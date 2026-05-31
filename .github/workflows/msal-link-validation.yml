@@ -1,0 +1,34 @@
+name: Validate MSAL package linkage
+
+on:
+  pull_request:
+    paths:
+      - 'ios/Lumen.xcodeproj/project.pbxproj'
+      - 'scripts/link-msal-package.py'
+      - '.github/workflows/msal-link-validation.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'ios/Lumen.xcodeproj/project.pbxproj'
+      - 'scripts/link-msal-package.py'
+      - '.github/workflows/msal-link-validation.yml'
+
+jobs:
+  validate-msal-linkage:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch MSAL linkage if missing
+        run: python3 scripts/link-msal-package.py
+      - name: Fail if project file was not committed patched
+        run: |
+          if ! git diff --exit-code -- ios/Lumen.xcodeproj/project.pbxproj; then
+            echo '::error::MSAL package linkage was missing from project.pbxproj. Run python3 scripts/link-msal-package.py and commit the project file.'
+            exit 1
+          fi
+      - name: Verify MSAL package references
+        run: |
+          grep -q 'microsoft-authentication-library-for-objc.git' ios/Lumen.xcodeproj/project.pbxproj
+          grep -q 'productName = MSAL;' ios/Lumen.xcodeproj/project.pbxproj
+          grep -q 'MSAL in Frameworks' ios/Lumen.xcodeproj/project.pbxproj

@@ -1,0 +1,780 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9A1B2C3D4E5F678901234570 /* SwiftLlama in Frameworks */ = {isa = PBXBuildFile; productRef = 9A1B2C3D4E5F678901234571 /* SwiftLlama */; };
+		A27B0C0D0E0F000000000002 /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = A27B0C0D0E0F000000000004 /* MSAL */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		105FC58A2E9EAD3200EA8BCF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 105FC5722E9EAD3100EA8BCF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 105FC5792E9EAD3100EA8BCF;
+			remoteInfo = Lumen;
+		};
+		105FC5942E9EAD3200EA8BCF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 105FC5722E9EAD3100EA8BCF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 105FC5792E9EAD3100EA8BCF;
+			remoteInfo = Lumen;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		105FC57A2E9EAD3100EA8BCF /* Lumen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lumen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		105FC5892E9EAD3200EA8BCF /* LumenTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LumenTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		105FC5932E9EAD3200EA8BCF /* LumenUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LumenUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		105FC57C2E9EAD3100EA8BCF /* Lumen */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Lumen;
+			sourceTree = "<group>";
+		};
+		105FC58C2E9EAD3200EA8BCF /* LumenTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LumenTests;
+			sourceTree = "<group>";
+		};
+		105FC5962E9EAD3200EA8BCF /* LumenUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LumenUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		105FC5772E9EAD3100EA8BCF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A1B2C3D4E5F678901234570 /* SwiftLlama in Frameworks */,
+				A27B0C0D0E0F000000000002 /* MSAL in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC5862E9EAD3200EA8BCF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC5902E9EAD3200EA8BCF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		105FC5712E9EAD3100EA8BCF = {
+			isa = PBXGroup;
+			children = (
+				105FC57C2E9EAD3100EA8BCF /* Lumen */,
+				105FC58C2E9EAD3200EA8BCF /* LumenTests */,
+				105FC5962E9EAD3200EA8BCF /* LumenUITests */,
+				105FC57B2E9EAD3100EA8BCF /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		105FC57B2E9EAD3100EA8BCF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				105FC57A2E9EAD3100EA8BCF /* Lumen.app */,
+				105FC5892E9EAD3200EA8BCF /* LumenTests.xctest */,
+				105FC5932E9EAD3200EA8BCF /* LumenUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		105FC5792E9EAD3100EA8BCF /* Lumen */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 105FC59D2E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "Lumen" */;
+			buildPhases = (
+				105FC5762E9EAD3100EA8BCF /* Sources */,
+				105FC5772E9EAD3100EA8BCF /* Frameworks */,
+				105FC5782E9EAD3100EA8BCF /* Resources */,
+				B7A1C2D3E4F5061728394A5B /* Bundle Agent Grounding Artifacts */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				105FC57C2E9EAD3100EA8BCF /* Lumen */,
+			);
+			name = Lumen;
+			packageProductDependencies = (
+				9A1B2C3D4E5F678901234571 /* SwiftLlama */,
+				A27B0C0D0E0F000000000004 /* MSAL */,
+			);
+			productName = Lumen;
+			productReference = 105FC57A2E9EAD3100EA8BCF /* Lumen.app */;
+			productType = "com.apple.product-type.application";
+		};
+		105FC5882E9EAD3200EA8BCF /* LumenTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 105FC5A02E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "LumenTests" */;
+			buildPhases = (
+				105FC5852E9EAD3200EA8BCF /* Sources */,
+				105FC5862E9EAD3200EA8BCF /* Frameworks */,
+				105FC5872E9EAD3200EA8BCF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				105FC58B2E9EAD3200EA8BCF /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				105FC58C2E9EAD3200EA8BCF /* LumenTests */,
+			);
+			name = LumenTests;
+			packageProductDependencies = (
+			);
+			productName = LumenTests;
+			productReference = 105FC5892E9EAD3200EA8BCF /* LumenTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		105FC5922E9EAD3200EA8BCF /* LumenUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 105FC5A32E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "LumenUITests" */;
+			buildPhases = (
+				105FC58F2E9EAD3200EA8BCF /* Sources */,
+				105FC5902E9EAD3200EA8BCF /* Frameworks */,
+				105FC5912E9EAD3200EA8BCF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				105FC5952E9EAD3200EA8BCF /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				105FC5962E9EAD3200EA8BCF /* LumenUITests */,
+			);
+			name = LumenUITests;
+			packageProductDependencies = (
+			);
+			productName = LumenUITests;
+			productReference = 105FC5932E9EAD3200EA8BCF /* LumenUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		105FC5722E9EAD3100EA8BCF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					105FC5792E9EAD3100EA8BCF = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					105FC5882E9EAD3200EA8BCF = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 105FC5792E9EAD3100EA8BCF;
+					};
+					105FC5922E9EAD3200EA8BCF = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 105FC5792E9EAD3100EA8BCF;
+					};
+				};
+			};
+			buildConfigurationList = 105FC5752E9EAD3100EA8BCF /* Build configuration list for PBXProject "Lumen" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 105FC5712E9EAD3100EA8BCF;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9A1B2C3D4E5F678901234572 /* XCRemoteSwiftPackageReference "swift-llama-cpp.git" */,
+				A27B0C0D0E0F000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc.git" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 105FC57B2E9EAD3100EA8BCF /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				105FC5792E9EAD3100EA8BCF /* Lumen */,
+				105FC5882E9EAD3200EA8BCF /* LumenTests */,
+				105FC5922E9EAD3200EA8BCF /* LumenUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		105FC5782E9EAD3100EA8BCF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC5872E9EAD3200EA8BCF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC5912E9EAD3200EA8BCF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		B7A1C2D3E4F5061728394A5B /* Bundle Agent Grounding Artifacts */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../generated/agent_manifest",
+				"$(SRCROOT)/../generated/cross_model_training",
+				"$(SRCROOT)/../generated/agent_manifest/cross_model_training",
+				"$(SRCROOT)/../generated/agent_improvement_loop",
+				"$(SRCROOT)/Lumen/Scripts/copy_agent_grounding_resources.sh",
+			);
+			name = "Bundle Agent Grounding Artifacts";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/cross_model_training",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_improvement_loop",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/fleet_system_prompts.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/cross_model_training/cross_model_training.jsonl",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${PROJECT_DIR}/Lumen/Scripts/copy_agent_grounding_resources.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		105FC5762E9EAD3100EA8BCF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC5852E9EAD3200EA8BCF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC58F2E9EAD3200EA8BCF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		105FC58B2E9EAD3200EA8BCF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 105FC5792E9EAD3100EA8BCF /* Lumen */;
+			targetProxy = 105FC58A2E9EAD3200EA8BCF /* PBXContainerItemProxy */;
+		};
+		105FC5952E9EAD3200EA8BCF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 105FC5792E9EAD3100EA8BCF /* Lumen */;
+			targetProxy = 105FC5942E9EAD3200EA8BCF /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		105FC59B2E9EAD3200EA8BCF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		105FC59C2E9EAD3200EA8BCF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
+				SWIFT_WHOLE_MODULE_OPTIMIZATION = NO;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		105FC59E2E9EAD3200EA8BCF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lumen/Lumen.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.27pm.lumen.agent.refresh com.27pm.lumen.agent.process";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleURLName = com.27pm.lumen;
+						CFBundleURLSchemes = (
+							msauth.com.27pm.lumen,
+						);
+					},
+				);
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
+					msauth,
+					msauthv2,
+					msauthv3,
+				);
+				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lumen uses the camera to capture images when you ask.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Lumen searches your contacts when you ask about people.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Lumen reads basic Health data to answer questions about your activity.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Lumen can log entries to Health when you ask.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Lumen uses your location for location-aware answers.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Lumen uses the microphone for voice input.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Lumen uses motion data to describe your recent activity.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Lumen searches your photo library when you ask.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Lumen uses Reminders to add and read tasks when you ask.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Lumen uses speech recognition to transcribe your voice input on-device.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		105FC59F2E9EAD3200EA8BCF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lumen/LumenAppStore.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = NO;
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.27pm.lumen.agent.refresh com.27pm.lumen.agent.process";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleURLName = com.27pm.lumen;
+						CFBundleURLSchemes = (
+							msauth.com.27pm.lumen,
+						);
+					},
+				);
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
+					msauth,
+					msauthv2,
+					msauthv3,
+				);
+				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lumen uses the camera to capture images when you ask.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Lumen searches your contacts when you ask about people.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Lumen reads basic Health data to answer questions about your activity.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Lumen can log entries to Health when you ask.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Lumen uses your location for location-aware answers.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Lumen uses the microphone for voice input.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Lumen uses motion data to describe your recent activity.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Lumen searches your photo library when you ask.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Lumen uses Reminders to add and read tasks when you ask.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Lumen uses speech recognition to transcribe your voice input on-device.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				SWIFT_WHOLE_MODULE_OPTIMIZATION = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		105FC5A12E9EAD3200EA8BCF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lumen.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lumen";
+			};
+			name = Debug;
+		};
+		105FC5A22E9EAD3200EA8BCF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = NO;
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				SWIFT_WHOLE_MODULE_OPTIMIZATION = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lumen.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lumen";
+			};
+			name = Release;
+		};
+		105FC5A42E9EAD3200EA8BCF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Lumen;
+			};
+			name = Debug;
+		};
+		105FC5A52E9EAD3200EA8BCF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = NO;
+				DEVELOPMENT_TEAM = 52T7P32J34;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				SWIFT_WHOLE_MODULE_OPTIMIZATION = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Lumen;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		105FC5752E9EAD3100EA8BCF /* Build configuration list for PBXProject "Lumen" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105FC59B2E9EAD3200EA8BCF /* Debug */,
+				105FC59C2E9EAD3200EA8BCF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		105FC59D2E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "Lumen" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105FC59E2E9EAD3200EA8BCF /* Debug */,
+				105FC59F2E9EAD3200EA8BCF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		105FC5A02E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "LumenTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105FC5A12E9EAD3200EA8BCF /* Debug */,
+				105FC5A22E9EAD3200EA8BCF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		105FC5A32E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "LumenUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105FC5A42E9EAD3200EA8BCF /* Debug */,
+				105FC5A52E9EAD3200EA8BCF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9A1B2C3D4E5F678901234572 /* XCRemoteSwiftPackageReference "swift-llama-cpp.git" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pgorzelany/swift-llama-cpp.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.2.0;
+			};
+		};
+		A27B0C0D0E0F000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc.git" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9A1B2C3D4E5F678901234571 /* SwiftLlama */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9A1B2C3D4E5F678901234572 /* XCRemoteSwiftPackageReference "swift-llama-cpp.git" */;
+			productName = SwiftLlama;
+		};
+		A27B0C0D0E0F000000000004 /* MSAL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A27B0C0D0E0F000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc.git" */;
+			productName = MSAL;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 105FC5722E9EAD3100EA8BCF /* Project object */;
+}

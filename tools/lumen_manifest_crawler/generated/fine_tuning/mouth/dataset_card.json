@@ -1,0 +1,11 @@
+{
+  "agent": "mouth",
+  "manifestCommit": "f54d520d888452d24905536a75f5b1e216fc4c01",
+  "recordCounts": {
+    "eval": 546,
+    "train_dpo": 52,
+    "train_sft": 45,
+    "val_dpo": 1,
+    "val_sft": 8
+  }
+}

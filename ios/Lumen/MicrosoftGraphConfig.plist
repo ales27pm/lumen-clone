@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>MSALClientID</key>
+	<string>51aa8fd9-16b2-4f8e-8b97-b8618ceb6c40</string>
+	<key>MSALAuthorityURL</key>
+	<string>https://login.microsoftonline.com/consumers</string>
+	<key>MSALKeychainGroup</key>
+	<string>com.microsoft.adalcache</string>
+	<key>MSALRedirectURI</key>
+	<string>msauth.com.27pm.lumen://auth</string>
+	<key>MSALForceNativeOAuth</key>
+	<true/>
+</dict>
+</plist>

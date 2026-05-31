@@ -1,0 +1,72 @@
+{
+  "agents": {
+    "cortex": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/cortex",
+      "agent": "cortex",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "gguf_file": "lumen-cortex-merged-q4_k_m.gguf",
+      "gguf_output_dir": "/home/ales27pm/Lumen/models/gguf_merged/cortex_merged_gguf",
+      "gguf_path": "/home/ales27pm/Lumen/models/gguf_merged/cortex_merged_gguf/lumen-cortex-merged-q4_k_m.gguf",
+      "quantization": "q4_k_m",
+      "sha256": "bddf5b1c37768239949e35c8949e7b64e6d93b328afed744308508f546910665",
+      "size_bytes": 986048032
+    },
+    "executor": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/executor",
+      "agent": "executor",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "gguf_file": "lumen-executor-merged-q4_k_m.gguf",
+      "gguf_output_dir": "/home/ales27pm/Lumen/models/gguf_merged/executor_merged_gguf",
+      "gguf_path": "/home/ales27pm/Lumen/models/gguf_merged/executor_merged_gguf/lumen-executor-merged-q4_k_m.gguf",
+      "quantization": "q4_k_m",
+      "sha256": "a75b39a60331031ae43e23346654aac14b46b2021a071ff4e84685b0aebefe29",
+      "size_bytes": 986048032
+    },
+    "fleet": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/fleet",
+      "agent": "fleet",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "gguf_file": "lumen-fleet-merged-q4_k_m.gguf",
+      "gguf_output_dir": "/home/ales27pm/Lumen/models/gguf_merged/fleet_merged_gguf",
+      "gguf_path": "/home/ales27pm/Lumen/models/gguf_merged/fleet_merged_gguf/lumen-fleet-merged-q4_k_m.gguf",
+      "quantization": "q4_k_m",
+      "sha256": "0883cc41c36cff4ff1592cbbf7a30f3bf4401c6354bc098cd037d0057622c89e",
+      "size_bytes": 986048032
+    },
+    "mimicry": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/mimicry",
+      "agent": "mimicry",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "gguf_file": "lumen-mimicry-merged-q4_k_m.gguf",
+      "gguf_output_dir": "/home/ales27pm/Lumen/models/gguf_merged/mimicry_merged_gguf",
+      "gguf_path": "/home/ales27pm/Lumen/models/gguf_merged/mimicry_merged_gguf/lumen-mimicry-merged-q4_k_m.gguf",
+      "quantization": "q4_k_m",
+      "sha256": "2cc22bdf1992af3b306ccaeae72aeacb2835361470a320102a5f2d1ffbba59bc",
+      "size_bytes": 986048032
+    },
+    "mouth": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/mouth",
+      "agent": "mouth",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "gguf_file": "lumen-mouth-merged-q4_k_m.gguf",
+      "gguf_output_dir": "/home/ales27pm/Lumen/models/gguf_merged/mouth_merged_gguf",
+      "gguf_path": "/home/ales27pm/Lumen/models/gguf_merged/mouth_merged_gguf/lumen-mouth-merged-q4_k_m.gguf",
+      "quantization": "q4_k_m",
+      "sha256": "b454c091e8f2d2b2791098becd3ac96d39d7063434e238f2926070b7b124a51f",
+      "size_bytes": 986048032
+    },
+    "rem": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/rem",
+      "agent": "rem",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "gguf_file": "lumen-rem-merged-q4_k_m.gguf",
+      "gguf_output_dir": "/home/ales27pm/Lumen/models/gguf_merged/rem_merged_gguf",
+      "gguf_path": "/home/ales27pm/Lumen/models/gguf_merged/rem_merged_gguf/lumen-rem-merged-q4_k_m.gguf",
+      "quantization": "q4_k_m",
+      "sha256": "126664283b9121cf29e095d6f34641b4068a0a7c905156c1f94f227e49d19471",
+      "size_bytes": 986048032
+    }
+  },
+  "quantization_override": "q4_k_m",
+  "repo_id": null
+}

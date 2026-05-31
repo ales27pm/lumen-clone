@@ -1,0 +1,58 @@
+{
+  "counts": {
+    "approval_boundary_samples": 115,
+    "cortex_routing": 69,
+    "dpo_preference_pairs": 53,
+    "eval_scenarios": 550,
+    "executor_tool_calls": 53,
+    "manifest_grounding_cards": 4,
+    "mimicry_style": 3,
+    "mouth_responses": 53,
+    "negative_samples": 53,
+    "rem_reflection": 5,
+    "runtime_audit_repairs": 0,
+    "tool_schema_cards": 91,
+    "train_sft": 298,
+    "validation_sft": 53
+  },
+  "deterministic": true,
+  "generatedAt": "1970-01-01T00:00:00+00:00",
+  "hashes": {
+    "dpo_preference_pairs": "fe30237492e17dfdeb3679726e4d4c887a156338004e7be17602d6f32163e191",
+    "eval_scenarios": "5f34ab53fd1f6b05fd6116622711240f475fc8d777e11be4f0c4272d1b89a5fc",
+    "manifest_grounding_cards": "1d0cef01d0db5365957b22d31f0ed18e24e713ec7b7494aea9d584189d308107",
+    "runtime_audit_repairs": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tool_schema_cards": "b10bef680ced23d9933860ba15971a7ae8d28b2c70ae6c4b6436bfd762087439",
+    "train_sft": "54e382947b8dfaacb66d29eab48671ee8b9f91f8c91ff21427543267fe4e3ae4",
+    "validation_sft": "25b7909e38ce960db6b7684d865017abdabc09a6fb07b5f735ffd60c78f7f853"
+  },
+  "manifest": {
+    "commit": null,
+    "intentCount": 22,
+    "modelSlotCount": 6,
+    "schemaVersion": "1.0.0",
+    "toolCount": 53
+  },
+  "schemaVersion": "2.0.0",
+  "sources": {
+    "rawDatasetFamilies": [
+      "approval_boundary_samples",
+      "cortex_routing",
+      "executor_tool_calls",
+      "mimicry_style",
+      "mouth_responses",
+      "negative_samples",
+      "rem_reflection"
+    ],
+    "runtimeAuditFormats": [],
+    "runtimeAuditReports": 0,
+    "staticSwiftSourceFiles": 13
+  },
+  "trainingPolicy": {
+    "format": "chat_messages_jsonl",
+    "privateDataPolicy": "static Swift source manifest, role datasets, explicit runtime audit JSON, explicit in-app dataset packages, behavior repair samples, deterministic scenario results, and bounded diagnostic trace prefixes only; no unrestricted logs, full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are ingested",
+    "sentinelLeakPolicy": "fail validation on model-visible leaks",
+    "splitStrategy": "stable_hash_by_record_id",
+    "validationRatio": 0.15
+  }
+}
