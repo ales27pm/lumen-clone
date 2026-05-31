@@ -47,6 +47,7 @@ final class SlotModelRuntimeCoordinator {
         candidates: [StoredModel],
         preferredID: String?
     ) async -> Bool {
+        guard ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue), !Task.isCancelled else { return false }
         let orderedCandidates = orderedCandidates(candidates: candidates, preferredID: preferredID)
         for (index, candidate) in orderedCandidates.enumerated() {
             let path = ModelStorage.resolvedModelURL(from: candidate.localPath, fileName: candidate.fileName).path
@@ -91,6 +92,7 @@ final class SlotModelRuntimeCoordinator {
         candidates: [StoredModel],
         preferredID: String?
     ) async -> Bool {
+        guard ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue), !Task.isCancelled else { return false }
         let orderedCandidates = orderedCandidates(candidates: candidates, preferredID: preferredID)
         for (index, candidate) in orderedCandidates.enumerated() {
             let path = ModelStorage.resolvedModelURL(from: candidate.localPath, fileName: candidate.fileName).path
@@ -119,6 +121,9 @@ final class SlotModelRuntimeCoordinator {
     }
 
     func ensureReadyWithMetrics(slot: LumenModelSlot) async throws -> RuntimeReadinessMetrics {
+        guard ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue), !Task.isCancelled else {
+            throw LocalRuntimeError.unavailable("resource budget denied model load")
+        }
         guard slot != .embedding else {
             return RuntimeReadinessMetrics(
                 ensureReadyMs: 0,

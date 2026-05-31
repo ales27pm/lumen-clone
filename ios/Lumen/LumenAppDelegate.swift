@@ -28,7 +28,7 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
         Task { @MainActor in
-            FleetRuntimeCleanup.unloadOptionalChatSlots()
+            await MemoryPressureMonitor.shared.handleWarning()
         }
     }
 }

@@ -40,8 +40,9 @@ final class ModelRuntimeController {
 
     func load(_ sm: StoredModel, appState: AppState, storedModels: [StoredModel]) async throws {
         if sm.modelRole == .chat || sm.modelRole == .roleAdapter {
-            await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels)
+            await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels, intent: .userChat)
         } else {
+            guard ModelLoader.canStartModelLoad(intent: .userChat) else { return }
             let resolvedPath = ModelStorage.resolvedModelURL(from: sm.localPath, fileName: sm.fileName).path
             try await AppLlamaService.shared.loadEmbeddingModel(path: resolvedPath)
         }
@@ -65,8 +66,9 @@ final class ModelRuntimeController {
 
     func reload(_ sm: StoredModel, appState: AppState, storedModels: [StoredModel]) async throws {
         if sm.modelRole == .chat || sm.modelRole == .roleAdapter {
-            await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels)
+            await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels, intent: .userChat)
         } else {
+            guard ModelLoader.canStartModelLoad(intent: .userChat) else { return }
             try await AppLlamaService.shared.reloadEmbed()
         }
     }

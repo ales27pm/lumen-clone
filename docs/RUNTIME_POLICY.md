@@ -10,3 +10,13 @@
 - FoundationModels for preferred foreground chat-like tasks when available and policy allows.
 - llama when FoundationModels is unavailable or constrained.
 - deterministic fallback for constrained or unavailable scenarios.
+
+## ResourceBudgetGate model-load policy
+
+`ResourceBudgetGate` is the lifecycle/resource gate for expensive local model work:
+- only explicit `userChat` and `userVoice` intents may start model/tokenizer/runtime loading;
+- `appStartup`, `diagnostics`, and `background` intents degrade without loading model assets;
+- inactive/background scenes, serious/critical/unknown thermal state, and memory warnings deny heavy work only during a short cooldown window;
+- Low Power Mode denies passive heavy work but still permits explicit foreground user chat/voice turns when other resource checks pass.
+
+FoundationModels availability is treated as a cheap metadata status. Diagnostics and capability profiling must not instantiate FoundationModels tokenizer/model assets.

@@ -105,7 +105,10 @@ struct VoiceModeView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear { generationController.startupIfNeeded(for: "voice") { } }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { session.handleAppDidEnterBackground(); syncPhaseFromSession() } }
+        .onChange(of: scenePhase) { _, phase in
+            ResourceBudgetGate.recordScenePhase(phase)
+            if ResourceBudgetGate.shouldCancelForScenePhase(phase) { cancelForSceneTransition() }
+        }
         .onDisappear { cleanup() }
     }
 
@@ -245,7 +248,7 @@ struct VoiceModeView: View {
             let userMsg = ChatMessage(role: .user, content: text)
             convo.messages.append(userMsg)
 
-            _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: [])
+            _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: [], intent: .userVoice)
 
             let routing = await IntentClassifierService.shared.route(text)
             let memories = await safeRecalledMemories(query: text, routing: routing)
@@ -404,6 +407,16 @@ struct VoiceModeView: View {
     private func close() {
         cleanup()
         dismiss()
+    }
+
+    private func cancelForSceneTransition() {
+        activeVoiceTurnID = nil
+        generationController.cancel(for: "voice")
+        responseTask?.cancel()
+        session.handleAppDidEnterBackground()
+        session.stopSpeaking()
+        RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "voice-scene")
+        syncPhaseFromSession()
     }
 
     private func cleanup() {
