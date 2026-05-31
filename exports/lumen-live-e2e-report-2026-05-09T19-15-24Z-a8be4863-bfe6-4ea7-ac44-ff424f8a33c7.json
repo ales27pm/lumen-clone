@@ -1,0 +1,577 @@
+{
+  "app" : {
+    "buildNumber" : "169",
+    "bundleIdentifier" : "com.27pm.lumen",
+    "name" : "Lumen",
+    "shortVersion" : "1.0.0"
+  },
+  "exportPolicy" : {
+    "format" : "live-e2e-test-report-json",
+    "includesDeterministicStaticScenarios" : false,
+    "notes" : [
+      "This is the live E2E model/test layer export.",
+      "Scenarios with requiresAgentRun=true are intended to exercise the loaded SlotAgentService path.",
+      "If a scenario says no model loaded or routing-only checks completed, the offline ingester treats it as invalid E2E evidence."
+    ],
+    "ownsLiveE2EScenarios" : true,
+    "privacy" : "Contains prompts, final outputs, failures, and event logs from the current local E2E run. Review before sharing outside the improve-loop.",
+    "sourceLayer" : "e2eTestReport"
+  },
+  "generatedAt" : "2026-05-09T19:15:24Z",
+  "payload" : {
+    "failed" : 1,
+    "finishedAt" : "2026-05-09T19:15:18Z",
+    "id" : "BCF5EC1A-B8FE-45D3-8FA0-E7D6C8FEEE07",
+    "passed" : 6,
+    "results" : [
+      {
+        "actualIntent" : "weather",
+        "events" : [
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "5C49AF42-1BCF-4C7F-A276-B6EF27D0488D",
+            "message" : "What is the weather here and should I carry an umbrella?",
+            "phase" : "start",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "7B8C9CE1-7117-4FC6-AA57-8643DAB0CA59",
+            "message" : "actual=weather, expected=weather",
+            "phase" : "intent",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "65B818E0-4FD3-41AF-8529-A1298BD51DDC",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "AE87812C-983B-4320-B54D-D27F72DCC790",
+            "message" : "action: weather()",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "919E3FFA-3529-4C40-A064-251995C3956F",
+            "message" : "observation: Weather at your location: · clear sky · 18°C · feels like 14°C · humidity 21% · wind 19 km/h · gusts 26 km/h · cloud cover 1% · updated 2026-05-09T15:00",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "61DF972F-7E71-4F83-84ED-10DA852BEB16",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "3F22CFEC-A933-44E5-A7D6-384C7D61AF7C",
+            "message" : "Weather update: Weather at your location: · clear sky · 18°C · feels like 14°C · humidity 21% · wind 19 km/h · gusts 26 km/h · cloud cover 1% · updated 2026-05-09T15:00",
+            "phase" : "final",
+            "scenarioID" : "training-weather-grounded"
+          }
+        ],
+        "expectedIntent" : "weather",
+        "failures" : [
+
+        ],
+        "finalText" : "Weather update: Weather at your location: · clear sky · 18°C · feels like 14°C · humidity 21% · wind 19 km/h · gusts 26 km/h · cloud cover 1% · updated 2026-05-09T15:00",
+        "finishedAt" : "2026-05-09T19:12:16Z",
+        "id" : "2436D9D9-3AE0-4C0F-9CF2-AF1E7A8A3017",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "prompt" : "What is the weather here and should I carry an umbrella?",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Weather update: Weather at your location: · clear sky · 18°C · feels like 14°C · humidity 21% · wind 19 km/h · gusts 26 km/h · cloud cover 1% · updated 2026-05-09T15:00",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Weather update: Weather at your location: · clear sky · 18°C · feels like 14°C · humidity 21% · wind 19 km/h · gusts 26 km/h · cloud cover 1% · updated 2026-05-09T15:00",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-weather-grounded",
+        "startedAt" : "2026-05-09T19:12:16Z",
+        "title" : "Training eval: weather stays grounded"
+      },
+      {
+        "actualIntent" : "webSearch",
+        "events" : [
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "506F1753-3E54-497E-BA9C-7DDE9A2B3606",
+            "message" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+            "phase" : "start",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "DC448EA0-5589-4E4A-8E0A-F4BC7028AC22",
+            "message" : "actual=webSearch, expected=webSearch",
+            "phase" : "intent",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "A7C5D4F0-8761-4CC0-90AB-DDC965DA9BA4",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:16Z",
+            "id" : "9CBD6C51-4970-423D-98BA-7D93C41AB153",
+            "message" : "action: web.search(query=two recent Swift concurrency best practices and summarize them)",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:17Z",
+            "id" : "E1EDA1FE-340C-472B-95E9-1142DDBE84E6",
+            "message" : "observation: Search results for: two recent Swift concurrency best practices and summarize them\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency Changes & Best Practices in Swift 6.2 | Medium\nhttps://ravi6997.medium.com/concurrency-changes-best-practices-in-swift-6-2-33d1561c066e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift 6.2 Introduces Approachable Concurrency to Simplify ... - InfoQ\nhttps://www.infoq.com/news/2025/08/swift62-approachable-concurrency/\n\n5. Strict Concurrency and Swift 6 - O2o\nhttps://www.o2ods.com/en/blog/strict-concurrency-and-swift-6/\n\n6. Strict Concurrency Got Approachable: A Swift 6.2 Migration Guide - LinkedIn\nhttps://www.linkedin.com/pulse/strict-concurrency-got-approachable-swift-62-migration-sakir-saiyed-d5pmc\n\n<lumen_web_payload>{\"media\":[{\"kind\":\"page\",\"url\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-architecture\",\"sourcePageURL\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-architecture\",\"title\":\"Swift Concurrency Architecture: Patterns and Best Practices\"},{\"kind\":\"page\",\"url\":\"https:\\/\\/ravi6997.medium.com\\/concurrency-changes-best-practices-in-swift-6-2-33d1561c066e\",\"sourcePageURL\":\"https:\\/\\/ravi6997.medium.com\\/concurrency-changes-best-practices-in-swift-6-2-33d1561c066e\",\"title\":\"Concurrency Changes & Best Practices in Swift 6.2 | Medium\"},{\"kind\":\"page\",\"url\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\",\"sourcePageURL\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\",\"title\":\"Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\"},{\"kind\":\"page\",\"url\":\"https:\\/\\/www.infoq.com\\/news\\/2025\\/08\\/swift62-approachable-concurrency\\/\",\"sourcePageURL\":\"https:\\/\\/www.infoq.com\\/news\\/2025\\/08\\/swift62-approachable-concurrency\\/\",\"title\":\"Swift 6.2 Introduces Approachable Concurrency to Simplify ... - InfoQ\"},{\"kind\":\"page\",\"url\":\"https:\\/\\/www.o2ods.com\\/en\\/blog\\/strict-concurrency-and-swift-6\\/\",\"sourcePageURL\":\"https:\\/\\/www.o2ods.com\\/en\\/blog\\/strict-concurrency-and-swift-6\\/\",\"title\":\"Strict Concurrency and Swift 6 - O2o\"},{\"kind\":\"page\",\"url\":\"https:\\/\\/www.linkedin.com\\/pulse\\/strict-concurrency-got-approachable-swift-62-migration-sakir-saiyed-d5pmc\",\"sourcePageURL\":\"https:\\/\\/www.linkedin.com\\/pulse\\/strict-concurrency-got-approachable-swift-62-migration-sakir-saiyed-d5pmc\",\"title\":\"Strict Concurrency Got Approachable: A Swift 6.2 Migration Guide - LinkedIn\"},{\"kind\":\"page\",\"url\":\"https:\\/\\/howtoinswift.tech\\/blog\\/2025\\/SwiftUI-Concurrency-Deep-Dive-Mastering-Structured-Concurrency-with-Swift-6-2025-Edition\",\"sourcePageURL\":\"https:\\/\\/howtoinswift.tech\\/blog\\/2025\\/SwiftUI-Concurrency-Deep-Dive-Mastering-Structured-Concurrency-with-Swift-6-2025-Edition\",\"title\":\"SwiftUI Concurrency Deep Dive: Mastering Structured Concurrency with ...\"},{\"kind\":\"page\",\"url\":\"https:\\/\\/namastedev.com\\/blog\\/concurrency-in-swift\\/\",\"sourcePageURL\":\"https:\\/\\/namastedev.com\\/blog\\/concurrency-in-swift\\/\",\"title\":\"Concurrency in Swift - NamasteDev Blogs\"}],\"kind\":\"searchResults\",\"results\":[{\"mediaKind\":\"page\",\"source\":\"www.atelier-socle.com\",\"url\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-architecture\",\"title\":\"Swift Concurrency Architecture: Patterns and Best Practices\"},{\"mediaKind\":\"page\",\"source\":\"ravi6997.medium.com\",\"url\":\"https:\\/\\/ravi6997.medium.com\\/concurrency-changes-best-practices-in-swift-6-2-33d1561c066e\",\"title\":\"Concurrency Changes & Best Practices in Swift 6.2 | Medium\"},{\"mediaKind\":\"page\",\"source\":\"developer.apple.com\",\"url\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\",\"title\":\"Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\"},{\"mediaKind\":\"page\",\"source\":\"www.infoq.com\",\"url\":\"https:\\/\\/www.infoq.com\\/news\\/2025\\/08\\/swift62-approachable-concurrency\\/\",\"title\":\"Swift 6.2 Introduces Approachable Concurrency to Simplify ... - InfoQ\"},{\"mediaKind\":\"page\",\"source\":\"www.o2ods.com\",\"url\":\"https:\\/\\/www.o2ods.com\\/en\\/blog\\/strict-concurrency-and-swift-6\\/\",\"title\":\"Strict Concurrency and Swift 6 - O2o\"},{\"mediaKind\":\"page\",\"source\":\"www.linkedin.com\",\"url\":\"https:\\/\\/www.linkedin.com\\/pulse\\/strict-concurrency-got-approachable-swift-62-migration-sakir-saiyed-d5pmc\",\"title\":\"Strict Concurrency Got Approachable: A Swift 6.2 Migration Guide - LinkedIn\"},{\"mediaKind\":\"page\",\"source\":\"howtoinswift.tech\",\"url\":\"https:\\/\\/howtoinswift.tech\\/blog\\/2025\\/SwiftUI-Concurrency-Deep-Dive-Mastering-Structured-Concurrency-with-Swift-6-2025-Edition\",\"title\":\"SwiftUI Concurrency Deep Dive: Mastering Structured Concurrency with ...\"},{\"mediaKind\":\"page\",\"source\":\"namastedev.com\",\"url\":\"https:\\/\\/namastedev.com\\/blog\\/concurrency-in-swift\\/\",\"title\":\"Concurrency in Swift - NamasteDev Blogs\"}],\"query\":\"two recent Swift concurrency best practices and summarize them\",\"generatedAt\":\"2026-05-09T19:12:17Z\"}</lumen_web_payload>",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:40Z",
+            "id" : "CB8F7999-0EB5-40FB-9016-0C9C6CE0D73B",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:40Z",
+            "id" : "59CFEE24-9E33-4C1C-BC35-030E4AF47DDF",
+            "message" : "web.search: Search results for: two recent Swift concurrency best practices and summarize them\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency Changes & Best Practices in Swift 6.2 | Medium\nhttps://ravi6997.medium.com/concurrency-changes-best-practices-in-swift-6-2-33d1561c066e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift 6.2 Introduces Approachable Concurrency to Simplify ... - InfoQ\nhttps://www.infoq.com/news/2025/08/swift62-approachable-concurrency/\n\n5. Strict Concurrency and Swift 6 - O2o\nhttps://www.o2ods.com/en/blog/strict-concurrency-and-swift-6/\n\n6. Strict Concurrency Got Approachable: A Swift 6.2 Migration Guide - LinkedIn\nhttps://www.linkedin.com/pulse/strict-concurrency-got-approachable-swift-62-migration-sakir-saiyed-d5pmc",
+            "phase" : "final",
+            "scenarioID" : "training-web-research"
+          }
+        ],
+        "expectedIntent" : "webSearch",
+        "failures" : [
+
+        ],
+        "finalText" : "web.search: Search results for: two recent Swift concurrency best practices and summarize them\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency Changes & Best Practices in Swift 6.2 | Medium\nhttps://ravi6997.medium.com/concurrency-changes-best-practices-in-swift-6-2-33d1561c066e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift 6.2 Introduces Approachable Concurrency to Simplify ... - InfoQ\nhttps://www.infoq.com/news/2025/08/swift62-approachable-concurrency/\n\n5. Strict Concurrency and Swift 6 - O2o\nhttps://www.o2ods.com/en/blog/strict-concurrency-and-swift-6/\n\n6. Strict Concurrency Got Approachable: A Swift 6.2 Migration Guide - LinkedIn\nhttps://www.linkedin.com/pulse/strict-concurrency-got-approachable-swift-62-migration-sakir-saiyed-d5pmc",
+        "finishedAt" : "2026-05-09T19:12:40Z",
+        "id" : "DD16664E-6DFD-4FD2-86D3-51138B60DB1C",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "prompt" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "web.search: Search results for: two recent Swift concurrency best practices and summarize them\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-a",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "web.search: Search results for: two recent Swift concurrency best practices and summarize them\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-a",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-web-research",
+        "startedAt" : "2026-05-09T19:12:16Z",
+        "title" : "Training eval: web research synthesis"
+      },
+      {
+        "actualIntent" : "memory",
+        "events" : [
+          {
+            "createdAt" : "2026-05-09T19:12:40Z",
+            "id" : "8B5A3B9E-EFFB-41AC-89FE-75FEA7E205E6",
+            "message" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            "phase" : "start",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:40Z",
+            "id" : "E56EE549-BE36-44D8-9BA4-2795577B7140",
+            "message" : "actual=memory, expected=memory",
+            "phase" : "intent",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:40Z",
+            "id" : "0B5378F0-8630-4479-B66F-EE1204202301",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:40Z",
+            "id" : "1E2C5364-A600-47C8-8657-F281EEE8DF61",
+            "message" : "action: memory.save(content=Remember that I prefer concise bullet points, then tell me what you remembered.)",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:41Z",
+            "id" : "EF50AE54-F2C5-4468-B9EB-375E4AA9E5A5",
+            "message" : "observation: Saved: Remember that I prefer concise bullet points, then tell me what you remembered.",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:41Z",
+            "id" : "1B301D39-6DB8-479B-AECE-C0FBD26930AE",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:41Z",
+            "id" : "5B2DC80A-1257-4D5C-A858-25660DC38E69",
+            "message" : "Saved to memory: Saved: Remember that I prefer concise bullet points, then tell me what you remembered.",
+            "phase" : "final",
+            "scenarioID" : "training-memory-loop"
+          }
+        ],
+        "expectedIntent" : "memory",
+        "failures" : [
+
+        ],
+        "finalText" : "Saved to memory: Saved: Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "finishedAt" : "2026-05-09T19:12:41Z",
+        "id" : "1B25C65F-A186-4618-B941-C51C2E03B22F",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "prompt" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Saved to memory: Saved: Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Saved to memory: Saved: Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-memory-loop",
+        "startedAt" : "2026-05-09T19:12:40Z",
+        "title" : "Training eval: memory save/recall"
+      },
+      {
+        "actualIntent" : "rag",
+        "events" : [
+          {
+            "createdAt" : "2026-05-09T19:12:41Z",
+            "id" : "6EBBF949-F8DD-48AD-A071-A03F60CB817B",
+            "message" : "Search my files for architecture notes and summarize key modules.",
+            "phase" : "start",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:41Z",
+            "id" : "E667C6DE-FDA7-4388-9CD7-5CE039FF4118",
+            "message" : "actual=rag, expected=rag",
+            "phase" : "intent",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:41Z",
+            "id" : "FA5F937C-69CC-4910-8DF2-890AF0A40BD4",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:41Z",
+            "id" : "ED0541AA-E577-4822-B3B1-4463B85458A4",
+            "message" : "action: rag.search(query=Search my files for architecture notes and summarize key modules service component package)",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-05-09T19:12:42Z",
+            "id" : "A3E818A7-9503-431D-9D15-3EDC53D8FCA8",
+            "message" : "observation: No matching files found for 'Search my files for architecture notes and summarize key modules service component package'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:14Z",
+            "id" : "1B1305BF-C56A-40AF-BEA7-CE83879C64AF",
+            "message" : "missing_hints=[], rewrite_attempted=true, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:14Z",
+            "id" : "33F10A6E-4043-4CDF-9367-89033E4AAA3B",
+            "message" : "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\"} [1]",
+            "phase" : "final",
+            "scenarioID" : "training-rag-grounding"
+          }
+        ],
+        "expectedIntent" : "rag",
+        "failures" : [
+          "Sanitized output still contains hidden reasoning"
+        ],
+        "finalText" : "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\"} [1]",
+        "finishedAt" : "2026-05-09T19:13:14Z",
+        "id" : "524CFB20-91AD-4044-A4EE-1EF59F6AD836",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+          "Sanitized output still contains hidden reasoning"
+        ],
+        "passed" : false,
+        "prompt" : "Search my files for architecture notes and summarize key modules.",
+        "rawFinalHadUnsafeLeakage" : true,
+        "rawFinalPrefix" : "The local index appears empty, and no matching files were found for \"architecture notes.\" Please import or create local files/notes first, then run `reindex files` to enable search.",
+        "rewriteAttempted" : true,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Con",
+        "sanitizedFinalRemovedArtifacts" : [
+          "thinkBlock"
+        ],
+        "scenarioID" : "training-rag-grounding",
+        "startedAt" : "2026-05-09T19:12:41Z",
+        "title" : "Training eval: local knowledge grounding"
+      },
+      {
+        "actualIntent" : "trigger",
+        "events" : [
+          {
+            "createdAt" : "2026-05-09T19:13:14Z",
+            "id" : "1A06AAD5-284A-407F-BB34-288FF3798293",
+            "message" : "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            "phase" : "start",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:14Z",
+            "id" : "55049EA8-7591-4999-BAF7-FF54C4500A4A",
+            "message" : "actual=trigger, expected=trigger",
+            "phase" : "intent",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:14Z",
+            "id" : "7CA8CCB2-8DE2-4FED-BFCE-6B11CA924282",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:30Z",
+            "id" : "BF87A941-95C8-4E82-B2F2-94F164F86353",
+            "message" : "approvalBoundary: Approval required before running trigger.create. Pending action id: 06449082-E9B3-4A62-8314-F213FE717927.",
+            "phase" : "step",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:30Z",
+            "id" : "58775EE1-703A-4DC5-BCB6-75228C68C1BF",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:30Z",
+            "id" : "7C81044D-3F01-4A9F-A10B-982B7F26942B",
+            "message" : "Approval required before running trigger.create. Pending action id: 06449082-E9B3-4A62-8314-F213FE717927.",
+            "phase" : "final",
+            "scenarioID" : "training-scheduler-agent"
+          }
+        ],
+        "expectedIntent" : "trigger",
+        "failures" : [
+
+        ],
+        "finalText" : "Approval required before running trigger.create. Pending action id: 06449082-E9B3-4A62-8314-F213FE717927.",
+        "finishedAt" : "2026-05-09T19:13:30Z",
+        "id" : "0CCF6385-1509-4FCD-9C51-06A870CA1389",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "prompt" : "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Approval required before running trigger.create. Pending action id: 06449082-E9B3-4A62-8314-F213FE717927.",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Approval required before running trigger.create. Pending action id: 06449082-E9B3-4A62-8314-F213FE717927.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-scheduler-agent",
+        "startedAt" : "2026-05-09T19:13:14Z",
+        "title" : "Training eval: trigger scheduling quality"
+      },
+      {
+        "actualIntent" : "emailDraft",
+        "events" : [
+          {
+            "createdAt" : "2026-05-09T19:13:30Z",
+            "id" : "03EAD707-4BBA-41AF-B9EB-A9E75C23FB1F",
+            "message" : "Draft an email to Alex with a professional update and ask one clarifying question.",
+            "phase" : "start",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:30Z",
+            "id" : "5732A6BC-F405-427E-AB57-077E9E3C5694",
+            "message" : "actual=emailDraft, expected=emailDraft",
+            "phase" : "intent",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:30Z",
+            "id" : "01EFC8BB-2305-45C7-8C1B-D20FD6B54E75",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:48Z",
+            "id" : "EA1995DB-EBCB-4BCB-B527-7DE4219885AE",
+            "message" : "thought: Resolve pronoun reference to Alex.",
+            "phase" : "step",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:48Z",
+            "id" : "F644E044-02E5-453E-9EFA-A150810F040D",
+            "message" : "action: contacts.search(query=Alex)",
+            "phase" : "step",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-05-09T19:13:48Z",
+            "id" : "BD605C8D-EED3-4A74-94EB-48DCA2F10AC1",
+            "message" : "observation: • Alexandre Tremblay — (514) 779-9054\n• Alexis Boulet — 14504943059\n• Alexis Boulet — no phone\n• Alexandre Thivierge — 1 (418) 559-7084\n• Alexandra Boulet — +14505614086",
+            "phase" : "step",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-05-09T19:14:31Z",
+            "id" : "693E443A-A4B3-4FD3-8C28-D0F07982D862",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-05-09T19:14:31Z",
+            "id" : "4C1A1100-31EA-4736-BBD9-E844A4111AA1",
+            "message" : "Dear Alex,\n\nI hope this message finds you well. I wanted to follow up on the recent update regarding [insert specific context here]. To ensure clarity, could you share more details about the key points you’d like to highlight? Your input would help me tailor the email to your needs.\n\nBest regards,\n[Your Name]\n\nOne clarifying question: what specific deadline, priority, or next step should I align this update with?",
+            "phase" : "final",
+            "scenarioID" : "training-communication-draft"
+          }
+        ],
+        "expectedIntent" : "emailDraft",
+        "failures" : [
+
+        ],
+        "finalText" : "Dear Alex,\n\nI hope this message finds you well. I wanted to follow up on the recent update regarding [insert specific context here]. To ensure clarity, could you share more details about the key points you’d like to highlight? Your input would help me tailor the email to your needs.\n\nBest regards,\n[Your Name]\n\nOne clarifying question: what specific deadline, priority, or next step should I align this update with?",
+        "finishedAt" : "2026-05-09T19:14:31Z",
+        "id" : "CED7C9F0-FA0B-4C1A-82DD-41D242186B4B",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "prompt" : "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Dear Alex,\n\nI hope this message finds you well. I wanted to follow up on the recent update regarding [insert specific context here]. To ensure clarity, could you share more details about the key points you’d like to high",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Dear Alex,\n\nI hope this message finds you well. I wanted to follow up on the recent update regarding [insert specific context here]. To ensure clarity, could you share more details about the key points you’d like to high",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-communication-draft",
+        "startedAt" : "2026-05-09T19:13:30Z",
+        "title" : "Training eval: communication drafting"
+      },
+      {
+        "actualIntent" : "chat",
+        "events" : [
+          {
+            "createdAt" : "2026-05-09T19:14:31Z",
+            "id" : "07988DB8-554F-4567-90E3-C2D4B662B7B0",
+            "message" : "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+            "phase" : "start",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-05-09T19:14:31Z",
+            "id" : "92863457-143C-4F1C-AD4A-C572A0C88EC3",
+            "message" : "actual=chat, expected=chat",
+            "phase" : "intent",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-05-09T19:14:31Z",
+            "id" : "214F5676-CA72-4C89-859B-4F609A6D8944",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-05-09T19:15:18Z",
+            "id" : "B49CF13D-C95B-4DB3-ABC0-3F3F45175F69",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-05-09T19:15:18Z",
+            "id" : "9C5EE6E4-AB0B-4328-B1EB-213BC1F01C87",
+            "message" : "In retrieval systems, precision and recall are two key metrics that often conflict:\n\n- **Precision** focuses on how accurate your results are: it measures the proportion of true positives (correct relevant results) among all positive predictions.\n*Example:* If 100 searches return 90 relevant results, precision is 90%.\n\n- **Recall** measures how many of the relevant results you capture: it's the ratio of true positives to all actual positives.\n*Example:* If 100 relevant searches return 85 results, recall is 85%.\n\n**Trade-off:**\n- To boost **precision**, you might miss some relevant results (lower recall).\n- To boost **recall**, you might include more irrelevant results (lower precision).\n\n**Balance Tip:**\nUse context:\n- Lower precision threshold for initial searches (find more results).\n- Higher precision threshold for final results (eliminate noise).",
+            "phase" : "final",
+            "scenarioID" : "training-general-chat"
+          }
+        ],
+        "expectedIntent" : "chat",
+        "failures" : [
+
+        ],
+        "finalText" : "In retrieval systems, precision and recall are two key metrics that often conflict:\n\n- **Precision** focuses on how accurate your results are: it measures the proportion of true positives (correct relevant results) among all positive predictions.\n*Example:* If 100 searches return 90 relevant results, precision is 90%.\n\n- **Recall** measures how many of the relevant results you capture: it's the ratio of true positives to all actual positives.\n*Example:* If 100 relevant searches return 85 results, recall is 85%.\n\n**Trade-off:**\n- To boost **precision**, you might miss some relevant results (lower recall).\n- To boost **recall**, you might include more irrelevant results (lower precision).\n\n**Balance Tip:**\nUse context:\n- Lower precision threshold for initial searches (find more results).\n- Higher precision threshold for final results (eliminate noise).",
+        "finishedAt" : "2026-05-09T19:15:18Z",
+        "id" : "1E060A56-FFF5-4223-BF87-2E50F24A8A34",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "prompt" : "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "In retrieval systems, precision and recall are two key metrics that often conflict:\n\n- **Precision** focuses on how accurate your results are: it measures the proportion of true positives (correct relevant results) among",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "In retrieval systems, precision and recall are two key metrics that often conflict:\n\n- **Precision** focuses on how accurate your results are: it measures the proportion of true positives (correct relevant results) among",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-general-chat",
+        "startedAt" : "2026-05-09T19:14:31Z",
+        "title" : "Training eval: pure chat quality"
+      }
+    ],
+    "startedAt" : "2026-05-09T19:12:16Z"
+  },
+  "schemaVersion" : "1.0.0"
+}

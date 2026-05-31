@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0.0",
+  "artifactRegistry": "huggingface",
+  "revision": "main",
+  "baseModel": {
+    "id": "qwen3-agent-base",
+    "repoId": "ales27pm/lumen-agent-base",
+    "fileName": "qwen3-1.7b/base.gguf",
+    "localPath": "models/base/qwen3-1.7b/base.gguf",
+    "sha256": "",
+    "role": "agentBase",
+    "required": true
+  },
+  "embedding": {
+    "id": "qwen3-embedding-0.6b",
+    "repoId": "ales27pm/lumen-embedding",
+    "fileName": "qwen3-embedding-0.6b/model.gguf",
+    "localPath": "models/embedding/qwen3-embedding-0.6b/model.gguf",
+    "sha256": "",
+    "role": "embedding",
+    "required": true
+  },
+  "adapters": {
+    "cortex": {
+      "id": "cortex-adapter",
+      "repoId": "ales27pm/lumen-agent-adapters",
+      "fileName": "cortex/adapter.safetensors",
+      "localPath": "models/adapters/cortex/adapter.safetensors",
+      "sha256": "",
+      "role": "cortex",
+      "required": true
+    },
+    "executor": {
+      "id": "executor-adapter",
+      "repoId": "ales27pm/lumen-agent-adapters",
+      "fileName": "executor/adapter.safetensors",
+      "localPath": "models/adapters/executor/adapter.safetensors",
+      "sha256": "",
+      "role": "executor",
+      "required": true
+    },
+    "mouth": {
+      "id": "mouth-adapter",
+      "repoId": "ales27pm/lumen-agent-adapters",
+      "fileName": "mouth/adapter.safetensors",
+      "localPath": "models/adapters/mouth/adapter.safetensors",
+      "sha256": "",
+      "role": "mouth",
+      "required": true
+    },
+    "rem": {
+      "id": "rem-adapter",
+      "repoId": "ales27pm/lumen-agent-adapters",
+      "fileName": "rem/adapter.safetensors",
+      "localPath": "models/adapters/rem/adapter.safetensors",
+      "sha256": "",
+      "role": "rem",
+      "required": true
+    },
+    "mimicry": {
+      "id": "mimicry-adapter",
+      "repoId": "ales27pm/lumen-agent-adapters",
+      "fileName": "mimicry/adapter.safetensors",
+      "localPath": "models/adapters/mimicry/adapter.safetensors",
+      "sha256": "",
+      "role": "mimicry",
+      "required": true
+    },
+    "fleet": {
+      "id": "fleet-adapter",
+      "repoId": "ales27pm/lumen-agent-adapters",
+      "fileName": "fleet/adapter.safetensors",
+      "localPath": "models/adapters/fleet/adapter.safetensors",
+      "sha256": "",
+      "role": "fleet",
+      "required": false
+    }
+  },
+  "releaseBakes": {}
+}

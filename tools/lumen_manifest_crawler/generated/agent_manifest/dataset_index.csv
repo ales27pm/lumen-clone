@@ -1,0 +1,15 @@
+family,recordCount,splits,roles,taskTypes
+approval_boundary_samples,0,,,
+cortex_routing,0,,,
+dpo_preference_pairs,0,,,
+eval_scenarios,2,eval,,hallucinated_tool_rejection;user_output_safety
+executor_tool_calls,0,,,
+manifest_grounding_cards,4,train,,
+mimicry_style,3,,,
+mouth_responses,0,,,
+negative_samples,0,,,
+rem_reflection,0,,,
+runtime_audit_repairs,0,,,
+tool_schema_cards,0,,,
+train_sft,2,train,mimicry,style_profile_detection
+validation_sft,1,validation,mimicry,style_profile_detection

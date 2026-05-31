@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0.0",
+  "app": {
+    "name": "Lumen",
+    "bundleIdentifier": null,
+    "buildVersion": null,
+    "generatedAt": "1970-01-01T00:00:00+00:00"
+  },
+  "sourceIntegrity": {
+    "commit": "92151fb7ef4fd24d7e5d6356ec260caf9fb3e933",
+    "files": []
+  },
+  "fleet": {
+    "contractVersion": "unknown",
+    "slots": []
+  },
+  "fleetTopology": {
+    "slots": {},
+    "externalHandoffTools": []
+  },
+  "tools": [],
+  "intents": [],
+  "routingMatrix": [],
+  "memory": {
+    "scopes": [],
+    "freshnessClasses": []
+  },
+  "sentinels": {
+    "forbiddenInUserOutput": [
+      "<hidden_reasoning>",
+      "<internal_state>",
+      "<private_reasoning>",
+      "<scratchpad>",
+      "<tool_json>",
+      "<user_final_text>"
+    ]
+  },
+  "agentProtocols": {
+    "cortexOutput": {
+      "requiredFields": [
+        "intent",
+        "selectedToolID",
+        "requiresApproval",
+        "nextModel",
+        "reasoningSummary"
+      ]
+    },
+    "executorOutput": {
+      "format": "strict_json",
+      "noMarkdown": true,
+      "noExplanation": true,
+      "supportedJSONTypes": [
+        "string",
+        "double",
+        "int",
+        "bool",
+        "array",
+        "object",
+        "null"
+      ]
+    }
+  },
+  "fleet_topology": {
+    "slots": {},
+    "external_handoff_tools": []
+  }
+}

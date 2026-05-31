@@ -1,0 +1,21 @@
+{
+  "agent": "mouth",
+  "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+  "batch_size": 2,
+  "dataset_dir": "generated/fine_tuning/mouth",
+  "fleet_strategy": "per_slot_adapter",
+  "gguf_output_dir": "models/gguf_merged/mouth_merged_gguf",
+  "gguf_quantization": "q4_k_m",
+  "gguf_repo_id": "ales27pm/lumen-fleet-gguf",
+  "gradient_accumulation_steps": 8,
+  "learning_rate": 8e-05,
+  "load_in_4bit": true,
+  "lora_alpha": 32,
+  "lora_dropout": 0.0,
+  "lora_r": 16,
+  "max_seq_length": 4096,
+  "merge_target": null,
+  "num_train_epochs": 1,
+  "output_dir": "models/lora/mouth",
+  "warmup_steps": 20
+}

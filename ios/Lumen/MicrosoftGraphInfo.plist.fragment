@@ -1,0 +1,23 @@
+<!-- Merge this into the generated Lumen target Info.plist settings if Xcode is not generating these keys for you. -->
+<key>CFBundleURLTypes</key>
+<array>
+    <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>msauth.$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+        </array>
+    </dict>
+</array>
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>msauthv2</string>
+    <string>msauthv3</string>
+</array>
+<key>MSALClientID</key>
+<string>$(MSAL_CLIENT_ID)</string>
+<key>MSALAuthorityURL</key>
+<string>https://login.microsoftonline.com/common</string>
+<key>MSALKeychainGroup</key>
+<string>com.microsoft.adalcache</string>
+<key>MSALRedirectURI</key>
+<string>msauth.$(PRODUCT_BUNDLE_IDENTIFIER)://auth</string>

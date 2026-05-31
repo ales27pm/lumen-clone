@@ -1,0 +1,81 @@
+E2E Test Report
+Passed: 7
+Failed: 0
+
+✅ Training eval: weather stays grounded
+Prompt: What is the weather here and should I carry an umbrella?
+Intent: weather / expected weather
+Final: I need location access, or a city name, to check the weather. Try asking `weather in Montreal` or enable Location permission.
+
+✅ Training eval: web research synthesis
+Prompt: Search the web for two recent Swift concurrency best practices and summarize them.
+Intent: webSearch / expected webSearch
+Final: Here are two recent Swift concurrency best practices:
+
+1. "Swift Concurrency Deep Dive: From GCD to Async/Await Best Practices" by Medium, which provides a comprehensive guide on transitioning from Grand Central Dispatch (GCD) to asynchronous programming in Swift.
+2. "Mastering Swift Concurrency: Best Practices for 2025 - Howik," which offers practical tips and examples for improving concurrency in Swift applications.
+
+These resources should help you implement efficient and effective concurrency patterns in your Swift projects.
+
+<lumen_web_payload>{"kind":"searchResults","query":"two recent Swift concurrency best practices","media":[{"sourcePageURL":"https:\/\/developer.apple.com\/documentation\/swift\/concurrency","url":"https:\/\/developer.apple.com\/documentation\/swift\/concurrency","kind":"page","title":"Concurrency | Apple Developer Documentation"},{"sourcePageURL":"https:\/\/medium.com\/techtrends-digest\/swift-concurrency-deep-dive-from-gcd-to-async-await-best-practices-0d63333e72d5","url":"https:\/\/medium.com\/techtrends-digest\/swift-concurrency-deep-dive-from-gcd-to-async-await-best-practices-0d63333e72d5","kind":"page","title":"Swift Concurrency Deep Dive: From GCD to Async\/Await Best Practices"},{"sourcePageURL":"https:\/\/howik.com\/swift-concurrency-best-practices","url":"https:\/\/howik.com\/swift-concurrency-best-practices","kind":"page","title":"Mastering Swift Concurrency: Best Practices for 2025 - Howik"},{"title":"Swift Concurrency Best Practices - beefed.ai","sourcePageURL":"https:\/\/beefed.ai\/en\/swift-concurrency-best-practices","kind":"page","url":"https:\/\/beefed.ai\/en\/swift-concurrency-best-practices"},{"title":"Concurrency in Swift - NamasteDev Blogs","sourcePageURL":"https:\/\/namastedev.com\/blog\/concurrency-in-swift\/","kind":"page","url":"https:\/\/namastedev.com\/blog\/concurrency-in-swift\/"},{"url":"https:\/\/docs.swift.org\/swift-book\/documentation\/the-swift-programming-language\/concurrency\/","title":"Concurrency - Documentation","kind":"page","sourcePageURL":"https:\/\/docs.swift.org\/swift-book\/documentation\/the-swift-programming-language\/concurrency\/"},{"url":"https:\/\/moldstud.com\/articles\/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers","title":"Mastering Swift Concurrency for Modern Developers | MoldStud","kind":"page","sourcePageURL":"https:\/\/moldstud.com\/articles\/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers"},{"url":"https:\/\/www.atelier-socle.com\/en\/articles\/swift-concurrency-architecture","title":"Swift Concurrency Architecture: Patterns and Best Practices","kind":"page","sourcePageURL":"https:\/\/www.atelier-socle.com\/en\/articles\/swift-concurrency-architecture"}],"results":[{"mediaKind":"page","title":"Concurrency | Apple Developer Documentation","url":"https:\/\/developer.apple.com\/documentation\/swift\/concurrency","source":"developer.apple.com"},{"mediaKind":"page","title":"Swift Concurrency Deep Dive: From GCD to Async\/Await Best Practices","url":"https:\/\/medium.com\/techtrends-digest\/swift-concurrency-deep-dive-from-gcd-to-async-await-best-practices-0d63333e72d5","source":"medium.com"},{"mediaKind":"page","title":"Mastering Swift Concurrency: Best Practices for 2025 - Howik","url":"https:\/\/howik.com\/swift-concurrency-best-practices","source":"howik.com"},{"mediaKind":"page","title":"Swift Concurrency Best Practices - beefed.ai","url":"https:\/\/beefed.ai\/en\/swift-concurrency-best-practices","source":"beefed.ai"},{"mediaKind":"page","title":"Concurrency in Swift - NamasteDev Blogs","url":"https:\/\/namastedev.com\/blog\/concurrency-in-swift\/","source":"namastedev.com"},{"mediaKind":"page","title":"Concurrency - Documentation","url":"https:\/\/docs.swift.org\/swift-book\/documentation\/the-swift-programming-language\/concurrency\/","source":"docs.swift.org"},{"mediaKind":"page","title":"Mastering Swift Concurrency for Modern Developers | MoldStud","url":"https:\/\/moldstud.com\/articles\/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers","source":"moldstud.com"},{"mediaKind":"page","title":"Swift Concurrency Architecture: Patterns and Best Practices","url":"https:\/\/www.atelier-socle.com\/en\/articles\/swift-concurrency-architecture","source":"www.atelier-socle.com"}],"generatedAt":"2026-05-03T06:20:37Z"}</lumen_web_payload>
+
+✅ Training eval: memory save/recall
+Prompt: Remember that I prefer concise bullet points, then tell me what you remembered.
+Intent: memory / expected memory
+Final: Saved: I prefer concise bullet points.
+
+I remember: I prefer concise bullet points
+
+✅ Training eval: local knowledge grounding
+Prompt: Search my files for architecture notes and summarize key modules.
+Intent: rag / expected rag
+Final: I couldn't find any specific architecture notes or key modules in your files. The available files are Lumen_codebase5.txt and microsoft-identity-association.json. [1]
+
+✅ Training eval: trigger scheduling quality
+Prompt: Schedule a trigger to summarize reminders tonight and confirm what will run.
+Intent: trigger / expected trigger
+Final: Your request has been understood. A trigger will be scheduled to summarize reminders tonight, and the confirmation of what will run will follow shortly.
+
+✅ Training eval: communication drafting
+Prompt: Draft an email to Alex with a professional update and ask one clarifying question.
+Intent: emailDraft / expected emailDraft
+Final: Email sent.
+
+One clarifying question: what specific deadline, priority, or next step should I align this update with?
+
+✅ Training eval: pure chat quality
+Prompt: Explain tradeoffs between precision and recall in retrieval systems in plain English.
+Intent: chat / expected chat
+Final: Certainly! In retrieval systems, precision and recall are two important metrics that help evaluate the effectiveness of a search or query system. Here’s how they work:
+
+### Precision
+Precision measures the proportion of relevant documents among the retrieved documents. It is calculated as:
+\[ \text{Precision} = \frac{\text{True Positives}}{\text{Total Retrieved Documents}} \]
+- **Positive**: A document that matches your search criteria.
+- **Negative**: A document that does not match your search criteria.
+
+### Recall
+Recall measures the proportion of relevant documents that are retrieved. It is calculated as:
+\[ \text{Recall} = \frac{\text{True Positives}}{\text{Total Relevant Documents}} \]
+- **Positive**: A document that matches your search criteria.
+- **Negative**: A document that does not match your search criteria.
+
+### Tradeoffs Between Precision and Recall
+1. **Precision vs Recall Tradeoff**:
+   - In many retrieval systems, there is a tradeoff between precision and recall. As you increase the precision (the number of relevant documents retrieved), recall decreases. Conversely, increasing recall often results in lower precision.
+   - For example, if you want to find all relevant documents but only retrieve a small percentage, you might sacrifice some precision for recall.
+
+2. **Contextual Factors**:
+   - The specific context and nature of the data can influence these tradeoffs. For instance, if your dataset is highly imbalanced (e.g., many more irrelevant documents than relevant ones), increasing recall might be more beneficial.
+   - In scenarios where you need to retrieve as many relevant documents as possible, precision might be a higher priority.
+
+3. **Balancing Precision and Recall**:
+   - The ideal scenario would be high precision with acceptable recall. However, achieving this balance can be challenging in practice due to the nature of data and system limitations.
+   - Techniques like "boosting" (e.g., boosting relevant documents) or "filtering" (e.g., filtering out irrelevant documents early in the process) can help optimize for either precision or recall.
+
+### Practical Implications
+- **User Experience**: Users often prefer high recall because they want to find more relevant information quickly. However, users might be willing to accept lower precision if it means finding all relevant documents.
+- **System Performance**: High recall systems might require more computational resources and storage space due to the need to store more documents.
+
+### Conclusion
+In summary, precision and recall are crucial metrics in retrieval systems. They help evaluate

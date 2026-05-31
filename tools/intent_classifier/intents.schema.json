@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Lumen Intent Example",
+  "type": "object",
+  "required": ["text", "intent"],
+  "properties": {
+    "text": { "type": "string", "minLength": 1 },
+    "intent": {
+      "type": "string",
+      "enum": ["weather","webSearch","emailDraft","messageDraft","phoneCall","contactSearch","calendar","reminder","maps","photos","camera","health","motion","files","memory","rag","trigger","alarm","outlook","note","chat","unknown"]
+    }
+  }
+}

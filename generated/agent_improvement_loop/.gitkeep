@@ -1,0 +1,2 @@
+# Keeps the optional agent improvement loop directory present for Xcode user-script sandbox input declarations.
+# Runtime loop artifacts are generated here when `python -m lumen_manifest_crawler improve-loop` runs.

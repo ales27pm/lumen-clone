@@ -1,0 +1,76 @@
+{
+  "adapterArtifact": "models/lora/rem",
+  "adapterDirectory": "models/lora/rem",
+  "adapterID": "lumen-rem-adapter",
+  "agent": "rem",
+  "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+  "datasetCard": {
+    "manifestCommit": "65446a07258bc6fa06111e5f968527101570bbe6",
+    "recordCounts": {
+      "eval": 4,
+      "train_dpo": 7,
+      "train_sft": 69,
+      "val_dpo": 1,
+      "val_sft": 12
+    },
+    "sourceFamilies": [
+      "cross_model_training",
+      "embedding_corpus",
+      "embedding_dataset_card",
+      "embedding_eval_retrieval",
+      "embedding_hard_negatives",
+      "embedding_train_triplets",
+      "embedding_val_pairs",
+      "manifest_grounding_cards",
+      "rem_reflection",
+      "runtime_audit_repairs",
+      "train_sft"
+    ],
+    "taskTypes": [
+      "embedding_corpus",
+      "embedding_dataset_card",
+      "embedding_eval_retrieval",
+      "embedding_hard_negatives",
+      "embedding_train_triplets",
+      "embedding_val_pairs",
+      "fleet_delegation",
+      "fleet_delegation_preference",
+      "fleet_peer_knowledge",
+      "fleet_private_state_boundary",
+      "manifest_grounding_cards",
+      "reflection_and_memory_policy",
+      "rem_reflection",
+      "runtime_manifest_drift_repair",
+      "tool_id_repair"
+    ]
+  },
+  "expectedArtifacts": {
+    "adapterDirectory": "models/lora/rem",
+    "datasetCard": "dataset_card.json",
+    "eval": "eval.jsonl",
+    "trainDPO": "train_dpo.jsonl",
+    "trainSFT": "train_sft.jsonl",
+    "trainingConfig": "unsloth_config.json",
+    "validationDPO": "val_dpo.jsonl",
+    "validationSFT": "val_sft.jsonl"
+  },
+  "exportPolicy": {
+    "allowMergedExport": true,
+    "defaultArtifact": "adapter",
+    "mergeAdaptersByDefault": false,
+    "mergedExportPhase": "optional_release_bake",
+    "publishMergedArtifactByDefault": false,
+    "requiresPassingEvalGatesBeforeMerge": true,
+    "rollbackUnit": "adapter"
+  },
+  "mode": "adapter_first",
+  "runtimeBinding": {
+    "agentSlot": "rem",
+    "fallbackToBaselineAdapter": true,
+    "loadBaseModelOnce": true,
+    "promptBinding": "systemPrompt",
+    "selectAdapterByAgentSlot": true
+  },
+  "schemaVersion": "1.0.0",
+  "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
+}

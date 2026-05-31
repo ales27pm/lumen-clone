@@ -1,0 +1,71 @@
+{
+  "adapterArtifact": "models/lora/mimicry",
+  "adapterDirectory": "models/lora/mimicry",
+  "adapterID": "lumen-mimicry-adapter",
+  "agent": "mimicry",
+  "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+  "datasetCard": {
+    "manifestCommit": "65446a07258bc6fa06111e5f968527101570bbe6",
+    "recordCounts": {
+      "eval": 3,
+      "train_dpo": 9,
+      "train_sft": 44,
+      "val_dpo": 2,
+      "val_sft": 8
+    },
+    "sourceFamilies": [
+      "cross_model_training",
+      "embedding_corpus",
+      "fleet_system_prompts",
+      "manifest_grounding_cards",
+      "mimicry_style",
+      "train_sft"
+    ],
+    "taskTypes": [
+      "embedding_corpus",
+      "fleet_delegation",
+      "fleet_delegation_preference",
+      "fleet_peer_knowledge",
+      "fleet_peer_source_knowledge",
+      "fleet_private_state_boundary",
+      "fleet_self_knowledge",
+      "fleet_whole_system_identity",
+      "manifest_grounding_cards",
+      "mimicry_style",
+      "role_directory",
+      "source_code_self_knowledge",
+      "source_routing_knowledge",
+      "source_tool_registry_knowledge",
+      "style_profile_detection"
+    ]
+  },
+  "expectedArtifacts": {
+    "adapterDirectory": "models/lora/mimicry",
+    "datasetCard": "dataset_card.json",
+    "eval": "eval.jsonl",
+    "trainDPO": "train_dpo.jsonl",
+    "trainSFT": "train_sft.jsonl",
+    "trainingConfig": "unsloth_config.json",
+    "validationDPO": "val_dpo.jsonl",
+    "validationSFT": "val_sft.jsonl"
+  },
+  "exportPolicy": {
+    "allowMergedExport": true,
+    "defaultArtifact": "adapter",
+    "mergeAdaptersByDefault": false,
+    "mergedExportPhase": "optional_release_bake",
+    "publishMergedArtifactByDefault": false,
+    "requiresPassingEvalGatesBeforeMerge": true,
+    "rollbackUnit": "adapter"
+  },
+  "mode": "adapter_first",
+  "runtimeBinding": {
+    "agentSlot": "mimicry",
+    "fallbackToBaselineAdapter": true,
+    "loadBaseModelOnce": true,
+    "promptBinding": "systemPrompt",
+    "selectAdapterByAgentSlot": true
+  },
+  "schemaVersion": "1.0.0",
+  "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."
+}

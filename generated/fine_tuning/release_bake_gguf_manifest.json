@@ -1,0 +1,51 @@
+{
+  "agents": {
+    "cortex": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/cortex",
+      "agent": "cortex",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "merge_adapters_by_default": false,
+      "release_bake_enabled_by_default": false
+    },
+    "executor": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/executor",
+      "agent": "executor",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "merge_adapters_by_default": false,
+      "release_bake_enabled_by_default": false
+    },
+    "fleet": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/fleet",
+      "agent": "fleet",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "merge_adapters_by_default": false,
+      "release_bake_enabled_by_default": false
+    },
+    "mimicry": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/mimicry",
+      "agent": "mimicry",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "merge_adapters_by_default": false,
+      "release_bake_enabled_by_default": false
+    },
+    "mouth": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/mouth",
+      "agent": "mouth",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "merge_adapters_by_default": false,
+      "release_bake_enabled_by_default": false
+    },
+    "rem": {
+      "adapter_dir": "/home/ales27pm/Lumen/models/lora/rem",
+      "agent": "rem",
+      "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "merge_adapters_by_default": false,
+      "release_bake_enabled_by_default": false
+    }
+  },
+  "manifest_output": "/home/ales27pm/Lumen/generated/fine_tuning/release_bake_gguf_manifest.json",
+  "mode": "adapter_first",
+  "reason": "Adapter-first training keeps LoRA adapters separate by default. Pass --release-bake to explicitly merge/export GGUF artifacts.",
+  "release_bake_requested": false,
+  "skipped": true
+}
