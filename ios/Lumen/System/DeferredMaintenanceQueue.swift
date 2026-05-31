@@ -41,15 +41,19 @@ final class DeferredMaintenanceQueue {
     static let shared = DeferredMaintenanceQueue()
 
     private let foregroundGraceDuration: TimeInterval
+    private let activeLeaseDuration: TimeInterval
     private var jobs: [String: DeferredMaintenanceJob] = [:]
     private var scenePhase: ScenePhase = .active
     private var lastForegroundActivation = Date.distantPast
     private var chatOrVoiceActive = false
+    private var activeSince: Date?
     private var drainTask: Task<Void, Never>?
+    private var activeLeaseTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "ai.lumen.app", category: "maintenance")
 
-    private init(foregroundGraceDuration: TimeInterval = 3) {
+    private init(foregroundGraceDuration: TimeInterval = 3, activeLeaseDuration: TimeInterval = 120) {
         self.foregroundGraceDuration = foregroundGraceDuration
+        self.activeLeaseDuration = activeLeaseDuration
     }
 
     func enqueue(_ job: DeferredMaintenanceJob) {
@@ -60,12 +64,23 @@ final class DeferredMaintenanceQueue {
     func updateScenePhase(_ phase: ScenePhase) {
         scenePhase = phase
         if phase == .active { lastForegroundActivation = Date() }
-        if phase != .active { cancelScheduledDrain() }
+        if phase != .active {
+            cancelScheduledDrain()
+            setChatOrVoiceActive(false)
+        }
         scheduleDrainIfEligible()
     }
 
     func setChatOrVoiceActive(_ active: Bool) {
         chatOrVoiceActive = active
+        if active {
+            activeSince = Date()
+            scheduleActiveLeaseExpiry()
+        } else {
+            activeSince = nil
+            activeLeaseTask?.cancel()
+            activeLeaseTask = nil
+        }
         scheduleDrainIfEligible()
     }
 
@@ -80,10 +95,28 @@ final class DeferredMaintenanceQueue {
 
     func resetForTesting() {
         cancelScheduledDrain()
+        activeLeaseTask?.cancel()
+        activeLeaseTask = nil
         jobs.removeAll()
         scenePhase = .active
         lastForegroundActivation = Date.distantPast
         chatOrVoiceActive = false
+        activeSince = nil
+    }
+
+    private func scheduleActiveLeaseExpiry() {
+        activeLeaseTask?.cancel()
+        activeLeaseTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let ns = UInt64(max(1, self.activeLeaseDuration) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: ns)
+            guard self.chatOrVoiceActive else { return }
+            self.logger.warning("maintenance_active_gate_auto_cleared lease_seconds=\(self.activeLeaseDuration, privacy: .public)")
+            self.chatOrVoiceActive = false
+            self.activeSince = nil
+            self.activeLeaseTask = nil
+            self.scheduleDrainIfEligible()
+        }
     }
 
     private func scheduleDrainIfEligible(now: Date = Date()) {
