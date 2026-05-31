@@ -183,11 +183,7 @@ struct LumenApp: App {
                     RootView()
                         .modelContainer(container)
                         .onChange(of: scenePhase) { _, phase in
-                            ResourceBudgetGate.recordScenePhase(phase)
-                            if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
-                                RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "app-scene")
-                                return
-                            }
+                            SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
                         }
                 case .failed(let failure):
                     StartupFailureView(failure: failure) {
