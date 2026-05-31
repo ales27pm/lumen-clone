@@ -25,6 +25,7 @@ struct PermissionsView: View {
         .navigationTitle("Permissions")
         .onAppear { center.refreshAll() }
         .onChange(of: scenePhase) { _, phase in
+            SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
             if phase == .active { center.refreshAll() }
         }
     }
