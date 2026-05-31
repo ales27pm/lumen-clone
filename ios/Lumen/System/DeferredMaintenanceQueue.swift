@@ -40,6 +40,7 @@ struct DeferredMaintenanceJob: Sendable {
 final class DeferredMaintenanceQueue {
     static let shared = DeferredMaintenanceQueue()
 
+    private let foregroundGraceDuration: TimeInterval
     private var jobs: [String: DeferredMaintenanceJob] = [:]
     private var scenePhase: ScenePhase = .active
     private var lastForegroundActivation = Date.distantPast
@@ -47,7 +48,9 @@ final class DeferredMaintenanceQueue {
     private var drainTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "ai.lumen.app", category: "maintenance")
 
-    private init() {}
+    private init(foregroundGraceDuration: TimeInterval = 3) {
+        self.foregroundGraceDuration = foregroundGraceDuration
+    }
 
     func enqueue(_ job: DeferredMaintenanceJob) {
         jobs[job.key] = job
@@ -57,6 +60,7 @@ final class DeferredMaintenanceQueue {
     func updateScenePhase(_ phase: ScenePhase) {
         scenePhase = phase
         if phase == .active { lastForegroundActivation = Date() }
+        if phase != .active { cancelScheduledDrain() }
         scheduleDrainIfEligible()
     }
 
@@ -68,19 +72,45 @@ final class DeferredMaintenanceQueue {
     func canRunNow(now: Date = Date()) -> Bool {
         scenePhase == .active
         && ResourceBudgetGate.allowsMaintenance(reason: "deferred-maintenance")
-        && now.timeIntervalSince(lastForegroundActivation) >= 3
+        && now.timeIntervalSince(lastForegroundActivation) >= foregroundGraceDuration
         && !chatOrVoiceActive
     }
 
     func pendingCount() -> Int { jobs.count }
 
-    private func scheduleDrainIfEligible() {
-        guard drainTask == nil, canRunNow() else { return }
-        drainTask = Task { @MainActor in
-            defer { drainTask = nil }
-            await drainEligibleJobs()
-            if !jobs.isEmpty { scheduleDrainIfEligible() }
+    func resetForTesting() {
+        cancelScheduledDrain()
+        jobs.removeAll()
+        scenePhase = .active
+        lastForegroundActivation = Date.distantPast
+        chatOrVoiceActive = false
+    }
+
+    private func scheduleDrainIfEligible(now: Date = Date()) {
+        guard !jobs.isEmpty else {
+            cancelScheduledDrain()
+            return
         }
+        guard drainTask == nil else { return }
+        guard scenePhase == .active, !chatOrVoiceActive else { return }
+        guard ResourceBudgetGate.allowsMaintenance(reason: "deferred-maintenance") else { return }
+
+        let graceRemaining = max(0, foregroundGraceDuration - now.timeIntervalSince(lastForegroundActivation))
+        drainTask = Task { @MainActor [weak self] in
+            if graceRemaining > 0 {
+                let ns = UInt64(graceRemaining * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: ns)
+            }
+            guard let self else { return }
+            self.drainTask = nil
+            await self.drainEligibleJobs()
+            if !self.jobs.isEmpty { self.scheduleDrainIfEligible() }
+        }
+    }
+
+    private func cancelScheduledDrain() {
+        drainTask?.cancel()
+        drainTask = nil
     }
 
     private func drainEligibleJobs() async {
