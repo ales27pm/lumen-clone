@@ -9,10 +9,11 @@ enum RAGStore {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
 
     private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
-        guard DiskWriteBudget.shared.canWrite(bytes: 128 * 1024, category: .rag) else { return }
+        let estimatedBytes = 128 * 1024
         do {
+            try DiskWriteBudget.shared.assertCanWrite(bytes: estimatedBytes, category: .rag, operation: operation, scope: scope)
             try context.save()
-            DiskWriteBudget.shared.recordWrite(bytes: 128 * 1024, category: .rag)
+            DiskWriteBudget.shared.recordWrite(bytes: estimatedBytes, category: .rag)
         } catch {
             logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
             throw error
