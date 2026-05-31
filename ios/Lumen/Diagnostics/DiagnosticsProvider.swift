@@ -2,7 +2,36 @@ import Foundation
 
 @MainActor
 final class DiagnosticsProvider {
+    private(set) var explicitCollectionCount = 0
+
+    func cachedSnapshot() -> DiagnosticsSnapshot {
+        let profiler = DeviceCapabilityProfiler().captureSnapshot()
+        let runtime = RuntimeDiagnosticsSnapshot(
+            foundationModelsAvailable: profiler.foundationModelsAvailable,
+            coreMLAvailable: profiler.coreMLAvailable,
+            metalAvailable: profiler.metalAvailable,
+            lowPowerModeEnabled: profiler.lowPowerModeEnabled,
+            thermalState: profiler.thermalState.rawValue,
+            memoryWarningCount: MemoryPressureMonitor.shared.recentWarningCount(),
+            recentMetricSummaries: []
+        )
+        let permissions = PermissionDiagnosticsSnapshot(domains: PermissionDomain.allCases.map { ($0.rawValue, "cached") })
+        let tools = ToolSecuritySnapshot(tools: SecureToolRegistry.shared.definitions().map { def in
+            ToolSecuritySnapshot.ToolRow(id: def.id, category: def.category.rawValue, requiredPermissions: def.requiredPermissions.map(\.rawValue), supportsBackground: def.supportsBackgroundExecution, requiresApproval: def.requiresUserApproval)
+        })
+        let background = BackgroundDiagnosticsSnapshot(permittedIdentifiers: [], entitlementWarnings: [])
+        let grounding = GroundingDiagnosticsSnapshot(contextSource: "cached", degradedReasons: [], sectionCounts: [:], doubleGroundingNormalized: true)
+        let privacy = PrivacyReportSnapshot(localOnlyMode: true, networkAccessState: "cached", recentToolCategories: Array(Set(tools.tools.map(\.category))).sorted(), appIntentLimitations: ["Expensive diagnostics require explicit refresh"])
+        return DiagnosticsSnapshot(runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
+    }
+
     func collect() async -> DiagnosticsSnapshot {
+        explicitCollectionCount += 1
+        let cpuToken = CPUWatchdogGuard.shared.begin(category: .diagnostics)
+        defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
+        guard !CPUWatchdogGuard.shared.shouldDegrade(category: .diagnostics), ResourceBudgetGate.allowsMaintenance(reason: "diagnostics.collect") else {
+            return cachedSnapshot()
+        }
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let metrics = (try? await RuntimeMetricsStore.shared.recentMetrics(limit: 10)) ?? []
         let runtime = RuntimeDiagnosticsSnapshot(

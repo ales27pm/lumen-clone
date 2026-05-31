@@ -22,17 +22,20 @@ actor RuntimeMetricsStore {
 
     func appendMetric(_ metric: RuntimeMetric) async throws {
         let line = try encoder.encode(metric) + Data([0x0A])
+        guard DiskWriteBudget.shared.canWrite(bytes: line.count, category: .logs) else { return }
         if !FileManager.default.fileExists(atPath: fileURL.path) {
             let created = FileManager.default.createFile(atPath: fileURL.path, contents: line)
             if !created {
                 try line.write(to: fileURL, options: .atomic)
             }
+            DiskWriteBudget.shared.recordWrite(bytes: line.count, category: .logs)
             return
         }
         let handle = try FileHandle(forWritingTo: fileURL)
         defer { try? handle.close() }
         try handle.seekToEnd()
         try handle.write(contentsOf: line)
+        DiskWriteBudget.shared.recordWrite(bytes: line.count, category: .logs)
     }
 
     func recentMetrics(limit: Int) async throws -> [RuntimeMetric] {
@@ -46,6 +49,8 @@ actor RuntimeMetricsStore {
     func compact(maxEntries: Int) async throws {
         let recent = try await recentMetrics(limit: maxEntries)
         let newData = try recent.map { try encoder.encode($0) + Data([0x0A]) }.reduce(Data(), +)
+        guard DiskWriteBudget.shared.canWrite(bytes: newData.count, category: .logs) else { return }
         try newData.write(to: fileURL, options: .atomic)
+        DiskWriteBudget.shared.recordWrite(bytes: newData.count, category: .logs)
     }
 }
