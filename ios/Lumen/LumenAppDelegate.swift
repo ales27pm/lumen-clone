@@ -3,6 +3,7 @@ import UIKit
 import MSAL
 #endif
 
+@MainActor
 class LumenAppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
@@ -24,6 +25,19 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
         #else
         return false
         #endif
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+        SceneTransitionCoordinator.shared.handleWillResignActive()
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        SceneTransitionCoordinator.shared.handleDidEnterBackground()
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        AppCancellationBus.shared.markCancellationRequested("will-terminate")
+        AppCancellationBus.shared.cancelAllSceneSensitive()
     }
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {

@@ -7,8 +7,11 @@ enum MemoryStore {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
 
     private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
+        let estimatedBytes = 64 * 1024
         do {
+            try DiskWriteBudget.shared.assertCanWrite(bytes: estimatedBytes, category: .memory, operation: operation, scope: scope)
             try context.save()
+            DiskWriteBudget.shared.recordWrite(bytes: estimatedBytes, category: .memory)
         } catch {
             logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
             throw error
@@ -113,7 +116,10 @@ enum MemoryStore {
     static func extractAndStore(userText: String, assistantText: String, transientTexts: [String] = [], context: ModelContext) async {
         let durableAssistant = durableAssistantText(assistantText, transientTexts: transientTexts)
         let combined = userText + "\n" + durableAssistant
+        let cpuToken = CPUWatchdogGuard.shared.begin(category: .memory)
+        defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for extracted in extractFacts(from: combined) {
+            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .memory) || !ResourceBudgetGate.allowsMaintenance(reason: "memory.extract") { break }
             try? await remember(extracted.content, kind: extracted.kind, source: "auto", topic: extracted.topic, context: context)
         }
     }
@@ -235,39 +241,27 @@ enum MemoryStore {
         return out
     }
 
+    nonisolated static func ttlPolicy(kind: MemoryKind, source: String) -> TTLPolicy {
+        if kind == .preference || kind == .person || kind == .project {
+            return TTLPolicy(freshness: .stable, ttl: nil)
+        }
+        if source == "auto" || source == "chat" || source == "voice" {
+            return TTLPolicy(freshness: .session, ttl: 30 * 24 * 60 * 60)
+        }
+        return TTLPolicy(freshness: .normal, ttl: nil)
+    }
+
     static func migrateExpiryIfNeeded(for item: MemoryItem) {
-        guard item.expiresAt == nil || item.freshnessClass == nil else { return }
-        let policy = ttlPolicy(kind: item.memoryKind, source: item.source)
-        item.freshnessClass = policy.freshness.rawValue
-        if item.expiresAt == nil {
-            item.expiresAt = policy.ttl.map { item.createdAt.addingTimeInterval($0) }
+        guard item.freshnessClass == .unknown else { return }
+        let policy = ttlPolicy(kind: item.kind, source: item.source)
+        item.freshnessClass = policy.freshness
+        if item.expiresAt == nil, let ttl = policy.ttl {
+            item.expiresAt = item.createdAt.addingTimeInterval(ttl)
         }
     }
 
     static func isExpired(_ item: MemoryItem, now: Date = Date()) -> Bool {
-        guard let expiresAt = item.expiresAt else { return false }
-        return expiresAt <= now
-    }
-
-    nonisolated static func ttlPolicy(kind: MemoryKind, source: String) -> TTLPolicy {
-        let lowerSource = source.lowercased()
-
-        if lowerSource.contains("tool") || lowerSource.contains("ephemeral") || lowerSource.contains("observation") {
-            return TTLPolicy(freshness: .volatile, ttl: 45 * 60)
-        }
-
-        if lowerSource == "rem-condensed" {
-            return TTLPolicy(freshness: .durable, ttl: nil)
-        }
-
-        if kind == .conversation || lowerSource.contains("crumb") || lowerSource.contains("chat") {
-            return TTLPolicy(freshness: .shortLived, ttl: 6 * 60 * 60)
-        }
-
-        if kind == .preference || kind == .project || kind == .person {
-            return TTLPolicy(freshness: .timeless, ttl: nil)
-        }
-
-        return TTLPolicy(freshness: .durable, ttl: 30 * 24 * 60 * 60)
+        guard !item.isPinned, let expiry = item.expiresAt else { return false }
+        return expiry < now
     }
 }
