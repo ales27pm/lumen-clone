@@ -59,6 +59,7 @@ enum SchemaPlaceholderDetector {
 struct ChatView: View {
     @Bindable var conversation: Conversation
     @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Query private var storedModels: [StoredModel]
 
@@ -157,6 +158,13 @@ struct ChatView: View {
             }
         }
         .onChange(of: draft) { _, _ in recomputeAttachmentPreview() }
+        .onChange(of: scenePhase) { _, phase in
+            ResourceBudgetGate.recordScenePhase(phase)
+            if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
+                stopForSceneTransition()
+            }
+        }
+        .onDisappear { stopForSceneTransition() }
     }
 
     private var displayedMessages: [ChatMessage] {
@@ -601,7 +609,17 @@ struct ChatView: View {
         return normalized.contains("no direct answer") || normalized.contains("no results") || normalized.contains("search failed") || normalized.contains("need a query")
     }
 
-    private func ensureChatModelLoaded() async -> Bool { await ModelLoader.ensureChatLoaded(appState: appState, stored: storedModels) }
+    private func ensureChatModelLoaded() async -> Bool { await ModelLoader.ensureChatLoaded(appState: appState, stored: storedModels, intent: .userChat) }
+
+    private func stopForSceneTransition() {
+        let task = streamingTask
+        streamingTask = nil
+        activeTurnID = nil
+        generationController.cancel(for: conversation.id)
+        task?.cancel()
+        appState.isGenerating = false
+        RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "chat-scene")
+    }
 
     private func stop() {
         let task = streamingTask

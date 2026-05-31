@@ -44,3 +44,9 @@ The build-hardening pass reserves legacy names for existing production UI/servic
 - `SecureToolRegistry` and `SecureToolCategory` are the secure-tool layer; existing `ToolRegistry` and `ToolCategory` remain the legacy catalog used by current UI and tool routing.
 - `AssistantPermissionState` is used by the new permission registry; existing `PermissionState` remains the `PermissionsCenter` UI state.
 - `AssistantDeviceCapabilitySnapshot` is used by diagnostics/system profiling; existing LLM policy `DeviceCapabilitySnapshot` remains unchanged.
+
+## Runtime resource-kill hardening
+
+- App launch must not load chat, embedding, FoundationModels, or tokenizer assets. `AppStartupCoordinator` now marks model runtime as deferred until an explicit foreground user chat or voice turn.
+- Scene phase transitions to inactive/background must only do nonblocking cancellation and optional cleanup; no synchronous memory compaction, RAG indexing, trigger firing, or model probing may run from scene-update handlers.
+- Before TestFlight submission, run the duplicate Swift filename and duplicate compatibility-type checks listed in the validation section of the runtime resource-kill analysis.

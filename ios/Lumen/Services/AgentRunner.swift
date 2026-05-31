@@ -37,6 +37,9 @@ enum AgentRunner {
         maxSteps: Int?,
         fleetSnapshot: LumenModelFleetSnapshot
     ) async -> (text: String, steps: [AgentStep]) {
+        guard ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue) else {
+            return ("Background trigger skipped: local model work requires a foreground user action.", [])
+        }
         let cascade = await MemoryCascade.recall(query: prompt, history: [], context: context)
         let resolution = ReferenceResolver.resolve(prompt: prompt, history: [], relevantMemories: cascade.promptFragments)
         let executionPrompt = resolution.rewrittenPrompt

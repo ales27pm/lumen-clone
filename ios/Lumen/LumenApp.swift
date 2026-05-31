@@ -136,10 +136,7 @@ final class AppStartupCoordinator {
         }
 
         try await withStage(.modelLoader) {
-            appState.runtime.updateBootStep(id: "loader", detail: "Loading active chat and embedding models", state: .running)
-            let storedModels = (try? ctx.fetch(FetchDescriptor<StoredModel>())) ?? []
-            await ModelLoader.loadAtLaunch(appState: appState, stored: storedModels)
-            appState.runtime.updateBootStep(id: "loader", detail: "Model runtime initialized", state: .complete)
+            appState.runtime.updateBootStep(id: "loader", detail: "Model runtime deferred until user action", state: .complete)
         }
 
         try await withStage(.triggers) {
@@ -151,7 +148,6 @@ final class AppStartupCoordinator {
         }
 
         try await withStage(.remCycle) {
-            await RemCycleService.runIfDue(context: ctx, appState: appState, reason: "launch")
             appState.runtime.completeBootCore()
         }
     }
@@ -187,12 +183,10 @@ struct LumenApp: App {
                     RootView()
                         .modelContainer(container)
                         .onChange(of: scenePhase) { _, phase in
-                            if phase == .active {
-                                Task { @MainActor in
-                                    let ctx = ModelContext(container)
-                                    await TriggerScheduler.shared.fireDueTriggers(context: ctx, appState: appState)
-                                    await RemCycleService.runIfDue(context: ctx, appState: appState, reason: "scene-active")
-                                }
+                            ResourceBudgetGate.recordScenePhase(phase)
+                            if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
+                                RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "app-scene")
+                                return
                             }
                         }
                 case .failed(let failure):
