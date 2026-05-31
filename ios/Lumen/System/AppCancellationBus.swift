@@ -32,11 +32,13 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
 
     private init() {}
 
-    func register(_ task: Task<Void, Never>, category: AppCancellationCategory) {
+    @discardableResult
+    func register(_ task: Task<Void, Never>, category: AppCancellationCategory) -> UUID {
         registerCancellation({ task.cancel() }, category: category)
     }
 
-    func registerThrowing(_ task: Task<Void, Error>, category: AppCancellationCategory) {
+    @discardableResult
+    func registerThrowing(_ task: Task<Void, Error>, category: AppCancellationCategory) -> UUID {
         registerCancellation({ task.cancel() }, category: category)
     }
 
@@ -88,6 +90,7 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
     func unregister(_ id: UUID, category: AppCancellationCategory) {
         lock.lock()
         tasks[category]?[id] = nil
+        if tasks[category]?.isEmpty == true { tasks[category] = nil }
         lock.unlock()
     }
 }
