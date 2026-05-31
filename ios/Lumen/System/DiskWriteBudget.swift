@@ -17,6 +17,17 @@ nonisolated struct DiskWriteBudgetSnapshot: Equatable, Sendable {
     let bytesByCategory24Hours: [DiskWriteCategory: Int64]
 }
 
+nonisolated struct DiskWriteBudgetExceededError: LocalizedError, Sendable {
+    let bytes: Int
+    let category: DiskWriteCategory
+    let operation: String
+    let scope: String
+
+    var errorDescription: String? {
+        "Disk write budget exceeded for \(category.rawValue) during \(operation) scope=\(scope) bytes=\(bytes)"
+    }
+}
+
 nonisolated final class DiskWriteBudget: @unchecked Sendable {
     static let shared = DiskWriteBudget()
 
@@ -52,6 +63,12 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
         let day = total(since: now - 24 * 60 * 60) + requested
         lock.unlock()
         return one > oneMinuteLimit || fifteen > fifteenMinuteLimit || day > dayLimit
+    }
+
+    func assertCanWrite(bytes: Int, category: DiskWriteCategory, operation: String, scope: String) throws {
+        guard canWrite(bytes: bytes, category: category) else {
+            throw DiskWriteBudgetExceededError(bytes: bytes, category: category, operation: operation, scope: scope)
+        }
     }
 
     func recordWrite(bytes: Int, category: DiskWriteCategory) {
