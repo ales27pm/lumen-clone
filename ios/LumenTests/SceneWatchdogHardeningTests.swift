@@ -4,6 +4,14 @@ import SwiftUI
 
 @MainActor
 final class SceneWatchdogHardeningTests: XCTestCase {
+    override func setUp() async throws {
+        DeferredMaintenanceQueue.shared.resetForTesting()
+    }
+
+    override func tearDown() async throws {
+        DeferredMaintenanceQueue.shared.resetForTesting()
+    }
+
     func testSceneTransitionCoordinatorReturnsQuickly() {
         let start = ProcessInfo.processInfo.systemUptime
         SceneTransitionCoordinator.shared.handleScenePhaseChange(.background)
@@ -42,6 +50,18 @@ final class SceneWatchdogHardeningTests: XCTestCase {
             ran.fulfill()
         })
         await fulfillment(of: [ran], timeout: 1)
+    }
+
+    func testDeferredMaintenanceQueueRunsAfterForegroundGraceWithoutExternalEvent() async throws {
+        let queue = DeferredMaintenanceQueue.shared
+        queue.updateScenePhase(.background)
+        let ran = XCTestExpectation(description: "job runs after foreground grace")
+        queue.enqueue(DeferredMaintenanceJob(key: "test-post-grace-drain", category: .diagnostics, staleAfter: 10, maxRuntime: 1) {
+            ran.fulfill()
+        })
+        queue.updateScenePhase(.active)
+        await fulfillment(of: [ran], timeout: 4.5)
+        XCTAssertEqual(queue.pendingCount(), 0)
     }
 
     func testCPUWatchdogGuardDegradesLongCategory() throws {
