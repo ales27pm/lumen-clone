@@ -38,9 +38,6 @@ final class SceneTransitionCoordinator {
             ResourceBudgetGate.recordScenePhase(.background)
             DeferredMaintenanceQueue.shared.updateScenePhase(.background)
             cancelSceneSensitive(reason: "did-enter-background")
-            DeferredMaintenanceQueue.shared.enqueue(
-                DeferredMaintenanceJob(key: "scene-background-coalesced-persistence", category: .persistence, staleAfter: 15 * 60, maxRuntime: 2) {}
-            )
         }
     }
 
