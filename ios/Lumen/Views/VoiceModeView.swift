@@ -282,6 +282,8 @@ struct VoiceModeView: View {
             var lastUIUpdate = Date.distantPast
             for await event in SlotAgentService.shared.run(req, options: .init(modelContext: modelContext, conversationID: convo.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
                 if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") || CPUWatchdogGuard.shared.shouldDegrade(category: .voice) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") { break }
+                let workStartedAt = ProcessInfo.processInfo.systemUptime
+                defer { CPUWatchdogGuard.shared.recordWork(category: .voice, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
                 switch event {
                 case .step(let s): stepsBuffer.append(s)
                 case .stepDelta: break
