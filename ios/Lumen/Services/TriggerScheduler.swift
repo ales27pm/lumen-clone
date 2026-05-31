@@ -85,6 +85,7 @@ final class TriggerScheduler {
         // Load settings fresh from disk so the background task never runs against
         // stale in-memory state from a previous foreground session.
         let snapshot = SettingsSnapshot.loadFromDisk()
+        guard await AppLlamaService.shared.isChatLoaded else { task.setTaskCompleted(success: true); return }
         await fireDueTriggers(context: context, settings: snapshot)
         task.setTaskCompleted(success: true)
     }
@@ -97,12 +98,14 @@ final class TriggerScheduler {
 
     func fireDueTriggers(context: ModelContext, settings: SettingsSnapshot) async {
         guard !isRunning else { return }
+        let deadline = Date().addingTimeInterval(4.5)
         isRunning = true
         defer { isRunning = false }
 
         let now = Date()
         guard let all = try? context.fetch(FetchDescriptor<Trigger>()) else { return }
         for t in all where !t.isPaused {
+            guard Date() < deadline else { break }
             if let next = t.nextFireAt ?? t.computeNextFire(from: now), next <= now.addingTimeInterval(30) {
                 _ = await runTrigger(t, context: context, settings: settings, notify: true)
             } else if t.nextFireAt == nil {
@@ -119,6 +122,13 @@ final class TriggerScheduler {
 
     @discardableResult
     func runTrigger(_ trigger: Trigger, context: ModelContext, settings: SettingsSnapshot, notify: Bool) async -> String? {
+        guard await AppLlamaService.shared.isChatLoaded else {
+            trigger.lastRunAt = Date()
+            trigger.lastResult = "Background trigger skipped: local model not loaded."
+            trigger.nextFireAt = trigger.computeNextFire(from: Date())
+            do { try persist(context, operation: "runTriggerSkipped", scope: "Trigger") } catch { return nil }
+            return trigger.lastResult
+        }
         let result = await AgentRunner.runHeadless(prompt: trigger.prompt, settings: settings, context: context, maxSteps: min(settings.maxAgentSteps, 3))
         trigger.lastRunAt = Date()
         trigger.lastResult = result.text
