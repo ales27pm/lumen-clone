@@ -104,8 +104,8 @@ final class VoiceService: NSObject {
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.recognitionRequest?.append(buffer)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self, request] buffer, _ in
+            request.append(buffer)
             self?.updateLevel(from: buffer)
         }
 
