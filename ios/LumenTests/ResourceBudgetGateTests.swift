@@ -34,6 +34,17 @@ final class ResourceBudgetGateTests: XCTestCase {
         XCTAssertTrue(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
     }
 
+    func testMemoryPressureMonitorAgesOutWarningCount() {
+        let metricsURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let monitor = MemoryPressureMonitor(metricsStore: RuntimeMetricsStore(fileURL: metricsURL), notificationCenter: NotificationCenter())
+        let staleWarning = Date().addingTimeInterval(-(MemoryPressureMonitor.modelLoadSuppressionInterval + 1))
+        monitor.recordWarningForTesting(count: 1, at: staleWarning)
+
+        XCTAssertEqual(monitor.recentWarningCount(), 0)
+        XCTAssertEqual(monitor.warningCount, 0)
+        XCTAssertNil(monitor.lastWarningAt)
+    }
+
     func testUnknownAndMemoryWarningDenyHeavyWork() {
         ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: nil, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
         XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
