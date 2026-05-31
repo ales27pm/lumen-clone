@@ -7,8 +7,10 @@ enum MemoryStore {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
 
     private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
+        guard DiskWriteBudget.shared.canWrite(bytes: 64 * 1024, category: .memory) else { return }
         do {
             try context.save()
+            DiskWriteBudget.shared.recordWrite(bytes: 64 * 1024, category: .memory)
         } catch {
             logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
             throw error
@@ -113,7 +115,10 @@ enum MemoryStore {
     static func extractAndStore(userText: String, assistantText: String, transientTexts: [String] = [], context: ModelContext) async {
         let durableAssistant = durableAssistantText(assistantText, transientTexts: transientTexts)
         let combined = userText + "\n" + durableAssistant
+        let cpuToken = CPUWatchdogGuard.shared.begin(category: .memory)
+        defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for extracted in extractFacts(from: combined) {
+            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .memory) || !ResourceBudgetGate.allowsMaintenance(reason: "memory.extract") { break }
             try? await remember(extracted.content, kind: extracted.kind, source: "auto", topic: extracted.topic, context: context)
         }
     }

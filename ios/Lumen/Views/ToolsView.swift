@@ -59,6 +59,7 @@ struct ToolsView: View {
             }
             .onAppear { permissions.refreshAll() }
             .onChange(of: scenePhase) { _, phase in
+                SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
                 if phase == .active {
                     permissions.refreshAll()
                 }

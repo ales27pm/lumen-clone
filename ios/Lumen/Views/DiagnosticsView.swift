@@ -16,11 +16,18 @@ struct DiagnosticsView: View {
                     NavigationLink("Privacy") { PrivacyReportView(privacy: snapshot.privacy) }
                 }
             } else {
-                ProgressView("Loading diagnostics…")
+                ContentUnavailableView("Diagnostics unavailable", systemImage: "waveform.path.ecg")
             }
         }
         .navigationTitle("Diagnostics")
-        .task { snapshot = await provider.collect() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Refresh") {
+                    Task { snapshot = await provider.collect() }
+                }
+            }
+        }
+        .onAppear { snapshot = provider.cachedSnapshot() }
     }
 }
 

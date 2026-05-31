@@ -9,7 +9,11 @@ enum RAGStore {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
 
     private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
-        do { try context.save() } catch {
+        guard DiskWriteBudget.shared.canWrite(bytes: 128 * 1024, category: .rag) else { return }
+        do {
+            try context.save()
+            DiskWriteBudget.shared.recordWrite(bytes: 128 * 1024, category: .rag)
+        } catch {
             logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
             throw error
         }
@@ -219,7 +223,10 @@ enum RAGStore {
         var count = 0
         var persistedCount = 0
         var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
+        let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
+        defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for (i, piece) in pieces.enumerated() {
+            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexFile") { break }
             let emb: [Double]
             do {
                 emb = try await AppLlamaService.shared.embed(piece)
@@ -292,7 +299,10 @@ enum RAGStore {
 
         var count = 0
         var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
+        let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
+        defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for (month, items) in buckets {
+            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexPhotos") { break }
             let favorites = items.filter(\.isFavorite).count
             let videos = items.filter { $0.mediaType == .video }.count
             let screenshots = items.filter { $0.mediaSubtypes.contains(.photoScreenshot) }.count
@@ -341,7 +351,10 @@ enum RAGStore {
         let pieces = chunkText(body)
         var count = 0
         var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
+        let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
+        defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for (i, piece) in pieces.enumerated() {
+            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexNote") { break }
             let emb: [Double]
             do {
                 emb = try await AppLlamaService.shared.embed(piece)

@@ -21,6 +21,7 @@ final class VoiceService: NSObject {
     @ObservationIgnored private var recognizer: SFSpeechRecognizer?
     @ObservationIgnored private var onFinal: ((String) -> Void)?
     @ObservationIgnored private var onSpeechEnd: (() -> Void)?
+    @ObservationIgnored private var cancellationID: UUID?
 
     override init() {
         super.init()
@@ -74,6 +75,10 @@ final class VoiceService: NSObject {
             return
         }
 
+        cancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in
+            Task { @MainActor in self?.stopListening() }
+        }, category: .voiceRecognition)
+
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
             Task { @MainActor in
@@ -117,6 +122,10 @@ final class VoiceService: NSObject {
         }
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
+        if let cancellationID {
+            AppCancellationBus.shared.unregister(cancellationID, category: .voiceRecognition)
+            self.cancellationID = nil
+        }
         recognitionRequest = nil
         recognitionTask = nil
         isListening = false
@@ -161,6 +170,9 @@ final class VoiceService: NSObject {
         utterance.pitchMultiplier = 1.0
         utterance.preUtteranceDelay = 0.02
         isSpeaking = true
+        AppCancellationBus.shared.registerCancellation({ [weak self] in
+            Task { @MainActor in self?.stopSpeaking() }
+        }, category: .tts)
         synthesizer.speak(utterance)
     }
 
@@ -176,6 +188,9 @@ final class VoiceService: NSObject {
         }
         utterance.rate = Float(max(0.1, min(0.8, rate)))
         isSpeaking = true
+        AppCancellationBus.shared.registerCancellation({ [weak self] in
+            Task { @MainActor in self?.stopSpeaking() }
+        }, category: .tts)
         synthesizer.speak(utterance)
     }
 

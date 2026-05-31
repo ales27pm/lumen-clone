@@ -106,7 +106,7 @@ struct VoiceModeView: View {
         .preferredColorScheme(.dark)
         .onAppear { generationController.startupIfNeeded(for: "voice") { } }
         .onChange(of: scenePhase) { _, phase in
-            ResourceBudgetGate.recordScenePhase(phase)
+            SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
             if ResourceBudgetGate.shouldCancelForScenePhase(phase) { cancelForSceneTransition() }
         }
         .onDisappear { cleanup() }
@@ -240,6 +240,8 @@ struct VoiceModeView: View {
         activeVoiceTurnID = turnID
 
         let task = Task {
+            let cpuToken = CPUWatchdogGuard.shared.begin(category: .voice)
+            defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
             let convo = conversations.first ?? {
                 let c = Conversation(title: String(text.prefix(36)), systemPrompt: appState.systemPrompt)
                 modelContext.insert(c)
@@ -273,17 +275,21 @@ struct VoiceModeView: View {
             )
 
             var finalText = ""
+            var lastUIUpdate = Date.distantPast
             for await event in SlotAgentService.shared.run(req, options: .init(modelContext: modelContext, conversationID: convo.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
-                if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") { break }
+                if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") || CPUWatchdogGuard.shared.shouldDegrade(category: .voice) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") { break }
                 switch event {
                 case .step(let s): stepsBuffer.append(s)
                 case .stepDelta: break
                 case .finalDelta(let chunk):
                     finalText += chunk
                     let sanitized = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
-                    responseText = FinalIntentValidator.validate(sanitized, routing: routing, fallback: nil)
-                    if phase != .speaking { phase = .speaking }; session.startSpeaking()
-                    speakPending()
+                    if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                        responseText = FinalIntentValidator.validate(sanitized, routing: routing, fallback: nil)
+                        lastUIUpdate = Date()
+                        if phase != .speaking { phase = .speaking }; session.startSpeaking()
+                        speakPending()
+                    }
                 case .done(let f, let all):
                     finalText = f.isEmpty ? finalText : f
                     stepsBuffer = all
@@ -303,7 +309,7 @@ struct VoiceModeView: View {
             let assistantMsg = ChatMessage(role: .assistant, content: persistedFinal, agentSteps: stepsBuffer)
             convo.messages.append(assistantMsg)
             convo.updatedAt = Date()
-            try? modelContext.save()
+            saveVoiceConversationIfBudgetAllows(estimatedBytes: persistedFinal.utf8.count + text.utf8.count + 4096)
 
             if appState.autoMemory, persistedFinal.count > 60, isSafeToStoreMemory(userText: text, assistantText: persistedFinal, routing: routing) {
                 try? await MemoryStore.remember(
@@ -315,9 +321,12 @@ struct VoiceModeView: View {
             }
 
             activeVoiceTurnID = nil
+            DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
             generationController.clearIfCurrent(controllerRequestID, for: "voice")
         }
         _ = generationController.begin(for: "voice", task: task, requestID: controllerRequestID)
+        AppCancellationBus.shared.register(task, category: .chatGeneration)
+        DeferredMaintenanceQueue.shared.setChatOrVoiceActive(true)
         responseTask = task
     }
 
@@ -415,8 +424,21 @@ struct VoiceModeView: View {
         responseTask?.cancel()
         session.handleAppDidEnterBackground()
         session.stopSpeaking()
+        DeferredMaintenanceQueue.shared.enqueue(DeferredMaintenanceJob(key: "voice-final-transcript", category: .voice, staleAfter: 10 * 60, maxRuntime: 2) {})
+        DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "voice-scene")
         syncPhaseFromSession()
+    }
+
+    private func saveVoiceConversationIfBudgetAllows(estimatedBytes: Int) {
+        guard !DiskWriteBudget.shared.shouldDefer(bytes: estimatedBytes, category: .conversation) else {
+            DeferredMaintenanceQueue.shared.enqueue(DeferredMaintenanceJob(key: "voice-conversation-save", category: .conversation, staleAfter: 10 * 60, maxRuntime: 2) { @MainActor in
+                try? modelContext.save()
+            })
+            return
+        }
+        try? modelContext.save()
+        DiskWriteBudget.shared.recordWrite(bytes: estimatedBytes, category: .conversation)
     }
 
     private func cleanup() {
@@ -425,6 +447,7 @@ struct VoiceModeView: View {
         responseTask?.cancel()
         session.cancel()
         session.stopSpeaking()
+        DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
     }
 }
 
@@ -434,7 +457,7 @@ struct VoiceWaveform: View {
     @State private var animate = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0, paused: phase == .idle)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             GeometryReader { geo in
                 HStack(spacing: 4) {

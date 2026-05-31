@@ -83,9 +83,10 @@ final class VoiceSessionController {
         transcriptPollTask = Task { @MainActor in
             while !Task.isCancelled && state == .listening {
                 partialTranscript = legacyVoice.liveTranscript
-                try? await Task.sleep(for: .milliseconds(120))
+                try? await Task.sleep(for: .seconds(1))
             }
         }
+        AppCancellationBus.shared.register(transcriptPollTask!, category: .voiceRecognition)
     }
 
     private func stopTranscriptPolling() {

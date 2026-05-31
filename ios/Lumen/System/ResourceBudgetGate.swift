@@ -52,6 +52,15 @@ enum ResourceBudgetGate {
         phase == .inactive || phase == .background
     }
 
+    static func allowsMaintenance(reason: String) -> Bool {
+        let snapshot = currentSnapshot()
+        guard snapshot.scenePhase == .active else { return false }
+        guard !hasRecentMemoryWarning(snapshot) else { return false }
+        if let thermal = snapshot.thermalState, thermal == .serious || thermal == .critical || thermal == .unknown { return false }
+        if snapshot.lowPowerModeEnabled == true { return false }
+        return true
+    }
+
     private static func currentSnapshot() -> Snapshot {
         #if DEBUG
         if let testSnapshotOverride { return testSnapshotOverride }
@@ -95,9 +104,15 @@ enum ResourceBudgetGate {
 @MainActor
 enum RuntimeLifecycleCanceller {
     static func cancelForSceneTransition(reason: String = "scene-transition") {
+        AppCancellationBus.shared.markCancellationRequested(reason)
+        AppCancellationBus.shared.cancelAllSceneSensitive()
         ModelLoader.cancelActiveLoads()
         VoiceService.shared.stopListening()
         VoiceService.shared.stopSpeaking()
-        Task { @MainActor in FleetRuntimeCleanup.unloadOptionalChatSlots() }
+        DeferredMaintenanceQueue.shared.enqueue(
+            DeferredMaintenanceJob(key: "runtime-cleanup-optional-chat-slots", category: .persistence, staleAfter: 10 * 60, maxRuntime: 2) {
+                await MainActor.run { FleetRuntimeCleanup.unloadOptionalChatSlots() }
+            }
+        )
     }
 }
