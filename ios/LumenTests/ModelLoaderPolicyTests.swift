@@ -11,7 +11,7 @@ final class ModelLoaderPolicyTests: XCTestCase {
     }
 
     func testOnlyExplicitUserChatAndVoiceCanStartModelLoadWhenGateAllows() {
-        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0)
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
         XCTAssertTrue(ModelLoader.canStartModelLoad(intent: .userChat))
         XCTAssertTrue(ModelLoader.canStartModelLoad(intent: .userVoice))
         XCTAssertFalse(ModelLoader.canStartModelLoad(intent: .appStartup))
@@ -20,7 +20,7 @@ final class ModelLoaderPolicyTests: XCTestCase {
     }
 
     func testUserChatAndVoiceDeniedWhenGateDenies() {
-        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .background, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0)
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .background, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
         XCTAssertFalse(ModelLoader.canStartModelLoad(intent: .userChat))
         XCTAssertFalse(ModelLoader.canStartModelLoad(intent: .userVoice))
     }

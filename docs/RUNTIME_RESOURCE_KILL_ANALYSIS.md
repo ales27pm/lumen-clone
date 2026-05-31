@@ -17,7 +17,7 @@ The reports point to a runtime resource/watchdog kill, not a normal Swift except
 - Scene phase transitions to inactive/background perform immediate nonblocking cancellation of generation/model-load/voice work and do not run memory compaction, RAG indexing, diagnostics, triggers, or model probing in the scene-update closure.
 - Diagnostics are passive: capability snapshots and diagnostics read cheap cached/metadata status rather than instantiating FoundationModels tokenizer/model assets.
 - Background tasks are bounded to a sub-5-second wall-clock budget and return skipped/degraded results rather than loading a model that is not already safe to use.
-- Memory warnings cancel in-flight model loads and optional slot residency before recording metrics.
+- Memory warnings cancel in-flight model loads and optional slot residency before recording metrics; the load-denial window ages out so a stale warning does not break later foreground user turns.
 
 ## Validation commands
 

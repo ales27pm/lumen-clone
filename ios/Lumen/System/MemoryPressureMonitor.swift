@@ -8,6 +8,7 @@ enum MemoryPressureUnloadPolicy {
 @MainActor
 final class MemoryPressureMonitor {
     static let shared = MemoryPressureMonitor()
+    static let modelLoadSuppressionInterval: TimeInterval = 120
     private(set) var warningCount: Int = 0
     private(set) var lastWarningAt: Date?
     private let metricsStore: RuntimeMetricsStore
@@ -32,6 +33,11 @@ final class MemoryPressureMonitor {
         if let observerToken {
             notificationCenter.removeObserver(observerToken)
         }
+    }
+
+    func recentWarningCount(now: Date = Date(), within interval: TimeInterval = MemoryPressureMonitor.modelLoadSuppressionInterval) -> Int {
+        guard let lastWarningAt else { return 0 }
+        return now.timeIntervalSince(lastWarningAt) < interval ? warningCount : 0
     }
 
     func handleWarning() async {

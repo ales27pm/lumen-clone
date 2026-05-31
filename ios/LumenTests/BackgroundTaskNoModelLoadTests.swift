@@ -10,7 +10,7 @@ final class BackgroundTaskNoModelLoadTests: XCTestCase {
     }
 
     func testBackgroundTaskCannotStartModelLoad() {
-        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .background, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0)
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .background, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
         XCTAssertFalse(ModelLoader.canStartModelLoad(intent: .background))
         XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue))
     }

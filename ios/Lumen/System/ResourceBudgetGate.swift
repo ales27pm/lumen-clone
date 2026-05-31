@@ -9,13 +9,15 @@ enum ResourceBudgetGate {
         let lowPowerModeEnabled: Bool?
         let thermalState: DeviceThermalState?
         let recentMemoryWarningCount: Int?
+        let lastMemoryWarningAt: Date?
 
         static var current: Snapshot {
             Snapshot(
                 scenePhase: inferredScenePhase(),
                 lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
                 thermalState: .from(processThermalState: ProcessInfo.processInfo.thermalState),
-                recentMemoryWarningCount: MemoryPressureMonitor.shared.warningCount
+                recentMemoryWarningCount: MemoryPressureMonitor.shared.recentWarningCount(),
+                lastMemoryWarningAt: MemoryPressureMonitor.shared.lastWarningAt
             )
         }
     }
@@ -33,7 +35,7 @@ enum ResourceBudgetGate {
     static func allowsHeavyModelWork(reason: String) -> Bool {
         let snapshot = currentSnapshot()
         guard snapshot.scenePhase == .active else { return false }
-        guard let warnings = snapshot.recentMemoryWarningCount, warnings == 0 else { return false }
+        guard !hasRecentMemoryWarning(snapshot) else { return false }
         guard let thermal = snapshot.thermalState else { return false }
         guard thermal != .serious, thermal != .critical, thermal != .unknown else { return false }
         guard let lowPower = snapshot.lowPowerModeEnabled else { return false }
@@ -60,10 +62,18 @@ enum ResourceBudgetGate {
                 scenePhase: lastScenePhase,
                 lowPowerModeEnabled: snapshot.lowPowerModeEnabled,
                 thermalState: snapshot.thermalState,
-                recentMemoryWarningCount: snapshot.recentMemoryWarningCount
+                recentMemoryWarningCount: snapshot.recentMemoryWarningCount,
+                lastMemoryWarningAt: snapshot.lastMemoryWarningAt
             )
         }
         return snapshot
+    }
+
+    private static func hasRecentMemoryWarning(_ snapshot: Snapshot) -> Bool {
+        guard let warnings = snapshot.recentMemoryWarningCount else { return true }
+        guard warnings > 0 else { return false }
+        guard let lastWarningAt = snapshot.lastMemoryWarningAt else { return true }
+        return Date().timeIntervalSince(lastWarningAt) < MemoryPressureMonitor.modelLoadSuppressionInterval
     }
 
     private static func isExplicitUserTurn(_ reason: String) -> Bool {
