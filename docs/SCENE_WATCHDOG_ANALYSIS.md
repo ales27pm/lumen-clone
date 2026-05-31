@@ -23,7 +23,7 @@ Use the helper script added at `scripts/symbolicate-lumen-offsets.sh` on macOS w
 ```bash
 scripts/symbolicate-lumen-offsets.sh --archive /path/to/Lumen.xcarchive
 # or
-scripts/symbolicate-lumen-offsets.sh --dsym /path/to/Lumen.app.dSYM --base 0x100d88000 0x185e5c 0x24f408 0x11aac 0xbe80 0x6e3fc
+scripts/symbolicate-lumen-offsets.sh --dsym /path/to/Lumen.app.dSYM --base 0x100d88000 0x184E5C 0x24F488 0x11AAD 0xBE81 0x6E3FD
 ```
 
 The script validates `atos`, locates the DWARF image in either an archive or direct dSYM, adds each offset to the supplied load address, and prints `offset -> absolute address -> symbol`.
