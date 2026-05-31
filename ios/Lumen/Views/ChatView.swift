@@ -67,6 +67,7 @@ struct ChatView: View {
     @State private var streamingText: String = ""
     @State private var streamingSteps: [AgentStep] = []
     @State private var streamingTask: Task<Void, Never>?
+    @State private var streamingCancellationID: UUID?
     @State private var activeTurnID: UUID?
     @State private var generationController = GenerationTaskController<UUID>()
     @State private var showVoiceMode = false
@@ -244,7 +245,7 @@ struct ChatView: View {
             }
         }
         _ = generationController.begin(for: conversation.id, task: task, requestID: controllerRequestID)
-        AppCancellationBus.shared.register(task, category: .chatGeneration)
+        streamingCancellationID = AppCancellationBus.shared.register(task, category: .chatGeneration)
         streamingTask = task
     }
 
@@ -640,6 +641,10 @@ struct ChatView: View {
         activeTurnID = nil
         generationController.cancel(for: conversation.id)
         task?.cancel()
+        if let streamingCancellationID {
+            AppCancellationBus.shared.unregister(streamingCancellationID, category: .chatGeneration)
+            self.streamingCancellationID = nil
+        }
         appState.isGenerating = false
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "chat-scene")
@@ -663,6 +668,10 @@ struct ChatView: View {
         activeTurnID = nil
         generationController.cancel(for: conversation.id)
         task?.cancel()
+        if let streamingCancellationID {
+            AppCancellationBus.shared.unregister(streamingCancellationID, category: .chatGeneration)
+            self.streamingCancellationID = nil
+        }
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         let captured = AssistantOutputSanitizer.sanitize(streamingText)
         let finalizedCaptured = FinalOutputSanitizer.sanitizeUserVisibleText(captured).text
