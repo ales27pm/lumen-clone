@@ -125,13 +125,23 @@ final class TriggerScheduler {
         guard await AppLlamaService.shared.isChatLoaded else {
             trigger.lastRunAt = Date()
             trigger.lastResult = "Background trigger skipped: local model not loaded."
-            trigger.nextFireAt = trigger.computeNextFire(from: Date())
+            updateNextFireAfterRun(for: trigger)
             do { try persist(context, operation: "runTriggerSkipped", scope: "Trigger") } catch { return nil }
             return trigger.lastResult
         }
         let result = await AgentRunner.runHeadless(prompt: trigger.prompt, settings: settings, context: context, maxSteps: min(settings.maxAgentSteps, 3))
         trigger.lastRunAt = Date()
         trigger.lastResult = result.text
+        updateNextFireAfterRun(for: trigger)
+        do { try persist(context, operation: "runTrigger", scope: "Trigger") } catch { return nil }
+
+        if notify {
+            await postNotification(trigger: trigger, body: result.text)
+        }
+        return result.text
+    }
+
+    private func updateNextFireAfterRun(for trigger: Trigger) {
         switch trigger.kind {
         case .once:
             trigger.isPaused = true
@@ -139,12 +149,6 @@ final class TriggerScheduler {
         default:
             trigger.nextFireAt = trigger.computeNextFire(from: Date())
         }
-        do { try persist(context, operation: "runTrigger", scope: "Trigger") } catch { return nil }
-
-        if notify {
-            await postNotification(trigger: trigger, body: result.text)
-        }
-        return result.text
     }
 
     private func postNotification(trigger: Trigger, body: String) async {

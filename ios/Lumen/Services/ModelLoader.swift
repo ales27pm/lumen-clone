@@ -12,8 +12,13 @@ enum ModelLoadIntent: String, Sendable, Equatable {
 
 @MainActor
 enum ModelLoader {
-    private static var chatLoadTask: Task<Bool, Never>?
-    private static var embedLoadTask: Task<Bool, Never>?
+    private struct PendingModelLoad {
+        let id = UUID()
+        let task: Task<Bool, Never>
+    }
+
+    private static var chatLoadTask: PendingModelLoad?
+    private static var embedLoadTask: PendingModelLoad?
 
     static func canStartModelLoad(intent: ModelLoadIntent) -> Bool {
         switch intent {
@@ -25,11 +30,26 @@ enum ModelLoader {
     }
 
     static func cancelActiveLoads() {
-        chatLoadTask?.cancel()
+        chatLoadTask?.task.cancel()
+        embedLoadTask?.task.cancel()
+    }
+
+    #if DEBUG
+    static func installChatLoadTaskForTesting(_ task: Task<Bool, Never>) {
+        chatLoadTask = PendingModelLoad(task: task)
+    }
+
+    static var hasActiveChatLoadTaskForTesting: Bool {
+        chatLoadTask != nil
+    }
+
+    static func resetLoadTasksForTesting() {
+        chatLoadTask?.task.cancel()
+        embedLoadTask?.task.cancel()
         chatLoadTask = nil
-        embedLoadTask?.cancel()
         embedLoadTask = nil
     }
+    #endif
     static func syncChat(appState: AppState, stored: [StoredModel]) async {
         await ensureFleetChatLoaded(appState: appState, stored: stored, intent: .appStartup)
     }
@@ -56,14 +76,12 @@ enum ModelLoader {
     static func ensureFleetChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
         if await hasLoadedChatRuntime(appState: appState, stored: stored) { return true }
         guard canStartModelLoad(intent: intent) else { return false }
-        if let chatLoadTask { return await chatLoadTask.value }
-        let task = Task { @MainActor in
+        if let chatLoadTask { return await finishChatLoad(chatLoadTask) }
+        let pending = PendingModelLoad(task: Task { @MainActor in
             await performEnsureFleetChatLoaded(appState: appState, stored: stored, intent: intent)
-        }
-        chatLoadTask = task
-        let result = await task.value
-        chatLoadTask = nil
-        return result
+        })
+        chatLoadTask = pending
+        return await finishChatLoad(pending)
     }
 
     @discardableResult
@@ -87,6 +105,14 @@ enum ModelLoader {
         let primaryReady = await SlotModelRuntimeCoordinator.shared.ensurePrimaryReady(preferredSlots: [.mouth, .cortex])
         guard !Task.isCancelled else { return false }
         return primaryReady || !runnableSlots.isEmpty
+    }
+
+    private static func finishChatLoad(_ pending: PendingModelLoad) async -> Bool {
+        let result = await pending.task.value
+        if chatLoadTask?.id == pending.id {
+            chatLoadTask = nil
+        }
+        return result
     }
 
     private static func hasLoadedChatRuntime(appState: AppState, stored: [StoredModel]) async -> Bool {
@@ -130,13 +156,19 @@ enum ModelLoader {
     static func ensureEmbedLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
         if await hasLoadedEmbeddingRuntime(appState: appState, stored: stored) { return true }
         guard canStartModelLoad(intent: intent) else { return false }
-        if let embedLoadTask { return await embedLoadTask.value }
-        let task = Task { @MainActor in
+        if let embedLoadTask { return await finishEmbedLoad(embedLoadTask) }
+        let pending = PendingModelLoad(task: Task { @MainActor in
             await performEnsureEmbedLoaded(appState: appState, stored: stored, intent: intent)
+        })
+        embedLoadTask = pending
+        return await finishEmbedLoad(pending)
+    }
+
+    private static func finishEmbedLoad(_ pending: PendingModelLoad) async -> Bool {
+        let result = await pending.task.value
+        if embedLoadTask?.id == pending.id {
+            embedLoadTask = nil
         }
-        embedLoadTask = task
-        let result = await task.value
-        embedLoadTask = nil
         return result
     }
 
