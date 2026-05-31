@@ -37,8 +37,20 @@ final class MemoryPressureMonitor {
 
     func recentWarningCount(now: Date = Date(), within interval: TimeInterval = MemoryPressureMonitor.modelLoadSuppressionInterval) -> Int {
         guard let lastWarningAt else { return 0 }
-        return now.timeIntervalSince(lastWarningAt) < interval ? warningCount : 0
+        guard now.timeIntervalSince(lastWarningAt) < interval else {
+            warningCount = 0
+            self.lastWarningAt = nil
+            return 0
+        }
+        return warningCount
     }
+
+    #if DEBUG
+    func recordWarningForTesting(count: Int = 1, at date: Date?) {
+        warningCount = count
+        lastWarningAt = date
+    }
+    #endif
 
     func handleWarning() async {
         warningCount += 1

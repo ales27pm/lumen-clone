@@ -54,6 +54,7 @@ enum ModelLoader {
 
     @discardableResult
     static func ensureFleetChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
+        if await hasLoadedChatRuntime(appState: appState, stored: stored) { return true }
         guard canStartModelLoad(intent: intent) else { return false }
         if let chatLoadTask { return await chatLoadTask.value }
         let task = Task { @MainActor in
@@ -88,6 +89,16 @@ enum ModelLoader {
         return primaryReady || !runnableSlots.isEmpty
     }
 
+    private static func hasLoadedChatRuntime(appState: AppState, stored: [StoredModel]) async -> Bool {
+        let preferredID = appState.activeChatModelID
+        if let preferredID,
+           let preferred = stored.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .chat }) {
+            let resolvedPath = ModelStorage.resolvedModelURL(from: preferred.localPath, fileName: preferred.fileName).path
+            return await AppLlamaService.shared.loadedChatPath == resolvedPath
+        }
+        return await AppLlamaService.shared.isChatLoaded
+    }
+
     @discardableResult
     private static func ensurePrimaryChatLoaded(appState: AppState, stored: [StoredModel]) async -> Bool {
         let preferredID = appState.activeChatModelID
@@ -117,6 +128,7 @@ enum ModelLoader {
 
     @discardableResult
     static func ensureEmbedLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
+        if await hasLoadedEmbeddingRuntime(appState: appState, stored: stored) { return true }
         guard canStartModelLoad(intent: intent) else { return false }
         if let embedLoadTask { return await embedLoadTask.value }
         let task = Task { @MainActor in
@@ -126,6 +138,16 @@ enum ModelLoader {
         let result = await task.value
         embedLoadTask = nil
         return result
+    }
+
+    private static func hasLoadedEmbeddingRuntime(appState: AppState, stored: [StoredModel]) async -> Bool {
+        let preferredID = appState.activeEmbeddingModelID
+        if let preferredID,
+           let preferred = stored.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .embedding }) {
+            let resolvedPath = ModelStorage.resolvedModelURL(from: preferred.localPath, fileName: preferred.fileName).path
+            return await AppLlamaService.shared.loadedEmbedPath == resolvedPath
+        }
+        return await AppLlamaService.shared.hasSemanticEmbeddingRuntime
     }
 
     private static func performEnsureEmbedLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent) async -> Bool {
