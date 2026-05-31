@@ -26,6 +26,19 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
         #endif
     }
 
+    func applicationWillResignActive(_ application: UIApplication) {
+        Task { @MainActor in SceneTransitionCoordinator.shared.handleWillResignActive() }
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        Task { @MainActor in SceneTransitionCoordinator.shared.handleDidEnterBackground() }
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        AppCancellationBus.shared.markCancellationRequested("will-terminate")
+        AppCancellationBus.shared.cancelAllSceneSensitive()
+    }
+
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
         Task { @MainActor in
             await MemoryPressureMonitor.shared.handleWarning()

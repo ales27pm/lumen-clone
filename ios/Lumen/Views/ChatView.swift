@@ -159,10 +159,8 @@ struct ChatView: View {
         }
         .onChange(of: draft) { _, _ in recomputeAttachmentPreview() }
         .onChange(of: scenePhase) { _, phase in
-            ResourceBudgetGate.recordScenePhase(phase)
-            if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
-                stopForSceneTransition()
-            }
+            SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
+            if ResourceBudgetGate.shouldCancelForScenePhase(phase) { stopForSceneTransition() }
         }
         .onDisappear { stopForSceneTransition() }
     }
@@ -211,7 +209,7 @@ struct ChatView: View {
         conversation.messages.append(userMsg)
         conversation.updatedAt = Date()
         if conversation.title == "New Chat" { conversation.title = String(displayContent.prefix(36)) }
-        try? modelContext.save()
+        saveConversationIfBudgetAllows(estimatedBytes: displayContent.utf8.count + 2048)
 
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         appState.isGenerating = true
@@ -220,13 +218,19 @@ struct ChatView: View {
         let turnID = UUID()
         let controllerRequestID = UUID()
         activeTurnID = turnID
+        DeferredMaintenanceQueue.shared.setChatOrVoiceActive(true)
 
         let task = Task {
+            let cpuToken = CPUWatchdogGuard.shared.begin(category: .chatGeneration)
+            defer {
+                CPUWatchdogGuard.shared.end(token: cpuToken)
+                DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
+            }
             if !(await ensureChatModelLoaded()) {
                 guard activeTurnID == turnID else { return }
                 let msg = ChatMessage(role: .assistant, content: "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it.")
                 conversation.messages.append(msg)
-                try? modelContext.save()
+                saveConversationIfBudgetAllows(estimatedBytes: 4096)
                 appState.isGenerating = false
                 return
             }
@@ -240,6 +244,7 @@ struct ChatView: View {
             }
         }
         _ = generationController.begin(for: conversation.id, task: task, requestID: controllerRequestID)
+        AppCancellationBus.shared.register(task, category: .chatGeneration)
         streamingTask = task
     }
 
@@ -267,22 +272,32 @@ struct ChatView: View {
         var steps: [AgentStep] = []
         var finalText = ""
 
+        var lastUIUpdate = Date.distantPast
         for await event in SlotAgentService.shared.run(req, options: .init(modelContext: modelContext, conversationID: conversation.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
-            if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) { break }
+            if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
             switch event {
             case .step(let step):
                 if let idx = steps.firstIndex(where: { $0.id == step.id }) { steps[idx] = step } else { steps.append(step) }
-                streamingSteps = steps
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                    streamingSteps = steps
+                    lastUIUpdate = Date()
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                }
             case .stepDelta(let id, let text):
                 if let idx = steps.firstIndex(where: { $0.id == id }) {
                     steps[idx].content = text
-                    streamingSteps = steps
+                    if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                        streamingSteps = steps
+                        lastUIUpdate = Date()
+                    }
                 }
             case .finalDelta(let chunk):
                 finalText += chunk
                 let sanitized = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
-                streamingText = SchemaPlaceholderDetector.isPlaceholderPrefix(sanitized) ? "" : sanitized
+                if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                    streamingText = SchemaPlaceholderDetector.isPlaceholderPrefix(sanitized) ? "" : sanitized
+                    lastUIUpdate = Date()
+                }
             case .done(let final, let allSteps):
                 finalText = final.isEmpty ? finalText : final
                 steps = allSteps
@@ -336,7 +351,7 @@ struct ChatView: View {
         }
 
         conversation.updatedAt = Date()
-        try? modelContext.save()
+        saveConversationIfBudgetAllows(estimatedBytes: persistedFinal.utf8.count + 4096)
         appState.isGenerating = false
     }
 
@@ -363,12 +378,16 @@ struct ChatView: View {
         )
 
         var accumulated = ""
+        var lastUIUpdate = Date.distantPast
         for await token in await AppLlamaService.shared.stream(request) {
-            if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) { break }
+            if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
             switch token {
             case .text(let s):
                 accumulated += s
-                streamingText = AssistantOutputSanitizer.sanitize(accumulated, lastUserMessage: text)
+                if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                    streamingText = AssistantOutputSanitizer.sanitize(accumulated, lastUserMessage: text)
+                    lastUIUpdate = Date()
+                }
             case .done:
                 break
             }
@@ -410,7 +429,7 @@ struct ChatView: View {
         }
 
         conversation.updatedAt = Date()
-        try? modelContext.save()
+        saveConversationIfBudgetAllows(estimatedBytes: finalized.utf8.count + 4096)
         appState.isGenerating = false
     }
 
@@ -618,7 +637,19 @@ struct ChatView: View {
         generationController.cancel(for: conversation.id)
         task?.cancel()
         appState.isGenerating = false
+        DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "chat-scene")
+    }
+
+    private func saveConversationIfBudgetAllows(estimatedBytes: Int) {
+        guard !DiskWriteBudget.shared.shouldDefer(bytes: estimatedBytes, category: .conversation) else {
+            DeferredMaintenanceQueue.shared.enqueue(DeferredMaintenanceJob(key: "conversation-save-\(conversation.id)", category: .conversation, staleAfter: 10 * 60, maxRuntime: 2) { @MainActor in
+                try? modelContext.save()
+            })
+            return
+        }
+        try? modelContext.save()
+        DiskWriteBudget.shared.recordWrite(bytes: estimatedBytes, category: .conversation)
     }
 
     private func stop() {
@@ -628,6 +659,7 @@ struct ChatView: View {
         activeTurnID = nil
         generationController.cancel(for: conversation.id)
         task?.cancel()
+        DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         let captured = AssistantOutputSanitizer.sanitize(streamingText)
         let finalizedCaptured = FinalOutputSanitizer.sanitizeUserVisibleText(captured).text
         let capturedSteps = AgentVisibleContentSanitizer.sanitizedSteps(streamingSteps)
@@ -641,7 +673,7 @@ struct ChatView: View {
                     let msg = ChatMessage(role: .assistant, content: finalizedCaptured, agentSteps: capturedSteps, wasStopped: true)
                     conversation.messages.append(msg)
                     conversation.updatedAt = Date()
-                    try? modelContext.save()
+                    saveConversationIfBudgetAllows(estimatedBytes: finalizedCaptured.utf8.count + 4096)
                 }
             }
         }

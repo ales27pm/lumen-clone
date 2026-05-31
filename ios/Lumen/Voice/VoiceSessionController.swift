@@ -13,6 +13,7 @@ final class VoiceSessionController {
     private let synthesis = SpeechSynthesisService()
     private let legacyVoice = VoiceService.shared
     private var transcriptPollTask: Task<Void, Never>?
+    private var transcriptPollCancellationID: UUID?
 
     func startPushToTalk(onFinal: @escaping (String) -> Void) async {
         state = .requestingPermissions
@@ -83,13 +84,20 @@ final class VoiceSessionController {
         transcriptPollTask = Task { @MainActor in
             while !Task.isCancelled && state == .listening {
                 partialTranscript = legacyVoice.liveTranscript
-                try? await Task.sleep(for: .milliseconds(120))
+                try? await Task.sleep(for: .seconds(1))
             }
+        }
+        if let transcriptPollTask {
+            transcriptPollCancellationID = AppCancellationBus.shared.register(transcriptPollTask, category: .voiceRecognition)
         }
     }
 
     private func stopTranscriptPolling() {
         transcriptPollTask?.cancel()
         transcriptPollTask = nil
+        if let transcriptPollCancellationID {
+            AppCancellationBus.shared.unregister(transcriptPollCancellationID, category: .voiceRecognition)
+            self.transcriptPollCancellationID = nil
+        }
     }
 }
