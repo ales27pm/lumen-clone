@@ -22,6 +22,7 @@ final class VoiceService: NSObject {
     @ObservationIgnored private var onFinal: ((String) -> Void)?
     @ObservationIgnored private var onSpeechEnd: (() -> Void)?
     @ObservationIgnored private var cancellationID: UUID?
+    @ObservationIgnored private var ttsCancellationID: UUID?
 
     override init() {
         super.init()
@@ -170,9 +171,7 @@ final class VoiceService: NSObject {
         utterance.pitchMultiplier = 1.0
         utterance.preUtteranceDelay = 0.02
         isSpeaking = true
-        AppCancellationBus.shared.registerCancellation({ [weak self] in
-            Task { @MainActor in self?.stopSpeaking() }
-        }, category: .tts)
+        registerTTSCancellation()
         synthesizer.speak(utterance)
     }
 
@@ -188,16 +187,29 @@ final class VoiceService: NSObject {
         }
         utterance.rate = Float(max(0.1, min(0.8, rate)))
         isSpeaking = true
-        AppCancellationBus.shared.registerCancellation({ [weak self] in
+        registerTTSCancellation()
+        synthesizer.speak(utterance)
+    }
+
+    private func registerTTSCancellation() {
+        unregisterTTSCancellation()
+        ttsCancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in
             Task { @MainActor in self?.stopSpeaking() }
         }, category: .tts)
-        synthesizer.speak(utterance)
+    }
+
+    private func unregisterTTSCancellation() {
+        if let ttsCancellationID {
+            AppCancellationBus.shared.unregister(ttsCancellationID, category: .tts)
+            self.ttsCancellationID = nil
+        }
     }
 
     func stopSpeaking() {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        unregisterTTSCancellation()
         isSpeaking = false
     }
 }
@@ -206,6 +218,7 @@ extension VoiceService: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
             if !self.synthesizer.isSpeaking {
+                self.unregisterTTSCancellation()
                 self.isSpeaking = false
                 let cb = self.onSpeechEnd
                 self.onSpeechEnd = nil
@@ -216,6 +229,7 @@ extension VoiceService: AVSpeechSynthesizerDelegate {
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor in
+            self.unregisterTTSCancellation()
             self.isSpeaking = false
             self.onSpeechEnd = nil
         }
