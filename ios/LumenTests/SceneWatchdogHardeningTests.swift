@@ -51,12 +51,19 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         await fulfillment(of: [ran], timeout: 1)
     }
 
-    func testCPUWatchdogGuardDegradesLongCategory() throws {
+    func testCPUWatchdogGuardDegradesRecordedWorkOnly() throws {
         let guardrail = CPUWatchdogGuard(window: 10, degradeThreshold: 0.01)
-        let token = guardrail.begin(category: .diagnostics)
-        Thread.sleep(forTimeInterval: 0.02)
-        guardrail.end(token: token)
+        guardrail.recordWork(category: .diagnostics, duration: 0.02)
         XCTAssertTrue(guardrail.shouldDegrade(category: .diagnostics))
+    }
+
+    func testCPUWatchdogGuardDoesNotDegradeActiveWallTime() throws {
+        let guardrail = CPUWatchdogGuard(window: 10, degradeThreshold: 0.01)
+        let token = guardrail.begin(category: .chatGeneration)
+        Thread.sleep(forTimeInterval: 0.02)
+        XCTAssertFalse(guardrail.shouldDegrade(category: .chatGeneration))
+        XCTAssertEqual(guardrail.currentSnapshot().activeCountsByCategory[.chatGeneration], 1)
+        guardrail.end(token: token)
     }
 
     func testDiskWriteBudgetDefersRepeatedLargeWrites() {

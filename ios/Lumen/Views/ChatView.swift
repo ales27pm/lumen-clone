@@ -275,6 +275,8 @@ struct ChatView: View {
         var lastUIUpdate = Date.distantPast
         for await event in SlotAgentService.shared.run(req, options: .init(modelContext: modelContext, conversationID: conversation.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
             if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
+            let workStartedAt = ProcessInfo.processInfo.systemUptime
+            defer { CPUWatchdogGuard.shared.recordWork(category: .chatGeneration, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
             switch event {
             case .step(let step):
                 if let idx = steps.firstIndex(where: { $0.id == step.id }) { steps[idx] = step } else { steps.append(step) }
@@ -381,6 +383,8 @@ struct ChatView: View {
         var lastUIUpdate = Date.distantPast
         for await token in await AppLlamaService.shared.stream(request) {
             if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
+            let workStartedAt = ProcessInfo.processInfo.systemUptime
+            defer { CPUWatchdogGuard.shared.recordWork(category: .chatGeneration, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
             switch token {
             case .text(let s):
                 accumulated += s

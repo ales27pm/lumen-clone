@@ -14,7 +14,6 @@ nonisolated enum CPUWatchdogCategory: String, CaseIterable, Sendable {
 nonisolated struct CPUWatchdogToken: Sendable {
     fileprivate let id: UUID
     fileprivate let category: CPUWatchdogCategory
-    fileprivate let startedAt: TimeInterval
 }
 
 nonisolated struct CPUWatchdogSnapshot: Equatable, Sendable {
@@ -45,7 +44,7 @@ nonisolated final class CPUWatchdogGuard: @unchecked Sendable {
 
     func begin(category: CPUWatchdogCategory) -> CPUWatchdogToken {
         let now = ProcessInfo.processInfo.systemUptime
-        let token = CPUWatchdogToken(id: UUID(), category: category, startedAt: now)
+        let token = CPUWatchdogToken(id: UUID(), category: category)
         lock.lock()
         prune(now: now)
         active[token.id] = token
@@ -53,12 +52,22 @@ nonisolated final class CPUWatchdogGuard: @unchecked Sendable {
         return token
     }
 
+    /// Ends activity tracking without charging elapsed wall-clock time as CPU work.
     func end(token: CPUWatchdogToken) {
         let now = ProcessInfo.processInfo.systemUptime
         lock.lock()
-        if active.removeValue(forKey: token.id) != nil {
-            samples.append(Sample(category: token.category, start: token.startedAt, end: now))
-        }
+        active.removeValue(forKey: token.id)
+        prune(now: now)
+        lock.unlock()
+    }
+
+    /// Records synchronous work time already spent by the caller. Awaiting an async stream
+    /// should not be included here, otherwise slow responses look like CPU pressure.
+    func recordWork(category: CPUWatchdogCategory, duration: TimeInterval) {
+        guard duration > 0 else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        lock.lock()
+        samples.append(Sample(category: category, start: max(0, now - duration), end: now))
         prune(now: now)
         lock.unlock()
     }
@@ -94,12 +103,8 @@ nonisolated final class CPUWatchdogGuard: @unchecked Sendable {
 
     private func rollingTotal(category: CPUWatchdogCategory, now: TimeInterval) -> TimeInterval {
         let cutoff = now - window
-        let completed = samples.filter { $0.category == category }.reduce(0) { partial, sample in
+        return samples.filter { $0.category == category }.reduce(0) { partial, sample in
             partial + max(0, sample.end - max(sample.start, cutoff))
         }
-        let running = active.values.filter { $0.category == category }.reduce(0) { partial, token in
-            partial + max(0, now - max(token.startedAt, cutoff))
-        }
-        return completed + running
     }
 }
