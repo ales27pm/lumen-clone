@@ -14,6 +14,7 @@ struct VoiceModeView: View {
     @State private var phase: Phase = .idle
     @State private var responseText: String = ""
     @State private var responseTask: Task<Void, Never>?
+    @State private var responseCancellationID: UUID?
     @State private var spokenPrefix: Int = 0
     @State private var finishedStreaming = false
     @State private var stepsBuffer: [AgentStep] = []
@@ -330,7 +331,7 @@ struct VoiceModeView: View {
             generationController.clearIfCurrent(controllerRequestID, for: "voice")
         }
         _ = generationController.begin(for: "voice", task: task, requestID: controllerRequestID)
-        AppCancellationBus.shared.register(task, category: .chatGeneration)
+        responseCancellationID = AppCancellationBus.shared.register(task, category: .chatGeneration)
         responseTask = task
     }
 
@@ -400,12 +401,20 @@ struct VoiceModeView: View {
         }
     }
 
+    private func unregisterResponseCancellation() {
+        if let responseCancellationID {
+            AppCancellationBus.shared.unregister(responseCancellationID, category: .chatGeneration)
+            self.responseCancellationID = nil
+        }
+    }
+
     private func interrupt() {
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         let turnID = activeVoiceTurnID
         activeVoiceTurnID = nil
         generationController.cancel(for: "voice")
         responseTask?.cancel()
+        unregisterResponseCancellation()
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         session.stopSpeaking()
         session.cancel()
@@ -427,6 +436,7 @@ struct VoiceModeView: View {
         activeVoiceTurnID = nil
         generationController.cancel(for: "voice")
         responseTask?.cancel()
+        unregisterResponseCancellation()
         session.handleAppDidEnterBackground()
         session.stopSpeaking()
         DeferredMaintenanceQueue.shared.enqueue(DeferredMaintenanceJob(key: "voice-scene-transition-save", category: .voice, staleAfter: 10 * 60, maxRuntime: 2) { @MainActor in
@@ -452,6 +462,7 @@ struct VoiceModeView: View {
         activeVoiceTurnID = nil
         generationController.cancel(for: "voice")
         responseTask?.cancel()
+        unregisterResponseCancellation()
         session.cancel()
         session.stopSpeaking()
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
