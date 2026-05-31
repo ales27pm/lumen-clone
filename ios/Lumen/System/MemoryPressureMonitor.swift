@@ -37,6 +37,7 @@ final class MemoryPressureMonitor {
     func handleWarning() async {
         warningCount += 1
         lastWarningAt = Date()
+        ModelLoader.cancelActiveLoads()
         FleetRuntimeCleanup.unloadOptionalChatSlots()
         let metric = RuntimeMetric(
             timestamp: Date(),

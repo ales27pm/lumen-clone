@@ -202,12 +202,12 @@ enum ModelLaunchBootstrap {
         switch stored.modelRole {
         case .chat:
             guard appState.activeChatModelID == stored.id.uuidString else { return }
-            _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: allStored)
+            _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: allStored, intent: .appStartup)
         case .embedding:
             guard appState.activeEmbeddingModelID == stored.id.uuidString else { return }
-            _ = await ModelLoader.ensureEmbedLoaded(appState: appState, stored: allStored)
+            _ = await ModelLoader.ensureEmbedLoaded(appState: appState, stored: allStored, intent: .appStartup)
         case .roleAdapter:
-            _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: allStored)
+            _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: allStored, intent: .appStartup)
         }
     }
 

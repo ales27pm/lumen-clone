@@ -53,20 +53,7 @@ struct RootView: View {
                 }
             }
             .tint(Theme.accent)
-            .task {
-                await ModelLoader.loadAtLaunch(appState: appState, stored: storedModels)
-            }
-            .task(id: appState.activeChatModelID) {
-                await ModelLoader.syncChat(appState: appState, stored: storedModels)
-            }
-            .task(id: appState.activeEmbeddingModelID) {
-                await ModelLoader.syncEmbed(appState: appState, stored: storedModels)
-            }
-            .onChange(of: storedModels.count) { _, _ in
-                Task {
-                    await ModelLoader.loadAtLaunch(appState: appState, stored: storedModels)
-                }
-            }
+
 
             if appState.runtime.bootSplashVisible {
                 BootSplashView()

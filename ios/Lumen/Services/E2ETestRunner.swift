@@ -547,7 +547,7 @@ enum E2ETestRunner {
 
         if scenario.requiresAgentRun {
             let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
-            let modelLoaded = await ModelLoader.ensureChatLoaded(appState: appState, stored: stored)
+            let modelLoaded = await ModelLoader.ensureChatLoaded(appState: appState, stored: stored, intent: .userChat)
             collectPerformanceSample()
             event("models", modelLoaded ? "chat fleet ready" : "no chat model loaded")
             if modelLoaded {

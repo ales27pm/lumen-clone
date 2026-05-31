@@ -102,3 +102,11 @@
 
 ## Final PR #232 Cleanup Update
 - Final cleanup made the staged AssistantKernel `@MainActor` for ModelContext-dependent grounding/tool helpers, removed `LegacyAgentRunOptions` Sendable conformance, clarified staged BackgroundOrchestrator status, and fixed remaining legacy grounding/test hygiene comments tracked in `docs/PR_REVIEW_FINAL_CLEANUP.md`.
+
+## Runtime resource-kill mitigation update
+
+- Startup model loading has been removed from `LumenApp`/`RootView`; the loader now degrades for `appStartup`, `diagnostics`, and `background` intents.
+- `ResourceBudgetGate` centralizes foreground, power, thermal, and memory-warning checks before model work.
+- Scene phase handlers now prefer immediate cancellation over foreground/background maintenance work.
+- Background trigger/headless execution returns a skipped/degraded result instead of loading local model assets.
+- Remaining audit risk: device symbolication with the matching dSYM is still needed to map the original crash offsets to exact functions.

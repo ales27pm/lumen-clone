@@ -25,14 +25,18 @@ final class BackgroundOrchestrator {
 
     func handleProcessing() async {
         guard let container = SharedContainer.shared else { return }
+        let deadline = Date().addingTimeInterval(4.5)
         let context = ModelContext(container)
         await runTriggerScan(context: context)
-        await runMemoryConsolidationIfAllowed()
-        await runRAGMaintenanceIfAllowed()
+        guard Date() < deadline else { return }
         await runModelHousekeepingIfAllowed()
     }
 
     func runTriggerScan(context: ModelContext) async {
+        guard await AppLlamaService.shared.isChatLoaded else {
+            try? await metrics.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: "background", taskKind: "triggerScan", modelIDHash: nil, policySummary: "skipped: model not loaded", latencyMs: nil, success: true, errorCode: "background_model_unloaded", thermalState: .from(processThermalState: ProcessInfo.processInfo.thermalState), lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled, memoryWarningCount: MemoryPressureMonitor.shared.warningCount))
+            return
+        }
         let acquired = await lease.acquire(category: "triggerScan", reason: "background trigger scan")
         guard acquired else { return }
         await TriggerScheduler.shared.fireDueTriggers(context: context, settings: SettingsSnapshot.loadFromDisk())
@@ -41,12 +45,14 @@ final class BackgroundOrchestrator {
     }
 
     func runMemoryConsolidationIfAllowed() async {
+        guard ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue) else { return }
         guard let container = SharedContainer.shared else { return }
         let context = ModelContext(container)
         await MemoryConsolidator.consolidate(context: context, metricsStore: metrics)
     }
 
     func runRAGMaintenanceIfAllowed() async {
+        guard ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue) else { return }
         guard let container = SharedContainer.shared else { return }
         let context = ModelContext(container)
         let result = await RAGEngine().maintenance(context: context)

@@ -205,7 +205,7 @@ struct ModelsView: View {
         isRepairingSelectedFamily = true
         Task { @MainActor in
             await ModelLaunchBootstrap.switchFamily(selectedModelFamily, appState: appState, context: modelContext)
-            await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels)
+            await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels, intent: .userChat)
             await refreshLoaded()
             isRepairingSelectedFamily = false
             UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -229,9 +229,9 @@ struct ModelsView: View {
                 if model.role == .chat && appState.activeChatModelID == nil { appState.activeChatModelID = stored.id.uuidString }
                 if model.role == .embedding && appState.activeEmbeddingModelID == nil { appState.activeEmbeddingModelID = stored.id.uuidString }
                 if model.role == .chat || model.role == .roleAdapter {
-                    await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels + [stored])
+                    await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels + [stored], intent: .userChat)
                 } else {
-                    _ = await ModelLoader.ensureEmbedLoaded(appState: appState, stored: storedModels + [stored])
+                    _ = await ModelLoader.ensureEmbedLoaded(appState: appState, stored: storedModels + [stored], intent: .userChat)
                 }
                 await refreshLoaded()
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
