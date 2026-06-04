@@ -31,22 +31,30 @@ final class LegacyTurnGroundingCoordinator {
         .init(title: "Runtime policy", content: content, estimatedChars: content.count, sourceIDs: [], privacyLevel: .low)
     }
 
-    func build(userMessage: String, conversationID: UUID?, turnID: UUID?, history: [(role: MessageRole, content: String)], modelContext: ModelContext, isBackground: Bool, task: AssistantTaskKind, role: String? = nil) async -> LegacyTurnGroundingOutput {
+    func build(userMessage: String, conversationID: UUID?, turnID: UUID?, history: [(role: MessageRole, content: String)], modelContext: ModelContext, isBackground: Bool, task: AssistantTaskKind, role: String? = nil, cancellationToken: AgentGroundingCancellationToken? = nil) async throws -> LegacyTurnGroundingOutput {
+        try cancellationToken?.checkCancellation()
+        AgentGroundingInstrumentation.mark("before LegacyGroundingBridge.build", metrics: .init(promptChars: userMessage.count))
+        let bridgeStart = ProcessInfo.processInfo.systemUptime
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         let thermal = DeviceThermalState.from(processThermalState: ProcessInfo.processInfo.thermalState)
         let roleKey = role.map { "\nrole=\($0)" } ?? ""
         let key = LegacyGroundingCache.Key(conversationID: conversationID, turnID: turnID, userDigest: LegacyGroundingCache.digest(userMessage + roleKey), background: isBackground, lowPowerMode: lowPower, thermalState: thermal)
         if let cached = await cache.get(key) {
+            AgentGroundingInstrumentation.mark("after LegacyGroundingBridge.build", metrics: .init(sectionCount: cached.sections.count, toolCount: cached.secureTools.count, memoryCount: cached.grounding.memoryCount, promptChars: cached.renderedPromptContext.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: bridgeStart))
             return .init(grounding: cached.grounding, sections: cached.sections, legacyTools: LegacyToolSchemaBridge.toLegacyToolDefinitions(cached.secureTools), promptInjection: cached.renderedPromptContext, metricsSummary: "cache")
         }
         let turn = AssistantTurnContext(task: task, input: userMessage, isForeground: !isBackground, lowPowerMode: lowPower, thermalState: ProcessInfo.processInfo.thermalState)
-        let bundle = await bridge.build(userMessage: userMessage, conversationID: conversationID, turnID: turnID, history: history, modelContext: modelContext, turn: turn)
+        let bundle = try await bridge.build(userMessage: userMessage, conversationID: conversationID, turnID: turnID, history: history, modelContext: modelContext, turn: turn, cancellationToken: cancellationToken)
+        try cancellationToken?.checkCancellation()
+        AgentGroundingInstrumentation.mark("after LegacyGroundingBridge.build", metrics: .init(sectionCount: bundle.sections.count, toolCount: bundle.secureTools.count, memoryCount: bundle.grounding.memoryCount, promptChars: bundle.renderedPromptContext.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: bridgeStart))
         var roleAwareBundle = bundle
         if let role, !role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             var sections = bundle.sections
             let content = String(role.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
             sections.append(.init(title: "Role stage", content: content, estimatedChars: content.count, sourceIDs: ["roleOrSlot"], privacyLevel: .low))
-            let rendered = PromptGroundingRenderer.renderForPrompt(sections, maxChars: 3200)
+            let rendered = await Task.detached(priority: .userInitiated) {
+                PromptGroundingRenderer.renderForPrompt(sections, maxChars: 3200)
+            }.value
             let grounding = AssistantGroundingContext(memoryCount: bundle.grounding.memoryCount, ragCount: bundle.grounding.ragCount, toolCount: bundle.grounding.toolCount, estimatedChars: rendered.count)
             roleAwareBundle = .init(grounding: grounding, sections: sections, renderedPromptContext: rendered, secureTools: bundle.secureTools, metricsSummary: bundle.metricsSummary)
         }
@@ -58,7 +66,10 @@ final class LegacyTurnGroundingCoordinator {
         await prepareGroundedRequest(request, provider: LegacyGroundingContextProvider())
     }
 
-    func prepareGroundedRequest(_ request: LegacyGroundingRequest, provider: LegacyGroundingContextProvider) async -> LegacyGroundingResult {
+    func prepareGroundedRequest(_ request: LegacyGroundingRequest, provider: LegacyGroundingContextProvider, cancellationToken: AgentGroundingCancellationToken? = nil) async -> LegacyGroundingResult {
+        do { try cancellationToken?.checkCancellation() } catch { return Self.cancelledResult(for: request) }
+        AgentGroundingInstrumentation.mark("before LegacyTurnGroundingCoordinator.prepareGroundedRequest", metrics: .init(toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: request.userMessage.count))
+        let requestStart = ProcessInfo.processInfo.systemUptime
         let context = provider.resolveContext()
         var degraded: [String] = []
         guard let modelContext = context else {
@@ -68,17 +79,40 @@ final class LegacyTurnGroundingCoordinator {
                 Self.toolsSection(request.externalAvailableTools.prefix(24)),
                 Self.runtimeSection("degraded-legacy-grounding")
             ].filter { !$0.content.isEmpty }
-            let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: fallbackSections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding)
+            AgentGroundingInstrumentation.mark("before LegacyPromptAssembler.assemble", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: request.userMessage.count))
+            let assembleStart = ProcessInfo.processInfo.systemUptime
+            let assembled = await Task.detached(priority: .userInitiated) {
+                LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: fallbackSections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding)
+            }.value
+            AgentGroundingInstrumentation.mark("after LegacyPromptAssembler.assemble", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: assembleStart))
+            AgentGroundingInstrumentation.mark("after LegacyTurnGroundingCoordinator.prepareGroundedRequest", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: requestStart))
             return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: nil, sections: fallbackSections, bridgedTools: request.externalAvailableTools, degradedReasons: degraded, metricsSummary: "degraded", truncationOccurred: assembled.truncationOccurred)
         }
 
-        let output = await build(userMessage: request.userMessage, conversationID: request.conversationID, turnID: request.turnID, history: request.history, modelContext: modelContext, isBackground: request.mode != .foreground, task: request.task, role: request.roleOrSlot)
+        let output: LegacyTurnGroundingOutput
+        do {
+            output = try await build(userMessage: request.userMessage, conversationID: request.conversationID, turnID: request.turnID, history: request.history, modelContext: modelContext, isBackground: request.mode != .foreground, task: request.task, role: request.roleOrSlot, cancellationToken: cancellationToken)
+        } catch {
+            return Self.cancelledResult(for: request)
+        }
+        do { try cancellationToken?.checkCancellation() } catch { return Self.cancelledResult(for: request) }
         var sections = output.sections
         if !request.externalRelevantMemories.isEmpty {
             sections.append(Self.memorySection(request.externalRelevantMemories.prefix(6), sourceID: "legacyCallerMemory"))
         }
-        let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: sections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding)
+        AgentGroundingInstrumentation.mark("before LegacyPromptAssembler.assemble", metrics: .init(sectionCount: sections.count, toolCount: output.legacyTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: request.userMessage.count))
+        let assembleStart = ProcessInfo.processInfo.systemUptime
+        let assembled = await Task.detached(priority: .userInitiated) {
+            LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: sections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding)
+        }.value
+        AgentGroundingInstrumentation.mark("after LegacyPromptAssembler.assemble", metrics: .init(sectionCount: sections.count, toolCount: output.legacyTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: assembleStart))
         let tools = output.legacyTools.isEmpty ? request.externalAvailableTools : output.legacyTools
+        AgentGroundingInstrumentation.mark("after LegacyTurnGroundingCoordinator.prepareGroundedRequest", metrics: .init(sectionCount: sections.count, toolCount: tools.count, memoryCount: output.grounding.memoryCount, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: requestStart))
         return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: output.grounding, sections: sections, bridgedTools: tools, degradedReasons: degraded, metricsSummary: output.metricsSummary, truncationOccurred: assembled.truncationOccurred)
     }
+
+    private static func cancelledResult(for request: LegacyGroundingRequest) -> LegacyGroundingResult {
+        .init(systemPrompt: request.baseSystemPrompt, userMessage: request.userMessage, grounding: nil, sections: [], bridgedTools: [], degradedReasons: ["cancelled"], metricsSummary: "cancelled", truncationOccurred: false)
+    }
 }
+
