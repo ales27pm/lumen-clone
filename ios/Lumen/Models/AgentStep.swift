@@ -52,10 +52,43 @@ nonisolated enum AgentStepContentBudget {
 
     static func truncated(_ text: String) -> String {
         guard text.count > maxStepCharacters else { return text }
-        let visible = String(text.prefix(maxStepCharacters))
+        if let existingMarkerRange = existingTruncationMarkerRange(in: text) {
+            let visibleSource = String(text[..<existingMarkerRange.lowerBound])
+            return applyingTruncationMarker(String(text[existingMarkerRange]), to: visibleSource)
+        }
+
+        var marker = truncationMarker(hiddenCount: max(0, text.count - maxStepCharacters))
+        var visible = boundedVisiblePrefix(from: text, marker: marker)
+        for _ in 0..<3 {
+            let refinedMarker = truncationMarker(hiddenCount: max(0, text.count - visible.count))
+            let refinedVisible = boundedVisiblePrefix(from: text, marker: refinedMarker)
+            if refinedMarker == marker, refinedVisible == visible { break }
+            marker = refinedMarker
+            visible = refinedVisible
+        }
+        return "\(visible)\(marker)"
+    }
+
+    private static func applyingTruncationMarker(_ marker: String, to visibleSource: String) -> String {
+        let visible = boundedVisiblePrefix(from: visibleSource, marker: marker)
+        return "\(visible)\(marker)"
+    }
+
+    private static func boundedVisiblePrefix(from text: String, marker: String) -> String {
+        let visibleLimit = max(0, maxStepCharacters - marker.count)
+        return String(text.prefix(visibleLimit))
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let hiddenCount = text.count - visible.count
-        return "\(visible)\n… \(hiddenCount.formatted()) more characters hidden."
+    }
+
+    private static func truncationMarker(hiddenCount: Int) -> String {
+        "\n… \(hiddenCount.formatted()) more characters hidden."
+    }
+
+    private static func existingTruncationMarkerRange(in text: String) -> Range<String.Index>? {
+        text.range(
+            of: #"\n… [0-9,]+ more characters hidden\.$"#,
+            options: .regularExpression
+        )
     }
 }
 
