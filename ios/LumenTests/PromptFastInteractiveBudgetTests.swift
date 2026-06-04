@@ -90,4 +90,42 @@ final class PromptFastInteractiveBudgetTests: XCTestCase {
 
         XCTAssertEqual(selection.latencyClass, .developerTrace)
     }
+
+    func testFinalPromptBuildResultStaysUnderFastCapAfterModelWrappers() async {
+        let request = GenerateRequest(
+            systemPrompt: String(repeating: "Verbose developer/system instructions. ", count: 240),
+            history: (0..<10).flatMap { index in
+                [
+                    (role: MessageRole.user, content: String(repeating: "older user turn \(index) ", count: 35)),
+                    (role: MessageRole.assistant, content: String(repeating: "older assistant turn \(index) ", count: 35))
+                ]
+            },
+            userMessage: "Hi",
+            temperature: 0.7,
+            topP: 0.9,
+            repetitionPenalty: 1.05,
+            maxTokens: 128,
+            modelName: "chat",
+            relevantMemories: (0..<6).map { index in
+                MemoryContextItem(
+                    content: String(repeating: "memory \(index) ", count: 35),
+                    scope: .conversation,
+                    authority: .referenceOnly,
+                    createdAt: nil,
+                    expiresAt: nil,
+                    source: "test",
+                    topic: nil
+                )
+            },
+            attachments: [],
+            developerTraceModeEnabled: false,
+            reasoningCaptureEnabled: false
+        )
+
+        let result = await AppLlamaService.shared.buildMessagesForTesting(req: request, contextSize: 4096, slot: .cortex)
+
+        XCTAssertEqual(result.latencySelection.latencyClass, .fastInteractive)
+        XCTAssertLessThanOrEqual(result.finalPromptChars, PromptBudgetConstants.fastInteractiveTotalChars)
+        XCTAssertEqual(result.estimatedPromptTokens, max(1, result.finalPromptChars / 4))
+    }
 }
