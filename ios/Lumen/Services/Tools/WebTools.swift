@@ -1,5 +1,4 @@
 import Foundation
-import WebKit
 
 nonisolated enum WebTools {
     private static let searchPolicy = ToolRetryPolicy(maxAttempts: 3, baseDelay: 0.35, maxDelay: 1.5, jitterRatio: 0.25)
@@ -35,17 +34,11 @@ nonisolated enum WebTools {
 
         let direct = await executeTextRequest(endpoint: "web.fetch.urlsession", request: req, timeout: 14, retryPolicy: fetchPolicy, context: "Web page fetch")
         switch direct {
+        case .failure(let error):
+            return error.localizedDescription
         case .success(let (html, _)):
-            if let output = pageOutput(htmlOrText: html, url: u) { return output }
-        case .failure:
-            break
-        }
-
-        let result = await executeWebRequest(endpoint: "web.fetch.webview", request: req, timeout: 15, retryPolicy: fetchPolicy, context: "Web page fetch")
-        switch result {
-        case .failure(let error): return error.localizedDescription
-        case .success(let (html, _)):
-            return pageOutput(htmlOrText: html, url: u) ?? "Page was empty or unreadable."
+            return pageOutput(htmlOrText: html, url: u)
+                ?? "Page was empty or unreadable. Lumen avoids hidden WebKit rendering for tool fetches to keep XPC services stable; open the page preview if you need an interactive browser view."
         }
     }
 
@@ -295,44 +288,6 @@ nonisolated enum WebTools {
         }
     }
 
-    private static func executeWebRequest(endpoint: String, request: URLRequest, timeout: TimeInterval, retryPolicy: ToolRetryPolicy, context: String) async -> Result<(String, HTTPURLResponse?), any Error> {
-        if !(await ToolNetworkResilience.circuitBreaker.allowRequest(endpoint: endpoint)) {
-            return .failure(NSError(domain: "WebTools", code: 1, userInfo: [NSLocalizedDescriptionKey: ToolNetworkResilience.fallbackMessage(for: .circuitOpen, context: context)]))
-        }
-        var retries = 0
-        let started = Date()
-        for attempt in 1...retryPolicy.maxAttempts {
-            do {
-                let (content, response) = try await WebViewRequestLoader.load(request: request, timeout: timeout)
-                let errorClass = ToolNetworkResilience.classify(error: nil, response: response)
-                if let status = response?.statusCode, !(200..<300).contains(status) {
-                    if ToolNetworkResilience.shouldRetry(errorClass: errorClass), attempt < retryPolicy.maxAttempts {
-                        retries += 1
-                        try? await Task.sleep(nanoseconds: ToolNetworkResilience.backoffDelay(attempt: attempt, policy: retryPolicy))
-                        continue
-                    }
-                    await ToolNetworkResilience.circuitBreaker.record(endpoint: endpoint, success: false)
-                    ToolNetworkTelemetry.emit(.init(endpoint: endpoint, latencyMs: Date().timeIntervalSince(started) * 1000, success: false, errorClass: errorClass, retryCount: retries, statusCode: status))
-                    return .failure(NSError(domain: "WebTools", code: 2, userInfo: [NSLocalizedDescriptionKey: ToolNetworkResilience.fallbackMessage(for: errorClass, context: context)]))
-                }
-                await ToolNetworkResilience.circuitBreaker.record(endpoint: endpoint, success: true)
-                ToolNetworkTelemetry.emit(.init(endpoint: endpoint, latencyMs: Date().timeIntervalSince(started) * 1000, success: true, errorClass: nil, retryCount: retries, statusCode: response?.statusCode))
-                return .success((content, response))
-            } catch {
-                let errorClass = ToolNetworkResilience.classify(error: error, response: nil)
-                if ToolNetworkResilience.shouldRetry(errorClass: errorClass), attempt < retryPolicy.maxAttempts {
-                    retries += 1
-                    try? await Task.sleep(nanoseconds: ToolNetworkResilience.backoffDelay(attempt: attempt, policy: retryPolicy))
-                    continue
-                }
-                await ToolNetworkResilience.circuitBreaker.record(endpoint: endpoint, success: false)
-                ToolNetworkTelemetry.emit(.init(endpoint: endpoint, latencyMs: Date().timeIntervalSince(started) * 1000, success: false, errorClass: errorClass, retryCount: retries, statusCode: nil))
-                return .failure(NSError(domain: "WebTools", code: 2, userInfo: [NSLocalizedDescriptionKey: ToolNetworkResilience.fallbackMessage(for: errorClass, context: context)]))
-            }
-        }
-        return .failure(NSError(domain: "WebTools", code: 3, userInfo: [NSLocalizedDescriptionKey: ToolNetworkResilience.fallbackMessage(for: .unknown, context: context)]))
-    }
-
     private static func summarizedText(fromHTMLOrText value: String, maxCharacters: Int) -> String {
         let stripped = decodeHTMLEntities(stripHTML(value))
         let normalized = stripped.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -499,64 +454,5 @@ nonisolated private extension String {
         }
         result += self[lastIndex..<endIndex]
         return result
-    }
-}
-
-@MainActor
-private final class WebViewRequestLoader: NSObject, WKNavigationDelegate {
-    private var continuation: CheckedContinuation<(String, HTTPURLResponse?), Error>?
-    private var response: HTTPURLResponse?
-    private lazy var webView: WKWebView = {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .nonPersistent()
-        let view = WKWebView(frame: .zero, configuration: config)
-        view.navigationDelegate = self
-        return view
-    }()
-
-    static func load(request: URLRequest, timeout: TimeInterval) async throws -> (String, HTTPURLResponse?) {
-        let loader = WebViewRequestLoader()
-        return try await loader.load(request: request, timeout: timeout)
-    }
-
-    private func load(request: URLRequest, timeout: TimeInterval) async throws -> (String, HTTPURLResponse?) {
-        try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
-            _ = webView.load(request)
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                guard let self, let continuation = self.continuation else { return }
-                self.continuation = nil
-                self.webView.stopLoading()
-                continuation.resume(throwing: URLError(.timedOut))
-            }
-        }
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard let continuation = continuation else { return }
-        self.continuation = nil
-        webView.evaluateJavaScript("document.documentElement.outerHTML.toString()") { result, error in
-            if let error { continuation.resume(throwing: error); return }
-            let html = result as? String ?? ""
-            continuation.resume(returning: (html, self.response))
-        }
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        guard let continuation = continuation else { return }
-        self.continuation = nil
-        continuation.resume(throwing: error)
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        guard let continuation = continuation else { return }
-        self.continuation = nil
-        continuation.resume(throwing: error)
-    }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        response = navigationResponse.response as? HTTPURLResponse
-        return .allow
     }
 }
