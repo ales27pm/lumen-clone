@@ -164,7 +164,6 @@ private enum LlamaRuntimeScheduling {
     static let maxForegroundDecodeThreads: Int32 = 2
     static let minInteractiveBatchSize: UInt32 = 32
     static let maxInteractiveBatchSize: UInt32 = 128
-    static let promptEvalYieldBatchInterval = 1
     static let decodeYieldTokenInterval = 4
 
     static func decodeThreadCount(detectedCores: Int) -> Int32 {
@@ -399,10 +398,13 @@ private actor AdapterChatRuntime {
     ) async {
         do {
             try Task.checkCancellation()
-            try await initializeCompletion(messages: messages)
+            try initializeCompletion(messages: messages)
             let sampler = LlamaSampler(config: samplingConfig, model: model)
             let limit = min(maxTokens ?? Int.max, max(0, contextSize - Int(currentTokenPosition) - 1))
             var emitted = 0
+            // Keep the native decode critical section non-suspending. Any `await`
+            // here would make this actor reentrant while it owns the shared llama
+            // context, batch, processed tokens, and current token position.
             while emitted < limit, !Task.isCancelled {
                 try Task.checkCancellation()
                 let token = sampler.sample(context: context)
@@ -414,9 +416,6 @@ private actor AdapterChatRuntime {
                 try context.decode(batch: batch)
                 continuation.yield(model.piece(from: token))
                 emitted += 1
-                if emitted.isMultiple(of: LlamaRuntimeScheduling.decodeYieldTokenInterval) {
-                    await Task.yield()
-                }
             }
             continuation.finish()
         } catch is CancellationError {
@@ -426,7 +425,7 @@ private actor AdapterChatRuntime {
         }
     }
 
-    private func initializeCompletion(messages: [LlamaChatMessage]) async throws {
+    private func initializeCompletion(messages: [LlamaChatMessage]) throws {
         let prompt = model.applyChatTemplate(to: messages, addAssistant: nil)
         let tokens = model.tokenize(text: prompt, addBos: model.shouldAddBos(), special: true)
         guard tokens.count < contextSize - 4 else {
@@ -443,7 +442,8 @@ private actor AdapterChatRuntime {
         batch.reset()
 
         let lastIndex = tokens.count - 1
-        var decodedBatches = 0
+        // Keep prompt evaluation non-suspending for the same reason as the decode
+        // loop above: this method mutates the shared llama context state.
         for (index, token) in tokens.enumerated() {
             try Task.checkCancellation()
             let isLast = index == lastIndex
@@ -452,10 +452,6 @@ private actor AdapterChatRuntime {
             if batch.size == Int32(batchSize) || isLast {
                 try context.decode(batch: batch)
                 batch.reset()
-                decodedBatches += 1
-                if decodedBatches.isMultiple(of: LlamaRuntimeScheduling.promptEvalYieldBatchInterval) {
-                    await Task.yield()
-                }
             }
         }
         currentTokenPosition = Int32(processedTokens.count)
