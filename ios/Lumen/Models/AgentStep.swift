@@ -36,6 +36,29 @@ nonisolated struct AgentStep: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
+nonisolated enum AgentStepContentBudget {
+    static let maxPersistedSteps = 80
+    static let maxStepCharacters = 2_000
+
+    static func boundedSanitizedSteps(_ steps: [AgentStep]) -> [AgentStep] {
+        let sanitized = AgentVisibleContentSanitizer.sanitizedSteps(steps)
+        let bounded = sanitized.count > maxPersistedSteps ? Array(sanitized.suffix(maxPersistedSteps)) : sanitized
+        return bounded.map { step in
+            var copy = step
+            copy.content = truncated(step.content)
+            return copy
+        }
+    }
+
+    static func truncated(_ text: String) -> String {
+        guard text.count > maxStepCharacters else { return text }
+        let visible = String(text.prefix(maxStepCharacters))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hiddenCount = text.count - visible.count
+        return "\(visible)\n… \(hiddenCount.formatted()) more characters hidden."
+    }
+}
+
 /// Final-answer placeholder filtering already exists in `ChatView`, but agent
 /// steps are persisted and rendered through a separate path. Keep this sanitizer
 /// close to the step model so every UI surface can reuse the same hard stop.
