@@ -877,7 +877,8 @@ final actor AppLlamaService {
             topP: topP,
             repetitionPenalty: repetitionPenalty,
             maxTokens: maxTokens,
-            seed: seed
+            seed: seed,
+            cancellationToken: cancellationToken
         )
     }
 
@@ -914,7 +915,8 @@ final actor AppLlamaService {
             topP: topP,
             repetitionPenalty: repetitionPenalty,
             maxTokens: maxTokens,
-            seed: seed
+            seed: seed,
+            cancellationToken: cancellationToken
         )
     }
 
@@ -947,8 +949,11 @@ final actor AppLlamaService {
         topP: Float,
         repetitionPenalty: Float,
         maxTokens: Int?,
-        seed: UInt32?
+        seed: UInt32?,
+        cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
+        try cancellationToken?.checkCancellation()
+
         let resolvedSeed = seed ?? makeRandomSeed()
         let sampling = LlamaSamplingConfig(
             temperature: temperature,
@@ -957,35 +962,42 @@ final actor AppLlamaService {
             repetitionPenaltyConfig: LlamaRepetitionPenaltyConfig(repeatPenalty: repetitionPenalty)
         )
         let rawStream = try await runtime.service.streamCompletion(of: messages, samplingConfig: sampling)
-        guard let maxTokens else { return rawStream }
 
         return AsyncThrowingStream { continuation in
-            let cap = max(0, maxTokens)
+            let cap = maxTokens.map { max(0, $0) }
             let task = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
                     continuation.finish()
                     return
                 }
-                if cap == 0 {
-                    await self.stopCompletion(for: stopSlot)
-                    continuation.finish()
-                    return
-                }
 
-                var emitted = 0
                 do {
+                    try cancellationToken?.checkCancellation()
+
+                    if cap == 0 {
+                        await self.stopCompletion(for: stopSlot)
+                        continuation.finish()
+                        return
+                    }
+
+                    var emitted = 0
                     for try await chunk in rawStream {
+                        try cancellationToken?.checkCancellation()
                         try Task.checkCancellation()
+
                         continuation.yield(chunk)
                         emitted += 1
-                        if emitted >= cap {
+
+                        if let cap, emitted >= cap {
                             await self.stopCompletion(for: stopSlot)
                             break
                         }
+
                         if emitted.isMultiple(of: LlamaRuntimeScheduling.decodeYieldTokenInterval) {
                             await Task.yield()
                         }
                     }
+
                     continuation.finish()
                 } catch is CancellationError {
                     await self.stopCompletion(for: stopSlot)
@@ -995,6 +1007,7 @@ final actor AppLlamaService {
                 }
             }
             continuation.onTermination = { @Sendable _ in
+                cancellationToken?.cancel(reason: "legacy-stream-terminated")
                 task.cancel()
             }
         }
@@ -1674,6 +1687,12 @@ final actor AppLlamaService {
             latencySelection: latencySelection
         )
     }
+
+    #if DEBUG
+    func buildMessagesForTesting(req: GenerateRequest, contextSize: Int? = nil, slot: LumenModelSlot? = nil, forceFastBudget: Bool = false) -> PromptBuildResult {
+        buildMessages(req: req, contextSize: contextSize, slot: slot, forceFastBudget: forceFastBudget)
+    }
+    #endif
 
     private func currentChatModelLooksLikeQwen3(slot: LumenModelSlot?) -> Bool {
         if sharedChatRuntime != nil { return true }
