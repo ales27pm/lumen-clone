@@ -293,10 +293,15 @@ public struct AgentGroundingAuditView: View {
         lastLiveTraceSmokeSummary = "Starting live model trace smoke test…"
         errorMessage = nil
 
-        let task = Task { @MainActor in
-            defer { finishLiveTraceSmokeTask(runID: runID) }
+        let task = Task.detached(priority: .utility) {
+            defer {
+                Task { @MainActor in
+                    finishLiveTraceSmokeTask(runID: runID)
+                }
+            }
 
-            let before = AgentBehaviorTraceRecorder.recent(limit: 5_000).count
+            let traceReadLimit = 500
+            let before = await AgentBehaviorTraceRecorder.recentAsync(limit: traceReadLimit).count
             let req = AgentRequest(
                 systemPrompt: "You are Lumen. Answer concisely and do not expose hidden reasoning.",
                 history: [],
@@ -311,7 +316,8 @@ public struct AgentGroundingAuditView: View {
             )
 
             var finalText = ""
-            for await event in RolePipelineAgentService.shared.run(req) {
+            let events = await RolePipelineAgentService.shared.run(req)
+            for await event in events {
                 guard !Task.isCancelled else { return }
 
                 switch event {
@@ -320,7 +326,10 @@ public struct AgentGroundingAuditView: View {
                 case .done(let text, _):
                     if !text.isEmpty { finalText = text }
                 case .error(let message):
-                    errorMessage = message
+                    await MainActor.run {
+                        guard liveTraceSmokeRunID == runID else { return }
+                        errorMessage = message
+                    }
                 case .step, .stepDelta:
                     break
                 }
@@ -328,14 +337,19 @@ public struct AgentGroundingAuditView: View {
 
             guard !Task.isCancelled else { return }
 
-            let after = AgentBehaviorTraceRecorder.recent(limit: 5_000).count
+            let after = await AgentBehaviorTraceRecorder.recentAsync(limit: traceReadLimit).count
             let added = max(0, after - before)
+            let summary: String
             if added > 0 {
-                lastLiveTraceSmokeSummary = "Live trace smoke test recorded \(added) trace(s). Export the runtime audit package again."
+                summary = "Live trace smoke test recorded \(added) trace(s). Export the runtime audit package again."
             } else if !finalText.isEmpty {
-                lastLiveTraceSmokeSummary = "Smoke test generated output but no traces were recorded. Check that the latest build includes AppLlamaService trace recording."
+                summary = "Smoke test generated output but no traces were recorded. Check that the latest build includes AppLlamaService trace recording."
             } else {
-                lastLiveTraceSmokeSummary = "Smoke test completed without output and no traces were recorded. Confirm that a chat model is downloaded and assigned."
+                summary = "Smoke test completed without output and no traces were recorded. Confirm that a chat model is downloaded and assigned."
+            }
+            await MainActor.run {
+                guard liveTraceSmokeRunID == runID else { return }
+                lastLiveTraceSmokeSummary = summary
             }
         }
 
