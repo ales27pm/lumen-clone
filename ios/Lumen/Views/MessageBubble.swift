@@ -31,14 +31,6 @@ struct MessageBubble: View {
         streamingOverride ?? message.assistantRenderContent
     }
 
-    private var assistantVisibleContent: String {
-        MessageRenderBudget.preview(AssistantOutputSanitizer.sanitize(assistantRawContent))
-    }
-
-    private var fullAssistantVisibleContent: String {
-        AssistantOutputSanitizer.sanitize(assistantRawContent)
-    }
-
     private var assistantRichPayloads: [WebRichContentPayload] {
         streamingOverride == nil ? WebRichContentPayload.decodeAll(from: message.content) : []
     }
@@ -76,8 +68,9 @@ struct MessageBubble: View {
 
     private var assistantBubble: some View {
         let steps = streamingOverride == nil ? message.agentSteps : []
-        let visibleContent = assistantVisibleContent
-        let copyContent = fullAssistantVisibleContent
+        let sanitizedContent = AssistantOutputSanitizer.sanitize(assistantRawContent)
+        let visibleContent = MessageRenderBudget.preview(sanitizedContent)
+        let copyContent = sanitizedContent
         let richPayloads = assistantRichPayloads
         return HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {

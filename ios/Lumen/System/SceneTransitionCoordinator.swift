@@ -9,7 +9,7 @@ final class SceneTransitionCoordinator {
     private let logger = Logger(subsystem: "ai.lumen.app", category: "scene")
     private(set) var currentPhase: ScenePhase = .active
     private var lastTransitionReason: String?
-    private var lastCancellationRequest: (reason: String, at: Date)?
+    private var lastIssuedCancellationAt: Date?
     private var deferredCleanupTask: Task<Void, Never>?
 
     private init() {}
@@ -64,7 +64,7 @@ final class SceneTransitionCoordinator {
     private func cancelDeferredCleanup() {
         deferredCleanupTask?.cancel()
         deferredCleanupTask = nil
-        lastCancellationRequest = nil
+        lastIssuedCancellationAt = nil
     }
 
     private func cancelSceneSensitive(reason: String) {
@@ -81,9 +81,12 @@ final class SceneTransitionCoordinator {
 
     private func shouldIssueCancellation(reason: String) -> Bool {
         let now = Date()
-        defer { lastCancellationRequest = (reason, now) }
-        guard let lastCancellationRequest else { return true }
-        return now.timeIntervalSince(lastCancellationRequest.at) >= 1.5
+        if let lastIssuedCancellationAt,
+           now.timeIntervalSince(lastIssuedCancellationAt) < 1.5 {
+            return false
+        }
+        lastIssuedCancellationAt = now
+        return true
     }
 
     private func scheduleDeferredSceneCleanup(reason: String) {
