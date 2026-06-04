@@ -17,6 +17,21 @@ nonisolated struct DiskWriteBudgetSnapshot: Equatable, Sendable {
     let bytesByCategory24Hours: [DiskWriteCategory: Int64]
 }
 
+nonisolated final class DiskWriteGenerationLease: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ended = false
+
+    fileprivate init() {}
+
+    func end() {
+        lock.lock()
+        let shouldEnd = !ended
+        ended = true
+        lock.unlock()
+        if shouldEnd { DiskWriteBudget.shared.endGenerationLease() }
+    }
+}
+
 nonisolated final class DiskWriteBudget: @unchecked Sendable {
     static let shared = DiskWriteBudget()
 
@@ -32,6 +47,7 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
     private let fifteenMinuteLimit: Int64
     private let dayLimit: Int64
     private var generationActive = false
+    private var activeGenerationLeaseCount = 0
 
     init(oneMinuteLimit: Int64 = 1_500_000, fifteenMinuteLimit: Int64 = 18_000_000, dayLimit: Int64 = 450_000_000) {
         self.oneMinuteLimit = oneMinuteLimit
@@ -46,18 +62,34 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
     func setGenerationActive(_ active: Bool) {
         lock.lock()
         generationActive = active
+        if !active { activeGenerationLeaseCount = 0 }
+        lock.unlock()
+    }
+
+    func beginGeneration() -> DiskWriteGenerationLease {
+        lock.lock()
+        activeGenerationLeaseCount += 1
+        generationActive = true
+        lock.unlock()
+        return DiskWriteGenerationLease()
+    }
+
+    fileprivate func endGenerationLease() {
+        lock.lock()
+        activeGenerationLeaseCount = max(0, activeGenerationLeaseCount - 1)
+        if activeGenerationLeaseCount == 0 { generationActive = false }
         lock.unlock()
     }
 
     func isGenerationActive() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return generationActive
+        return generationActive || activeGenerationLeaseCount > 0
     }
 
     func shouldDefer(bytes: Int, category: DiskWriteCategory) -> Bool {
         lock.lock()
-        let active = generationActive
+        let active = generationActive || activeGenerationLeaseCount > 0
         lock.unlock()
         let generationBlockedCategories: Set<DiskWriteCategory> = [.diagnostics, .logs, .memory, .rag, .triggers]
         if active, generationBlockedCategories.contains(category) {
