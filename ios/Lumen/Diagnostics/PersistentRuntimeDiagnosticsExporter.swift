@@ -13,26 +13,49 @@ actor PersistentRuntimeDiagnosticsExporter {
     }
 
     func export() async throws -> URL {
-        let directory = fileManager.temporaryDirectory.appendingPathComponent("PersistentRuntimeDiagnosticsExport", isDirectory: true)
+        let directory = fileManager.temporaryDirectory.appendingPathComponent(
+            "PersistentRuntimeDiagnosticsExport",
+            isDirectory: true
+        )
+
         try? fileManager.removeItem(at: directory)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
         let packageURL = directory.appendingPathComponent("persistent-runtime-diagnostics-export.json")
+
+        let campaign = await store.loadCampaign()
+        let state = await store.loadState()
+        let logData = await store.readLogDataForExport()
+        let ndjson = String(data: logData, encoding: .utf8) ?? ""
+
+        let device = await MainActor.run {
+            (
+                appVersion: Bundle.main.persistentDiagnosticsAppVersionSummary,
+                deviceModel: UIDevice.current.model,
+                systemName: UIDevice.current.systemName,
+                systemVersion: UIDevice.current.systemVersion
+            )
+        }
+
         let payload = PersistentRuntimeDiagnosticsExportPayload(
             exportedAt: Date(),
-            appVersion: Bundle.main.persistentDiagnosticsAppVersionSummary,
+            appVersion: device.appVersion,
             sourceCommit: Self.sourceCommit(),
-            deviceModel: UIDevice.current.model,
-            systemName: UIDevice.current.systemName,
-            systemVersion: UIDevice.current.systemVersion,
-            campaign: await store.loadCampaign(),
-            state: await store.loadState(),
-            ndjson: String(data: await store.readLogDataForExport(), encoding: .utf8) ?? ""
+            deviceModel: device.deviceModel,
+            systemName: device.systemName,
+            systemVersion: device.systemVersion,
+            campaign: campaign,
+            state: state,
+            ndjson: ndjson
         )
+
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
+
         let data = try encoder.encode(payload.redacted())
         try data.write(to: packageURL, options: [.atomic])
+
         return packageURL
     }
 

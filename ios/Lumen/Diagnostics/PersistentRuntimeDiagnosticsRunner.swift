@@ -44,6 +44,18 @@ actor PersistentRuntimeDiagnosticsRunner {
         return fresh
     }
 
+    private func campaignOrLoad(_ requested: PersistentDiagnosticCampaign?) async -> PersistentDiagnosticCampaign {
+        if let requested = requested {
+            return requested
+        }
+
+        if let campaign = campaign {
+            return campaign
+        }
+
+        return await loadCampaign()
+    }
+
     func saveCampaign(_ newCampaign: PersistentDiagnosticCampaign) async {
         var copy = newCampaign
         copy.updatedAt = Date()
@@ -54,7 +66,7 @@ actor PersistentRuntimeDiagnosticsRunner {
 
     func runOnce(_ requested: PersistentDiagnosticCampaign? = nil) async -> PersistentDiagnosticRunRecord? {
         installObserverIfNeeded()
-        var current = requested ?? campaign ?? (await loadCampaign())
+        var current = await campaignOrLoad(requested)
         current.enabled = true
         current.runContinuously = false
         campaign = current
@@ -71,7 +83,7 @@ actor PersistentRuntimeDiagnosticsRunner {
 
     func startContinuous(_ requested: PersistentDiagnosticCampaign? = nil) async {
         installObserverIfNeeded()
-        var current = requested ?? campaign ?? (await loadCampaign())
+        var current = await campaignOrLoad(requested)
         current.enabled = true
         current.runContinuously = true
         campaign = current
@@ -101,7 +113,7 @@ actor PersistentRuntimeDiagnosticsRunner {
     }
 
     func startLifecycleCancellationProbe() async -> PersistentDiagnosticRunRecord {
-        let current = campaign ?? (await loadCampaign())
+        let current = await campaignOrLoad(nil)
         var record = makeRecord(campaign: current, scenario: .lifecycleCancellation)
         record.metrics.cancellationReason = "tester_background_prompt"
         record.events.append(PersistentDiagnosticEvent(code: "tester_action_required", message: "Lock device or background app within 3 seconds"))
