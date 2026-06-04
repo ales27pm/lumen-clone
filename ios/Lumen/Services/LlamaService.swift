@@ -524,6 +524,7 @@ private struct ActiveLlamaGeneration {
     let slot: LumenModelSlot
     let token: LlamaGenerationCancellationToken
     let taskBox: LlamaGenerationTaskBox
+    let diskWriteLease: DiskWriteGenerationLease
     let startedAt: Date
 }
 
@@ -619,18 +620,17 @@ final actor AppLlamaService {
         activeGenerations[requestID] != nil
     }
 
-    private func registerActiveGeneration(requestID: UUID, slot: LumenModelSlot, token: LlamaGenerationCancellationToken, taskBox: LlamaGenerationTaskBox) {
-        activeGenerations[requestID] = ActiveLlamaGeneration(requestID: requestID, slot: slot, token: token, taskBox: taskBox, startedAt: Date())
+    private func registerActiveGeneration(requestID: UUID, slot: LumenModelSlot, token: LlamaGenerationCancellationToken, taskBox: LlamaGenerationTaskBox, diskWriteLease: DiskWriteGenerationLease) {
+        activeGenerations[requestID] = ActiveLlamaGeneration(requestID: requestID, slot: slot, token: token, taskBox: taskBox, diskWriteLease: diskWriteLease, startedAt: Date())
         Task { @MainActor in DeferredMaintenanceQueue.shared.setChatOrVoiceActive(true) }
-        DiskWriteBudget.shared.setGenerationActive(true)
     }
 
     private func unregisterActiveGeneration(requestID: UUID) {
-        activeGenerations.removeValue(forKey: requestID)
+        let generation = activeGenerations.removeValue(forKey: requestID)
+        generation?.diskWriteLease.end()
         lastCancellationReasonByRequest.removeValue(forKey: requestID)
         if activeGenerations.isEmpty {
             Task { @MainActor in DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false) }
-            DiskWriteBudget.shared.setGenerationActive(false)
         }
     }
 
@@ -1099,22 +1099,21 @@ final actor AppLlamaService {
         return AsyncStream<GenerationToken>(bufferingPolicy: .unbounded) { (continuation: AsyncStream<GenerationToken>.Continuation) in
             let cancellationToken = LlamaGenerationCancellationToken()
             let taskBox = LlamaGenerationTaskBox()
+            let diskWriteLease = DiskWriteBudget.shared.beginGeneration()
             let generationTask = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
+                    diskWriteLease.end()
                     continuation.yield(GenerationToken.done)
                     continuation.finish()
                     return
                 }
 
-                await self.registerActiveGeneration(requestID: req.id, slot: slot, token: cancellationToken, taskBox: taskBox)
-                defer { Task { await self.unregisterActiveGeneration(requestID: req.id) } }
+                await self.registerActiveGeneration(requestID: req.id, slot: slot, token: cancellationToken, taskBox: taskBox, diskWriteLease: diskWriteLease)
 
                 do {
                     try cancellationToken.checkCancellation()
                     let requestForGeneration = req.cappedForDeveloperReasoning()
                     guard requestForGeneration.maxTokens > 0 else {
-                        continuation.yield(GenerationToken.done)
-                        continuation.finish()
                         return
                     }
 
@@ -1283,14 +1282,19 @@ final actor AppLlamaService {
                     continuation.yield(GenerationToken.text(errorText))
                 }
 
+                await self.unregisterActiveGeneration(requestID: req.id)
                 continuation.yield(GenerationToken.done)
                 continuation.finish()
             }
 
             taskBox.set(generationTask)
             continuation.onTermination = { @Sendable _ in
+                diskWriteLease.end()
                 cancellationToken.cancel(reason: "stream-terminated")
                 generationTask.cancel()
+                Task.detached(priority: .utility) {
+                    await AppLlamaService.shared.unregisterActiveGeneration(requestID: req.id)
+                }
             }
         }
     }
