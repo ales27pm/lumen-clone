@@ -34,7 +34,7 @@ struct AssistantRuntimeRouter {
             }
             return .init(runtime: .deterministicFallback, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : "heavy runtime disallowed")
         case .chat, .agentPlan, .toolDecision, .summarization, .memoryExtraction, .speechCommandParsing:
-            if context.prefersFoundationModels, foundation.isAvailable, decision.allowHeavyRuntime {
+            if context.prefersFoundationModels, foundation.isAvailable, decision.allowHeavyRuntime, context.isForeground, !DiskWriteBudget.shared.isGenerationActive() {
                 return .init(runtime: .foundationModels, reason: "preferred on-device foundation runtime")
             }
             if decision.allowHeavyRuntime, llama.isAvailable {

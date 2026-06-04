@@ -124,6 +124,34 @@ nonisolated enum GenerationToken: Sendable {
     case done
 }
 
+final class LlamaGenerationCancellationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelledReason: String?
+
+    func cancel(reason: String) {
+        lock.lock()
+        if cancelledReason == nil { cancelledReason = reason }
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelledReason != nil
+    }
+
+    var reason: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelledReason
+    }
+
+    func checkCancellation() throws {
+        if isCancelled { throw CancellationError() }
+        try Task.checkCancellation()
+    }
+}
+
 nonisolated enum LlamaError: Error, Sendable {
     case noModelLoaded
     case slotModelNotLoaded(String)
@@ -371,7 +399,8 @@ private actor AdapterChatRuntime {
     func streamCompletion(
         of messages: [LlamaChatMessage],
         samplingConfig: LlamaSamplingConfig,
-        maxTokens: Int?
+        maxTokens: Int?,
+        cancellationToken: LlamaGenerationCancellationToken? = nil
     ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
@@ -383,6 +412,7 @@ private actor AdapterChatRuntime {
                     messages: messages,
                     samplingConfig: samplingConfig,
                     maxTokens: maxTokens,
+                    cancellationToken: cancellationToken,
                     continuation: continuation
                 )
             }
@@ -394,11 +424,13 @@ private actor AdapterChatRuntime {
         messages: [LlamaChatMessage],
         samplingConfig: LlamaSamplingConfig,
         maxTokens: Int?,
+        cancellationToken: LlamaGenerationCancellationToken?,
         continuation: AsyncThrowingStream<String, Error>.Continuation
     ) async {
         do {
+            try cancellationToken?.checkCancellation()
             try Task.checkCancellation()
-            try initializeCompletion(messages: messages)
+            try initializeCompletion(messages: messages, cancellationToken: cancellationToken)
             let sampler = LlamaSampler(config: samplingConfig, model: model)
             let limit = min(maxTokens ?? Int.max, max(0, contextSize - Int(currentTokenPosition) - 1))
             var emitted = 0
@@ -406,6 +438,7 @@ private actor AdapterChatRuntime {
             // here would make this actor reentrant while it owns the shared llama
             // context, batch, processed tokens, and current token position.
             while emitted < limit, !Task.isCancelled {
+                try cancellationToken?.checkCancellation()
                 try Task.checkCancellation()
                 let token = sampler.sample(context: context)
                 if model.isEogToken(token) { break }
@@ -425,8 +458,10 @@ private actor AdapterChatRuntime {
         }
     }
 
-    private func initializeCompletion(messages: [LlamaChatMessage]) throws {
+    private func initializeCompletion(messages: [LlamaChatMessage], cancellationToken: LlamaGenerationCancellationToken? = nil) throws {
+        try cancellationToken?.checkCancellation()
         let prompt = model.applyChatTemplate(to: messages, addAssistant: nil)
+        try cancellationToken?.checkCancellation()
         let tokens = model.tokenize(text: prompt, addBos: model.shouldAddBos(), special: true)
         guard tokens.count < contextSize - 4 else {
             throw LlamaError.failedToInitializeContext("Prompt exceeds shared chat context window")
@@ -445,6 +480,7 @@ private actor AdapterChatRuntime {
         // Keep prompt evaluation non-suspending for the same reason as the decode
         // loop above: this method mutates the shared llama context state.
         for (index, token) in tokens.enumerated() {
+            try cancellationToken?.checkCancellation()
             try Task.checkCancellation()
             let isLast = index == lastIndex
             batch.addToken(token, at: Int32(index), logits: isLast)
@@ -463,6 +499,42 @@ private struct LoadedRoleAdapter {
     let path: String
     let scale: Float
     let loadedAt: Date
+}
+
+private final class LlamaGenerationTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+
+    func set(_ task: Task<Void, Never>) {
+        lock.lock()
+        self.task = task
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
+    }
+}
+
+private struct ActiveLlamaGeneration {
+    let requestID: UUID
+    let slot: LumenModelSlot
+    let token: LlamaGenerationCancellationToken
+    let taskBox: LlamaGenerationTaskBox
+    let diskWriteLease: DiskWriteGenerationLease
+    let startedAt: Date
+}
+
+nonisolated struct PromptBuildResult: Sendable {
+    let messages: [LlamaChatMessage]
+    let assembly: PromptAssembly
+    let initialPromptChars: Int
+    let finalPromptChars: Int
+    let estimatedPromptTokens: Int
+    let latencySelection: PromptLatencySelection
 }
 
 nonisolated struct LlamaAdapterTraceMetadata: Codable, Sendable, Hashable {
@@ -498,6 +570,8 @@ final actor AppLlamaService {
     private var activeAdapterSlot: LumenModelSlot?
     private var lastAdapterFailureReason: String?
     private var completedTracePayloads: [UUID: CompletedGenerationTracePayload] = [:]
+    private var activeGenerations: [UUID: ActiveLlamaGeneration] = [:]
+    private var lastCancellationReasonByRequest: [UUID: String] = [:]
 
     private var embeddingModelPath: String?
     private var embeddingModel: LlamaModel?
@@ -522,6 +596,42 @@ final actor AppLlamaService {
 
     func takeCompletedTracePayload(requestID: UUID) -> CompletedGenerationTracePayload? {
         completedTracePayloads.removeValue(forKey: requestID)
+    }
+
+    func cancelActiveGeneration(reason: String) async {
+        let generations = activeGenerations
+        guard !generations.isEmpty else {
+            logger.info("event=llama.chat.cancel_active_generation_empty reason=\(reason, privacy: .public)")
+            return
+        }
+        for (requestID, generation) in generations {
+            generation.token.cancel(reason: reason)
+            generation.taskBox.cancel()
+            lastCancellationReasonByRequest[requestID] = reason
+        }
+        let legacySlots = Set(generations.values.map(\.slot))
+        logger.info("event=llama.chat.cancel_active_generation count=\(generations.count, privacy: .public) reason=\(reason, privacy: .public)")
+        for slot in legacySlots {
+            await stopCompletion(for: slot)
+        }
+    }
+
+    func hasActiveGenerationForTesting(requestID: UUID) -> Bool {
+        activeGenerations[requestID] != nil
+    }
+
+    private func registerActiveGeneration(requestID: UUID, slot: LumenModelSlot, token: LlamaGenerationCancellationToken, taskBox: LlamaGenerationTaskBox, diskWriteLease: DiskWriteGenerationLease) {
+        activeGenerations[requestID] = ActiveLlamaGeneration(requestID: requestID, slot: slot, token: token, taskBox: taskBox, diskWriteLease: diskWriteLease, startedAt: Date())
+        Task { @MainActor in DeferredMaintenanceQueue.shared.setChatOrVoiceActive(true) }
+    }
+
+    private func unregisterActiveGeneration(requestID: UUID) {
+        let generation = activeGenerations.removeValue(forKey: requestID)
+        generation?.diskWriteLease.end()
+        lastCancellationReasonByRequest.removeValue(forKey: requestID)
+        if activeGenerations.isEmpty {
+            Task { @MainActor in DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false) }
+        }
     }
 
     func isChatLoaded(for slot: LumenModelSlot) -> Bool {
@@ -741,7 +851,8 @@ final actor AppLlamaService {
         topP: Float = 0.95,
         repetitionPenalty: Float = 1.1,
         maxTokens: Int? = nil,
-        seed: UInt32? = nil
+        seed: UInt32? = nil,
+        cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         if let runtime = sharedChatRuntime {
             return try await streamResponse(
@@ -751,7 +862,8 @@ final actor AppLlamaService {
                 topP: topP,
                 repetitionPenalty: repetitionPenalty,
                 maxTokens: maxTokens,
-                seed: seed
+                seed: seed,
+                cancellationToken: cancellationToken
             )
         }
         guard let runtime = chatRuntimes[primaryChatSlot] ?? chatRuntimes.values.first else {
@@ -765,7 +877,8 @@ final actor AppLlamaService {
             topP: topP,
             repetitionPenalty: repetitionPenalty,
             maxTokens: maxTokens,
-            seed: seed
+            seed: seed,
+            cancellationToken: cancellationToken
         )
     }
 
@@ -776,7 +889,8 @@ final actor AppLlamaService {
         topP: Float = 0.95,
         repetitionPenalty: Float = 1.1,
         maxTokens: Int? = nil,
-        seed: UInt32? = nil
+        seed: UInt32? = nil,
+        cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         if let runtime = sharedChatRuntime {
             return try await streamResponse(
@@ -786,7 +900,8 @@ final actor AppLlamaService {
                 topP: topP,
                 repetitionPenalty: repetitionPenalty,
                 maxTokens: maxTokens,
-                seed: seed
+                seed: seed,
+                cancellationToken: cancellationToken
             )
         }
         guard let runtime = chatRuntimes[slot] else {
@@ -800,7 +915,8 @@ final actor AppLlamaService {
             topP: topP,
             repetitionPenalty: repetitionPenalty,
             maxTokens: maxTokens,
-            seed: seed
+            seed: seed,
+            cancellationToken: cancellationToken
         )
     }
 
@@ -812,7 +928,8 @@ final actor AppLlamaService {
         topP: Float,
         repetitionPenalty: Float,
         maxTokens: Int?,
-        seed: UInt32?
+        seed: UInt32?,
+        cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         let resolvedSeed = seed ?? makeRandomSeed()
         let sampling = LlamaSamplingConfig(
@@ -821,7 +938,7 @@ final actor AppLlamaService {
             topP: topP,
             repetitionPenaltyConfig: LlamaRepetitionPenaltyConfig(repeatPenalty: repetitionPenalty)
         )
-        return await runtime.streamCompletion(of: messages, samplingConfig: sampling, maxTokens: maxTokens)
+        return await runtime.streamCompletion(of: messages, samplingConfig: sampling, maxTokens: maxTokens, cancellationToken: cancellationToken)
     }
 
     private func streamResponse(
@@ -832,8 +949,11 @@ final actor AppLlamaService {
         topP: Float,
         repetitionPenalty: Float,
         maxTokens: Int?,
-        seed: UInt32?
+        seed: UInt32?,
+        cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
+        try cancellationToken?.checkCancellation()
+
         let resolvedSeed = seed ?? makeRandomSeed()
         let sampling = LlamaSamplingConfig(
             temperature: temperature,
@@ -842,35 +962,42 @@ final actor AppLlamaService {
             repetitionPenaltyConfig: LlamaRepetitionPenaltyConfig(repeatPenalty: repetitionPenalty)
         )
         let rawStream = try await runtime.service.streamCompletion(of: messages, samplingConfig: sampling)
-        guard let maxTokens else { return rawStream }
 
         return AsyncThrowingStream { continuation in
-            let cap = max(0, maxTokens)
+            let cap = maxTokens.map { max(0, $0) }
             let task = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
                     continuation.finish()
                     return
                 }
-                if cap == 0 {
-                    await self.stopCompletion(for: stopSlot)
-                    continuation.finish()
-                    return
-                }
 
-                var emitted = 0
                 do {
+                    try cancellationToken?.checkCancellation()
+
+                    if cap == 0 {
+                        await self.stopCompletion(for: stopSlot)
+                        continuation.finish()
+                        return
+                    }
+
+                    var emitted = 0
                     for try await chunk in rawStream {
+                        try cancellationToken?.checkCancellation()
                         try Task.checkCancellation()
+
                         continuation.yield(chunk)
                         emitted += 1
-                        if emitted >= cap {
+
+                        if let cap, emitted >= cap {
                             await self.stopCompletion(for: stopSlot)
                             break
                         }
+
                         if emitted.isMultiple(of: LlamaRuntimeScheduling.decodeYieldTokenInterval) {
                             await Task.yield()
                         }
                     }
+
                     continuation.finish()
                 } catch is CancellationError {
                     await self.stopCompletion(for: stopSlot)
@@ -880,6 +1007,7 @@ final actor AppLlamaService {
                 }
             }
             continuation.onTermination = { @Sendable _ in
+                cancellationToken?.cancel(reason: "legacy-stream-terminated")
                 task.cancel()
             }
         }
@@ -969,30 +1097,54 @@ final actor AppLlamaService {
 
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
         return AsyncStream<GenerationToken>(bufferingPolicy: .unbounded) { (continuation: AsyncStream<GenerationToken>.Continuation) in
+            let cancellationToken = LlamaGenerationCancellationToken()
+            let taskBox = LlamaGenerationTaskBox()
+            let diskWriteLease = DiskWriteBudget.shared.beginGeneration()
             let generationTask = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
+                    diskWriteLease.end()
                     continuation.yield(GenerationToken.done)
                     continuation.finish()
                     return
                 }
 
+                await self.registerActiveGeneration(requestID: req.id, slot: slot, token: cancellationToken, taskBox: taskBox, diskWriteLease: diskWriteLease)
+
                 do {
+                    try cancellationToken.checkCancellation()
                     let requestForGeneration = req.cappedForDeveloperReasoning()
                     guard requestForGeneration.maxTokens > 0 else {
-                        continuation.yield(GenerationToken.done)
-                        continuation.finish()
                         return
                     }
 
                     let startedAt = Date()
+                    let allowsWork = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue) }
+                    guard allowsWork else {
+                        cancellationToken.cancel(reason: "resource-budget-denied-before-prompt-eval")
+                        throw CancellationError()
+                    }
                     let readyMetrics = try await SlotModelRuntimeCoordinator.shared.ensureReadyWithMetrics(slot: slot)
+                    try cancellationToken.checkCancellation()
                     let contextSize = await self.contextSizeForGeneration(slot: slot)
                     let groundedRequest = requestForGeneration.groundingSystemPrompt(for: slot)
                     let messageBuildStarted = Date()
-                    let messages = await self.buildMessages(req: groundedRequest, contextSize: contextSize, slot: slot)
+                    var promptBuild = await self.buildMessages(req: groundedRequest, contextSize: contextSize, slot: slot)
+                    if promptBuild.latencySelection.latencyClass == .fastInteractive, promptBuild.finalPromptChars > PromptBudgetConstants.fastInteractiveTotalChars {
+                        let before = promptBuild.finalPromptChars
+                        promptBuild = await self.buildMessages(req: groundedRequest, contextSize: contextSize, slot: slot, forceFastBudget: true)
+                        logger.info("event=llama.chat.prompt_fast_reslim before_chars=\(before, privacy: .public) after_chars=\(promptBuild.finalPromptChars, privacy: .public)")
+                    }
                     let messageBuildMs = Int(Date().timeIntervalSince(messageBuildStarted) * 1000)
-                    let promptChars = messages.reduce(0) { $0 + $1.content.count }
-                    let estimatedPromptTokenCount = max(1, promptChars / 4)
+                    let messages = promptBuild.messages
+                    let promptChars = promptBuild.finalPromptChars
+                    let estimatedPromptTokenCount = promptBuild.estimatedPromptTokens
+                    logger.info("event=llama.chat.prompt_budget slot=\(slot.rawValue, privacy: .public) latency_class=\(promptBuild.latencySelection.latencyClass.rawValue, privacy: .public) reason=\(promptBuild.latencySelection.reason, privacy: .public) initial_chars=\(promptBuild.initialPromptChars, privacy: .public) final_chars=\(promptBuild.finalPromptChars, privacy: .public) budget_chars=\(promptBuild.assembly.budgetChars, privacy: .public) estimated_tokens=\(estimatedPromptTokenCount, privacy: .public)")
+                    try cancellationToken.checkCancellation()
+                    let stillAllowsWork = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue) }
+                    guard stillAllowsWork else {
+                        cancellationToken.cancel(reason: "resource-budget-denied-after-prompt-build")
+                        throw CancellationError()
+                    }
                     let stream = try await self.streamResponse(
                         slot: slot,
                         messages: messages,
@@ -1000,7 +1152,8 @@ final actor AppLlamaService {
                         topP: Float(groundedRequest.topP),
                         repetitionPenalty: Float(groundedRequest.repetitionPenalty),
                         maxTokens: groundedRequest.maxTokens,
-                        seed: groundedRequest.seed
+                        seed: groundedRequest.seed,
+                        cancellationToken: cancellationToken
                     )
                     var parser = ReasoningAwareStreamParser(
                         config: ReasoningAwareStreamParserConfig(
@@ -1108,7 +1261,8 @@ final actor AppLlamaService {
                         accelerationDiagnostics: accelerationDiagnostics
                     )
                 } catch is CancellationError {
-                    logger.info("event=llama.chat.generation_cancelled slot=\(slot.rawValue, privacy: .public)")
+                    let cancelReason = cancellationToken.reason ?? AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"
+                    logger.info("event=llama.chat.generation_cancelled slot=\(slot.rawValue, privacy: .public) reason=\(cancelReason, privacy: .public)")
                 } catch {
                     let errorText = "Generation error: \(error.localizedDescription)"
                     await self.storeCompletedTracePayloadIfNeeded(
@@ -1128,12 +1282,19 @@ final actor AppLlamaService {
                     continuation.yield(GenerationToken.text(errorText))
                 }
 
+                await self.unregisterActiveGeneration(requestID: req.id)
                 continuation.yield(GenerationToken.done)
                 continuation.finish()
             }
 
+            taskBox.set(generationTask)
             continuation.onTermination = { @Sendable _ in
+                diskWriteLease.end()
+                cancellationToken.cancel(reason: "stream-terminated")
                 generationTask.cancel()
+                Task.detached(priority: .utility) {
+                    await AppLlamaService.shared.unregisterActiveGeneration(requestID: req.id)
+                }
             }
         }
     }
@@ -1455,15 +1616,30 @@ final actor AppLlamaService {
         }
     }
 
-    private func buildMessages(req: GenerateRequest, contextSize: Int? = nil, slot: LumenModelSlot? = nil) -> [LlamaChatMessage] {
-        let budget = PromptBudget.make(
-            contextSize: contextSize ?? 2048,
-            maxTokens: req.maxTokens,
-            systemPromptChars: req.systemPrompt.count,
-            userMessageChars: req.userMessage.count,
-            hasAttachments: !req.attachments.isEmpty,
-            hasMemories: !req.relevantMemories.isEmpty
-        )
+    private func buildMessages(req: GenerateRequest, contextSize: Int? = nil, slot: LumenModelSlot? = nil, forceFastBudget: Bool = false) -> PromptBuildResult {
+        let latencySelection = forceFastBudget
+            ? PromptLatencySelection(latencyClass: .fastInteractive, reason: "forced-fast-slimming")
+            : PromptLatencyClassifier.classify(
+                userMessage: req.userMessage,
+                attachments: req.attachments,
+                developerTraceModeEnabled: req.developerTraceModeEnabled,
+                reasoningCaptureEnabled: req.reasoningCaptureEnabled,
+                modelName: req.modelName
+            )
+        let budget: PromptBudget
+        switch latencySelection.latencyClass {
+        case .fastInteractive:
+            budget = PromptBudget.fastInteractive()
+        case .normalInteractive, .documentGrounded, .developerTrace:
+            budget = PromptBudget.make(
+                contextSize: contextSize ?? 2048,
+                maxTokens: req.maxTokens,
+                systemPromptChars: req.systemPrompt.count,
+                userMessageChars: req.userMessage.count,
+                hasAttachments: !req.attachments.isEmpty,
+                hasMemories: !req.relevantMemories.isEmpty
+            )
+        }
 
         let assembly = PromptAssembler.assemble(
             systemPrompt: req.systemPrompt,
@@ -1472,7 +1648,8 @@ final actor AppLlamaService {
             memories: req.relevantMemories,
             attachments: req.attachments,
             budget: budget,
-            attachmentNormalization: req.modelName == "agent-json" ? .agentRouting : .preserveRaw
+            attachmentNormalization: req.modelName == "agent-json" ? .agentRouting : .preserveRaw,
+            latencyClass: latencySelection.latencyClass
         )
         let useQwenDirective = currentChatModelLooksLikeQwen3(slot: slot)
         let systemPrompt = ModelThinkingControl.systemPrompt(
@@ -1504,8 +1681,22 @@ final actor AppLlamaService {
         }
 
         messages.append(LlamaChatMessage(role: .user, content: userMessage))
-        return messages
+        let finalPromptChars = messages.reduce(0) { $0 + $1.content.count }
+        return PromptBuildResult(
+            messages: messages,
+            assembly: assembly,
+            initialPromptChars: req.systemPrompt.count + req.userMessage.count + req.history.reduce(0) { $0 + $1.content.count } + req.relevantMemories.reduce(0) { $0 + $1.content.count },
+            finalPromptChars: finalPromptChars,
+            estimatedPromptTokens: max(1, finalPromptChars / 4),
+            latencySelection: latencySelection
+        )
     }
+
+    #if DEBUG
+    func buildMessagesForTesting(req: GenerateRequest, contextSize: Int? = nil, slot: LumenModelSlot? = nil, forceFastBudget: Bool = false) -> PromptBuildResult {
+        buildMessages(req: req, contextSize: contextSize, slot: slot, forceFastBudget: forceFastBudget)
+    }
+    #endif
 
     private func currentChatModelLooksLikeQwen3(slot: LumenModelSlot?) -> Bool {
         if sharedChatRuntime != nil { return true }

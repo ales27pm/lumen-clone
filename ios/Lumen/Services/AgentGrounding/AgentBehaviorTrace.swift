@@ -293,6 +293,7 @@ nonisolated enum AgentBehaviorTraceRecorder {
             let data = try encoder.encode(trace)
             var line = data
             line.append(0x0A)
+            guard DiskWriteBudget.shared.canWrite(bytes: line.count, category: .diagnostics) else { return }
 
             if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
                 let handle = try FileHandle(forWritingTo: url)
@@ -302,6 +303,7 @@ nonisolated enum AgentBehaviorTraceRecorder {
             } else {
                 try line.write(to: url, options: [.atomic])
             }
+            DiskWriteBudget.shared.recordWrite(bytes: line.count, category: .diagnostics)
         } catch {
             // Diagnostics must never break assistant execution.
         }

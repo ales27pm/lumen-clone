@@ -109,6 +109,9 @@ enum RuntimeLifecycleCanceller {
         ModelLoader.cancelActiveLoads()
         VoiceService.shared.stopListening()
         VoiceService.shared.stopSpeaking()
+        Task.detached(priority: .userInitiated) {
+            await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
+        }
         DeferredMaintenanceQueue.shared.enqueue(
             DeferredMaintenanceJob(key: "runtime-cleanup-optional-chat-slots", category: .persistence, staleAfter: 10 * 60, maxRuntime: 2) {
                 await MainActor.run { FleetRuntimeCleanup.unloadOptionalChatSlots() }
