@@ -40,9 +40,9 @@ public struct AgentGroundingAuditView: View {
                     runLiveTraceSmokeTest()
                 } label: {
                     if isRunningLiveTraceSmokeTest {
-                        Label("Running Live Trace Smoke Test…", systemImage: "timer")
+                        Label("Running Diagnostics Smoke Test…", systemImage: "timer")
                     } else {
-                        Label("Run Live Trace Smoke Test", systemImage: "waveform.path.ecg")
+                        Label("Run Compatibility Diagnostics Smoke Test", systemImage: "waveform.path.ecg")
                     }
                 }
                 .disabled(isRunningLiveTraceSmokeTest)
@@ -58,7 +58,7 @@ public struct AgentGroundingAuditView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes an Agent Grounding runtime audit package for the offline loop: audit failures, behavior violations, and bounded diagnostic traces. Static scenario checks stay visible here but are not exported as live E2E model results. The live trace smoke test runs one real model pipeline turn and records it through AgentBehaviorTraceRecorder before export.")
+                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes an Agent Grounding runtime audit package for the offline loop: audit failures, behavior violations, and bounded diagnostic traces. Static scenario checks stay visible here but are not exported as live E2E model results. The compatibility diagnostics smoke test exercises the deterministic role-pipeline grounding path only; it does not run AppLlamaService and does not record AgentBehaviorTrace entries.")
             }
 
             Section {
@@ -114,7 +114,7 @@ public struct AgentGroundingAuditView: View {
                         LabeledContent("Runtime failures", value: "\(lastExportPackage.runtimeManifestAudit?.failures.count ?? 0)")
                         LabeledContent("Behavior violations", value: "\(lastExportPackage.behaviorAudit?.violations.count ?? 0)")
                         if lastExportPackage.recentTraces.isEmpty {
-                            Label("No recent model/tool traces were exported. Run real model interactions before exporting or run the Live Trace Smoke Test above.", systemImage: "exclamationmark.triangle.fill")
+                            Label("No recent model/tool traces were exported. Run real model chat interactions before exporting; the compatibility diagnostics smoke test above does not create model traces.", systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
@@ -290,7 +290,7 @@ public struct AgentGroundingAuditView: View {
         let runID = UUID()
         isRunningLiveTraceSmokeTest = true
         liveTraceSmokeRunID = runID
-        lastLiveTraceSmokeSummary = "Starting live model trace smoke test…"
+        lastLiveTraceSmokeSummary = "Starting compatibility diagnostics smoke test…"
         errorMessage = nil
 
         let task = Task.detached(priority: .utility) {
@@ -309,7 +309,7 @@ public struct AgentGroundingAuditView: View {
             let req = AgentRequest(
                 systemPrompt: "You are Lumen. Answer concisely and do not expose hidden reasoning.",
                 history: [],
-                userMessage: "Live trace smoke test: explain in one sentence why a sharp chisel is safer than a dull one.",
+                userMessage: "Compatibility diagnostics smoke test: explain in one sentence why a sharp chisel is safer than a dull one.",
                 temperature: 0.1,
                 topP: 0.7,
                 repetitionPenalty: 1.05,
@@ -349,13 +349,21 @@ public struct AgentGroundingAuditView: View {
             }.count
             let tailChanged = recentTraces.last?.id != beforeLastTraceID
             let summary: String
-            if recordedTraceCount > 0 || tailChanged {
+            if (recordedTraceCount > 0 || tailChanged) && RolePipelineAgentService.smokeTestTraceExpectation.recordsAgentBehaviorTrace {
                 let countDescription = recordedTraceCount > 0 ? "\(recordedTraceCount)" : "new"
-                summary = "Live trace smoke test recorded \(countDescription) trace(s). Export the runtime audit package again."
+                summary = "Real-model trace smoke test recorded \(countDescription) trace(s). Export the runtime audit package again."
             } else if !finalText.isEmpty {
-                summary = "Smoke test generated output but no traces were recorded. Check that the latest build includes AppLlamaService trace recording."
+                if let notice = RolePipelineAgentService.smokeTestTraceExpectation.compatibilityModeNotice {
+                    summary = "Diagnostics smoke test completed. \(notice)"
+                } else {
+                    summary = "Diagnostics smoke test generated deterministic output; no AgentBehaviorTrace is expected for the compatibility-mode role pipeline."
+                }
             } else {
-                summary = "Smoke test completed without output and no traces were recorded. Confirm that a chat model is downloaded and assigned."
+                if let notice = RolePipelineAgentService.smokeTestTraceExpectation.compatibilityModeNotice {
+                    summary = "Diagnostics smoke test completed without model output. \(notice)"
+                } else {
+                    summary = "Diagnostics smoke test completed without model output; no AgentBehaviorTrace is expected for the compatibility-mode role pipeline."
+                }
             }
             await MainActor.run {
                 guard liveTraceSmokeRunID == runID else { return }

@@ -1,9 +1,26 @@
 import Foundation
 import OSLog
 
+nonisolated enum RolePipelineSmokeTestTraceMode: String, Sendable, Equatable {
+    case compatibilityDiagnosticsOnly
+    case realModelTrace
+}
+
+nonisolated struct RolePipelineSmokeTestTraceExpectation: Sendable, Equatable {
+    let mode: RolePipelineSmokeTestTraceMode
+    let recordsAgentBehaviorTrace: Bool
+    let compatibilityModeNotice: String?
+}
+
 @MainActor
 final class RolePipelineAgentService {
     static let shared = RolePipelineAgentService()
+
+    nonisolated static let smokeTestTraceExpectation = RolePipelineSmokeTestTraceExpectation(
+        mode: .compatibilityDiagnosticsOnly,
+        recordsAgentBehaviorTrace: false,
+        compatibilityModeNotice: "Compatibility-mode only: this smoke test exercises deterministic grounding diagnostics and does not run AppLlamaService or record AgentBehaviorTrace entries."
+    )
     private let logger = Logger(subsystem: "ai.lumen.app", category: "role-pipeline")
 
     private init() {}
