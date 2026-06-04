@@ -17,16 +17,20 @@ final class SlotAgentService {
         return AsyncStream { continuation in
             let task = Task.detached(priority: .userInitiated) {
                 do {
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentStart, values: ["promptChars": String(req.userMessage.count), "toolCount": String(req.availableTools.count), "memoryCount": String(req.relevantMemories.count)]))
                     try cancellationToken.checkCancellation()
                     let budgetDecision = await MainActor.run { Self.agentBudgetDecision() }
                     switch budgetDecision {
                     case .cancel:
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": "resource-scene-inactive"]))
                         continuation.finish()
                         return
                     case .fallback:
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-fallback"]))
                         let text = Self.deterministicCompatibilityFallback()
                         continuation.yield(.finalDelta(text))
                         continuation.yield(.done(finalText: text, steps: []))
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "fallback"]))
                         continuation.finish()
                         return
                     case .allow:
@@ -34,25 +38,30 @@ final class SlotAgentService {
                     }
 
                     if Self.shouldUseFastAgentPath(req) {
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "fast-agent"]))
                         let grounded = Self.fastGroundingResult(for: req, options: options)
                         try cancellationToken.checkCancellation()
                         let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
                         let text = Self.deterministicAnswer(for: effectiveRequest)
                         continuation.yield(.finalDelta(text))
                         continuation.yield(.done(finalText: text, steps: []))
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "fast-agent", "groundingChars": String(grounded.userMessage.count + grounded.systemPrompt.count), "sectionCount": String(grounded.sections.count), "toolCount": String(grounded.bridgedTools.count)]))
                         continuation.finish()
                         return
                     }
 
                     try cancellationToken.checkCancellation()
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "normal-agent"]))
                     let grounded = await self.prepareGroundedRequest(req, options: options, cancellationToken: cancellationToken)
                     try cancellationToken.checkCancellation()
                     let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
                     let text = Self.deterministicAnswer(for: effectiveRequest)
                     continuation.yield(.finalDelta(text))
                     continuation.yield(.done(finalText: text, steps: []))
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "normal-agent", "groundingChars": String(grounded.userMessage.count + grounded.systemPrompt.count), "sectionCount": String(grounded.sections.count), "toolCount": String(grounded.bridgedTools.count)]))
                     continuation.finish()
                 } catch is CancellationError {
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"]))
                     continuation.finish()
                 } catch {
                     continuation.finish()
@@ -180,7 +189,7 @@ final class SlotAgentService {
         return detector.firstMatch(in: text, options: [], range: range)?.url?.absoluteString
     }
 
-    enum AgentBudgetDecision: Sendable { case allow, cancel, fallback }
+    enum AgentBudgetDecision: Sendable, Equatable { case allow, cancel, fallback }
 
     @MainActor
     static func agentBudgetDecision() -> AgentBudgetDecision {

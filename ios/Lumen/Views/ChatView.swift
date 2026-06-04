@@ -302,6 +302,7 @@ struct ChatView: View {
                 let sanitized = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
                 if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
                     streamingText = SchemaPlaceholderDetector.isPlaceholderPrefix(sanitized) ? "" : sanitized
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .uiUpdate, values: ["surface": "chat", "targetHz": "10"]))
                     lastUIUpdate = Date()
                 }
             case .done(let final, let allSteps):
@@ -394,6 +395,7 @@ struct ChatView: View {
                 accumulated += s
                 if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
                     streamingText = AssistantOutputSanitizer.sanitize(accumulated, lastUserMessage: text)
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .uiUpdate, values: ["surface": "chat", "targetHz": "10"]))
                     lastUIUpdate = Date()
                 }
             case .done:
