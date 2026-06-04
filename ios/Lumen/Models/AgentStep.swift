@@ -36,6 +36,62 @@ nonisolated struct AgentStep: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
+nonisolated enum AgentStepContentBudget {
+    static let maxPersistedSteps = 80
+    static let maxStepCharacters = 2_000
+
+    static func boundedSanitizedSteps(_ steps: [AgentStep]) -> [AgentStep] {
+        let sanitized = AgentVisibleContentSanitizer.sanitizedSteps(steps)
+        let bounded = sanitized.count > maxPersistedSteps ? Array(sanitized.suffix(maxPersistedSteps)) : sanitized
+        return bounded.map { step in
+            var copy = step
+            copy.content = truncated(step.content)
+            return copy
+        }
+    }
+
+    static func truncated(_ text: String) -> String {
+        guard text.count > maxStepCharacters else { return text }
+        if let existingMarkerRange = existingTruncationMarkerRange(in: text) {
+            let visibleSource = String(text[..<existingMarkerRange.lowerBound])
+            return applyingTruncationMarker(String(text[existingMarkerRange]), to: visibleSource)
+        }
+
+        var marker = truncationMarker(hiddenCount: max(0, text.count - maxStepCharacters))
+        var visible = boundedVisiblePrefix(from: text, marker: marker)
+        for _ in 0..<3 {
+            let refinedMarker = truncationMarker(hiddenCount: max(0, text.count - visible.count))
+            let refinedVisible = boundedVisiblePrefix(from: text, marker: refinedMarker)
+            if refinedMarker == marker, refinedVisible == visible { break }
+            marker = refinedMarker
+            visible = refinedVisible
+        }
+        return "\(visible)\(marker)"
+    }
+
+    private static func applyingTruncationMarker(_ marker: String, to visibleSource: String) -> String {
+        let visible = boundedVisiblePrefix(from: visibleSource, marker: marker)
+        return "\(visible)\(marker)"
+    }
+
+    private static func boundedVisiblePrefix(from text: String, marker: String) -> String {
+        let visibleLimit = max(0, maxStepCharacters - marker.count)
+        return String(text.prefix(visibleLimit))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func truncationMarker(hiddenCount: Int) -> String {
+        "\n… \(hiddenCount.formatted()) more characters hidden."
+    }
+
+    private static func existingTruncationMarkerRange(in text: String) -> Range<String.Index>? {
+        text.range(
+            of: #"\n… [0-9,]+ more characters hidden\.$"#,
+            options: .regularExpression
+        )
+    }
+}
+
 /// Final-answer placeholder filtering already exists in `ChatView`, but agent
 /// steps are persisted and rendered through a separate path. Keep this sanitizer
 /// close to the step model so every UI surface can reuse the same hard stop.

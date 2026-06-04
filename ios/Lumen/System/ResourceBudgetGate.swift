@@ -107,14 +107,23 @@ enum ResourceBudgetGate {
 
 @MainActor
 enum RuntimeLifecycleCanceller {
+    private static var lastCancellationAt = Date.distantPast
+
     static func cancelForSceneTransition(reason: String = "scene-transition") {
+        let now = Date()
+        guard now.timeIntervalSince(lastCancellationAt) >= 1.5 else { return }
+        lastCancellationAt = now
         AppCancellationBus.shared.markCancellationRequested(reason)
         AppCancellationBus.shared.cancelAllSceneSensitive()
         ModelLoader.cancelActiveLoads()
-        VoiceService.shared.stopListening()
-        VoiceService.shared.stopSpeaking()
         Task.detached(priority: .userInitiated) {
             await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
+        }
+        Task { @MainActor in
+            await Task.yield()
+            guard ResourceBudgetGate.diagnosticSnapshot().scenePhase != .active else { return }
+            VoiceService.shared.stopListening()
+            VoiceService.shared.stopSpeaking()
         }
         DeferredMaintenanceQueue.shared.enqueue(
             DeferredMaintenanceJob(key: "runtime-cleanup-optional-chat-slots", category: .persistence, staleAfter: 10 * 60, maxRuntime: 2) {

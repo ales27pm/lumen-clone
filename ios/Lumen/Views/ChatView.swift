@@ -168,7 +168,7 @@ struct ChatView: View {
 
     private var displayedMessages: [ChatMessage] {
         let sorted = conversation.sortedMessages
-        let renderLimit = 300
+        let renderLimit = 120
         if sorted.count > renderLimit {
             return Array(sorted.suffix(renderLimit))
         }
@@ -285,7 +285,7 @@ struct ChatView: View {
             case .step(let step):
                 if let idx = steps.firstIndex(where: { $0.id == step.id }) { steps[idx] = step } else { steps.append(step) }
                 if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
-                    streamingSteps = steps
+                    streamingSteps = AgentStepContentBudget.boundedSanitizedSteps(steps)
                     lastUIUpdate = Date()
                     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 }
@@ -293,7 +293,7 @@ struct ChatView: View {
                 if let idx = steps.firstIndex(where: { $0.id == id }) {
                     steps[idx].content = text
                     if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
-                        streamingSteps = steps
+                        streamingSteps = AgentStepContentBudget.boundedSanitizedSteps(steps)
                         lastUIUpdate = Date()
                     }
                 }
@@ -317,7 +317,7 @@ struct ChatView: View {
         finalText = await repairSchemaPlaceholderFinalIfNeeded(finalText, userText: text, routing: routing, memories: memories, attachments: attachments)
         finalText = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
         finalText = FinalIntentValidator.validate(finalText, routing: routing, fallback: nil)
-        let sanitizedSteps = AgentVisibleContentSanitizer.sanitizedSteps(steps)
+        let sanitizedSteps = AgentStepContentBudget.boundedSanitizedSteps(steps)
 
         let persistedFinal = FinalOutputSanitizer.sanitizeUserVisibleText(finalText).text
         let assistantMsg = ChatMessage(role: .assistant, content: persistedFinal, agentSteps: sanitizedSteps, visibleContent: persistedFinal)
@@ -684,7 +684,7 @@ struct ChatView: View {
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         let captured = AssistantOutputSanitizer.sanitize(streamingText)
         let finalizedCaptured = FinalOutputSanitizer.sanitizeUserVisibleText(captured).text
-        let capturedSteps = AgentVisibleContentSanitizer.sanitizedSteps(streamingSteps)
+        let capturedSteps = AgentStepContentBudget.boundedSanitizedSteps(streamingSteps)
         streamingText = ""
         streamingSteps = []
         Task {

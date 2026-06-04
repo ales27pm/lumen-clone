@@ -5,7 +5,7 @@ struct AgentStepsPanel: View {
     @State var expanded: Bool
 
     private var visibleSteps: [AgentStep] {
-        AgentVisibleContentSanitizer.sanitizedSteps(steps)
+        AgentStepContentBudget.boundedSanitizedSteps(steps)
     }
 
     var body: some View {
@@ -19,7 +19,7 @@ struct AgentStepsPanel: View {
                         Image(systemName: "sparkles")
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
-                        Text("\(displaySteps.count) reasoning step\(displaySteps.count == 1 ? "" : "s")")
+                        Text(stepCountLabel(displaySteps.count))
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
                         Spacer()
@@ -50,6 +50,12 @@ struct AgentStepsPanel: View {
                     .strokeBorder(Theme.border, lineWidth: 1)
             }
         }
+    }
+
+    private func stepCountLabel(_ visibleCount: Int) -> String {
+        let base = "\(visibleCount) reasoning step\(visibleCount == 1 ? "" : "s")"
+        guard steps.count > visibleCount else { return base }
+        return "Latest \(base) of \(steps.count)"
     }
 }
 
