@@ -296,6 +296,7 @@ struct VoiceModeView: View {
                     let sanitized = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
                     if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
                         responseText = FinalIntentValidator.validate(sanitized, routing: routing, fallback: nil)
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .uiUpdate, values: ["surface": "voice", "targetHz": "1"]))
                         lastUIUpdate = Date()
                         if phase != .speaking { phase = .speaking }; session.startSpeaking()
                         speakPending()

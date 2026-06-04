@@ -17,6 +17,7 @@ final class SceneTransitionCoordinator {
             currentPhase = phase
             ResourceBudgetGate.recordScenePhase(phase)
             DeferredMaintenanceQueue.shared.updateScenePhase(phase)
+            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": Self.phaseName(phase), "cancellationRequested": String(ResourceBudgetGate.shouldCancelForScenePhase(phase))]))
             if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
                 cancelSceneSensitive(reason: "scene-phase-\(phase)")
             }
@@ -28,6 +29,7 @@ final class SceneTransitionCoordinator {
             currentPhase = .inactive
             ResourceBudgetGate.recordScenePhase(.inactive)
             DeferredMaintenanceQueue.shared.updateScenePhase(.inactive)
+            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": "inactive", "cancellationRequested": "true"]))
             cancelSceneSensitive(reason: "will-resign-active")
         }
     }
@@ -37,6 +39,7 @@ final class SceneTransitionCoordinator {
             currentPhase = .background
             ResourceBudgetGate.recordScenePhase(.background)
             DeferredMaintenanceQueue.shared.updateScenePhase(.background)
+            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": "background", "cancellationRequested": "true"]))
             cancelSceneSensitive(reason: "did-enter-background")
         }
     }
@@ -46,6 +49,7 @@ final class SceneTransitionCoordinator {
             currentPhase = .active
             ResourceBudgetGate.recordScenePhase(.active)
             DeferredMaintenanceQueue.shared.updateScenePhase(.active)
+            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": "active", "cancellationRequested": "false"]))
         }
     }
 
@@ -59,6 +63,29 @@ final class SceneTransitionCoordinator {
             await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
         }
         ModelLoader.cancelActiveLoads()
+        let phaseName = currentPhaseName
+        for delayMs in [500, 1000, 2000] {
+            Task.detached(priority: .utility) {
+                try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+                PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: [
+                    "phase": phaseName,
+                    "checkMs": String(delayMs),
+                    "generationActive": String(DiskWriteBudget.shared.isGenerationActive()),
+                    "cancellationReason": AppCancellationBus.shared.lastCancellationReason ?? reason
+                ]))
+            }
+        }
+    }
+
+    private var currentPhaseName: String { Self.phaseName(currentPhase) }
+
+    private static func phaseName(_ phase: ScenePhase) -> String {
+        switch phase {
+        case .active: return "active"
+        case .inactive: return "inactive"
+        case .background: return "background"
+        @unknown default: return "unknown"
+        }
     }
 
     private func measure(_ operation: String, _ work: () -> Void) {
