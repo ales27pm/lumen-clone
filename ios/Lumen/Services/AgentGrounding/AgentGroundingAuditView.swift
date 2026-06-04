@@ -261,7 +261,6 @@ public struct AgentGroundingAuditView: View {
         }
         .navigationTitle("Agent Grounding")
         .onChange(of: scenePhase) { _, phase in
-            SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
             if ResourceBudgetGate.shouldCancelForScenePhase(phase) { cancelLiveTraceSmokeTestForSceneTransition() }
         }
         .onDisappear { cancelLiveTraceSmokeTestForSceneTransition() }
