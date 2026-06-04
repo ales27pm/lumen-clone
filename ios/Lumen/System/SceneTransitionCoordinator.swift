@@ -55,6 +55,9 @@ final class SceneTransitionCoordinator {
         AppCancellationBus.shared.cancelAllSceneSensitive()
         VoiceService.shared.stopListening()
         VoiceService.shared.stopSpeaking()
+        Task.detached(priority: .userInitiated) {
+            await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
+        }
         ModelLoader.cancelActiveLoads()
     }
 

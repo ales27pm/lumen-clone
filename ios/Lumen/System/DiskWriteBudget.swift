@@ -31,6 +31,7 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
     private let oneMinuteLimit: Int64
     private let fifteenMinuteLimit: Int64
     private let dayLimit: Int64
+    private var generationActive = false
 
     init(oneMinuteLimit: Int64 = 1_500_000, fifteenMinuteLimit: Int64 = 18_000_000, dayLimit: Int64 = 450_000_000) {
         self.oneMinuteLimit = oneMinuteLimit
@@ -42,7 +43,27 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
         !shouldDefer(bytes: bytes, category: category)
     }
 
+    func setGenerationActive(_ active: Bool) {
+        lock.lock()
+        generationActive = active
+        lock.unlock()
+    }
+
+    func isGenerationActive() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return generationActive
+    }
+
     func shouldDefer(bytes: Int, category: DiskWriteCategory) -> Bool {
+        lock.lock()
+        let active = generationActive
+        lock.unlock()
+        let generationBlockedCategories: Set<DiskWriteCategory> = [.diagnostics, .logs, .memory, .rag, .triggers]
+        if active, generationBlockedCategories.contains(category) {
+            return true
+        }
+
         let requested = Int64(max(0, bytes))
         let now = ProcessInfo.processInfo.systemUptime
         lock.lock()
