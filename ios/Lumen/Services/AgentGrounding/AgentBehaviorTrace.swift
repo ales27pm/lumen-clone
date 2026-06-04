@@ -309,7 +309,7 @@ nonisolated enum AgentBehaviorTraceRecorder {
 
     static func recent(limit: Int = 200) -> [AgentBehaviorTrace] {
         let boundedLimit = max(0, limit)
-        guard boundedLimit > 0 else { return [] }
+        guard boundedLimit > 0, !Task.isCancelled else { return [] }
 
         do {
             let url = try diagnosticsDirectory().appendingPathComponent(fileName, isDirectory: false)
@@ -325,22 +325,23 @@ nonisolated enum AgentBehaviorTraceRecorder {
             if didReadSuffix {
                 let handle = try FileHandle(forReadingFrom: url)
                 defer { try? handle.close() }
-                try handle.seek(toOffset: fileSize - readByteCount)
-                data = try handle.read(upToCount: Int(readByteCount)) ?? Data()
+                let suffixStart = fileSize - readByteCount
+                try handle.seek(toOffset: suffixStart - 1)
+                let suffixData = try handle.read(upToCount: Int(readByteCount + 1)) ?? Data()
+                data = completeLineData(fromSuffixIncludingPreviousByte: suffixData)
             } else {
                 data = try Data(contentsOf: url)
             }
 
-            guard let text = String(data: data, encoding: .utf8) else { return [] }
-            var lines = text.split(whereSeparator: \.isNewline)
-            if didReadSuffix, !lines.isEmpty {
-                lines.removeFirst()
-            }
+            guard !Task.isCancelled else { return [] }
 
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            let traces = lines.compactMap { line -> AgentBehaviorTrace? in
-                guard let lineData = String(line).data(using: .utf8) else { return nil }
+            let traces = data.split(separator: 0x0A).compactMap { line -> AgentBehaviorTrace? in
+                var lineData = Data(line)
+                if lineData.last == 0x0D {
+                    lineData.removeLast()
+                }
                 return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
             }
             return Array(traces.suffix(boundedLimit))
@@ -349,10 +350,27 @@ nonisolated enum AgentBehaviorTraceRecorder {
         }
     }
 
+    private static func completeLineData(fromSuffixIncludingPreviousByte data: Data) -> Data {
+        guard !data.isEmpty else { return Data() }
+        guard data.first != 0x0A else { return Data(data.dropFirst()) }
+        guard let newlineIndex = data.firstIndex(of: 0x0A) else { return Data() }
+
+        let firstCompleteLineIndex = data.index(after: newlineIndex)
+        guard firstCompleteLineIndex < data.endIndex else { return Data() }
+        return Data(data[firstCompleteLineIndex...])
+    }
+
     static func recentAsync(limit: Int = 200) async -> [AgentBehaviorTrace] {
-        await Task.detached(priority: .utility) {
+        guard !Task.isCancelled else { return [] }
+
+        let task = Task.detached(priority: .utility) {
             recent(limit: limit)
-        }.value
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     static func clear() {

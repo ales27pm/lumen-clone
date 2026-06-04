@@ -301,7 +301,11 @@ public struct AgentGroundingAuditView: View {
             }
 
             let traceReadLimit = 500
-            let before = await AgentBehaviorTraceRecorder.recentAsync(limit: traceReadLimit).count
+            guard !Task.isCancelled else { return }
+            let startedAt = Date()
+            let beforeLastTraceID = await AgentBehaviorTraceRecorder.recentAsync(limit: 1).last?.id
+            guard !Task.isCancelled else { return }
+
             let req = AgentRequest(
                 systemPrompt: "You are Lumen. Answer concisely and do not expose hidden reasoning.",
                 history: [],
@@ -337,11 +341,17 @@ public struct AgentGroundingAuditView: View {
 
             guard !Task.isCancelled else { return }
 
-            let after = await AgentBehaviorTraceRecorder.recentAsync(limit: traceReadLimit).count
-            let added = max(0, after - before)
+            let recentTraces = await AgentBehaviorTraceRecorder.recentAsync(limit: traceReadLimit)
+            guard !Task.isCancelled else { return }
+
+            let recordedTraceCount = recentTraces.filter { trace in
+                trace.createdAt >= startedAt
+            }.count
+            let tailChanged = recentTraces.last?.id != beforeLastTraceID
             let summary: String
-            if added > 0 {
-                summary = "Live trace smoke test recorded \(added) trace(s). Export the runtime audit package again."
+            if recordedTraceCount > 0 || tailChanged {
+                let countDescription = recordedTraceCount > 0 ? "\(recordedTraceCount)" : "new"
+                summary = "Live trace smoke test recorded \(countDescription) trace(s). Export the runtime audit package again."
             } else if !finalText.isEmpty {
                 summary = "Smoke test generated output but no traces were recorded. Check that the latest build includes AppLlamaService trace recording."
             } else {
