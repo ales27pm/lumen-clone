@@ -548,7 +548,7 @@ nonisolated struct LlamaAdapterTraceMetadata: Codable, Sendable, Hashable {
     let adapterFailureReason: String?
 }
 
-private enum LlamaErrorCode: String {
+private enum LlamaErrorCode: String, Sendable {
     case network = "network"
     case decode = "decode"
     case modelLoad = "model-load"
@@ -1724,7 +1724,7 @@ final actor AppLlamaService {
         return lower.contains("qwen3") || lower.contains("qwen-3")
     }
 
-    private func classifyError(_ error: Error) -> LlamaErrorCode {
+    private nonisolated func classifyError(_ error: Error) -> LlamaErrorCode {
         if let llamaError = error as? LlamaError {
             switch llamaError {
             case .modelFileNotFound, .failedToInitializeContext, .noModelLoaded, .slotModelNotLoaded, .embeddingModelNotLoaded:
