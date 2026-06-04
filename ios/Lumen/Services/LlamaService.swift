@@ -159,6 +159,23 @@ private struct ChatRuntime {
     var batchSize: UInt32
 }
 
+private enum LlamaRuntimeScheduling {
+    static let inferenceTaskPriority: TaskPriority = .utility
+    static let maxForegroundDecodeThreads: Int32 = 2
+    static let minInteractiveBatchSize: UInt32 = 32
+    static let maxInteractiveBatchSize: UInt32 = 128
+    static let decodeYieldTokenInterval = 4
+
+    static func decodeThreadCount(detectedCores: Int) -> Int32 {
+        let efficientForegroundCount = max(1, min(Int(maxForegroundDecodeThreads), max(1, detectedCores / 2)))
+        return Int32(efficientForegroundCount)
+    }
+
+    static func batchSize(_ requested: UInt32) -> UInt32 {
+        min(max(requested, minInteractiveBatchSize), maxInteractiveBatchSize)
+    }
+}
+
 private final class LlamaRuntimeLogCapture: @unchecked Sendable {
     nonisolated(unsafe) static let shared = LlamaRuntimeLogCapture()
     nonisolated(unsafe) private static let callback: ggml_log_callback = { _, text, _ in
@@ -289,7 +306,8 @@ private actor AdapterChatRuntime {
         LlamaRuntimeLogCapture.shared.installIfNeeded()
         LlamaRuntimeLogCapture.shared.markLoadBoundary()
         let detectedCores = ProcessInfo.processInfo.processorCount
-        let runtimeThreadCount = Int32(max(2, detectedCores - 2))
+        let runtimeThreadCount = LlamaRuntimeScheduling.decodeThreadCount(detectedCores: detectedCores)
+        let effectiveBatchSize = LlamaRuntimeScheduling.batchSize(batchSize)
         var modelParams = llama_model_default_params()
         modelParams.n_gpu_layers = 999
         guard let model = LlamaModel(path: path, parameters: modelParams) else {
@@ -297,8 +315,8 @@ private actor AdapterChatRuntime {
         }
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = UInt32(max(1, contextSize))
-        contextParams.n_batch = batchSize
-        contextParams.n_ubatch = batchSize
+        contextParams.n_batch = effectiveBatchSize
+        contextParams.n_ubatch = effectiveBatchSize
         contextParams.n_threads = runtimeThreadCount
         contextParams.n_threads_batch = runtimeThreadCount
         contextParams.offload_kqv = true
@@ -309,8 +327,8 @@ private actor AdapterChatRuntime {
         self.context = context
         self.modelPath = path
         self.contextSize = contextSize
-        self.batchSize = batchSize
-        self.batch = LlamaBatch(initialSize: Int32(batchSize))
+        self.batchSize = effectiveBatchSize
+        self.batch = LlamaBatch(initialSize: Int32(effectiveBatchSize))
         let layerCount = Int(model.nLayer())
         let offload = LlamaOffloadSnapshot.fromRuntimeLogs(totalModelLayers: layerCount, requestedKQVOffload: true)
         self.accelerationDiagnostics = RuntimeAccelerationDiagnostics.forCurrentRuntime(
@@ -356,7 +374,7 @@ private actor AdapterChatRuntime {
         maxTokens: Int?
     ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
-            let task = Task { [weak self] in
+            let task = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
                     continuation.finish()
                     return
@@ -377,13 +395,18 @@ private actor AdapterChatRuntime {
         samplingConfig: LlamaSamplingConfig,
         maxTokens: Int?,
         continuation: AsyncThrowingStream<String, Error>.Continuation
-    ) {
+    ) async {
         do {
+            try Task.checkCancellation()
             try initializeCompletion(messages: messages)
             let sampler = LlamaSampler(config: samplingConfig, model: model)
             let limit = min(maxTokens ?? Int.max, max(0, contextSize - Int(currentTokenPosition) - 1))
             var emitted = 0
+            // Keep the native decode critical section non-suspending. Any `await`
+            // here would make this actor reentrant while it owns the shared llama
+            // context, batch, processed tokens, and current token position.
             while emitted < limit, !Task.isCancelled {
+                try Task.checkCancellation()
                 let token = sampler.sample(context: context)
                 if model.isEogToken(token) { break }
                 batch.reset()
@@ -394,6 +417,8 @@ private actor AdapterChatRuntime {
                 continuation.yield(model.piece(from: token))
                 emitted += 1
             }
+            continuation.finish()
+        } catch is CancellationError {
             continuation.finish()
         } catch {
             continuation.finish(throwing: error)
@@ -417,7 +442,10 @@ private actor AdapterChatRuntime {
         batch.reset()
 
         let lastIndex = tokens.count - 1
+        // Keep prompt evaluation non-suspending for the same reason as the decode
+        // loop above: this method mutates the shared llama context state.
         for (index, token) in tokens.enumerated() {
+            try Task.checkCancellation()
             let isLast = index == lastIndex
             batch.addToken(token, at: Int32(index), logits: isLast)
             processedTokens.append(token)
@@ -818,7 +846,7 @@ final actor AppLlamaService {
 
         return AsyncThrowingStream { continuation in
             let cap = max(0, maxTokens)
-            let task = Task { [weak self] in
+            let task = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
                     continuation.finish()
                     return
@@ -832,13 +860,20 @@ final actor AppLlamaService {
                 var emitted = 0
                 do {
                     for try await chunk in rawStream {
+                        try Task.checkCancellation()
                         continuation.yield(chunk)
                         emitted += 1
                         if emitted >= cap {
                             await self.stopCompletion(for: stopSlot)
                             break
                         }
+                        if emitted.isMultiple(of: LlamaRuntimeScheduling.decodeYieldTokenInterval) {
+                            await Task.yield()
+                        }
                     }
+                    continuation.finish()
+                } catch is CancellationError {
+                    await self.stopCompletion(for: stopSlot)
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -934,7 +969,7 @@ final actor AppLlamaService {
 
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
         return AsyncStream<GenerationToken>(bufferingPolicy: .unbounded) { (continuation: AsyncStream<GenerationToken>.Continuation) in
-            let generationTask = Task { [weak self] in
+            let generationTask = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
                     continuation.yield(GenerationToken.done)
                     continuation.finish()
@@ -978,6 +1013,7 @@ final actor AppLlamaService {
                     var firstTokenMs: Int?
                     var outputChunks = 0
                     for try await chunk in stream {
+                        try Task.checkCancellation()
                         if firstTokenMs == nil {
                             firstTokenMs = Int(Date().timeIntervalSince(startedAt) * 1000)
                         }
@@ -987,6 +1023,9 @@ final actor AppLlamaService {
                         if !safeDelta.isEmpty {
                             streamedSanitized += safeDelta
                             continuation.yield(GenerationToken.text(safeDelta))
+                        }
+                        if outputChunks.isMultiple(of: LlamaRuntimeScheduling.decodeYieldTokenInterval) {
+                            await Task.yield()
                         }
                     }
                     let parserFinishDelta = parser.finish()
@@ -1068,6 +1107,8 @@ final actor AppLlamaService {
                         accelerationDiagnostic: readyMetrics.accelerationDiagnostic,
                         accelerationDiagnostics: accelerationDiagnostics
                     )
+                } catch is CancellationError {
+                    logger.info("event=llama.chat.generation_cancelled slot=\(slot.rawValue, privacy: .public)")
                 } catch {
                     let errorText = "Generation error: \(error.localizedDescription)"
                     await self.storeCompletedTracePayloadIfNeeded(
