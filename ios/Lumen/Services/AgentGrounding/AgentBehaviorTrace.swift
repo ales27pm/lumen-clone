@@ -282,6 +282,7 @@ nonisolated struct AgentBehaviorRepairSample: Codable, Sendable, Identifiable, H
 
 nonisolated enum AgentBehaviorTraceRecorder {
     private static let fileName = "agent-behavior-traces.jsonl"
+    private static let maxRecentReadBytes = 1_048_576
 
     static func record(_ trace: AgentBehaviorTrace) {
         do {
@@ -307,23 +308,68 @@ nonisolated enum AgentBehaviorTraceRecorder {
     }
 
     static func recent(limit: Int = 200) -> [AgentBehaviorTrace] {
+        let boundedLimit = max(0, limit)
+        guard boundedLimit > 0, !Task.isCancelled else { return [] }
+
         do {
             let url = try diagnosticsDirectory().appendingPathComponent(fileName, isDirectory: false)
-            guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return [] }
-            let data = try Data(contentsOf: url)
-            guard let text = String(data: data, encoding: .utf8) else { return [] }
+            let path = url.path(percentEncoded: false)
+            guard FileManager.default.fileExists(atPath: path) else { return [] }
+
+            let attributes = try FileManager.default.attributesOfItem(atPath: path)
+            let fileSize = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+            let readByteCount = min(UInt64(maxRecentReadBytes), fileSize)
+            let didReadSuffix = readByteCount < fileSize
+            let data: Data
+
+            if didReadSuffix {
+                let handle = try FileHandle(forReadingFrom: url)
+                defer { try? handle.close() }
+                let suffixStart = fileSize - readByteCount
+                try handle.seek(toOffset: suffixStart - 1)
+                let suffixData = try handle.read(upToCount: Int(readByteCount + 1)) ?? Data()
+                data = completeLineData(fromSuffixIncludingPreviousByte: suffixData)
+            } else {
+                data = try Data(contentsOf: url)
+            }
+
+            guard !Task.isCancelled else { return [] }
+
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            let traces = text
-                .split(whereSeparator: \.isNewline)
-                .compactMap { line -> AgentBehaviorTrace? in
-                    guard let lineData = String(line).data(using: .utf8) else { return nil }
-                    return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
+            let traces = data.split(separator: 0x0A).compactMap { line -> AgentBehaviorTrace? in
+                var lineData = Data(line)
+                if lineData.last == 0x0D {
+                    lineData.removeLast()
                 }
-            let boundedLimit = max(0, limit)
+                return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
+            }
             return Array(traces.suffix(boundedLimit))
         } catch {
             return []
+        }
+    }
+
+    private static func completeLineData(fromSuffixIncludingPreviousByte data: Data) -> Data {
+        guard !data.isEmpty else { return Data() }
+        guard data.first != 0x0A else { return Data(data.dropFirst()) }
+        guard let newlineIndex = data.firstIndex(of: 0x0A) else { return Data() }
+
+        let firstCompleteLineIndex = data.index(after: newlineIndex)
+        guard firstCompleteLineIndex < data.endIndex else { return Data() }
+        return Data(data[firstCompleteLineIndex...])
+    }
+
+    static func recentAsync(limit: Int = 200) async -> [AgentBehaviorTrace] {
+        guard !Task.isCancelled else { return [] }
+
+        let task = Task.detached(priority: .utility) {
+            recent(limit: limit)
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 
