@@ -9,22 +9,28 @@ final class SceneTransitionCoordinator {
     private let logger = Logger(subsystem: "ai.lumen.app", category: "scene")
     private(set) var currentPhase: ScenePhase = .active
     private var lastTransitionReason: String?
+    private var lastCancellationRequest: (reason: String, at: Date)?
+    private var deferredCleanupTask: Task<Void, Never>?
 
     private init() {}
 
     func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard phase != currentPhase else { return }
         measure("scenePhase.\(String(describing: phase))") {
             currentPhase = phase
             ResourceBudgetGate.recordScenePhase(phase)
             DeferredMaintenanceQueue.shared.updateScenePhase(phase)
             PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": Self.phaseName(phase), "cancellationRequested": String(ResourceBudgetGate.shouldCancelForScenePhase(phase))]))
-            if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
-                cancelSceneSensitive(reason: "scene-phase-\(phase)")
+            if phase == .active {
+                cancelDeferredCleanup()
+            } else if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
+                cancelSceneSensitive(reason: "scene-phase-\(Self.phaseName(phase))")
             }
         }
     }
 
     func handleWillResignActive() {
+        guard currentPhase != .inactive else { return }
         measure("willResignActive") {
             currentPhase = .inactive
             ResourceBudgetGate.recordScenePhase(.inactive)
@@ -35,6 +41,7 @@ final class SceneTransitionCoordinator {
     }
 
     func handleDidEnterBackground() {
+        guard currentPhase != .background else { return }
         measure("didEnterBackground") {
             currentPhase = .background
             ResourceBudgetGate.recordScenePhase(.background)
@@ -45,6 +52,7 @@ final class SceneTransitionCoordinator {
     }
 
     func requestForegroundActivation() {
+        cancelDeferredCleanup()
         measure("foregroundActivation") {
             currentPhase = .active
             ResourceBudgetGate.recordScenePhase(.active)
@@ -53,17 +61,49 @@ final class SceneTransitionCoordinator {
         }
     }
 
+    private func cancelDeferredCleanup() {
+        deferredCleanupTask?.cancel()
+        deferredCleanupTask = nil
+        lastCancellationRequest = nil
+    }
+
     private func cancelSceneSensitive(reason: String) {
+        guard shouldIssueCancellation(reason: reason) else { return }
         lastTransitionReason = reason
         AppCancellationBus.shared.markCancellationRequested(reason)
         AppCancellationBus.shared.cancelAllSceneSensitive()
-        VoiceService.shared.stopListening()
-        VoiceService.shared.stopSpeaking()
         Task.detached(priority: .userInitiated) {
             await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
         }
-        ModelLoader.cancelActiveLoads()
-        let phaseName = currentPhaseName
+        scheduleDeferredSceneCleanup(reason: reason)
+        scheduleCancellationDiagnostics(reason: reason, phaseName: currentPhaseName)
+    }
+
+    private func shouldIssueCancellation(reason: String) -> Bool {
+        let now = Date()
+        defer { lastCancellationRequest = (reason, now) }
+        guard let lastCancellationRequest else { return true }
+        return now.timeIntervalSince(lastCancellationRequest.at) >= 1.5
+    }
+
+    private func scheduleDeferredSceneCleanup(reason: String) {
+        deferredCleanupTask?.cancel()
+        deferredCleanupTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, currentPhase != .active else { return }
+            ModelLoader.cancelActiveLoads()
+            VoiceService.shared.stopListening()
+            VoiceService.shared.stopSpeaking()
+            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: [
+                "phase": currentPhaseName,
+                "deferredCleanup": "complete",
+                "cancellationReason": reason
+            ]))
+            deferredCleanupTask = nil
+        }
+    }
+
+    private func scheduleCancellationDiagnostics(reason: String, phaseName: String) {
         for delayMs in [500, 1000, 2000] {
             Task.detached(priority: .utility) {
                 try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)

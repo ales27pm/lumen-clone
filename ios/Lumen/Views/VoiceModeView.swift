@@ -289,7 +289,7 @@ struct VoiceModeView: View {
                 let workStartedAt = ProcessInfo.processInfo.systemUptime
                 defer { CPUWatchdogGuard.shared.recordWork(category: .voice, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
                 switch event {
-                case .step(let s): stepsBuffer.append(s)
+                case .step(let s): stepsBuffer.append(contentsOf: AgentStepContentBudget.boundedSanitizedSteps([s]))
                 case .stepDelta: break
                 case .finalDelta(let chunk):
                     finalText += chunk
@@ -303,7 +303,7 @@ struct VoiceModeView: View {
                     }
                 case .done(let f, let all):
                     finalText = f.isEmpty ? finalText : f
-                    stepsBuffer = all
+                    stepsBuffer = AgentStepContentBudget.boundedSanitizedSteps(all)
                 case .error(let msg):
                     finalText = msg
                     responseText = FinalIntentValidator.validate(msg, routing: routing, fallback: nil)
@@ -317,7 +317,7 @@ struct VoiceModeView: View {
             let persistedFinal = FinalOutputSanitizer.sanitizeUserVisibleText(finalText).text
             responseText = persistedFinal
             speakPending()
-            let assistantMsg = ChatMessage(role: .assistant, content: persistedFinal, agentSteps: stepsBuffer)
+            let assistantMsg = ChatMessage(role: .assistant, content: persistedFinal, agentSteps: AgentStepContentBudget.boundedSanitizedSteps(stepsBuffer))
             convo.messages.append(assistantMsg)
             convo.updatedAt = Date()
             saveVoiceConversationIfBudgetAllows(estimatedBytes: persistedFinal.utf8.count + text.utf8.count + 4096)

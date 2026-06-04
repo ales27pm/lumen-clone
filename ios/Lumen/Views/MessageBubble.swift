@@ -2,6 +2,18 @@ import SwiftUI
 import SwiftData
 import WebKit
 
+private enum MessageRenderBudget {
+    static let maxVisibleCharacters = 16_000
+
+    static func preview(_ text: String) -> String {
+        guard text.count > maxVisibleCharacters else { return text }
+        let visible = String(text.prefix(maxVisibleCharacters))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hiddenCount = text.count - visible.count
+        return "\(visible)\n\n… \(hiddenCount.formatted()) more characters hidden to keep the chat view responsive. Use Copy to capture the full message."
+    }
+}
+
 struct MessageBubble: View {
     let message: ChatMessage
     var streamingOverride: String? = nil
@@ -20,6 +32,10 @@ struct MessageBubble: View {
     }
 
     private var assistantVisibleContent: String {
+        MessageRenderBudget.preview(AssistantOutputSanitizer.sanitize(assistantRawContent))
+    }
+
+    private var fullAssistantVisibleContent: String {
         AssistantOutputSanitizer.sanitize(assistantRawContent)
     }
 
@@ -48,7 +64,7 @@ struct MessageBubble: View {
     private var userBubble: some View {
         HStack(alignment: .top) {
             Spacer(minLength: 48)
-            Text(message.content)
+            Text(MessageRenderBudget.preview(message.content))
                 .font(.body)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12)
@@ -61,6 +77,7 @@ struct MessageBubble: View {
     private var assistantBubble: some View {
         let steps = streamingOverride == nil ? message.agentSteps : []
         let visibleContent = assistantVisibleContent
+        let copyContent = fullAssistantVisibleContent
         let richPayloads = assistantRichPayloads
         return HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
@@ -116,9 +133,9 @@ struct MessageBubble: View {
                             .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.border, lineWidth: 1) }
                         }
                         MessageActionButton(icon: "doc.on.doc") {
-                            UIPasteboard.general.string = visibleContent
+                            UIPasteboard.general.string = copyContent
                         }
-                        MessageActionButton(icon: didBookmark ? "bookmark.fill" : "bookmark") { bookmark(content: visibleContent) }
+                        MessageActionButton(icon: didBookmark ? "bookmark.fill" : "bookmark") { bookmark(content: copyContent) }
                     }
                     .padding(.top, 2)
 
@@ -445,7 +462,7 @@ struct ToolCallCard: View {
             }
 
             if expanded {
-                let visibleToolContent = ToolArgumentRedactor.redactDisplayContent(message.content)
+                let visibleToolContent = MessageRenderBudget.preview(ToolArgumentRedactor.redactDisplayContent(message.content))
                 if !visibleToolContent.isEmpty {
                     Text(visibleToolContent)
                         .font(.caption.monospaced())
@@ -465,7 +482,7 @@ struct ToolCallCard: View {
                             .tint(Theme.accent)
                     }
                 } else if let result = message.toolResult, !result.isEmpty {
-                    let visibleResult = AssistantOutputSanitizer.sanitize(result)
+                    let visibleResult = MessageRenderBudget.preview(AssistantOutputSanitizer.sanitize(result))
                     let richPayloads = WebRichContentPayload.decodeAll(from: result)
                     if !visibleResult.isEmpty {
                         Text(visibleResult)
