@@ -91,6 +91,63 @@ final class PromptFastInteractiveBudgetTests: XCTestCase {
         XCTAssertEqual(selection.latencyClass, .developerTrace)
     }
 
+    func testFastSystemPromptPreservesOriginalConstraintsWhenSlimmed() {
+        let systemPrompt = "MUST_KEEP_TOOL_POLICY_START "
+            + String(repeating: "verbose operational guidance ", count: 120)
+            + " MUST_KEEP_PRIVACY_RULE_END"
+        let assembly = PromptAssembler.assemble(
+            systemPrompt: systemPrompt,
+            history: [],
+            userMessage: "Hi",
+            memories: [],
+            attachments: [],
+            budget: .fastInteractive(),
+            latencyClass: .fastInteractive
+        )
+
+        XCTAssertLessThanOrEqual(assembly.systemPrompt.count, PromptBudgetConstants.fastInteractiveSystemChars)
+        XCTAssertTrue(assembly.systemPrompt.contains("MUST_KEEP_TOOL_POLICY_START"))
+        XCTAssertTrue(assembly.systemPrompt.contains("MUST_KEEP_PRIVACY_RULE_END"))
+        XCTAssertTrue(assembly.systemPrompt.contains("Fast interactive mode"))
+    }
+
+    func testNormalInteractiveSmallMemoryShareDoesNotUseFastMemoryCaps() {
+        let memoryContent = "normal memory " + String(repeating: "detail ", count: 16) + "normal-memory-tail"
+        let memory = MemoryContextItem(
+            content: memoryContent,
+            scope: .conversation,
+            authority: .referenceOnly,
+            createdAt: nil,
+            expiresAt: nil,
+            source: "test",
+            topic: nil
+        )
+        let budget = PromptBudget(totalChars: 1_000, attachmentsShare: 0, memoriesShare: PromptBudgetConstants.fastInteractiveMemoriesChars, historyShare: 0)
+
+        let normal = PromptAssembler.assemble(
+            systemPrompt: "system",
+            history: [],
+            userMessage: "Tell me more",
+            memories: [memory],
+            attachments: [],
+            budget: budget,
+            latencyClass: .normalInteractive
+        )
+        let fast = PromptAssembler.assemble(
+            systemPrompt: "system",
+            history: [],
+            userMessage: "Hi",
+            memories: [memory],
+            attachments: [],
+            budget: budget,
+            latencyClass: .fastInteractive
+        )
+
+        XCTAssertTrue(normal.systemPrompt.contains(memoryContent))
+        XCTAssertFalse(normal.systemPrompt.contains("[... truncated ...]"))
+        XCTAssertTrue(fast.systemPrompt.contains("[... truncated ...]"))
+    }
+
     func testFinalPromptBuildResultStaysUnderFastCapAfterModelWrappers() async {
         let request = GenerateRequest(
             systemPrompt: String(repeating: "Verbose developer/system instructions. ", count: 240),
