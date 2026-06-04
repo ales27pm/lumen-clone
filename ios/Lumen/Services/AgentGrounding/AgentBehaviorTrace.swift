@@ -282,6 +282,7 @@ nonisolated struct AgentBehaviorRepairSample: Codable, Sendable, Identifiable, H
 
 nonisolated enum AgentBehaviorTraceRecorder {
     private static let fileName = "agent-behavior-traces.jsonl"
+    private static let maxRecentReadBytes = 1_048_576
 
     static func record(_ trace: AgentBehaviorTrace) {
         do {
@@ -307,24 +308,51 @@ nonisolated enum AgentBehaviorTraceRecorder {
     }
 
     static func recent(limit: Int = 200) -> [AgentBehaviorTrace] {
+        let boundedLimit = max(0, limit)
+        guard boundedLimit > 0 else { return [] }
+
         do {
             let url = try diagnosticsDirectory().appendingPathComponent(fileName, isDirectory: false)
-            guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return [] }
-            let data = try Data(contentsOf: url)
+            let path = url.path(percentEncoded: false)
+            guard FileManager.default.fileExists(atPath: path) else { return [] }
+
+            let attributes = try FileManager.default.attributesOfItem(atPath: path)
+            let fileSize = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+            let readByteCount = min(UInt64(maxRecentReadBytes), fileSize)
+            let didReadSuffix = readByteCount < fileSize
+            let data: Data
+
+            if didReadSuffix {
+                let handle = try FileHandle(forReadingFrom: url)
+                defer { try? handle.close() }
+                try handle.seek(toOffset: fileSize - readByteCount)
+                data = try handle.read(upToCount: Int(readByteCount)) ?? Data()
+            } else {
+                data = try Data(contentsOf: url)
+            }
+
             guard let text = String(data: data, encoding: .utf8) else { return [] }
+            var lines = text.split(whereSeparator: \.isNewline)
+            if didReadSuffix, !lines.isEmpty {
+                lines.removeFirst()
+            }
+
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            let traces = text
-                .split(whereSeparator: \.isNewline)
-                .compactMap { line -> AgentBehaviorTrace? in
-                    guard let lineData = String(line).data(using: .utf8) else { return nil }
-                    return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
-                }
-            let boundedLimit = max(0, limit)
+            let traces = lines.compactMap { line -> AgentBehaviorTrace? in
+                guard let lineData = String(line).data(using: .utf8) else { return nil }
+                return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
+            }
             return Array(traces.suffix(boundedLimit))
         } catch {
             return []
         }
+    }
+
+    static func recentAsync(limit: Int = 200) async -> [AgentBehaviorTrace] {
+        await Task.detached(priority: .utility) {
+            recent(limit: limit)
+        }.value
     }
 
     static func clear() {
