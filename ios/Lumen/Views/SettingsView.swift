@@ -158,6 +158,15 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings.developer.e2eTests")
 
+                    if PersistentRuntimeDiagnosticsAvailability.isDeveloperVisible || state.developerTraceModeEnabled {
+                        NavigationLink {
+                            PersistentRuntimeDiagnosticsView()
+                        } label: {
+                            Label("Persistent runtime diagnostics", systemImage: "waveform.path.ecg.rectangle")
+                        }
+                        .accessibilityIdentifier("settings.developer.persistentRuntimeDiagnostics")
+                    }
+
                     Button {
                         runDeveloperChecks()
                     } label: {

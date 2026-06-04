@@ -257,7 +257,10 @@ struct VoiceModeView: View {
 
             _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: [], intent: .userVoice)
 
+            AgentGroundingInstrumentation.mark("before IntentClassifierService.route", metrics: .init(promptChars: text.count))
+            let routeStart = ProcessInfo.processInfo.systemUptime
             let routing = await IntentClassifierService.shared.route(text)
+            AgentGroundingInstrumentation.mark("after IntentClassifierService.route", metrics: .init(promptChars: text.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: routeStart))
             let memories = await safeRecalledMemories(query: text, routing: routing)
             let tools = ToolRegistry.all
                 .filter { appState.enabledToolIDs.contains($0.id) }
@@ -293,6 +296,7 @@ struct VoiceModeView: View {
                     let sanitized = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
                     if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
                         responseText = FinalIntentValidator.validate(sanitized, routing: routing, fallback: nil)
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .uiUpdate, values: ["surface": "voice", "targetHz": "1"]))
                         lastUIUpdate = Date()
                         if phase != .speaking { phase = .speaking }; session.startSpeaking()
                         speakPending()
@@ -347,7 +351,11 @@ struct VoiceModeView: View {
     }
 
     private func safeRecalledMemories(query: String, routing: IntentRoutingDecision) async -> [MemoryContextItem] {
-        await MemoryRecall.recallAndNormalize(query: query, routing: routing, context: modelContext, limit: 8)
+        AgentGroundingInstrumentation.mark("before safeRecalledMemories", metrics: .init(promptChars: query.count))
+        let start = ProcessInfo.processInfo.systemUptime
+        let memories = await MemoryRecall.recallAndNormalize(query: query, routing: routing, context: modelContext, limit: 8)
+        AgentGroundingInstrumentation.mark("after safeRecalledMemories", metrics: .init(memoryCount: memories.count, promptChars: query.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: start))
+        return memories
     }
 
     private func isSafeToStoreMemory(userText: String, assistantText: String, routing: IntentRoutingDecision) -> Bool {

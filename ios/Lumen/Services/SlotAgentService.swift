@@ -13,20 +13,69 @@ final class SlotAgentService {
     }
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        let cancellationToken = AgentGroundingCancellationToken()
         return AsyncStream { continuation in
-            let task = Task { @MainActor in
-                let grounded = await prepareGroundedRequest(req, options: options)
-                let effectiveRequest = makeEffectiveRequest(original: req, grounded: grounded, options: options)
-                let text = Self.deterministicAnswer(for: effectiveRequest)
-                continuation.yield(.finalDelta(text))
-                continuation.yield(.done(finalText: text, steps: []))
-                continuation.finish()
+            let task = Task.detached(priority: .userInitiated) {
+                do {
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentStart, values: ["promptChars": String(req.userMessage.count), "toolCount": String(req.availableTools.count), "memoryCount": String(req.relevantMemories.count)]))
+                    try cancellationToken.checkCancellation()
+                    let budgetDecision = await MainActor.run { Self.agentBudgetDecision() }
+                    switch budgetDecision {
+                    case .cancel:
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": "resource-scene-inactive"]))
+                        continuation.finish()
+                        return
+                    case .fallback:
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-fallback"]))
+                        let text = Self.deterministicCompatibilityFallback()
+                        continuation.yield(.finalDelta(text))
+                        continuation.yield(.done(finalText: text, steps: []))
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "fallback"]))
+                        continuation.finish()
+                        return
+                    case .allow:
+                        break
+                    }
+
+                    if Self.shouldUseFastAgentPath(req) {
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "fast-agent"]))
+                        let grounded = Self.fastGroundingResult(for: req, options: options)
+                        try cancellationToken.checkCancellation()
+                        let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
+                        let text = Self.deterministicAnswer(for: effectiveRequest)
+                        continuation.yield(.finalDelta(text))
+                        continuation.yield(.done(finalText: text, steps: []))
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "fast-agent", "groundingChars": String(grounded.userMessage.count + grounded.systemPrompt.count), "sectionCount": String(grounded.sections.count), "toolCount": String(grounded.bridgedTools.count)]))
+                        continuation.finish()
+                        return
+                    }
+
+                    try cancellationToken.checkCancellation()
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "normal-agent"]))
+                    let grounded = await self.prepareGroundedRequest(req, options: options, cancellationToken: cancellationToken)
+                    try cancellationToken.checkCancellation()
+                    let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
+                    let text = Self.deterministicAnswer(for: effectiveRequest)
+                    continuation.yield(.finalDelta(text))
+                    continuation.yield(.done(finalText: text, steps: []))
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "normal-agent", "groundingChars": String(grounded.userMessage.count + grounded.systemPrompt.count), "sectionCount": String(grounded.sections.count), "toolCount": String(grounded.bridgedTools.count)]))
+                    continuation.finish()
+                } catch is CancellationError {
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"]))
+                    continuation.finish()
+                } catch {
+                    continuation.finish()
+                }
             }
-            continuation.onTermination = { @Sendable _ in task.cancel() }
+            AppCancellationBus.shared.register(task, category: .chatGeneration)
+            continuation.onTermination = { @Sendable _ in
+                cancellationToken.cancel()
+                task.cancel()
+            }
         }
     }
 
-    private func prepareGroundedRequest(_ req: AgentRequest, options: LegacyAgentRunOptions) async -> LegacyGroundingResult {
+    private func prepareGroundedRequest(_ req: AgentRequest, options: LegacyAgentRunOptions, cancellationToken: AgentGroundingCancellationToken? = nil) async -> LegacyGroundingResult {
         let mode: LegacyGroundingRequest.Mode = options.groundingMode == .headlessTrigger ? .headless : .foreground
         let policy: LegacyPromptInjectionPolicy
         switch options.groundingMode {
@@ -50,7 +99,7 @@ final class SlotAgentService {
             baseSystemPrompt: req.systemPrompt,
             preventDoubleGrounding: options.preventDoubleGrounding
         )
-        return await LegacyTurnGroundingCoordinator.shared.prepareGroundedRequest(request, provider: provider)
+        return await LegacyTurnGroundingCoordinator.shared.prepareGroundedRequest(request, provider: provider, cancellationToken: cancellationToken)
     }
 
     private func makeEffectiveRequest(original: AgentRequest, grounded: LegacyGroundingResult, options: LegacyAgentRunOptions) -> AgentRequest {
@@ -138,6 +187,44 @@ final class SlotAgentService {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         return detector.firstMatch(in: text, options: [], range: range)?.url?.absoluteString
+    }
+
+    enum AgentBudgetDecision: Sendable, Equatable { case allow, cancel, fallback }
+
+    @MainActor
+    static func agentBudgetDecision() -> AgentBudgetDecision {
+        let snapshot = ResourceBudgetGate.diagnosticSnapshot()
+        if snapshot.scenePhase == .inactive || snapshot.scenePhase == .background { return .cancel }
+        if snapshot.thermalState == .serious || snapshot.thermalState == .critical { return .fallback }
+        if CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) { return .fallback }
+        guard ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding") else { return .fallback }
+        return .allow
+    }
+
+    nonisolated static func shouldUseFastAgentPath(_ req: AgentRequest) -> Bool {
+        let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, prompt.count <= 80 else { return false }
+        guard req.attachments.isEmpty else { return false }
+        let lower = prompt.lowercased()
+        let explicitToolTerms = ["search", "web", "file", "pdf", "document", "email", "outlook", "calendar", "remind", "map", "weather", "photo", "camera", "call", "message", "note", "memory", "rag", "tool"]
+        guard !explicitToolTerms.contains(where: { lower.contains($0) }) else { return false }
+        let wordCount = prompt.split { $0.isWhitespace || $0.isNewline }.count
+        guard wordCount <= 8 else { return false }
+        return true
+    }
+
+    nonisolated static func fastGroundingResult(for req: AgentRequest, options: LegacyAgentRunOptions) -> LegacyGroundingResult {
+        let tinyMemories = req.relevantMemories.prefix(2).map { item in
+            let content = String(item.content.prefix(96))
+            return PromptGroundingSection(title: "Relevant memories", content: "- \(content)", estimatedChars: content.count + 2, sourceIDs: [item.id.uuidString], privacyLevel: .moderate)
+        }
+        let sections = Array(tinyMemories)
+        let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: req.systemPrompt, baseUserMessage: req.userMessage, sections: sections, policy: .slotAgent, roleMetadata: nil, preventDoubleGrounding: options.preventDoubleGrounding)
+        return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: AssistantGroundingContext(memoryCount: sections.count, ragCount: 0, toolCount: 0, estimatedChars: assembled.estimatedChars), sections: sections, bridgedTools: [], degradedReasons: [], metricsSummary: "fast-agent", truncationOccurred: assembled.truncationOccurred)
+    }
+
+    nonisolated static func deterministicCompatibilityFallback() -> String {
+        "I can’t safely start the full agent pipeline right now. Please try again when the app is active and the device has cooled down."
     }
 
     private nonisolated static func deterministicAnswer(for req: AgentRequest) -> String {

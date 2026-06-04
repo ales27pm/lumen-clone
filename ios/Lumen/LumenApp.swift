@@ -208,6 +208,7 @@ struct LumenApp: App {
                 await startup.initialize(appState: appState)
                 if case .ready(let container) = startup.state {
                     SharedContainer.shared = container
+                    await PersistentRuntimeDiagnosticsRunner.shared.resumeIfEnabled()
                 }
             }
         }
