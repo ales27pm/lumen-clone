@@ -7,6 +7,7 @@ public struct AgentGroundingAuditView: View {
     private let behaviorAuditor = AgentModelBehaviorAuditor()
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \ChatMessage.createdAt, order: .forward) private var messages: [ChatMessage]
 
     @State private var report: RuntimeAgentManifestAuditReport?
@@ -20,6 +21,9 @@ public struct AgentGroundingAuditView: View {
     @State private var lastLayerExportURL: URL?
     @State private var lastLayerExportLabel: String?
     @State private var isRunningLiveTraceSmokeTest = false
+    @State private var liveTraceSmokeTask: Task<Void, Never>?
+    @State private var liveTraceCancellationID: UUID?
+    @State private var liveTraceSmokeRunID: UUID?
     @State private var lastLiveTraceSmokeSummary: String?
 
     public init(registryProvider: RuntimeToolRegistryProviding) {
@@ -256,6 +260,10 @@ public struct AgentGroundingAuditView: View {
             }
         }
         .navigationTitle("Agent Grounding")
+        .onChange(of: scenePhase) { _, phase in
+            if ResourceBudgetGate.shouldCancelForScenePhase(phase) { cancelLiveTraceSmokeTestForSceneTransition() }
+        }
+        .onDisappear { cancelLiveTraceSmokeTestForSceneTransition() }
     }
 
     private func runAudit() {
@@ -277,10 +285,17 @@ public struct AgentGroundingAuditView: View {
     }
 
     private func runLiveTraceSmokeTest() {
+        cancelLiveTraceSmokeTestForSceneTransition()
+
+        let runID = UUID()
         isRunningLiveTraceSmokeTest = true
+        liveTraceSmokeRunID = runID
         lastLiveTraceSmokeSummary = "Starting live model trace smoke test…"
         errorMessage = nil
-        Task { @MainActor in
+
+        let task = Task { @MainActor in
+            defer { finishLiveTraceSmokeTask(runID: runID) }
+
             let before = AgentBehaviorTraceRecorder.recent(limit: 5_000).count
             let req = AgentRequest(
                 systemPrompt: "You are Lumen. Answer concisely and do not expose hidden reasoning.",
@@ -297,6 +312,8 @@ public struct AgentGroundingAuditView: View {
 
             var finalText = ""
             for await event in RolePipelineAgentService.shared.run(req) {
+                guard !Task.isCancelled else { return }
+
                 switch event {
                 case .finalDelta(let chunk):
                     finalText += chunk
@@ -309,9 +326,10 @@ public struct AgentGroundingAuditView: View {
                 }
             }
 
+            guard !Task.isCancelled else { return }
+
             let after = AgentBehaviorTraceRecorder.recent(limit: 5_000).count
             let added = max(0, after - before)
-            isRunningLiveTraceSmokeTest = false
             if added > 0 {
                 lastLiveTraceSmokeSummary = "Live trace smoke test recorded \(added) trace(s). Export the runtime audit package again."
             } else if !finalText.isEmpty {
@@ -320,6 +338,33 @@ public struct AgentGroundingAuditView: View {
                 lastLiveTraceSmokeSummary = "Smoke test completed without output and no traces were recorded. Confirm that a chat model is downloaded and assigned."
             }
         }
+
+        liveTraceSmokeTask = task
+        liveTraceCancellationID = AppCancellationBus.shared.register(task, category: .diagnostics)
+    }
+
+    private func cancelLiveTraceSmokeTestForSceneTransition() {
+        let task = liveTraceSmokeTask
+        let cancellationID = liveTraceCancellationID
+        liveTraceSmokeTask = nil
+        liveTraceCancellationID = nil
+        liveTraceSmokeRunID = nil
+        isRunningLiveTraceSmokeTest = false
+        task?.cancel()
+        if let cancellationID {
+            AppCancellationBus.shared.unregister(cancellationID, category: .diagnostics)
+        }
+    }
+
+    private func finishLiveTraceSmokeTask(runID: UUID) {
+        guard liveTraceSmokeRunID == runID else { return }
+        if let liveTraceCancellationID {
+            AppCancellationBus.shared.unregister(liveTraceCancellationID, category: .diagnostics)
+        }
+        liveTraceCancellationID = nil
+        liveTraceSmokeTask = nil
+        liveTraceSmokeRunID = nil
+        isRunningLiveTraceSmokeTest = false
     }
 
     private func exportRuntimeAuditPackage() {
