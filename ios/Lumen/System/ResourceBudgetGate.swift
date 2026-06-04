@@ -32,6 +32,10 @@ enum ResourceBudgetGate {
         lastScenePhase = phase
     }
 
+    static func diagnosticSnapshot() -> Snapshot {
+        currentSnapshot()
+    }
+
     static func allowsHeavyModelWork(reason: String) -> Bool {
         let snapshot = currentSnapshot()
         guard snapshot.scenePhase == .active else { return false }

@@ -235,7 +235,10 @@ struct ChatView: View {
                 appState.isGenerating = false
                 return
             }
+            AgentGroundingInstrumentation.mark("before IntentClassifierService.route", metrics: .init(promptChars: text.count))
+            let routeStart = ProcessInfo.processInfo.systemUptime
             let routing = await IntentClassifierService.shared.route(text)
+            AgentGroundingInstrumentation.mark("after IntentClassifierService.route", metrics: .init(promptChars: text.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: routeStart))
             let memories = await safeRecalledMemories(query: text, routing: routing)
             let recentContext = safeShortTermContext(excludingCurrentUserMessageID: userMsg.id)
             if appState.agentModeEnabled {
@@ -453,7 +456,11 @@ struct ChatView: View {
     }
 
     private func safeRecalledMemories(query: String, routing: IntentRoutingDecision) async -> [MemoryContextItem] {
-        await MemoryRecall.recallAndNormalize(query: query, routing: routing, context: modelContext, limit: 8)
+        AgentGroundingInstrumentation.mark("before safeRecalledMemories", metrics: .init(promptChars: query.count))
+        let start = ProcessInfo.processInfo.systemUptime
+        let memories = await MemoryRecall.recallAndNormalize(query: query, routing: routing, context: modelContext, limit: 8)
+        AgentGroundingInstrumentation.mark("after safeRecalledMemories", metrics: .init(memoryCount: memories.count, promptChars: query.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: start))
+        return memories
     }
 
     private func makeDeveloperTrace(
