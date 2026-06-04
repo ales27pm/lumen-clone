@@ -13,6 +13,58 @@ nonisolated enum PromptBudgetConstants {
     static let memoriesShareFraction: Double = 0.20
     static let minHistoryChars: Int = 512
     static let minPerAttachmentChars: Int = 800
+    static let fastInteractiveTotalChars: Int = 2_200
+    static let fastInteractiveSystemChars: Int = 900
+    static let fastInteractiveHistoryChars: Int = 420
+    static let fastInteractiveMemoriesChars: Int = 220
+    static let fastInteractiveMaxUserChars: Int = 280
+    static let fastInteractiveUserMessageChars: Int = 160
+}
+
+nonisolated enum PromptLatencyClass: String, Sendable {
+    case fastInteractive
+    case normalInteractive
+    case documentGrounded
+    case developerTrace
+}
+
+nonisolated struct PromptLatencySelection: Sendable, Equatable {
+    let latencyClass: PromptLatencyClass
+    let reason: String
+}
+
+nonisolated enum PromptLatencyClassifier {
+    static func classify(
+        userMessage: String,
+        attachments: [ChatAttachment],
+        developerTraceModeEnabled: Bool,
+        reasoningCaptureEnabled: Bool,
+        modelName: String
+    ) -> PromptLatencySelection {
+        if developerTraceModeEnabled || reasoningCaptureEnabled {
+            return PromptLatencySelection(latencyClass: .developerTrace, reason: "developer-trace")
+        }
+        if !attachments.isEmpty {
+            return PromptLatencySelection(latencyClass: .documentGrounded, reason: "attachments")
+        }
+        let trimmed = userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        if modelName.lowercased().contains("json") {
+            return PromptLatencySelection(latencyClass: .normalInteractive, reason: "agent-json")
+        }
+        if trimmed.count <= PromptBudgetConstants.fastInteractiveUserMessageChars, !looksDocumentOrToolHeavy(lower) {
+            return PromptLatencySelection(latencyClass: .fastInteractive, reason: "short-simple-user-turn")
+        }
+        return PromptLatencySelection(latencyClass: .normalInteractive, reason: "standard-turn")
+    }
+
+    private static func looksDocumentOrToolHeavy(_ lowercasedMessage: String) -> Bool {
+        let signals = [
+            "file", "document", "attachment", "pdf", "rag", "search", "web", "url",
+            "summarize", "analyse this", "analyze this", "read ", "browse", "tool", "codebase"
+        ]
+        return signals.contains { lowercasedMessage.contains($0) }
+    }
 }
 
 /// Total per-section character budget for a single generation request.
@@ -24,6 +76,17 @@ nonisolated struct PromptBudget: Sendable {
     let attachmentsShare: Int
     let memoriesShare: Int
     let historyShare: Int
+    let maxUserChars: Int?
+    let maxSystemPromptChars: Int?
+
+    init(totalChars: Int, attachmentsShare: Int, memoriesShare: Int, historyShare: Int, maxUserChars: Int? = nil, maxSystemPromptChars: Int? = nil) {
+        self.totalChars = totalChars
+        self.attachmentsShare = attachmentsShare
+        self.memoriesShare = memoriesShare
+        self.historyShare = historyShare
+        self.maxUserChars = maxUserChars
+        self.maxSystemPromptChars = maxSystemPromptChars
+    }
 
     static func make(
         contextSize: Int,
@@ -70,10 +133,24 @@ nonisolated struct PromptBudget: Sendable {
             totalChars: totalChars,
             attachmentsShare: attachmentsShare,
             memoriesShare: memoriesShare,
-            historyShare: historyShare
+            historyShare: historyShare,
+            maxUserChars: nil,
+            maxSystemPromptChars: nil
+        )
+    }
+
+    static func fastInteractive() -> PromptBudget {
+        PromptBudget(
+            totalChars: PromptBudgetConstants.fastInteractiveTotalChars,
+            attachmentsShare: 0,
+            memoriesShare: PromptBudgetConstants.fastInteractiveMemoriesChars,
+            historyShare: PromptBudgetConstants.fastInteractiveHistoryChars,
+            maxUserChars: PromptBudgetConstants.fastInteractiveMaxUserChars,
+            maxSystemPromptChars: PromptBudgetConstants.fastInteractiveSystemChars
         )
     }
 }
+
 
 /// Per-attachment outcome after the budget is applied. Surfaced to the UI so
 /// the user can see when a file was trimmed.
@@ -93,6 +170,7 @@ nonisolated struct PromptAssembly: Sendable {
     let attachmentStates: [AttachmentRenderState]
     let usedChars: Int
     let budgetChars: Int
+    let latencyClass: PromptLatencyClass
 
     var historyTuples: [(String, String)] {
         history.map { ($0.role.rawValue, $0.content) }
@@ -126,10 +204,15 @@ nonisolated enum PromptAssembler {
         memories: [MemoryContextItem],
         attachments: [ChatAttachment],
         budget: PromptBudget,
-        attachmentNormalization: AttachmentNormalizationMode = .preserveRaw
+        attachmentNormalization: AttachmentNormalizationMode = .preserveRaw,
+        latencyClass: PromptLatencyClass = .normalInteractive
     ) -> PromptAssembly {
-        let userCap = min(userMessage.count, max(PromptBudgetConstants.minUserCharCap, budget.totalChars / 4))
+        let userCap = budget.maxUserChars.map { min(userMessage.count, $0) }
+            ?? min(userMessage.count, max(PromptBudgetConstants.minUserCharCap, budget.totalChars / 4))
         let boundedUser = truncateMiddle(userMessage, maxChars: userCap)
+
+        let systemCap = budget.maxSystemPromptChars ?? systemPrompt.count
+        let boundedSystemPrompt = truncateSystemPrompt(systemPrompt, maxChars: systemCap, latencyClass: latencyClass)
 
         let memoriesBlock = buildMemoriesBlock(memories: memories, share: budget.memoriesShare)
         let (attachmentsBlock, states) = buildAttachmentsBlock(
@@ -137,7 +220,7 @@ nonisolated enum PromptAssembler {
             share: budget.attachmentsShare,
             normalization: attachmentNormalization
         )
-        let finalSystem = systemPrompt + memoriesBlock + attachmentsBlock
+        let finalSystem = boundedSystemPrompt + memoriesBlock + attachmentsBlock
 
         let keptHistory = fitHistory(history: history, share: budget.historyShare)
 
@@ -150,7 +233,8 @@ nonisolated enum PromptAssembler {
             userMessage: boundedUser,
             attachmentStates: states,
             usedChars: totalUsed,
-            budgetChars: budget.totalChars
+            budgetChars: budget.totalChars,
+            latencyClass: latencyClass
         )
     }
 
@@ -187,13 +271,16 @@ nonisolated enum PromptAssembler {
         guard !memories.isEmpty, share > 0 else { return "" }
         var used = 0
         var items: [MemoryContextItem] = []
-        for m in memories.prefix(10) {
+        let maxItems = share <= PromptBudgetConstants.fastInteractiveMemoriesChars ? 2 : 10
+        for m in memories.prefix(maxItems) {
             let cleaned = m.content.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleaned.isEmpty { continue }
-            let line = "• [\(m.scope.rawValue) | \(m.authority.rawValue)] " + cleaned
+            let contentCap = share <= PromptBudgetConstants.fastInteractiveMemoriesChars ? 96 : cleaned.count
+            let bounded = truncateMiddle(cleaned, maxChars: contentCap)
+            let line = "• [\(m.scope.rawValue) | \(m.authority.rawValue)] " + bounded
             let cost = line.count + 1
             if used + cost > share { break }
-            items.append(m)
+            items.append(MemoryContextItem(content: bounded, scope: m.scope, authority: m.authority, createdAt: m.createdAt, expiresAt: m.expiresAt, source: m.source, topic: m.topic))
             used += cost
         }
         return PromptContextBuilder.renderMemoryBlock(items)
@@ -273,8 +360,10 @@ nonisolated enum PromptAssembler {
         guard share > 0, !history.isEmpty else { return [] }
         var kept: [(role: MessageRole, content: String)] = []
         var used = 0
+        let maxTurns = share <= PromptBudgetConstants.fastInteractiveHistoryChars ? 2 : Int.max
         // Walk newest → oldest; prepend so original order is preserved.
         for h in history.reversed() {
+            if kept.count >= maxTurns { break }
             let content = h.content.count > share
                 ? truncateMiddle(h.content, maxChars: max(256, share / 2))
                 : h.content
@@ -287,6 +376,18 @@ nonisolated enum PromptAssembler {
     }
 
     // MARK: - Truncation primitives
+
+    private static func truncateSystemPrompt(_ systemPrompt: String, maxChars: Int, latencyClass: PromptLatencyClass) -> String {
+        guard systemPrompt.count > maxChars else { return systemPrompt }
+        guard latencyClass == .fastInteractive else { return truncateMiddle(systemPrompt, maxChars: maxChars) }
+        let compact = """
+        You are Lumen, a concise local assistant. Answer the user's current message directly.
+        Do not reveal hidden reasoning. Ask one brief clarification only when needed.
+        Prefer short, helpful answers for simple chat.
+        """
+        if compact.count <= maxChars { return compact }
+        return truncateHead(compact, maxChars: maxChars)
+    }
 
     static func truncateHead(_ s: String, maxChars: Int) -> String {
         if s.count <= maxChars { return s }
