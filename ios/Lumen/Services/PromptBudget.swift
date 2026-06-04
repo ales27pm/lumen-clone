@@ -191,8 +191,9 @@ nonisolated enum AttachmentNormalizationMode: Sendable {
 ///    The most recent turns are preserved because they're most relevant.
 /// 3. Memories — the list is prefix-truncated to fit its share.
 ///
-/// Never shrunk:
-/// - The raw system prompt (agent rules, tool list).
+/// Preserved but bounded:
+/// - The system prompt keeps original head/tail constraints when capped, with
+///   fast-mode guidance appended only after preserved original instructions.
 /// - The current user message, except for a final safety cap at roughly
 ///   ¼ of the total budget (protects against multi-MB paste dumps).
 nonisolated enum PromptAssembler {
@@ -214,7 +215,7 @@ nonisolated enum PromptAssembler {
         let systemCap = budget.maxSystemPromptChars ?? systemPrompt.count
         let boundedSystemPrompt = truncateSystemPrompt(systemPrompt, maxChars: systemCap, latencyClass: latencyClass)
 
-        let memoriesBlock = buildMemoriesBlock(memories: memories, share: budget.memoriesShare)
+        let memoriesBlock = buildMemoriesBlock(memories: memories, share: budget.memoriesShare, latencyClass: latencyClass)
         let (attachmentsBlock, states) = buildAttachmentsBlock(
             attachments: attachments,
             share: budget.attachmentsShare,
@@ -222,7 +223,7 @@ nonisolated enum PromptAssembler {
         )
         let finalSystem = boundedSystemPrompt + memoriesBlock + attachmentsBlock
 
-        let keptHistory = fitHistory(history: history, share: budget.historyShare)
+        let keptHistory = fitHistory(history: history, share: budget.historyShare, latencyClass: latencyClass)
 
         let historyChars = keptHistory.reduce(0) { $0 + $1.content.count + 16 }
         let totalUsed = finalSystem.count + boundedUser.count + historyChars
@@ -267,15 +268,16 @@ nonisolated enum PromptAssembler {
 
     // MARK: - Sections
 
-    private static func buildMemoriesBlock(memories: [MemoryContextItem], share: Int) -> String {
+    private static func buildMemoriesBlock(memories: [MemoryContextItem], share: Int, latencyClass: PromptLatencyClass) -> String {
         guard !memories.isEmpty, share > 0 else { return "" }
         var used = 0
         var items: [MemoryContextItem] = []
-        let maxItems = share <= PromptBudgetConstants.fastInteractiveMemoriesChars ? 2 : 10
+        let isFastInteractive = latencyClass == .fastInteractive
+        let maxItems = isFastInteractive ? 2 : 10
         for m in memories.prefix(maxItems) {
             let cleaned = m.content.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleaned.isEmpty { continue }
-            let contentCap = share <= PromptBudgetConstants.fastInteractiveMemoriesChars ? 96 : cleaned.count
+            let contentCap = isFastInteractive ? 96 : cleaned.count
             let bounded = truncateMiddle(cleaned, maxChars: contentCap)
             let line = "• [\(m.scope.rawValue) | \(m.authority.rawValue)] " + bounded
             let cost = line.count + 1
@@ -355,12 +357,13 @@ nonisolated enum PromptAssembler {
 
     private static func fitHistory(
         history: [(role: MessageRole, content: String)],
-        share: Int
+        share: Int,
+        latencyClass: PromptLatencyClass
     ) -> [(role: MessageRole, content: String)] {
         guard share > 0, !history.isEmpty else { return [] }
         var kept: [(role: MessageRole, content: String)] = []
         var used = 0
-        let maxTurns = share <= PromptBudgetConstants.fastInteractiveHistoryChars ? 2 : Int.max
+        let maxTurns = latencyClass == .fastInteractive ? 2 : Int.max
         // Walk newest → oldest; prepend so original order is preserved.
         for h in history.reversed() {
             if kept.count >= maxTurns { break }
@@ -380,13 +383,15 @@ nonisolated enum PromptAssembler {
     private static func truncateSystemPrompt(_ systemPrompt: String, maxChars: Int, latencyClass: PromptLatencyClass) -> String {
         guard systemPrompt.count > maxChars else { return systemPrompt }
         guard latencyClass == .fastInteractive else { return truncateMiddle(systemPrompt, maxChars: maxChars) }
-        let compact = """
-        You are Lumen, a concise local assistant. Answer the user's current message directly.
-        Do not reveal hidden reasoning. Ask one brief clarification only when needed.
-        Prefer short, helpful answers for simple chat.
+        let fastDirective = """
+
+        Fast interactive mode: keep the answer concise for this simple turn, but continue to obey all preserved system, tool, privacy, and safety instructions above.
         """
-        if compact.count <= maxChars { return compact }
-        return truncateHead(compact, maxChars: maxChars)
+        guard maxChars > fastDirective.count + 128 else {
+            return truncateMiddle(systemPrompt, maxChars: maxChars)
+        }
+        let preservedOriginal = truncateMiddle(systemPrompt, maxChars: maxChars - fastDirective.count)
+        return preservedOriginal + fastDirective
     }
 
     static func truncateHead(_ s: String, maxChars: Int) -> String {
