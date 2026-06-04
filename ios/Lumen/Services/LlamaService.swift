@@ -1139,6 +1139,12 @@ final actor AppLlamaService {
                     let promptChars = promptBuild.finalPromptChars
                     let estimatedPromptTokenCount = promptBuild.estimatedPromptTokens
                     logger.info("event=llama.chat.prompt_budget slot=\(slot.rawValue, privacy: .public) latency_class=\(promptBuild.latencySelection.latencyClass.rawValue, privacy: .public) reason=\(promptBuild.latencySelection.reason, privacy: .public) initial_chars=\(promptBuild.initialPromptChars, privacy: .public) final_chars=\(promptBuild.finalPromptChars, privacy: .public) budget_chars=\(promptBuild.assembly.budgetChars, privacy: .public) estimated_tokens=\(estimatedPromptTokenCount, privacy: .public)")
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaPromptBudget, values: [
+                        "latencyClass": promptBuild.latencySelection.latencyClass.rawValue,
+                        "initialChars": String(promptBuild.initialPromptChars),
+                        "finalChars": String(promptBuild.finalPromptChars),
+                        "estimatedTokens": String(estimatedPromptTokenCount)
+                    ]))
                     try cancellationToken.checkCancellation()
                     let stillAllowsWork = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue) }
                     guard stillAllowsWork else {
@@ -1169,6 +1175,7 @@ final actor AppLlamaService {
                         try Task.checkCancellation()
                         if firstTokenMs == nil {
                             firstTokenMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+                            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaFirstToken, values: ["latencyMs": String(firstTokenMs ?? 0)]))
                         }
                         outputChunks += 1
                         let parsedDelta = parser.ingest(chunk)
@@ -1237,6 +1244,12 @@ final actor AppLlamaService {
                             error: nil
                         )
                     )
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaComplete, values: [
+                        "elapsedMs": String(elapsedMs),
+                        "firstTokenLatencyMs": String(firstTokenMs ?? -1),
+                        "estimatedPromptTokens": String(estimatedPromptTokenCount),
+                        "finalPromptChars": String(promptChars)
+                    ]))
                     await self.recordModelTrace(
                         slot: slot,
                         request: groundedRequest,
@@ -1263,6 +1276,7 @@ final actor AppLlamaService {
                 } catch is CancellationError {
                     let cancelReason = cancellationToken.reason ?? AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"
                     logger.info("event=llama.chat.generation_cancelled slot=\(slot.rawValue, privacy: .public) reason=\(cancelReason, privacy: .public)")
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaCancel, values: ["reason": cancelReason]))
                 } catch {
                     let errorText = "Generation error: \(error.localizedDescription)"
                     await self.storeCompletedTracePayloadIfNeeded(
@@ -1278,6 +1292,7 @@ final actor AppLlamaService {
                             error: error.localizedDescription
                         )
                     )
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaFailure, values: ["errorCode": self.classifyError(error).rawValue]))
                     await self.recordModelTrace(slot: slot, request: req, output: errorText, parseError: "generation_error")
                     continuation.yield(GenerationToken.text(errorText))
                 }
@@ -1690,6 +1705,10 @@ final actor AppLlamaService {
             estimatedPromptTokens: max(1, finalPromptChars / 4),
             latencySelection: latencySelection
         )
+    }
+
+    func buildMessagesForDiagnostics(req: GenerateRequest, contextSize: Int? = nil, slot: LumenModelSlot? = nil, forceFastBudget: Bool = false) -> PromptBuildResult {
+        buildMessages(req: req, contextSize: contextSize, slot: slot, forceFastBudget: forceFastBudget)
     }
 
     #if DEBUG

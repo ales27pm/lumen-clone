@@ -1,0 +1,337 @@
+import Foundation
+import SwiftUI
+import UIKit
+
+nonisolated enum PersistentDiagnosticScenarioKind: String, Codable, Sendable, CaseIterable, Identifiable {
+    case plainFastPrompt
+    case plainDeveloperTraceBypass
+    case agentFastPrompt
+    case agentToolPrompt
+    case agentCancellation
+    case lifecycleCancellation
+    case diskWriteGate
+    case swiftUIChurnProbe
+    case groundingCostProbe
+    case thermalResourceGate
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .plainFastPrompt: return "Plain fast prompt"
+        case .plainDeveloperTraceBypass: return "Developer trace bypass"
+        case .agentFastPrompt: return "Agent fast prompt"
+        case .agentToolPrompt: return "Agent tool prompt"
+        case .agentCancellation: return "Agent cancellation"
+        case .lifecycleCancellation: return "Lifecycle cancellation"
+        case .diskWriteGate: return "Disk write gate"
+        case .swiftUIChurnProbe: return "SwiftUI churn probe"
+        case .groundingCostProbe: return "Grounding cost probe"
+        case .thermalResourceGate: return "Thermal resource gate"
+        }
+    }
+}
+
+nonisolated enum PersistentDiagnosticStatus: String, Codable, Sendable {
+    case pending
+    case running
+    case passed
+    case failed
+    case skipped
+    case cancelled
+    case interrupted
+}
+
+nonisolated struct PersistentDiagnosticCampaign: Codable, Sendable, Identifiable, Equatable {
+    let id: UUID
+    var createdAt: Date
+    var updatedAt: Date
+    var enabled: Bool
+    var runContinuously: Bool
+    var maxRunsPerScenario: Int
+    var delayBetweenRunsSeconds: Double
+    var scenarios: [PersistentDiagnosticScenarioKind]
+
+    init(
+        id: UUID = UUID(),
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        enabled: Bool = false,
+        runContinuously: Bool = false,
+        maxRunsPerScenario: Int = 1,
+        delayBetweenRunsSeconds: Double = 5,
+        scenarios: [PersistentDiagnosticScenarioKind] = PersistentDiagnosticScenarioKind.allCases
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.enabled = enabled
+        self.runContinuously = runContinuously
+        self.maxRunsPerScenario = max(1, maxRunsPerScenario)
+        self.delayBetweenRunsSeconds = max(0.5, delayBetweenRunsSeconds)
+        self.scenarios = scenarios.isEmpty ? [.plainFastPrompt, .agentFastPrompt] : scenarios
+    }
+}
+
+nonisolated struct PersistentDiagnosticRunRecord: Codable, Sendable, Identifiable, Equatable {
+    let id: UUID
+    let campaignID: UUID
+    let scenario: PersistentDiagnosticScenarioKind
+    let startedAt: Date
+    var finishedAt: Date?
+    var status: PersistentDiagnosticStatus
+    var metrics: PersistentDiagnosticMetrics
+    var events: [PersistentDiagnosticEvent]
+    var failureSummary: String?
+
+    init(id: UUID = UUID(), campaignID: UUID, scenario: PersistentDiagnosticScenarioKind, startedAt: Date = Date(), status: PersistentDiagnosticStatus = .pending, metrics: PersistentDiagnosticMetrics = .init(), events: [PersistentDiagnosticEvent] = [], failureSummary: String? = nil) {
+        self.id = id
+        self.campaignID = campaignID
+        self.scenario = scenario
+        self.startedAt = startedAt
+        self.finishedAt = nil
+        self.status = status
+        self.metrics = metrics
+        self.events = events
+        self.failureSummary = failureSummary
+    }
+}
+
+nonisolated struct PersistentDiagnosticMetrics: Codable, Sendable, Equatable {
+    var scenePhase: String?
+    var thermalState: String?
+    var lowPowerMode: Bool?
+    var memoryWarningCount: Int?
+    var cpuWatchdog: PersistentDiagnosticCPUWatchdogSnapshot?
+    var diskWrite: PersistentDiagnosticDiskWriteSnapshot?
+    var generationActive: Bool = false
+    var promptLatencyClass: String?
+    var promptInitialChars: Int?
+    var promptFinalChars: Int?
+    var estimatedPromptTokens: Int?
+    var firstTokenLatencyMs: Int?
+    var generationElapsedMs: Int?
+    var agentGroundingElapsedMs: Int?
+    var groundingSectionCount: Int?
+    var groundingChars: Int?
+    var toolCount: Int?
+    var memoryCount: Int?
+    var didUseFastPath: Bool = false
+    var didCancel: Bool = false
+    var cancellationReason: String?
+    var didFallback: Bool = false
+    var fallbackReason: String?
+    var uiUpdateCount: Int = 0
+    var streamingUpdateCount: Int = 0
+    var diskBytesBefore: Int64?
+    var diskBytesAfter: Int64?
+    var appBecameInactiveOrBackgroundDuringRun: Bool = false
+    var errorCodes: [String] = []
+
+    mutating func captureNonisolatedEnvironment() {
+        thermalState = DeviceThermalState.from(processThermalState: ProcessInfo.processInfo.thermalState).rawValue
+        lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        cpuWatchdog = PersistentDiagnosticCPUWatchdogSnapshot(CPUWatchdogGuard.shared.currentSnapshot())
+        diskWrite = PersistentDiagnosticDiskWriteSnapshot(DiskWriteBudget.shared.snapshot())
+        generationActive = DiskWriteBudget.shared.isGenerationActive()
+    }
+
+    static func sceneString(_ phase: ScenePhase?) -> String? {
+        switch phase {
+        case .active: return "active"
+        case .inactive: return "inactive"
+        case .background: return "background"
+        case nil: return nil
+        @unknown default: return "unknown"
+        }
+    }
+}
+
+nonisolated struct PersistentDiagnosticCPUWatchdogSnapshot: Codable, Sendable, Equatable {
+    var degradedCategories: [String]
+    var totalsByCategory: [String: Double]
+    var activeCountsByCategory: [String: Int]
+
+    init(_ snapshot: CPUWatchdogSnapshot) {
+        degradedCategories = snapshot.degradedCategories.map(\.rawValue).sorted()
+        totalsByCategory = Dictionary(uniqueKeysWithValues: snapshot.totalsByCategory.map { ($0.key.rawValue, $0.value) })
+        activeCountsByCategory = Dictionary(uniqueKeysWithValues: snapshot.activeCountsByCategory.map { ($0.key.rawValue, $0.value) })
+    }
+}
+
+nonisolated struct PersistentDiagnosticDiskWriteSnapshot: Codable, Sendable, Equatable {
+    var bytes1Minute: Int64
+    var bytes15Minutes: Int64
+    var bytes24Hours: Int64
+    var bytesByCategory24Hours: [String: Int64]
+    var generationActive: Bool
+
+    init(_ snapshot: DiskWriteBudgetSnapshot, generationActive: Bool = DiskWriteBudget.shared.isGenerationActive()) {
+        bytes1Minute = snapshot.bytes1Minute
+        bytes15Minutes = snapshot.bytes15Minutes
+        bytes24Hours = snapshot.bytes24Hours
+        bytesByCategory24Hours = Dictionary(uniqueKeysWithValues: snapshot.bytesByCategory24Hours.map { ($0.key.rawValue, $0.value) })
+        self.generationActive = generationActive
+    }
+}
+
+nonisolated struct PersistentDiagnosticEvent: Codable, Sendable, Identifiable, Equatable {
+    let id: UUID
+    let at: Date
+    let code: String
+    let message: String
+    let values: [String: String]
+
+    init(id: UUID = UUID(), at: Date = Date(), code: String, message: String, values: [String: String] = [:]) {
+        self.id = id
+        self.at = at
+        self.code = PersistentRuntimeDiagnosticsRedactor.safeCode(code)
+        self.message = PersistentRuntimeDiagnosticsRedactor.redact(message)
+        self.values = PersistentRuntimeDiagnosticsRedactor.redact(values)
+    }
+}
+
+nonisolated struct PersistentDiagnosticRunnerStatus: Codable, Sendable, Equatable {
+    var isRunning: Bool = false
+    var isPaused: Bool = false
+    var latestScenario: PersistentDiagnosticScenarioKind?
+    var passedCount: Int = 0
+    var failedCount: Int = 0
+    var skippedCount: Int = 0
+    var lastFirstTokenLatencyMs: Int?
+    var lastPromptFinalChars: Int?
+    var lastCancellationReason: String?
+    var lastCrashResumeStatus: String?
+    var lastUpdatedAt: Date = Date()
+}
+
+nonisolated struct PersistentDiagnosticState: Codable, Sendable, Equatable {
+    var activeRunID: UUID?
+    var activeCampaignID: UUID?
+    var activeScenario: PersistentDiagnosticScenarioKind?
+    var activeStartedAt: Date?
+    var activeLaunchUUID: UUID?
+    var cleanCancellationBeforeTermination: Bool = false
+    var completedRunIDs: Set<UUID> = []
+    var records: [PersistentDiagnosticRunRecord] = []
+    var status: PersistentDiagnosticRunnerStatus = .init()
+}
+
+nonisolated enum PersistentRuntimeDiagnosticsRedactor {
+    static let maxEventMessageChars = 160
+    static let maxValueChars = 96
+
+    static func safeCode(_ code: String) -> String {
+        let allowed = code.lowercased().map { ch in
+            (ch.isLetter || ch.isNumber || ch == "_" || ch == "-" || ch == ".") ? ch : "_"
+        }
+        return String(String(allowed).prefix(64))
+    }
+
+    static func redact(_ text: String) -> String {
+        String(redactWithoutTruncating(text).prefix(maxEventMessageChars))
+    }
+
+    static func redactWithoutTruncating(_ text: String) -> String {
+        var output = text
+        let patterns = [
+            #"(?i)(prompt|memory|file|path|content|body|text)=([^,\n]+)"#,
+            #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
+            #"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"#,
+            #"/[^\s,]+"#
+        ]
+        for pattern in patterns {
+            output = output.replacingOccurrences(of: pattern, with: "[redacted]", options: [.regularExpression, .caseInsensitive])
+        }
+        return output
+    }
+
+    static func redact(_ values: [String: String]) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: values.map { key, value in
+            (safeCode(key), String(redact(value).prefix(maxValueChars)))
+        })
+    }
+}
+
+nonisolated enum PersistentRuntimeDiagnosticsAvailability {
+    static var isDeveloperVisible: Bool {
+        #if DEBUG
+        return true
+        #else
+        return UserDefaults.standard.bool(forKey: "lumen.developer.persistentRuntimeDiagnostics.visible")
+        #endif
+    }
+
+    static func enableForInternalDiagnostics() {
+        UserDefaults.standard.set(true, forKey: "lumen.developer.persistentRuntimeDiagnostics.visible")
+    }
+}
+
+nonisolated enum PersistentRuntimeDiagnosticSignalKind: String, Codable, Sendable {
+    case llamaPromptBudget
+    case llamaFirstToken
+    case llamaComplete
+    case llamaCancel
+    case llamaFailure
+    case slotAgentStart
+    case slotAgentPath
+    case slotAgentFallback
+    case slotAgentEnd
+    case slotAgentCancel
+    case groundingCost
+    case uiUpdate
+    case sceneTransition
+}
+
+nonisolated struct PersistentRuntimeDiagnosticSignal: Sendable {
+    let kind: PersistentRuntimeDiagnosticSignalKind
+    let at: Date
+    let values: [String: String]
+
+    init(kind: PersistentRuntimeDiagnosticSignalKind, values: [String: String] = [:], at: Date = Date()) {
+        self.kind = kind
+        self.at = at
+        self.values = PersistentRuntimeDiagnosticsRedactor.redact(values)
+    }
+}
+
+nonisolated final class PersistentRuntimeDiagnosticsObserver: @unchecked Sendable {
+    static let shared = PersistentRuntimeDiagnosticsObserver()
+    typealias Handler = @Sendable (PersistentRuntimeDiagnosticSignal) -> Void
+
+    private let lock = NSLock()
+    private var handlers: [UUID: Handler] = [:]
+
+    private init() {}
+
+    @discardableResult
+    func addObserver(_ handler: @escaping Handler) -> UUID {
+        let id = UUID()
+        lock.lock()
+        handlers[id] = handler
+        lock.unlock()
+        return id
+    }
+
+    func removeObserver(_ id: UUID) {
+        lock.lock()
+        handlers[id] = nil
+        lock.unlock()
+    }
+
+    func emit(_ signal: PersistentRuntimeDiagnosticSignal) {
+        let current: [Handler]
+        lock.lock()
+        current = Array(handlers.values)
+        lock.unlock()
+        current.forEach { $0(signal) }
+    }
+}
+
+extension Bundle {
+    var persistentDiagnosticsAppVersionSummary: String {
+        let version = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        return "\(version) (\(build))"
+    }
+}
