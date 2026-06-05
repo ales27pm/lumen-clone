@@ -1,6 +1,41 @@
 import Foundation
 import SwiftUI
 
+private final class SlotAgentCancellationRegistration: @unchecked Sendable {
+    private let lock = NSLock()
+    private var id: UUID?
+    private var category: AppCancellationCategory?
+    private var finished = false
+
+    func set(_ id: UUID, category: AppCancellationCategory) {
+        var shouldUnregister = false
+        lock.lock()
+        if finished {
+            shouldUnregister = true
+        } else {
+            self.id = id
+            self.category = category
+        }
+        lock.unlock()
+        if shouldUnregister { AppCancellationBus.shared.unregister(id, category: category) }
+    }
+
+    func unregister() {
+        let currentID: UUID?
+        let currentCategory: AppCancellationCategory?
+        lock.lock()
+        finished = true
+        currentID = id
+        currentCategory = category
+        id = nil
+        category = nil
+        lock.unlock()
+        if let currentID, let currentCategory {
+            AppCancellationBus.shared.unregister(currentID, category: currentCategory)
+        }
+    }
+}
+
 @MainActor
 final class SlotAgentService {
     static let shared = SlotAgentService()
@@ -15,8 +50,10 @@ final class SlotAgentService {
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
         let cancellationToken = AgentGroundingCancellationToken()
+        let registration = SlotAgentCancellationRegistration()
         return AsyncStream { continuation in
             let task = Task.detached(priority: .userInitiated) {
+                defer { registration.unregister() }
                 do {
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentStart, values: ["promptChars": String(req.userMessage.count), "toolCount": String(req.availableTools.count), "memoryCount": String(req.relevantMemories.count)]))
                     try cancellationToken.checkCancellation()
@@ -25,14 +62,18 @@ final class SlotAgentService {
                     case .cancel:
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": "resource-scene-inactive"]))
                         continuation.finish()
+                        Self.emitContinuationFinished(path: "cancel")
                         return
                     case .fallback:
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-fallback"]))
                         let text = Self.deterministicCompatibilityFallback()
+                        Self.emitDeterministicAnswerBuilt(path: "fallback")
                         continuation.yield(.finalDelta(text))
                         continuation.yield(.done(finalText: text, steps: []))
-                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "fallback"]))
+                        Self.emitDoneYielded(path: "fallback")
+                        Self.emitSlotAgentEnd(path: "fallback")
                         continuation.finish()
+                        Self.emitContinuationFinished(path: "fallback")
                         return
                     case .allow:
                         break
@@ -40,40 +81,85 @@ final class SlotAgentService {
 
                     if Self.shouldUseFastAgentPath(req) {
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "fast-agent"]))
+                        let groundingStart = ProcessInfo.processInfo.systemUptime
                         let grounded = Self.fastGroundingResult(for: req, options: options)
+                        Self.emitGroundingComplete(path: "fast-agent", grounded: grounded, elapsedMs: Int((ProcessInfo.processInfo.systemUptime - groundingStart) * 1000))
                         try cancellationToken.checkCancellation()
                         let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
+                        Self.emitEffectiveRequestBuilt(path: "fast-agent", request: effectiveRequest)
                         let text = Self.deterministicAnswer(for: effectiveRequest)
+                        Self.emitDeterministicAnswerBuilt(path: "fast-agent")
                         continuation.yield(.finalDelta(text))
                         continuation.yield(.done(finalText: text, steps: []))
-                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "fast-agent", "groundingChars": String(grounded.userMessage.count + grounded.systemPrompt.count), "sectionCount": String(grounded.sections.count), "toolCount": String(grounded.bridgedTools.count)]))
+                        Self.emitDoneYielded(path: "fast-agent")
+                        Self.emitSlotAgentEnd(path: "fast-agent", grounded: grounded)
                         continuation.finish()
+                        Self.emitContinuationFinished(path: "fast-agent")
                         return
                     }
 
                     try cancellationToken.checkCancellation()
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "normal-agent"]))
+                    let groundingStart = ProcessInfo.processInfo.systemUptime
                     let grounded = await self.prepareGroundedRequest(req, options: options, cancellationToken: cancellationToken)
+                    Self.emitGroundingComplete(path: "normal-agent", grounded: grounded, elapsedMs: Int((ProcessInfo.processInfo.systemUptime - groundingStart) * 1000))
                     try cancellationToken.checkCancellation()
                     let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
+                    Self.emitEffectiveRequestBuilt(path: "normal-agent", request: effectiveRequest)
                     let text = Self.deterministicAnswer(for: effectiveRequest)
+                    Self.emitDeterministicAnswerBuilt(path: "normal-agent")
                     continuation.yield(.finalDelta(text))
                     continuation.yield(.done(finalText: text, steps: []))
-                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: ["path": "normal-agent", "groundingChars": String(grounded.userMessage.count + grounded.systemPrompt.count), "sectionCount": String(grounded.sections.count), "toolCount": String(grounded.bridgedTools.count)]))
+                    Self.emitDoneYielded(path: "normal-agent")
+                    Self.emitSlotAgentEnd(path: "normal-agent", grounded: grounded)
                     continuation.finish()
+                    Self.emitContinuationFinished(path: "normal-agent")
                 } catch is CancellationError {
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"]))
                     continuation.finish()
+                    Self.emitContinuationFinished(path: "cancelled")
                 } catch {
                     continuation.finish()
+                    Self.emitContinuationFinished(path: "error")
                 }
             }
-            AppCancellationBus.shared.register(task, category: .chatGeneration)
+            let id = AppCancellationBus.shared.register(task, category: .chatGeneration)
+            registration.set(id, category: .chatGeneration)
             continuation.onTermination = { @Sendable _ in
                 cancellationToken.cancel()
                 task.cancel()
+                registration.unregister()
             }
         }
+    }
+
+    func prepareGroundedRequestForDiagnostics(_ req: AgentRequest, options: LegacyAgentRunOptions) async -> LegacyGroundingResult {
+        let mode: LegacyGroundingRequest.Mode = options.groundingMode == .headlessTrigger ? .headless : .foreground
+        let policy: LegacyPromptInjectionPolicy
+        switch options.groundingMode {
+        case .headlessTrigger: policy = .headlessTrigger
+        case .slotAgent: policy = .slotAgent
+        case .rolePipeline: policy = .rolePipeline
+        case .foregroundChat: policy = .foregroundChat
+        }
+        let request = LegacyGroundingRequest(
+            userMessage: req.userMessage,
+            conversationID: options.conversationID ?? req.conversationID,
+            turnID: options.turnID ?? req.turnID,
+            history: req.history,
+            mode: mode,
+            task: .chat,
+            roleOrSlot: "\(options.groundingMode):diagnostics-dry-run",
+            externalRelevantMemories: req.relevantMemories,
+            externalAvailableTools: req.availableTools,
+            policy: policy,
+            baseSystemPrompt: req.systemPrompt,
+            preventDoubleGrounding: options.preventDoubleGrounding
+        )
+        return await LegacyTurnGroundingCoordinator.shared.prepareGroundedRequest(
+            request,
+            provider: LegacyGroundingContextProvider(directContext: nil, allowSharedFallback: false)
+        )
     }
 
     private func prepareGroundedRequest(_ req: AgentRequest, options: LegacyAgentRunOptions, cancellationToken: AgentGroundingCancellationToken? = nil) async -> LegacyGroundingResult {
@@ -120,6 +206,43 @@ final class SlotAgentService {
             conversationID: options.conversationID ?? original.conversationID,
             turnID: options.turnID ?? original.turnID
         )
+    }
+
+    private nonisolated static func diagnosticValues(path: String, grounded: LegacyGroundingResult? = nil, toolCount: Int? = nil, elapsedMs: Int? = nil) -> [String: String] {
+        var values = ["path": path]
+        if let grounded {
+            values["groundingChars"] = String(grounded.userMessage.count + grounded.systemPrompt.count)
+            values["sectionCount"] = String(grounded.sections.count)
+            values["toolCount"] = String(grounded.bridgedTools.count)
+        }
+        if let toolCount { values["toolCount"] = String(toolCount) }
+        if let elapsedMs { values["elapsedMs"] = String(elapsedMs) }
+        return values
+    }
+
+    private nonisolated static func emitGroundingComplete(path: String, grounded: LegacyGroundingResult, elapsedMs: Int) {
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentGroundingComplete, values: diagnosticValues(path: path, grounded: grounded, elapsedMs: elapsedMs)))
+    }
+
+    private nonisolated static func emitEffectiveRequestBuilt(path: String, request: AgentRequest) {
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEffectiveRequestBuilt, values: diagnosticValues(path: path, toolCount: request.availableTools.count)))
+    }
+
+    private nonisolated static func emitDeterministicAnswerBuilt(path: String) {
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentDeterministicAnswerBuilt, values: diagnosticValues(path: path)))
+    }
+
+    private nonisolated static func emitDoneYielded(path: String) {
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentDoneYielded, values: diagnosticValues(path: path)))
+    }
+
+    private nonisolated static func emitSlotAgentEnd(path: String, grounded: LegacyGroundingResult? = nil) {
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEnd, values: diagnosticValues(path: path, grounded: grounded)))
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentEndEmitted, values: diagnosticValues(path: path, grounded: grounded)))
+    }
+
+    private nonisolated static func emitContinuationFinished(path: String) {
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentContinuationFinished, values: diagnosticValues(path: path)))
     }
 
     nonisolated static func sanitizeHistoryEntryForPromptContext(role: MessageRole, content: String) -> String? {
