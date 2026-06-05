@@ -1,10 +1,12 @@
 import SwiftUI
+import UIKit
 
 struct PersistentRuntimeDiagnosticsView: View {
     @State private var campaign = PersistentDiagnosticCampaign()
     @State private var status = PersistentDiagnosticRunnerStatus()
     @State private var isBusy = false
     @State private var exportURL: URL?
+    @State private var shareItem: RuntimeDiagnosticsShareItem?
     @State private var message = "Persistent diagnostics are idle."
 
     var body: some View {
@@ -40,7 +42,26 @@ struct PersistentRuntimeDiagnosticsView: View {
                 Button("Start Lifecycle Cancellation Probe") { startLifecycleProbe() }.disabled(isBusy)
                 Button("Export Logs") { exportLogs() }.disabled(isBusy)
                 Button("Clear Logs", role: .destructive) { clearLogs() }.disabled(isBusy)
-                if let exportURL { Text(exportURL.path).font(.caption.monospaced()).textSelection(.enabled) }
+                if let exportURL {
+                    Button {
+                        shareItem = RuntimeDiagnosticsShareItem(url: exportURL)
+                    } label: {
+                        Label("Share Exported Logs", systemImage: "square.and.arrow.up")
+                    }
+
+                    ShareLink(item: exportURL) {
+                        Label("Save / Share Logs", systemImage: "square.and.arrow.up")
+                    }
+
+                    Text(exportURL.lastPathComponent)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+
+                    Text(exportURL.path)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
 
             Section("Latest Status") {
@@ -62,6 +83,9 @@ struct PersistentRuntimeDiagnosticsView: View {
         }
         .navigationTitle("Runtime Diagnostics")
         .task { await load() }
+        .sheet(item: $shareItem) { item in
+            RuntimeDiagnosticsActivityView(activityItems: [item.url])
+        }
     }
 
     private func binding(_ keyPath: WritableKeyPath<PersistentDiagnosticCampaign, Bool>) -> Binding<Bool> {
@@ -122,8 +146,10 @@ struct PersistentRuntimeDiagnosticsView: View {
         isBusy = true
         Task {
             do {
-                exportURL = try await PersistentRuntimeDiagnosticsExporter.shared.export()
-                message = "Export written."
+                let url = try await PersistentRuntimeDiagnosticsExporter.shared.export()
+                exportURL = url
+                shareItem = RuntimeDiagnosticsShareItem(url: url)
+                message = "Export ready to share."
             } catch {
                 message = "Export failed: \(error.localizedDescription)"
             }
@@ -141,4 +167,19 @@ struct PersistentRuntimeDiagnosticsView: View {
             isBusy = false
         }
     }
+}
+
+private struct RuntimeDiagnosticsShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct RuntimeDiagnosticsActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
