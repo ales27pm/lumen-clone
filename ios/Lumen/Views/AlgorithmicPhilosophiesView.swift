@@ -29,7 +29,7 @@ struct AlgorithmicPhilosophiesView: View {
                 )
             }
         }
-        .background(Theme.background.ignoresSafeArea())
+        .background(AppBackground())
         .navigationTitle("Philosophies")
     }
 

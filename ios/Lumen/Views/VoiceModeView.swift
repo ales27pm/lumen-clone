@@ -25,7 +25,7 @@ struct VoiceModeView: View {
 
     var body: some View {
         ZStack {
-            Theme.background.ignoresSafeArea()
+            AppBackground()
 
             VStack(spacing: 24) {
                 HStack {

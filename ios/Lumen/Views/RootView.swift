@@ -41,6 +41,8 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
+            AppBackground()
+
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 List(MenuItem.allCases, selection: $selection) { item in
                     NavigationLink(value: item) {
