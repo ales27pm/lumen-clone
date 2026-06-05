@@ -13,8 +13,10 @@ actor PersistentRuntimeDiagnosticsStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var bufferedLines: [String] = []
-    private let maxLogBytes = 2 * 1024 * 1024
+    private let maxLogBytes = 1 * 1024 * 1024
     private let maxBufferedLines = 256
+    private let defaultExportLineLimit = 500
+    private let defaultExportByteLimit = 1 * 1024 * 1024
 
     init(directoryURL: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -82,14 +84,15 @@ actor PersistentRuntimeDiagnosticsStore {
         bufferedLines = []
     }
 
-    func readLogDataForExport() async -> Data {
+    func readLogDataForExport(full: Bool = false) async -> Data {
         var out = Data()
-        if let rotated = try? Data(contentsOf: rotatedLogURL) { out.append(rotated) }
+        if full, let rotated = try? Data(contentsOf: rotatedLogURL) { out.append(rotated) }
         if let current = try? Data(contentsOf: logURL) { out.append(current) }
         if !bufferedLines.isEmpty {
+            if !out.isEmpty { out.append("\n".data(using: .utf8) ?? Data()) }
             out.append(bufferedLines.joined(separator: "\n").data(using: .utf8) ?? Data())
         }
-        return out
+        return full ? out : boundedExportData(out)
     }
 
     func markUnfinishedRunInterrupted(launchUUID: UUID, startupAt: Date) async throws -> PersistentDiagnosticRunRecord? {
@@ -110,6 +113,7 @@ actor PersistentRuntimeDiagnosticsStore {
         ]))
         state.status.lastCrashResumeStatus = statusText
         state.records.append(record)
+        state.markRunCompleted(record.id)
         state.activeRunID = nil
         state.activeCampaignID = nil
         state.activeScenario = nil
@@ -168,7 +172,28 @@ actor PersistentRuntimeDiagnosticsStore {
     private func trimmedState(_ state: PersistentDiagnosticState) -> PersistentDiagnosticState {
         var copy = state
         if copy.records.count > 100 { copy.records.removeFirst(copy.records.count - 100) }
+        copy.trimCompletedRunIDs()
         return copy
+    }
+
+    private func boundedExportData(_ data: Data) -> Data {
+        guard !data.isEmpty else { return data }
+        let text = String(data: data, encoding: .utf8) ?? ""
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        if lines.count > defaultExportLineLimit {
+            lines.removeFirst(lines.count - defaultExportLineLimit)
+        }
+        var output = lines.joined(separator: "\n")
+        var encoded = output.data(using: .utf8) ?? Data()
+        if encoded.count > defaultExportByteLimit {
+            encoded = Data(encoded.suffix(defaultExportByteLimit))
+            output = String(data: encoded, encoding: .utf8) ?? ""
+            if let newline = output.firstIndex(of: "\n") {
+                output = String(output[output.index(after: newline)...])
+            }
+            encoded = output.data(using: .utf8) ?? encoded
+        }
+        return encoded
     }
 }
 

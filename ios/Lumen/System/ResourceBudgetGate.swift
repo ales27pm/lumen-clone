@@ -24,6 +24,14 @@ enum ResourceBudgetGate {
 
     #if DEBUG
     static var testSnapshotOverride: Snapshot?
+
+    static func setDiagnosticSnapshotOverride(_ snapshot: Snapshot?) {
+        testSnapshotOverride = snapshot
+    }
+
+    static func clearDiagnosticSnapshotOverride() {
+        testSnapshotOverride = nil
+    }
     #endif
 
     private static var lastScenePhase: ScenePhase?
@@ -37,7 +45,10 @@ enum ResourceBudgetGate {
     }
 
     static func allowsHeavyModelWork(reason: String) -> Bool {
-        let snapshot = currentSnapshot()
+        allowsHeavyModelWork(snapshot: currentSnapshot(), reason: reason)
+    }
+
+    static func allowsHeavyModelWork(snapshot: Snapshot, reason: String) -> Bool {
         guard snapshot.scenePhase == .active else { return false }
         guard !hasRecentMemoryWarning(snapshot) else { return false }
         guard let thermal = snapshot.thermalState else { return false }
