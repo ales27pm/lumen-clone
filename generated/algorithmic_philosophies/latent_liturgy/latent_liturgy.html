@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generative Art Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Lora:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --anthropic-dark: #141413;
+            --anthropic-light: #faf9f5;
+            --anthropic-mid-gray: #b0aea5;
+            --anthropic-light-gray: #e8e6dc;
+            --anthropic-orange: #d97757;
+            --anthropic-blue: #6a9bcc;
+            --anthropic-green: #788c5d;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, var(--anthropic-light) 0%, #f5f3ee 100%);
+            min-height: 100vh;
+            color: var(--anthropic-dark);
+        }
+        .container { display: flex; min-height: 100vh; padding: 20px; gap: 20px; }
+        .sidebar {
+            width: 320px; flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 24px; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(20, 20, 19, 0.1);
+            overflow-y: auto;
+        }
+        .sidebar h1 { font-family: 'Lora', serif; font-size: 24px; font-weight: 500; margin-bottom: 8px; }
+        .sidebar .subtitle { color: var(--anthropic-mid-gray); font-size: 14px; margin-bottom: 32px; }
+        .control-section { margin-bottom: 32px; }
+        .control-section h3 {
+            font-size: 16px; font-weight: 600; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .control-section h3::before { content: '•'; color: var(--anthropic-orange); }
+        .seed-input {
+            width: 100%; background: var(--anthropic-light);
+            padding: 12px; border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px; margin-bottom: 12px;
+            border: 1px solid var(--anthropic-light-gray);
+            text-align: center;
+        }
+        .seed-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+        .control-group { margin-bottom: 20px; }
+        .control-group label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+        .slider-container { display: flex; align-items: center; gap: 12px; }
+        .slider-container input[type="range"] {
+            flex: 1; height: 4px; background: var(--anthropic-light-gray);
+            border-radius: 2px; -webkit-appearance: none;
+        }
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px;
+            background: var(--anthropic-orange); border-radius: 50%; cursor: pointer;
+        }
+        .value-display {
+            font-family: 'Courier New', monospace; font-size: 12px;
+            color: var(--anthropic-mid-gray); min-width: 60px; text-align: right;
+        }
+        .color-group { margin-bottom: 16px; }
+        .color-group label { display: block; font-size: 12px; color: var(--anthropic-mid-gray); margin-bottom: 4px; }
+        .color-picker-container { display: flex; align-items: center; gap: 8px; }
+        .color-picker-container input[type="color"] {
+            width: 32px; height: 32px; border: none; border-radius: 6px; cursor: pointer;
+        }
+        .button {
+            background: var(--anthropic-orange); color: white; border: none;
+            padding: 10px 16px; border-radius: 6px; font-size: 14px;
+            font-weight: 500; cursor: pointer; width: 100%;
+        }
+        .button:hover { background: #c86641; }
+        .button.secondary { background: var(--anthropic-blue); }
+        .button.tertiary { background: var(--anthropic-green); }
+        .button-row { display: flex; gap: 8px; }
+        .button-row .button { flex: 1; }
+        .canvas-area { flex: 1; display: flex; align-items: center; justify-content: center; }
+        #canvas-container {
+            width: 100%; max-width: 1000px; border-radius: 12px;
+            overflow: hidden; box-shadow: 0 20px 40px rgba(20, 20, 19, 0.1); background: white;
+        }
+        #canvas-container canvas { display: block; width: 100% !important; height: auto !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <!-- CUSTOMIZE: Title and subtitle -->
+            <h1>Latent Liturgy</h1>
+            <div class="subtitle">Hidden clauses guide living particles into ceremonial traces.</div>
+
+            <!-- FIXED: Seed Section -->
+            <div class="control-section">
+                <h3>Seed</h3>
+                <input type="number" id="seed-input" class="seed-input" value="12345" onchange="updateSeed()">
+                <div class="seed-controls">
+                    <button class="button secondary" onclick="previousSeed()">← Prev</button>
+                    <button class="button secondary" onclick="nextSeed()">Next →</button>
+                </div>
+                <button class="button tertiary" onclick="randomSeedAndUpdate()">↻ Random</button>
+            </div>
+
+            <!-- CUSTOMIZE: Parameters Section -->
+            <div class="control-section">
+                <h3>Parameters</h3>
+                <div class="control-group">
+                    <label>Hidden Clauses</label>
+                    <div class="slider-container">
+                        <input type="range" id="clauseCount" min="3" max="12" step="1" value="7" oninput="updateParam('clauseCount', this.value)">
+                        <span class="value-display" id="clauseCount-value">7</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Particle Readers</label>
+                    <div class="slider-container">
+                        <input type="range" id="particleCount" min="250" max="1400" step="25" value="850" oninput="updateParam('particleCount', this.value)">
+                        <span class="value-display" id="particleCount-value">850</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Turbulence</label>
+                    <div class="slider-container">
+                        <input type="range" id="turbulence" min="0.1" max="1.5" step="0.01" value="0.78" oninput="updateParam('turbulence', this.value)">
+                        <span class="value-display" id="turbulence-value">0.78</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Clause Gravity</label>
+                    <div class="slider-container">
+                        <input type="range" id="clauseGravity" min="0.2" max="2.2" step="0.01" value="1.18" oninput="updateParam('clauseGravity', this.value)">
+                        <span class="value-display" id="clauseGravity-value">1.18</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Procession Speed</label>
+                    <div class="slider-container">
+                        <input type="range" id="processionSpeed" min="0.35" max="2.8" step="0.01" value="1.35" oninput="updateParam('processionSpeed', this.value)">
+                        <span class="value-display" id="processionSpeed-value">1.35</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Trail Patience</label>
+                    <div class="slider-container">
+                        <input type="range" id="trailPatience" min="10" max="80" step="1" value="38" oninput="updateParam('trailPatience', this.value)">
+                        <span class="value-display" id="trailPatience-value">38</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Symmetry Pressure</label>
+                    <div class="slider-container">
+                        <input type="range" id="symmetryPressure" min="0" max="1" step="0.01" value="0.42" oninput="updateParam('symmetryPressure', this.value)">
+                        <span class="value-display" id="symmetryPressure-value">0.42</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Margin Bend</label>
+                    <div class="slider-container">
+                        <input type="range" id="marginBend" min="0" max="1.4" step="0.01" value="0.62" oninput="updateParam('marginBend', this.value)">
+                        <span class="value-display" id="marginBend-value">0.62</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OPTIONAL: Colors Section -->
+            <div class="control-section">
+                <h3>Colors</h3>
+                <div class="color-group">
+                    <label>Background</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="backgroundColor" value="#11110f" onchange="updateColor('backgroundColor', this.value)">
+                    </div>
+                </div>
+                <div class="color-group">
+                    <label>Ink</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="inkColor" value="#f4e7cf" onchange="updateColor('inkColor', this.value)">
+                    </div>
+                </div>
+                <div class="color-group">
+                    <label>Ember</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="emberColor" value="#d97757" onchange="updateColor('emberColor', this.value)">
+                    </div>
+                </div>
+                <div class="color-group">
+                    <label>Witness Blue</label>
+                    <div class="color-picker-container">
+                        <input type="color" id="witnessColor" value="#6a9bcc" onchange="updateColor('witnessColor', this.value)">
+                    </div>
+                </div>
+            </div>
+
+            <!-- FIXED: Actions Section -->
+            <div class="control-section">
+                <h3>Actions</h3>
+                <div class="button-row">
+                    <button class="button secondary" onclick="regenerateArtwork()">Regenerate</button>
+                    <button class="button" onclick="resetParameters()">Reset</button>
+                </div>
+            </div>
+        </div>
+        <div class="canvas-area">
+            <div id="canvas-container"></div>
+        </div>
+    </div>
+    <script>
+const defaultParams = {
+  seed: 12345,
+  clauseCount: 7,
+  particleCount: 850,
+  turbulence: 0.78,
+  clauseGravity: 1.18,
+  processionSpeed: 1.35,
+  trailPatience: 38,
+  symmetryPressure: 0.42,
+  marginBend: 0.62,
+  backgroundColor: '#11110f',
+  inkColor: '#f4e7cf',
+  emberColor: '#d97757',
+  witnessColor: '#6a9bcc'
+};
+
+let params = { ...defaultParams };
+let particles = [];
+let clauses = [];
+let trailLayer;
+let systemAge = 0;
+let maxAge = 980;
+let fieldSalt = 0;
+
+function setup() {
+  const canvas = createCanvas(1200, 1200);
+  canvas.parent('canvas-container');
+  pixelDensity(1);
+  initializeSystem();
+}
+
+function initializeSystem() {
+  params.seed = Number.isFinite(params.seed) ? params.seed : defaultParams.seed;
+  randomSeed(params.seed);
+  noiseSeed(params.seed);
+  fieldSalt = random(1000);
+  systemAge = 0;
+  maxAge = floor(map(params.trailPatience, 10, 80, 620, 1300));
+
+  trailLayer = createGraphics(width, height);
+  trailLayer.pixelDensity(1);
+  trailLayer.colorMode(RGB, 255, 255, 255, 255);
+  trailLayer.background(params.backgroundColor);
+  trailLayer.noFill();
+  trailLayer.blendMode(BLEND);
+
+  clauses = buildClauses();
+  particles = buildParticles();
+  background(params.backgroundColor);
+  loop();
+}
+
+function buildClauses() {
+  const built = [];
+  const count = floor(params.clauseCount);
+  const golden = PI * (3 - sqrt(5));
+  const center = createVector(width * 0.5, height * 0.5);
+  for (let i = 0; i < count; i++) {
+    const canonical = -HALF_PI + i * golden;
+    const jitter = random(-0.24, 0.24) * (1 - params.symmetryPressure);
+    const radius = width * (0.105 + 0.245 * sqrt((i + 0.5) / count));
+    const offset = p5.Vector.fromAngle(canonical + jitter).mult(radius);
+    const vow = createVector(center.x + offset.x, center.y + offset.y);
+    built.push({
+      pos: vow,
+      phase: random(TWO_PI),
+      polarity: random([-1, 1]),
+      radius: random(width * 0.12, width * 0.26),
+      gravity: random(0.72, 1.28)
+    });
+  }
+  return built;
+}
+
+function buildParticles() {
+  const built = [];
+  const count = floor(params.particleCount);
+  for (let i = 0; i < count; i++) {
+    let x;
+    let y;
+    if (random() < 0.68) {
+      const clause = random(clauses);
+      const angle = random(TWO_PI);
+      const radius = random(width * 0.035, width * 0.34) * sqrt(random());
+      x = clause.pos.x + cos(angle) * radius;
+      y = clause.pos.y + sin(angle) * radius;
+    } else {
+      const side = floor(random(4));
+      if (side === 0) { x = random(width); y = -random(20, 120); }
+      else if (side === 1) { x = width + random(20, 120); y = random(height); }
+      else if (side === 2) { x = random(width); y = height + random(20, 120); }
+      else { x = -random(20, 120); y = random(height); }
+    }
+
+    built.push(new Particle(x, y, i));
+  }
+  return built;
+}
+
+class Particle {
+  constructor(x, y, index) {
+    this.pos = createVector(x, y);
+    this.prev = this.pos.copy();
+    this.vel = p5.Vector.random2D().mult(random(0.2, 1.1));
+    this.index = index;
+    this.life = random(0.55, 1.0);
+    this.weight = random(0.28, 1.24);
+    this.hueBias = random();
+    this.memory = random(TWO_PI);
+  }
+
+  step() {
+    this.prev.set(this.pos);
+    const force = sampleField(this.pos, this.index, this.memory);
+    this.vel.mult(0.936);
+    this.vel.add(force.mult(params.processionSpeed));
+    this.vel.limit(2.9 + params.processionSpeed * 1.35);
+    this.pos.add(this.vel);
+    this.memory += 0.006 + this.vel.mag() * 0.002;
+    this.life -= 0.00024;
+
+    if (this.isExpired()) {
+      this.reseed();
+    }
+  }
+
+  isExpired() {
+    return this.life <= 0 || this.pos.x < -140 || this.pos.x > width + 140 || this.pos.y < -140 || this.pos.y > height + 140;
+  }
+
+  reseed() {
+    const angle = random(TWO_PI);
+    const radius = random(width * 0.48, width * 0.64);
+    this.pos.set(width / 2 + cos(angle) * radius, height / 2 + sin(angle) * radius);
+    this.prev.set(this.pos);
+    this.vel = p5.Vector.fromAngle(angle + HALF_PI * random([-1, 1])).mult(random(0.2, 0.9));
+    this.life = random(0.58, 1.0);
+    this.memory = random(TWO_PI);
+  }
+
+  drawTo(layer) {
+    const speed = this.vel.mag();
+    const warm = color(params.emberColor);
+    const pale = color(params.inkColor);
+    const witness = color(params.witnessColor);
+    const phase = 0.5 + 0.5 * sin(this.memory + this.index * 0.013);
+    const c = this.hueBias > 0.82 ? lerpColor(pale, witness, phase * 0.65) : lerpColor(pale, warm, min(1, speed / 4.2));
+    const alpha = map(speed, 0, 4.5, 14, 58, true) * this.life;
+
+    layer.stroke(red(c), green(c), blue(c), alpha);
+    layer.strokeWeight(this.weight * map(speed, 0, 4, 0.42, 1.7, true));
+    layer.line(this.prev.x, this.prev.y, this.pos.x, this.pos.y);
+  }
+}
+
+function sampleField(pos, index, memory) {
+  const center = createVector(width * 0.5, height * 0.5);
+  const toCenter = p5.Vector.sub(center, pos);
+  const dCenter = max(1, toCenter.mag());
+  const field = createVector(0, 0);
+
+  const scale = 0.0018 + params.turbulence * 0.0027;
+  const n1 = noise(pos.x * scale, pos.y * scale, fieldSalt + systemAge * 0.0016);
+  const n2 = noise(pos.y * scale * 1.7 + 31.4, pos.x * scale * 1.7, fieldSalt * 0.37);
+  const angle = (n1 * TWO_PI * 2.8) + (n2 - 0.5) * PI * params.turbulence + sin(memory) * 0.16;
+  field.add(p5.Vector.fromAngle(angle).mult(0.52 * params.turbulence));
+
+  for (const clause of clauses) {
+    const delta = p5.Vector.sub(clause.pos, pos);
+    const d = max(8, delta.mag());
+    const influence = exp(-sq(d / clause.radius)) * params.clauseGravity * clause.gravity;
+    const orbital = createVector(-delta.y, delta.x).normalize().mult(influence * clause.polarity * 0.92);
+    const pull = delta.normalize().mult(influence * 0.34);
+    field.add(orbital).add(pull);
+  }
+
+  const margin = min(pos.x, pos.y, width - pos.x, height - pos.y);
+  if (margin < width * 0.18) {
+    const tangent = createVector(-toCenter.y, toCenter.x).normalize();
+    const pressure = map(margin, 0, width * 0.18, 1, 0, true);
+    field.add(tangent.mult(pressure * params.marginBend * 0.94));
+  }
+
+  const symmetry = p5.Vector.sub(createVector(width - pos.x, height - pos.y), pos).normalize().mult(0.045 * params.symmetryPressure);
+  const breath = sin(systemAge * 0.012 + index * 0.037) * 0.028;
+  field.add(symmetry);
+  field.add(toCenter.normalize().mult((0.18 + breath) / sqrt(dCenter / 120)));
+  return field;
+}
+
+function draw() {
+  if (!trailLayer) return;
+
+  trailLayer.noStroke();
+  const fadeAlpha = map(params.trailPatience, 10, 80, 6.5, 0.75);
+  const bg = color(params.backgroundColor);
+  trailLayer.fill(red(bg), green(bg), blue(bg), fadeAlpha);
+  trailLayer.rect(0, 0, width, height);
+
+  const steps = params.particleCount > 1100 ? 1 : 2;
+  for (let s = 0; s < steps; s++) {
+    for (const p of particles) {
+      p.step();
+      p.drawTo(trailLayer);
+    }
+    systemAge++;
+  }
+
+  image(trailLayer, 0, 0);
+  drawClauseGlints();
+  drawVignette();
+
+  if (systemAge > maxAge) {
+    noLoop();
+  }
+}
+
+function drawClauseGlints() {
+  push();
+  blendMode(ADD);
+  noFill();
+  for (const clause of clauses) {
+    const pulse = 0.5 + 0.5 * sin(systemAge * 0.018 + clause.phase);
+    const c = color(params.emberColor);
+    stroke(red(c), green(c), blue(c), 18 + pulse * 28);
+    strokeWeight(0.7 + pulse * 0.8);
+    circle(clause.pos.x, clause.pos.y, clause.radius * (0.12 + pulse * 0.035));
+  }
+  pop();
+}
+
+function drawVignette() {
+  push();
+  noFill();
+  for (let i = 0; i < 42; i++) {
+    const alpha = map(i, 0, 41, 0, 8);
+    stroke(0, 0, 0, alpha);
+    strokeWeight(8);
+    rect(i * 6, i * 6, width - i * 12, height - i * 12, 18);
+  }
+  pop();
+}
+
+function regenerateArtwork() {
+  initializeSystem();
+}
+
+function updateSeed() {
+  params.seed = parseInt(document.getElementById('seed-input').value, 10);
+  initializeSystem();
+}
+
+function previousSeed() {
+  params.seed--;
+  document.getElementById('seed-input').value = params.seed;
+  initializeSystem();
+}
+
+function nextSeed() {
+  params.seed++;
+  document.getElementById('seed-input').value = params.seed;
+  initializeSystem();
+}
+
+function randomSeedAndUpdate() {
+  params.seed = Math.floor(Math.random() * 999999);
+  document.getElementById('seed-input').value = params.seed;
+  initializeSystem();
+}
+
+function resetParameters() {
+  const currentSeed = params.seed;
+  params = { ...defaultParams, seed: currentSeed };
+  syncControls();
+  initializeSystem();
+}
+
+function updateParam(name, value) {
+  params[name] = parseFloat(value);
+  document.getElementById(name + '-value').textContent = value;
+  initializeSystem();
+}
+
+function updateColor(id, value) {
+  params[id] = value;
+  initializeSystem();
+}
+
+function syncControls() {
+  document.getElementById('seed-input').value = params.seed;
+  for (const key of ['clauseCount', 'particleCount', 'turbulence', 'clauseGravity', 'processionSpeed', 'trailPatience', 'symmetryPressure', 'marginBend']) {
+    const input = document.getElementById(key);
+    const readout = document.getElementById(key + '-value');
+    if (input) input.value = params[key];
+    if (readout) readout.textContent = params[key];
+  }
+  for (const key of ['backgroundColor', 'inkColor', 'emberColor', 'witnessColor']) {
+    const input = document.getElementById(key);
+    if (input) input.value = params[key];
+  }
+}
+
+    </script>
+</body>
+</html>
