@@ -180,10 +180,14 @@ private struct LatentLiturgyProcessField: View {
 
     private func dayFraction(for date: Date) -> Double {
         let calendar = Calendar.autoupdatingCurrent
-        let components = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
-        let seconds = Double((components.hour ?? 0) * 3600 + (components.minute ?? 0) * 60 + (components.second ?? 0))
-        let nanos = Double(components.nanosecond ?? 0) / 1_000_000_000
-        return (seconds + nanos) / 86_400
+        let hour: Int = calendar.component(.hour, from: date)
+        let minute: Int = calendar.component(.minute, from: date)
+        let second: Int = calendar.component(.second, from: date)
+        let nanosecond: Int = calendar.component(.nanosecond, from: date)
+
+        let wholeSeconds: Int = (hour * 3_600) + (minute * 60) + second
+        let fractionalSeconds: Double = Double(nanosecond) / 1_000_000_000.0
+        return (Double(wholeSeconds) + fractionalSeconds) / 86_400.0
     }
 
     private func hiddenClauses(in size: CGSize, dayProgress: Double) -> [CGPoint] {
