@@ -1,0 +1,22 @@
+# Latent Liturgy
+
+Latent Liturgy is a generative movement devoted to the beauty of instructions that are never directly seen, only inferred through the behavior they produce. Its computational worldview treats a canvas as a field of hidden commitments: quiet attractors, procedural thresholds, and seeded vows that guide thousands of small agents into legible consequence without ever becoming illustration. The work must feel like a meticulously crafted algorithm, not a decorated surface; every visible trace is evidence of process, constraint, and emergence.
+
+Mathematically, Latent Liturgy is built from layered relationships between radial gravity, angular drift, harmonic phase, and bounded instability. Seeded randomness establishes the initial temperament of the system, while coherent noise gives it breath, hesitation, and local memory. The final implementation should appear refined through countless iterations, the product of deep computational expertise, where ratios, falloff curves, and perturbations have been tuned until the system seems inevitable rather than arbitrary.
+
+Particles behave like readers moving through an invisible text. They are pulled by hidden clauses, deflected by margins, accelerated by near encounters, and slowed when their motion begins to rhyme with neighboring paths. Their trails accumulate into luminous processional bands, not because a composition was predetermined, but because repeated rules discover structure over time. This must be a master-level implementation: painstaking optimization should make complexity feel calm, and every particle should seem governed by a hand that understands both force and restraint.
+
+Temporal evolution is central to the philosophy. Latent Liturgy should not reveal itself all at once; it should compile visually, as if the system is rehearsing an argument until the argument becomes atmosphere. Early states may look sparse and tentative, middle states should braid into dense fields of implication, and later states should settle into a balanced residue of motion. The algorithm’s beauty lives in execution, and each seed should produce a distinct but related ceremony, reproducible with exacting fidelity.
+
+Parametric variation should adjust qualities of devotion rather than switch styles: the number of hidden clauses, the radius of influence, the degree of turbulence, the patience of trails, and the pressure of symmetry. These controls give creative freedom while preserving the movement’s soul: a refined niche reference to latent instruction systems, embedded so quietly that those who know will feel the grammar beneath the image, while everyone else encounters a gallery-quality field of computational beauty. The finished piece must read as a meticulously crafted algorithm by someone at the absolute top of computational aesthetics, a living system shaped through care rather than chance.
+
+## Conceptual Seed
+
+The quiet conceptual DNA is a niche reference to latent instruction systems: hidden prompts, invisible constraints, and downstream interpretation are translated into “clauses” that never render directly but bend every particle path. This reference remains deliberately submerged; viewers who know the grammar of prompted computation may sense it in the attractors and parameter names, while others simply encounter a refined field of emergent motion.
+
+
+## Runtime Reflection
+
+Latent Liturgy now extends beyond the artifact into the host app as a real-time visual grammar. The same hidden-clause structure becomes a live SVG tracer for inspection and a SwiftUI Canvas process field for ambience: both are grounded in local time, golden-angle placement, particle-like path revelation, and quiet margins that imply invisible rules. This keeps the reference internal and sophisticated—the app does not label every motion as a prompt or constraint, but the informed viewer can feel the latent instruction system bending the interface.
+
+The reflection layer asks the runtime to expose its own process without flattening it into explanation. Viewer, tracer, manifesto, source, and app shell are separate witnesses to one computational philosophy: a seeded system whose visible behavior is an argument about hidden structure. The SVG tracer is deliberately not a screenshot; it is a living diagnostic of the aesthetic, revealing the algorithm's clauses, traces, and temporal drift as inspectable motion.

@@ -34,3 +34,7 @@ ios/Lumen/Assets.xcassets/
 !ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/
 !ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/Contents.json
 !ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/*.png
+
+# Keep generated algorithmic art previews local-only; binary screenshots make PR diffs unreadable.
+generated/algorithmic_philosophies/**/screenshots/
+ios/Lumen/Resources/AlgorithmicPhilosophies/**/screenshots/
