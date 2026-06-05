@@ -15,7 +15,7 @@ struct ChatHomeView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.background.ignoresSafeArea()
+                AppBackground()
                 if let convo = selectedConversation ?? conversations.first {
                     ChatView(conversation: convo)
                         .id(convo.id)
