@@ -105,8 +105,123 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertFalse(text.contains("/tmp/secret"))
     }
 
+    @MainActor func testAgentToolPromptDiagnosticUsesDryRunWithoutLiveSlotStream() async throws {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        #endif
+        AppCancellationBus.shared.cancel(.chatGeneration)
+        let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
+        let store = try makeStore()
+        let runner = PersistentRuntimeDiagnosticsRunner(store: store)
+        let campaign = PersistentDiagnosticCampaign(enabled: true, runContinuously: false, scenarios: [.agentToolPrompt])
+
+        let record = await runner.runOnce(campaign)
+
+        XCTAssertEqual(record?.status, .passed)
+        XCTAssertEqual(record?.scenario, .agentToolPrompt)
+        XCTAssertEqual(record?.metrics.didUseFastPath, false)
+        XCTAssertLessThanOrEqual(record?.metrics.groundingChars ?? Int.max, 4_000)
+        XCTAssertLessThanOrEqual(record?.metrics.groundingSectionCount ?? Int.max, 6)
+        XCTAssertEqual(record?.metrics.inputToolCount, 2)
+        XCTAssertEqual(record?.metrics.bridgedToolCount, 2)
+        XCTAssertFalse(record?.events.contains { $0.code == PersistentRuntimeDiagnosticSignalKind.slotAgentStart.rawValue } ?? true)
+        XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
+    }
+
+    @MainActor func testAgentToolPromptDryRunProducesBoundedGroundingWithoutCancellationRegistration() async {
+        AppCancellationBus.shared.cancel(.chatGeneration)
+        let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
+        let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
+
+        let result = await SlotAgentService.shared.prepareGroundedRequestForDiagnostics(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true))
+
+        XCTAssertFalse(SlotAgentService.shouldUseFastAgentPath(request))
+        XCTAssertLessThanOrEqual(result.userMessage.count + result.systemPrompt.count, 4_000)
+        XCTAssertLessThanOrEqual(result.sections.count, 6)
+        XCTAssertEqual(result.bridgedTools.count, request.availableTools.count)
+        XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
+    }
+
+    @MainActor func testLiveSlotAgentStreamUnregistersCancellationBusOnNormalCompletion() async {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        #endif
+        AppCancellationBus.shared.cancel(.chatGeneration)
+        let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
+        let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
+
+        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true)) {}
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
+    }
+
+    @MainActor func testLiveSlotAgentStreamUnregistersCancellationBusOnCancellation() async {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        #endif
+        AppCancellationBus.shared.cancel(.chatGeneration)
+        let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
+        let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
+        let stream = SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true))
+        XCTAssertGreaterThanOrEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
+        let task = Task {
+            for await _ in stream {}
+        }
+
+        task.cancel()
+        AppCancellationBus.shared.cancel(.chatGeneration)
+        _ = await task.result
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
+    }
+
+    @MainActor func testLiveSlotAgentDiagnosticSequenceIncludesPostGroundingMilestones() async {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        #endif
+        let capturedKinds = DiagnosticSignalKindCapture()
+        let observerID = PersistentRuntimeDiagnosticsObserver.shared.addObserver { signal in
+            capturedKinds.append(signal.kind)
+        }
+        defer { PersistentRuntimeDiagnosticsObserver.shared.removeObserver(observerID) }
+        let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
+
+        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true)) {}
+
+        let kinds = capturedKinds.snapshot()
+        XCTAssertTrue(kinds.contains(.slotAgentGroundingComplete))
+        XCTAssertTrue(kinds.contains(.slotAgentEffectiveRequestBuilt))
+        XCTAssertTrue(kinds.contains(.slotAgentDeterministicAnswerBuilt))
+        XCTAssertTrue(kinds.contains(.slotAgentDoneYielded))
+        XCTAssertTrue(kinds.contains(.slotAgentEndEmitted))
+        XCTAssertTrue(kinds.contains(.slotAgentContinuationFinished))
+    }
+
     private func makeStore() throws -> PersistentRuntimeDiagnosticsStore {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         return PersistentRuntimeDiagnosticsStore(directoryURL: url)
+    }
+}
+
+private final class DiagnosticSignalKindCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var kinds: [PersistentRuntimeDiagnosticSignalKind] = []
+
+    func append(_ kind: PersistentRuntimeDiagnosticSignalKind) {
+        lock.lock()
+        kinds.append(kind)
+        lock.unlock()
+    }
+
+    func snapshot() -> [PersistentRuntimeDiagnosticSignalKind] {
+        lock.lock()
+        defer { lock.unlock() }
+        return kinds
     }
 }
