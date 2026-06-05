@@ -15,7 +15,7 @@ struct ModelsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.background.ignoresSafeArea()
+                AppBackground()
                 ScrollView {
                     VStack(spacing: 24) {
                         activeRow
