@@ -1,0 +1,9 @@
+# Ensure generated philosophy artifacts remain reviewable as text in PR diffs.
+generated/algorithmic_philosophies/**/*.md text eol=lf
+generated/algorithmic_philosophies/**/*.html text eol=lf
+generated/algorithmic_philosophies/**/*.js text eol=lf
+ios/Lumen/Resources/AlgorithmicPhilosophies/**/*.md text eol=lf
+ios/Lumen/Resources/AlgorithmicPhilosophies/**/*.html text eol=lf
+ios/Lumen/Resources/AlgorithmicPhilosophies/**/*.js text eol=lf
+generated/algorithmic_philosophies/*.js text eol=lf linguist-vendored
+ios/Lumen/Resources/AlgorithmicPhilosophies/*.js text eol=lf linguist-vendored

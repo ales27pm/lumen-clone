@@ -32,7 +32,7 @@ struct MemoryView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.background.ignoresSafeArea()
+                AppBackground()
                 ScrollView {
                     VStack(spacing: 18) {
                         summaryRow
