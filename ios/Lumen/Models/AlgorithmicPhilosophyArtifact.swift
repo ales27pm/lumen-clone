@@ -12,6 +12,9 @@ struct AlgorithmicPhilosophyArtifact: Identifiable, Hashable {
     let defaultSeed: Int
     let parameterNames: [String]
     let conceptualSeed: String
+    let internalReference: String
+    let reflectionPrompts: [String]
+    let tracerSignature: String
 
     var resourceSubdirectory: String {
         "Resources/AlgorithmicPhilosophies/\(folderName)"
@@ -73,7 +76,14 @@ enum AlgorithmicPhilosophyCatalog {
                 "Symmetry Pressure",
                 "Margin Bend"
             ],
-            conceptualSeed: "Latent instruction systems: prompts and constraints are never shown directly, but their grammar bends every particle path."
+            conceptualSeed: "Latent instruction systems: prompts and constraints are never shown directly, but their grammar bends every particle path.",
+            internalReference: "The app shell now mirrors the artwork's hidden-clause grammar: real time, local state, and seeded constants drive visible traces without exposing the invisible instructions directly.",
+            reflectionPrompts: [
+                "Which invisible constraints are shaping the current surface?",
+                "Where does a repeated path become evidence rather than decoration?",
+                "How does local time alter the same seeded system without breaking reproducibility?"
+            ],
+            tracerSignature: "7 clauses · golden-angle placement · day-fraction drift · SVG path revelation"
         )
     ]
 }

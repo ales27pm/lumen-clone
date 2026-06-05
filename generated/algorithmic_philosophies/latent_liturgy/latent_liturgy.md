@@ -14,3 +14,9 @@ Parametric variation should adjust qualities of devotion rather than switch styl
 
 The quiet conceptual DNA is a niche reference to latent instruction systems: hidden prompts, invisible constraints, and downstream interpretation are translated into “clauses” that never render directly but bend every particle path. This reference remains deliberately submerged; viewers who know the grammar of prompted computation may sense it in the attractors and parameter names, while others simply encounter a refined field of emergent motion.
 
+
+## Runtime Reflection
+
+Latent Liturgy now extends beyond the artifact into the host app as a real-time visual grammar. The same hidden-clause structure becomes a live SVG tracer for inspection and a SwiftUI Canvas process field for ambience: both are grounded in local time, golden-angle placement, particle-like path revelation, and quiet margins that imply invisible rules. This keeps the reference internal and sophisticated—the app does not label every motion as a prompt or constraint, but the informed viewer can feel the latent instruction system bending the interface.
+
+The reflection layer asks the runtime to expose its own process without flattening it into explanation. Viewer, tracer, manifesto, source, and app shell are separate witnesses to one computational philosophy: a seeded system whose visible behavior is an argument about hidden structure. The SVG tracer is deliberately not a screenshot; it is a living diagnostic of the aesthetic, revealing the algorithm's clauses, traces, and temporal drift as inspectable motion.
