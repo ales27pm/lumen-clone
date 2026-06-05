@@ -2,10 +2,19 @@ import Foundation
 import SwiftUI
 import UIKit
 
+nonisolated enum PersistentDiagnosticAutomationPolicy: String, Codable, Sendable, CaseIterable {
+    case automatic
+    case manualOnly
+    case disabled
+}
+
 nonisolated enum PersistentDiagnosticScenarioKind: String, Codable, Sendable, CaseIterable, Identifiable {
     case plainFastPrompt
     case plainDeveloperTraceBypass
     case agentFastPrompt
+    case dryRunPromptBudgetOnly
+    case sandboxedToolPlanOnly
+    case liveAgentStream
     case agentToolPrompt
     case agentCancellation
     case lifecycleCancellation
@@ -21,7 +30,10 @@ nonisolated enum PersistentDiagnosticScenarioKind: String, Codable, Sendable, Ca
         case .plainFastPrompt: return "Plain fast prompt"
         case .plainDeveloperTraceBypass: return "Developer trace bypass"
         case .agentFastPrompt: return "Agent fast prompt"
-        case .agentToolPrompt: return "Agent tool prompt"
+        case .dryRunPromptBudgetOnly: return "Agent dry-run prompt budget"
+        case .sandboxedToolPlanOnly: return "Agent sandboxed tool plan"
+        case .liveAgentStream: return "Live agent stream"
+        case .agentToolPrompt: return "Legacy live agent tool prompt"
         case .agentCancellation: return "Agent cancellation"
         case .lifecycleCancellation: return "Lifecycle cancellation"
         case .diskWriteGate: return "Disk write gate"
@@ -30,6 +42,24 @@ nonisolated enum PersistentDiagnosticScenarioKind: String, Codable, Sendable, Ca
         case .thermalResourceGate: return "Thermal resource gate"
         }
     }
+
+    var automationPolicy: PersistentDiagnosticAutomationPolicy {
+        switch self {
+        case .lifecycleCancellation, .liveAgentStream, .agentToolPrompt:
+            return .manualOnly
+        case .plainFastPrompt, .plainDeveloperTraceBypass, .agentFastPrompt, .dryRunPromptBudgetOnly, .sandboxedToolPlanOnly, .agentCancellation, .diskWriteGate, .swiftUIChurnProbe, .groundingCostProbe, .thermalResourceGate:
+            return .automatic
+        }
+    }
+
+    static var automaticCases: [PersistentDiagnosticScenarioKind] {
+        allCases.filter { $0.automationPolicy == .automatic }
+    }
+
+    var requiresExplicitUserRequest: Bool {
+        automationPolicy == .manualOnly
+    }
+
 }
 
 nonisolated enum PersistentDiagnosticStatus: String, Codable, Sendable {
@@ -60,7 +90,7 @@ nonisolated struct PersistentDiagnosticCampaign: Codable, Sendable, Identifiable
         runContinuously: Bool = false,
         maxRunsPerScenario: Int = 1,
         delayBetweenRunsSeconds: Double = 5,
-        scenarios: [PersistentDiagnosticScenarioKind] = PersistentDiagnosticScenarioKind.allCases
+        scenarios: [PersistentDiagnosticScenarioKind] = PersistentDiagnosticScenarioKind.automaticCases
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -115,6 +145,9 @@ nonisolated struct PersistentDiagnosticMetrics: Codable, Sendable, Equatable {
     var promptInitialChars: Int?
     var promptFinalChars: Int?
     var estimatedPromptTokens: Int?
+    var promptSHA256: String?
+    var promptBodyBytes: Int?
+    var promptRedactionMode: String?
     var firstTokenLatencyMs: Int?
     var generationElapsedMs: Int?
     var agentGroundingElapsedMs: Int?
@@ -214,7 +247,7 @@ nonisolated struct PersistentDiagnosticRunnerStatus: Codable, Sendable, Equatabl
 }
 
 nonisolated struct PersistentDiagnosticState: Codable, Sendable, Equatable {
-    static let maxCompletedRunIDs = 200
+    static let maxCompletedRunIDs = 500
 
     var activeRunID: UUID?
     var activeCampaignID: UUID?
@@ -309,6 +342,7 @@ nonisolated enum PersistentRuntimeDiagnosticSignalKind: String, Codable, Sendabl
     case groundingCost
     case uiUpdate
     case sceneTransition
+    case metricKitPersistFailure
 }
 
 nonisolated struct PersistentRuntimeDiagnosticSignal: Sendable {
@@ -361,5 +395,20 @@ extension Bundle {
         let version = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
         let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
         return "\(version) (\(build))"
+    }
+}
+
+extension PersistentDiagnosticCampaign {
+    var automaticScenarios: [PersistentDiagnosticScenarioKind] {
+        scenarios.filter { $0.automationPolicy == .automatic }
+    }
+
+    func automaticOnly() -> PersistentDiagnosticCampaign {
+        var copy = self
+        copy.scenarios = automaticScenarios
+        if copy.scenarios.isEmpty {
+            copy.scenarios = [.dryRunPromptBudgetOnly, .sandboxedToolPlanOnly]
+        }
+        return copy
     }
 }
