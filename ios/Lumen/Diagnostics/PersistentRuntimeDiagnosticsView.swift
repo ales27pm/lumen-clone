@@ -11,81 +11,144 @@ struct PersistentRuntimeDiagnosticsView: View {
 
     var body: some View {
         Form {
-            Section("Campaign") {
-                Toggle("Enable Persistent Runtime Diagnostics", isOn: binding(\.enabled))
-                Toggle("Run continuously", isOn: binding(\.runContinuously))
-                Stepper(value: Binding(get: { campaign.maxRunsPerScenario }, set: { campaign.maxRunsPerScenario = max(1, $0); saveCampaign() }), in: 1...100) {
-                    HStack { Text("Max runs / scenario"); Spacer(); Text("\(campaign.maxRunsPerScenario)") }
-                }
-                Stepper(value: Binding(get: { campaign.delayBetweenRunsSeconds }, set: { campaign.delayBetweenRunsSeconds = max(0.5, $0); saveCampaign() }), in: 0.5...120, step: 0.5) {
-                    HStack { Text("Delay between runs"); Spacer(); Text(String(format: "%.1fs", campaign.delayBetweenRunsSeconds)) }
-                }
-            }
-
-            Section("Scenarios") {
-                ForEach(PersistentDiagnosticScenarioKind.allCases) { scenario in
-                    Toggle(scenario.displayName, isOn: Binding(
-                        get: { campaign.scenarios.contains(scenario) },
-                        set: { enabled in
-                            if enabled, !campaign.scenarios.contains(scenario) { campaign.scenarios.append(scenario) }
-                            if !enabled { campaign.scenarios.removeAll { $0 == scenario } }
-                            saveCampaign()
-                        }
-                    ))
-                }
-            }
-
-            Section("Controls") {
-                Button("Run Once") { runOnce() }.disabled(isBusy)
-                Button("Start Continuous Campaign") { startContinuous() }.disabled(isBusy)
-                Button("Stop") { stop() }.disabled(isBusy)
-                Button("Start Lifecycle Cancellation Probe") { startLifecycleProbe() }.disabled(isBusy)
-                Button("Export Logs") { exportLogs() }.disabled(isBusy)
-                Button("Clear Logs", role: .destructive) { clearLogs() }.disabled(isBusy)
-                if let exportURL {
-                    Button {
-                        shareItem = RuntimeDiagnosticsShareItem(url: exportURL)
-                    } label: {
-                        Label("Share Exported Logs", systemImage: "square.and.arrow.up")
-                    }
-
-                    ShareLink(item: exportURL) {
-                        Label("Save / Share Logs", systemImage: "square.and.arrow.up")
-                    }
-
-                    Text(exportURL.lastPathComponent)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-
-                    Text(exportURL.path)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
-
-            Section("Latest Status") {
-                LabeledContent("Runner", value: status.isRunning ? (status.isPaused ? "Paused" : "Running") : "Idle")
-                LabeledContent("Last scenario", value: status.latestScenario?.displayName ?? "—")
-                LabeledContent("Pass / fail / skipped", value: "\(status.passedCount) / \(status.failedCount) / \(status.skippedCount)")
-                LabeledContent("First token latency", value: status.lastFirstTokenLatencyMs.map { "\($0) ms" } ?? "—")
-                LabeledContent("Final prompt chars", value: status.lastPromptFinalChars.map(String.init) ?? "—")
-                LabeledContent("Cancellation", value: status.lastCancellationReason ?? "—")
-                LabeledContent("Crash resume", value: status.lastCrashResumeStatus ?? "—")
-                Text(message).font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section("TestFlight validation") {
-                Text("Run Agent fast prompt, Agent cancellation, and Lifecycle cancellation on a physical device. For lifecycle validation, tap the probe button, then lock or background the app within 3 seconds. On next launch, export logs and verify interrupted_or_terminated or clean_cancel_before_termination.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            campaignSection
+            scenariosSection
+            controlsSection
+            latestStatusSection
+            validationSection
         }
         .navigationTitle("Runtime Diagnostics")
         .task { await load() }
         .sheet(item: $shareItem) { item in
             RuntimeDiagnosticsActivityView(activityItems: [item.url])
         }
+    }
+
+    private var campaignSection: some View {
+        Section("Campaign") {
+            Toggle("Enable Persistent Runtime Diagnostics", isOn: binding(\.enabled))
+            Toggle("Run continuously", isOn: binding(\.runContinuously))
+            Stepper(value: maxRunsBinding, in: 1...100) {
+                HStack {
+                    Text("Max runs / scenario")
+                    Spacer()
+                    Text("\(campaign.maxRunsPerScenario)")
+                }
+            }
+            Stepper(value: delayBinding, in: 0.5...120, step: 0.5) {
+                HStack {
+                    Text("Delay between runs")
+                    Spacer()
+                    Text(String(format: "%.1fs", campaign.delayBetweenRunsSeconds))
+                }
+            }
+        }
+    }
+
+    private var scenariosSection: some View {
+        Section("Scenarios") {
+            ForEach(PersistentDiagnosticScenarioKind.allCases) { scenario in
+                scenarioToggle(scenario)
+            }
+        }
+    }
+
+    private var controlsSection: some View {
+        Section("Controls") {
+            Button("Run Once") { runOnce() }.disabled(isBusy)
+            Button("Start Continuous Campaign") { startContinuous() }.disabled(isBusy)
+            Button("Stop") { stop() }.disabled(isBusy)
+            Button("Start Lifecycle Cancellation Probe") { startLifecycleProbe() }.disabled(isBusy)
+            Button("Run Live Agent Stream") { runLiveAgentStream() }.disabled(isBusy)
+            Button("Export Logs") { exportLogs() }.disabled(isBusy)
+            Button("Clear Logs", role: .destructive) { clearLogs() }.disabled(isBusy)
+            exportControls
+        }
+    }
+
+    @ViewBuilder
+    private var exportControls: some View {
+        if let exportURL {
+            Button {
+                shareItem = RuntimeDiagnosticsShareItem(url: exportURL)
+            } label: {
+                Label("Share Exported Logs", systemImage: "square.and.arrow.up")
+            }
+
+            ShareLink(item: exportURL) {
+                Label("Save / Share Logs", systemImage: "square.and.arrow.up")
+            }
+
+            Text(exportURL.lastPathComponent)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+
+            Text(exportURL.path)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var latestStatusSection: some View {
+        Section("Latest Status") {
+            LabeledContent("Runner", value: status.isRunning ? (status.isPaused ? "Paused" : "Running") : "Idle")
+            LabeledContent("Last scenario", value: status.latestScenario?.displayName ?? "—")
+            LabeledContent("Pass / fail / skipped", value: "\(status.passedCount) / \(status.failedCount) / \(status.skippedCount)")
+            LabeledContent("First token latency", value: status.lastFirstTokenLatencyMs.map { "\($0) ms" } ?? "—")
+            LabeledContent("Final prompt chars", value: status.lastPromptFinalChars.map(String.init) ?? "—")
+            LabeledContent("Cancellation", value: status.lastCancellationReason ?? "—")
+            LabeledContent("Crash resume", value: status.lastCrashResumeStatus ?? "—")
+            Text(message).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var validationSection: some View {
+        Section("TestFlight validation") {
+            Text("Run Agent fast prompt, Agent cancellation, and Lifecycle cancellation on a physical device. For lifecycle validation, tap the probe button, then lock or background the app within 3 seconds. On next launch, export logs and verify interrupted_or_terminated or clean_cancel_before_termination.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func scenarioToggle(_ scenario: PersistentDiagnosticScenarioKind) -> some View {
+        Toggle(isOn: scenarioBinding(scenario)) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(scenario.displayName)
+                Text(scenario.automationPolicy.rawValue)
+                    .font(.caption2)
+                    .foregroundStyle(scenario.automationPolicy == .automatic ? .secondary : .orange)
+            }
+        }
+    }
+
+    private var maxRunsBinding: Binding<Int> {
+        Binding(
+            get: { campaign.maxRunsPerScenario },
+            set: { campaign.maxRunsPerScenario = max(1, $0); saveCampaign() }
+        )
+    }
+
+    private var delayBinding: Binding<Double> {
+        Binding(
+            get: { campaign.delayBetweenRunsSeconds },
+            set: { campaign.delayBetweenRunsSeconds = max(0.5, $0); saveCampaign() }
+        )
+    }
+
+    private func scenarioBinding(_ scenario: PersistentDiagnosticScenarioKind) -> Binding<Bool> {
+        Binding(
+            get: { campaign.scenarios.contains(scenario) },
+            set: { enabled in
+                if enabled, !campaign.scenarios.contains(scenario) {
+                    campaign.scenarios.append(scenario)
+                }
+                if !enabled {
+                    campaign.scenarios.removeAll { $0 == scenario }
+                }
+                saveCampaign()
+            }
+        )
     }
 
     private func binding(_ keyPath: WritableKeyPath<PersistentDiagnosticCampaign, Bool>) -> Binding<Bool> {
@@ -137,6 +200,16 @@ struct PersistentRuntimeDiagnosticsView: View {
         Task {
             _ = await PersistentRuntimeDiagnosticsRunner.shared.startLifecycleCancellationProbe()
             message = "Lifecycle probe armed. Background or lock the device within 3 seconds."
+            await load()
+            isBusy = false
+        }
+    }
+
+    private func runLiveAgentStream() {
+        isBusy = true
+        Task {
+            let record = await PersistentRuntimeDiagnosticsRunner.shared.runLiveAgentStream(explicitUserRequested: true)
+            message = record.map { "Live stream: \($0.status.rawValue)" } ?? "Live stream requires explicit user request."
             await load()
             isBusy = false
         }

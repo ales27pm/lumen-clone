@@ -8,7 +8,8 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        true
+        MetricKitDiagnosticsSubscriber.shared.register()
+        return true
     }
 
     func application(
