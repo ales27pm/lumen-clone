@@ -24,14 +24,21 @@ struct PersistentRuntimeDiagnosticsView: View {
 
             Section("Scenarios") {
                 ForEach(PersistentDiagnosticScenarioKind.allCases) { scenario in
-                    Toggle(scenario.displayName, isOn: Binding(
+                    Toggle(isOn: Binding(
                         get: { campaign.scenarios.contains(scenario) },
                         set: { enabled in
                             if enabled, !campaign.scenarios.contains(scenario) { campaign.scenarios.append(scenario) }
                             if !enabled { campaign.scenarios.removeAll { $0 == scenario } }
                             saveCampaign()
                         }
-                    ))
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(scenario.displayName)
+                            Text(scenario.automationPolicy.rawValue)
+                                .font(.caption2)
+                                .foregroundStyle(scenario.automationPolicy == .automatic ? .secondary : .orange)
+                        }
+                    }
                 }
             }
 
@@ -40,6 +47,7 @@ struct PersistentRuntimeDiagnosticsView: View {
                 Button("Start Continuous Campaign") { startContinuous() }.disabled(isBusy)
                 Button("Stop") { stop() }.disabled(isBusy)
                 Button("Start Lifecycle Cancellation Probe") { startLifecycleProbe() }.disabled(isBusy)
+                Button("Run Live Agent Stream") { runLiveAgentStream() }.disabled(isBusy)
                 Button("Export Logs") { exportLogs() }.disabled(isBusy)
                 Button("Clear Logs", role: .destructive) { clearLogs() }.disabled(isBusy)
                 if let exportURL {
@@ -137,6 +145,16 @@ struct PersistentRuntimeDiagnosticsView: View {
         Task {
             _ = await PersistentRuntimeDiagnosticsRunner.shared.startLifecycleCancellationProbe()
             message = "Lifecycle probe armed. Background or lock the device within 3 seconds."
+            await load()
+            isBusy = false
+        }
+    }
+
+    private func runLiveAgentStream() {
+        isBusy = true
+        Task {
+            let record = await PersistentRuntimeDiagnosticsRunner.shared.runLiveAgentStream(explicitUserRequested: true)
+            message = record.map { "Live stream: \($0.status.rawValue)" } ?? "Live stream requires explicit user request."
             await load()
             isBusy = false
         }

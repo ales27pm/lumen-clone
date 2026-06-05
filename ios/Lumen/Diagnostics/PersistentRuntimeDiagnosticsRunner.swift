@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SwiftUI
 
 actor PersistentRuntimeDiagnosticsRunner {
@@ -11,11 +12,14 @@ actor PersistentRuntimeDiagnosticsRunner {
     private var state: PersistentDiagnosticState
     private var runTask: Task<Void, Never>?
     private var observerID: UUID?
+    private let agentRunCoordinator: AgentRunCoordinator
+    private let lifecycleProbeController = LifecycleProbeController()
     private var recentRecords: [PersistentDiagnosticRunRecord] = []
     private let maxRecentRecords = 50
 
-    init(store: PersistentRuntimeDiagnosticsStore = .shared) {
+    init(store: PersistentRuntimeDiagnosticsStore = .shared, agentRunCoordinator: AgentRunCoordinator? = nil) {
         self.store = store
+        self.agentRunCoordinator = agentRunCoordinator ?? AgentRunCoordinator(store: store)
         self.state = PersistentDiagnosticState()
     }
 
@@ -25,7 +29,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         campaign = await store.loadCampaign()
         installObserverIfNeeded()
         guard let campaign, campaign.enabled, campaign.runContinuously, await environmentAllowsDiagnostics() else { return }
-        startLoop(campaign: campaign)
+        startLoop(campaign: campaign.automaticOnly())
     }
 
     func loadStatus() async -> PersistentDiagnosticRunnerStatus {
@@ -86,6 +90,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         var current = await campaignOrLoad(requested)
         current.enabled = true
         current.runContinuously = true
+        current = current.automaticOnly()
         campaign = current
         try? await store.saveCampaign(current)
         startLoop(campaign: current)
@@ -116,7 +121,8 @@ actor PersistentRuntimeDiagnosticsRunner {
         let current = await campaignOrLoad(nil)
         var record = makeRecord(campaign: current, scenario: .lifecycleCancellation)
         record.metrics.cancellationReason = "tester_background_prompt"
-        record.events.append(PersistentDiagnosticEvent(code: "tester_action_required", message: "Lock device or background app within 3 seconds"))
+        record.events.append(PersistentDiagnosticEvent(code: "tester_action_required", message: "Lock device or background app, then return to the app"))
+        record = await lifecycleProbeController.arm(record: record)
         state.activeRunID = record.id
         state.activeCampaignID = current.id
         state.activeScenario = record.scenario
@@ -132,7 +138,7 @@ actor PersistentRuntimeDiagnosticsRunner {
 
     private func startLoop(campaign: PersistentDiagnosticCampaign) {
         runTask?.cancel()
-        runTask = Task.detached(priority: .utility) { [weak self] in
+        runTask = Task(priority: .utility) { [weak self] in
             guard let self else { return }
             await self.runLoop(campaignID: campaign.id)
         }
@@ -153,8 +159,9 @@ actor PersistentRuntimeDiagnosticsRunner {
                 continue
             }
             state.status.isPaused = false
+            current = current.automaticOnly()
             let counts = scenarioRunCounts(campaignID: current.id)
-            for scenario in current.scenarios {
+            for scenario in current.scenarios where scenario.automationPolicy == .automatic {
                 if Task.isCancelled { break }
                 if counts[scenario, default: 0] >= current.maxRunsPerScenario { continue }
                 _ = await runScenario(scenario, campaign: current)
@@ -165,7 +172,7 @@ actor PersistentRuntimeDiagnosticsRunner {
             current.updatedAt = Date()
             campaign = current
             if !current.runContinuously { break }
-            if current.scenarios.allSatisfy({ scenarioRunCounts(campaignID: current.id)[$0, default: 0] >= current.maxRunsPerScenario }) { break }
+            if current.automaticScenarios.allSatisfy({ scenarioRunCounts(campaignID: current.id)[$0, default: 0] >= current.maxRunsPerScenario }) { break }
         }
     }
 
@@ -192,6 +199,11 @@ actor PersistentRuntimeDiagnosticsRunner {
         state.status.lastUpdatedAt = Date()
         try? await store.saveState(state)
         await store.appendRunUpdate(record)
+        if scenario.requiresExplicitUserRequest {
+            finish(&record, status: .skipped, code: "manual_scenario_requires_explicit_request", message: "Manual-only scenario requires explicit user action")
+            await persist(record)
+            return record
+        }
         switch scenario {
         case .plainFastPrompt:
             await scenarioPlainFastPrompt(&record)
@@ -199,8 +211,12 @@ actor PersistentRuntimeDiagnosticsRunner {
             await scenarioDeveloperTraceBypass(&record)
         case .agentFastPrompt:
             await scenarioAgentFastPrompt(&record)
-        case .agentToolPrompt:
-            await scenarioAgentToolPrompt(&record)
+        case .dryRunPromptBudgetOnly:
+            await scenarioDryRunPromptBudgetOnly(&record)
+        case .sandboxedToolPlanOnly:
+            await scenarioSandboxedToolPlanOnly(&record)
+        case .liveAgentStream, .agentToolPrompt:
+            finish(&record, status: .skipped, code: "manual_live_agent_stream_required", message: "Live agent stream requires explicit user action")
         case .agentCancellation:
             await scenarioAgentCancellation(&record)
         case .lifecycleCancellation:
@@ -236,7 +252,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         state.activeStartedAt = nil
         state.cleanCancellationBeforeTermination = false
         state.records.append(copy)
-        if state.records.count > 100 { state.records.removeFirst(state.records.count - 100) }
+        if state.records.count > 500 { state.records.removeFirst(state.records.count - 500) }
         recentRecords.append(copy)
         if recentRecords.count > maxRecentRecords { recentRecords.removeFirst(recentRecords.count - maxRecentRecords) }
         switch copy.status {
@@ -251,6 +267,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         state.status.lastUpdatedAt = Date()
         try? await store.saveState(state)
         await store.appendRunUpdate(copy)
+        await store.flushBufferedIfPossible()
     }
 
     private func finish(_ record: inout PersistentDiagnosticRunRecord, status: PersistentDiagnosticStatus, code: String, message: String) {
@@ -300,13 +317,16 @@ actor PersistentRuntimeDiagnosticsRunner {
         finish(&record, status: pass ? .passed : .failed, code: pass ? "agent_fast_path_bounded" : "agent_fast_path_unbounded", message: "Agent fast prompt validated")
     }
 
-    private func scenarioAgentToolPrompt(_ record: inout PersistentDiagnosticRunRecord) async {
+    private func scenarioDryRunPromptBudgetOnly(_ record: inout PersistentDiagnosticRunRecord) async {
         let req = diagnosticAgentRequest(userMessage: "Search the web for SwiftData cancellation patterns", tools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") })
         let fast = SlotAgentService.shouldUseFastAgentPath(req)
         record.metrics.didUseFastPath = fast
         record.metrics.inputToolCount = req.availableTools.count
         record.metrics.toolCount = req.availableTools.count
         record.metrics.promptInitialChars = req.userMessage.count
+        record.metrics.promptBodyBytes = req.userMessage.utf8.count
+        record.metrics.promptSHA256 = Self.sha256(req.userMessage)
+        record.metrics.promptRedactionMode = "hash_and_size_only"
         if fast {
             finish(&record, status: .failed, code: "tool_prompt_used_fast_path", message: "Tool prompt incorrectly selected fast path")
             return
@@ -329,25 +349,112 @@ actor PersistentRuntimeDiagnosticsRunner {
         finish(&record, status: pass ? .passed : .failed, code: pass ? "agent_tool_dry_run_bounded" : "agent_tool_dry_run_unbounded", message: "Dry-run tool prompt validated bounded grounding without opening the agent stream")
     }
 
+    private func scenarioSandboxedToolPlanOnly(_ record: inout PersistentDiagnosticRunRecord) async {
+        let req = diagnosticAgentRequest(userMessage: "Plan a safe web lookup for SwiftData cancellation without executing tools", tools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") })
+        try? Task.checkCancellation()
+        record.metrics.didUseFastPath = SlotAgentService.shouldUseFastAgentPath(req)
+        record.metrics.inputToolCount = req.availableTools.count
+        record.metrics.toolCount = req.availableTools.count
+        record.metrics.promptInitialChars = req.userMessage.count
+        record.metrics.promptBodyBytes = req.userMessage.utf8.count
+        record.metrics.promptSHA256 = Self.sha256(req.userMessage)
+        record.metrics.promptRedactionMode = "hash_and_size_only"
+        let bounded = !record.metrics.didUseFastPath && req.availableTools.count <= 4 && req.maxSteps <= 2
+        record.events.append(PersistentDiagnosticEvent(code: "sandboxed_tool_plan", message: "Sandboxed tool plan validated without executing tools", values: ["toolCount": String(req.availableTools.count), "maxSteps": String(req.maxSteps)]))
+        finish(&record, status: bounded ? .passed : .failed, code: bounded ? "sandboxed_tool_plan_bounded" : "sandboxed_tool_plan_unbounded", message: "Sandboxed tool plan validated")
+    }
+
+    func runLiveAgentStream(explicitUserRequested: Bool) async -> PersistentDiagnosticRunRecord? {
+        guard explicitUserRequested else { return nil }
+        let current = await campaignOrLoad(nil)
+        return await runManualScenario(.liveAgentStream, campaign: current)
+    }
+
+    private func runManualScenario(_ scenario: PersistentDiagnosticScenarioKind, campaign: PersistentDiagnosticCampaign) async -> PersistentDiagnosticRunRecord {
+        var record = makeRecord(campaign: campaign, scenario: scenario)
+        state.activeRunID = record.id
+        state.activeCampaignID = campaign.id
+        state.activeScenario = scenario
+        state.activeStartedAt = record.startedAt
+        state.activeLaunchUUID = Self.launchUUID
+        state.cleanCancellationBeforeTermination = false
+        state.status.latestScenario = scenario
+        state.status.lastUpdatedAt = Date()
+        try? await store.saveState(state)
+        await store.appendRunUpdate(record)
+        switch scenario {
+        case .liveAgentStream, .agentToolPrompt:
+            record = await scenarioLiveAgentStream(record)
+        case .lifecycleCancellation:
+            record = await startLifecycleCancellationProbe()
+        default:
+            finish(&record, status: .skipped, code: "not_manual_scenario", message: "Scenario is not manual-only")
+        }
+        if record.status != .running { await persist(record) }
+        return record
+    }
+
+    private func scenarioLiveAgentStream(_ record: PersistentDiagnosticRunRecord) async -> PersistentDiagnosticRunRecord {
+        let req = diagnosticAgentRequest(userMessage: "Search the web for SwiftData cancellation patterns", tools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") })
+        return await agentRunCoordinator.run(record: record, cancellationReason: "persistent-diagnostics-live-agent-cancel") { startingRecord in
+            try Task.checkCancellation()
+            var mutable = startingRecord
+            mutable.metrics.inputToolCount = req.availableTools.count
+            mutable.metrics.toolCount = req.availableTools.count
+            mutable.metrics.promptInitialChars = req.userMessage.count
+            mutable.metrics.promptBodyBytes = req.userMessage.utf8.count
+            mutable.metrics.promptSHA256 = Self.sha256(req.userMessage)
+            mutable.metrics.promptRedactionMode = "hash_and_size_only"
+            let started = ProcessInfo.processInfo.systemUptime
+            for await event in await SlotAgentService.shared.run(req, options: .default) {
+                try Task.checkCancellation()
+                switch event {
+                case .finalDelta:
+                    mutable.metrics.streamingUpdateCount += 1
+                case .step:
+                    mutable.metrics.toolCount = max(mutable.metrics.toolCount ?? 0, 1)
+                default:
+                    break
+                }
+                if mutable.metrics.streamingUpdateCount > 64 { break }
+            }
+            mutable.metrics.generationElapsedMs = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            mutable.finishedAt = Date()
+            mutable.status = .passed
+            mutable.events.append(PersistentDiagnosticEvent(code: "live_agent_stream_passed", message: "Live agent stream completed by explicit user request"))
+            return mutable
+        }
+    }
+
     private func scenarioAgentCancellation(_ record: inout PersistentDiagnosticRunRecord) async {
         let req = diagnosticAgentRequest(userMessage: "Search documents and tools for a detailed cancellation analysis", tools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") })
-        let task = Task { () -> String in
-            var out = ""
-            for await event in await SlotAgentService.shared.run(req, options: .default) {
-                if Task.isCancelled { break }
-                if case .finalDelta(let text) = event { out += text }
+        let startingRecord = record
+        let task = Task {
+            await agentRunCoordinator.run(record: startingRecord, cancellationReason: "persistent-diagnostics-agent-cancel") { mutableStart in
+                try Task.checkCancellation()
+                var mutable = mutableStart
+                mutable.metrics.inputToolCount = req.availableTools.count
+                mutable.metrics.toolCount = req.availableTools.count
+                for await event in await SlotAgentService.shared.run(req, options: .default) {
+                    try Task.checkCancellation()
+                    if case .finalDelta = event { mutable.metrics.streamingUpdateCount += 1 }
+                }
+                mutable.status = .passed
+                mutable.finishedAt = Date()
+                mutable.events.append(PersistentDiagnosticEvent(code: "agent_cancel_stream_completed", message: "Agent stream completed before cancellation"))
+                return mutable
             }
-            return out
         }
         try? await Task.sleep(nanoseconds: 50_000_000)
-        AppCancellationBus.shared.markCancellationRequested("persistent-diagnostics-agent-cancel")
-        AppCancellationBus.shared.cancel(.chatGeneration)
-        task.cancel()
-        _ = await task.value
+        await agentRunCoordinator.cancelActive(reason: "persistent-diagnostics-agent-cancel")
+        let result = await task.value
+        record = result
         record.metrics.didCancel = true
         record.metrics.cancellationReason = "persistent-diagnostics-agent-cancel"
         state.cleanCancellationBeforeTermination = true
-        finish(&record, status: .passed, code: "agent_cancel_clean", message: "Agent stream cancelled cleanly")
+        if record.status != .cancelled {
+            finish(&record, status: .cancelled, code: "agent_cancel_clean", message: "Agent stream cancelled cleanly")
+        }
     }
 
     private func scenarioDiskWriteGate(_ record: inout PersistentDiagnosticRunRecord) async {
@@ -394,42 +501,68 @@ actor PersistentRuntimeDiagnosticsRunner {
     private func scenarioThermalResourceGate(_ record: inout PersistentDiagnosticRunRecord) async {
         let realSnapshot = await MainActor.run { ResourceBudgetGate.diagnosticSnapshot() }
         let realDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: realSnapshot, reason: "userChat.agentGrounding") }
-        let simulatedSnapshot = await MainActor.run {
-            ResourceBudgetGate.Snapshot(
-                scenePhase: .background,
-                lowPowerModeEnabled: true,
-                thermalState: .serious,
-                recentMemoryWarningCount: realSnapshot.recentMemoryWarningCount ?? 0,
-                lastMemoryWarningAt: nil
-            )
+        let simulatedSerious = await MainActor.run {
+            ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .serious, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        }
+        let simulatedCritical = await MainActor.run {
+            ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .critical, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        }
+        let simulatedBackground = await MainActor.run {
+            ResourceBudgetGate.Snapshot(scenePhase: .background, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        }
+        let simulatedLowPower = await MainActor.run {
+            ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: true, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
         }
 
-        let simulatedDenied: Bool
+        let seriousDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedSerious, reason: "userChat.agentGrounding") }
+        let criticalDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedCritical, reason: "userChat.agentGrounding") }
+        let backgroundDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedBackground, reason: "userChat.agentGrounding") }
+        let lowPowerDeniedOrDegraded = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedLowPower, reason: ModelLoadIntent.diagnostics.rawValue) }
+
         #if DEBUG
-        simulatedDenied = await MainActor.run {
-            ResourceBudgetGate.setDiagnosticSnapshotOverride(simulatedSnapshot)
+        let overrideDenied = await MainActor.run {
+            ResourceBudgetGate.setDiagnosticSnapshotOverride(simulatedBackground)
             defer { ResourceBudgetGate.clearDiagnosticSnapshotOverride() }
             return !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding")
         }
         #else
-        simulatedDenied = await MainActor.run {
-            !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedSnapshot, reason: "userChat.agentGrounding")
-        }
+        let overrideDenied = backgroundDenied
         #endif
 
-        record.metrics.didFallback = simulatedDenied
+        let realExpectedAllowed: Bool
+        if realSnapshot.scenePhase == .active,
+           realSnapshot.lowPowerModeEnabled == false,
+           realSnapshot.recentMemoryWarningCount == 0 || realSnapshot.recentMemoryWarningCount == nil,
+           realSnapshot.thermalState == .nominal || realSnapshot.thermalState == .fair {
+            realExpectedAllowed = true
+        } else {
+            realExpectedAllowed = false
+        }
+        let realPass = realExpectedAllowed ? !realDenied : true
+        let simulatedPass = seriousDenied && criticalDenied && backgroundDenied && lowPowerDeniedOrDegraded && overrideDenied
+
+        record.metrics.didFallback = simulatedPass
         record.metrics.fallbackReason = "resource_gate_probe"
         record.metrics.realScenePhase = PersistentDiagnosticMetrics.sceneString(realSnapshot.scenePhase)
         record.metrics.realThermalState = realSnapshot.thermalState?.rawValue
         record.metrics.realDenied = realDenied
-        record.metrics.simulatedScenePhase = PersistentDiagnosticMetrics.sceneString(simulatedSnapshot.scenePhase)
-        record.metrics.simulatedThermalState = simulatedSnapshot.thermalState?.rawValue
-        record.metrics.simulatedDenied = simulatedDenied
+        record.metrics.simulatedScenePhase = PersistentDiagnosticMetrics.sceneString(simulatedBackground.scenePhase)
+        record.metrics.simulatedThermalState = simulatedSerious.thermalState?.rawValue
+        record.metrics.simulatedDenied = simulatedPass
+        record.events.append(PersistentDiagnosticEvent(code: "resource_gate_matrix", message: "Resource gate matrix evaluated", values: [
+            "seriousDenied": String(seriousDenied),
+            "criticalDenied": String(criticalDenied),
+            "backgroundDenied": String(backgroundDenied),
+            "lowPowerDeniedOrDegraded": String(lowPowerDeniedOrDegraded),
+            "realExpectedAllowed": String(realExpectedAllowed),
+            "realDenied": String(realDenied)
+        ]))
 
+        let pass = realPass && simulatedPass
         finish(
             &record,
-            status: simulatedDenied ? .passed : .failed,
-            code: simulatedDenied ? "resource_gate_simulated_denied" : "resource_gate_simulated_allowed",
+            status: pass ? .passed : .failed,
+            code: pass ? "resource_gate_policy_passed" : "resource_gate_policy_failed",
             message: "Thermal/resource gate probe completed"
         )
     }
@@ -488,6 +621,10 @@ actor PersistentRuntimeDiagnosticsRunner {
             if signal.values["phase"] == "inactive" || signal.values["phase"] == "background" {
                 state.cleanCancellationBeforeTermination = AppCancellationBus.shared.lastCancellationReason != nil
             }
+            if state.activeScenario == .lifecycleCancellation, let phase = Self.scenePhase(from: signal.values["phase"]), let result = await lifecycleProbeController.record(phase: phase), result.shouldPersist {
+                await persist(result.record)
+                return
+            }
         }
         if signal.kind == .llamaCancel || signal.kind == .slotAgentCancel {
             state.cleanCancellationBeforeTermination = true
@@ -496,6 +633,19 @@ actor PersistentRuntimeDiagnosticsRunner {
             try? await store.saveState(state)
         }
         await store.appendEvent(PersistentDiagnosticEvent(code: signal.kind.rawValue, message: signal.kind.rawValue, values: signal.values), recordID: state.activeRunID, campaignID: campaign?.id)
+    }
+
+    private static func scenePhase(from value: String?) -> ScenePhase? {
+        switch value {
+        case "active": return .active
+        case "inactive": return .inactive
+        case "background": return .background
+        default: return nil
+        }
+    }
+
+    private static func sha256(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     static func evaluatePlainFastPrompt(finalChars: Int, estimatedTokens: Int, latencyClass: PromptLatencyClass) -> (status: PersistentDiagnosticStatus, code: String, message: String) {
