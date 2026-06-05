@@ -115,6 +115,8 @@ nonisolated struct PersistentDiagnosticMetrics: Codable, Sendable, Equatable {
     var groundingSectionCount: Int?
     var groundingChars: Int?
     var toolCount: Int?
+    var inputToolCount: Int?
+    var bridgedToolCount: Int?
     var memoryCount: Int?
     var didUseFastPath: Bool = false
     var didCancel: Bool = false
@@ -276,7 +278,13 @@ nonisolated enum PersistentRuntimeDiagnosticSignalKind: String, Codable, Sendabl
     case slotAgentStart
     case slotAgentPath
     case slotAgentFallback
+    case slotAgentGroundingComplete
+    case slotAgentEffectiveRequestBuilt
+    case slotAgentDeterministicAnswerBuilt
+    case slotAgentDoneYielded
     case slotAgentEnd
+    case slotAgentEndEmitted
+    case slotAgentContinuationFinished
     case slotAgentCancel
     case groundingCost
     case uiUpdate
