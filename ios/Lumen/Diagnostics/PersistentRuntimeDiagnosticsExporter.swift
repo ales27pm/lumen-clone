@@ -27,6 +27,7 @@ actor PersistentRuntimeDiagnosticsExporter {
         let state = Self.exportState(await store.loadState(), includeFullHistory: includeFullHistory)
         let logData = await store.readLogDataForExport(full: includeFullHistory)
         let ndjson = String(data: logData, encoding: .utf8) ?? ""
+        let metricKitPayloads = await Self.metricKitPayloads()
 
         let device = await MainActor.run {
             (
@@ -46,7 +47,8 @@ actor PersistentRuntimeDiagnosticsExporter {
             systemVersion: device.systemVersion,
             campaign: campaign,
             state: state,
-            ndjson: ndjson
+            ndjson: ndjson,
+            metricKitPayloads: metricKitPayloads
         )
 
         let encoder = JSONEncoder()
@@ -62,14 +64,27 @@ actor PersistentRuntimeDiagnosticsExporter {
     private static func exportState(_ state: PersistentDiagnosticState?, includeFullHistory: Bool) -> PersistentDiagnosticState? {
         guard var state = state else { return nil }
         guard !includeFullHistory else { return state }
-        if state.records.count > 100 { state.records.removeFirst(state.records.count - 100) }
+        if state.records.count > 500 { state.records.removeFirst(state.records.count - 500) }
         state.trimCompletedRunIDs()
         return state
+    }
+
+    private static func metricKitPayloads() async -> [PersistentMetricKitExportPayload] {
+        let urls = await MetricKitDiagnosticsStore.shared.exportPayloadURLs()
+        return urls.compactMap { url in
+            guard let text = try? String(contentsOf: url) else { return nil }
+            return PersistentMetricKitExportPayload(fileName: url.lastPathComponent, json: text)
+        }
     }
 
     private static func sourceCommit() -> String? {
         Bundle.main.object(forInfoDictionaryKey: "GitCommit") as? String
     }
+}
+
+nonisolated struct PersistentMetricKitExportPayload: Codable, Sendable {
+    var fileName: String
+    var json: String
 }
 
 nonisolated struct PersistentRuntimeDiagnosticsExportPayload: Codable, Sendable {
@@ -82,6 +97,7 @@ nonisolated struct PersistentRuntimeDiagnosticsExportPayload: Codable, Sendable 
     var campaign: PersistentDiagnosticCampaign?
     var state: PersistentDiagnosticState?
     var ndjson: String
+    var metricKitPayloads: [PersistentMetricKitExportPayload]
 
     func redacted() -> Self {
         var copy = self

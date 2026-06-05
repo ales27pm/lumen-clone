@@ -98,7 +98,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
 
         XCTAssertNil(ResourceBudgetGate.testSnapshotOverride)
         XCTAssertEqual(record?.status, .passed)
-        XCTAssertEqual(record?.events.last?.code, "resource_gate_simulated_denied")
+        XCTAssertEqual(record?.events.last?.code, "resource_gate_policy_passed")
         XCTAssertEqual(record?.metrics.didFallback, true)
         XCTAssertEqual(record?.metrics.fallbackReason, "resource_gate_probe")
         XCTAssertEqual(record?.metrics.realScenePhase, "active")
@@ -168,12 +168,12 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
         let store = try makeStore()
         let runner = PersistentRuntimeDiagnosticsRunner(store: store)
-        let campaign = PersistentDiagnosticCampaign(enabled: true, runContinuously: false, scenarios: [.agentToolPrompt])
+        let campaign = PersistentDiagnosticCampaign(enabled: true, runContinuously: false, scenarios: [.dryRunPromptBudgetOnly])
 
         let record = await runner.runOnce(campaign)
 
         XCTAssertEqual(record?.status, .passed)
-        XCTAssertEqual(record?.scenario, .agentToolPrompt)
+        XCTAssertEqual(record?.scenario, .dryRunPromptBudgetOnly)
         XCTAssertEqual(record?.metrics.didUseFastPath, false)
         XCTAssertLessThanOrEqual(record?.metrics.groundingChars ?? Int.max, 4_000)
         XCTAssertLessThanOrEqual(record?.metrics.groundingSectionCount ?? Int.max, 6)
@@ -256,6 +256,96 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(kinds.contains(.slotAgentEndEmitted))
         XCTAssertTrue(kinds.contains(.slotAgentContinuationFinished))
     }
+
+
+
+    func testAutomaticCampaignNeverSchedulesManualOnlyScenarios() {
+        let campaign = PersistentDiagnosticCampaign(enabled: true, runContinuously: true, scenarios: [.plainFastPrompt, .lifecycleCancellation, .liveAgentStream, .agentToolPrompt, .sandboxedToolPlanOnly])
+        let automatic = campaign.automaticOnly()
+        XCTAssertEqual(automatic.scenarios, [.plainFastPrompt, .sandboxedToolPlanOnly])
+        XCTAssertFalse(automatic.scenarios.contains { $0.automationPolicy != .automatic })
+    }
+
+    func testLiveAgentStreamCannotRunWithoutExplicitUserRequest() async throws {
+        let store = try makeStore()
+        let runner = PersistentRuntimeDiagnosticsRunner(store: store)
+        let record = await runner.runLiveAgentStream(explicitUserRequested: false)
+        XCTAssertNil(record)
+    }
+
+    @MainActor func testResourceGateAllowsNominalAndFairActiveState() {
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertTrue(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .fair, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertTrue(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
+        ResourceBudgetGate.testSnapshotOverride = nil
+    }
+
+    @MainActor func testResourceGateDeniesSeriousCriticalAndBackground() {
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .serious, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .critical, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .background, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
+        ResourceBudgetGate.testSnapshotOverride = nil
+    }
+
+    func testLifecycleProbePassesAfterInactiveBackgroundActiveCycle() async {
+        let controller = LifecycleProbeController()
+        let record = PersistentDiagnosticRunRecord(campaignID: UUID(), scenario: .lifecycleCancellation, status: .running)
+        _ = await controller.arm(record: record)
+        _ = await controller.record(phase: .inactive)
+        _ = await controller.record(phase: .background)
+        let result = await controller.record(phase: .active)
+        XCTAssertEqual(result?.record.status, .passed)
+        XCTAssertEqual(result?.record.metrics.appBecameInactiveOrBackgroundDuringRun, true)
+    }
+
+    func testLifecycleProbeSkipsWhenNoTransitionOccurs() async {
+        let controller = LifecycleProbeController()
+        let record = PersistentDiagnosticRunRecord(campaignID: UUID(), scenario: .lifecycleCancellation, status: .running)
+        _ = await controller.arm(record: record)
+        let finalized = await controller.finalizeWithoutTransition()
+        XCTAssertEqual(finalized?.status, .skipped)
+        XCTAssertEqual(finalized?.metrics.appBecameInactiveOrBackgroundDuringRun, false)
+    }
+
+    func testDiagnosticsWriteBufferCapsRecordCountAndBatchesWrites() async throws {
+        let store = try makeStore()
+        for index in 0..<60 {
+            await store.appendEvent(PersistentDiagnosticEvent(code: "batched", message: "safe synthetic event \(index)"))
+        }
+        let data = await store.readLogDataForExport(full: true)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertTrue(text.contains("safe synthetic event 59"))
+
+        var state = PersistentDiagnosticState()
+        state.records = (0..<520).map { _ in PersistentDiagnosticRunRecord(campaignID: UUID(), scenario: .plainFastPrompt, status: .passed) }
+        try await store.saveState(state)
+        let restored = try XCTUnwrap(await store.loadState())
+        XCTAssertEqual(restored.records.count, 500)
+    }
+
+    func testAgentCancellationPersistsCancelledStateNotInterrupted() async throws {
+        let store = try makeStore()
+        let coordinator = AgentRunCoordinator(store: store)
+        let record = PersistentDiagnosticRunRecord(campaignID: UUID(), scenario: .agentCancellation, status: .running)
+        let task = Task {
+            await coordinator.run(record: record, cancellationReason: "unit-test-cancel") { starting in
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                return starting
+            }
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        await coordinator.cancelActive(reason: "unit-test-cancel")
+        let result = await task.value
+        XCTAssertEqual(result.status, .cancelled)
+        XCTAssertEqual(result.metrics.didCancel, true)
+        XCTAssertEqual(result.metrics.cancellationReason, "unit-test-cancel")
+        XCTAssertNotEqual(result.status, .interrupted)
+    }
+
 
     private func makeStore() throws -> PersistentRuntimeDiagnosticsStore {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
