@@ -267,6 +267,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         state.status.lastUpdatedAt = Date()
         try? await store.saveState(state)
         await store.appendRunUpdate(copy)
+        await store.flushBufferedIfPossible()
     }
 
     private func finish(_ record: inout PersistentDiagnosticRunRecord, status: PersistentDiagnosticStatus, code: String, message: String) {

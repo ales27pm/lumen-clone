@@ -347,6 +347,53 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
     }
 
 
+    func testFullDiagnosticsExportDoesNotDuplicateFlushedRingEntries() async throws {
+        let store = try makeStore()
+        for index in 0..<50 {
+            await store.appendEvent(PersistentDiagnosticEvent(code: "no_duplicate", message: "no duplicate event \(index)"))
+        }
+        let data = await store.readLogDataForExport(full: true)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertEqual(text.components(separatedBy: "no_duplicate").count - 1, 50)
+    }
+
+
+    func testDiagnosticsExportReadsLegacySingleEntryJSONLLines() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = PersistentRuntimeDiagnosticsStore(directoryURL: directory)
+        let legacyEntry = PersistentDiagnosticLogEntry(kind: "event", recordID: nil, campaignID: nil, event: PersistentDiagnosticEvent(code: "legacy_line", message: "legacy event"), record: nil)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let line = String(data: try encoder.encode(legacyEntry), encoding: .utf8) ?? ""
+        try (line + "\n").write(to: directory.appendingPathComponent("persistent-runtime-diagnostics.jsonl"), atomically: true, encoding: .utf8)
+
+        let data = await store.readLogDataForExport(full: true)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertTrue(text.contains("legacy_line"))
+        XCTAssertTrue(text.contains("legacy event"))
+    }
+
+    func testMetricKitExportUsesSummariesAndRetentionCountsOnlyRawPayloads() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = MetricKitDiagnosticsStore(directoryURL: directory)
+        let payload = Data("{}".utf8)
+        for _ in 0..<51 {
+            await store.persistMetricPayload(payload)
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let rawPayloads = urls.filter { $0.lastPathComponent.hasPrefix("mxmetric-") && !$0.lastPathComponent.hasSuffix(".summary.json") }
+        let summaries = await store.exportSummaryPayloadURLs()
+
+        XCTAssertEqual(rawPayloads.count, 50)
+        XCTAssertEqual(summaries.count, 50)
+        XCTAssertTrue(summaries.allSatisfy { $0.lastPathComponent.hasSuffix(".summary.json") })
+    }
+
+
     private func makeStore() throws -> PersistentRuntimeDiagnosticsStore {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         return PersistentRuntimeDiagnosticsStore(directoryURL: url)
