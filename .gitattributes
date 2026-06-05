@@ -5,3 +5,5 @@ generated/algorithmic_philosophies/**/*.js text eol=lf
 ios/Lumen/Resources/AlgorithmicPhilosophies/**/*.md text eol=lf
 ios/Lumen/Resources/AlgorithmicPhilosophies/**/*.html text eol=lf
 ios/Lumen/Resources/AlgorithmicPhilosophies/**/*.js text eol=lf
+generated/algorithmic_philosophies/*.js text eol=lf linguist-vendored
+ios/Lumen/Resources/AlgorithmicPhilosophies/*.js text eol=lf linguist-vendored
