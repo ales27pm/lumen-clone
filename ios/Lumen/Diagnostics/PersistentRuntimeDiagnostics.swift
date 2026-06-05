@@ -102,6 +102,12 @@ nonisolated struct PersistentDiagnosticMetrics: Codable, Sendable, Equatable {
     var thermalState: String?
     var lowPowerMode: Bool?
     var memoryWarningCount: Int?
+    var realScenePhase: String?
+    var realThermalState: String?
+    var realDenied: Bool?
+    var simulatedScenePhase: String?
+    var simulatedThermalState: String?
+    var simulatedDenied: Bool?
     var cpuWatchdog: PersistentDiagnosticCPUWatchdogSnapshot?
     var diskWrite: PersistentDiagnosticDiskWriteSnapshot?
     var generationActive: Bool = false
@@ -208,16 +214,30 @@ nonisolated struct PersistentDiagnosticRunnerStatus: Codable, Sendable, Equatabl
 }
 
 nonisolated struct PersistentDiagnosticState: Codable, Sendable, Equatable {
+    static let maxCompletedRunIDs = 200
+
     var activeRunID: UUID?
     var activeCampaignID: UUID?
     var activeScenario: PersistentDiagnosticScenarioKind?
     var activeStartedAt: Date?
     var activeLaunchUUID: UUID?
     var cleanCancellationBeforeTermination: Bool = false
-    var completedRunIDs: Set<UUID> = []
+    var completedRunIDs: [UUID] = []
     var records: [PersistentDiagnosticRunRecord] = []
     var status: PersistentDiagnosticRunnerStatus = .init()
+
+    mutating func markRunCompleted(_ id: UUID) {
+        completedRunIDs.removeAll { $0 == id }
+        completedRunIDs.append(id)
+        trimCompletedRunIDs()
+    }
+
+    mutating func trimCompletedRunIDs(limit: Int = Self.maxCompletedRunIDs) {
+        guard completedRunIDs.count > limit else { return }
+        completedRunIDs.removeFirst(completedRunIDs.count - limit)
+    }
 }
+
 
 nonisolated enum PersistentRuntimeDiagnosticsRedactor {
     static let maxEventMessageChars = 160

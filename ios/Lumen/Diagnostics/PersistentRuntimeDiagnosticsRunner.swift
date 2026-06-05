@@ -229,7 +229,7 @@ actor PersistentRuntimeDiagnosticsRunner {
     private func persist(_ record: PersistentDiagnosticRunRecord) async {
         var copy = record
         copy.metrics.diskBytesAfter = DiskWriteBudget.shared.snapshot().bytes24Hours
-        state.completedRunIDs.insert(copy.id)
+        state.markRunCompleted(copy.id)
         state.activeRunID = nil
         state.activeCampaignID = nil
         state.activeScenario = nil
@@ -392,20 +392,46 @@ actor PersistentRuntimeDiagnosticsRunner {
     }
 
     private func scenarioThermalResourceGate(_ record: inout PersistentDiagnosticRunRecord) async {
-        let denied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(reason: "background") }
-        let decision = await MainActor.run { SlotAgentService.agentBudgetDecision() }
-        record.metrics.didFallback = decision == .fallback || decision == .cancel
-        record.metrics.fallbackReason = "resource_gate_probe"
-        #if DEBUG
-        await MainActor.run {
-            ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .background, lowPowerModeEnabled: true, thermalState: .serious, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        let realSnapshot = await MainActor.run { ResourceBudgetGate.diagnosticSnapshot() }
+        let realDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: realSnapshot, reason: "userChat.agentGrounding") }
+        let simulatedSnapshot = await MainActor.run {
+            ResourceBudgetGate.Snapshot(
+                scenePhase: .background,
+                lowPowerModeEnabled: true,
+                thermalState: .serious,
+                recentMemoryWarningCount: realSnapshot.recentMemoryWarningCount ?? 0,
+                lastMemoryWarningAt: nil
+            )
         }
-        let simulatedDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding") }
-        await MainActor.run { ResourceBudgetGate.testSnapshotOverride = nil }
+
+        let simulatedDenied: Bool
+        #if DEBUG
+        simulatedDenied = await MainActor.run {
+            ResourceBudgetGate.setDiagnosticSnapshotOverride(simulatedSnapshot)
+            defer { ResourceBudgetGate.clearDiagnosticSnapshotOverride() }
+            return !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding")
+        }
         #else
-        let simulatedDenied = denied
+        simulatedDenied = await MainActor.run {
+            !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedSnapshot, reason: "userChat.agentGrounding")
+        }
         #endif
-        finish(&record, status: (denied && simulatedDenied) ? .passed : .failed, code: (denied && simulatedDenied) ? "resource_gate_denied" : "resource_gate_allowed", message: "Thermal/resource gate probe completed")
+
+        record.metrics.didFallback = simulatedDenied
+        record.metrics.fallbackReason = "resource_gate_probe"
+        record.metrics.realScenePhase = PersistentDiagnosticMetrics.sceneString(realSnapshot.scenePhase)
+        record.metrics.realThermalState = realSnapshot.thermalState?.rawValue
+        record.metrics.realDenied = realDenied
+        record.metrics.simulatedScenePhase = PersistentDiagnosticMetrics.sceneString(simulatedSnapshot.scenePhase)
+        record.metrics.simulatedThermalState = simulatedSnapshot.thermalState?.rawValue
+        record.metrics.simulatedDenied = simulatedDenied
+
+        finish(
+            &record,
+            status: simulatedDenied ? .passed : .failed,
+            code: simulatedDenied ? "resource_gate_simulated_denied" : "resource_gate_simulated_allowed",
+            message: "Thermal/resource gate probe completed"
+        )
     }
 
     private func runPlainGeneration(_ request: GenerateRequest, record: inout PersistentDiagnosticRunRecord) async {

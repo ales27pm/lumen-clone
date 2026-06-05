@@ -86,6 +86,60 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         #endif
     }
 
+
+    @MainActor func testThermalResourceGateUsesSimulatedDeniedSnapshotWhenRealStateAllowsWork() async throws {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .fair, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        let store = try makeStore()
+        let runner = PersistentRuntimeDiagnosticsRunner(store: store)
+        let campaign = PersistentDiagnosticCampaign(enabled: true, runContinuously: false, scenarios: [.thermalResourceGate])
+
+        let record = await runner.runOnce(campaign)
+
+        XCTAssertNil(ResourceBudgetGate.testSnapshotOverride)
+        XCTAssertEqual(record?.status, .passed)
+        XCTAssertEqual(record?.events.last?.code, "resource_gate_simulated_denied")
+        XCTAssertEqual(record?.metrics.didFallback, true)
+        XCTAssertEqual(record?.metrics.fallbackReason, "resource_gate_probe")
+        XCTAssertEqual(record?.metrics.realScenePhase, "active")
+        XCTAssertEqual(record?.metrics.realThermalState, DeviceThermalState.fair.rawValue)
+        XCTAssertEqual(record?.metrics.realDenied, false)
+        XCTAssertEqual(record?.metrics.simulatedScenePhase, "background")
+        XCTAssertEqual(record?.metrics.simulatedThermalState, DeviceThermalState.serious.rawValue)
+        XCTAssertEqual(record?.metrics.simulatedDenied, true)
+        #endif
+    }
+
+    func testPersistentDiagnosticsStateCapsCompletedRunIDs() async throws {
+        let store = try makeStore()
+        var state = PersistentDiagnosticState()
+        let ids = (0..<250).map { _ in UUID() }
+        state.completedRunIDs = ids
+
+        try await store.saveState(state)
+
+        let restored = try XCTUnwrap(await store.loadState())
+        XCTAssertEqual(restored.completedRunIDs.count, PersistentDiagnosticState.maxCompletedRunIDs)
+        XCTAssertEqual(restored.completedRunIDs.first, ids[50])
+        XCTAssertEqual(restored.completedRunIDs.last, ids[249])
+    }
+
+    func testDefaultExporterBoundsNormalExportSizeAndRecentLogLines() async throws {
+        let store = try makeStore()
+        for index in 0..<700 {
+            await store.appendEvent(PersistentDiagnosticEvent(code: "bounded_export", message: "safe synthetic event \(index)"))
+        }
+
+        let exporter = PersistentRuntimeDiagnosticsExporter(store: store)
+        let url = try await exporter.export()
+        let data = try Data(contentsOf: url)
+        let text = try String(contentsOf: url)
+
+        XCTAssertLessThanOrEqual(data.count, 1_100_000)
+        XCTAssertFalse(text.contains("safe synthetic event 0"))
+        XCTAssertTrue(text.contains("safe synthetic event 699"))
+    }
+
     func testAgentFastPromptScenarioUsesFastPathAndBoundedGroundingMetrics() {
         let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Yo", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 1, availableTools: ToolRegistry.all, relevantMemories: [])
         let result = SlotAgentService.fastGroundingResult(for: request, options: .default)
