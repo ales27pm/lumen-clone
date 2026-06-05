@@ -9,7 +9,7 @@ struct RootView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     enum MenuItem: Hashable, Identifiable, CaseIterable {
-        case chat, outlook, models, memory, sources, triggers, tools, settings
+        case chat, outlook, models, memory, sources, philosophies, triggers, tools, settings
         var id: Self { self }
         var title: String {
             switch self {
@@ -18,6 +18,7 @@ struct RootView: View {
             case .models: return "Models"
             case .memory: return "Memory"
             case .sources: return "Sources"
+            case .philosophies: return "Philosophies"
             case .triggers: return "Triggers"
             case .tools: return "Tools"
             case .settings: return "Settings"
@@ -30,6 +31,7 @@ struct RootView: View {
             case .models: return "cpu"
             case .memory: return "brain"
             case .sources: return "externaldrive"
+            case .philosophies: return "sparkles.rectangle.stack"
             case .triggers: return "alarm"
             case .tools: return "wrench.and.screwdriver"
             case .settings: return "gearshape"
@@ -71,6 +73,7 @@ struct RootView: View {
         case .models: ModelsView()
         case .memory: MemoryView()
         case .sources: SourcesView()
+        case .philosophies: AlgorithmicPhilosophiesView()
         case .triggers: TriggersView()
         case .tools: ToolsView()
         case .settings: SettingsView()
