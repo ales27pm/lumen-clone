@@ -130,7 +130,7 @@ struct ChatView: View {
             )
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Theme.background)
+            .background(Theme.background.opacity(0.86))
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
