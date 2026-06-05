@@ -398,7 +398,7 @@ extension Bundle {
     }
 }
 
-extension PersistentDiagnosticCampaign {
+nonisolated extension PersistentDiagnosticCampaign {
     var automaticScenarios: [PersistentDiagnosticScenarioKind] {
         scenarios.filter { $0.automationPolicy == .automatic }
     }
