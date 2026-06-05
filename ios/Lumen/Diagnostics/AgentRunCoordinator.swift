@@ -4,6 +4,7 @@ actor AgentRunCoordinator {
     static let shared = AgentRunCoordinator()
 
     private var activeTask: Task<PersistentDiagnosticRunRecord, Never>?
+    private var activeTaskID: UUID?
     private let store: PersistentRuntimeDiagnosticsStore
 
     init(store: PersistentRuntimeDiagnosticsStore = .shared) {
@@ -15,6 +16,7 @@ actor AgentRunCoordinator {
         AppCancellationBus.shared.cancel(.chatGeneration)
         activeTask?.cancel()
         activeTask = nil
+        activeTaskID = nil
     }
 
     func run(
@@ -25,6 +27,7 @@ actor AgentRunCoordinator {
         await cancelActive(reason: "diagnostics-replaced-by-new-agent-run")
         var startingRecord = record
         startingRecord.status = .running
+        let taskID = UUID()
         let task = Task { () -> PersistentDiagnosticRunRecord in
             await withTaskCancellationHandler {
                 do {
@@ -64,8 +67,12 @@ actor AgentRunCoordinator {
             }
         }
         activeTask = task
+        activeTaskID = taskID
         let result = await task.value
-        activeTask = nil
+        if activeTaskID == taskID {
+            activeTask = nil
+            activeTaskID = nil
+        }
         return result
     }
 }

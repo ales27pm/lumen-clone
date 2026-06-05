@@ -15,6 +15,7 @@ actor PersistentRuntimeDiagnosticsStore {
     private var pendingEntries: [PersistentDiagnosticLogEntry] = []
     private var ringEntries: [PersistentDiagnosticLogEntry] = []
     private var lastBatchWriteAt = Date()
+    private var scheduledFlushTask: Task<Void, Never>?
     private let batchInterval: TimeInterval = 15
     private let batchSize = 50
     private let maxStoredRecords = 500
@@ -85,13 +86,15 @@ actor PersistentRuntimeDiagnosticsStore {
         try? fileManager.removeItem(at: rotatedLogURL)
         pendingEntries = []
         ringEntries = []
+        scheduledFlushTask?.cancel()
+        scheduledFlushTask = nil
         lastBatchWriteAt = Date()
     }
 
     func readLogDataForExport(full: Bool = false) async -> Data {
         var lines: [String] = []
-        let persistedEntries = persistedBatchEntries(includeRotated: full)
-        let exportEntries = full ? persistedEntries + ringEntries : (ringEntries.isEmpty ? persistedEntries : ringEntries)
+        let persistedEntries = persistedLogEntries(includeRotated: full)
+        let exportEntries = persistedEntries + pendingEntries
         for entry in exportEntries {
             if let data = try? encoder.encode(entry), let line = String(data: data, encoding: .utf8) {
                 lines.append(line)
@@ -138,6 +141,7 @@ actor PersistentRuntimeDiagnosticsStore {
         pendingEntries.append(entry)
         if pendingEntries.count > maxStoredRecords { pendingEntries.removeFirst(pendingEntries.count - maxStoredRecords) }
         await flushPending(force: false)
+        scheduleFlushIfNeeded()
     }
 
     private func flushPending(force: Bool) async {
@@ -160,6 +164,8 @@ actor PersistentRuntimeDiagnosticsStore {
             }
             DiskWriteBudget.shared.recordWrite(bytes: data.count, category: .diagnostics)
             pendingEntries = []
+            scheduledFlushTask?.cancel()
+            scheduledFlushTask = nil
             lastBatchWriteAt = Date()
         } catch {
             if pendingEntries.count > maxStoredRecords { pendingEntries.removeFirst(pendingEntries.count - maxStoredRecords) }
@@ -174,17 +180,30 @@ actor PersistentRuntimeDiagnosticsStore {
         return output
     }
 
-    private func persistedBatchEntries(includeRotated: Bool) -> [PersistentDiagnosticLogEntry] {
+    private func persistedLogEntries(includeRotated: Bool) -> [PersistentDiagnosticLogEntry] {
         var entries: [PersistentDiagnosticLogEntry] = []
         let urls = (includeRotated ? [rotatedLogURL] : []) + [logURL]
         for url in urls {
             guard let text = try? String(contentsOf: url) else { continue }
             for line in text.split(separator: "\n") {
-                guard let data = String(line).data(using: .utf8), let batch = try? decoder.decode([PersistentDiagnosticLogEntry].self, from: data) else { continue }
-                entries.append(contentsOf: batch)
+                guard let data = String(line).data(using: .utf8) else { continue }
+                if let batch = try? decoder.decode([PersistentDiagnosticLogEntry].self, from: data) {
+                    entries.append(contentsOf: batch)
+                } else if let legacyEntry = try? decoder.decode(PersistentDiagnosticLogEntry.self, from: data) {
+                    entries.append(legacyEntry)
+                }
             }
         }
         return entries
+    }
+
+    private func scheduleFlushIfNeeded() {
+        guard !pendingEntries.isEmpty, scheduledFlushTask == nil else { return }
+        let delay = UInt64(batchInterval * 1_000_000_000)
+        scheduledFlushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            await self?.flushBufferedIfPossible()
+        }
     }
 
     private func rotateIfNeeded(incomingBytes: Int) throws {

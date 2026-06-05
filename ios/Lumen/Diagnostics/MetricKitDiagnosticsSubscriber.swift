@@ -67,9 +67,11 @@ actor MetricKitDiagnosticsStore {
         await persist(data, prefix: "mxdiagnostic", extracted: extractDiagnosticPayload(from: data))
     }
 
-    func exportPayloadURLs() async -> [URL] {
+    func exportSummaryPayloadURLs() async -> [URL] {
         guard let urls = try? fileManager.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles]) else { return [] }
-        return urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        return urls
+            .filter { Self.isSummaryPayloadURL($0) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
     private func persist(_ data: Data, prefix: String, extracted: MetricKitExtractedDiagnostics) async {
@@ -81,7 +83,7 @@ actor MetricKitDiagnosticsStore {
             try data.write(to: rawURL, options: [.atomic])
             DiskWriteBudget.shared.recordWrite(bytes: data.count, category: .diagnostics)
 
-            let summaryURL = rawURL.deletingPathExtension().appendingPathExtension("summary.json")
+            let summaryURL = Self.summaryURL(for: rawURL)
             let summaryData = try encoder.encode(extracted)
             if DiskWriteBudget.shared.canWrite(bytes: summaryData.count, category: .diagnostics) {
                 try summaryData.write(to: summaryURL, options: [.atomic])
@@ -95,13 +97,26 @@ actor MetricKitDiagnosticsStore {
 
     private func trimOldPayloads(prefix: String) throws {
         let urls = (try? fileManager.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])) ?? []
-        let matching = urls.filter { $0.lastPathComponent.hasPrefix(prefix) }.sorted { lhs, rhs in
+        let rawPayloads = urls.filter { url in
+            url.lastPathComponent.hasPrefix(prefix) && !Self.isSummaryPayloadURL(url)
+        }.sorted { lhs, rhs in
             let ld = (try? lhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
             let rd = (try? rhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
             return ld < rd
         }
-        guard matching.count > maxPayloads else { return }
-        for url in matching.prefix(matching.count - maxPayloads) { try? fileManager.removeItem(at: url) }
+        guard rawPayloads.count > maxPayloads else { return }
+        for rawURL in rawPayloads.prefix(rawPayloads.count - maxPayloads) {
+            try? fileManager.removeItem(at: rawURL)
+            try? fileManager.removeItem(at: Self.summaryURL(for: rawURL))
+        }
+    }
+
+    private static func isSummaryPayloadURL(_ url: URL) -> Bool {
+        url.lastPathComponent.hasSuffix(".summary.json")
+    }
+
+    private static func summaryURL(for rawURL: URL) -> URL {
+        rawURL.deletingPathExtension().appendingPathExtension("summary.json")
     }
 
     private func extractMetricPayload(from data: Data) -> MetricKitExtractedDiagnostics {
