@@ -19,7 +19,7 @@ struct SourcesView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.background.ignoresSafeArea()
+                AppBackground()
                 ScrollView {
                     VStack(spacing: 18) {
                         headerRow
@@ -181,7 +181,7 @@ struct SourceDetailView: View {
 
     var body: some View {
         ZStack {
-            Theme.background.ignoresSafeArea()
+            AppBackground()
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(items) { chunk in
