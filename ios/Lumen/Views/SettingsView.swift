@@ -226,6 +226,8 @@ struct SettingsView: View {
                     .padding(.vertical, 2)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AppBackground())
             .navigationTitle("Settings")
             .task {
                 selectedModelFamily = LumenModelFamily.persistedSelected
