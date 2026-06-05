@@ -12,7 +12,7 @@ actor PersistentRuntimeDiagnosticsExporter {
         self.fileManager = fileManager
     }
 
-    func export() async throws -> URL {
+    func export(includeFullHistory: Bool = false) async throws -> URL {
         let directory = fileManager.temporaryDirectory.appendingPathComponent(
             "PersistentRuntimeDiagnosticsExport",
             isDirectory: true
@@ -24,8 +24,8 @@ actor PersistentRuntimeDiagnosticsExporter {
         let packageURL = directory.appendingPathComponent("persistent-runtime-diagnostics-export.json")
 
         let campaign = await store.loadCampaign()
-        let state = await store.loadState()
-        let logData = await store.readLogDataForExport()
+        let state = Self.exportState(await store.loadState(), includeFullHistory: includeFullHistory)
+        let logData = await store.readLogDataForExport(full: includeFullHistory)
         let ndjson = String(data: logData, encoding: .utf8) ?? ""
 
         let device = await MainActor.run {
@@ -57,6 +57,14 @@ actor PersistentRuntimeDiagnosticsExporter {
         try data.write(to: packageURL, options: [.atomic])
 
         return packageURL
+    }
+
+    private static func exportState(_ state: PersistentDiagnosticState?, includeFullHistory: Bool) -> PersistentDiagnosticState? {
+        guard var state = state else { return nil }
+        guard !includeFullHistory else { return state }
+        if state.records.count > 100 { state.records.removeFirst(state.records.count - 100) }
+        state.trimCompletedRunIDs()
+        return state
     }
 
     private static func sourceCommit() -> String? {
