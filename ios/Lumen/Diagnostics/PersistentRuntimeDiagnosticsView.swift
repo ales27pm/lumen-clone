@@ -68,7 +68,7 @@ struct PersistentRuntimeDiagnosticsView: View {
             Text(scenario.displayName)
             Text(scenario.automationPolicy.rawValue)
                 .font(.caption2)
-                .foregroundStyle(scenario.automationPolicy == .automatic ? .secondary : .orange)
+                .foregroundStyle(scenario.automationPolicy == .automatic ? Color.secondary : Color.orange)
         }
     }
 
