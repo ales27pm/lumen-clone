@@ -304,6 +304,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         let req = diagnosticAgentRequest(userMessage: "Search the web for SwiftData cancellation patterns", tools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") })
         let fast = SlotAgentService.shouldUseFastAgentPath(req)
         record.metrics.didUseFastPath = fast
+        record.metrics.inputToolCount = req.availableTools.count
         record.metrics.toolCount = req.availableTools.count
         record.metrics.promptInitialChars = req.userMessage.count
         if fast {
@@ -311,16 +312,21 @@ actor PersistentRuntimeDiagnosticsRunner {
             return
         }
         let start = ProcessInfo.processInfo.systemUptime
-        var final = ""
-        for await event in await SlotAgentService.shared.run(req, options: .init(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true)) {
-            switch event {
-            case .finalDelta(let text): final += text
-            case .error: record.metrics.errorCodes.append("agent_error")
-            default: break
-            }
-        }
+        let grounded = await SlotAgentService.shared.prepareGroundedRequestForDiagnostics(
+            req,
+            options: .init(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true)
+        )
         record.metrics.agentGroundingElapsedMs = Int((ProcessInfo.processInfo.systemUptime - start) * 1000)
-        finish(&record, status: final.isEmpty ? .failed : .passed, code: final.isEmpty ? "agent_tool_empty" : "agent_tool_bounded", message: "Dry-run tool prompt used bounded grounding")
+        record.metrics.groundingChars = grounded.userMessage.count + grounded.systemPrompt.count
+        record.metrics.groundingSectionCount = grounded.sections.count
+        record.metrics.bridgedToolCount = grounded.bridgedTools.count
+        record.metrics.toolCount = grounded.bridgedTools.count
+        record.metrics.memoryCount = grounded.grounding?.memoryCount
+        record.metrics.didFallback = grounded.metricsSummary == "degraded"
+        record.metrics.fallbackReason = grounded.degradedReasons.first
+        let boundedTools = grounded.bridgedTools.count <= max(req.availableTools.count, 2)
+        let pass = !fast && (record.metrics.groundingChars ?? Int.max) <= 4_000 && grounded.sections.count <= 6 && boundedTools
+        finish(&record, status: pass ? .passed : .failed, code: pass ? "agent_tool_dry_run_bounded" : "agent_tool_dry_run_unbounded", message: "Dry-run tool prompt validated bounded grounding without opening the agent stream")
     }
 
     private func scenarioAgentCancellation(_ record: inout PersistentDiagnosticRunRecord) async {
@@ -376,6 +382,8 @@ actor PersistentRuntimeDiagnosticsRunner {
         record.metrics.agentGroundingElapsedMs = elapsed
         record.metrics.groundingSectionCount = result.sections.count
         record.metrics.groundingChars = result.userMessage.count + result.systemPrompt.count
+        record.metrics.inputToolCount = request.externalAvailableTools.count
+        record.metrics.bridgedToolCount = result.bridgedTools.count
         record.metrics.toolCount = result.bridgedTools.count
         record.metrics.didFallback = result.metricsSummary == "degraded"
         record.metrics.fallbackReason = result.degradedReasons.first

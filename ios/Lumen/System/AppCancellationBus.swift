@@ -102,4 +102,10 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
         tasks[category]?[id] = nil
         lock.unlock()
     }
+
+    func activeRegistrationCount(category: AppCancellationCategory) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return tasks[category]?.count ?? 0
+    }
 }
