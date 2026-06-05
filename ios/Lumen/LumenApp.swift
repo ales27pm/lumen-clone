@@ -129,10 +129,15 @@ final class AppStartupCoordinator {
 
         try await withStage(.groundingResources) {
             appState.runtime.updateBootStep(id: "grounding", detail: "Verifying bundled agent grounding resources", state: .running)
-            try BundledAgentGroundingStore.shared.verifyRequiredResources()
-            _ = try BundledAgentGroundingStore.shared.loadManifest()
-            _ = try BundledAgentGroundingStore.shared.loadFleetSystemPrompts()
-            appState.runtime.updateBootStep(id: "grounding", detail: "Bundled agent grounding resources ready", state: .complete)
+            do {
+                try BundledAgentGroundingStore.shared.verifyRequiredResources()
+                _ = try BundledAgentGroundingStore.shared.loadManifest()
+                _ = try BundledAgentGroundingStore.shared.loadFleetSystemPrompts()
+                appState.runtime.updateBootStep(id: "grounding", detail: "Bundled agent grounding resources ready", state: .complete)
+            } catch {
+                Logger(subsystem: "ai.lumen.app", category: "startup").warning("Grounding resources unavailable: \(error.localizedDescription, privacy: .public). Continuing in limited mode.")
+                appState.runtime.updateBootStep(id: "grounding", detail: "Grounding resources unavailable — limited mode", state: .complete)
+            }
         }
 
         try await withStage(.modelLoader) {
