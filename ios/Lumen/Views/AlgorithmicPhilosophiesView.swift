@@ -296,6 +296,6 @@ private struct LocalHTMLArtifactView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         guard webView.url != url else { return }
-        webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent().deletingLastPathComponent())
     }
 }
