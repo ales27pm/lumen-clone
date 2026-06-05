@@ -117,7 +117,7 @@ struct EmbeddedImageSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.background.ignoresSafeArea()
+                AppBackground()
                 ScrollView([.horizontal, .vertical]) {
                     AsyncImage(url: url) { phase in
                         switch phase {
