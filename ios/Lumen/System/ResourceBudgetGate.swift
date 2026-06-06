@@ -126,7 +126,7 @@ enum RuntimeLifecycleCanceller {
         guard now.timeIntervalSince(lastCancellationAt) >= 1.5 else { return }
         lastCancellationAt = now
         AppCancellationBus.shared.markCancellationRequested(reason)
-        AppCancellationBus.shared.cancelAllSceneSensitive()
+        AppCancellationBus.shared.cancelAllSceneSensitiveDeferred(priority: .utility)
         ModelLoader.cancelActiveLoads()
         Task.detached(priority: .userInitiated) {
             await AppLlamaService.shared.cancelActiveGeneration(reason: reason)

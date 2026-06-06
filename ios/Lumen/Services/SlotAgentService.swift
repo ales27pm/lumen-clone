@@ -134,27 +134,10 @@ final class SlotAgentService {
     }
 
     func prepareGroundedRequestForDiagnostics(_ req: AgentRequest, options: LegacyAgentRunOptions) async -> LegacyGroundingResult {
-        let mode: LegacyGroundingRequest.Mode = options.groundingMode == .headlessTrigger ? .headless : .foreground
-        let policy: LegacyPromptInjectionPolicy
-        switch options.groundingMode {
-        case .headlessTrigger: policy = .headlessTrigger
-        case .slotAgent: policy = .slotAgent
-        case .rolePipeline: policy = .rolePipeline
-        case .foregroundChat: policy = .foregroundChat
-        }
-        let request = LegacyGroundingRequest(
-            userMessage: req.userMessage,
-            conversationID: options.conversationID ?? req.conversationID,
-            turnID: options.turnID ?? req.turnID,
-            history: req.history,
-            mode: mode,
-            task: .chat,
-            roleOrSlot: "\(options.groundingMode):diagnostics-dry-run",
-            externalRelevantMemories: req.relevantMemories,
-            externalAvailableTools: req.availableTools,
-            policy: policy,
-            baseSystemPrompt: req.systemPrompt,
-            preventDoubleGrounding: options.preventDoubleGrounding
+        let request = Self.makeLegacyGroundingRequest(
+            req,
+            options: options,
+            roleOrSlot: "\(options.groundingMode):diagnostics-dry-run"
         )
         return await LegacyTurnGroundingCoordinator.shared.prepareGroundedRequest(
             request,
@@ -162,7 +145,11 @@ final class SlotAgentService {
         )
     }
 
-    private func prepareGroundedRequest(_ req: AgentRequest, options: LegacyAgentRunOptions, cancellationToken: AgentGroundingCancellationToken? = nil) async -> LegacyGroundingResult {
+    nonisolated static func makeLegacyGroundingRequest(
+        _ req: AgentRequest,
+        options: LegacyAgentRunOptions,
+        roleOrSlot: String? = nil
+    ) -> LegacyGroundingRequest {
         let mode: LegacyGroundingRequest.Mode = options.groundingMode == .headlessTrigger ? .headless : .foreground
         let policy: LegacyPromptInjectionPolicy
         switch options.groundingMode {
@@ -171,21 +158,97 @@ final class SlotAgentService {
         case .rolePipeline: policy = .rolePipeline
         case .foregroundChat: policy = .foregroundChat
         }
-        let provider = LegacyGroundingContextProvider(directContext: options.modelContext, allowSharedFallback: options.allowDegradedGrounding)
-        let request = LegacyGroundingRequest(
+        return LegacyGroundingRequest(
             userMessage: req.userMessage,
             conversationID: options.conversationID ?? req.conversationID,
             turnID: options.turnID ?? req.turnID,
             history: req.history,
             mode: mode,
             task: .chat,
-            roleOrSlot: "\(options.groundingMode)" + (options.diagnosticsEnabled ? ":diagnostics" : ""),
+            roleOrSlot: roleOrSlot ?? "\(options.groundingMode)" + (options.diagnosticsEnabled ? ":diagnostics" : ""),
             externalRelevantMemories: req.relevantMemories,
             externalAvailableTools: req.availableTools,
             policy: policy,
             baseSystemPrompt: req.systemPrompt,
             preventDoubleGrounding: options.preventDoubleGrounding
         )
+    }
+
+    nonisolated static func requiredTools(for intent: UserIntent) -> Set<String> {
+        IntentRouter.allowedToolIDs(for: intent)
+    }
+
+    nonisolated static func isActionAllowed(_ toolID: String, routing: IntentRoutingDecision) -> Bool {
+        IntentRouter.isToolAllowed(toolID, for: routing)
+    }
+
+    nonisolated static func resolveRequiredToolFallback(
+        intent: UserIntent,
+        prompt: String,
+        allowedToolIDs: Set<String>
+    ) -> String? {
+        if intent == .camera, allowedToolIDs.contains("camera.capture") {
+            return "camera.capture"
+        }
+        if intent == .maps, IntentRouter.isMapFollowUpPrompt(prompt) {
+            if allowedToolIDs.contains("location.current") { return "location.current" }
+            if allowedToolIDs.contains("maps.search") { return "maps.search" }
+        }
+        let routing = IntentRoutingDecision(
+            intent: intent,
+            allowedToolIDs: allowedToolIDs,
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        return DeterministicToolPlanner.plan(routing: routing, prompt: prompt, availableToolIDs: allowedToolIDs)?.tool
+    }
+
+    nonisolated static func resolveRequiredToolFallback(
+        intent: UserIntent,
+        prompt: String,
+        allowedToolIDs: [String]
+    ) -> String? {
+        resolveRequiredToolFallback(intent: intent, prompt: prompt, allowedToolIDs: Set(allowedToolIDs))
+    }
+
+    nonisolated static func deterministicPrimaryAction(
+        routing: IntentRoutingDecision,
+        prompt: String,
+        scopedTools: [ToolDefinition],
+        availableToolIDs: Set<String>
+    ) -> AgentAction? {
+        DeterministicToolPlanner.plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs)
+    }
+
+    nonisolated static func deterministicDirectFinalIfSafe(
+        prompt: String,
+        intent: UserIntent,
+        hasAttachments: Bool,
+        hasRelevantMemories: Bool
+    ) -> String? {
+        guard intent == .chat, !hasAttachments, !hasRelevantMemories else { return nil }
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let lowered = trimmed.lowercased()
+        guard lowered.hasPrefix("explain ") || lowered.hasPrefix("give me ") else { return nil }
+        let request = AgentRequest(
+            systemPrompt: "",
+            history: [],
+            userMessage: trimmed,
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 320,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+        return deterministicAnswer(for: request)
+    }
+
+    private func prepareGroundedRequest(_ req: AgentRequest, options: LegacyAgentRunOptions, cancellationToken: AgentGroundingCancellationToken? = nil) async -> LegacyGroundingResult {
+        let provider = LegacyGroundingContextProvider(directContext: options.modelContext, allowSharedFallback: options.allowDegradedGrounding)
+        let request = Self.makeLegacyGroundingRequest(req, options: options)
         return await LegacyTurnGroundingCoordinator.shared.prepareGroundedRequest(request, provider: provider, cancellationToken: cancellationToken)
     }
 

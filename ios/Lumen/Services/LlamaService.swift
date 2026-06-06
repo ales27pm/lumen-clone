@@ -152,6 +152,29 @@ final class LlamaGenerationCancellationToken: @unchecked Sendable {
     }
 }
 
+private final class LlamaRuntimeStopFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested = false
+
+    func requestStop() {
+        lock.lock()
+        requested = true
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        requested = false
+        lock.unlock()
+    }
+
+    var isStopRequested: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return requested
+    }
+}
+
 nonisolated enum LlamaError: Error, Sendable {
     case noModelLoaded
     case slotModelNotLoaded(String)
@@ -321,6 +344,7 @@ private struct LlamaOffloadSnapshot {
 private actor AdapterChatRuntime {
     private let model: LlamaModel
     private let context: LlamaContext
+    private let stopFlag = LlamaRuntimeStopFlag()
     let modelPath: String
     private let contextSize: Int
     private let batchSize: UInt32
@@ -375,6 +399,10 @@ private actor AdapterChatRuntime {
     func configuredContextSize() -> Int { contextSize }
     func runtimeAccelerationDiagnostics() -> RuntimeAccelerationDiagnostics { accelerationDiagnostics }
 
+    nonisolated func stopCompletion() {
+        stopFlag.requestStop()
+    }
+
     func loadRoleAdapter(slot: LumenModelSlot, path: String) throws {
         loadedAdapters[slot] = try LlamaLoraAdapter(model: model, path: path)
     }
@@ -390,6 +418,7 @@ private actor AdapterChatRuntime {
     }
 
     func resetKVCache() {
+        stopFlag.reset()
         context.clearKVCache()
         processedTokens.removeAll()
         currentTokenPosition = 0
@@ -402,7 +431,8 @@ private actor AdapterChatRuntime {
         maxTokens: Int?,
         cancellationToken: LlamaGenerationCancellationToken? = nil
     ) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        stopFlag.reset()
+        return AsyncThrowingStream<String, Error> { continuation in
             let task = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
                     continuation.finish()
@@ -428,7 +458,7 @@ private actor AdapterChatRuntime {
         continuation: AsyncThrowingStream<String, Error>.Continuation
     ) async {
         do {
-            try cancellationToken?.checkCancellation()
+            try checkGenerationCancellation(cancellationToken)
             try Task.checkCancellation()
             try initializeCompletion(messages: messages, cancellationToken: cancellationToken)
             let sampler = LlamaSampler(config: samplingConfig, model: model)
@@ -437,9 +467,9 @@ private actor AdapterChatRuntime {
             // Keep the native decode critical section non-suspending. Any `await`
             // here would make this actor reentrant while it owns the shared llama
             // context, batch, processed tokens, and current token position.
-            while emitted < limit, !Task.isCancelled {
-                try cancellationToken?.checkCancellation()
-                try Task.checkCancellation()
+            while emitted < limit, !Task.isCancelled, !stopFlag.isStopRequested {
+                try checkGenerationCancellation(cancellationToken)
+                let tokenStarted = ProcessInfo.processInfo.systemUptime
                 let token = sampler.sample(context: context)
                 if model.isEogToken(token) { break }
                 batch.reset()
@@ -449,6 +479,7 @@ private actor AdapterChatRuntime {
                 try context.decode(batch: batch)
                 continuation.yield(model.piece(from: token))
                 emitted += 1
+                try recordCPUWorkAndCheckBudget(since: tokenStarted, cancellationToken: cancellationToken)
             }
             continuation.finish()
         } catch is CancellationError {
@@ -459,9 +490,9 @@ private actor AdapterChatRuntime {
     }
 
     private func initializeCompletion(messages: [LlamaChatMessage], cancellationToken: LlamaGenerationCancellationToken? = nil) throws {
-        try cancellationToken?.checkCancellation()
+        try checkGenerationCancellation(cancellationToken)
         let prompt = model.applyChatTemplate(to: messages, addAssistant: nil)
-        try cancellationToken?.checkCancellation()
+        try checkGenerationCancellation(cancellationToken)
         let tokens = model.tokenize(text: prompt, addBos: model.shouldAddBos(), special: true)
         guard tokens.count < contextSize - 4 else {
             throw LlamaError.failedToInitializeContext("Prompt exceeds shared chat context window")
@@ -480,17 +511,35 @@ private actor AdapterChatRuntime {
         // Keep prompt evaluation non-suspending for the same reason as the decode
         // loop above: this method mutates the shared llama context state.
         for (index, token) in tokens.enumerated() {
-            try cancellationToken?.checkCancellation()
-            try Task.checkCancellation()
+            try checkGenerationCancellation(cancellationToken)
             let isLast = index == lastIndex
             batch.addToken(token, at: Int32(index), logits: isLast)
             processedTokens.append(token)
             if batch.size == Int32(batchSize) || isLast {
+                let batchStarted = ProcessInfo.processInfo.systemUptime
                 try context.decode(batch: batch)
                 batch.reset()
+                try recordCPUWorkAndCheckBudget(since: batchStarted, cancellationToken: cancellationToken)
             }
         }
         currentTokenPosition = Int32(processedTokens.count)
+    }
+
+    private func checkGenerationCancellation(_ cancellationToken: LlamaGenerationCancellationToken?) throws {
+        if stopFlag.isStopRequested {
+            cancellationToken?.cancel(reason: "runtime-stop-requested")
+            throw CancellationError()
+        }
+        try cancellationToken?.checkCancellation()
+        try Task.checkCancellation()
+    }
+
+    private func recordCPUWorkAndCheckBudget(since start: TimeInterval, cancellationToken: LlamaGenerationCancellationToken?) throws {
+        CPUWatchdogGuard.shared.recordWork(category: .chatGeneration, duration: ProcessInfo.processInfo.systemUptime - start)
+        if CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) {
+            cancellationToken?.cancel(reason: "cpu-watchdog-degraded")
+            throw CancellationError()
+        }
     }
 }
 
@@ -611,6 +660,7 @@ final actor AppLlamaService {
         }
         let legacySlots = Set(generations.values.map(\.slot))
         logger.info("event=llama.chat.cancel_active_generation count=\(generations.count, privacy: .public) reason=\(reason, privacy: .public)")
+        sharedChatRuntime?.stopCompletion()
         for slot in legacySlots {
             await stopCompletion(for: slot)
         }
@@ -1453,6 +1503,7 @@ final actor AppLlamaService {
     }
 
     private func stopCompletion(for slot: LumenModelSlot) async {
+        sharedChatRuntime?.stopCompletion()
         await chatRuntimes[slot]?.service.stopCompletion()
     }
 

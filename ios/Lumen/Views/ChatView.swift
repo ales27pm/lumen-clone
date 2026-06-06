@@ -227,13 +227,22 @@ struct ChatView: View {
                 CPUWatchdogGuard.shared.end(token: cpuToken)
                 DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
             }
-            if !appState.agentModeEnabled, !(await ensureChatModelLoaded()) {
+            if appState.agentModeEnabled {
+                streamingSteps = [AgentStep(kind: .thought, content: "Loading local model")]
+            }
+            if !(await ensureChatModelLoaded()) {
                 guard activeTurnID == turnID else { return }
                 let msg = ChatMessage(role: .assistant, content: "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it.")
                 conversation.messages.append(msg)
                 saveConversationIfBudgetAllows(estimatedBytes: 4096)
+                streamingSteps = []
+                activeTurnID = nil
+                generationController.clearIfCurrent(controllerRequestID, for: conversation.id)
                 appState.isGenerating = false
                 return
+            }
+            if appState.agentModeEnabled {
+                streamingSteps = [AgentStep(kind: .thought, content: "Preparing agent context")]
             }
             AgentGroundingInstrumentation.mark("before IntentClassifierService.route", metrics: .init(promptChars: text.count))
             let routeStart = ProcessInfo.processInfo.systemUptime
@@ -277,7 +286,7 @@ struct ChatView: View {
         var finalText = ""
 
         var lastUIUpdate = Date.distantPast
-        for await event in SlotAgentService.shared.run(req, options: .init(modelContext: modelContext, conversationID: conversation.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
+        for await event in AgentService.shared.run(req, options: .init(modelContext: nil, conversationID: conversation.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
             if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
             let workStartedAt = ProcessInfo.processInfo.systemUptime
             defer { CPUWatchdogGuard.shared.recordWork(category: .chatGeneration, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
