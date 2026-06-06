@@ -312,4 +312,74 @@ extension AgentGroundingRegressionTests {
         let audit = AgentModelBehaviorAuditor().audit(manifest: manifest, messages: messages)
         #expect(audit.violations.contains(where: { $0.code == "approval_sensitive_tool_selected" }))
     }
+
+    @Test func effectiveToolDefinitionsPreserveRouteScopedCanonicalTools() {
+        let original = ToolRegistry.all.filter { ["weather", "location.current"].contains($0.id) }
+        let grounded = [
+            ToolDefinition(id: "location.snapshot", name: "Location Snapshot", category: .location, description: "Secure location snapshot", icon: "location", tint: "teal", requiresApproval: false, permissionKey: "NSLocationWhenInUseUsageDescription")
+        ]
+
+        let effective = SlotAgentService.effectiveToolDefinitions(original: original, grounded: grounded)
+        let ids = Set(effective.map(\.id))
+        #expect(ids.contains("weather"))
+        #expect(ids.contains("location.current"))
+        #expect(!ids.contains("location.snapshot"))
+    }
+
+    @Test func secureToolAliasesBridgeToCanonicalLegacyDefinitions() {
+        let secure = [
+            SecureToolDefinition(id: "rag.search.secure", displayName: "Secure RAG", description: "Secure RAG", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "{}", resultPrivacyLevel: .moderate, maxOutputCharacters: 100),
+            SecureToolDefinition(id: "contacts.lookup", displayName: "Lookup", description: "Lookup", category: .permissionRead, requiredPermissions: [.contacts], supportsBackgroundExecution: false, requiresUserApproval: false, argumentSchemaDescription: "{}", resultPrivacyLevel: .sensitive, maxOutputCharacters: 100)
+        ]
+
+        let ids = LegacyToolSchemaBridge.toLegacyToolDefinitions(secure).map(\.id)
+        #expect(ids.contains("rag.search"))
+        #expect(ids.contains("contacts.search"))
+    }
+
+    @Test func compatibilityTriggerCreateYieldsApprovalBoundaryStep() async {
+        let tools = ToolRegistry.all.filter { ["trigger.create", "trigger.list"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: true)
+
+        let response = await SlotAgentService.deterministicCompatibilityResponseForTests(original: req, effective: req, options: options)
+
+        #expect(response.steps.first?.kind == .approvalBoundary)
+        #expect(response.steps.first?.toolID == "trigger.create")
+        #expect(response.text.lowercased().contains("trigger"))
+    }
+
+    @Test func compatibilityChatAnswersPrecisionRecallDirectly() async {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: true)
+
+        let response = await SlotAgentService.deterministicCompatibilityResponseForTests(original: req, effective: req, options: options)
+
+        #expect(response.steps.isEmpty)
+        #expect(response.text.lowercased().contains("precision"))
+        #expect(response.text.lowercased().contains("recall"))
+        #expect(!response.text.lowercased().contains("compatibility mode"))
+    }
 }

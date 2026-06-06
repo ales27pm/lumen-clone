@@ -55,4 +55,17 @@ struct DeterministicToolPlannerTests {
         #expect(action?.args["location"]?.stringValue == "Montreal")
     }
 
+    @Test func triggerSchedulePlansCreateAction() async throws {
+        let routing = IntentRoutingDecision(intent: .trigger, allowedToolIDs: ["trigger.create", "trigger.list"], requiresClarification: false, clarificationPrompt: nil)
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            availableToolIDs: ["trigger.create", "trigger.list"]
+        )
+        #expect(action?.tool == "trigger.create")
+        #expect(action?.args["title"]?.stringValue == "Reminder summary")
+        #expect(action?.args["prompt"]?.stringValue.contains("summarize reminders") == true)
+        #expect(action?.args["schedule"]?.stringValue == "once")
+    }
+
 }

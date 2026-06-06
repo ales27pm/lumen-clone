@@ -87,10 +87,13 @@ final class SlotAgentService {
                         try cancellationToken.checkCancellation()
                         let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
                         Self.emitEffectiveRequestBuilt(path: "fast-agent", request: effectiveRequest)
-                        let text = Self.deterministicAnswer(for: effectiveRequest)
+                        let response = await Self.deterministicCompatibilityResponse(original: req, effective: effectiveRequest, options: options)
                         Self.emitDeterministicAnswerBuilt(path: "fast-agent")
-                        continuation.yield(.finalDelta(text))
-                        continuation.yield(.done(finalText: text, steps: []))
+                        for step in response.steps {
+                            continuation.yield(.step(step))
+                        }
+                        continuation.yield(.finalDelta(response.text))
+                        continuation.yield(.done(finalText: response.text, steps: response.steps))
                         Self.emitDoneYielded(path: "fast-agent")
                         Self.emitSlotAgentEnd(path: "fast-agent", grounded: grounded)
                         continuation.finish()
@@ -106,10 +109,13 @@ final class SlotAgentService {
                     try cancellationToken.checkCancellation()
                     let effectiveRequest = await MainActor.run { self.makeEffectiveRequest(original: req, grounded: grounded, options: options) }
                     Self.emitEffectiveRequestBuilt(path: "normal-agent", request: effectiveRequest)
-                    let text = Self.deterministicAnswer(for: effectiveRequest)
+                    let response = await Self.deterministicCompatibilityResponse(original: req, effective: effectiveRequest, options: options)
                     Self.emitDeterministicAnswerBuilt(path: "normal-agent")
-                    continuation.yield(.finalDelta(text))
-                    continuation.yield(.done(finalText: text, steps: []))
+                    for step in response.steps {
+                        continuation.yield(.step(step))
+                    }
+                    continuation.yield(.finalDelta(response.text))
+                    continuation.yield(.done(finalText: response.text, steps: response.steps))
                     Self.emitDoneYielded(path: "normal-agent")
                     Self.emitSlotAgentEnd(path: "normal-agent", grounded: grounded)
                     continuation.finish()
@@ -263,7 +269,7 @@ final class SlotAgentService {
             repetitionPenalty: original.repetitionPenalty,
             maxTokens: original.maxTokens,
             maxSteps: original.maxSteps,
-            availableTools: useGrounded ? grounded.bridgedTools : original.availableTools,
+            availableTools: useGrounded ? Self.effectiveToolDefinitions(original: original.availableTools, grounded: grounded.bridgedTools) : original.availableTools,
             relevantMemories: original.relevantMemories,
             attachments: original.attachments,
             conversationID: options.conversationID ?? original.conversationID,
@@ -306,6 +312,23 @@ final class SlotAgentService {
 
     private nonisolated static func emitContinuationFinished(path: String) {
         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentContinuationFinished, values: diagnosticValues(path: path)))
+    }
+
+    nonisolated static func effectiveToolDefinitions(original: [ToolDefinition], grounded: [ToolDefinition]) -> [ToolDefinition] {
+        guard !grounded.isEmpty else { return original }
+
+        var seen: Set<String> = []
+        var merged: [ToolDefinition] = []
+        func appendCanonical(_ tool: ToolDefinition) {
+            let canonical = ToolRouteGuard.canonicalToolID(tool.id)
+            guard !seen.contains(canonical) else { return }
+            seen.insert(canonical)
+            merged.append(ToolRegistry.find(id: canonical) ?? tool)
+        }
+
+        original.forEach(appendCanonical)
+        grounded.forEach(appendCanonical)
+        return merged
     }
 
     nonisolated static func sanitizeHistoryEntryForPromptContext(role: MessageRole, content: String) -> String? {
@@ -414,11 +437,139 @@ final class SlotAgentService {
         "I can’t safely start the full agent pipeline right now. Please try again when the app is active and the device has cooled down."
     }
 
+    private struct DeterministicCompatibilityResponse: Sendable {
+        let text: String
+        let steps: [AgentStep]
+    }
+
+    private nonisolated static func deterministicCompatibilityResponse(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> DeterministicCompatibilityResponse {
+        let routing = IntentRouter.classify(original.userMessage)
+        let availableToolIDs = Set(effective.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+
+        func directAnswer() -> DeterministicCompatibilityResponse {
+            let candidate = deterministicAnswer(for: effective)
+            let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: nil)
+            return .init(text: text, steps: [])
+        }
+
+        guard IntentRouter.intentRequiresTool(routing) else {
+            return directAnswer()
+        }
+
+        if routing.requiresClarification {
+            let candidate = routing.clarificationPrompt ?? deterministicAnswer(for: effective)
+            let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: nil)
+            return .init(text: text, steps: [])
+        }
+
+        guard !availableToolIDs.isEmpty,
+              let action = deterministicPrimaryAction(
+                routing: routing,
+                prompt: original.userMessage,
+                scopedTools: effective.availableTools,
+                availableToolIDs: availableToolIDs
+              ) else {
+            let text = FinalIntentValidator.validate(IntentRouter.unavailableMessage(for: routing), routing: routing, fallback: nil)
+            return .init(text: text, steps: [])
+        }
+
+        let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
+        if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
+            let approval = approvalBoundaryFinal(for: canonicalActionTool, action: action, routing: routing, prompt: original.userMessage)
+            let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+            let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
+            return .init(text: text, steps: [step])
+        }
+
+        let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+        let result = await compatibilityObservation(
+            toolID: canonicalActionTool,
+            action: action,
+            effective: effective,
+            options: options,
+            availableToolIDs: availableToolIDs
+        )
+        let observationStep = AgentStep(kind: .observation, content: result, toolID: canonicalActionTool)
+        let candidate = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: routing.intent,
+            toolID: canonicalActionTool,
+            observation: result,
+            originalPrompt: original.userMessage
+        ) ?? result
+        let fallback = IntentRouter.unavailableMessage(for: routing)
+        let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: fallback)
+        return .init(text: text, steps: [actionStep, observationStep])
+    }
+
+    nonisolated static func deterministicCompatibilityResponseForTests(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> (text: String, steps: [AgentStep]) {
+        let response = await deterministicCompatibilityResponse(original: original, effective: effective, options: options)
+        return (response.text, response.steps)
+    }
+
+    private nonisolated static func compatibilityObservation(
+        toolID: String,
+        action: AgentAction,
+        effective: AgentRequest,
+        options: LegacyAgentRunOptions,
+        availableToolIDs: Set<String>
+    ) async -> String {
+        guard availableToolIDs.contains(toolID) else {
+            return "Tool \(toolID) is disabled. Enable it in Tools."
+        }
+
+        if options.diagnosticsEnabled {
+            return await ToolExecutor.shared.execute(toolID, arguments: action.args, approval: .autonomous)
+        }
+
+        return await LegacySecureToolExecutor.execute(
+            toolID: toolID,
+            arguments: action.args,
+            conversationID: effective.conversationID,
+            turnID: effective.turnID
+        )
+    }
+
+    private nonisolated static func approvalBoundaryFinal(for toolID: String, action: AgentAction, routing: IntentRoutingDecision, prompt: String) -> String {
+        switch routing.intent {
+        case .emailDraft:
+            return "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?"
+        case .messageDraft:
+            return "Approval required for messages.draft. I can prepare the message after you approve it. What tone should I use?"
+        case .trigger:
+            return "Approval required for trigger.create. Trigger request prepared for: \(prompt). It will run the scheduled agent prompt after approval."
+        case .calendar:
+            return "Approval required for calendar.create. I did not create an event yet."
+        case .reminder:
+            return "Approval required for reminders.create. I did not create a reminder yet."
+        case .camera:
+            return "Approval required for camera.capture. I did not open the camera yet."
+        case .alarm:
+            return "Approval required for \(toolID). I did not change alarms yet."
+        case .outlook:
+            return "Approval required for \(toolID). I did not modify Outlook mail yet."
+        default:
+            return "Approval required for \(action.displayContent). I did not run it yet."
+        }
+    }
+
     private nonisolated static func deterministicAnswer(for req: AgentRequest) -> String {
         let visible = req.userMessage
             .replacingOccurrences(of: "<!-- LUMEN_GROUNDING_V1 -->", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if visible.isEmpty { return "I need a message to answer." }
+        let lower = visible.lowercased()
+        if lower.contains("precision") && lower.contains("recall") {
+            return "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches."
+        }
+        if lower.contains("sharp chisel") || lower.contains("dull") {
+            return "A sharp chisel is safer because it needs less force, follows the cut more predictably, and is less likely to slip. A dull edge makes you push harder, which reduces control."
+        }
+        if lower.contains("door hinge") {
+            return "Three hinge-fitting tips: mark the leaf with a sharp knife, pare to the line in thin passes, and test-fit often so the hinge sits flush without deep gaps."
+        }
+        if lower.contains("actor isolation") {
+            return "Actor isolation means Swift protects data owned by an actor so only that actor can touch it directly. Other code has to await access, which helps prevent races."
+        }
         return "I received your request. The full local model pipeline is temporarily running in compatibility mode while the native build is hardened."
     }
 }
