@@ -35,7 +35,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let store = try makeStore()
         let lease = DiskWriteBudget.shared.beginGeneration()
         await store.appendEvent(PersistentDiagnosticEvent(code: "diagnostic_write", message: "safe synthetic event"))
-        XCTAssertEqual(await store.readLogDataForExport(), Data())
+        let deferredData = await store.readLogDataForExport()
+        XCTAssertEqual(deferredData, Data())
         lease.end()
         await store.flushBufferedIfPossible()
         let data = await store.readLogDataForExport()
@@ -118,7 +119,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
 
         try await store.saveState(state)
 
-        let restored = try XCTUnwrap(await store.loadState())
+        let loadedState = await store.loadState()
+        let restored = try XCTUnwrap(loadedState)
         XCTAssertEqual(restored.completedRunIDs.count, PersistentDiagnosticState.maxCompletedRunIDs)
         XCTAssertEqual(restored.completedRunIDs.first, ids[50])
         XCTAssertEqual(restored.completedRunIDs.last, ids[249])
@@ -323,7 +325,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         var state = PersistentDiagnosticState()
         state.records = (0..<520).map { _ in PersistentDiagnosticRunRecord(campaignID: UUID(), scenario: .plainFastPrompt, status: .passed) }
         try await store.saveState(state)
-        let restored = try XCTUnwrap(await store.loadState())
+        let loadedState = await store.loadState()
+        let restored = try XCTUnwrap(loadedState)
         XCTAssertEqual(restored.records.count, 500)
     }
 

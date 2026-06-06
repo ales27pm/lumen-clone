@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 enum LegacyToolSchemaBridge {
-    static func toLegacyToolDefinitions(_ secure: [SecureToolDefinition]) -> [ToolDefinition] {
+    nonisolated static func toLegacyToolDefinitions(_ secure: [SecureToolDefinition]) -> [ToolDefinition] {
         secure.map {
             ToolDefinition(
                 id: $0.id,
@@ -17,11 +17,11 @@ enum LegacyToolSchemaBridge {
         }
     }
 
-    static func toInvocation(toolID: String, arguments: [String: String], source: ToolInvocationSource, conversationID: UUID?, turnID: UUID?) -> ToolInvocation {
+    nonisolated static func toInvocation(toolID: String, arguments: [String: String], source: ToolInvocationSource, conversationID: UUID?, turnID: UUID?) -> ToolInvocation {
         ToolInvocation(id: UUID(), toolID: toolID, arguments: arguments, source: source, conversationID: conversationID, turnID: turnID, createdAt: Date())
     }
 
-    private static func mapCategory(_ c: SecureToolCategory) -> ToolCategory {
+    private nonisolated static func mapCategory(_ c: SecureToolCategory) -> ToolCategory {
         switch c {
         case .readOnly, .permissionRead: return .knowledge
         case .userVisibleAction: return .productivity
@@ -30,7 +30,7 @@ enum LegacyToolSchemaBridge {
         }
     }
 
-    private static func mapPermission(_ p: PermissionDomain?) -> String? {
+    private nonisolated static func mapPermission(_ p: PermissionDomain?) -> String? {
         switch p {
         case .calendars: return "NSCalendarsUsageDescription"
         case .contacts: return "NSContactsUsageDescription"

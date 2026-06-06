@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import UIKit
 @testable import Lumen
 
 @MainActor
@@ -7,6 +8,7 @@ final class SceneWatchdogHardeningTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         #if DEBUG
+        SceneTransitionCoordinator.shared.resetForTesting()
         await MainActor.run { DeferredMaintenanceQueue.shared.resetForTesting() }
         #endif
     }
@@ -18,6 +20,22 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.1)
     }
 
+    func testSceneTransitionDoesNotSynchronouslyRunCancellationCallbacks() async {
+        let cancelled = XCTestExpectation(description: "deferred cancellation callback ran")
+        let id = AppCancellationBus.shared.registerCancellation({
+            Thread.sleep(forTimeInterval: 0.2)
+            cancelled.fulfill()
+        }, category: .chatGeneration)
+
+        let start = ProcessInfo.processInfo.systemUptime
+        SceneTransitionCoordinator.shared.handleScenePhaseChange(.background)
+        let elapsed = ProcessInfo.processInfo.systemUptime - start
+
+        XCTAssertLessThan(elapsed, 0.05)
+        await fulfillment(of: [cancelled], timeout: 1)
+        AppCancellationBus.shared.unregister(id, category: .chatGeneration)
+    }
+
     func testCancellationBusCancelsSceneSensitiveTasksSynchronously() async {
         let cancelled = XCTestExpectation(description: "task cancelled")
         let task = Task<Void, Never> {
@@ -27,6 +45,24 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         AppCancellationBus.shared.register(task, category: .chatGeneration)
         AppCancellationBus.shared.cancelAllSceneSensitive()
         await fulfillment(of: [cancelled], timeout: 1)
+    }
+
+    func testApplicationWillTerminateDoesNotSynchronouslyCancelSceneSensitiveWork() async {
+        let cancelled = XCTestExpectation(description: "termination should not run cancellation callbacks")
+        cancelled.isInverted = true
+        let id = AppCancellationBus.shared.registerCancellation({
+            cancelled.fulfill()
+        }, category: .chatGeneration)
+
+        let delegate = LumenAppDelegate()
+        let start = ProcessInfo.processInfo.systemUptime
+        delegate.applicationWillTerminate(UIApplication.shared)
+        let elapsed = ProcessInfo.processInfo.systemUptime - start
+
+        XCTAssertLessThan(elapsed, 0.05)
+        XCTAssertEqual(AppCancellationBus.shared.lastCancellationReason, "will-terminate")
+        await fulfillment(of: [cancelled], timeout: 0.2)
+        AppCancellationBus.shared.unregister(id, category: .chatGeneration)
     }
 
     func testDeferredMaintenanceQueueDoesNotRunWhileBackgrounded() async throws {
