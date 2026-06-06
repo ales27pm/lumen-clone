@@ -32,16 +32,33 @@ struct DeterministicFallbackRuntime: LocalTextGenerationRuntime {
 
 struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     let kind: AssistantRuntimeKind = .llama
-    let isAvailable: Bool
     let unavailableReason: String?
+    private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
 
-    init(isAvailable: Bool = false, unavailableReason: String? = "llama text runtime is not directly wired to AssistantKernel") {
-        self.isAvailable = isAvailable
-        self.unavailableReason = isAvailable ? nil : unavailableReason
+    var isAvailable: Bool {
+        generateHandler != nil
+    }
+
+    init(
+        isAvailable: Bool = false,
+        unavailableReason: String? = "llama text runtime is not directly wired to AssistantKernel",
+        generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil
+    ) {
+        self.generateHandler = generateHandler
+        if generateHandler != nil {
+            self.unavailableReason = nil
+        } else if isAvailable {
+            self.unavailableReason = unavailableReason ?? "llama text runtime was marked available without a generation adapter"
+        } else {
+            self.unavailableReason = unavailableReason
+        }
     }
 
     func generate(request: TextGenerationRequest) async throws -> String {
-        throw LocalRuntimeError.unavailable(unavailableReason ?? "llama runtime unavailable")
+        guard let generateHandler else {
+            throw LocalRuntimeError.unavailable(unavailableReason ?? "llama runtime unavailable")
+        }
+        return try await generateHandler(request)
     }
 
     func handleMemoryPressure() async {
