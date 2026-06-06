@@ -10,8 +10,7 @@ nonisolated struct RuntimeReadinessMetrics: Sendable {
     let accelerationDiagnostics: RuntimeAccelerationDiagnostics
 }
 
-@MainActor
-final class SlotModelRuntimeCoordinator {
+actor SlotModelRuntimeCoordinator {
     static let shared = SlotModelRuntimeCoordinator()
 
     private let logger = Logger(subsystem: "ai.lumen.app", category: "slot-runtime")
@@ -43,14 +42,24 @@ final class SlotModelRuntimeCoordinator {
 
     @discardableResult
     func ensureChatModel(
-        appState: AppState,
-        candidates: [StoredModel],
+        appState: AppState?,
+        candidates: [StoredModelLoadItem],
         preferredID: String?
     ) async -> Bool {
-        guard ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue), !Task.isCancelled else { return false }
+        guard let selectedID = await ensureChatModelSelection(candidates: candidates, preferredID: preferredID) else { return false }
+        await MainActor.run { appState?.activeChatModelID = selectedID }
+        return true
+    }
+
+    func ensureChatModelSelection(
+        candidates: [StoredModelLoadItem],
+        preferredID: String?
+    ) async -> String? {
+        guard await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else { return nil }
         let orderedCandidates = orderedCandidates(candidates: candidates, preferredID: preferredID)
         for (index, candidate) in orderedCandidates.enumerated() {
-            let path = ModelStorage.resolvedModelURL(from: candidate.localPath, fileName: candidate.fileName).path
+            await Task.yield()
+            let path = candidate.resolvedPath
             logger.info("transition event=attempt role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
             guard FileManager.default.fileExists(atPath: path) else {
                 logger.info("transition event=skip_missing role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
@@ -60,18 +69,16 @@ final class SlotModelRuntimeCoordinator {
             do {
                 try await AppLlamaService.shared.unloadAllChat()
                 try await AppLlamaService.shared.loadChatModel(path: path, contextSize: contextSize)
-                appState.activeChatModelID = candidate.id.uuidString
                 logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
-                return true
+                return candidate.id.uuidString
             } catch {
                 if isContextInitFailed(error) {
                     do {
                         logger.info("transition event=retry_context_2048 role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
                         try await AppLlamaService.shared.unloadAllChat()
                         try await AppLlamaService.shared.loadChatModel(path: path, contextSize: 2048)
-                        appState.activeChatModelID = candidate.id.uuidString
                         logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) context=2048")
-                        return true
+                        return candidate.id.uuidString
                     } catch {
                         logger.error("transition event=retry_context_2048_failed role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) error=\(String(describing: error), privacy: .public)")
                         logger.error("transition event=failed_candidate role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) error=\(String(describing: error), privacy: .public)")
@@ -83,7 +90,7 @@ final class SlotModelRuntimeCoordinator {
             }
         }
         logger.error("transition event=failed_all role=chat")
-        return false
+        return nil
     }
 
     @discardableResult
@@ -92,9 +99,10 @@ final class SlotModelRuntimeCoordinator {
         candidates: [StoredModel],
         preferredID: String?
     ) async -> Bool {
-        guard ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue), !Task.isCancelled else { return false }
+        guard await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else { return false }
         let orderedCandidates = orderedCandidates(candidates: candidates, preferredID: preferredID)
         for (index, candidate) in orderedCandidates.enumerated() {
+            await Task.yield()
             let path = ModelStorage.resolvedModelURL(from: candidate.localPath, fileName: candidate.fileName).path
             logger.info("transition event=attempt role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
             guard FileManager.default.fileExists(atPath: path) else {
@@ -104,7 +112,7 @@ final class SlotModelRuntimeCoordinator {
 
             do {
                 try await AppLlamaService.shared.loadEmbeddingModel(path: path)
-                appState.activeEmbeddingModelID = candidate.id.uuidString
+                await MainActor.run { appState.activeEmbeddingModelID = candidate.id.uuidString }
                 logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=embedding model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
                 return true
             } catch {
@@ -121,7 +129,7 @@ final class SlotModelRuntimeCoordinator {
     }
 
     func ensureReadyWithMetrics(slot: LumenModelSlot) async throws -> RuntimeReadinessMetrics {
-        guard ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue), !Task.isCancelled else {
+        guard await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else {
             throw LocalRuntimeError.unavailable("resource budget denied model load")
         }
         guard slot != .embedding else {
@@ -273,6 +281,18 @@ final class SlotModelRuntimeCoordinator {
             }
         }
         return false
+    }
+
+    private func orderedCandidates(candidates: [StoredModelLoadItem], preferredID: String?) -> [StoredModelLoadItem] {
+        let pool = candidates.filter { FileManager.default.fileExists(atPath: $0.resolvedPath) }
+        var ordered: [StoredModelLoadItem] = []
+        if let preferredID, let preferred = pool.first(where: { $0.id.uuidString == preferredID }) {
+            ordered.append(preferred)
+        }
+        for candidate in pool where !ordered.contains(where: { $0.id == candidate.id }) {
+            ordered.append(candidate)
+        }
+        return ordered
     }
 
     private func orderedCandidates(candidates: [StoredModel], preferredID: String?) -> [StoredModel] {
