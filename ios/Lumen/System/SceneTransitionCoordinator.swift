@@ -71,7 +71,7 @@ final class SceneTransitionCoordinator {
         guard shouldIssueCancellation(reason: reason) else { return }
         lastTransitionReason = reason
         AppCancellationBus.shared.markCancellationRequested(reason)
-        AppCancellationBus.shared.cancelAllSceneSensitive()
+        AppCancellationBus.shared.cancelAllSceneSensitiveDeferred(priority: .utility)
         Task.detached(priority: .userInitiated) {
             await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
         }
@@ -142,4 +142,13 @@ final class SceneTransitionCoordinator {
             logger.warning("scene_transition_near_budget operation=\(operation, privacy: .public) elapsed_ms=\(elapsed, privacy: .public)")
         }
     }
+
+    #if DEBUG
+    func resetForTesting() {
+        currentPhase = .active
+        lastTransitionReason = nil
+        lastIssuedCancellationAt = nil
+        cancelDeferredCleanup()
+    }
+    #endif
 }

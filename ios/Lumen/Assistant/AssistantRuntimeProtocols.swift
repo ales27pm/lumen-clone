@@ -15,6 +15,14 @@ struct TextGenerationRequest: Sendable {
 
 struct EmbeddingRequest: Sendable {
     let text: String
+
+    init(text: String) {
+        self.text = text
+    }
+
+    init(text: String, dimensions: Int?) {
+        self.text = text
+    }
 }
 
 protocol RuntimeHealthReporting: Sendable {

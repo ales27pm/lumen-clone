@@ -314,7 +314,7 @@ actor SlotModelRuntimeCoordinator {
         return true
     }
 
-    func selectionEvent(index: Int, candidateID: String, preferredID: String?) -> String {
+    nonisolated func selectionEvent(index: Int, candidateID: String, preferredID: String?) -> String {
         if index > 0 { return "fallback_selected" }
         if let preferredID, candidateID != preferredID { return "fallback_selected" }
         return "selected"

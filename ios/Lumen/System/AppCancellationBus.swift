@@ -63,16 +63,16 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
     }
 
     func cancelAllSceneSensitive() {
-        let cancellers: [@Sendable () -> Void]
-        lock.lock()
-        cancellers = AppCancellationCategory.allCases
-            .filter(\.isSceneSensitive)
-            .flatMap { category in Array((tasks[category] ?? [:]).values) }
-        for category in AppCancellationCategory.allCases where category.isSceneSensitive {
-            tasks[category] = nil
-        }
-        lock.unlock()
+        let cancellers = drainSceneSensitiveCancellers()
         cancellers.forEach { $0() }
+    }
+
+    func cancelAllSceneSensitiveDeferred(priority: TaskPriority = .utility) {
+        let cancellers = drainSceneSensitiveCancellers()
+        guard !cancellers.isEmpty else { return }
+        Task.detached(priority: priority) {
+            cancellers.forEach { $0() }
+        }
     }
 
     func markCancellationRequested(_ reason: String) {
@@ -80,6 +80,12 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
         cancellationRequestedReason = reason
         lock.unlock()
         logger.info("cancellation_requested reason=\(reason, privacy: .public)")
+    }
+
+    func markProcessExitRequested(_ reason: String) {
+        lock.lock()
+        cancellationRequestedReason = reason
+        lock.unlock()
     }
 
     var lastCancellationReason: String? {
@@ -107,5 +113,18 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return tasks[category]?.count ?? 0
+    }
+
+    private func drainSceneSensitiveCancellers() -> [@Sendable () -> Void] {
+        let cancellers: [@Sendable () -> Void]
+        lock.lock()
+        cancellers = AppCancellationCategory.allCases
+            .filter(\.isSceneSensitive)
+            .flatMap { category in Array((tasks[category] ?? [:]).values) }
+        for category in AppCancellationCategory.allCases where category.isSceneSensitive {
+            tasks[category] = nil
+        }
+        lock.unlock()
+        return cancellers
     }
 }
