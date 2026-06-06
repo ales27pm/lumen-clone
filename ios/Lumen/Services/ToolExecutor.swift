@@ -229,6 +229,16 @@ nonisolated enum ToolRouteGuard {
             return "phone.call"
         case "contacts", "contacts.search", "contact.search", "search.contacts":
             return "contacts.search"
+        case "contacts.lookup":
+            return "contacts.search"
+        case "calendar.read":
+            return "calendar.list"
+        case "location.snapshot":
+            return "location.current"
+        case "memory.search":
+            return "memory.recall"
+        case "rag.search.secure":
+            return "rag.search"
         case "outlook", "outlook.status", "microsoft.outlook.status", "hotmail.status", "graph.status":
             return "outlook.status"
         case "outlook.folders", "outlook.folder.list", "outlook.folders.list", "hotmail.folders", "mail.folders.list":

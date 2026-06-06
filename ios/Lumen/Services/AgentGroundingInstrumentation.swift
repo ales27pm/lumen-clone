@@ -32,12 +32,13 @@ nonisolated struct AgentGroundingMetrics: Sendable {
 
 @MainActor
 enum AgentGroundingInstrumentation {
-    private static let logger = Logger(subsystem: "ai.lumen.app", category: "agent-grounding")
+    private static let log = OSLog(subsystem: "ai.lumen.app", category: "agent-grounding")
 
     static func mark(_ stage: String, metrics: AgentGroundingMetrics = .init(), elapsedMs: Double? = nil) {
         let snapshot = ResourceBudgetGate.diagnosticSnapshot()
         let elapsedText = elapsedMs.map { String(format: "%.1f", $0) } ?? "-"
-        logger.info("stage=\(stage, privacy: .public) elapsed_ms=\(elapsedText, privacy: .public) sections=\(metrics.sectionCount, privacy: .public) tools=\(metrics.toolCount, privacy: .public) memories=\(metrics.memoryCount, privacy: .public) prompt_chars=\(metrics.promptChars, privacy: .public) scene=\(sceneText(snapshot.scenePhase), privacy: .public) thermal=\(snapshot.thermalState?.rawValue ?? "unknown", privacy: .public)")
+        let message = "stage=\(stage) elapsed_ms=\(elapsedText) sections=\(metrics.sectionCount) tools=\(metrics.toolCount) memories=\(metrics.memoryCount) prompt_chars=\(metrics.promptChars) scene=\(sceneText(snapshot.scenePhase)) thermal=\(snapshot.thermalState?.rawValue ?? "unknown")"
+        os_log("%{public}@", log: log, type: .info, message)
     }
 
     static func elapsedMs(since start: TimeInterval) -> Double {

@@ -4,7 +4,10 @@ import Foundation
 enum LegacyToolSchemaBridge {
     nonisolated static func toLegacyToolDefinitions(_ secure: [SecureToolDefinition]) -> [ToolDefinition] {
         secure.map {
-            ToolDefinition(
+            if let canonical = canonicalLegacyToolDefinition(forSecureToolID: $0.id) {
+                return canonical
+            }
+            return ToolDefinition(
                 id: $0.id,
                 name: $0.displayName,
                 category: mapCategory($0.category),
@@ -14,6 +17,23 @@ enum LegacyToolSchemaBridge {
                 requiresApproval: $0.requiresUserApproval,
                 permissionKey: mapPermission($0.requiredPermissions.first)
             )
+        }
+    }
+
+    nonisolated static func canonicalLegacyToolDefinition(forSecureToolID id: String) -> ToolDefinition? {
+        switch id {
+        case "calendar.read":
+            return ToolRegistry.find(id: "calendar.list")
+        case "contacts.lookup":
+            return ToolRegistry.find(id: "contacts.search")
+        case "location.snapshot":
+            return ToolRegistry.find(id: "location.current")
+        case "memory.search":
+            return ToolRegistry.find(id: "memory.recall")
+        case "rag.search.secure":
+            return ToolRegistry.find(id: "rag.search")
+        default:
+            return nil
         }
     }
 

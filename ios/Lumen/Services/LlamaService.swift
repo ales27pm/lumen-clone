@@ -1596,8 +1596,12 @@ final actor AppLlamaService {
         var insideAvailableTools = false
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed == "Available tools:" {
+            if trimmed == "Available tools:" || trimmed == "[AVAILABLE LOCAL TOOLS]" {
                 insideAvailableTools = true
+                continue
+            }
+            if insideAvailableTools, trimmed.hasPrefix("["), trimmed.hasSuffix("]") {
+                insideAvailableTools = false
                 continue
             }
             if insideAvailableTools, trimmed.hasSuffix(":") && !trimmed.hasPrefix("-") {
@@ -1608,9 +1612,26 @@ final actor AppLlamaService {
             if !candidate.isEmpty { ids.insert(ToolRouteGuard.canonicalToolID(candidate)) }
         }
         if ids.isEmpty, slot == .cortex || slot == .executor {
-            ids = IntentRouter.classify(prompt).allowedToolIDs
+            ids = IntentRouter.classify(traceUserRequest(from: prompt)).allowedToolIDs
         }
         return Array(ids).sorted()
+    }
+
+    private func traceUserRequest(from prompt: String) -> String {
+        guard let marker = prompt.range(of: "User request:") else {
+            return PromptGroundingIdempotencyGuard.stripExistingGrounding(from: prompt).text
+        }
+        var tail = String(prompt[marker.upperBound...])
+        if tail.hasPrefix("\n") {
+            tail.removeFirst()
+        }
+        if let grounding = tail.range(of: PromptGroundingIdempotencyGuard.marker) {
+            tail = String(tail[..<grounding.lowerBound])
+        }
+        if let nextInstruction = tail.range(of: "\n\nEmit ") {
+            tail = String(tail[..<nextInstruction.lowerBound])
+        }
+        return tail.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func currentAdapterTraceMetadata(slot: LumenModelSlot) -> LlamaAdapterTraceMetadata {

@@ -58,6 +58,49 @@ struct E2ETestRunnerHygieneTests {
         #expect(failures.isEmpty)
     }
 
+    @Test func liveAgentUnavailableFallbackCannotPassAfterEvalRewrite() {
+        let scenario = E2ETestScenario(
+            id: "web",
+            title: "web",
+            kind: .training,
+            prompt: "Search the web for Swift concurrency best practices.",
+            expectedIntent: .webSearch,
+            requiredAllowedToolIDs: ["web.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["swift"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let failures = E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: "Web search is not available in this build yet.",
+            finalText: "The model produced only internal reasoning and no final answer. Try again with thinking disabled.\n\nswift",
+            scenario: scenario
+        )
+        #expect(failures.contains("Live agent returned fallback/error text instead of completing the scenario"))
+        #expect(failures.contains("Raw live final required hint missing before eval rewrite: swift"))
+    }
+
+    @Test func routingOnlyScenarioDoesNotApplyLiveAgentQualityGate() {
+        let scenario = E2ETestScenario(
+            id: "routing",
+            title: "routing",
+            kind: .toolGuard,
+            prompt: "Search the web.",
+            expectedIntent: .webSearch,
+            requiredAllowedToolIDs: ["web.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["swift"],
+            forbiddenTextHints: [],
+            requiresAgentRun: false
+        )
+        let failures = E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: "Web search is not available in this build yet.",
+            finalText: "swift",
+            scenario: scenario
+        )
+        #expect(failures.isEmpty)
+    }
+
     @Test func runStandardScenarioLoopRunsOffMainThreadWhenDetached() async {
         #if DEBUG
         let scenario = E2ETestScenario(

@@ -115,6 +115,21 @@ nonisolated enum DeterministicToolPlanner {
         case .trigger:
             if text.contains("list") { return action("trigger.list") }
             if text.contains("cancel"), let token = extractContactQuery(from: prompt), !token.isEmpty { return action("trigger.cancel", ["id": .string(token)]) }
+            if has("trigger.create") {
+                var args: AgentJSONArguments = [
+                    "title": .string(extractTriggerTitle(from: prompt)),
+                    "prompt": .string(extractTriggerPrompt(from: prompt)),
+                    "schedule": .string("once")
+                ]
+                if text.contains("tonight") {
+                    args["inMinutes"] = .string("120")
+                } else if let minutes = extractMinutes(from: text) {
+                    args["inMinutes"] = .string(String(minutes))
+                } else {
+                    args["inMinutes"] = .string("60")
+                }
+                return action("trigger.create", args)
+            }
             return nil
         default:
             return nil
@@ -199,6 +214,37 @@ nonisolated enum DeterministicToolPlanner {
     static func extractOutlookMessageReference(from text: String) -> String? { SlotAgentService.shared_extractOutlookMessageReference(text) }
     static func extractOutlookBody(from text: String) -> String? { let b = SlotAgentService.shared_extractOutlookBody(text); return b.isEmpty ? nil : b }
     static func firstURL(in text: String) -> String? { SlotAgentService.shared_firstURL(text) }
+    private static func extractMinutes(from text: String) -> Int? {
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let regex = try? NSRegularExpression(pattern: #"(\d+)\s*(?:minute|minutes|min|mins)"#),
+              let match = regex.firstMatch(in: text, range: nsRange),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: text),
+              let value = Int(text[range]) else {
+            return nil
+        }
+        return max(1, min(value, 24 * 60))
+    }
+
+    private static func extractTriggerTitle(from prompt: String) -> String {
+        let lower = normalized(prompt)
+        if lower.contains("reminder") { return "Reminder summary" }
+        if lower.contains("digest") { return "Scheduled digest" }
+        return "Scheduled agent run"
+    }
+
+    private static func extractTriggerPrompt(from prompt: String) -> String {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Run the scheduled agent task." }
+        let lower = normalized(trimmed)
+        if let range = lower.range(of: "to ") {
+            let offset = lower.distance(from: lower.startIndex, to: range.upperBound)
+            let start = trimmed.index(trimmed.startIndex, offsetBy: offset, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+            let task = String(trimmed[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !task.isEmpty { return task }
+        }
+        return trimmed
+    }
 
     static func extractDestination(from text: String) -> String? {
         let lower = normalized(text)

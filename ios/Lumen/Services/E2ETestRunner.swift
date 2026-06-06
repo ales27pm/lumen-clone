@@ -622,6 +622,7 @@ nonisolated enum E2ETestRunner {
         var rewriteAttempted = false
         var rewriteSuccess = false
         var rawFinalText = ""
+        var agentSteps: [AgentStep] = []
         var hygieneState = FinalHygieneState(
             rawFinalText: "",
             finalText: "",
@@ -678,6 +679,16 @@ nonisolated enum E2ETestRunner {
         }
 
         if scenario.requiresAgentRun {
+            let enabledCanonicalToolIDs = Set(config.enabledToolIDs.map(ToolRouteGuard.canonicalToolID))
+            let disabledRequiredTools = scenario.requiredAllowedToolIDs
+                .map(ToolRouteGuard.canonicalToolID)
+                .filter { !enabledCanonicalToolIDs.contains($0) }
+            if !disabledRequiredTools.isEmpty {
+                failures.append("Required live E2E tools disabled: \(Array(Set(disabledRequiredTools)).sorted().joined(separator: ", "))")
+            }
+        }
+
+        if scenario.requiresAgentRun {
             try Task.checkCancellation()
             await Task.yield()
             let modelLoaded: Bool
@@ -690,6 +701,9 @@ nonisolated enum E2ETestRunner {
             await Task.yield()
             collectPerformanceSample()
             await event("models", modelLoaded ? "chat fleet ready" : "no chat model loaded")
+            if !modelLoaded {
+                failures.append("Live E2E scenario did not run: no chat model loaded")
+            }
             if modelLoaded {
                 let req = AgentRequest(
                     systemPrompt: config.systemPrompt,
@@ -706,7 +720,16 @@ nonisolated enum E2ETestRunner {
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
                 await Task.yield()
-                for await agentEvent in await SlotAgentService.shared.run(req) {
+                let runOptions = LegacyAgentRunOptions(
+                    modelContext: nil,
+                    conversationID: req.conversationID,
+                    turnID: req.turnID,
+                    groundingMode: .slotAgent,
+                    allowDegradedGrounding: false,
+                    preventDoubleGrounding: true,
+                    diagnosticsEnabled: true
+                )
+                for await agentEvent in await SlotAgentService.shared.run(req, options: runOptions) {
                     try Task.checkCancellation()
                     await Task.yield()
                     switch agentEvent {
@@ -733,6 +756,7 @@ nonisolated enum E2ETestRunner {
                 }
                 try Task.checkCancellation()
                 await Task.yield()
+                agentSteps = steps
                 rawFinalText = FinalIntentValidator.validate(rawFinalText, routing: routing, fallback: nil)
 
                 let recoveredBeforeRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rawFinalText)
@@ -788,7 +812,23 @@ nonisolated enum E2ETestRunner {
             scenario: scenario,
             observations: observations
         )
-        failures = mergedStrings(failures, outputHygieneFailures)
+        let liveAgentQualityFailures = liveAgentQualityFailures(
+            rawFinalText: rawFinalText,
+            finalText: finalText,
+            scenario: scenario
+        )
+        failures = mergedStrings(failures, outputHygieneFailures, liveAgentQualityFailures)
+        if scenario.requiresAgentRun, IntentRouter.intentRequiresTool(routing), !routing.requiresClarification {
+            let actionToolIDs = Set(agentSteps
+                .filter { $0.kind == .action || $0.kind == .approvalBoundary }
+                .compactMap(\.toolID)
+                .map(ToolRouteGuard.canonicalToolID))
+            if actionToolIDs.isEmpty {
+                failures.append("Live agent produced no action step for tool-backed intent")
+            } else if !actionToolIDs.contains(where: { routing.allowedToolIDs.contains($0) }) {
+                failures.append("Live agent selected no manifest-allowed action tool")
+            }
+        }
         for hint in scenario.requiredTextHints where !lowerFinal.contains(hint.lowercased()) {
             failures.append("Required final hint missing: \(hint)")
         }
@@ -923,6 +963,43 @@ nonisolated enum E2ETestRunner {
             failures.append("Weather precipitation recommendation not grounded")
         }
         return mergedStrings(failures)
+    }
+
+    nonisolated static func liveAgentQualityFailures(rawFinalText: String, finalText: String, scenario: E2ETestScenario) -> [String] {
+        guard scenario.requiresAgentRun else { return [] }
+        var failures: [String] = []
+        let lowerRaw = rawFinalText.lowercased()
+        let lowerFinal = finalText.lowercased()
+        if let reason = liveAgentInvalidFinalReason(lowerRaw: lowerRaw, lowerFinal: lowerFinal) {
+            failures.append(reason)
+        }
+
+        for hint in requiredHintsMissing(in: rawFinalText, scenario: scenario) {
+            failures.append("Raw live final required hint missing before eval rewrite: \(hint)")
+        }
+
+        return mergedStrings(failures)
+    }
+
+    nonisolated private static func liveAgentInvalidFinalReason(lowerRaw: String, lowerFinal: String) -> String? {
+        let combined = lowerRaw + "\n" + lowerFinal
+        let invalidSignals = [
+            "not available in this build",
+            "tools are unavailable",
+            "tool unavailable",
+            "tool denied by legacy secure policy",
+            "tool is disabled",
+            "i hit an internal response-format issue",
+            "only internal reasoning and no final answer",
+            "no model loaded; routing-only checks completed",
+            "routing-only checks completed",
+            "full local model pipeline is temporarily running in compatibility mode",
+            "full agent pipeline",
+            "please try again with thinking disabled"
+        ]
+        return invalidSignals.contains(where: { combined.contains($0) })
+            ? "Live agent returned fallback/error text instead of completing the scenario"
+            : nil
     }
 
     nonisolated private static func weatherGroundingOverreach(finalText: String, observations: String) -> Bool {

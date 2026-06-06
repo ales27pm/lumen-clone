@@ -8,10 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		2292D5B92FD41142004AF85D /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5B62FD4112C004AF85D /* CoreML.framework */; };
-		2292D5BA2FD41142004AF85D /* CoreML.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5B62FD4112C004AF85D /* CoreML.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2292D5BC2FD41152004AF85D /* libswiftCoreML.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5B82FD4113C004AF85D /* libswiftCoreML.tbd */; };
 		2292D5BF2FD411A5004AF85D /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5BD2FD411A2004AF85D /* FoundationModels.framework */; };
-		2292D5C02FD411A5004AF85D /* FoundationModels.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5BD2FD411A2004AF85D /* FoundationModels.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		9A1B2C3D4E5F678901234570 /* SwiftLlama in Frameworks */ = {isa = PBXBuildFile; productRef = 9A1B2C3D4E5F678901234571 /* SwiftLlama */; };
 		A27B0C0D0E0F000000000002 /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = A27B0C0D0E0F000000000004 /* MSAL */; };
 /* End PBXBuildFile section */
@@ -32,21 +30,6 @@
 			remoteInfo = Lumen;
 		};
 /* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		2292D5BB2FD41142004AF85D /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				2292D5BA2FD41142004AF85D /* CoreML.framework in Embed Frameworks */,
-				2292D5C02FD411A5004AF85D /* FoundationModels.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		105FC57A2E9EAD3100EA8BCF /* Lumen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lumen.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -135,7 +118,6 @@
 				105FC5772E9EAD3100EA8BCF /* Frameworks */,
 				105FC5782E9EAD3100EA8BCF /* Resources */,
 				B7A1C2D3E4F5061728394A5B /* Bundle Agent Grounding Artifacts */,
-				2292D5BB2FD41142004AF85D /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -488,7 +470,7 @@
 				CODE_SIGN_ENTITLEMENTS = Lumen/Lumen.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202606061919;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = 52T7P32J34;
@@ -551,7 +533,7 @@
 				CODE_SIGN_ENTITLEMENTS = Lumen/LumenAppStore.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202606061919;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = 52T7P32J34;
 				ENABLE_PREVIEWS = YES;
@@ -614,7 +596,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202606061919;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -643,7 +625,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202606061919;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -674,7 +656,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202606061919;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -701,7 +683,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202606061919;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.0;
