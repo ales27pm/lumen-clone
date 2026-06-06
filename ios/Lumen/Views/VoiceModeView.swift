@@ -10,6 +10,7 @@ struct VoiceModeView: View {
     @State private var session = VoiceSessionController()
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
+    @Query private var storedModels: [StoredModel]
 
     @State private var phase: Phase = .idle
     @State private var responseText: String = ""
@@ -254,6 +255,20 @@ struct VoiceModeView: View {
             }()
             let userMsg = ChatMessage(role: .user, content: text)
             convo.messages.append(userMsg)
+            guard await ensureChatModelLoaded() else {
+                guard activeVoiceTurnID == turnID else { return }
+                let fallback = "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it."
+                responseText = fallback
+                finishedStreaming = true
+                speakPending()
+                let assistantMsg = ChatMessage(role: .assistant, content: fallback)
+                convo.messages.append(assistantMsg)
+                convo.updatedAt = Date()
+                saveVoiceConversationIfBudgetAllows(estimatedBytes: fallback.utf8.count + text.utf8.count + 4096)
+                activeVoiceTurnID = nil
+                generationController.clearIfCurrent(controllerRequestID, for: "voice")
+                return
+            }
 
             AgentGroundingInstrumentation.mark("before IntentClassifierService.route", metrics: .init(promptChars: text.count))
             let routeStart = ProcessInfo.processInfo.systemUptime
@@ -282,7 +297,7 @@ struct VoiceModeView: View {
 
             var finalText = ""
             var lastUIUpdate = Date.distantPast
-            for await event in SlotAgentService.shared.run(req, options: .init(modelContext: modelContext, conversationID: convo.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
+            for await event in AgentService.shared.run(req, options: .init(modelContext: nil, conversationID: convo.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
                 if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") || CPUWatchdogGuard.shared.shouldDegrade(category: .voice) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") { break }
                 let workStartedAt = ProcessInfo.processInfo.systemUptime
                 defer { CPUWatchdogGuard.shared.recordWork(category: .voice, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
@@ -358,6 +373,10 @@ struct VoiceModeView: View {
 
     private func isSafeToStoreMemory(userText: String, assistantText: String, routing: IntentRoutingDecision) -> Bool {
         FinalIntentValidator.validate(assistantText, routing: routing, fallback: nil) == assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func ensureChatModelLoaded() async -> Bool {
+        await ModelLoader.ensureChatLoaded(appState: appState, stored: storedModels, intent: .userVoice)
     }
 
     private func speakPending() {

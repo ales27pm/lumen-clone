@@ -1321,14 +1321,26 @@ final class AgentService {
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
         let originalReq = req
+        let cancellationToken = AgentGroundingCancellationToken()
         return AsyncStream { continuation in
+            let groundingStepID = UUID()
             let task = Task { @MainActor in
+                defer { continuation.finish() }
+                continuation.yield(.step(AgentStep(id: groundingStepID, kind: .thought, content: "Preparing agent context")))
+                if Task.isCancelled || cancellationToken.isCancelled { return }
                 let provider = LegacyGroundingContextProvider(directContext: options.modelContext)
-                let grounded = await LegacyTurnGroundingCoordinator.shared.prepareGroundedRequest(.init(userMessage: originalReq.userMessage, conversationID: options.conversationID ?? originalReq.conversationID, turnID: options.turnID ?? originalReq.turnID, history: originalReq.history, mode: .foreground, task: .chat, roleOrSlot: nil, externalRelevantMemories: originalReq.relevantMemories, externalAvailableTools: originalReq.availableTools, policy: .rolePipeline, baseSystemPrompt: originalReq.systemPrompt, preventDoubleGrounding: options.preventDoubleGrounding), provider: provider)
+                let grounded = await LegacyTurnGroundingCoordinator.shared.prepareGroundedRequest(.init(userMessage: originalReq.userMessage, conversationID: options.conversationID ?? originalReq.conversationID, turnID: options.turnID ?? originalReq.turnID, history: originalReq.history, mode: .foreground, task: .chat, roleOrSlot: nil, externalRelevantMemories: originalReq.relevantMemories, externalAvailableTools: originalReq.availableTools, policy: .rolePipeline, baseSystemPrompt: originalReq.systemPrompt, preventDoubleGrounding: options.preventDoubleGrounding), provider: provider, cancellationToken: cancellationToken)
+                if Task.isCancelled || cancellationToken.isCancelled { return }
+                continuation.yield(.stepDelta(id: groundingStepID, text: "Agent context ready"))
                 let req = AgentRequest(systemPrompt: grounded.systemPrompt, history: originalReq.history, userMessage: grounded.userMessage, temperature: originalReq.temperature, topP: originalReq.topP, repetitionPenalty: originalReq.repetitionPenalty, maxTokens: originalReq.maxTokens, maxSteps: originalReq.maxSteps, availableTools: grounded.bridgedTools, relevantMemories: originalReq.relevantMemories, attachments: originalReq.attachments, conversationID: options.conversationID ?? originalReq.conversationID, turnID: options.turnID ?? originalReq.turnID)
                 await self.runLoop(req, continuation: continuation)
             }
-            continuation.onTermination = { _ in task.cancel() }
+            let cancellationID = AppCancellationBus.shared.register(task, category: .chatGeneration)
+            continuation.onTermination = { @Sendable _ in
+                cancellationToken.cancel()
+                task.cancel()
+                AppCancellationBus.shared.unregister(cancellationID, category: .chatGeneration)
+            }
         }
     }
 
