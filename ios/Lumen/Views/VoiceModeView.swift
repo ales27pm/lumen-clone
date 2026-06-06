@@ -255,8 +255,6 @@ struct VoiceModeView: View {
             let userMsg = ChatMessage(role: .user, content: text)
             convo.messages.append(userMsg)
 
-            _ = await ModelLoader.ensureChatLoaded(appState: appState, stored: [], intent: .userVoice)
-
             AgentGroundingInstrumentation.mark("before IntentClassifierService.route", metrics: .init(promptChars: text.count))
             let routeStart = ProcessInfo.processInfo.systemUptime
             let routing = await IntentClassifierService.shared.route(text)

@@ -25,28 +25,30 @@ struct MemorySearchTool: LocalTool {
         do {
             let args = try parse(invocation.arguments)
             guard let mc = context.modelContext else { return .init(invocationID: invocation.id, status: .unavailable, displayText: "Memory storage unavailable.", modelText: "Memory search unavailable.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "no_model_context", errorCode: "unavailable") }
-            let engine = MemoryEngine()
+            let engine = await MemoryEngine()
             let now = Date()
             let initial = await engine.search(query: args.query, limit: args.limit * 2, context: mc)
-            let filtered = initial.filter { item in
-                if args.pinnedOnly && !item.isPinned { return false }
-                if let topic = args.topic, !(item.topic?.localizedCaseInsensitiveContains(topic) ?? false) { return false }
-                return !MemoryStore.isExpired(item, now: now)
-            }
             let q = args.query.lowercased()
-            let scored = filtered.map { item -> (MemoryItem, Double) in
-                let text = item.content.lowercased()
-                var s = 0.0
-                if text == q { s += 5 }
-                if text.hasPrefix(q) { s += 2 }
-                if text.contains(q) { s += 1 }
-                if item.isPinned { s += 0.5 }
-                return (item, s)
-            }.sorted { $0.1 > $1.1 }.prefix(args.limit)
+            let rows = await MainActor.run {
+                let filtered = initial.filter { item in
+                    if args.pinnedOnly && !item.isPinned { return false }
+                    if let topic = args.topic, !(item.topic?.localizedCaseInsensitiveContains(topic) ?? false) { return false }
+                    return !MemoryStore.isExpired(item, now: now)
+                }
+                let scored = filtered.map { item -> (MemoryItem, Double) in
+                    let text = item.content.lowercased()
+                    var s = 0.0
+                    if text == q { s += 5 }
+                    if text.hasPrefix(q) { s += 2 }
+                    if text.contains(q) { s += 1 }
+                    if item.isPinned { s += 0.5 }
+                    return (item, s)
+                }.sorted { $0.1 > $1.1 }.prefix(args.limit)
 
-            let rows = scored.map { item, score in
-                let excerpt = item.content.count > 120 ? String(item.content.prefix(120)) + "…" : item.content
-                return "- [\(item.id.uuidString.prefix(8))] \(excerpt) | kind=\(item.kind) | score=\(String(format: "%.2f", score)) | source=\(item.source)"
+                return scored.map { item, score in
+                    let excerpt = item.content.count > 120 ? String(item.content.prefix(120)) + "..." : item.content
+                    return "- [\(item.id.uuidString.prefix(8))] \(excerpt) | kind=\(item.kind) | score=\(String(format: "%.2f", score)) | source=\(item.source)"
+                }
             }
             let text = rows.isEmpty ? "No matching memories found." : rows.joined(separator: "\n")
             return SafeToolOutputLimiter.limit(result: .init(invocationID: invocation.id, status: .success, displayText: text, modelText: text, structuredPayload: ["count": "\(rows.count)"], privacyLevel: .moderate, metricsSummary: "lexical", errorCode: nil), maxOutput: definition.maxOutputCharacters)
