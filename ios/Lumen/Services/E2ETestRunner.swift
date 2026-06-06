@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 #if canImport(Darwin)
 import Darwin
 #endif
@@ -10,6 +9,27 @@ nonisolated enum E2ETestKind: String, Codable, Sendable, CaseIterable {
     case chat
     case regression
     case training
+}
+
+nonisolated struct E2ERunConfig: Sendable {
+    let systemPrompt: String
+    let temperature: Double
+    let topP: Double
+    let repetitionPenalty: Double
+    let maxTokens: Int
+    let maxAgentSteps: Int
+    let enabledToolIDs: Set<String>
+
+    @MainActor
+    init(appState: AppState) {
+        self.systemPrompt = appState.systemPrompt
+        self.temperature = appState.temperature
+        self.topP = appState.topP
+        self.repetitionPenalty = appState.repetitionPenalty
+        self.maxTokens = appState.maxTokens
+        self.maxAgentSteps = appState.maxAgentSteps
+        self.enabledToolIDs = appState.enabledToolIDs
+    }
 }
 
 nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
@@ -437,28 +457,50 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
     }
 }
 
-@MainActor
 enum E2ETestRunner {
-    static func runStandard(appState: AppState, context: ModelContext, onResult: ((E2ETestResult) -> Void)? = nil, onEvent: ((E2ETestEvent) -> Void)? = nil) async -> E2ETestReport {
-        await run(scenarios: E2ETestScenario.standard, appState: appState, context: context, onResult: onResult, onEvent: onEvent)
+    typealias ResultCallback = @Sendable (E2ETestResult) async -> Void
+    typealias EventCallback = @Sendable (E2ETestEvent) async -> Void
+    typealias EnsureChatLoaded = @Sendable () async -> Bool
+
+    static func runStandard(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
+        await run(scenarios: E2ETestScenario.standard, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
-    static func runTrainingValidation(appState: AppState, context: ModelContext, onResult: ((E2ETestResult) -> Void)? = nil, onEvent: ((E2ETestEvent) -> Void)? = nil) async -> E2ETestReport {
-        await run(scenarios: E2ETestScenario.trainingValidation, appState: appState, context: context, onResult: onResult, onEvent: onEvent)
+    static func runTrainingValidation(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
+        await run(scenarios: E2ETestScenario.trainingValidation, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
-    static func run(scenarios: [E2ETestScenario], appState: AppState, context: ModelContext, onResult: ((E2ETestResult) -> Void)? = nil, onEvent: ((E2ETestEvent) -> Void)? = nil) async -> E2ETestReport {
+    static func run(scenarios: [E2ETestScenario], config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
         let started = Date()
         var results: [E2ETestResult] = []
         for scenario in scenarios {
-            let result = await runScenario(scenario, appState: appState, context: context, onEvent: onEvent)
-            results.append(result)
-            E2ETestLogStore.append(result)
-            onResult?(result)
+            do {
+                try Task.checkCancellation()
+                await Task.yield()
+                let result = try await runScenario(scenario, config: config, ensureChatLoaded: ensureChatLoaded, onEvent: onEvent)
+                results.append(result)
+                try Task.checkCancellation()
+                await Task.yield()
+                E2ETestLogStore.append(result)
+                try Task.checkCancellation()
+                await Task.yield()
+                await onResult?(result)
+            } catch is CancellationError {
+                break
+            } catch {
+                let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
+                results.append(result)
+                E2ETestLogStore.append(result)
+                await onResult?(result)
+            }
         }
         let passed = results.filter(\.passed).count
         let report = E2ETestReport(id: UUID(), startedAt: started, finishedAt: Date(), passed: passed, failed: results.count - passed, results: results)
+        do { try Task.checkCancellation() } catch { return report }
+        await Task.yield()
         E2ETestLogStore.writeLatest(report)
+        do { try Task.checkCancellation() } catch { return report }
+        await Task.yield()
         return report
     }
 
@@ -487,7 +529,7 @@ enum E2ETestRunner {
         }
     }
 
-    private static func runScenario(_ scenario: E2ETestScenario, appState: AppState, context: ModelContext, onEvent: ((E2ETestEvent) -> Void)? = nil) async -> E2ETestResult {
+    private static func runScenario(_ scenario: E2ETestScenario, config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onEvent: EventCallback? = nil) async throws -> E2ETestResult {
         let started = Date()
         var events: [E2ETestEvent] = []
         var failures: [String] = []
@@ -508,10 +550,10 @@ enum E2ETestRunner {
         var lastPerformanceSampleAt: Date?
         let totalMemoryMB = Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)
 
-        func event(_ phase: String, _ message: String) {
+        func event(_ phase: String, _ message: String) async {
             let emitted = E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: scenario.id, phase: phase, message: message)
             events.append(emitted)
-            onEvent?(emitted)
+            await onEvent?(emitted)
         }
         func collectPerformanceSample(force: Bool = false) {
             let now = Date()
@@ -529,10 +571,16 @@ enum E2ETestRunner {
         }
 
         collectPerformanceSample(force: true)
-        event("start", scenario.prompt)
+        try Task.checkCancellation()
+        await Task.yield()
+        await event("start", scenario.prompt)
+        try Task.checkCancellation()
+        await Task.yield()
         let routing = await IntentClassifierService.shared.route(scenario.prompt)
+        try Task.checkCancellation()
+        await Task.yield()
         collectPerformanceSample()
-        event("intent", "actual=\(routing.intent.rawValue), expected=\(scenario.expectedIntent.rawValue)")
+        await event("intent", "actual=\(routing.intent.rawValue), expected=\(scenario.expectedIntent.rawValue)")
         if routing.intent != scenario.expectedIntent {
             failures.append("Intent mismatch: \(routing.intent.rawValue) != \(scenario.expectedIntent.rawValue)")
         }
@@ -546,30 +594,42 @@ enum E2ETestRunner {
         }
 
         if scenario.requiresAgentRun {
-            let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
-            let modelLoaded = await ModelLoader.ensureChatLoaded(appState: appState, stored: stored, intent: .userChat)
+            try Task.checkCancellation()
+            await Task.yield()
+            let modelLoaded: Bool
+            if let ensureChatLoaded = ensureChatLoaded {
+                modelLoaded = await ensureChatLoaded()
+            } else {
+                modelLoaded = false
+            }
+            try Task.checkCancellation()
+            await Task.yield()
             collectPerformanceSample()
-            event("models", modelLoaded ? "chat fleet ready" : "no chat model loaded")
+            await event("models", modelLoaded ? "chat fleet ready" : "no chat model loaded")
             if modelLoaded {
                 let req = AgentRequest(
-                    systemPrompt: appState.systemPrompt,
+                    systemPrompt: config.systemPrompt,
                     history: [],
                     userMessage: scenario.prompt,
-                    temperature: min(appState.temperature, 0.3),
-                    topP: appState.topP,
-                    repetitionPenalty: appState.repetitionPenalty,
-                    maxTokens: min(appState.maxTokens, 512),
-                    maxSteps: min(appState.maxAgentSteps, 3),
-                    availableTools: ToolRegistry.all.filter { appState.enabledToolIDs.contains($0.id) && IntentRouter.isToolAllowed($0.id, for: routing) },
+                    temperature: min(config.temperature, 0.3),
+                    topP: config.topP,
+                    repetitionPenalty: config.repetitionPenalty,
+                    maxTokens: min(config.maxTokens, 512),
+                    maxSteps: min(config.maxAgentSteps, 3),
+                    availableTools: ToolRegistry.all.filter { config.enabledToolIDs.contains($0.id) && IntentRouter.isToolAllowed($0.id, for: routing) },
                     relevantMemories: []
                 )
                 var steps: [AgentStep] = []
+                try Task.checkCancellation()
+                await Task.yield()
                 for await agentEvent in SlotAgentService.shared.run(req) {
+                    try Task.checkCancellation()
+                    await Task.yield()
                     switch agentEvent {
                     case .step(let step):
                         collectPerformanceSample()
                         steps.append(step)
-                        event("step", "\(step.kind.rawValue): \(step.content)")
+                        await event("step", "\(step.kind.rawValue): \(step.content)")
                         if let toolID = step.toolID, scenario.forbiddenToolIDs.contains(toolID) {
                             failures.append("Forbidden tool selected by agent: \(toolID)")
                         }
@@ -587,12 +647,16 @@ enum E2ETestRunner {
                         failures.append("Agent error: \(message)")
                     }
                 }
+                try Task.checkCancellation()
+                await Task.yield()
                 rawFinalText = FinalIntentValidator.validate(rawFinalText, routing: routing, fallback: nil)
 
                 let recoveredBeforeRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rawFinalText)
                 let rawSanitized = mergeSanitizerOutputs(FinalOutputSanitizer.sanitizeUserVisibleText(rawFinalText), recovered: recoveredBeforeRewrite)
                 finalText = rawSanitized.text
 
+                try Task.checkCancellation()
+                await Task.yield()
                 let rewriteOutcome = await validateAndRewriteFinalTextIfNeeded(
                     scenario: scenario,
                     routing: routing,
@@ -614,8 +678,8 @@ enum E2ETestRunner {
                 missingHints = rewriteOutcome.missingHints
                 rewriteAttempted = rewriteOutcome.rewriteAttempted
                 rewriteSuccess = rewriteOutcome.rewriteSuccess
-                event("final-hints", "missing_hints=\(missingHints), rewrite_attempted=\(rewriteAttempted), rewrite_success=\(rewriteSuccess)")
-                event("final", finalText)
+                await event("final-hints", "missing_hints=\(missingHints), rewrite_attempted=\(rewriteAttempted), rewrite_success=\(rewriteSuccess)")
+                await event("final", finalText)
                 collectPerformanceSample(force: true)
             } else {
                 finalText = "No model loaded; routing-only checks completed."
@@ -672,6 +736,8 @@ enum E2ETestRunner {
         let sanitizedPrefix = hygieneState.postRewriteSanitized.artifactAudit.sanitizedPrefix
         let endedAt = Date()
         collectPerformanceSample(force: true)
+        try Task.checkCancellation()
+        await Task.yield()
         let matrix = await performanceMatrix(from: performanceSamples, startedAt: started, finishedAt: endedAt)
         return E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
     }

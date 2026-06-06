@@ -571,37 +571,58 @@ private struct E2ETestRunnerView: View {
         runStartedAt = nil
     }
 
+    @MainActor
     private func run() {
         guard !isRunning else { return }
+        let mode = runMode
+        let totalScenarioCount = mode.scenarios.count
+        let config = E2ERunConfig(appState: appState)
+        let appStateForModelLoading = appState
+        let modelContextForModelLoading = modelContext
+
         isRunning = true
         exportError = nil
         latestReport = nil
         liveResults = []
         liveEventBuffer = []
         runStartedAt = Date()
-        reportText = runMode.runningLabel
-        Task { @MainActor in
-            let report: E2ETestReport
-            switch runMode {
-            case .standard:
-                report = await E2ETestRunner.runStandard(appState: appState, context: modelContext, onResult: { result in
-                    liveResults.append(result)
-                    reportText = inProgressReportText(results: liveResults, total: runMode.scenarios.count)
-                }, onEvent: { event in
-                    liveEventBuffer.append(event)
-                })
-            case .trainingValidation:
-                report = await E2ETestRunner.runTrainingValidation(appState: appState, context: modelContext, onResult: { result in
-                    liveResults.append(result)
-                    reportText = inProgressReportText(results: liveResults, total: runMode.scenarios.count)
-                }, onEvent: { event in
-                    liveEventBuffer.append(event)
-                })
+        reportText = mode.runningLabel
+
+        Task.detached(priority: .userInitiated) {
+            let ensureChatLoaded: E2ETestRunner.EnsureChatLoaded = {
+                let stored = await MainActor.run {
+                    (try? modelContextForModelLoading.fetch(FetchDescriptor<StoredModel>())) ?? []
+                }
+                return await ModelLoader.ensureChatLoaded(appState: appStateForModelLoading, stored: stored, intent: .userChat)
             }
-            latestReport = report
-            reportText = report.summaryText
-            isRunning = false
-            runStartedAt = nil
+
+            let onResult: E2ETestRunner.ResultCallback = { result in
+                await MainActor.run {
+                    liveResults.append(result)
+                    reportText = inProgressReportText(results: liveResults, total: totalScenarioCount)
+                }
+            }
+
+            let onEvent: E2ETestRunner.EventCallback = { event in
+                await MainActor.run {
+                    liveEventBuffer.append(event)
+                }
+            }
+
+            let report: E2ETestReport
+            switch mode {
+            case .standard:
+                report = await E2ETestRunner.runStandard(config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
+            case .trainingValidation:
+                report = await E2ETestRunner.runTrainingValidation(config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
+            }
+
+            await MainActor.run {
+                latestReport = report
+                reportText = report.summaryText
+                isRunning = false
+                runStartedAt = nil
+            }
         }
     }
 
