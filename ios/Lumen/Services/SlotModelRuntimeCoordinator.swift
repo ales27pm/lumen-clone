@@ -146,6 +146,17 @@ actor SlotModelRuntimeCoordinator {
 
         let assignment = resolvedAssignment(for: slot)
         guard let assignment else {
+            if await AppLlamaService.shared.isChatLoaded {
+                let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+                return RuntimeReadinessMetrics(
+                    ensureReadyMs: elapsed,
+                    adapterActivationMs: 0,
+                    runtimePath: "loadedChatFallback",
+                    activeAdapterSlot: nil,
+                    accelerationDiagnostic: "Using already-loaded standalone chat runtime without a fleet slot assignment.",
+                    accelerationDiagnostics: await AppLlamaService.shared.currentAccelerationDiagnostics()
+                )
+            }
             throw LlamaError.slotModelNotLoaded("\(slot.rawValue): no assigned model")
         }
         guard FileManager.default.fileExists(atPath: assignment.localPath) else {
