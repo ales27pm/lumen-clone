@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Lumen
 
-@MainActor
 struct E2ETestRunnerHygieneTests {
     @Test func recoveredRawThinkLeakPassesWhenSanitizedFinalIsClean() {
         let scenario = E2ETestScenario(id: "s", title: "t", kind: .chat, prompt: "p", expectedIntent: .chat, forbiddenToolIDs: [], requiredTextHints: [], forbiddenTextHints: [], requiresAgentRun: false)
@@ -58,6 +57,50 @@ struct E2ETestRunnerHygieneTests {
         let failures = E2ETestRunner.hygieneFailures(lowerRawFinal: "use [link](https://example.com)", lowerFinal: "use [link](https://example.com)", removedArtifacts: [], scenario: scenario, observations: "")
         #expect(failures.isEmpty)
     }
+
+    @Test func runStandardScenarioLoopRunsOffMainThreadWhenDetached() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "detached-loop-thread",
+            title: "Detached loop thread",
+            kind: .chat,
+            prompt: "Hello there.",
+            expectedIntent: .chat,
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: false
+        )
+        let config = E2ERunConfig(
+            systemPrompt: "",
+            temperature: 0.1,
+            topP: 1.0,
+            repetitionPenalty: 1.0,
+            maxTokens: 64,
+            maxAgentSteps: 1,
+            enabledToolIDs: []
+        )
+        let recorder = ScenarioLoopThreadRecorder()
+        let recordThread: @Sendable (Bool) -> Void = { isMainThread in
+            recorder.record(isMainThread: isMainThread)
+        }
+
+        let report = await Task.detached {
+            await E2ETestRunner.$debugStandardScenariosOverride.withValue([scenario]) {
+                await E2ETestRunner.$debugAssertScenarioLoopOffMainThread.withValue(true) {
+                    await E2ETestRunner.$debugScenarioLoopThreadRecorder.withValue(recordThread) {
+                        await E2ETestRunner.runStandard(config: config)
+                    }
+                }
+            }
+        }.value
+
+        #expect(report.results.count == 1)
+        #expect(recorder.values == [false])
+        #else
+        #expect(true)
+        #endif
+    }
 }
 
 struct E2ETestResultExplicitInitializerTests {
@@ -89,5 +132,22 @@ struct E2ETestResultExplicitInitializerTests {
         #expect(result.failures == ["A"])
         #expect(result.sanitizedFinalRemovedArtifacts == ["x"])
         #expect(result.outputHygieneFailures == ["H"])
+    }
+}
+
+private final class ScenarioLoopThreadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedValues: [Bool] = []
+
+    var values: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedValues
+    }
+
+    func record(isMainThread: Bool) {
+        lock.lock()
+        recordedValues.append(isMainThread)
+        lock.unlock()
     }
 }

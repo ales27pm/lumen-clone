@@ -12,6 +12,47 @@ nonisolated enum E2ETestKind: String, Codable, Sendable, CaseIterable {
 }
 
 nonisolated struct E2ERunConfig: Sendable {
+    nonisolated struct Snapshot: Sendable {
+        let systemPrompt: String
+        let temperature: Double
+        let topP: Double
+        let repetitionPenalty: Double
+        let maxTokens: Int
+        let maxAgentSteps: Int
+        let enabledToolIDs: Set<String>
+
+        init(
+            systemPrompt: String,
+            temperature: Double,
+            topP: Double,
+            repetitionPenalty: Double,
+            maxTokens: Int,
+            maxAgentSteps: Int,
+            enabledToolIDs: Set<String>
+        ) {
+            self.systemPrompt = systemPrompt
+            self.temperature = temperature
+            self.topP = topP
+            self.repetitionPenalty = repetitionPenalty
+            self.maxTokens = maxTokens
+            self.maxAgentSteps = maxAgentSteps
+            self.enabledToolIDs = enabledToolIDs
+        }
+
+        @MainActor
+        init(appState: AppState) {
+            self.init(
+                systemPrompt: appState.systemPrompt,
+                temperature: appState.temperature,
+                topP: appState.topP,
+                repetitionPenalty: appState.repetitionPenalty,
+                maxTokens: appState.maxTokens,
+                maxAgentSteps: appState.maxAgentSteps,
+                enabledToolIDs: appState.enabledToolIDs
+            )
+        }
+    }
+
     let systemPrompt: String
     let temperature: Double
     let topP: Double
@@ -20,15 +61,41 @@ nonisolated struct E2ERunConfig: Sendable {
     let maxAgentSteps: Int
     let enabledToolIDs: Set<String>
 
+    init(snapshot: Snapshot) {
+        self.systemPrompt = snapshot.systemPrompt
+        self.temperature = snapshot.temperature
+        self.topP = snapshot.topP
+        self.repetitionPenalty = snapshot.repetitionPenalty
+        self.maxTokens = snapshot.maxTokens
+        self.maxAgentSteps = snapshot.maxAgentSteps
+        self.enabledToolIDs = snapshot.enabledToolIDs
+    }
+
+    init(
+        systemPrompt: String,
+        temperature: Double,
+        topP: Double,
+        repetitionPenalty: Double,
+        maxTokens: Int,
+        maxAgentSteps: Int,
+        enabledToolIDs: Set<String>
+    ) {
+        self.init(
+            snapshot: Snapshot(
+                systemPrompt: systemPrompt,
+                temperature: temperature,
+                topP: topP,
+                repetitionPenalty: repetitionPenalty,
+                maxTokens: maxTokens,
+                maxAgentSteps: maxAgentSteps,
+                enabledToolIDs: enabledToolIDs
+            )
+        )
+    }
+
     @MainActor
     init(appState: AppState) {
-        self.systemPrompt = appState.systemPrompt
-        self.temperature = appState.temperature
-        self.topP = appState.topP
-        self.repetitionPenalty = appState.repetitionPenalty
-        self.maxTokens = appState.maxTokens
-        self.maxAgentSteps = appState.maxAgentSteps
-        self.enabledToolIDs = appState.enabledToolIDs
+        self.init(snapshot: Snapshot(appState: appState))
     }
 }
 
@@ -457,13 +524,24 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
     }
 }
 
-enum E2ETestRunner {
+nonisolated enum E2ETestRunner {
     typealias ResultCallback = @Sendable (E2ETestResult) async -> Void
     typealias EventCallback = @Sendable (E2ETestEvent) async -> Void
     typealias EnsureChatLoaded = @Sendable () async -> Bool
 
+    #if DEBUG
+    @TaskLocal static var debugStandardScenariosOverride: [E2ETestScenario]?
+    @TaskLocal static var debugAssertScenarioLoopOffMainThread = false
+    @TaskLocal static var debugScenarioLoopThreadRecorder: (@Sendable (Bool) -> Void)?
+    #endif
+
     static func runStandard(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
-        await run(scenarios: E2ETestScenario.standard, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
+        #if DEBUG
+        let scenarios = debugStandardScenariosOverride ?? E2ETestScenario.standard
+        #else
+        let scenarios = E2ETestScenario.standard
+        #endif
+        return await run(scenarios: scenarios, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
     static func runTrainingValidation(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
@@ -474,6 +552,12 @@ enum E2ETestRunner {
         let started = Date()
         var results: [E2ETestResult] = []
         for scenario in scenarios {
+            #if DEBUG
+            debugScenarioLoopThreadRecorder?(Thread.isMainThread)
+            if debugAssertScenarioLoopOffMainThread {
+                assert(!Thread.isMainThread, "E2ETestRunner scenario loop must not run on the main thread")
+            }
+            #endif
             do {
                 try Task.checkCancellation()
                 await Task.yield()
@@ -742,7 +826,7 @@ enum E2ETestRunner {
         return E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
     }
 
-    private static func performanceMatrix(from samples: [E2EPerformanceSample], startedAt: Date, finishedAt: Date) async -> E2EPerformanceMatrix {
+    nonisolated private static func performanceMatrix(from samples: [E2EPerformanceSample], startedAt: Date, finishedAt: Date) async -> E2EPerformanceMatrix {
         let residentSamples = samples.compactMap(\.residentMemoryMB)
         let averageRAM = residentSamples.isEmpty ? 0 : residentSamples.reduce(0, +) / Double(residentSamples.count)
         let peakRAM = residentSamples.max() ?? 0
@@ -767,7 +851,7 @@ enum E2ETestRunner {
         )
     }
 
-    private static func residentMemoryUsageMB() -> Double? {
+    nonisolated private static func residentMemoryUsageMB() -> Double? {
 #if canImport(Darwin)
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.stride)
@@ -783,7 +867,7 @@ enum E2ETestRunner {
 #endif
     }
 
-    static func mergeSanitizerOutputs(_ primary: SanitizedFinalOutput, recovered: SanitizedFinalOutput?) -> SanitizedFinalOutput {
+    nonisolated static func mergeSanitizerOutputs(_ primary: SanitizedFinalOutput, recovered: SanitizedFinalOutput?) -> SanitizedFinalOutput {
         guard let recovered else { return primary }
         let mergedArtifactsList = mergedArtifacts(primary.removedArtifacts, recovered.removedArtifacts)
         let hadUnsafeLeakage = primary.hadUnsafeLeakage || recovered.hadUnsafeLeakage
@@ -801,7 +885,7 @@ enum E2ETestRunner {
         )
     }
 
-    static func mergedArtifacts(_ groups: [FinalOutputArtifact]...) -> [FinalOutputArtifact] {
+    nonisolated static func mergedArtifacts(_ groups: [FinalOutputArtifact]...) -> [FinalOutputArtifact] {
         var merged: [FinalOutputArtifact] = []
         for artifact in groups.flatMap({ $0 }) where !merged.contains(artifact) {
             merged.append(artifact)
@@ -809,7 +893,7 @@ enum E2ETestRunner {
         return merged
     }
 
-    static func mergedStrings(_ groups: [String]...) -> [String] {
+    nonisolated static func mergedStrings(_ groups: [String]...) -> [String] {
         var merged: [String] = []
         for item in groups.flatMap({ $0 }) where !merged.contains(item) {
             merged.append(item)
@@ -817,7 +901,7 @@ enum E2ETestRunner {
         return merged
     }
 
-    static func hygieneFailures(lowerRawFinal: String, lowerFinal: String, removedArtifacts: [FinalOutputArtifact], scenario: E2ETestScenario, observations: String) -> [String] {
+    nonisolated static func hygieneFailures(lowerRawFinal: String, lowerFinal: String, removedArtifacts: [FinalOutputArtifact], scenario: E2ETestScenario, observations: String) -> [String] {
         var failures: [String] = []
         if lowerFinal.contains("<think") || lowerFinal.contains("</think>")
             || lowerFinal.contains("<analysis") || lowerFinal.contains("</analysis>")
@@ -841,7 +925,7 @@ enum E2ETestRunner {
         return mergedStrings(failures)
     }
 
-    private static func weatherGroundingOverreach(finalText: String, observations: String) -> Bool {
+    nonisolated private static func weatherGroundingOverreach(finalText: String, observations: String) -> Bool {
         let answer = finalText.lowercased()
         let obs = observations.lowercased()
         let recommendsUmbrella = answer.contains("umbrella") || answer.contains("likely raining") || answer.contains("it's raining") || answer.contains("it is raining")
@@ -850,7 +934,7 @@ enum E2ETestRunner {
         return !precipitationSignals.contains(where: { obs.contains($0) })
     }
 
-    private static func referencesRetrievedSnippet(_ lowerFinal: String) -> Bool {
+    nonisolated private static func referencesRetrievedSnippet(_ lowerFinal: String) -> Bool {
         let signals = ["[1]", "[2]", "snippet", "source", "file", "pdf", "note", "photos", "retrieved"]
         return signals.contains { lowerFinal.contains($0) }
     }
@@ -862,7 +946,7 @@ enum E2ETestRunner {
         let rewriteSuccess: Bool
     }
 
-    private static func validateAndRewriteFinalTextIfNeeded(
+    nonisolated private static func validateAndRewriteFinalTextIfNeeded(
         scenario: E2ETestScenario,
         routing: IntentRoutingDecision,
         originalFinal: String
@@ -884,7 +968,7 @@ enum E2ETestRunner {
         return EvalRewriteOutcome(finalText: rewritten, missingHints: secondMissing, rewriteAttempted: true, rewriteSuccess: rewriteSuccess)
     }
 
-    private static func requiredHintsMissing(in finalText: String, scenario: E2ETestScenario) -> [String] {
+    nonisolated private static func requiredHintsMissing(in finalText: String, scenario: E2ETestScenario) -> [String] {
         let lower = finalText.lowercased()
         var missing: [String] = scenario.requiredTextHints.filter { !lower.contains($0.lowercased()) }
         if scenario.id == "training-general-chat" {
@@ -901,7 +985,7 @@ enum E2ETestRunner {
         return Array(Set(missing)).sorted()
     }
 
-    private static func rewriteFinalTextForEvalHints(
+    nonisolated private static func rewriteFinalTextForEvalHints(
         originalFinal: String,
         prompt: String,
         intent: UserIntent,
@@ -947,7 +1031,7 @@ enum E2ETestRunner {
         )
     }
 
-    private static func enforceEvalGrounding(_ text: String, intent: UserIntent) -> String {
+    nonisolated private static func enforceEvalGrounding(_ text: String, intent: UserIntent) -> String {
         guard intent == .rag else { return text }
         let lower = text.lowercased()
         var out = text
@@ -964,7 +1048,7 @@ enum E2ETestRunner {
         return out
     }
 
-    private static func enforceEvalHintConstraints(
+    nonisolated private static func enforceEvalHintConstraints(
         _ text: String,
         intent: UserIntent,
         requiredHints: [String],
@@ -993,7 +1077,7 @@ enum E2ETestRunner {
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func deterministicHintInjection(for requiredHint: String, intent: UserIntent) -> String {
+    nonisolated private static func deterministicHintInjection(for requiredHint: String, intent: UserIntent) -> String {
         let lower = requiredHint.lowercased()
 
         if lower.contains("recalled preference text") || lower.contains("prefer concise bullet points") {
