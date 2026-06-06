@@ -227,7 +227,7 @@ struct ChatView: View {
                 CPUWatchdogGuard.shared.end(token: cpuToken)
                 DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
             }
-            if !(await ensureChatModelLoaded()) {
+            if !appState.agentModeEnabled, !(await ensureChatModelLoaded()) {
                 guard activeTurnID == turnID else { return }
                 let msg = ChatMessage(role: .assistant, content: "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it.")
                 conversation.messages.append(msg)

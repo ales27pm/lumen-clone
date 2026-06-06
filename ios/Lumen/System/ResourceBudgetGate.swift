@@ -11,6 +11,7 @@ enum ResourceBudgetGate {
         let recentMemoryWarningCount: Int?
         let lastMemoryWarningAt: Date?
 
+        @MainActor
         static var current: Snapshot {
             Snapshot(
                 scenePhase: inferredScenePhase(),

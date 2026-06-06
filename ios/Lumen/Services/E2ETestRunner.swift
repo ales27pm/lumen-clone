@@ -706,7 +706,7 @@ nonisolated enum E2ETestRunner {
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
                 await Task.yield()
-                for await agentEvent in SlotAgentService.shared.run(req) {
+                for await agentEvent in await SlotAgentService.shared.run(req) {
                     try Task.checkCancellation()
                     await Task.yield()
                     switch agentEvent {
