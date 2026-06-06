@@ -84,14 +84,24 @@ struct IntentClassifierPolicyTests {
         #expect(result.intent == .chat)
     }
 
-    @MainActor
+    @Test func weatherRouteRunsBundledPredictionOffMainActor() async {
+        await BundledIntentClassifier.shared.resetPredictionMainThreadViolationCountForTesting()
+
+        let routing = await Task.detached {
+            await IntentClassifierService.shared.route("What is the weather here?")
+        }.value
+
+        #expect(routing.intent == .weather)
+        let violationCount = await BundledIntentClassifier.shared.predictionMainThreadViolationCountForTesting()
+        #expect(violationCount == 0)
+    }
+
     @Test func priorityOverridesRunBeforeBundledModel() async {
         let result = await IntentClassifierService.shared.classify("Help me message Jordan with a complete ETA and apology.")
         #expect(result.intent == .messageDraft)
         #expect(result.diagnostics == "deterministic_priority_override")
     }
 
-    @MainActor
     @Test func liveE2ERoutingRegressionsUsePriorityOverrides() async {
         let cases: [(String, UserIntent)] = [
             ("Draft a quick email update to Taylor about the delay and ask one question.", .emailDraft),
