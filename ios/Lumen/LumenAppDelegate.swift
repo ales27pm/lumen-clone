@@ -36,8 +36,7 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
-        AppCancellationBus.shared.markCancellationRequested("will-terminate")
-        AppCancellationBus.shared.cancelAllSceneSensitive()
+        AppCancellationBus.shared.markProcessExitRequested("will-terminate")
     }
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
