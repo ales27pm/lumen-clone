@@ -25,9 +25,19 @@ final class RuntimeRouterTests: XCTestCase {
         XCTAssertEqual(router.runtime(for: context), .deterministicFallback)
     }
 
-    func testChatUsesLlamaOnlyWhenHeavyRuntimeAllowed() {
+    func testChatFallsBackWhenLlamaIsMarkedAvailableWithoutGenerationAdapter() {
         let foundation = FoundationModelsRuntimeAdapter()
         let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(isAvailable: true, unavailableReason: nil))
+        let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
+        XCTAssertEqual(router.runtime(for: context), .deterministicFallback)
+    }
+
+    func testChatUsesLlamaOnlyWhenGenerationAdapterIsWiredAndHeavyRuntimeAllowed() {
+        let foundation = FoundationModelsRuntimeAdapter()
+        let llama = LlamaRuntimeAdapter(generateHandler: { request in
+            "llama: \(request.prompt)"
+        })
+        let router = AssistantRuntimeRouter(foundation: foundation, llama: llama)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
         XCTAssertEqual(router.runtime(for: context), .llama)
     }
