@@ -1,7 +1,6 @@
 import Foundation
 
-@MainActor
-final class IntentClassifierService {
+final class IntentClassifierService: Sendable {
     static let shared = IntentClassifierService()
     private init() {}
 
