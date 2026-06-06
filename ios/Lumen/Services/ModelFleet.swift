@@ -166,6 +166,10 @@ enum LumenModelFleetResolver {
         resolveV1(activeChatModelID: settings.activeChatModelID, activeEmbeddingModelID: settings.activeEmbeddingModelID, storedModels: storedModels)
     }
 
+    nonisolated static func resolveV1(snapshot: ModelLoadSnapshot) -> LumenModelFleetSnapshot {
+        resolveV1(activeChatModelID: snapshot.activeChatModelID, activeEmbeddingModelID: snapshot.activeEmbeddingModelID, selectedFamily: snapshot.selectedModelFamily, storedModels: snapshot.storedModels)
+    }
+
     static func resolveV1(activeChatModelID: String?, activeEmbeddingModelID: String?, storedModels: [StoredModel]) -> LumenModelFleetSnapshot {
         var assignments: [LumenModelSlot: LumenModelAssignment] = [:]
         let existingStoredModels = storedModels.filter { modelFileExists($0) }
@@ -199,6 +203,144 @@ enum LumenModelFleetResolver {
 
         let missing = LumenModelSlot.allCases.filter { assignments[$0] == nil }
         return LumenModelFleetSnapshot(mode: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? .qwen3AdapterRuntime : .v1MultiResident, assignments: assignments, missingSlots: missing, targetResidentSlots: Set(assignments.keys), runtimeResidentSlots: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? [.cortex] : [])
+    }
+
+    nonisolated private static func resolveV1(activeChatModelID: String?, activeEmbeddingModelID: String?, selectedFamily: LumenModelFamily, storedModels: [StoredModelLoadItem]) -> LumenModelFleetSnapshot {
+        var assignments: [LumenModelSlot: LumenModelAssignment] = [:]
+        let existingStoredModels = storedModels.filter { FileManager.default.fileExists(atPath: $0.resolvedPath) }
+        let textModels = existingStoredModels.filter { $0.modelRole == .chat && isStandaloneLoadableChatArtifact($0) }
+        let adapterModels = existingStoredModels.filter { $0.modelRole == .roleAdapter }
+        let activeText = activeChatModelID.flatMap { id in textModels.first { $0.id.uuidString == id } }
+        let fallbackText = activeText ?? preferredTextModel(from: textModels)
+        let qwen3AdapterBase = (activeText?.isQwen3SharedAdapterBase == true ? activeText : nil)
+            ?? textModels.filter(\.isQwen3SharedAdapterBase).sorted { $0.downloadedAt > $1.downloadedAt }.first
+
+        if selectedFamily == .qwen3, let sharedBase = qwen3AdapterBase {
+            for slot in [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem] {
+                let adapter = preferredAdapter(for: slot, storedModels: adapterModels)
+                assignments[slot] = assignment(slot: slot, model: sharedBase, family: .qwen3, adapter: adapter)
+            }
+        } else {
+            let fallbackFamily: LumenModelFamily? = selectedFamily == .qwen3 ? nil : selectedFamily
+            for slot in [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem] {
+                if let model = preferredFineTunedModel(for: slot, storedModels: textModels)
+                    ?? preferredModel(for: slot, storedModels: textModels)
+                    ?? fallbackText {
+                    assignments[slot] = assignment(slot: slot, model: model, family: fallbackFamily, adapter: nil)
+                }
+            }
+        }
+
+        if let embed = preferredEmbedding(activeEmbeddingModelID: activeEmbeddingModelID, storedModels: existingStoredModels) {
+            assignments[.embedding] = assignment(slot: .embedding, model: embed)
+        }
+
+        let missing = LumenModelSlot.allCases.filter { assignments[$0] == nil }
+        return LumenModelFleetSnapshot(mode: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? .qwen3AdapterRuntime : .v1MultiResident, assignments: assignments, missingSlots: missing, targetResidentSlots: Set(assignments.keys), runtimeResidentSlots: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? [.cortex] : [])
+    }
+
+    nonisolated private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
+        let slotToken = slot.rawValue
+        let scored = storedModels.compactMap { model -> (model: StoredModelLoadItem, rank: Int)? in
+            let text = [model.name, model.repoId, model.fileName, model.localPath].joined(separator: " ").lowercased()
+            if text.contains(slotToken) { return (model, 2) }
+            if slot == .cortex, text.contains("fleet") { return (model, 1) }
+            return nil
+        }
+        return scored.sorted { lhs, rhs in
+            if lhs.rank != rhs.rank { return lhs.rank > rhs.rank }
+            return lhs.model.downloadedAt > rhs.model.downloadedAt
+        }.first?.model
+    }
+
+    nonisolated private static func preferredEmbedding(activeEmbeddingModelID: String?, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
+        let embedModels = storedModels.filter { $0.modelRole == .embedding }
+        let activeEmbed = activeEmbeddingModelID.flatMap { id in embedModels.first { $0.id.uuidString == id } }
+        return activeEmbed ?? preferredModel(for: .embedding, storedModels: embedModels) ?? mostRecentModel(from: embedModels)
+    }
+
+    nonisolated private static func preferredModel(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
+        let weights = hintWeights(for: slot)
+        return storedModels.map { model in (model: model, score: score(model, weights: weights)) }.filter { $0.score > 0 }.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.model.downloadedAt > rhs.model.downloadedAt
+        }.first?.model
+    }
+
+    nonisolated private static func preferredFineTunedModel(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
+        let slotTokens = slotHintTokens(for: slot)
+        return storedModels.map { model in (model: model, score: fineTunedScore(model, slotTokens: slotTokens)) }.filter { $0.score > 0 }.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.model.downloadedAt > rhs.model.downloadedAt
+        }.first?.model
+    }
+
+    nonisolated private static func preferredTextModel(from models: [StoredModelLoadItem]) -> StoredModelLoadItem? {
+        preferredModel(for: .cortex, storedModels: models) ?? preferredModel(for: .mouth, storedModels: models) ?? mostRecentModel(from: models)
+    }
+
+    nonisolated private static func mostRecentModel(from models: [StoredModelLoadItem]) -> StoredModelLoadItem? { models.sorted { $0.downloadedAt > $1.downloadedAt }.first }
+
+    nonisolated private static func score(_ model: StoredModelLoadItem, weights: [String: Int]) -> Int {
+        let primary = [model.name, model.repoId, model.fileName].joined(separator: " ").lowercased()
+        let secondary = [model.parameters, model.quantization, model.role].joined(separator: " ").lowercased()
+        return weights.reduce(0) { partial, item in
+            let hint = item.key.lowercased()
+            let weight = item.value
+            if primary.contains(hint) { return partial + weight }
+            if secondary.contains(hint) { return partial + max(1, weight / 2) }
+            return partial
+        }
+    }
+
+    nonisolated private static func fineTunedScore(_ model: StoredModelLoadItem, slotTokens: [String]) -> Int {
+        let primary = [model.name, model.repoId, model.fileName, model.localPath].joined(separator: " ").lowercased()
+        let secondary = [model.parameters, model.quantization, model.role].joined(separator: " ").lowercased()
+        let primaryTokens = tokenSet(primary)
+        let secondaryTokens = tokenSet(secondary)
+        let standaloneTunedMarkers = ["release", "bake", "merged", "gguf", "finetune", "finetuned", "sft", "dpo", "orpo", "agent"]
+        let tunedPhrases = ["release-bake", "release_bake", "release baked", "fine-tune", "fine_tune", "fine tuned"]
+        let slotMatchPrimary = slotTokens.contains { primaryTokens.contains($0) }
+        let slotMatchSecondary = slotTokens.contains { secondaryTokens.contains($0) }
+        guard slotMatchPrimary || slotMatchSecondary else { return 0 }
+        guard isStandaloneLoadableChatArtifact(model) else { return 0 }
+        let tunedPrimary = standaloneTunedMarkers.contains { primaryTokens.contains($0) } || tunedPhrases.contains { primary.contains($0) }
+        let tunedSecondary = standaloneTunedMarkers.contains { secondaryTokens.contains($0) } || tunedPhrases.contains { secondary.contains($0) }
+        let releaseBake = primary.contains("release-bake") || primary.contains("release_bake") || primaryTokens.contains("release") && primaryTokens.contains("bake")
+        var score = 0
+        score += slotMatchPrimary ? 120 : 70
+        score += releaseBake ? 160 : 0
+        score += tunedPrimary ? 80 : 0
+        score += tunedSecondary ? 30 : 0
+        score += (tunedPrimary || tunedSecondary) ? 30 : 0
+        return score
+    }
+
+    nonisolated private static func isStandaloneLoadableChatArtifact(_ model: StoredModelLoadItem) -> Bool {
+        let artifactText = [model.repoId, model.fileName, model.localPath, model.parameters, model.quantization, model.role].joined(separator: " ").lowercased()
+        let fileName = model.fileName.lowercased()
+        let artifactTokens = tokenSet(artifactText)
+        let hasAdapterMarker = fileName.hasSuffix(".lora") || fileName.hasSuffix(".adapter") || artifactTokens.contains("adapter") || artifactTokens.contains("lora")
+        if hasAdapterMarker { return false }
+        return fileName.hasSuffix(".gguf") || fileName.hasSuffix(".bin") || fileName.hasSuffix(".safetensors") || fileName.hasSuffix(".mlmodelc")
+    }
+
+    nonisolated private static func assignment(slot: LumenModelSlot, model: StoredModelLoadItem, family: LumenModelFamily? = nil, adapter: StoredModelLoadItem? = nil) -> LumenModelAssignment {
+        LumenModelAssignment(
+            slot: slot,
+            modelID: model.id,
+            localPath: model.resolvedPath,
+            fileName: model.fileName,
+            displayName: model.name,
+            parameters: model.parameters,
+            quantization: model.quantization,
+            modelFamily: family,
+            artifactKind: model.modelRole,
+            adapterID: adapter?.id,
+            adapterPath: adapter?.resolvedPath,
+            adapterFileName: adapter?.fileName,
+            adapterScale: 1.0
+        )
     }
 
     private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModel]) -> StoredModel? {
@@ -243,7 +385,7 @@ enum LumenModelFleetResolver {
 
     private static func mostRecentModel(from models: [StoredModel]) -> StoredModel? { models.sorted { $0.downloadedAt > $1.downloadedAt }.first }
 
-    private static func slotHintTokens(for slot: LumenModelSlot) -> [String] {
+    nonisolated private static func slotHintTokens(for slot: LumenModelSlot) -> [String] {
         switch slot {
         case .cortex: return ["cortex"]
         case .executor: return ["executor"]
@@ -254,7 +396,7 @@ enum LumenModelFleetResolver {
         }
     }
 
-    private static func hintWeights(for slot: LumenModelSlot) -> [String: Int] {
+    nonisolated private static func hintWeights(for slot: LumenModelSlot) -> [String: Int] {
         switch slot {
         case .cortex: return ["cortex": 120, "release": 90, "bake": 90, "1.7b": 60, "qwen3": 50, "1.5b": 25, "coder": 20]
         case .executor: return ["executor": 120, "release": 90, "bake": 90, "json": 60, "qwen3": 50, "coder": 20]
@@ -313,7 +455,7 @@ enum LumenModelFleetResolver {
         FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path)
     }
 
-    private static func tokenSet(_ value: String) -> Set<String> {
+    nonisolated private static func tokenSet(_ value: String) -> Set<String> {
         Set(value.split { !$0.isLetter && !$0.isNumber }.map(String.init))
     }
 
@@ -338,6 +480,13 @@ enum LumenModelFleetResolver {
 
 
 private extension StoredModel {
+    var isQwen3SharedAdapterBase: Bool {
+        repoId == "ales27pm/lumen-qwen3-bootstrap-gguf" && fileName == "lumen-qwen3-fast-shared-q4_k_m.gguf"
+    }
+}
+
+
+private extension StoredModelLoadItem {
     var isQwen3SharedAdapterBase: Bool {
         repoId == "ales27pm/lumen-qwen3-bootstrap-gguf" && fileName == "lumen-qwen3-fast-shared-q4_k_m.gguf"
     }

@@ -2,6 +2,53 @@ import Foundation
 import SwiftData
 import OSLog
 
+
+nonisolated struct ModelLoadSnapshot: Sendable {
+    let activeChatModelID: String?
+    let activeEmbeddingModelID: String?
+    let contextSize: Int
+    let selectedModelFamily: LumenModelFamily
+    let storedModels: [StoredModelLoadItem]
+
+    @MainActor
+    init(appState: AppState, stored: [StoredModel]) {
+        self.activeChatModelID = appState.activeChatModelID
+        self.activeEmbeddingModelID = appState.activeEmbeddingModelID
+        self.contextSize = appState.contextSize
+        self.selectedModelFamily = LumenModelFamily.persistedSelected
+        self.storedModels = stored.map(StoredModelLoadItem.init(stored:))
+    }
+}
+
+nonisolated struct StoredModelLoadItem: Identifiable, Sendable, Hashable {
+    let id: UUID
+    let name: String
+    let repoId: String
+    let fileName: String
+    let quantization: String
+    let parameters: String
+    let role: String
+    let downloadedAt: Date
+    let localPath: String
+    let resolvedPath: String
+
+    var modelRole: ModelRole { ModelRole(rawValue: role) ?? .chat }
+
+    @MainActor
+    init(stored: StoredModel) {
+        self.id = stored.id
+        self.name = stored.name
+        self.repoId = stored.repoId
+        self.fileName = stored.fileName
+        self.quantization = stored.quantization
+        self.parameters = stored.parameters
+        self.role = stored.role
+        self.downloadedAt = stored.downloadedAt
+        self.localPath = stored.localPath
+        self.resolvedPath = ModelStorage.resolvedModelURL(from: stored.localPath, fileName: stored.fileName).path
+    }
+}
+
 enum ModelLoadIntent: String, Sendable, Equatable {
     case userChat
     case userVoice
@@ -12,12 +59,22 @@ enum ModelLoadIntent: String, Sendable, Equatable {
 
 @MainActor
 enum ModelLoader {
+    private struct ChatLoadResult: Sendable {
+        let loaded: Bool
+        let selectedChatModelID: String?
+    }
+
+    private struct PendingChatModelLoad {
+        let id = UUID()
+        let task: Task<ChatLoadResult, Never>
+    }
+
     private struct PendingModelLoad {
         let id = UUID()
         let task: Task<Bool, Never>
     }
 
-    private static var chatLoadTask: PendingModelLoad?
+    private static var chatLoadTask: PendingChatModelLoad?
     private static var embedLoadTask: PendingModelLoad?
 
     static func canStartModelLoad(intent: ModelLoadIntent) -> Bool {
@@ -36,7 +93,9 @@ enum ModelLoader {
 
     #if DEBUG
     static func installChatLoadTaskForTesting(_ task: Task<Bool, Never>) {
-        chatLoadTask = PendingModelLoad(task: task)
+        chatLoadTask = PendingChatModelLoad(task: Task {
+            ChatLoadResult(loaded: await task.value, selectedChatModelID: nil)
+        })
     }
 
     static var hasActiveChatLoadTaskForTesting: Bool {
@@ -69,45 +128,68 @@ enum ModelLoader {
     /// assignments for on-demand slot loading instead of loading all contexts.
     @discardableResult
     static func ensureChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
-        await ensureFleetChatLoaded(appState: appState, stored: stored, intent: intent)
+        await ensureFleetChatLoaded(snapshot: ModelLoadSnapshot(appState: appState, stored: stored), appState: appState, intent: intent)
+    }
+
+    @discardableResult
+    static func ensureChatLoaded(snapshot: ModelLoadSnapshot, intent: ModelLoadIntent = .userChat) async -> Bool {
+        await ensureFleetChatLoaded(snapshot: snapshot, appState: nil, intent: intent)
     }
 
     @discardableResult
     static func ensureFleetChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
-        if await hasLoadedChatRuntime(appState: appState, stored: stored) { return true }
-        guard canStartModelLoad(intent: intent) else { return false }
-        if let chatLoadTask { return await finishChatLoad(chatLoadTask) }
-        let pending = PendingModelLoad(task: Task { @MainActor in
-            await performEnsureFleetChatLoaded(appState: appState, stored: stored, intent: intent)
-        })
-        chatLoadTask = pending
-        return await finishChatLoad(pending)
+        await ensureFleetChatLoaded(snapshot: ModelLoadSnapshot(appState: appState, stored: stored), appState: appState, intent: intent)
     }
 
     @discardableResult
-    private static func performEnsureFleetChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent) async -> Bool {
-        guard !Task.isCancelled, ResourceBudgetGate.allowsForegroundModelLoad(reason: intent.rawValue) else { return false }
-        let snapshot = LumenModelFleetResolver.resolveV1(appState: appState, storedModels: stored)
-        SlotModelRuntimeCoordinator.shared.configure(
+    private static func ensureFleetChatLoaded(snapshot: ModelLoadSnapshot, appState: AppState?, intent: ModelLoadIntent) async -> Bool {
+        await Task.yield()
+        if await hasLoadedChatRuntime(snapshot: snapshot) { return true }
+        guard canStartModelLoad(intent: intent) else { return false }
+        if let chatLoadTask {
+            let result = await finishChatLoad(chatLoadTask)
+            if let selectedChatModelID = result.selectedChatModelID {
+                appState?.activeChatModelID = selectedChatModelID
+            }
+            return result.loaded
+        }
+        let pending = PendingChatModelLoad(task: Task.detached(priority: .userInitiated) {
+            await performEnsureFleetChatLoaded(snapshot: snapshot, intent: intent)
+        })
+        chatLoadTask = pending
+        let result = await finishChatLoad(pending)
+        if let selectedChatModelID = result.selectedChatModelID {
+            appState?.activeChatModelID = selectedChatModelID
+        }
+        return result.loaded
+    }
+
+    @discardableResult
+    nonisolated private static func performEnsureFleetChatLoaded(snapshot loadSnapshot: ModelLoadSnapshot, intent: ModelLoadIntent) async -> ChatLoadResult {
+        guard !Task.isCancelled, await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: intent.rawValue) }) else { return ChatLoadResult(loaded: false, selectedChatModelID: nil) }
+        await Task.yield()
+        let snapshot = LumenModelFleetResolver.resolveV1(snapshot: loadSnapshot)
+        await SlotModelRuntimeCoordinator.shared.configure(
             assignments: snapshot.assignments,
-            contextSize: appState.contextSize,
+            contextSize: loadSnapshot.contextSize,
             preferExclusiveChatRuntime: true
         )
 
         let runnableSlots = [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem]
             .filter { snapshot.assignment(for: $0) != nil }
         guard !runnableSlots.isEmpty else {
-            return await ensurePrimaryChatLoaded(appState: appState, stored: stored)
+            return await ensurePrimaryChatLoaded(snapshot: loadSnapshot)
         }
 
         // Keep one chat runtime warm for non-agent/plain chat. Slot-agent turns load
         // each role-baked GGUF lazily, one slot at a time, through the coordinator.
+        await Task.yield()
         let primaryReady = await SlotModelRuntimeCoordinator.shared.ensurePrimaryReady(preferredSlots: [.mouth, .cortex])
-        guard !Task.isCancelled else { return false }
-        return primaryReady || !runnableSlots.isEmpty
+        guard !Task.isCancelled else { return ChatLoadResult(loaded: false, selectedChatModelID: nil) }
+        return ChatLoadResult(loaded: primaryReady || !runnableSlots.isEmpty, selectedChatModelID: nil)
     }
 
-    private static func finishChatLoad(_ pending: PendingModelLoad) async -> Bool {
+    private static func finishChatLoad(_ pending: PendingChatModelLoad) async -> ChatLoadResult {
         let result = await pending.task.value
         if chatLoadTask?.id == pending.id {
             chatLoadTask = nil
@@ -115,41 +197,40 @@ enum ModelLoader {
         return result
     }
 
-    private static func hasLoadedChatRuntime(appState: AppState, stored: [StoredModel]) async -> Bool {
-        let preferredID = appState.activeChatModelID
+    nonisolated private static func hasLoadedChatRuntime(snapshot: ModelLoadSnapshot) async -> Bool {
+        let preferredID = snapshot.activeChatModelID
         if let preferredID,
-           let preferred = stored.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .chat }) {
-            let resolvedPath = ModelStorage.resolvedModelURL(from: preferred.localPath, fileName: preferred.fileName).path
-            return await AppLlamaService.shared.loadedChatPath == resolvedPath
+           let preferred = snapshot.storedModels.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .chat }) {
+            return await AppLlamaService.shared.loadedChatPath == preferred.resolvedPath
         }
         return await AppLlamaService.shared.isChatLoaded
     }
 
     @discardableResult
-    private static func ensurePrimaryChatLoaded(appState: AppState, stored: [StoredModel]) async -> Bool {
-        let preferredID = appState.activeChatModelID
+    nonisolated private static func ensurePrimaryChatLoaded(snapshot: ModelLoadSnapshot) async -> ChatLoadResult {
+        let preferredID = snapshot.activeChatModelID
         if let preferredID,
-           let preferred = stored.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .chat }) {
-            let resolvedPath = ModelStorage.resolvedModelURL(from: preferred.localPath, fileName: preferred.fileName).path
-            guard FileManager.default.fileExists(atPath: resolvedPath) else { return false }
+           let preferred = snapshot.storedModels.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .chat }) {
+            guard FileManager.default.fileExists(atPath: preferred.resolvedPath) else { return ChatLoadResult(loaded: false, selectedChatModelID: nil) }
             if await AppLlamaService.shared.isChatLoaded,
-               await AppLlamaService.shared.loadedChatPath == resolvedPath {
-                return true
+               await AppLlamaService.shared.loadedChatPath == preferred.resolvedPath {
+                return ChatLoadResult(loaded: true, selectedChatModelID: nil)
             }
         } else if await AppLlamaService.shared.isChatLoaded {
-            return true
+            return ChatLoadResult(loaded: true, selectedChatModelID: nil)
         }
-        let candidates = stored.filter { $0.modelRole == .chat }
-        SlotModelRuntimeCoordinator.shared.configure(
+        let candidates = snapshot.storedModels.filter { $0.modelRole == .chat }
+        await SlotModelRuntimeCoordinator.shared.configure(
             assignments: [:],
-            contextSize: appState.contextSize,
+            contextSize: snapshot.contextSize,
             preferExclusiveChatRuntime: true
         )
-        return await SlotModelRuntimeCoordinator.shared.ensureChatModel(
-            appState: appState,
+        await Task.yield()
+        let selectedChatModelID = await SlotModelRuntimeCoordinator.shared.ensureChatModelSelection(
             candidates: candidates,
             preferredID: preferredID
         )
+        return ChatLoadResult(loaded: selectedChatModelID != nil, selectedChatModelID: selectedChatModelID)
     }
 
     @discardableResult
@@ -173,11 +254,15 @@ enum ModelLoader {
     }
 
     private static func hasLoadedEmbeddingRuntime(appState: AppState, stored: [StoredModel]) async -> Bool {
-        let preferredID = appState.activeEmbeddingModelID
+        let snapshot = ModelLoadSnapshot(appState: appState, stored: stored)
+        return await hasLoadedEmbeddingRuntime(snapshot: snapshot)
+    }
+
+    nonisolated private static func hasLoadedEmbeddingRuntime(snapshot: ModelLoadSnapshot) async -> Bool {
+        let preferredID = snapshot.activeEmbeddingModelID
         if let preferredID,
-           let preferred = stored.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .embedding }) {
-            let resolvedPath = ModelStorage.resolvedModelURL(from: preferred.localPath, fileName: preferred.fileName).path
-            return await AppLlamaService.shared.loadedEmbedPath == resolvedPath
+           let preferred = snapshot.storedModels.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .embedding }) {
+            return await AppLlamaService.shared.loadedEmbedPath == preferred.resolvedPath
         }
         return await AppLlamaService.shared.hasSemanticEmbeddingRuntime
     }
@@ -197,8 +282,8 @@ enum ModelLoader {
         }
 
         let candidates = stored.filter { $0.modelRole == .embedding }
-        SlotModelRuntimeCoordinator.shared.configure(
-            assignments: SlotModelRuntimeCoordinator.shared.configuredAssignments,
+        await SlotModelRuntimeCoordinator.shared.configure(
+            assignments: await SlotModelRuntimeCoordinator.shared.configuredAssignments,
             contextSize: appState.contextSize,
             preferExclusiveChatRuntime: true
         )
