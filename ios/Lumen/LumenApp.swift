@@ -137,27 +137,24 @@ final class AppStartupCoordinator {
         ])
     }
 
-    /// Runs heavy bootstrap work in the background after the UI is already visible.
+    /// Runs light bootstrap work in the background after the UI is already visible.
     /// This is nonisolated — it runs on the Task.detached executor, NOT @MainActor.
     /// All UI updates go through `await MainActor.run { ... }`.
+    ///
+    /// IMPORTANT: Fleet model checks and model loading are deliberately NOT done here.
+    /// They are deferred to on-demand loading (ModelLoader.ensureChatLoaded / ensureEmbedLoaded)
+    /// when the user first interacts with the chat. This keeps startup under 1 second
+    /// and prevents watchdog (0x8BADF00D) kills from blocking the main actor.
     nonisolated private static func defaultBootstrap(appState: AppState, ctx: ModelContext) async throws {
         // Phase 1: Lightweight validation (fast, no I/O heavy work)
         try await withStage(.bootstrap) {
             try LumenModelSlotContract.validateCompletenessAtStartup()
         }
 
-        // Phase 2: Fleet model checks — ModelLaunchBootstrap is @MainActor,
-        // but ensureFleetDownloaded only creates background Tasks for loading.
-        // The synchronous catalog iteration is lightweight enough on a real device.
-        await ModelLaunchBootstrap.ensureFleetDownloaded(appState: appState, context: ctx)
-
-        // Phase 3: Grounding resources — parsed on background actor
+        // Phase 2: Grounding resources — parsed on background actor
         await loadGroundingResourcesOnBackground(appState: appState)
 
-        // Phase 4: Model loading with fallbacks — on background actor
-        await loadModelsWithFallbacks(appState: appState, context: ctx)
-
-        // Phase 5: Triggers
+        // Phase 3: Triggers
         await MainActor.run {
             appState.runtime.updateBootStep(id: "triggers", detail: "Registering background tasks", state: .running)
         }
@@ -166,6 +163,12 @@ final class AppStartupCoordinator {
         await TriggerScheduler.shared.requestPermission()
         await MainActor.run {
             appState.runtime.updateBootStep(id: "triggers", detail: "Background tasks ready", state: .complete)
+        }
+
+        // Boot is complete. Dismiss the splash immediately — models load on-demand.
+        await MainActor.run {
+            appState.runtime.bootHeadline = "Lumen is ready"
+            appState.runtime.dismissBootSplash()
         }
     }
 
