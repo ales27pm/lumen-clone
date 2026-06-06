@@ -577,8 +577,7 @@ private struct E2ETestRunnerView: View {
         let mode = runMode
         let totalScenarioCount = mode.scenarios.count
         let config = E2ERunConfig(appState: appState)
-        let appStateForModelLoading = appState
-        let modelContextForModelLoading = modelContext
+        let modelLoadSnapshot = makeModelLoadSnapshot()
 
         isRunning = true
         exportError = nil
@@ -590,10 +589,8 @@ private struct E2ETestRunnerView: View {
 
         Task.detached(priority: .userInitiated) {
             let ensureChatLoaded: E2ETestRunner.EnsureChatLoaded = {
-                let stored = await MainActor.run {
-                    (try? modelContextForModelLoading.fetch(FetchDescriptor<StoredModel>())) ?? []
-                }
-                return await ModelLoader.ensureChatLoaded(appState: appStateForModelLoading, stored: stored, intent: .userChat)
+                await Task.yield()
+                return await ModelLoader.ensureChatLoaded(snapshot: modelLoadSnapshot, intent: .userChat)
             }
 
             let onResult: E2ETestRunner.ResultCallback = { result in
@@ -624,6 +621,13 @@ private struct E2ETestRunnerView: View {
                 runStartedAt = nil
             }
         }
+    }
+
+
+    @MainActor
+    private func makeModelLoadSnapshot() -> ModelLoadSnapshot {
+        let stored = (try? modelContext.fetch(FetchDescriptor<StoredModel>())) ?? []
+        return ModelLoadSnapshot(appState: appState, stored: stored)
     }
 
     private func exportLatestReport() {
