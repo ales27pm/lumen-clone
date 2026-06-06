@@ -41,6 +41,7 @@ final class RuntimeState {
     /// real current boot sequence.
     var bootSteps: [BootStep] = [
         BootStep(id: "container", title: "Storage", detail: "Preparing SwiftData container", state: .pending),
+        BootStep(id: "grounding", title: "Knowledge", detail: "Loading agent manifests", state: .pending),
         BootStep(id: "models", title: "Models", detail: "Checking local GGUF files", state: .pending),
         BootStep(id: "loader", title: "Runtime", detail: "Loading active models", state: .pending),
         BootStep(id: "triggers", title: "Triggers", detail: "Registering background tasks", state: .pending)

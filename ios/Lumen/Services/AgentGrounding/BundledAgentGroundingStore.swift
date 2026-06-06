@@ -25,6 +25,29 @@ public enum BundledAgentGroundingStoreError: LocalizedError, Sendable {
     }
 }
 
+/// Background actor for CPU-intensive grounding resource operations
+/// (JSON parsing of large manifest files). Keeps heavy work off @MainActor.
+public actor GroundingResourceLoader {
+    public static let shared = GroundingResourceLoader()
+    private let store = BundledAgentGroundingStore()
+
+    public func loadManifestAsync() throws -> AgentBehaviorManifest {
+        try store.loadManifest()
+    }
+
+    public func loadFleetSystemPromptsAsync() throws -> [String: BundledFleetSystemPrompt] {
+        try store.loadFleetSystemPrompts()
+    }
+
+    public func verifyRequiredResourcesAsync() throws {
+        try store.verifyRequiredResources()
+    }
+
+    public func loadManifestValidationReportAsync() throws -> Data {
+        try store.loadValidationReportData()
+    }
+}
+
 public final class BundledAgentGroundingStore: @unchecked Sendable {
     public static let shared = BundledAgentGroundingStore()
 

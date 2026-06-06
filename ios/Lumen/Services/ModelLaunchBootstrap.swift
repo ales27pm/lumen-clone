@@ -47,7 +47,10 @@ enum ModelLaunchBootstrap {
             return
         }
 
-        let missing = missingModels(from: models, context: context)
+        // Fetch all stored models once to avoid repeated O(n) fetches in the loop below.
+        let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+
+        let missing = missingModels(from: models, allStored: allStored)
         let missingBytes = missing.reduce(Int64(0)) { $0 + $1.sizeBytes }
         let requiredBytes = max(0, missingBytes + (missing.isEmpty ? 0 : storageSafetyBufferBytes))
         let availableBytes = availableStorageBytes()
@@ -73,7 +76,7 @@ enum ModelLaunchBootstrap {
         var linkedLocalFiles = 0
 
         for model in models {
-            let result = ensureModelPresent(model, expectedFleetCount: models.count, appState: appState, context: context)
+            let result = ensureModelPresent(model, expectedFleetCount: models.count, appState: appState, context: context, allStored: allStored)
             switch result {
             case .alreadyStored, .alreadyDownloading:
                 alreadyPresent += 1
@@ -121,9 +124,10 @@ enum ModelLaunchBootstrap {
         _ model: CatalogModel,
         expectedFleetCount: Int,
         appState: AppState,
-        context: ModelContext
+        context: ModelContext,
+        allStored: [StoredModel]
     ) -> EnsureResult {
-        let existingStored = storedModel(for: model, context: context)
+        let existingStored = storedModel(for: model, in: allStored)
         let localURL = ModelDownloader.shared.localURL(for: model)
 
         if FileManager.default.fileExists(atPath: localURL.path) {
@@ -161,8 +165,9 @@ enum ModelLaunchBootstrap {
 
         ModelDownloader.shared.start(model) { localURL in
             Task { @MainActor in
+                let freshStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
                 let stored: StoredModel
-                if let existing = storedModel(for: model, context: context) {
+                if let existing = storedModel(for: model, in: freshStored) {
                     activateIfNeeded(existing, appState: appState)
                     stored = existing
                 } else {
@@ -189,11 +194,11 @@ enum ModelLaunchBootstrap {
         }
     }
 
-    private static func missingModels(from models: [CatalogModel], context: ModelContext) -> [CatalogModel] {
+    private static func missingModels(from models: [CatalogModel], allStored: [StoredModel]) -> [CatalogModel] {
         models.filter { model in
             let localURL = ModelDownloader.shared.localURL(for: model)
             if FileManager.default.fileExists(atPath: localURL.path) { return false }
-            return storedModel(for: model, context: context) == nil
+            return storedModel(for: model, in: allStored) == nil
         }
     }
 
@@ -233,7 +238,11 @@ enum ModelLaunchBootstrap {
 
     private static func storedModel(for catalog: CatalogModel, context: ModelContext) -> StoredModel? {
         let models = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
-        return models.first { stored in
+        return storedModel(for: catalog, in: models)
+    }
+
+    private static func storedModel(for catalog: CatalogModel, in models: [StoredModel]) -> StoredModel? {
+        models.first { stored in
             artifactKey(repoId: stored.repoId, fileName: stored.fileName) == artifactKey(repoId: catalog.repoId, fileName: catalog.fileName)
         }
     }
