@@ -34,7 +34,7 @@ fileprivate nonisolated enum ToolSettingsRegistrySnapshot {
     static func loadDisabledToolIDs(defaults: UserDefaults, persistLegacyMigration: Bool) -> Set<String> {
         let current = currentToolIDs
         if let disabled = defaults.array(forKey: UserSettingsKeys.disabledToolIDs) as? [String] {
-            return Set(disabled.map(ToolRouteGuard.canonicalToolID)).intersection(current)
+            return Set(disabled.map(ToolRouteGuard.canonicalToolID))
         }
         if let legacyEnabled = defaults.array(forKey: UserSettingsKeys.enabledToolIDs) as? [String] {
             let enabled = Set(legacyEnabled.map(ToolRouteGuard.canonicalToolID))
@@ -61,7 +61,11 @@ final class UserSettings {
     private var disabledToolIDs: Set<String> { didSet { save() } }
     var enabledToolIDs: Set<String> {
         get { ToolSettingsRegistrySnapshot.currentToolIDs.subtracting(disabledToolIDs) }
-        set { disabledToolIDs = ToolSettingsRegistrySnapshot.currentToolIDs.subtracting(newValue) }
+        set {
+            let current = ToolSettingsRegistrySnapshot.currentToolIDs
+            let canonicalizedEnabled = Set(newValue.map(ToolRouteGuard.canonicalToolID)).intersection(current)
+            disabledToolIDs = current.subtracting(canonicalizedEnabled)
+        }
     }
 
     // Prompting / generation

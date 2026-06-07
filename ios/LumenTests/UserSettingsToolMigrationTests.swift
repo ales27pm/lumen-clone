@@ -28,6 +28,23 @@ struct UserSettingsToolMigrationTests {
         #expect(settings.enabledToolIDs.contains("weather"))
     }
 
+    @Test func enabledToolSetterCanonicalizesIncomingIDs() async throws {
+        let defaults = isolatedDefaults("setter")
+        let settings = UserSettings(defaults: defaults)
+        settings.enabledToolIDs = ["WEATHER", "memory.search"]
+        #expect(settings.enabledToolIDs.contains("weather"))
+        #expect(settings.enabledToolIDs.contains("memory.recall"))
+    }
+
+    @Test func persistedDisabledIDsSurviveRegistryChurn() async throws {
+        let defaults = isolatedDefaults("disabled-churn")
+        defaults.set(["legacy.future.tool", "WEATHER"], forKey: "disabledToolIDs")
+        let settings = UserSettings(defaults: defaults)
+        #expect(!settings.enabledToolIDs.contains("weather"))
+        let persisted = Set((defaults.array(forKey: "disabledToolIDs") as? [String]) ?? [])
+        #expect(persisted.contains("legacy.future.tool"))
+    }
+
     private func isolatedDefaults(_ suffix: String) -> UserDefaults {
         let name = "UserSettingsToolMigrationTests.\(suffix).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
