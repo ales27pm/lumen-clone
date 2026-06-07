@@ -649,17 +649,11 @@ final class SlotAgentService {
             return "Tool \(toolID) is disabled. Enable it in Tools."
         }
 
+        let result = await ToolExecutor.shared.execute(toolID, arguments: action.args, approval: .autonomous)
         if options.diagnosticsEnabled {
-            let result = await ToolExecutor.shared.execute(toolID, arguments: action.args, approval: .autonomous)
             return diagnosticsObservationOverride(toolID: toolID, action: action, result: result)
         }
-
-        return await LegacySecureToolExecutor.execute(
-            toolID: toolID,
-            arguments: action.args,
-            conversationID: effective.conversationID,
-            turnID: effective.turnID
-        )
+        return result
     }
 
     nonisolated static func diagnosticsObservationOverrideForTests(toolID: String, action: AgentAction, result: String) -> String {
@@ -764,6 +758,22 @@ final class SlotAgentService {
         if lower.contains("actor isolation") {
             return "Actor isolation means Swift protects data owned by an actor so only that actor can touch it directly. Other code has to await access, which helps prevent races."
         }
-        return "I received your request. The full local model pipeline is temporarily running in compatibility mode while the native build is hardened."
+        if isSimpleGreeting(lower) {
+            return "Hi. How can I help?"
+        }
+        return "I'm ready. Tell me what you want to do next."
+    }
+
+    private nonisolated static func isSimpleGreeting(_ lowercasedText: String) -> Bool {
+        let cleaned = lowercasedText
+            .replacingOccurrences(of: #"[^a-z0-9\s]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return false }
+        let greetings: Set<String> = [
+            "hi", "hello", "hey", "yo", "hi lumen", "hello lumen", "hey lumen",
+            "good morning", "good afternoon", "good evening"
+        ]
+        return greetings.contains(cleaned)
     }
 }
