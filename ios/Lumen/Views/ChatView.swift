@@ -390,7 +390,10 @@ struct ChatView: View {
         #endif
     }
 
-    private func serializedToolArgs(_ args: [String: String]) -> String {        args.keys.sorted().map { key in "\(key): \(args[key] ?? "")" }.joined(separator: ", ")
+    private func serializedToolArgs(_ args: [String: String]) -> String {
+        args.keys.sorted()
+            .map { key in "\(key): \(args[key] ?? "")" }
+            .joined(separator: ", ")
     }
 
     private func runPlain(turnID: UUID, requestID: UUID, text: String, memories: [MemoryContextItem], attachments: [ChatAttachment]) async {

@@ -523,6 +523,11 @@ final class SlotAgentService {
 
     private nonisolated static func shouldStopPlannedChain(after observation: String) -> Bool {
         let lower = observation.lowercased()
+        let normalized = lower
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         return lower.contains("not signed in")
             || lower.contains("missing outlook message context")
             || lower.contains("failed")
@@ -531,6 +536,12 @@ final class SlotAgentService {
             || lower.contains("couldn't")
             || lower.contains("couldn’t")
             || lower.contains("error")
+            || containsAny(normalized, [
+                "no messages", "no message", "no messages found", "no message found",
+                "no unread", "no unread messages", "no unread message", "no unread mail",
+                "no mail", "no email", "no emails", "empty inbox", "inbox is empty",
+                "mailbox is empty", "nothing to read", "nothing found"
+            ])
     }
 
     private nonisolated static func compatibilityObservation(

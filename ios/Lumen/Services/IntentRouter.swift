@@ -328,7 +328,10 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if isExplicitMemorySaveIntent(text) || isPersonalProfileRecallIntent(text) || isPersonalProfileSaveIntent(text) || matchesAny(text, ["what do you remember", "recall my saved"]) {
+        if isExplicitMemorySaveIntent(text)
+            || isPersonalProfileRecallIntent(text)
+            || (isPersonalProfileSaveIntent(text) && !isExplicitActionIntentContainingProfilePhrase(text))
+            || matchesAny(text, ["what do you remember", "recall my saved"]) {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
@@ -413,6 +416,18 @@ nonisolated enum IntentRouter {
         return value.range(of: #"(?i)\b(?:can you\s+)?(?:please\s+)?(?:remember|save|note)\s+(?:that\s+)?my name is\s+[^.!?]+"#, options: .regularExpression) != nil
             || value.range(of: #"(?i)\bmy name is\s+[^.!?]+"#, options: .regularExpression) != nil
             || value.range(of: #"(?i)\bcall me\s+[^.!?]+"#, options: .regularExpression) != nil
+    }
+
+    private static func isExplicitActionIntentContainingProfilePhrase(_ text: String) -> Bool {
+        guard isPersonalProfileSaveIntent(text) else { return false }
+        if text.hasPrefix("call me ") || text.hasPrefix("please call me ") {
+            return false
+        }
+        return matchesAny(text, [
+            "draft an email", "draft a email", "write an email", "compose email", "email to", "mail to", "send email",
+            "draft message", "write a message", "compose message", "message to", "send a text", "text message", "sms", "imessage",
+            "place a call to", "start a call to", "call to ", "phone ", "dial "
+        ])
     }
 
     private static func isExplicitMemorySaveIntent(_ text: String) -> Bool {

@@ -23,6 +23,23 @@ struct DeterministicToolPlannerTests {
         #expect(steps.last?.args["message"]?.stringValue == "latest")
     }
 
+    @Test func outlookLatestPlansReadOnlyWhenListUnavailable() async throws {
+        let routing = IntentRoutingDecision(
+            intent: .outlook,
+            allowedToolIDs: ["outlook.messages.list", "outlook.message.read"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: "Read the latest email",
+            availableToolIDs: ["outlook.message.read"]
+        )
+        #expect(steps.count == 1)
+        #expect(steps.first?.tool == "outlook.message.read")
+        #expect(steps.first?.args["message"]?.stringValue == "latest")
+    }
+
     @Test func whereAreWePlansCurrentLocation() async throws {
         let routing = IntentRoutingDecision(intent: .maps, allowedToolIDs: ["location.current"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Where are we", availableToolIDs: ["location.current"])

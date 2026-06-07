@@ -21,3 +21,25 @@ struct FinalIntentValidatorTests {
         #expect(text == "No matching memories.")
     }
 }
+
+
+extension FinalIntentValidatorTests {
+    @Test func safeObservationStillRejectsCrossIntentLeaks() async throws {
+        let routing = IntentRoutingDecision(intent: .weather, allowedToolIDs: ["weather"], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate("Created a new event. GPS signal timeout.", routing: routing, fallback: nil)
+        #expect(!text.contains("Created a new event"))
+    }
+
+    @Test func outlookObservationRejectsTokenBearingOutput() async throws {
+        let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.messages.list"], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate("Outlook token: eyJhbGciOi.fake.token", routing: routing, fallback: nil)
+        #expect(!text.contains("eyJhbGciOi"))
+        #expect(text == "Outlook tool output could not be validated.")
+    }
+
+    @Test func outlookObservationAcceptsExpiredAuthWithoutRawToken() async throws {
+        let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.messages.list"], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate("Outlook tool failed: authentication expired. Sign in again.", routing: routing, fallback: nil)
+        #expect(text.contains("authentication expired"))
+    }
+}
