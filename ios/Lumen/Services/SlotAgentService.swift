@@ -223,7 +223,7 @@ final class SlotAgentService {
         scopedTools: [ToolDefinition],
         availableToolIDs: Set<String>
     ) -> AgentAction? {
-        DeterministicToolPlanner.plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs)
+        DeterministicToolPlanner.planSteps(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs).first
     }
 
     nonisolated static func deterministicDirectFinalIfSafe(
@@ -462,48 +462,75 @@ final class SlotAgentService {
             return .init(text: text, steps: [])
         }
 
-        guard !availableToolIDs.isEmpty,
-              let action = deterministicPrimaryAction(
-                routing: routing,
-                prompt: original.userMessage,
-                scopedTools: effective.availableTools,
-                availableToolIDs: availableToolIDs
-              ) else {
+        let plannedActions = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: original.userMessage,
+            availableToolIDs: availableToolIDs
+        )
+        guard !availableToolIDs.isEmpty, !plannedActions.isEmpty else {
             let text = FinalIntentValidator.validate(IntentRouter.unavailableMessage(for: routing), routing: routing, fallback: nil)
             return .init(text: text, steps: [])
         }
 
-        let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
-        if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
-            let approval = approvalBoundaryFinal(for: canonicalActionTool, action: action, routing: routing, prompt: original.userMessage)
-            let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
-            let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
-            return .init(text: text, steps: [step])
+        var steps: [AgentStep] = []
+        var lastObservation = ""
+        var lastToolID = ""
+
+        for (index, action) in plannedActions.enumerated() {
+            let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
+            if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
+                let approval = approvalBoundaryFinal(for: canonicalActionTool, action: action, routing: routing, prompt: original.userMessage)
+                let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+                let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
+                return .init(text: text, steps: steps + [step])
+            }
+
+            let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+            steps.append(actionStep)
+            let result = await compatibilityObservation(
+                toolID: canonicalActionTool,
+                action: action,
+                effective: effective,
+                options: options,
+                availableToolIDs: availableToolIDs
+            )
+            steps.append(AgentStep(kind: .observation, content: result, toolID: canonicalActionTool))
+            lastObservation = result
+            lastToolID = canonicalActionTool
+
+            if index < plannedActions.count - 1, shouldStopPlannedChain(after: result) {
+                let text = FinalIntentValidator.validate(result, routing: routing, fallback: IntentRouter.unavailableMessage(for: routing))
+                return .init(text: text, steps: steps)
+            }
         }
 
-        let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
-        let result = await compatibilityObservation(
-            toolID: canonicalActionTool,
-            action: action,
-            effective: effective,
-            options: options,
-            availableToolIDs: availableToolIDs
-        )
-        let observationStep = AgentStep(kind: .observation, content: result, toolID: canonicalActionTool)
         let candidate = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: routing.intent,
-            toolID: canonicalActionTool,
-            observation: result,
+            toolID: lastToolID,
+            observation: lastObservation,
             originalPrompt: original.userMessage
-        ) ?? result
+        ) ?? lastObservation
         let fallback = IntentRouter.unavailableMessage(for: routing)
         let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: fallback)
-        return .init(text: text, steps: [actionStep, observationStep])
+        return .init(text: text, steps: steps)
     }
 
     nonisolated static func deterministicCompatibilityResponseForTests(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> (text: String, steps: [AgentStep]) {
         let response = await deterministicCompatibilityResponse(original: original, effective: effective, options: options)
         return (response.text, response.steps)
+    }
+
+
+    private nonisolated static func shouldStopPlannedChain(after observation: String) -> Bool {
+        let lower = observation.lowercased()
+        return lower.contains("not signed in")
+            || lower.contains("missing outlook message context")
+            || lower.contains("failed")
+            || lower.contains("unavailable")
+            || lower.contains("denied")
+            || lower.contains("couldn't")
+            || lower.contains("couldn’t")
+            || lower.contains("error")
     }
 
     private nonisolated static func compatibilityObservation(

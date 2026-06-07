@@ -343,6 +343,7 @@ nonisolated enum PersistentRuntimeDiagnosticSignalKind: String, Codable, Sendabl
     case uiUpdate
     case sceneTransition
     case metricKitPersistFailure
+    case finalIntentCandidateReplaced
 }
 
 nonisolated struct PersistentRuntimeDiagnosticSignal: Sendable {
