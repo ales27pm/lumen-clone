@@ -85,3 +85,26 @@ extension FinalIntentValidatorTests {
         #expect(!text.contains("abcdefghijklmnop="))
     }
 }
+
+
+extension FinalIntentValidatorTests {
+    @Test func bearerTokenFollowedByColonIsRejected() async throws {
+        let routing = IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate(
+            "Authorization: Bearer abcdefghijklmnop=: rotate it now",
+            routing: routing,
+            fallback: nil
+        )
+        #expect(!text.contains("abcdefghijklmnop="))
+    }
+
+    @Test func jsonAccessTokenFollowedByColonDelimiterIsRejected() async throws {
+        let routing = IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate(
+            #"{"access_token":"abcd1234efgh5678": "unexpected delimiter"}"#,
+            routing: routing,
+            fallback: nil
+        )
+        #expect(!text.contains("abcd1234efgh5678"))
+    }
+}
