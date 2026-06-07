@@ -173,3 +173,17 @@ extension IntentRouterTests {
         #expect(decision.allowedToolIDs.contains("memory.save"))
     }
 }
+
+
+extension IntentRouterTests {
+    @Test func profilePhrasesInsideExplicitEmailDraftDoNotPreemptDraftIntent() async throws {
+        let decision = IntentRouter.classify("Draft an email to bob@example.com saying my name is Alexis")
+        #expect(decision.intent == .emailDraft)
+    }
+
+    @Test func directCallMeProfilePromptStillRoutesToMemory() async throws {
+        let decision = IntentRouter.classify("Call me Alexis")
+        #expect(decision.intent == .memory)
+        #expect(decision.allowedToolIDs.contains("memory.save"))
+    }
+}

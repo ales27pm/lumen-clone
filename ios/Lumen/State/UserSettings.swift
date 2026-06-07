@@ -26,6 +26,29 @@ fileprivate nonisolated enum UserSettingsKeys {
     static let confirmFleetDownloads = "confirmFleetDownloads"
 }
 
+fileprivate nonisolated enum ToolSettingsRegistrySnapshot {
+    static var currentToolIDs: Set<String> {
+        Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
+    }
+
+    static func loadDisabledToolIDs(defaults: UserDefaults, persistLegacyMigration: Bool) -> Set<String> {
+        let current = currentToolIDs
+        if let disabled = defaults.array(forKey: UserSettingsKeys.disabledToolIDs) as? [String] {
+            return Set(disabled.map(ToolRouteGuard.canonicalToolID)).intersection(current)
+        }
+        if let legacyEnabled = defaults.array(forKey: UserSettingsKeys.enabledToolIDs) as? [String] {
+            let enabled = Set(legacyEnabled.map(ToolRouteGuard.canonicalToolID))
+            let disabled = current.subtracting(enabled)
+            if persistLegacyMigration {
+                defaults.set(Array(disabled), forKey: UserSettingsKeys.disabledToolIDs)
+            }
+            return disabled
+        }
+        return []
+    }
+}
+
+
 /// Persistent user settings. Values are auto-persisted to UserDefaults whenever
 /// they change. Initialization reads from UserDefaults; no didSet runs during init.
 @Observable
@@ -37,8 +60,8 @@ final class UserSettings {
     // Tools. Persisted as opt-out disabled IDs; enabled IDs are derived for call-site compatibility.
     private var disabledToolIDs: Set<String> { didSet { save() } }
     var enabledToolIDs: Set<String> {
-        get { Self.currentToolIDs.subtracting(disabledToolIDs) }
-        set { disabledToolIDs = Self.currentToolIDs.subtracting(newValue) }
+        get { ToolSettingsRegistrySnapshot.currentToolIDs.subtracting(disabledToolIDs) }
+        set { disabledToolIDs = ToolSettingsRegistrySnapshot.currentToolIDs.subtracting(newValue) }
     }
 
     // Prompting / generation
@@ -76,7 +99,7 @@ final class UserSettings {
         activeChatModelID = defaults.string(forKey: UserSettingsKeys.activeChatModelID)
         activeEmbeddingModelID = defaults.string(forKey: UserSettingsKeys.activeEmbeddingModelID)
 
-        disabledToolIDs = Self.loadDisabledToolIDs(defaults: defaults)
+        disabledToolIDs = ToolSettingsRegistrySnapshot.loadDisabledToolIDs(defaults: defaults, persistLegacyMigration: true)
 
         systemPrompt = defaults.string(forKey: UserSettingsKeys.systemPrompt) ?? Presets.general.prompt
         temperature = defaults.object(forKey: UserSettingsKeys.temperature) as? Double ?? 0.7
@@ -144,26 +167,8 @@ final class UserSettings {
         }
     }
 
-
-    private static var currentToolIDs: Set<String> {
-        Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
-    }
-
-    private static func loadDisabledToolIDs(defaults: UserDefaults) -> Set<String> {
-        let current = currentToolIDs
-        if let disabled = defaults.array(forKey: UserSettingsKeys.disabledToolIDs) as? [String] {
-            return Set(disabled.map(ToolRouteGuard.canonicalToolID)).intersection(current)
-        }
-        if let legacyEnabled = defaults.array(forKey: UserSettingsKeys.enabledToolIDs) as? [String] {
-            let enabled = Set(legacyEnabled.map(ToolRouteGuard.canonicalToolID))
-            let disabled = current.subtracting(enabled)
-            defaults.set(Array(disabled), forKey: UserSettingsKeys.disabledToolIDs)
-            return disabled
-        }
-        return []
-    }
-
-    func applyPreset(_ preset: Preset) {        systemPrompt = preset.prompt
+    func applyPreset(_ preset: Preset) {
+        systemPrompt = preset.prompt
         selectedPresetID = preset.id
         temperature = preset.temperature
     }
@@ -237,15 +242,8 @@ nonisolated struct SettingsSnapshot: Sendable {
     /// in-memory `UserSettings` instance. Used by background tasks that may
     /// run before or without the main app scene.
     static func loadFromDisk(defaults: UserDefaults = .standard) -> SettingsSnapshot {
-        let current = Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
-        let disabled: Set<String>
-        if let savedDisabled = defaults.array(forKey: UserSettingsKeys.disabledToolIDs) as? [String] {
-            disabled = Set(savedDisabled.map(ToolRouteGuard.canonicalToolID)).intersection(current)
-        } else if let legacyEnabled = defaults.array(forKey: UserSettingsKeys.enabledToolIDs) as? [String] {
-            disabled = current.subtracting(Set(legacyEnabled.map(ToolRouteGuard.canonicalToolID)))
-        } else {
-            disabled = []
-        }
+        let current = ToolSettingsRegistrySnapshot.currentToolIDs
+        let disabled = ToolSettingsRegistrySnapshot.loadDisabledToolIDs(defaults: defaults, persistLegacyMigration: false)
         let enabled = current.subtracting(disabled)
         return SettingsSnapshot(
             activeChatModelID: defaults.string(forKey: UserSettingsKeys.activeChatModelID),

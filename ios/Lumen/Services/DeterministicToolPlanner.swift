@@ -31,14 +31,17 @@ nonisolated enum DeterministicToolPlanner {
 
     static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
         let text = normalized(prompt)
-        if routing.intent == .outlook,
-           isLatestOutlookReadIntent(text),
-           availableToolIDs.contains("outlook.messages.list"),
-           availableToolIDs.contains("outlook.message.read") {
-            return [
-                AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
-                AgentAction(tool: "outlook.message.read", args: ["message": .string("latest")])
-            ]
+        if routing.intent == .outlook, isLatestOutlookReadIntent(text) {
+            if availableToolIDs.contains("outlook.messages.list"),
+               availableToolIDs.contains("outlook.message.read") {
+                return [
+                    AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
+                    AgentAction(tool: "outlook.message.read", args: ["message": .string("latest")])
+                ]
+            }
+            if availableToolIDs.contains("outlook.message.read") {
+                return [AgentAction(tool: "outlook.message.read", args: ["message": .string("latest")])]
+            }
         }
         if let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
             return [single]
@@ -173,6 +176,7 @@ nonisolated enum DeterministicToolPlanner {
         }
         if isLatestOutlookReadIntent(text) {
             return action("outlook.messages.list", ["limit": .string("1")])
+                ?? action("outlook.message.read", ["message": .string("latest")])
         }
         if containsAny(text, ["reply all", "reply-all", "respond to all"]) {
             return action("outlook.message.reply_all", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
@@ -258,10 +262,7 @@ nonisolated enum DeterministicToolPlanner {
 
 
     private static func isPersonalProfileRecallIntent(_ text: String) -> Bool {
-        containsAny(text, [
-            "what is my name", "what's my name", "who am i", "do you know my name",
-            "what did i say my name was", "what name did i give you"
-        ])
+        IntentRouter.isPersonalProfileRecallIntent(text)
     }
 
     private static func isLatestOutlookReadIntent(_ text: String) -> Bool {
