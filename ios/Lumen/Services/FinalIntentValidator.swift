@@ -5,32 +5,31 @@ nonisolated enum FinalIntentValidator {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = clean.lowercased()
 
-        if isValid(clean, lower: lower, for: routing) {
+        if isValid(clean, lower: lower, for: routing) || isSafeToolObservation(clean, lower: lower, for: routing) {
             return clean
         }
 
         if let fallback {
             let fallbackClean = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
             let fallbackLower = fallbackClean.lowercased()
-            if isValid(fallbackClean, lower: fallbackLower, for: routing) {
+            if isValid(fallbackClean, lower: fallbackLower, for: routing) || isSafeToolObservation(fallbackClean, lower: fallbackLower, for: routing) {
+                emitReplacementDiagnostic(intent: routing.intent, candidateLength: clean.count, replacementSource: "fallback", reason: replacementReason(for: clean, lower: lower, routing: routing))
                 return fallbackClean
             }
         }
 
-        return safeMessage(for: routing)
+        let safe = safeMessage(for: routing)
+        emitReplacementDiagnostic(intent: routing.intent, candidateLength: clean.count, replacementSource: "safeMessage", reason: replacementReason(for: clean, lower: lower, routing: routing))
+        return safe
     }
 
     private static func isValid(_ text: String, lower: String, for routing: IntentRoutingDecision) -> Bool {
         guard !text.isEmpty else { return false }
-        guard !AssistantOutputSanitizer.isLeakedToolJSONArtifact(text) else { return false }
-        guard !looksLikeCalendarLeak(lower, unless: routing.intent == .calendar) else { return false }
-        guard !looksLikeWeatherLeak(lower, unless: routing.intent == .weather) else { return false }
-        guard !looksLikeEmailLeak(lower, unless: routing.intent == .emailDraft || routing.intent == .outlook) else { return false }
-        guard !looksLikeWebSearchLeak(lower, unless: routing.intent == .webSearch) else { return false }
+        guard passesLeakFilters(text: text, lower: lower, routing: routing) else { return false }
 
         switch routing.intent {
         case .weather:
-            return containsAny(lower, ["weather", "temperature", "humidity", "wind", "feels like", "°c", "rain", "snow", "cloud"])
+            return containsAny(lower, ["weather", "temperature", "humidity", "wind", "feels like", "°c", "rain", "snow", "cloud", "gps", "location access", "network", "timeout", "unreachable", "open-meteo", "service unavailable"])
         case .webSearch:
             return containsAny(lower, ["web", "search", "result", "http", "source", "found", "not available", "no direct answer", "try a different phrasing"])
         case .emailDraft:
@@ -59,7 +58,7 @@ nonisolated enum FinalIntentValidator {
         case .files:
             return containsAny(lower, ["file", "document", "read", "local", "unavailable", "couldn’t", "couldn't"])
         case .memory:
-            return containsAny(lower, ["memory", "remember", "recall", "saved", "unavailable", "couldn’t", "couldn't"])
+            return containsAny(lower, ["memory", "remember", "recall", "saved", "user's name", "no matching memories", "unavailable", "couldn’t", "couldn't"])
         case .rag:
             let hasRagTopic = containsAny(lower, ["search", "index", "indexed", "files", "photos", "local"])
             let hasGrounding = containsAny(lower, ["[1]", "[2]", "snippet", "source", "retrieved", "file", "pdf", "note", "module", "modules"])
@@ -73,7 +72,7 @@ nonisolated enum FinalIntentValidator {
             return containsAny(lower, [
                 "outlook", "hotmail", "microsoft", "graph", "email", "mail", "message", "inbox", "subject:", "from:", "received:",
                 "unread", "attachment", "draft", "sent", "reply", "forward", "archive", "deleted", "moved", "marked", "folder",
-                "requires explicit user approval", "not signed in", "sign in", "unavailable", "couldn’t", "couldn't", "failed"
+                "requires explicit user approval", "not signed in", "sign in", "missing outlook message context", "unavailable", "couldn’t", "couldn't", "failed"
             ])
         case .note:
             return !looksLikeCalendarLeak(lower, unless: false) && !looksLikeWeatherLeak(lower, unless: false)
@@ -85,7 +84,7 @@ nonisolated enum FinalIntentValidator {
     private static func safeMessage(for routing: IntentRoutingDecision) -> String {
         switch routing.intent {
         case .weather:
-            return "I couldn’t safely complete the current weather request. Please enable location/weather access or tell me the city."
+            return routing.clarificationPrompt ?? "Weather tool output could not be validated. Try again or provide a city."
         case .webSearch:
             return "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly."
         case .emailDraft:
@@ -113,7 +112,7 @@ nonisolated enum FinalIntentValidator {
         case .files:
             return "I couldn’t safely complete the file request."
         case .memory:
-            return "I couldn’t safely complete the memory request."
+            return routing.clarificationPrompt ?? "Memory tool output could not be validated."
         case .rag:
             return "I couldn’t safely complete the local search/indexing request."
         case .trigger:
@@ -121,12 +120,88 @@ nonisolated enum FinalIntentValidator {
         case .alarm:
             return "I couldn’t safely complete the alarm/timer request."
         case .outlook:
-            return routing.clarificationPrompt ?? "I couldn’t safely complete the Outlook/Hotmail mail request. Make sure Outlook is signed in, then try again."
+            return routing.clarificationPrompt ?? "Outlook tool output could not be validated."
         case .note:
             return "I couldn’t safely complete the note request."
         case .chat, .unknown:
             return "I hit a routing error. Please try again."
         }
+    }
+
+
+    private static func isSafeToolObservation(_ text: String, lower: String, for routing: IntentRoutingDecision) -> Bool {
+        guard !text.isEmpty else { return false }
+        guard passesLeakFilters(text: text, lower: lower, routing: routing) else { return false }
+        switch routing.intent {
+        case .weather:
+            return containsAny(lower, ["gps signal timeout", "location access was denied", "location permission", "network unreachable", "weather service unavailable", "open-meteo", "geocod", "couldn't get your current location", "couldn’t get your current location"])
+        case .memory:
+            return containsAny(lower, ["saved:", "no matching memories", "memory unavailable", "user's name", "remembered"])
+        case .outlook:
+            return containsAny(lower, [
+                "outlook is not signed in", "missing outlook message context", "outlook tool failed",
+                "authentication expired", "authorization expired", "oauth expired", "oauth sign in",
+                "not connected", "no messages"
+            ])
+        default:
+            return false
+        }
+    }
+
+    private static func passesLeakFilters(text: String, lower: String, routing: IntentRoutingDecision) -> Bool {
+        guard !AssistantOutputSanitizer.isLeakedToolJSONArtifact(text) else { return false }
+        guard !looksLikeCredentialLeak(lower) else { return false }
+        guard !looksLikeCalendarLeak(lower, unless: routing.intent == .calendar) else { return false }
+        guard !looksLikeWeatherLeak(lower, unless: routing.intent == .weather) else { return false }
+        guard !looksLikeEmailLeak(lower, unless: routing.intent == .emailDraft || routing.intent == .outlook) else { return false }
+        guard !looksLikeWebSearchLeak(lower, unless: routing.intent == .webSearch) else { return false }
+        return true
+    }
+
+    private static func replacementReason(for text: String, lower: String, routing: IntentRoutingDecision) -> String {
+        if text.isEmpty { return "empty-candidate" }
+        if AssistantOutputSanitizer.isLeakedToolJSONArtifact(text) { return "tool-json-leak" }
+        if looksLikeCredentialLeak(lower) { return "credential-leak" }
+        if looksLikeCalendarLeak(lower, unless: routing.intent == .calendar) { return "calendar-leak" }
+        if looksLikeWeatherLeak(lower, unless: routing.intent == .weather) { return "weather-leak" }
+        if looksLikeEmailLeak(lower, unless: routing.intent == .emailDraft || routing.intent == .outlook) { return "email-leak" }
+        if looksLikeWebSearchLeak(lower, unless: routing.intent == .webSearch) { return "web-leak" }
+        return "intent-validation-failed"
+    }
+
+    private static func emitReplacementDiagnostic(intent: UserIntent, candidateLength: Int, replacementSource: String, reason: String) {
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .finalIntentCandidateReplaced, values: [
+            "intent": intent.rawValue,
+            "candidateLength": String(candidateLength),
+            "replacementSource": replacementSource,
+            "reason": reason
+        ]))
+    }
+
+    private static func looksLikeCredentialLeak(_ lower: String) -> Bool {
+        let secretTerminator = #"(?![a-z0-9._~+/=-])"#
+        if lower.range(
+            of: ##"(?i)(?:^|[\s{"',])"?(?:access_token|refresh_token|id_token|client_secret|api_key)"?\s*[:=]\s*"?[a-z0-9._~+/=-]{8,}"?"## + secretTerminator,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+        if lower.range(
+            of: #"(?i)\bauthorization\s*:\s*bearer\s+[a-z0-9._~+/=-]{16,}"# + secretTerminator,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+        if lower.range(
+            of: #"(?i)\bbearer\s+[a-z0-9._~+/=-]{16,}"# + secretTerminator,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+        return lower.range(
+            of: #"(?i)\beyj[a-z0-9_-]{8,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}"# + secretTerminator,
+            options: .regularExpression
+        ) != nil
     }
 
     private static func looksLikeCalendarLeak(_ lower: String, unless allowed: Bool) -> Bool {

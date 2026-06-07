@@ -330,6 +330,7 @@ struct ChatView: View {
 
         let persistedFinal = FinalOutputSanitizer.sanitizeUserVisibleText(finalText).text
         let assistantMsg = ChatMessage(role: .assistant, content: persistedFinal, agentSteps: sanitizedSteps, visibleContent: persistedFinal)
+        #if DEBUG
         if appState.developerTraceModeEnabled {
             let trace = makeAgentDeveloperTrace(
                 systemPrompt: baseSystemPrompt,
@@ -343,6 +344,7 @@ struct ChatView: View {
             assistantMsg.developerTraceID = trace.id
             assistantMsg.developerTraceJSON = DeveloperTraceCodec.encode(trace)
         }
+        #endif
         conversation.messages.append(assistantMsg)
         if let approvalStep = sanitizedSteps.first(where: { $0.kind == .approvalBoundary }),
            let toolID = approvalStep.toolID {
@@ -371,8 +373,27 @@ struct ChatView: View {
         appState.isGenerating = false
     }
 
+
+    private var debugDeveloperTraceEnabled: Bool {
+        #if DEBUG
+        return appState.developerTraceModeEnabled
+        #else
+        return false
+        #endif
+    }
+
+    private var debugDeveloperReasoningCaptureEnabled: Bool {
+        #if DEBUG
+        return appState.developerReasoningCaptureEnabled
+        #else
+        return false
+        #endif
+    }
+
     private func serializedToolArgs(_ args: [String: String]) -> String {
-        args.keys.sorted().map { key in "\(key): \(args[key] ?? "")" }.joined(separator: ", ")
+        args.keys.sorted()
+            .map { key in "\(key): \(args[key] ?? "")" }
+            .joined(separator: ", ")
     }
 
     private func runPlain(turnID: UUID, requestID: UUID, text: String, memories: [MemoryContextItem], attachments: [ChatAttachment]) async {
@@ -389,8 +410,8 @@ struct ChatView: View {
             modelName: conversation.modelName ?? "default",
             relevantMemories: memories,
             attachments: attachments,
-            developerTraceModeEnabled: appState.developerTraceModeEnabled,
-            reasoningCaptureEnabled: appState.developerReasoningCaptureEnabled
+            developerTraceModeEnabled: debugDeveloperTraceEnabled,
+            reasoningCaptureEnabled: debugDeveloperReasoningCaptureEnabled
         )
 
         var accumulated = ""
@@ -421,9 +442,10 @@ struct ChatView: View {
             role: .assistant,
             content: finalized,
             visibleContent: finalized,
-            reasoningTrace: appState.developerTraceModeEnabled ? completedPayload?.reasoningText : nil,
-            rawModelOutput: appState.developerTraceModeEnabled ? completedPayload?.rawModelOutput : nil
+            reasoningTrace: debugDeveloperTraceEnabled ? completedPayload?.reasoningText : nil,
+            rawModelOutput: debugDeveloperTraceEnabled ? completedPayload?.rawModelOutput : nil
         )
+        #if DEBUG
         if appState.developerTraceModeEnabled {
             let trace = makeDeveloperTrace(
                 request: request,
@@ -438,6 +460,7 @@ struct ChatView: View {
             assistantMsg.developerTraceID = trace.id
             assistantMsg.developerTraceJSON = DeveloperTraceCodec.encode(trace)
         }
+        #endif
         conversation.messages.append(assistantMsg)
         streamingText = ""
         activeTurnID = nil
