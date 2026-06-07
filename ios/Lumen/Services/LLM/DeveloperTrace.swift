@@ -225,17 +225,25 @@ nonisolated struct TraceTokenUsage: Codable, Sendable, Equatable, Hashable {
 
 nonisolated enum DeveloperTraceCodec {
     static func encode(_ trace: DeveloperTrace) -> String? {
+        #if DEBUG
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(trace) else { return nil }
         return String(data: data, encoding: .utf8)
+        #else
+        return nil
+        #endif
     }
 
     static func decode(_ string: String?) -> DeveloperTrace? {
+        #if DEBUG
         guard let string, let data = string.data(using: .utf8) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(DeveloperTrace.self, from: data)
+        #else
+        return nil
+        #endif
     }
 }
 

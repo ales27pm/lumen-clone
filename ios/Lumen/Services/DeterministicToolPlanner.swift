@@ -29,6 +29,26 @@ nonisolated enum DeterministicToolPlanner {
         }
     }
 
+    static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
+        let text = normalized(prompt)
+        if routing.intent == .outlook, isLatestOutlookReadIntent(text) {
+            if availableToolIDs.contains("outlook.messages.list"),
+               availableToolIDs.contains("outlook.message.read") {
+                return [
+                    AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
+                    AgentAction(tool: "outlook.message.read", args: ["message": .string("latest")])
+                ]
+            }
+            if availableToolIDs.contains("outlook.message.read") {
+                return [AgentAction(tool: "outlook.message.read", args: ["message": .string("latest")])]
+            }
+        }
+        if let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
+            return [single]
+        }
+        return []
+    }
+
     static func plan(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         let text = normalized(prompt)
 
@@ -98,8 +118,14 @@ nonisolated enum DeterministicToolPlanner {
             if let name = extractFileName(from: prompt) { return action("files.read", ["name": .string(name)]) }
             return nil
         case .memory:
+            if isPersonalProfileRecallIntent(text) { return action("memory.recall", ["query": .string("user name")]) }
             if containsAny(text, ["what do you remember", "recall", "remember about"]) { return action("memory.recall", ["query": .string(extractContactQuery(from: prompt) ?? "")]) }
-            if containsAny(text, ["remember", "save"]) { return action("memory.save", ["content": .string(prompt)]) }
+            if containsAny(text, ["remember", "save", "my name is", "call me"]) {
+                return action("memory.save", [
+                    "content": .string(extractMemoryFact(from: prompt)),
+                    "kind": .string("fact")
+                ])
+            }
             return nil
         case .rag:
             if containsAny(text, ["index photos", "reindex photos", "photo retrieval index"]) { return action("rag.index_photos") }
@@ -148,8 +174,9 @@ nonisolated enum DeterministicToolPlanner {
             if text.contains("unread") { args["unreadOnly"] = .string("true") }
             return action("outlook.messages.list", args)
         }
-        if containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email"]) {
-            return action("outlook.message.read", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")])
+        if isLatestOutlookReadIntent(text) {
+            return action("outlook.messages.list", ["limit": .string("1")])
+                ?? action("outlook.message.read", ["message": .string("latest")])
         }
         if containsAny(text, ["reply all", "reply-all", "respond to all"]) {
             return action("outlook.message.reply_all", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
@@ -231,6 +258,49 @@ nonisolated enum DeterministicToolPlanner {
         if lower.contains("reminder") { return "Reminder summary" }
         if lower.contains("digest") { return "Scheduled digest" }
         return "Scheduled agent run"
+    }
+
+
+    private static func isPersonalProfileRecallIntent(_ text: String) -> Bool {
+        IntentRouter.isPersonalProfileRecallIntent(text)
+    }
+
+    private static func isLatestOutlookReadIntent(_ text: String) -> Bool {
+        containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"])
+    }
+
+    static func extractMemoryFact(from prompt: String) -> String {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let name = firstCapture(in: trimmed, pattern: #"(?i)\b(?:can you\s+)?(?:please\s+)?(?:remember|save|note)\s+(?:that\s+)?my name is\s+([^.!?\n]+)"#)
+            ?? firstCapture(in: trimmed, pattern: #"(?i)\bmy name is\s+([^.!?\n]+)"#) {
+            return "User's name is \(cleanCapturedValue(name))"
+        }
+        if let name = firstCapture(in: trimmed, pattern: #"(?i)\bcall me\s+([^.!?\n]+)"#) {
+            return "User prefers to be called \(cleanCapturedValue(name))"
+        }
+        if let fact = firstCapture(in: trimmed, pattern: #"(?i)\bremember that\s+(.+)"#)
+            ?? firstCapture(in: trimmed, pattern: #"(?i)\bsave this fact:?\s+(.+)"#)
+            ?? firstCapture(in: trimmed, pattern: #"(?i)\bkeep this in mind:?\s+(.+)"#) {
+            return normalizeFactSentence(fact)
+        }
+        return normalizeFactSentence(trimmed)
+    }
+
+    private static func firstCapture(in text: String, pattern: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)), match.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: match.range(at: 1))
+    }
+
+    private static func cleanCapturedValue(_ value: String) -> String {
+        value.trimmingCharacters(in: CharacterSet(charactersIn: " \t\n\r\"'.,!?"))
+    }
+
+    private static func normalizeFactSentence(_ value: String) -> String {
+        let cleaned = cleanCapturedValue(value)
+        guard !cleaned.isEmpty else { return value.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return cleaned
     }
 
     private static func extractTriggerPrompt(from prompt: String) -> String {

@@ -5,6 +5,7 @@ fileprivate nonisolated enum UserSettingsKeys {
     static let activeChatModelID = "activeChatModelID"
     static let activeEmbeddingModelID = "activeEmbeddingModelID"
     static let enabledToolIDs = "enabledToolIDs"
+    static let disabledToolIDs = "disabledToolIDs"
     static let systemPrompt = "systemPrompt"
     static let temperature = "temperature"
     static let topP = "topP"
@@ -25,6 +26,29 @@ fileprivate nonisolated enum UserSettingsKeys {
     static let confirmFleetDownloads = "confirmFleetDownloads"
 }
 
+fileprivate nonisolated enum ToolSettingsRegistrySnapshot {
+    static var currentToolIDs: Set<String> {
+        Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
+    }
+
+    static func loadDisabledToolIDs(defaults: UserDefaults, persistLegacyMigration: Bool) -> Set<String> {
+        let current = currentToolIDs
+        if let disabled = defaults.array(forKey: UserSettingsKeys.disabledToolIDs) as? [String] {
+            return Set(disabled.map(ToolRouteGuard.canonicalToolID))
+        }
+        if let legacyEnabled = defaults.array(forKey: UserSettingsKeys.enabledToolIDs) as? [String] {
+            let enabled = Set(legacyEnabled.map(ToolRouteGuard.canonicalToolID))
+            let disabled = current.subtracting(enabled)
+            if persistLegacyMigration {
+                defaults.set(Array(disabled), forKey: UserSettingsKeys.disabledToolIDs)
+            }
+            return disabled
+        }
+        return []
+    }
+}
+
+
 /// Persistent user settings. Values are auto-persisted to UserDefaults whenever
 /// they change. Initialization reads from UserDefaults; no didSet runs during init.
 @Observable
@@ -33,8 +57,16 @@ final class UserSettings {
     var activeChatModelID: String? { didSet { save() } }
     var activeEmbeddingModelID: String? { didSet { save() } }
 
-    // Tools
-    var enabledToolIDs: Set<String> { didSet { save() } }
+    // Tools. Persisted as opt-out disabled IDs; enabled IDs are derived for call-site compatibility.
+    private var disabledToolIDs: Set<String> { didSet { save() } }
+    var enabledToolIDs: Set<String> {
+        get { ToolSettingsRegistrySnapshot.currentToolIDs.subtracting(disabledToolIDs) }
+        set {
+            let current = ToolSettingsRegistrySnapshot.currentToolIDs
+            let canonicalizedEnabled = Set(newValue.map(ToolRouteGuard.canonicalToolID)).intersection(current)
+            disabledToolIDs = current.subtracting(canonicalizedEnabled)
+        }
+    }
 
     // Prompting / generation
     var systemPrompt: String { didSet { save() } }
@@ -71,11 +103,7 @@ final class UserSettings {
         activeChatModelID = defaults.string(forKey: UserSettingsKeys.activeChatModelID)
         activeEmbeddingModelID = defaults.string(forKey: UserSettingsKeys.activeEmbeddingModelID)
 
-        if let saved = defaults.array(forKey: UserSettingsKeys.enabledToolIDs) as? [String] {
-            enabledToolIDs = Set(saved)
-        } else {
-            enabledToolIDs = Set(ToolRegistry.all.map(\.id))
-        }
+        disabledToolIDs = ToolSettingsRegistrySnapshot.loadDisabledToolIDs(defaults: defaults, persistLegacyMigration: true)
 
         systemPrompt = defaults.string(forKey: UserSettingsKeys.systemPrompt) ?? Presets.general.prompt
         temperature = defaults.object(forKey: UserSettingsKeys.temperature) as? Double ?? 0.7
@@ -93,8 +121,13 @@ final class UserSettings {
         maxAgentSteps = defaults.object(forKey: UserSettingsKeys.maxAgentSteps) as? Int ?? 6
         showThinkingByDefault = defaults.object(forKey: UserSettingsKeys.showThinkingByDefault) as? Bool ?? false
         agentModeEnabled = defaults.object(forKey: UserSettingsKeys.agentModeEnabled) as? Bool ?? true
+        #if DEBUG
         developerTraceModeEnabled = defaults.object(forKey: UserSettingsKeys.developerTraceModeEnabled) as? Bool ?? false
         developerReasoningCaptureEnabled = defaults.object(forKey: UserSettingsKeys.developerReasoningCaptureEnabled) as? Bool ?? false
+        #else
+        developerTraceModeEnabled = false
+        developerReasoningCaptureEnabled = false
+        #endif
         autoDownloadFleetModels = defaults.object(forKey: UserSettingsKeys.autoDownloadFleetModels) as? Bool ?? true
         confirmFleetDownloads = defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? false
     }
@@ -102,6 +135,7 @@ final class UserSettings {
     private func save() {
         defaults.set(activeChatModelID, forKey: UserSettingsKeys.activeChatModelID)
         defaults.set(activeEmbeddingModelID, forKey: UserSettingsKeys.activeEmbeddingModelID)
+        defaults.set(Array(disabledToolIDs), forKey: UserSettingsKeys.disabledToolIDs)
         defaults.set(Array(enabledToolIDs), forKey: UserSettingsKeys.enabledToolIDs)
         defaults.set(systemPrompt, forKey: UserSettingsKeys.systemPrompt)
         defaults.set(temperature, forKey: UserSettingsKeys.temperature)
@@ -117,17 +151,23 @@ final class UserSettings {
         defaults.set(maxAgentSteps, forKey: UserSettingsKeys.maxAgentSteps)
         defaults.set(showThinkingByDefault, forKey: UserSettingsKeys.showThinkingByDefault)
         defaults.set(agentModeEnabled, forKey: UserSettingsKeys.agentModeEnabled)
+        #if DEBUG
         defaults.set(developerTraceModeEnabled, forKey: UserSettingsKeys.developerTraceModeEnabled)
         defaults.set(developerReasoningCaptureEnabled, forKey: UserSettingsKeys.developerReasoningCaptureEnabled)
+        #else
+        defaults.set(false, forKey: UserSettingsKeys.developerTraceModeEnabled)
+        defaults.set(false, forKey: UserSettingsKeys.developerReasoningCaptureEnabled)
+        #endif
         defaults.set(autoDownloadFleetModels, forKey: UserSettingsKeys.autoDownloadFleetModels)
         defaults.set(confirmFleetDownloads, forKey: UserSettingsKeys.confirmFleetDownloads)
     }
 
     func toggleTool(_ id: String) {
-        if enabledToolIDs.contains(id) {
-            enabledToolIDs.remove(id)
+        let canonical = ToolRouteGuard.canonicalToolID(id)
+        if disabledToolIDs.contains(canonical) {
+            disabledToolIDs.remove(canonical)
         } else {
-            enabledToolIDs.insert(id)
+            disabledToolIDs.insert(canonical)
         }
     }
 
@@ -186,16 +226,29 @@ nonisolated struct SettingsSnapshot: Sendable {
     let autoDownloadFleetModels: Bool
     let confirmFleetDownloads: Bool
 
+    private static func debugDeveloperTraceEnabled(defaults: UserDefaults) -> Bool {
+        #if DEBUG
+        return defaults.object(forKey: UserSettingsKeys.developerTraceModeEnabled) as? Bool ?? false
+        #else
+        return false
+        #endif
+    }
+
+    private static func debugDeveloperReasoningCaptureEnabled(defaults: UserDefaults) -> Bool {
+        #if DEBUG
+        return defaults.object(forKey: UserSettingsKeys.developerReasoningCaptureEnabled) as? Bool ?? false
+        #else
+        return false
+        #endif
+    }
+
     /// Loads a snapshot directly from UserDefaults without touching the
     /// in-memory `UserSettings` instance. Used by background tasks that may
     /// run before or without the main app scene.
     static func loadFromDisk(defaults: UserDefaults = .standard) -> SettingsSnapshot {
-        let enabled: Set<String>
-        if let saved = defaults.array(forKey: UserSettingsKeys.enabledToolIDs) as? [String] {
-            enabled = Set(saved)
-        } else {
-            enabled = Set(ToolRegistry.all.map(\.id))
-        }
+        let current = ToolSettingsRegistrySnapshot.currentToolIDs
+        let disabled = ToolSettingsRegistrySnapshot.loadDisabledToolIDs(defaults: defaults, persistLegacyMigration: false)
+        let enabled = current.subtracting(disabled)
         return SettingsSnapshot(
             activeChatModelID: defaults.string(forKey: UserSettingsKeys.activeChatModelID),
             activeEmbeddingModelID: defaults.string(forKey: UserSettingsKeys.activeEmbeddingModelID),
@@ -212,8 +265,8 @@ nonisolated struct SettingsSnapshot: Sendable {
             handsFree: defaults.object(forKey: UserSettingsKeys.handsFree) as? Bool ?? false,
             maxAgentSteps: defaults.object(forKey: UserSettingsKeys.maxAgentSteps) as? Int ?? 6,
             agentModeEnabled: defaults.object(forKey: UserSettingsKeys.agentModeEnabled) as? Bool ?? true,
-            developerTraceModeEnabled: defaults.object(forKey: UserSettingsKeys.developerTraceModeEnabled) as? Bool ?? false,
-            developerReasoningCaptureEnabled: defaults.object(forKey: UserSettingsKeys.developerReasoningCaptureEnabled) as? Bool ?? false,
+            developerTraceModeEnabled: Self.debugDeveloperTraceEnabled(defaults: defaults),
+            developerReasoningCaptureEnabled: Self.debugDeveloperReasoningCaptureEnabled(defaults: defaults),
             autoDownloadFleetModels: defaults.object(forKey: UserSettingsKeys.autoDownloadFleetModels) as? Bool ?? true,
             confirmFleetDownloads: defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? false
         )

@@ -156,3 +156,34 @@ extension IntentRouterTests {
         }
     }
 }
+
+
+extension IntentRouterTests {
+    @Test func identityRecallPromptsRouteToMemoryRecall() async throws {
+        for prompt in ["What is my name?", "Who am I?", "Do you know my name?", "What's my name?", "What did I say my name was?"] {
+            let decision = IntentRouter.classify(prompt)
+            #expect(decision.intent == .memory)
+            #expect(decision.allowedToolIDs.contains("memory.recall"))
+        }
+    }
+
+    @Test func identitySavePromptRoutesToMemorySave() async throws {
+        let decision = IntentRouter.classify("Remember my name is Alexis")
+        #expect(decision.intent == .memory)
+        #expect(decision.allowedToolIDs.contains("memory.save"))
+    }
+}
+
+
+extension IntentRouterTests {
+    @Test func profilePhrasesInsideExplicitEmailDraftDoNotPreemptDraftIntent() async throws {
+        let decision = IntentRouter.classify("Draft an email to bob@example.com saying my name is Alexis")
+        #expect(decision.intent == .emailDraft)
+    }
+
+    @Test func directCallMeProfilePromptStillRoutesToMemory() async throws {
+        let decision = IntentRouter.classify("Call me Alexis")
+        #expect(decision.intent == .memory)
+        #expect(decision.allowedToolIDs.contains("memory.save"))
+    }
+}
