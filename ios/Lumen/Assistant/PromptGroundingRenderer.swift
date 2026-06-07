@@ -7,7 +7,10 @@ enum PromptGroundingRenderer {
         let renderedRAG = Array(rag.selected.prefix(8))
         let ragLines = renderedRAG.map { "- [\($0.chunkID.uuidString.prefix(8))] \($0.source.title) (\($0.retrievalMode), \(String(format: "%.2f", $0.score)))" }
         let renderedTools = Array(tools.prefix(20))
-        let toolLines = renderedTools.map { "- \($0.id): \($0.description)" }
+        let canonicalToolIDs = renderedTools.map { ToolRouteGuard.canonicalToolID($0.id) }
+        let toolLines = zip(renderedTools, canonicalToolIDs).map { tool, canonicalID in
+            "- \(canonicalID): \(tool.description)"
+        }
         let runtimePolicy = "lowPower=\(lowPower), thermal=\(thermal.rawValue)"
         let memoryContent = memLines.joined(separator: "\n")
         let ragContent = ragLines.joined(separator: "\n")
@@ -15,7 +18,7 @@ enum PromptGroundingRenderer {
         return [
             .init(title: "Relevant memories", content: memoryContent, estimatedChars: memoryContent.count, sourceIDs: renderedMemories.map { $0.id.uuidString }, privacyLevel: .moderate),
             .init(title: "Retrieved sources", content: ragContent, estimatedChars: ragContent.count, sourceIDs: renderedRAG.map { $0.chunkID.uuidString }, privacyLevel: .moderate),
-            .init(title: "Available tools", content: toolContent, estimatedChars: toolContent.count, sourceIDs: renderedTools.map { $0.id }, privacyLevel: .low),
+            .init(title: "Available tools", content: toolContent, estimatedChars: toolContent.count, sourceIDs: canonicalToolIDs, privacyLevel: .low),
             .init(title: "Runtime policy", content: runtimePolicy, estimatedChars: runtimePolicy.count, sourceIDs: [], privacyLevel: .low)
         ].filter { !$0.content.isEmpty }
     }
