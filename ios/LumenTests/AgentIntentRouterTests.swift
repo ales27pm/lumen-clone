@@ -37,9 +37,9 @@ struct AgentIntentRouterTests {
     }
 
     @Test func clarificationKeepsProductionIntentAndCompatibilityName() async throws {
-        let decision = AgentIntentRouter.decide(userMessage: "Call")
+        let decision = AgentIntentRouter.decide(userMessage: "Draft an email")
         #expect(decision.shouldAskClarification)
-        #expect(decision.intent == .phoneCall)
+        #expect(decision.intent == .emailDraft)
         #expect(decision.compatibilityIntentName == "clarify")
         #expect(decision.confidenceSource == "compatibility:clarification-required")
     }
