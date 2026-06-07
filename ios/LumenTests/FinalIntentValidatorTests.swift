@@ -32,7 +32,11 @@ extension FinalIntentValidatorTests {
 
     @Test func outlookObservationRejectsTokenBearingOutput() async throws {
         let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.messages.list"], requiresClarification: false, clarificationPrompt: nil)
-        let text = FinalIntentValidator.validate("Outlook token: eyJhbGciOi.fake.token", routing: routing, fallback: nil)
+        let text = FinalIntentValidator.validate(
+            "Outlook token: eyJhbGciOiJIUzI1NiJ9.eyJvdXQiOiJsdW1lbiJ9.signature123456",
+            routing: routing,
+            fallback: nil
+        )
         #expect(!text.contains("eyJhbGciOi"))
         #expect(text == "Outlook tool output could not be validated.")
     }
