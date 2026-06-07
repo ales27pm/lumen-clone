@@ -179,10 +179,28 @@ nonisolated enum FinalIntentValidator {
     }
 
     private static func looksLikeCredentialLeak(_ lower: String) -> Bool {
-        if containsAny(lower, ["access_token", "refresh_token", "id_token", "client_secret", "authorization:", "bearer ", "token:"]) {
+        if lower.range(
+            of: #"(?i)\b(?:access_token|refresh_token|id_token|client_secret|api_key)\s*[:=]\s*\S{8,}"#,
+            options: .regularExpression
+        ) != nil {
             return true
         }
-        return lower.range(of: #"[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+"#, options: .regularExpression) != nil
+        if lower.range(
+            of: #"(?i)\bauthorization\s*:\s*bearer\s+[a-z0-9._~+/=-]{16,}\b"#,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+        if lower.range(
+            of: #"(?i)\bbearer\s+[a-z0-9._~+/=-]{16,}\b"#,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+        return lower.range(
+            of: #"(?i)\beyj[a-z0-9_-]{8,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\b"#,
+            options: .regularExpression
+        ) != nil
     }
 
     private static func looksLikeCalendarLeak(_ lower: String, unless allowed: Bool) -> Bool {

@@ -43,3 +43,22 @@ extension FinalIntentValidatorTests {
         #expect(text.contains("authentication expired"))
     }
 }
+
+
+extension FinalIntentValidatorTests {
+    @Test func semanticVersionIsNotCredentialLeak() async throws {
+        let routing = IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate("The installed version is 1.2.3.", routing: routing, fallback: nil)
+        #expect(text == "The installed version is 1.2.3.")
+    }
+
+    @Test func jwtShapedCredentialIsRejected() async throws {
+        let routing = IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate(
+            "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456ghi789",
+            routing: routing,
+            fallback: nil
+        )
+        #expect(!text.contains("eyJhbGciOi"))
+    }
+}
