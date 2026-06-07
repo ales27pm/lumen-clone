@@ -179,26 +179,27 @@ nonisolated enum FinalIntentValidator {
     }
 
     private static func looksLikeCredentialLeak(_ lower: String) -> Bool {
+        let secretValueBoundary = #"(?=$|[\s\"',;)}\]])"#
         if lower.range(
-            of: #"(?i)\b(?:access_token|refresh_token|id_token|client_secret|api_key)\s*[:=]\s*\S{8,}"#,
+            of: #"(?i)(?:^|[\s{\"',])\"?(?:access_token|refresh_token|id_token|client_secret|api_key)\"?\s*[:=]\s*\"?[a-z0-9._~+/=-]{8,}\"?"# + secretValueBoundary,
             options: .regularExpression
         ) != nil {
             return true
         }
         if lower.range(
-            of: #"(?i)\bauthorization\s*:\s*bearer\s+[a-z0-9._~+/=-]{16,}\b"#,
+            of: #"(?i)\bauthorization\s*:\s*bearer\s+[a-z0-9._~+/=-]{16,}"# + secretValueBoundary,
             options: .regularExpression
         ) != nil {
             return true
         }
         if lower.range(
-            of: #"(?i)\bbearer\s+[a-z0-9._~+/=-]{16,}\b"#,
+            of: #"(?i)\bbearer\s+[a-z0-9._~+/=-]{16,}"# + secretValueBoundary,
             options: .regularExpression
         ) != nil {
             return true
         }
         return lower.range(
-            of: #"(?i)\beyj[a-z0-9_-]{8,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\b"#,
+            of: #"(?i)\beyj[a-z0-9_-]{8,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}"# + secretValueBoundary,
             options: .regularExpression
         ) != nil
     }

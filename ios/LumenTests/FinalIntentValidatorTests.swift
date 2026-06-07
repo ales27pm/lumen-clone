@@ -62,3 +62,26 @@ extension FinalIntentValidatorTests {
         #expect(!text.contains("eyJhbGciOi"))
     }
 }
+
+
+extension FinalIntentValidatorTests {
+    @Test func quotedJsonAccessTokenIsRejected() async throws {
+        let routing = IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate(
+            #"{"access_token":"abcd1234efgh5678"}"#,
+            routing: routing,
+            fallback: nil
+        )
+        #expect(!text.contains("abcd1234efgh5678"))
+    }
+
+    @Test func bearerTokenEndingWithPaddingIsRejected() async throws {
+        let routing = IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate(
+            "Authorization: Bearer abcdefghijklmnop=",
+            routing: routing,
+            fallback: nil
+        )
+        #expect(!text.contains("abcdefghijklmnop="))
+    }
+}
