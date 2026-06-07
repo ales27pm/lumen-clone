@@ -188,7 +188,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["remember that", "remember this", "save memory", "recall memory", "what do you remember", "memory about", "save this fact", "keep this in mind"]) {
+        if isPersonalProfileRecallIntent(text) || isPersonalProfileSaveIntent(text) || matchesAny(text, ["remember that", "remember this", "save memory", "recall memory", "what do you remember", "memory about", "save this fact", "keep this in mind"]) {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
@@ -328,7 +328,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if isExplicitMemorySaveIntent(text) || matchesAny(text, ["what do you remember", "recall my saved"]) {
+        if isExplicitMemorySaveIntent(text) || isPersonalProfileRecallIntent(text) || isPersonalProfileSaveIntent(text) || matchesAny(text, ["what do you remember", "recall my saved"]) {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
@@ -397,6 +397,22 @@ nonisolated enum IntentRouter {
         }
 
         return matchesAny(text, localScopeMarkers) && matchesAny(text, ["architecture", "system design", "structure", "module", "modules"])
+    }
+
+
+    static func isPersonalProfileRecallIntent(_ text: String) -> Bool {
+        let value = normalized(text)
+        return matchesAny(value, [
+            "what is my name", "what's my name", "who am i", "do you know my name",
+            "what did i say my name was", "what name did i give you"
+        ])
+    }
+
+    static func isPersonalProfileSaveIntent(_ text: String) -> Bool {
+        let value = normalized(text)
+        return value.range(of: #"(?i)\b(?:can you\s+)?(?:please\s+)?(?:remember|save|note)\s+(?:that\s+)?my name is\s+[^.!?]+"#, options: .regularExpression) != nil
+            || value.range(of: #"(?i)\bmy name is\s+[^.!?]+"#, options: .regularExpression) != nil
+            || value.range(of: #"(?i)\bcall me\s+[^.!?]+"#, options: .regularExpression) != nil
     }
 
     private static func isExplicitMemorySaveIntent(_ text: String) -> Bool {

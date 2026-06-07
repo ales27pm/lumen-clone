@@ -132,9 +132,11 @@ struct MessageBubble: View {
                     }
                     .padding(.top, 2)
 
+                    #if DEBUG
                     if appState.developerTraceModeEnabled, let trace = message.developerTrace {
                         DeveloperTracePanel(trace: trace)
                     }
+                    #endif
                 }
             }
             Spacer(minLength: 32)

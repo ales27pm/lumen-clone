@@ -6,12 +6,21 @@ nonisolated enum ModelThinkingControl {
     private static let reasoningCaptureInstruction = "If reasoning capture is enabled, put any internal reasoning inside <think>...</think> and put the final user-visible answer after </think>. Do not include hidden reasoning in the final answer text."
 
     static func developerInstruction(reasoningCaptureEnabled: Bool) -> String {
-        reasoningCaptureEnabled ? reasoningCaptureInstruction : noHiddenReasoningInstruction
+        #if DEBUG
+        return reasoningCaptureEnabled ? reasoningCaptureInstruction : noHiddenReasoningInstruction
+        #else
+        return noHiddenReasoningInstruction
+        #endif
     }
 
     static func systemPrompt(_ base: String, reasoningCaptureEnabled: Bool, requireFinalAnswerOnly: Bool = true) -> String {
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
-        let rule = reasoningCaptureEnabled
+        #if DEBUG
+        let capture = reasoningCaptureEnabled
+        #else
+        let capture = false
+        #endif
+        let rule = capture
             ? reasoningCaptureInstruction
             : (requireFinalAnswerOnly ? noHiddenReasoningInstruction : noHiddenReasoningOnlyInstruction)
         guard !trimmed.lowercased().contains(rule.lowercased()) else { return base }
@@ -21,7 +30,12 @@ nonisolated enum ModelThinkingControl {
 
     static func userMessage(_ base: String, reasoningCaptureEnabled: Bool, useQwenThinkingDirective: Bool) -> String {
         guard useQwenThinkingDirective else { return base }
-        let directive = reasoningCaptureEnabled ? "/think" : "/no_think"
+        #if DEBUG
+        let capture = reasoningCaptureEnabled
+        #else
+        let capture = false
+        #endif
+        let directive = capture ? "/think" : "/no_think"
         let lower = base.lowercased()
         guard !lower.contains("/think"), !lower.contains("/no_think") else { return base }
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)

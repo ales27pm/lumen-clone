@@ -156,3 +156,20 @@ extension IntentRouterTests {
         }
     }
 }
+
+
+extension IntentRouterTests {
+    @Test func identityRecallPromptsRouteToMemoryRecall() async throws {
+        for prompt in ["What is my name?", "Who am I?", "Do you know my name?", "What's my name?", "What did I say my name was?"] {
+            let decision = IntentRouter.classify(prompt)
+            #expect(decision.intent == .memory)
+            #expect(decision.allowedToolIDs.contains("memory.recall"))
+        }
+    }
+
+    @Test func identitySavePromptRoutesToMemorySave() async throws {
+        let decision = IntentRouter.classify("Remember my name is Alexis")
+        #expect(decision.intent == .memory)
+        #expect(decision.allowedToolIDs.contains("memory.save"))
+    }
+}

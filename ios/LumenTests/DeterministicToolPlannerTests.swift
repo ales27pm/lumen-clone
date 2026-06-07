@@ -15,11 +15,12 @@ struct DeterministicToolPlannerTests {
         #expect(action?.args["unreadOnly"]?.stringValue == "true")
     }
 
-    @Test func outlookLatestPlansRead() async throws {
-        let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.message.read"], requiresClarification: false, clarificationPrompt: nil)
-        let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Read the latest email", availableToolIDs: ["outlook.message.read"])
-        #expect(action?.tool == "outlook.message.read")
-        #expect(action?.args["message"]?.stringValue == "latest")
+    @Test func outlookLatestPlansListBeforeRead() async throws {
+        let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.messages.list", "outlook.message.read"], requiresClarification: false, clarificationPrompt: nil)
+        let steps = DeterministicToolPlanner.planSteps(routing: routing, prompt: "Read the latest email", availableToolIDs: ["outlook.messages.list", "outlook.message.read"])
+        #expect(steps.map(\.tool) == ["outlook.messages.list", "outlook.message.read"])
+        #expect(steps.first?.args["limit"]?.stringValue == "1")
+        #expect(steps.last?.args["message"]?.stringValue == "latest")
     }
 
     @Test func whereAreWePlansCurrentLocation() async throws {
@@ -68,4 +69,19 @@ struct DeterministicToolPlannerTests {
         #expect(action?.args["schedule"]?.stringValue == "once")
     }
 
+
+    @Test func memoryNameSaveNormalizesFact() async throws {
+        let routing = IntentRouter.classify("Can you remember that my name is Alexis?")
+        let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Can you remember that my name is Alexis?", availableToolIDs: routing.allowedToolIDs)
+        #expect(action?.tool == "memory.save")
+        #expect(action?.args["content"]?.stringValue == "User's name is Alexis")
+        #expect(action?.args["kind"]?.stringValue == "fact")
+    }
+
+    @Test func memoryNameRecallUsesProfileQuery() async throws {
+        let routing = IntentRouter.classify("Who am I?")
+        let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Who am I?", availableToolIDs: routing.allowedToolIDs)
+        #expect(action?.tool == "memory.recall")
+        #expect(action?.args["query"]?.stringValue == "user name")
+    }
 }
