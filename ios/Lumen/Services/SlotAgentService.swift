@@ -544,6 +544,10 @@ final class SlotAgentService {
             ])
     }
 
+    private nonisolated static func containsAny(_ value: String, _ needles: [String]) -> Bool {
+        needles.contains { value.contains($0) }
+    }
+
     private nonisolated static func compatibilityObservation(
         toolID: String,
         action: AgentAction,
