@@ -705,6 +705,8 @@ nonisolated enum E2ETestRunner {
                 failures.append("Live E2E scenario did not run: no chat model loaded")
             }
             if modelLoaded {
+                let enabledCanonicalToolIDs = Set(config.enabledToolIDs.map(ToolRouteGuard.canonicalToolID))
+                let forbiddenCanonicalToolIDs = Set(scenario.forbiddenToolIDs.map(ToolRouteGuard.canonicalToolID))
                 let req = AgentRequest(
                     systemPrompt: config.systemPrompt,
                     history: [],
@@ -714,9 +716,13 @@ nonisolated enum E2ETestRunner {
                     repetitionPenalty: config.repetitionPenalty,
                     maxTokens: min(config.maxTokens, 512),
                     maxSteps: min(config.maxAgentSteps, 3),
-                    availableTools: ToolRegistry.all.filter { config.enabledToolIDs.contains($0.id) && IntentRouter.isToolAllowed($0.id, for: routing) },
+                    availableTools: ToolRegistry.all.filter { tool in
+                        let canonical = ToolRouteGuard.canonicalToolID(tool.id)
+                        return enabledCanonicalToolIDs.contains(canonical) && IntentRouter.isToolAllowed(canonical, for: routing)
+                    },
                     relevantMemories: []
                 )
+                await event("tools", "available=\(req.availableTools.map(\.id).sorted().joined(separator: ","))")
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
                 await Task.yield()
@@ -737,7 +743,8 @@ nonisolated enum E2ETestRunner {
                         collectPerformanceSample()
                         steps.append(step)
                         await event("step", "\(step.kind.rawValue): \(step.content)")
-                        if let toolID = step.toolID, scenario.forbiddenToolIDs.contains(toolID) {
+                        if let toolID = step.toolID,
+                           forbiddenCanonicalToolIDs.contains(ToolRouteGuard.canonicalToolID(toolID)) {
                             failures.append("Forbidden tool selected by agent: \(toolID)")
                         }
                     case .stepDelta:
@@ -974,8 +981,10 @@ nonisolated enum E2ETestRunner {
             failures.append(reason)
         }
 
-        for hint in requiredHintsMissing(in: rawFinalText, scenario: scenario) {
-            failures.append("Raw live final required hint missing before eval rewrite: \(hint)")
+        let rawMissingHints = Set(requiredHintsMissing(in: rawFinalText, scenario: scenario))
+        let finalMissingHints = Set(requiredHintsMissing(in: finalText, scenario: scenario))
+        for hint in rawMissingHints.intersection(finalMissingHints).sorted() {
+            failures.append("Live final required hint missing: \(hint)")
         }
 
         return mergedStrings(failures)

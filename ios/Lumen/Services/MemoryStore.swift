@@ -47,12 +47,17 @@ enum MemoryStore {
             return []
         }
 
+        let availableItems = (try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []
+        guard !availableItems.isEmpty else { return [] }
+        let itemByID = Dictionary(uniqueKeysWithValues: availableItems.map { ($0.persistentModelID, $0) })
+
         MemoryVectorIndex.shared.ensureLoaded(context: context)
         var results: [MemoryItem] = []
         results.reserveCapacity(limit)
         var seenIds: Set<PersistentIdentifier> = []
         var topK = max(limit * 3, limit + 8)
         let maxTopK = max(topK, 256)
+        var sawStaleVectorID = false
 
         while results.count < limit {
             let hits = MemoryVectorIndex.shared.search(query: queryVec, topK: topK, pinBonus: 0.15)
@@ -61,11 +66,12 @@ enum MemoryStore {
             for h in hits {
                 if results.count >= limit { break }
                 guard seenIds.insert(h.id).inserted else { continue }
-                if let item = context.model(for: h.id) as? MemoryItem {
-                    migrateExpiryIfNeeded(for: item)
-                    guard !isExpired(item) else { continue }
-                    results.append(item)
+                guard let item = itemByID[h.id] else {
+                    sawStaleVectorID = true
+                    continue
                 }
+                guard !isExpired(item) else { continue }
+                results.append(item)
             }
 
             if results.count >= limit || hits.count < topK || topK >= maxTopK {
@@ -73,7 +79,11 @@ enum MemoryStore {
             }
             topK = min(topK * 2, maxTopK)
         }
-        do { try persist(context, operation: "recall.migrateExpiry", scope: "MemoryItem") } catch {}
+
+        if sawStaleVectorID {
+            MemoryVectorIndex.shared.invalidate()
+            MemoryVectorIndex.shared.ensureLoaded(context: context)
+        }
         return results
     }
 
@@ -241,16 +251,19 @@ enum MemoryStore {
     }
 
     static func migrateExpiryIfNeeded(for item: MemoryItem) {
-        guard item.expiresAt == nil || item.freshnessClass == nil else { return }
-        let policy = ttlPolicy(kind: item.memoryKind, source: item.source)
-        item.freshnessClass = policy.freshness.rawValue
-        if item.expiresAt == nil {
-            item.expiresAt = policy.ttl.map { item.createdAt.addingTimeInterval($0) }
-        }
+        // Persisted expiry columns were added after early TestFlight builds. On some upgraded
+        // stores, touching those generated SwiftData accessors from the hot chat path can trap
+        // before Swift can throw an error. Treat the TTL as computed policy instead of eagerly
+        // reading or mutating the optional persisted cache fields during recall.
+        _ = item
+    }
+
+    static func inferredExpiresAt(for item: MemoryItem) -> Date? {
+        ttlPolicy(kind: item.memoryKind, source: item.source).ttl.map { item.createdAt.addingTimeInterval($0) }
     }
 
     static func isExpired(_ item: MemoryItem, now: Date = Date()) -> Bool {
-        guard let expiresAt = item.expiresAt else { return false }
+        guard let expiresAt = inferredExpiresAt(for: item) else { return false }
         return expiresAt <= now
     }
 

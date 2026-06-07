@@ -57,7 +57,7 @@ final class SlotAgentService {
                 do {
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentStart, values: ["promptChars": String(req.userMessage.count), "toolCount": String(req.availableTools.count), "memoryCount": String(req.relevantMemories.count)]))
                     try cancellationToken.checkCancellation()
-                    let budgetDecision = await MainActor.run { Self.agentBudgetDecision() }
+                    let budgetDecision = await MainActor.run { Self.agentBudgetDecision(for: req, options: options) }
                     switch budgetDecision {
                     case .cancel:
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": "resource-scene-inactive"]))
@@ -66,6 +66,20 @@ final class SlotAgentService {
                         return
                     case .fallback:
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-fallback"]))
+                        if options.diagnosticsEnabled {
+                            let response = await Self.deterministicCompatibilityResponse(original: req, effective: req, options: options)
+                            Self.emitDeterministicAnswerBuilt(path: "diagnostic-fallback")
+                            for step in response.steps {
+                                continuation.yield(.step(step))
+                            }
+                            continuation.yield(.finalDelta(response.text))
+                            continuation.yield(.done(finalText: response.text, steps: response.steps))
+                            Self.emitDoneYielded(path: "diagnostic-fallback")
+                            Self.emitSlotAgentEnd(path: "diagnostic-fallback")
+                            continuation.finish()
+                            Self.emitContinuationFinished(path: "diagnostic-fallback")
+                            return
+                        }
                         let text = Self.deterministicCompatibilityFallback()
                         Self.emitDeterministicAnswerBuilt(path: "fallback")
                         continuation.yield(.finalDelta(text))
@@ -402,13 +416,48 @@ final class SlotAgentService {
     enum AgentBudgetDecision: Sendable, Equatable { case allow, cancel, fallback }
 
     @MainActor
-    static func agentBudgetDecision() -> AgentBudgetDecision {
+    static func agentBudgetDecision(for req: AgentRequest, options: LegacyAgentRunOptions) -> AgentBudgetDecision {
         let snapshot = ResourceBudgetGate.diagnosticSnapshot()
         if snapshot.scenePhase == .inactive || snapshot.scenePhase == .background { return .cancel }
+
+        // The slot-agent path below is deterministic compatibility work: it scopes tools,
+        // emits action/approval steps, and runs lightweight tool observations. Do not let
+        // the heavy-model budget gate turn live E2E/tool-backed turns into empty fallback
+        // finals. Those empty finals are exactly what the grounding audit reports as
+        // `missing_required_tool_action`.
+        if options.diagnosticsEnabled || canCompleteThroughDeterministicCompatibility(req) {
+            return .allow
+        }
+
         if snapshot.thermalState == .serious || snapshot.thermalState == .critical { return .fallback }
         if CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) { return .fallback }
         guard ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding") else { return .fallback }
         return .allow
+    }
+
+    nonisolated private static func canCompleteThroughDeterministicCompatibility(_ req: AgentRequest) -> Bool {
+        let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return false }
+        let routing = IntentRouter.classify(prompt)
+
+        if routing.intent == .chat {
+            return deterministicDirectFinalIfSafe(
+                prompt: prompt,
+                intent: routing.intent,
+                hasAttachments: !req.attachments.isEmpty,
+                hasRelevantMemories: !req.relevantMemories.isEmpty
+            ) != nil
+        }
+
+        guard IntentRouter.intentRequiresTool(routing) else { return false }
+        if routing.requiresClarification { return true }
+
+        let availableToolIDs = Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        return !DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: availableToolIDs
+        ).isEmpty
     }
 
     nonisolated static func shouldUseFastAgentPath(_ req: AgentRequest) -> Bool {

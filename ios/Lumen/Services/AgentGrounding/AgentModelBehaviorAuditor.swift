@@ -29,6 +29,7 @@ final class AgentModelBehaviorAuditor {
             }
             let visibleFinal = AssistantOutputSanitizer.sanitize(message.content)
             let sanitizedFinal = FinalOutputSanitizer.sanitizeUserVisibleText(message.content)
+            let isResourceFallbackFinal = isResourceBudgetFallbackFinal(visibleFinal)
             auditedTraceCount += 1
 
             let hasRawThinkLeak = message.content.localizedCaseInsensitiveContains("<think") || message.content.localizedCaseInsensitiveContains("</think>")
@@ -92,7 +93,7 @@ final class AgentModelBehaviorAuditor {
             }
 
             let manifestSaysToolExpected = !expectedManifestTools.isEmpty && routing.intent != .chat && routing.intent != .unknown
-            if manifestSaysToolExpected && actionSteps.isEmpty && !reflectionApprovalBoundary && !routing.requiresClarification {
+            if manifestSaysToolExpected && actionSteps.isEmpty && !reflectionApprovalBoundary && !routing.requiresClarification && !isResourceFallbackFinal {
                 violations.append(violation(
                     severity: .error,
                     code: "missing_required_tool_action",
@@ -101,6 +102,18 @@ final class AgentModelBehaviorAuditor {
                     actual: "No action step was persisted.",
                     prompt: prompt,
                     problem: "The model produced no tool action even though the static manifest/runtime router expects a tool-backed intent."
+                ))
+            }
+
+            if manifestSaysToolExpected && actionSteps.isEmpty && !reflectionApprovalBoundary && !routing.requiresClarification && isResourceFallbackFinal {
+                violations.append(violation(
+                    severity: .warning,
+                    code: "resource_budget_fallback_without_action",
+                    agent: "runtime",
+                    expected: "Runtime budget fallback should be tracked separately from model tool-routing failures.",
+                    actual: "Resource fallback final was persisted with no action step.",
+                    prompt: prompt,
+                    problem: "Resource gating prevented tool execution; this is not a model routing failure."
                 ))
             }
 
@@ -247,6 +260,13 @@ final class AgentModelBehaviorAuditor {
         return sentinels.contains { sentinel in
             !sentinel.isEmpty && text.localizedCaseInsensitiveContains(sentinel)
         }
+    }
+
+    private func isResourceBudgetFallbackFinal(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("can’t safely start the full agent pipeline")
+            || lower.contains("can't safely start the full agent pipeline")
+            || lower.contains("please try again when the app is active and the device has cooled down")
     }
 
     private func hasTrustedUIApproval(prompt: String) -> Bool {

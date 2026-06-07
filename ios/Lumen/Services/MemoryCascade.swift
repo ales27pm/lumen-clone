@@ -35,7 +35,7 @@ enum MemoryCascade {
             .compactMap { item -> MemoryContextItem? in
                 let compact = compactAndTrim(item.content, maxLength: 260)
                 guard !compact.isEmpty else { return nil }
-                return MemoryContextItem(content: compact, scope: .conversation, authority: .referenceOnly, createdAt: item.createdAt, expiresAt: item.expiresAt, source: item.source, topic: item.topic)
+                return MemoryContextItem(content: compact, scope: .conversation, authority: .referenceOnly, createdAt: item.createdAt, expiresAt: MemoryStore.inferredExpiresAt(for: item), source: item.source, topic: item.topic)
             }
 
         let queryTokens = tokenSet(query)
@@ -43,8 +43,7 @@ enum MemoryCascade {
             predicate: #Predicate<MemoryItem> { $0.source == "rem-condensed" }
         )
         let condensedItems = ((try? context.fetch(condensedDescriptor)) ?? []).filter { item in
-            MemoryStore.migrateExpiryIfNeeded(for: item)
-            return !MemoryStore.isExpired(item)
+            !MemoryStore.isExpired(item)
         }
 
         let rankedTier3 = condensedItems
@@ -62,7 +61,7 @@ enum MemoryCascade {
             .compactMap { pair -> MemoryContextItem? in
                 let compact = compactAndTrim(pair.item.content, maxLength: 260)
                 guard !compact.isEmpty else { return nil }
-                return MemoryContextItem(content: compact, scope: .remCondensed, authority: .backgroundOnly, createdAt: pair.item.createdAt, expiresAt: pair.item.expiresAt, source: pair.item.source, topic: pair.item.topic)
+                return MemoryContextItem(content: compact, scope: .remCondensed, authority: .backgroundOnly, createdAt: pair.item.createdAt, expiresAt: MemoryStore.inferredExpiresAt(for: pair.item), source: pair.item.source, topic: pair.item.topic)
             }
 
         return MemoryCascadeResult(
@@ -80,7 +79,6 @@ enum MemoryCascade {
         let allItems = try context.fetch(descriptor)
 
         let candidates = allItems.filter { item in
-            MemoryStore.migrateExpiryIfNeeded(for: item)
             guard item.source != "rem-condensed" else { return false }
             guard item.isPinned == false else { return false }
             guard !MemoryStore.isExpired(item) else { return false }
@@ -145,10 +143,7 @@ enum MemoryCascade {
             )
 
             let saved = try context.fetch(existingDescriptor)
-            if let latest = saved.first {
-                latest.freshnessClass = MemoryFreshnessClass.durable.rawValue
-                latest.expiresAt = nil
-            }
+            _ = saved.first
         }
 
         try context.save()

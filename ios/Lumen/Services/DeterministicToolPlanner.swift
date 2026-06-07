@@ -31,6 +31,21 @@ nonisolated enum DeterministicToolPlanner {
 
     static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
         let text = normalized(prompt)
+        if routing.intent == .memory, isMemorySaveThenRecallIntent(text) {
+            var actions: [AgentAction] = []
+            if let save = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs), ToolRouteGuard.canonicalToolID(save.tool) == "memory.save" {
+                actions.append(save)
+            } else if availableToolIDs.contains("memory.save") {
+                actions.append(AgentAction(tool: "memory.save", args: [
+                    "content": .string(extractMemoryFact(from: prompt)),
+                    "kind": .string("fact")
+                ]))
+            }
+            if availableToolIDs.contains("memory.recall") {
+                actions.append(AgentAction(tool: "memory.recall", args: ["query": .string(extractMemoryRecallQuery(from: prompt))]))
+            }
+            if !actions.isEmpty { return actions }
+        }
         if routing.intent == .outlook, isLatestOutlookReadIntent(text) {
             if availableToolIDs.contains("outlook.messages.list"),
                availableToolIDs.contains("outlook.message.read") {
@@ -267,6 +282,22 @@ nonisolated enum DeterministicToolPlanner {
 
     private static func isLatestOutlookReadIntent(_ text: String) -> Bool {
         containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"])
+    }
+
+    private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool {
+        containsAny(text, ["remember", "save", "note", "keep this in mind"])
+            && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"])
+    }
+
+    private static func extractMemoryRecallQuery(from prompt: String) -> String {
+        let fact = extractMemoryFact(from: prompt)
+        let cleaned = fact
+            .replacingOccurrences(of: "User's name is ", with: "", options: [.caseInsensitive])
+            .replacingOccurrences(of: "User prefers to be called ", with: "", options: [.caseInsensitive])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.lowercased().contains("prefer concise bullet points") { return "prefer concise bullet points" }
+        if !cleaned.isEmpty { return cleaned }
+        return prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func extractMemoryFact(from prompt: String) -> String {
