@@ -1418,7 +1418,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+        "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -1444,7 +1444,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Models/MemoryContextItem.swift",
-            "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+            "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
           },
           {
             "domains": [
@@ -1472,21 +1472,21 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+            "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+            "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
           },
           {
             "domains": [
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
           },
           {
             "domains": [
@@ -1500,7 +1500,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+            "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
           },
           {
             "domains": [
@@ -1521,7 +1521,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+            "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
           }
         ],
         "sourceToSlots": {
@@ -2420,7 +2420,7 @@
     "slotID": "cortex",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+      "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -2446,7 +2446,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Models/MemoryContextItem.swift",
-          "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+          "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
         },
         {
           "domains": [
@@ -2474,21 +2474,21 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+          "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+          "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
         },
         {
           "domains": [
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
         },
         {
           "domains": [
@@ -2502,7 +2502,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+          "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
         },
         {
           "domains": [
@@ -2523,7 +2523,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+          "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
         }
       ],
       "sourceToSlots": {
@@ -3480,7 +3480,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+        "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -3506,7 +3506,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Models/MemoryContextItem.swift",
-            "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+            "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
           },
           {
             "domains": [
@@ -3534,21 +3534,21 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+            "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+            "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
           },
           {
             "domains": [
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
           },
           {
             "domains": [
@@ -3562,7 +3562,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+            "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
           },
           {
             "domains": [
@@ -3583,7 +3583,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+            "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
           }
         ],
         "sourceToSlots": {
@@ -4471,7 +4471,7 @@
     "slotID": "embedding",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+      "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -4497,7 +4497,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Models/MemoryContextItem.swift",
-          "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+          "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
         },
         {
           "domains": [
@@ -4525,21 +4525,21 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+          "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+          "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
         },
         {
           "domains": [
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
         },
         {
           "domains": [
@@ -4553,7 +4553,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+          "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
         },
         {
           "domains": [
@@ -4574,7 +4574,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+          "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
         }
       ],
       "sourceToSlots": {
@@ -6332,7 +6332,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+        "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -6358,7 +6358,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Models/MemoryContextItem.swift",
-            "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+            "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
           },
           {
             "domains": [
@@ -6386,21 +6386,21 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+            "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+            "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
           },
           {
             "domains": [
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
           },
           {
             "domains": [
@@ -6414,7 +6414,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+            "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
           },
           {
             "domains": [
@@ -6435,7 +6435,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+            "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
           }
         ],
         "sourceToSlots": {
@@ -7331,7 +7331,7 @@
     "slotID": "executor",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+      "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -7357,7 +7357,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Models/MemoryContextItem.swift",
-          "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+          "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
         },
         {
           "domains": [
@@ -7385,21 +7385,21 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+          "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+          "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
         },
         {
           "domains": [
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
         },
         {
           "domains": [
@@ -7413,7 +7413,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+          "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
         },
         {
           "domains": [
@@ -7434,7 +7434,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+          "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
         }
       ],
       "sourceToSlots": {
@@ -8399,7 +8399,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+        "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -8425,7 +8425,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Models/MemoryContextItem.swift",
-            "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+            "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
           },
           {
             "domains": [
@@ -8453,21 +8453,21 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+            "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+            "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
           },
           {
             "domains": [
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
           },
           {
             "domains": [
@@ -8481,7 +8481,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+            "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
           },
           {
             "domains": [
@@ -8502,7 +8502,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+            "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
           }
         ],
         "sourceToSlots": {
@@ -9396,7 +9396,7 @@
     "slotID": "mimicry",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+      "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -9422,7 +9422,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Models/MemoryContextItem.swift",
-          "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+          "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
         },
         {
           "domains": [
@@ -9450,21 +9450,21 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+          "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+          "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
         },
         {
           "domains": [
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
         },
         {
           "domains": [
@@ -9478,7 +9478,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+          "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
         },
         {
           "domains": [
@@ -9499,7 +9499,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+          "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
         }
       ],
       "sourceToSlots": {
@@ -10464,7 +10464,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+        "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -10490,7 +10490,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Models/MemoryContextItem.swift",
-            "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+            "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
           },
           {
             "domains": [
@@ -10518,21 +10518,21 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+            "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+            "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
           },
           {
             "domains": [
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
           },
           {
             "domains": [
@@ -10546,7 +10546,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+            "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
           },
           {
             "domains": [
@@ -10567,7 +10567,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+            "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
           }
         ],
         "sourceToSlots": {
@@ -11461,7 +11461,7 @@
     "slotID": "mouth",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+      "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -11487,7 +11487,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Models/MemoryContextItem.swift",
-          "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+          "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
         },
         {
           "domains": [
@@ -11515,21 +11515,21 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+          "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+          "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
         },
         {
           "domains": [
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
         },
         {
           "domains": [
@@ -11543,7 +11543,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+          "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
         },
         {
           "domains": [
@@ -11564,7 +11564,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+          "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
         }
       ],
       "sourceToSlots": {
@@ -12531,7 +12531,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+        "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -12557,7 +12557,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Models/MemoryContextItem.swift",
-            "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+            "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
           },
           {
             "domains": [
@@ -12585,21 +12585,21 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+            "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+            "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
           },
           {
             "domains": [
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
           },
           {
             "domains": [
@@ -12613,7 +12613,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+            "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
           },
           {
             "domains": [
@@ -12634,7 +12634,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+            "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
           }
         ],
         "sourceToSlots": {
@@ -13531,7 +13531,7 @@
     "slotID": "rem",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "65446a07258bc6fa06111e5f968527101570bbe6",
+      "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -13557,7 +13557,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Models/MemoryContextItem.swift",
-          "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+          "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
         },
         {
           "domains": [
@@ -13585,21 +13585,21 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+          "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "97ce87a079d3903e242f2d0f6dfe0a18dde8c631b7559a6447b9481a360f5517"
+          "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
         },
         {
           "domains": [
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
         },
         {
           "domains": [
@@ -13613,7 +13613,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+          "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
         },
         {
           "domains": [
@@ -13634,7 +13634,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "237b59f284b585f66011680287791d213d7f65d26a39d896c478feb4eecb5315"
+          "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
         }
       ],
       "sourceToSlots": {

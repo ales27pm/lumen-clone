@@ -5,16 +5,18 @@
   "agent": "fleet",
   "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
   "datasetCard": {
-    "manifestCommit": "65446a07258bc6fa06111e5f968527101570bbe6",
+    "manifestCommit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
     "recordCounts": {
       "eval": 93,
       "train_dpo": 14,
-      "train_sft": 699,
+      "train_sft": 1104,
       "val_dpo": 3,
-      "val_sft": 123
+      "val_sft": 195
     },
     "sourceFamilies": [
       "approval_boundary_samples",
+      "codebase_home_corpus",
+      "codebase_home_sft",
       "cortex_routing",
       "cross_model_training",
       "dpo_preference_pairs",
@@ -44,6 +46,8 @@
       "approval_granted",
       "approval_rejected",
       "approval_required_tool",
+      "codebase_home_grounding",
+      "codebase_home_overview",
       "cortex_routing",
       "dpo_preference_pairs",
       "embedding_corpus",

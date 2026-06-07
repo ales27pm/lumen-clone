@@ -4,7 +4,7 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `4496`
+- Dataset records: `7762`
 - Runtime audit reports: `2`
 - Runtime failures: `0`
 - TestFlight status: `runtime-audit-ingested`
@@ -14,7 +14,7 @@
 
 ## TestFlight handoff
 
-Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the Runtime Audit Package JSON and/or Live E2E Report JSON, then rerun this command with `--runtime-audit <exported-json>`.
+Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app dataset package JSON, then rerun this command with `--runtime-audit <exported-json>`.
 
 ## Top gaps
 

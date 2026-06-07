@@ -70,6 +70,20 @@ def test_embedding_corpus_contains_core_lumen_object_types() -> None:
     assert "source_code_map_entry" in object_types
 
 
+def test_embedding_corpus_contains_codebase_home_when_root_is_provided() -> None:
+    repo_root = _repo_root()
+    manifest = generate_manifest(repo_root)
+    datasets = generate_all_datasets(manifest, root=repo_root)
+    object_types = {record["objectType"] for record in datasets["embedding_corpus"]}
+    codebase_records = [record for record in datasets["codebase_home_corpus"] if record.get("path") != "."]
+
+    assert "codebase_home_module" in object_types
+    assert codebase_records
+    assert any(record["path"].endswith("AgentService.swift") for record in codebase_records)
+    assert any(record["path"].startswith("tools/lumen_manifest_crawler/") for record in codebase_records)
+    assert any(pair["family"] == "codebase_home_corpus_retrieval" for pair in datasets["embedding_train_pairs"] + datasets["embedding_val_pairs"])
+
+
 def test_embedding_dedicated_output_directory_is_written(tmp_path: Path) -> None:
     manifest = generate_manifest(_repo_root())
     datasets = generate_all_datasets(manifest)
@@ -95,6 +109,29 @@ def test_embedding_dedicated_output_directory_is_written(tmp_path: Path) -> None
     card = json.loads((embedding_dir / "dataset_card.json").read_text(encoding="utf-8"))
     assert card["model"] == EMBEDDING_MODEL_ID
     assert card["counts"]["corpus"] == sum(1 for _ in (embedding_dir / "corpus.jsonl").open(encoding="utf-8"))
+
+
+def test_runtime_grounding_bundle_is_written_for_build_injection(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    manifest = generate_manifest(repo_root)
+    datasets = generate_all_datasets(manifest, root=repo_root)
+    report = validate_manifest(manifest, datasets)
+    output = tmp_path / "agent_manifest"
+
+    write_outputs(output, manifest, report, datasets, pretty=True)
+
+    bundle_path = output / "runtime_grounding_bundle.json"
+    prompt_path = output / "runtime_grounding_prompt.md"
+    assert bundle_path.exists()
+    assert prompt_path.exists()
+
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    assert bundle["artifactKind"] == "agent_grounding_runtime_bundle"
+    assert bundle["injectionPolicy"]["target"] == "AgentGroundingPromptComposer"
+    assert bundle["codebaseHome"]["recordCount"] == len(datasets["codebase_home_corpus"])
+    assert bundle["codebaseHome"]["selectedFiles"]
+    assert "Bundled source grounding" not in prompt_path.read_text(encoding="utf-8")
+    assert "Lumen Runtime Grounding Bundle" in prompt_path.read_text(encoding="utf-8")
 
 
 def test_embedding_compile_is_deterministic() -> None:

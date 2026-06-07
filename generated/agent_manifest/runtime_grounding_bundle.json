@@ -1,0 +1,2061 @@
+{
+  "artifactKind": "agent_grounding_runtime_bundle",
+  "codebaseHome": {
+    "languageCounts": {
+      "json": 21,
+      "markdown": 41,
+      "mixed": 1,
+      "plist": 3,
+      "python": 69,
+      "swift": 299
+    },
+    "moduleCounts": {
+      "AppIntents": 7,
+      "Assets.xcassets": 1,
+      "Assets.xcassets/AccentColor.colorset": 1,
+      "Assets.xcassets/AppIcon.appiconset": 1,
+      "Assets.xcassets/LumenAssistantMark.imageset": 1,
+      "Assets.xcassets/LumenVerticalLogo.imageset": 1,
+      "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
+      "Assistant": 19,
+      "Background": 4,
+      "Brand": 2,
+      "Diagnostics": 16,
+      "Memory": 7,
+      "Models": 15,
+      "Permissions": 6,
+      "RAG": 9,
+      "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
+      "Services": 54,
+      "Services/AgentGrounding": 13,
+      "Services/Diagnostics": 1,
+      "Services/IntentClassification": 5,
+      "Services/LLM": 21,
+      "Services/LLM/GGUF": 7,
+      "Services/LLM/Models": 9,
+      "Services/LLM/Policy": 9,
+      "Services/MicrosoftGraph": 6,
+      "Services/Tools": 14,
+      "State": 3,
+      "System": 14,
+      "Tools": 14,
+      "Tools/Builtin": 8,
+      "Views": 30,
+      "Voice": 6,
+      "app": 6,
+      "docs": 34,
+      "docs/stabilization": 1,
+      "repo": 1,
+      "tools": 9,
+      "tools/fine_tuning/unsloth": 18,
+      "tools/hf_artifacts": 2,
+      "tools/intent_classifier": 4,
+      "tools/lumen_manifest_crawler": 1,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 35,
+      "tools/lumen_manifest_crawler/tests": 17
+    },
+    "recordCount": 434,
+    "selectedFiles": [
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` owns AgentBehaviorManifest behavior and defines: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent, ManifestRoutingEntry, ManifestMemory, ManifestFreshnessClass.",
+        "sha256": "d0117c4aa3c571d89931d2d3225e518396af1f70dce4b79280c418a677dc69a7",
+        "symbols": [
+          "AgentBehaviorManifest",
+          "ManifestAppInfo",
+          "ManifestSourceIntegrity",
+          "ManifestSourceFileHash",
+          "ManifestFleet",
+          "ManifestModelSlot",
+          "ManifestIntent",
+          "ManifestRoutingEntry",
+          "ManifestMemory",
+          "ManifestFreshnessClass",
+          "CodingKeys",
+          "ManifestSentinels",
+          "RuntimeToolDefinition",
+          "RuntimeToolArgument",
+          "schemaVersion",
+          "app"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` owns AgentBehaviorTrace behavior and defines: AgentBehaviorTrace, Event, CodingKeys, AgentBehaviorAuditReport, AgentBehaviorViolation, Severity, AgentBehaviorRepairSample, AgentBehaviorTraceRecorder, encode, record.",
+        "sha256": "6277c2cac2bc9e89b9a72b16ad756cf3420984320701252a33d717a2635c2940",
+        "symbols": [
+          "AgentBehaviorTrace",
+          "Event",
+          "CodingKeys",
+          "AgentBehaviorAuditReport",
+          "AgentBehaviorViolation",
+          "Severity",
+          "AgentBehaviorRepairSample",
+          "AgentBehaviorTraceRecorder",
+          "encode",
+          "record",
+          "recent",
+          "completeLineData",
+          "recentAsync",
+          "clear",
+          "diagnosticsDirectory",
+          "id"
+        ]
+      },
+      {
+        "imports": [
+          "SwiftUI",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentGroundingAuditView, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage, exportRuntimeRegistryAuditLayer, exportBehaviorAuditLayer, exportStaticScenarioLayer, exportRecentTraceLayer.",
+        "sha256": "7d092005fbe5d26af59e56695003bc9c684f04ebdef9ee4400417a2c9ecdf2e6",
+        "symbols": [
+          "AgentGroundingAuditView",
+          "runAudit",
+          "runLiveTraceSmokeTest",
+          "cancelLiveTraceSmokeTestForSceneTransition",
+          "finishLiveTraceSmokeTask",
+          "exportRuntimeAuditPackage",
+          "exportRuntimeRegistryAuditLayer",
+          "exportBehaviorAuditLayer",
+          "exportStaticScenarioLayer",
+          "exportRecentTraceLayer",
+          "scoreText",
+          "severityIcon",
+          "severityColor",
+          "auditor",
+          "scenarioRunner",
+          "behaviorAuditor"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift` owns AgentGroundingPromptComposer behavior and defines: AgentGroundingPromptComposer, GenerateRequest, composeSystemPrompt, groundingSystemPrompt, fallback, store, bundledPrompt, loadedRuntimeGrounding, runtimeGrounding, groundedPrompt.",
+        "sha256": "9b96718eb980741233bacc3099c1259abf79a820082e30e2c11c982eaa088693",
+        "symbols": [
+          "AgentGroundingPromptComposer",
+          "GenerateRequest",
+          "composeSystemPrompt",
+          "groundingSystemPrompt",
+          "fallback",
+          "store",
+          "bundledPrompt",
+          "loadedRuntimeGrounding",
+          "runtimeGrounding",
+          "groundedPrompt"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/AgentManifestStore.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentManifestStore.swift` owns AgentManifestStore behavior and defines: AgentManifestStore, manifestDirectory, manifestURL, manifestHashURL, bundledManifestURL, bundledHashURL, load, persist, synchronizeWithBundle, copyBundledManifestAndHash.",
+        "sha256": "cf59fe6817472a432f4c77609f2ef000ea798ccab853eb4cdee5f98305eeed2a",
+        "symbols": [
+          "AgentManifestStore",
+          "manifestDirectory",
+          "manifestURL",
+          "manifestHashURL",
+          "bundledManifestURL",
+          "bundledHashURL",
+          "load",
+          "persist",
+          "synchronizeWithBundle",
+          "copyBundledManifestAndHash",
+          "readHash",
+          "directoryName",
+          "fileName",
+          "hashFileName",
+          "bundledRelativeDirectory",
+          "base"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/AgentModelBehaviorAuditor.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentModelBehaviorAuditor.swift` owns AgentModelBehaviorAuditor behavior and defines: AgentModelBehaviorAuditor, audit, previousUserPrompt, allowedToolsByIntent, containsSentinel, isResourceBudgetFallbackFinal, hasTrustedUIApproval, isApprovalBoundaryStep, violation, recommendations.",
+        "sha256": "88e83229bbb6adddccdf4d2b2c5f65cc5ba17efa8607f3cfa96aedcbd3dab6bc",
+        "symbols": [
+          "AgentModelBehaviorAuditor",
+          "audit",
+          "previousUserPrompt",
+          "allowedToolsByIntent",
+          "containsSentinel",
+          "isResourceBudgetFallbackFinal",
+          "hasTrustedUIApproval",
+          "isApprovalBoundaryStep",
+          "violation",
+          "recommendations",
+          "repairSamples",
+          "correctedOutput",
+          "lesson",
+          "curriculum",
+          "ordered",
+          "boundedLimit"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift` owns BundledAgentGroundingStore behavior and defines: BundledFleetSystemPrompt, RuntimeGroundingBundle, RuntimeCodebaseHome, RuntimeGroundingFile, RuntimeGroundingInjectionPolicy, BundledAgentGroundingStoreError, for, GroundingResourceLoader, BundledAgentGroundingStore, fileExtension.",
+        "sha256": "2b41679d211b9398cc915437d5c703251113f140fba03a18249709ae34d484bf",
+        "symbols": [
+          "BundledFleetSystemPrompt",
+          "RuntimeGroundingBundle",
+          "RuntimeCodebaseHome",
+          "RuntimeGroundingFile",
+          "RuntimeGroundingInjectionPolicy",
+          "BundledAgentGroundingStoreError",
+          "for",
+          "GroundingResourceLoader",
+          "BundledAgentGroundingStore",
+          "fileExtension",
+          "loadManifestAsync",
+          "loadFleetSystemPromptsAsync",
+          "verifyRequiredResourcesAsync",
+          "loadManifestValidationReportAsync",
+          "loadRuntimeGroundingBundleAsync",
+          "loadRuntimeGroundingPromptAsync"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` owns ImproveLoopSampleGate behavior and defines: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, ImproveLoopTrainingSample, ImproveLoopDatasetCounters, ImproveLoopDataset, ImproveLoopSampleGate, buildDataset, append.",
+        "sha256": "42367ea783c162b95e334e7720d56a0e6f3cc78203743a5a401d9b717a16f958",
+        "symbols": [
+          "ImproveLoopSampleDisposition",
+          "ImproveLoopSampleType",
+          "ImproveLoopSampleSource",
+          "ImproveLoopSampleAuthority",
+          "ImproveLoopTrainingSample",
+          "ImproveLoopDatasetCounters",
+          "ImproveLoopDataset",
+          "ImproveLoopSampleGate",
+          "buildDataset",
+          "append",
+          "gateRepairSample",
+          "gateViolation",
+          "gateTrace",
+          "makeTraceSample",
+          "gateStaticScenario",
+          "makeSample"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, writePackage, exportDirectory, mergedBehaviorAuditWithRuntimeTraceViolations, runtimeTraceViolations.",
+        "sha256": "77a631c1baa1e7a9cc4d70be7237fab8a36ea03230ebb654817d62a8b38ad98a",
+        "symbols": [
+          "LumenInAppDatasetPackage",
+          "InAppDatasetAppInfo",
+          "InAppDatasetExportPolicy",
+          "InAppDatasetPackageExportResult",
+          "InAppDatasetPackageExporter",
+          "makePackage",
+          "writePackage",
+          "exportDirectory",
+          "mergedBehaviorAuditWithRuntimeTraceViolations",
+          "runtimeTraceViolations",
+          "isActionStructuredStage",
+          "writeImproveLoopJSONL",
+          "safeTimestamp",
+          "schemaVersion",
+          "generatedAt",
+          "app"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, isValidArgumentName, inferredType, numericMarkers, typeHintWords.",
+        "sha256": "dab1473fdb922ce57880defdb41132670497071ccb52125c5390bb6f26264a94",
+        "symbols": [
+          "LiveRuntimeToolRegistryProvider",
+          "RuntimeToolArgumentInferencer",
+          "currentToolDefinitions",
+          "arguments",
+          "argsBody",
+          "removeParentheticalText",
+          "isValidArgumentName",
+          "inferredType",
+          "numericMarkers",
+          "typeHintWords",
+          "trimmed",
+          "lowered",
+          "normalized",
+          "specs",
+          "optionalGroup",
+          "token"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` owns RuntimeManifestAuditor behavior and defines: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAuditor, RuntimeManifestAuditError, loadBundledManifest, loadManifestFromStoreBundleOrRuntimeFallback, loadBundledManifestOrRuntimeFallback, syntheticManifestFromRuntimeRegistry, audit.",
+        "sha256": "69c150ced28bba393a585ad395b6adacf50a6d49b16edf8bd2f2d605b27efb98",
+        "symbols": [
+          "RuntimeAgentManifestAuditReport",
+          "RuntimeManifestFailure",
+          "RuntimeManifestLoadResult",
+          "RuntimeManifestAuditor",
+          "RuntimeManifestAuditError",
+          "loadBundledManifest",
+          "loadManifestFromStoreBundleOrRuntimeFallback",
+          "loadBundledManifestOrRuntimeFallback",
+          "syntheticManifestFromRuntimeRegistry",
+          "audit",
+          "compare",
+          "uniqueToolMap",
+          "groupToolsByID",
+          "uniqueArgumentMap",
+          "normalizeType",
+          "score"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` owns RuntimeScenarioRunner behavior and defines: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt, id, intent, expectedToolID, requiresApproval.",
+        "sha256": "e8cb095c55c27eb1ec9f0670c49c8de82d1ae697d2820bb7a25e5e2fcb905084",
+        "symbols": [
+          "RuntimeScenario",
+          "RuntimeScenarioResult",
+          "RuntimeScenarioRunner",
+          "scenarios",
+          "validateStaticScenarios",
+          "prompt",
+          "id",
+          "intent",
+          "expectedToolID",
+          "requiresApproval",
+          "scenario",
+          "passed",
+          "failures",
+          "output",
+          "approvalByTool",
+          "knownTools"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/AgentGrounding",
+        "path": "ios/Lumen/Services/AgentGrounding/RuntimeToolRegistryProviding.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/RuntimeToolRegistryProviding.swift` owns RuntimeToolRegistryProviding behavior and defines: RuntimeToolRegistryProviding, StaticRuntimeToolRegistryProvider, currentToolDefinitions, tools.",
+        "sha256": "9f6b84b8c092169cf1bf83c79b2e417ca8bf4296543200a5411d060660e16b51",
+        "symbols": [
+          "RuntimeToolRegistryProviding",
+          "StaticRuntimeToolRegistryProvider",
+          "currentToolDefinitions",
+          "tools"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/AssistantGroundingContext.swift",
+        "responsibility": "`ios/Lumen/Assistant/AssistantGroundingContext.swift` owns AssistantGroundingContext behavior and defines: AssistantGroundingContext, memoryCount, ragCount, toolCount, estimatedChars, zeroCount, empty.",
+        "sha256": "1a5178e96f9c872c1f659617ecbfae356da34cdbe379f8465e847caadac172e5",
+        "symbols": [
+          "AssistantGroundingContext",
+          "memoryCount",
+          "ragCount",
+          "toolCount",
+          "estimatedChars",
+          "zeroCount",
+          "empty"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/AssistantKernel.swift",
+        "responsibility": "`ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, buildGroundingContext, runTextTurn, executeTool, router, metricsStore, toolRegistry, memoryEngine.",
+        "sha256": "cdb6e1672261f73a95688e500a636f402db7b1c53823733936da8f8d5efc4c9c",
+        "symbols": [
+          "AssistantKernel",
+          "KernelError",
+          "selectRuntime",
+          "buildGroundingContext",
+          "runTextTurn",
+          "executeTool",
+          "router",
+          "metricsStore",
+          "toolRegistry",
+          "memoryEngine",
+          "ragEngine",
+          "budget",
+          "mem",
+          "rag",
+          "tctx",
+          "defs"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "CoreML"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift",
+        "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` owns AssistantRuntimeAdapters behavior and defines: LocalRuntimeError, CoreMLRuntimeError, DeterministicFallbackRuntime, LlamaRuntimeAdapter, FoundationModelsRuntimeAdapter, CoreMLRuntimeAdapter, generate, handleMemoryPressure, embed, kind.",
+        "sha256": "06960063399e816f12ae8e2fed56d0eb45ed098bca09808edc1957563d97fbd9",
+        "symbols": [
+          "LocalRuntimeError",
+          "CoreMLRuntimeError",
+          "DeterministicFallbackRuntime",
+          "LlamaRuntimeAdapter",
+          "FoundationModelsRuntimeAdapter",
+          "CoreMLRuntimeAdapter",
+          "generate",
+          "handleMemoryPressure",
+          "embed",
+          "kind",
+          "isAvailable",
+          "unavailableReason",
+          "generateHandler",
+          "modelURL",
+          "config"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/AssistantRuntimeProtocols.swift",
+        "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeProtocols.swift` owns AssistantRuntimeProtocols behavior and defines: AssistantRuntimeKind, TextGenerationRequest, EmbeddingRequest, RuntimeHealthReporting, RuntimeMemoryPressureHandling, LocalTextGenerationRuntime, LocalEmbeddingRuntime, handleMemoryPressure, generate, embed.",
+        "sha256": "c5f274f22efbfaa309994cda11a9f67d695ea83601ef581612f02170e68ac852",
+        "symbols": [
+          "AssistantRuntimeKind",
+          "TextGenerationRequest",
+          "EmbeddingRequest",
+          "RuntimeHealthReporting",
+          "RuntimeMemoryPressureHandling",
+          "LocalTextGenerationRuntime",
+          "LocalEmbeddingRuntime",
+          "handleMemoryPressure",
+          "generate",
+          "embed",
+          "prompt",
+          "systemPrompt",
+          "maxTokens",
+          "text",
+          "isAvailable",
+          "unavailableReason"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/AssistantRuntimeRouter.swift",
+        "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeRouter.swift` owns AssistantRuntimeRouter behavior and defines: AssistantRuntimeRouter, Selection, selection, runtime, foundation, llama, fallback, coreML, reason, decision.",
+        "sha256": "f5000d19f4fff8240695ecc5e879ffec9bb55790906cd75ed30700e7f47f9406",
+        "symbols": [
+          "AssistantRuntimeRouter",
+          "Selection",
+          "selection",
+          "runtime",
+          "foundation",
+          "llama",
+          "fallback",
+          "coreML",
+          "reason",
+          "decision"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/AssistantTurnContext.swift",
+        "responsibility": "`ios/Lumen/Assistant/AssistantTurnContext.swift` owns AssistantTurnContext behavior and defines: AssistantTaskKind, AssistantTurnContext, task, input, isForeground, lowPowerMode, thermalState, prefersFoundationModels.",
+        "sha256": "d5408b670f40d5e6faa13e8ad072a4068c0628261e1c5da0789ed2db9b36dcb7",
+        "symbols": [
+          "AssistantTaskKind",
+          "AssistantTurnContext",
+          "task",
+          "input",
+          "isForeground",
+          "lowPowerMode",
+          "thermalState",
+          "prefersFoundationModels"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/ContextBudgetAllocator.swift",
+        "responsibility": "`ios/Lumen/Assistant/ContextBudgetAllocator.swift` owns ContextBudgetAllocator behavior and defines: ContextBudgetSections, ContextBudgetAllocator, allocate, system, history, memories, rag, tools, runtime, bounded.",
+        "sha256": "c0fbd9b1cb8ed289c3d6f529c1aa7fec80500e1c9697953a4a663a32018c52ac",
+        "symbols": [
+          "ContextBudgetSections",
+          "ContextBudgetAllocator",
+          "allocate",
+          "system",
+          "history",
+          "memories",
+          "rag",
+          "tools",
+          "runtime",
+          "bounded"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyAgentRunOptions.swift",
+        "responsibility": "`ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding, preventDoubleGrounding, diagnosticsEnabled.",
+        "sha256": "2bd1fd9890db826dfe8965a1eac4798278e1e65caa02d0ecef420c25c7665093",
+        "symbols": [
+          "LegacyAgentRunOptions",
+          "GroundingMode",
+          "modelContext",
+          "conversationID",
+          "turnID",
+          "groundingMode",
+          "allowDegradedGrounding",
+          "preventDoubleGrounding",
+          "diagnosticsEnabled"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyGroundingBridge.swift",
+        "responsibility": "Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and degraded behavior stay centralized.",
+        "sha256": "9d0717e363fc9d71bf8d2022fc7057e401dba68d5b95aa51d86b0d092d96251b",
+        "symbols": [
+          "LegacyGroundingBundle",
+          "LegacyGroundingBridge",
+          "build",
+          "grounding",
+          "sections",
+          "renderedPromptContext",
+          "secureTools",
+          "metricsSummary",
+          "memoryEngine",
+          "ragEngine",
+          "toolRegistry",
+          "metricsStore",
+          "budget",
+          "mem",
+          "rag",
+          "tctx"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "CryptoKit"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyGroundingCache.swift",
+        "responsibility": "`ios/Lumen/Assistant/LegacyGroundingCache.swift` owns LegacyGroundingCache behavior and defines: LegacyGroundingCache, Key, Entry, digest, get, put, invalidate, pruneExpired, conversationID, turnID.",
+        "sha256": "90340fe00da195384ab33820604a52399dcabab6c197d0a6616827cd7be41ccf",
+        "symbols": [
+          "LegacyGroundingCache",
+          "Key",
+          "Entry",
+          "digest",
+          "get",
+          "put",
+          "invalidate",
+          "pruneExpired",
+          "conversationID",
+          "turnID",
+          "userDigest",
+          "background",
+          "lowPowerMode",
+          "thermalState",
+          "bundle",
+          "expiresAt"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyGroundingContextProvider.swift",
+        "responsibility": "`ios/Lumen/Assistant/LegacyGroundingContextProvider.swift` owns LegacyGroundingContextProvider behavior and defines: LegacyGroundingContextProvider, resolveContext, directContext, allowSharedFallback, shared, degradedReason.",
+        "sha256": "5cb512e436dff423f857d01643f699861de59075af5c218c2b8fc6fa708a2f30",
+        "symbols": [
+          "LegacyGroundingContextProvider",
+          "resolveContext",
+          "directContext",
+          "allowSharedFallback",
+          "shared",
+          "degradedReason"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyGroundingRequest.swift",
+        "responsibility": "`ios/Lumen/Assistant/LegacyGroundingRequest.swift` owns LegacyGroundingRequest behavior and defines: LegacyGroundingRequest, Mode, userMessage, conversationID, turnID, history, mode, task, roleOrSlot, externalRelevantMemories.",
+        "sha256": "288f2fcb6f559738fae5ec2e1df16f2c6c1df6c557deec5ab781caae92fd7976",
+        "symbols": [
+          "LegacyGroundingRequest",
+          "Mode",
+          "userMessage",
+          "conversationID",
+          "turnID",
+          "history",
+          "mode",
+          "task",
+          "roleOrSlot",
+          "externalRelevantMemories",
+          "externalAvailableTools",
+          "policy",
+          "baseSystemPrompt",
+          "preventDoubleGrounding"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyGroundingResult.swift",
+        "responsibility": "`ios/Lumen/Assistant/LegacyGroundingResult.swift` owns LegacyGroundingResult behavior and defines: LegacyGroundingResult, systemPrompt, userMessage, grounding, sections, bridgedTools, degradedReasons, metricsSummary, truncationOccurred.",
+        "sha256": "6f53a27f084cf18b629139958b91f98a988616d4a888c689e765cbd680cfe0e5",
+        "symbols": [
+          "LegacyGroundingResult",
+          "systemPrompt",
+          "userMessage",
+          "grounding",
+          "sections",
+          "bridgedTools",
+          "degradedReasons",
+          "metricsSummary",
+          "truncationOccurred"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyPromptAssembler.swift",
+        "responsibility": "A single user-authored grounding-like header is ambiguous, not generated grounding. Preserve the user text and still inject the bounded generated appendix.",
+        "sha256": "fed9eb14d312a79c60032b1312e1e050fdba50817ff057c8c34e623979eb215c",
+        "symbols": [
+          "LegacyPromptAssembled",
+          "LegacyPromptAssembler",
+          "assemble",
+          "titled",
+          "systemPrompt",
+          "userMessage",
+          "groundingAppendix",
+          "estimatedChars",
+          "truncationOccurred",
+          "memorySectionChars",
+          "ragSectionChars",
+          "toolSectionChars",
+          "mem",
+          "rag",
+          "tool",
+          "runtime"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyPromptInjectionPolicy.swift",
+        "responsibility": "`ios/Lumen/Assistant/LegacyPromptInjectionPolicy.swift` owns LegacyPromptInjectionPolicy behavior and defines: LegacyPromptInjectionPolicy, memoryMax, ragMax, toolMax, runtimeMax, allowSensitiveSections, backgroundSafeToolsOnly, foregroundChat, headlessTrigger, rolePipeline.",
+        "sha256": "973cffbfa371e42e9cf90cc6162cd2562858b7aae28c70952513aa1ad03995cb",
+        "symbols": [
+          "LegacyPromptInjectionPolicy",
+          "memoryMax",
+          "ragMax",
+          "toolMax",
+          "runtimeMax",
+          "allowSensitiveSections",
+          "backgroundSafeToolsOnly",
+          "foregroundChat",
+          "headlessTrigger",
+          "rolePipeline",
+          "slotAgent",
+          "diagnostics"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift",
+        "responsibility": "`ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, cancelledResult, grounding, sections.",
+        "sha256": "daa12e3c65b9bbc0f70781b7e5764d625d02aec424447d498c99487c2c592fa3",
+        "symbols": [
+          "LegacyTurnGroundingOutput",
+          "LegacyTurnGroundingCoordinator",
+          "memorySection",
+          "toolsSection",
+          "runtimeSection",
+          "build",
+          "prepareGroundedRequest",
+          "cancelledResult",
+          "grounding",
+          "sections",
+          "legacyTools",
+          "promptInjection",
+          "metricsSummary",
+          "shared",
+          "bridge",
+          "cache"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/PromptGroundingIdempotencyGuard.swift",
+        "responsibility": "`ios/Lumen/Assistant/PromptGroundingIdempotencyGuard.swift` owns PromptGroundingIdempotencyGuard behavior and defines: PromptGroundingIdempotencyGuard, sectionOccurrenceCounts, containsGrounding, stripExistingGrounding, marker, sectionHeaders, out, range, prefix, counts.",
+        "sha256": "e4a195d32617e9ba1fc53057daff13287ddf2eb87370e7b83106c6b2a9bcb2bf",
+        "symbols": [
+          "PromptGroundingIdempotencyGuard",
+          "sectionOccurrenceCounts",
+          "containsGrounding",
+          "stripExistingGrounding",
+          "marker",
+          "sectionHeaders",
+          "out",
+          "range",
+          "prefix",
+          "counts",
+          "total",
+          "earliest",
+          "idx"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/PromptGroundingRenderer.swift",
+        "responsibility": "`ios/Lumen/Assistant/PromptGroundingRenderer.swift` owns PromptGroundingRenderer behavior and defines: PromptGroundingRenderer, render, renderForPrompt, renderedMemories, memLines, renderedRAG, ragLines, renderedTools, canonicalToolIDs, toolLines.",
+        "sha256": "4203dfcb315628dcd91edfc227c763d1794d1cf88fdfcf31e3fae30ceb58d05d",
+        "symbols": [
+          "PromptGroundingRenderer",
+          "render",
+          "renderForPrompt",
+          "renderedMemories",
+          "memLines",
+          "renderedRAG",
+          "ragLines",
+          "renderedTools",
+          "canonicalToolIDs",
+          "toolLines",
+          "runtimePolicy",
+          "memoryContent",
+          "ragContent",
+          "toolContent",
+          "out",
+          "chars"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/PromptGroundingSection.swift",
+        "responsibility": "`ios/Lumen/Assistant/PromptGroundingSection.swift` owns PromptGroundingSection behavior and defines: GroundingPrivacyLevel, PromptGroundingSection, title, content, estimatedChars, sourceIDs, privacyLevel.",
+        "sha256": "bce31fc3f690b26862187dd79920b363e2cf16eb254e1efdefb31a4425deed48",
+        "symbols": [
+          "GroundingPrivacyLevel",
+          "PromptGroundingSection",
+          "title",
+          "content",
+          "estimatedChars",
+          "sourceIDs",
+          "privacyLevel"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services",
+        "path": "ios/Lumen/Services/AgentEventContinuationYield.swift",
+        "responsibility": "`ios/Lumen/Services/AgentEventContinuationYield.swift` is static Lumen source for the `Services` module.",
+        "sha256": "dda9b75f64b106eb544de201f599122d75abc483c5b156bba6c05c0f956dbc3c",
+        "symbols": []
+      },
+      {
+        "imports": [
+          "Foundation",
+          "OSLog",
+          "SwiftUI"
+        ],
+        "language": "swift",
+        "module": "Services",
+        "path": "ios/Lumen/Services/AgentGroundingInstrumentation.swift",
+        "responsibility": "`ios/Lumen/Services/AgentGroundingInstrumentation.swift` owns AgentGroundingInstrumentation behavior and defines: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancellation, mark, elapsedMs, sceneText, lock, cancelled.",
+        "sha256": "0379fe34a54176cbd5e26d1455ce8be57f2ffcfdb70b5cf0af16a7230781a019",
+        "symbols": [
+          "AgentGroundingCancellationToken",
+          "AgentGroundingMetrics",
+          "AgentGroundingInstrumentation",
+          "cancel",
+          "checkCancellation",
+          "mark",
+          "elapsedMs",
+          "sceneText",
+          "lock",
+          "cancelled",
+          "isCancelled",
+          "sectionCount",
+          "toolCount",
+          "memoryCount",
+          "promptChars",
+          "log"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services",
+        "path": "ios/Lumen/Services/AgentIntentRouter.swift",
+        "responsibility": "Compatibility facade for older agent-routing tests/call sites.",
+        "sha256": "c37a068abb309182b3aaa6fdf2aacb2b51a11302639ae5a52d7456bce462a765",
+        "symbols": [
+          "AgentIntentRouter",
+          "Decision",
+          "decide",
+          "filteredTools",
+          "routingSystemNote",
+          "allowedToolIDs",
+          "compatibilityConfidence",
+          "intent",
+          "confidence",
+          "confidenceSource",
+          "reason",
+          "requiresUserApproval",
+          "shouldAskClarification",
+          "clarificationQuestion",
+          "alternatives",
+          "attachmentsWerePresent"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Services",
+        "path": "ios/Lumen/Services/AgentRunner.swift",
+        "responsibility": "Foreground entry point. Uses the live `AppState` (reads its current snapshot).",
+        "sha256": "b7ea3eb56be1daf93ba34eb37012dfa18075daeac7c2b0a46f8cde3801beab6d",
+        "symbols": [
+          "AgentRunner",
+          "runHeadless",
+          "composedSystemPrompt",
+          "stored",
+          "fleet",
+          "cascade",
+          "resolution",
+          "executionPrompt",
+          "routing",
+          "grounding",
+          "memories",
+          "tools",
+          "assembled",
+          "mimicry",
+          "req",
+          "final"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Services",
+        "path": "ios/Lumen/Services/AgentService.swift",
+        "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser, ExtractedJSONObject, StreamingJSONScanner.",
+        "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d",
+        "symbols": [
+          "AgentRequest",
+          "AgentEvent",
+          "AgentAction",
+          "AgentTurn",
+          "AgentTurnParseError",
+          "AgentJSONCandidateSelector",
+          "Selection",
+          "AgentTurnParser",
+          "ExtractedJSONObject",
+          "StreamingJSONScanner",
+          "Event",
+          "JSONContext",
+          "AgentParseFailureTrace",
+          "AgentParseNoiseTrace",
+          "AgentNoiseInspector",
+          "Snapshot"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "AlarmKit"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: AlarmTools, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause, resume, stop.",
+        "sha256": "42e6cf15859d5a5120e976b6d2faefff398bb3acf378e4bf33dda7dd37aae97c",
+        "symbols": [
+          "AlarmTools",
+          "authorizationStatus",
+          "requestAuthorization",
+          "schedule",
+          "countdown",
+          "list",
+          "cancel",
+          "pause",
+          "resume",
+          "stop",
+          "snooze",
+          "mutateAlarm",
+          "scheduleAlarm",
+          "state",
+          "title",
+          "snoozeMinutes"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "EventKit"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/CalendarTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, createEvent, listEvents, createReminder, listReminders, store, granted, event, predicate, events.",
+        "sha256": "7235aac6cd44100aae344eb0619c20870a6151167615485cb47626b20873541d",
+        "symbols": [
+          "CalendarTools",
+          "createEvent",
+          "listEvents",
+          "createReminder",
+          "listReminders",
+          "store",
+          "granted",
+          "event",
+          "predicate",
+          "events",
+          "reminder",
+          "items"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "Contacts",
+          "UIKit"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/ContactsTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/ContactsTools.swift` owns ContactsTools behavior and defines: ContactsTools, searchContacts, call, composeMessage, composeMail, store, granted, predicate, keys, results.",
+        "sha256": "a96f17eb98bd1dc7be7acd597a3bed68384e7e4040abefe703c1672bbbbbcf72",
+        "symbols": [
+          "ContactsTools",
+          "searchContacts",
+          "call",
+          "composeMessage",
+          "composeMail",
+          "store",
+          "granted",
+          "predicate",
+          "keys",
+          "results",
+          "name",
+          "phone",
+          "trimmed",
+          "normalized",
+          "url",
+          "ok"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "PDFKit"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/FilesTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/FilesTools.swift` owns FilesTools behavior and defines: FilesTools, readImportedFile, dir, trimmed, fm, files, match, url, pdf, text.",
+        "sha256": "5faff51f772d01146ba9f3d806a38e32005c761edc8f4fc2123ab5ebf928c802",
+        "symbols": [
+          "FilesTools",
+          "readImportedFile",
+          "dir",
+          "trimmed",
+          "fm",
+          "files",
+          "match",
+          "url",
+          "pdf",
+          "text",
+          "data",
+          "s"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "HealthKit"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/HealthTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/HealthTools.swift` owns HealthTools behavior and defines: HealthTools, healthSummary, sumQuantity, averageQuantity, sleepHours, healthStore, stepType, hrType, sleepType, energyType.",
+        "sha256": "b3c999f639a90e99b5bdc1aa6a8d50500a8f39847a5109678c45359f6ca342ea",
+        "symbols": [
+          "HealthTools",
+          "healthSummary",
+          "sumQuantity",
+          "averageQuantity",
+          "sleepHours",
+          "healthStore",
+          "stepType",
+          "hrType",
+          "sleepType",
+          "energyType",
+          "distanceType",
+          "readTypes",
+          "cal",
+          "start",
+          "end",
+          "steps"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "CoreLocation"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/LocationProbe.swift",
+        "responsibility": "One-shot location fetch with a per-call delegate — no shared singleton state.",
+        "sha256": "dafa0d5eb85f688dec7cce4a398773fd0a9ad897c22ac74606fb6b39073c04f6",
+        "symbols": [
+          "LocationProbe",
+          "LocationAuthorizationAction",
+          "SingleShotLocationDelegate",
+          "SingleShotDescriptionDelegate",
+          "currentCoordinate",
+          "currentDescription",
+          "locationAuthorizationAction",
+          "locationAuthorizationUpdateAction",
+          "logUnknownAuthorizationStatus",
+          "begin",
+          "finish",
+          "locationManager",
+          "locationManagerDidChangeAuthorization",
+          "activeDelegates",
+          "manager",
+          "status"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "MapKit",
+          "UIKit"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/LocationTools.swift",
+        "responsibility": "Policy: maps.apple.com deep links must use HTTPS. Plain HTTP links are prohibited to avoid mixed-content/security regressions and are covered by tests in LocationToolsTests.",
+        "sha256": "5bbd8f81f4936aa2c1f18de869ab431164dacba3878fbc8b7bfa9a127ca7e107",
+        "symbols": [
+          "LocationTools",
+          "currentLocation",
+          "openDirections",
+          "directionsURL",
+          "searchNearby",
+          "localSearchFailureMessage",
+          "trimmed",
+          "url",
+          "components",
+          "coord",
+          "request",
+          "response",
+          "items",
+          "name",
+          "addr",
+          "nsError"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/MemoryTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, save, recall, ragSearch, expandRAGQueryIfNeeded, ragIndexFiles, ragIndexPhotos, trimmed, k, container.",
+        "sha256": "4bb9e187a7836bed2943ecb18866b3127b72c85ac4bcd75f948466e2a48f0673",
+        "symbols": [
+          "MemoryTools",
+          "save",
+          "recall",
+          "ragSearch",
+          "expandRAGQueryIfNeeded",
+          "ragIndexFiles",
+          "ragIndexPhotos",
+          "trimmed",
+          "k",
+          "container",
+          "ctx",
+          "items",
+          "expandedQuery",
+          "embeddingReady",
+          "results",
+          "counts"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "CoreMotion"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/MotionTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/MotionTools.swift` owns MotionTools behavior and defines: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end, start, ped.",
+        "sha256": "8ff5892b6ab5f6e24ab8398217cc40dc72a8b401b7e1849e66a354da0c5c507c",
+        "symbols": [
+          "MotionTools",
+          "motionActivity",
+          "pedometerData",
+          "activitySegments",
+          "shared",
+          "pedometer",
+          "activityManager",
+          "end",
+          "start",
+          "ped",
+          "activities",
+          "parts",
+          "dist",
+          "floors",
+          "summary",
+          "status"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "Photos",
+          "AVFoundation",
+          "OSLog"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/PhotosTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/PhotosTools.swift` owns PhotosTools behavior and defines: PhotosTools, searchPhotos, captureImage, formatAssetDate, previousDayRange, logger, status, options, assets, trimmed.",
+        "sha256": "e746f8988f56a6542debf5ef5a7d7b7abf0479098fd17c61f921738a342688f9",
+        "symbols": [
+          "PhotosTools",
+          "searchPhotos",
+          "captureImage",
+          "formatAssetDate",
+          "previousDayRange",
+          "logger",
+          "status",
+          "options",
+          "assets",
+          "trimmed",
+          "now",
+          "cal",
+          "dateRange",
+          "start",
+          "weekStart",
+          "monthStart"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "OSLog"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/ToolNetworkResilience.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/ToolNetworkResilience.swift` owns ToolNetworkResilience behavior and defines: ToolNetworkErrorClass, ToolRetryPolicy, ToolRequestMetrics, ToolCircuitBreaker, ToolNetworkTelemetry, Notification, ToolNetworkResilience, allowRequest, record, emit.",
+        "sha256": "305d109f74c8da4c3144021057a79e6969eec7cc72cd823a230271ef03c56dfb",
+        "symbols": [
+          "ToolNetworkErrorClass",
+          "ToolRetryPolicy",
+          "ToolRequestMetrics",
+          "ToolCircuitBreaker",
+          "ToolNetworkTelemetry",
+          "Notification",
+          "ToolNetworkResilience",
+          "allowRequest",
+          "record",
+          "emit",
+          "classify",
+          "fallbackMessage",
+          "shouldRetry",
+          "backoffDelay",
+          "maxAttempts",
+          "baseDelay"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/TriggerTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/TriggerTools.swift` owns TriggerTools behavior and defines: TriggerTools, create, list, cancel, container, ctx, title, prompt, schedule, trigger.",
+        "sha256": "02c0049e7a1453fad79a309819b613258b7bb00e7d6e34459dfbccff693bab15",
+        "symbols": [
+          "TriggerTools",
+          "create",
+          "list",
+          "cancel",
+          "container",
+          "ctx",
+          "title",
+          "prompt",
+          "schedule",
+          "trigger",
+          "minutes",
+          "fire",
+          "hhmm",
+          "parts",
+          "mins",
+          "seconds"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "CoreLocation"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/WeatherTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/WeatherTools.swift` owns WeatherTools behavior and defines: WeatherTools, currentWeather, isCurrentLocationRequest, executeRequest, geocode, currentDouble, weatherDescription, retryPolicy, coordinate, requestedLocation.",
+        "sha256": "75a86621831f2edec8495ea3d20f05e4eae6634c1effa21c32ff3b027a39b702",
+        "symbols": [
+          "WeatherTools",
+          "currentWeather",
+          "isCurrentLocationRequest",
+          "executeRequest",
+          "geocode",
+          "currentDouble",
+          "weatherDescription",
+          "retryPolicy",
+          "coordinate",
+          "requestedLocation",
+          "usesDeviceLocation",
+          "components",
+          "url",
+          "request",
+          "result",
+          "json"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/Tools",
+        "path": "ios/Lumen/Services/Tools/WebTools.swift",
+        "responsibility": "`ios/Lumen/Services/Tools/WebTools.swift` owns WebTools behavior and defines: WebTools, SearchOutput, SearchResult, String, webSearch, webFetch, pageOutput, duckDuckGoInstantAnswer, duckDuckGoHTMLSearch, collectRelatedTopic.",
+        "sha256": "cc8e7df21931044a816ea6978f0c6ba98750f19ac2e163b87c6bb934d0666ca9",
+        "symbols": [
+          "WebTools",
+          "SearchOutput",
+          "SearchResult",
+          "String",
+          "webSearch",
+          "webFetch",
+          "pageOutput",
+          "duckDuckGoInstantAnswer",
+          "duckDuckGoHTMLSearch",
+          "collectRelatedTopic",
+          "parseDuckDuckGoHTMLResults",
+          "cleanDuckDuckGoRedirectURL",
+          "normalizeURL",
+          "executeAPIRequest",
+          "executeTextRequest",
+          "summarizedText"
+        ]
+      },
+      {
+        "imports": [
+          "CoreML",
+          "Foundation",
+          "NaturalLanguage",
+          "OSLog"
+        ],
+        "language": "swift",
+        "module": "Services/IntentClassification",
+        "path": "ios/Lumen/Services/IntentClassification/BundledIntentClassifier.swift",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/BundledIntentClassifier.swift` owns BundledIntentClassifier behavior and defines: BundledIntentClassifier, classify, resetPredictionMainThreadViolationCountForTesting, predictionMainThreadViolationCountForTesting, loadNLModel, loadCoreMLModel, inferWithCoreML, predictedLabel, predictedLabelHypotheses, noteIfPredictionIsOnMainThread.",
+        "sha256": "366fdb2722fb5dc81563e56fc188f066b9ac099eda85951a6508bf1861fba800",
+        "symbols": [
+          "BundledIntentClassifier",
+          "classify",
+          "resetPredictionMainThreadViolationCountForTesting",
+          "predictionMainThreadViolationCountForTesting",
+          "loadNLModel",
+          "loadCoreMLModel",
+          "inferWithCoreML",
+          "predictedLabel",
+          "predictedLabelHypotheses",
+          "noteIfPredictionIsOnMainThread",
+          "normalizeIntentLabel",
+          "stringDoubleDictionary",
+          "shared",
+          "logger",
+          "cachedNLModel",
+          "cachedCoreMLModel"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/IntentClassification",
+        "path": "ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift` owns DeterministicIntentFallback behavior and defines: DeterministicIntentFallback, classify, decision, confidence.",
+        "sha256": "2471bb35cc79b94977c095928685cd06ca346ac7e1bdbbdf4bd16c68c74c43d1",
+        "symbols": [
+          "DeterministicIntentFallback",
+          "classify",
+          "decision",
+          "confidence"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/IntentClassification",
+        "path": "ios/Lumen/Services/IntentClassification/IntentClassificationResult.swift",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassificationResult.swift` owns IntentClassificationResult behavior and defines: IntentAlternative, IntentClassificationResult, Source, IntentToolMapping, withAllowedAlternatives, asRoutingDecision, allowedToolIDs, intent, confidence, alternatives.",
+        "sha256": "3eeedd3e5967374ef74edba36654dc43d9d890c0bfea2f6ea1cac7f5116a3f9f",
+        "symbols": [
+          "IntentAlternative",
+          "IntentClassificationResult",
+          "Source",
+          "IntentToolMapping",
+          "withAllowedAlternatives",
+          "asRoutingDecision",
+          "allowedToolIDs",
+          "intent",
+          "confidence",
+          "alternatives",
+          "requiresClarification",
+          "clarificationPrompt",
+          "source",
+          "diagnostics",
+          "normalized",
+          "deduped"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/IntentClassification",
+        "path": "ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, resolve, resolveMediumConfidence, sanitized, isApprovalSensitive, isSemanticNonDestructive, boundedConfidence, primary, candidates, alternatives.",
+        "sha256": "a38d5b1a7da0f2e657a63a95da29f0a5147e216cbcbde741cc59ab69410cd1a5",
+        "symbols": [
+          "IntentClassifierPolicy",
+          "resolve",
+          "resolveMediumConfidence",
+          "sanitized",
+          "isApprovalSensitive",
+          "isSemanticNonDestructive",
+          "boundedConfidence",
+          "primary",
+          "candidates",
+          "alternatives"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services/IntentClassification",
+        "path": "ios/Lumen/Services/IntentClassification/IntentClassifierService.swift",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierService.swift` owns IntentClassifierService behavior and defines: IntentClassifierService, route, classify, shared, override, deterministic, modelResult.",
+        "sha256": "24f5af233ecc9423cc7f8051e42732e112340eae92b3f2ed648cb97e417b032c",
+        "symbols": [
+          "IntentClassifierService",
+          "route",
+          "classify",
+          "shared",
+          "override",
+          "deterministic",
+          "modelResult"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services",
+        "path": "ios/Lumen/Services/IntentRouter.swift",
+        "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, unavailableMessage.",
+        "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec",
+        "symbols": [
+          "UserIntent",
+          "IntentRoutingDecision",
+          "IntentRouter",
+          "isMapFollowUpPrompt",
+          "classify",
+          "priorityOverride",
+          "allowedToolIDs",
+          "isToolAllowed",
+          "intentRequiresTool",
+          "unavailableMessage",
+          "blockedToolMessage",
+          "isLikelyPhoneCallIntent",
+          "isLikelyLocalKnowledgeQuery",
+          "isPersonalProfileRecallIntent",
+          "isPersonalProfileSaveIntent",
+          "isExplicitActionIntentContainingProfilePhrase"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Memory",
+        "path": "ios/Lumen/Memory/MemoryCandidate.swift",
+        "responsibility": "`ios/Lumen/Memory/MemoryCandidate.swift` owns MemoryCandidate behavior and defines: MemoryUserExplicitness, MemorySensitivity, MemoryCandidate, text, kind, topics, conversationID, messageID, createdAt, confidence.",
+        "sha256": "e4450ffbd9e172332f63712e1955ea95d38350fd2d863d33716482a5aa54ee84",
+        "symbols": [
+          "MemoryUserExplicitness",
+          "MemorySensitivity",
+          "MemoryCandidate",
+          "text",
+          "kind",
+          "topics",
+          "conversationID",
+          "messageID",
+          "createdAt",
+          "confidence",
+          "extractionReason",
+          "userExplicitness",
+          "sensitivity"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Memory",
+        "path": "ios/Lumen/Memory/MemoryConsolidator.swift",
+        "responsibility": "`ios/Lumen/Memory/MemoryConsolidator.swift` owns MemoryConsolidator behavior and defines: MemoryConsolidator, consolidate, all, seen, deleted, key.",
+        "sha256": "f2e0c80f0d499e8adfb6d99ec1e85db3f38c8f77adec3d0fef31a029ef23216a",
+        "symbols": [
+          "MemoryConsolidator",
+          "consolidate",
+          "all",
+          "seen",
+          "deleted",
+          "key"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Memory",
+        "path": "ios/Lumen/Memory/MemoryContextBuilder.swift",
+        "responsibility": "`ios/Lumen/Memory/MemoryContextBuilder.swift` owns MemoryContextBuilder behavior and defines: MemoryContextResult, MemoryContextBuilder, build, score, selected, totalChars, reasons, sourceIDs, all, q.",
+        "sha256": "b6f78f5ac9fc9277619c9e8e48203d755f9ff8811ebc191fb8c8686a9ca69fba",
+        "symbols": [
+          "MemoryContextResult",
+          "MemoryContextBuilder",
+          "build",
+          "score",
+          "selected",
+          "totalChars",
+          "reasons",
+          "sourceIDs",
+          "all",
+          "q",
+          "hasQuery",
+          "now",
+          "ranked",
+          "picked",
+          "chars",
+          "c"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Memory",
+        "path": "ios/Lumen/Memory/MemoryEngine.swift",
+        "responsibility": "`ios/Lumen/Memory/MemoryEngine.swift` owns MemoryEngine behavior and defines: MemoryEngine, search, buildContext, extractCandidates, saveCandidateIfAllowed, consolidateDueMemories, deleteMemory, pinMemory, t, lower.",
+        "sha256": "2ae3871dfa55ef94a34f46c2ac506820e6bf41732cdc67908fc165832cd25b4c",
+        "symbols": [
+          "MemoryEngine",
+          "search",
+          "buildContext",
+          "extractCandidates",
+          "saveCandidateIfAllowed",
+          "consolidateDueMemories",
+          "deleteMemory",
+          "pinMemory",
+          "t",
+          "lower",
+          "explicit",
+          "reason",
+          "result",
+          "descriptor",
+          "item"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Memory",
+        "path": "ios/Lumen/Memory/MemoryExtractionPolicy.swift",
+        "responsibility": "`ios/Lumen/Memory/MemoryExtractionPolicy.swift` owns MemoryExtractionPolicy behavior and defines: MemoryExtractionTrigger, MemoryExtractionPolicy, shouldExtract.",
+        "sha256": "78b429fe87cb875d9d0456c6ca6d4db72ac8b68c2c273d35f570b13c293c0edf",
+        "symbols": [
+          "MemoryExtractionTrigger",
+          "MemoryExtractionPolicy",
+          "shouldExtract"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Memory",
+        "path": "ios/Lumen/Memory/MemoryProvenance.swift",
+        "responsibility": "`ios/Lumen/Memory/MemoryProvenance.swift` owns MemoryProvenance behavior and defines: MemoryProvenance, memoryID, conversationID, messageID, source, createdAt.",
+        "sha256": "6d395139212cc5034e338ae70fc12d08b6a188dd8e27bb4b7058d927ba3b1bf1",
+        "symbols": [
+          "MemoryProvenance",
+          "memoryID",
+          "conversationID",
+          "messageID",
+          "source",
+          "createdAt"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Memory",
+        "path": "ios/Lumen/Memory/MemoryScorer.swift",
+        "responsibility": "`ios/Lumen/Memory/MemoryScorer.swift` owns MemoryScorer behavior and defines: MemorySaveDecision, MemoryScoreResult, MemoryScorer, score, decision, reasons, s, age, d.",
+        "sha256": "7329be69a3883fb46122cd470ffd8a67c24a0717972b21d86435f6c8ea64433b",
+        "symbols": [
+          "MemorySaveDecision",
+          "MemoryScoreResult",
+          "MemoryScorer",
+          "score",
+          "decision",
+          "reasons",
+          "s",
+          "age",
+          "d"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/ChunkingStrategy.swift",
+        "responsibility": "`ios/Lumen/RAG/ChunkingStrategy.swift` owns ChunkingStrategy behavior and defines: ChunkingContentType, ChunkingConfig, ChunkPiece, ChunkingStrategy, chunk, maxChars, overlap, text, start, end.",
+        "sha256": "4aff2130bd838a6c6a1127c89c2ef9a78756704d6680acc875ba2ab4b92d83a6",
+        "symbols": [
+          "ChunkingContentType",
+          "ChunkingConfig",
+          "ChunkPiece",
+          "ChunkingStrategy",
+          "chunk",
+          "maxChars",
+          "overlap",
+          "text",
+          "start",
+          "end",
+          "separators",
+          "out",
+          "cursor",
+          "nextSeparator",
+          "unitEnd",
+          "unit"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/EmbeddingBatcher.swift",
+        "responsibility": "`ios/Lumen/RAG/EmbeddingBatcher.swift` owns EmbeddingBatcher behavior and defines: EmbeddingBatcherError, EmbeddingBatcher, embed, batch, out.",
+        "sha256": "d944f8c07b748b32541c1334a9e66a6ca0c5d68340712591f526d56249819650",
+        "symbols": [
+          "EmbeddingBatcherError",
+          "EmbeddingBatcher",
+          "embed",
+          "batch",
+          "out"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/RAGContextBuilder.swift",
+        "responsibility": "`ios/Lumen/RAG/RAGContextBuilder.swift` owns RAGContextBuilder behavior and defines: RAGContextResult, RAGContextBuilder, build, selected, totalChars, picked, chars, seen, key, c.",
+        "sha256": "d881674f2432717faafd9a4af8f1a0243619e03e5665c58a97a2985bee34eb29",
+        "symbols": [
+          "RAGContextResult",
+          "RAGContextBuilder",
+          "build",
+          "selected",
+          "totalChars",
+          "picked",
+          "chars",
+          "seen",
+          "key",
+          "c"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/RAGDocument.swift",
+        "responsibility": "`ios/Lumen/RAG/RAGDocument.swift` owns RAGDocument behavior and defines: RAGDocument, source, text, metadata.",
+        "sha256": "d016be4464803624e45901b75ef9af61d0aacdc30d470efe6923c0cef5afb44d",
+        "symbols": [
+          "RAGDocument",
+          "source",
+          "text",
+          "metadata"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/RAGEngine.swift",
+        "responsibility": "`ios/Lumen/RAG/RAGEngine.swift` owns RAGEngine behavior and defines: RAGMaintenanceResult, RAGEngine, retrieve, buildContext, index, maintenance, success, metricSummary, indexer, semantic.",
+        "sha256": "ba66660c5d7139d93385923e304ce07ebd239f1f9194e46bd60201899dfa33e8",
+        "symbols": [
+          "RAGMaintenanceResult",
+          "RAGEngine",
+          "retrieve",
+          "buildContext",
+          "index",
+          "maintenance",
+          "success",
+          "metricSummary",
+          "indexer",
+          "semantic",
+          "mapped",
+          "ref",
+          "seen",
+          "key",
+          "r",
+          "descriptor"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/RAGIndexer.swift",
+        "responsibility": "`ios/Lumen/RAG/RAGIndexer.swift` owns RAGIndexer behavior and defines: RAGIndexer, RAGIndexingError, indexText, type, chunks, pending, embedding, chunk.",
+        "sha256": "312829deb183966c7080a0900de88a4bcb8e141fedbebebd0a641e56d0fa356e",
+        "symbols": [
+          "RAGIndexer",
+          "RAGIndexingError",
+          "indexText",
+          "type",
+          "chunks",
+          "pending",
+          "embedding",
+          "chunk"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/RAGMaintenancePolicy.swift",
+        "responsibility": "`ios/Lumen/RAG/RAGMaintenancePolicy.swift` owns RAGMaintenancePolicy behavior and defines: RAGMaintenancePolicy, allowEmbeddings.",
+        "sha256": "775730454b3688b7f8d0283560fb46549e6deceb519a5f811af6d10b4f018347",
+        "symbols": [
+          "RAGMaintenancePolicy",
+          "allowEmbeddings"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/RAGRetrievalResult.swift",
+        "responsibility": "`ios/Lumen/RAG/RAGRetrievalResult.swift` owns RAGRetrievalResult behavior and defines: RAGRetrievalResult, chunkID, source, excerpt, score, retrievalMode, offsetStart, offsetEnd.",
+        "sha256": "57a9affda49a881bd2d557f82dd49f31ef4f76f2f496c42b5b796d50ab081e1c",
+        "symbols": [
+          "RAGRetrievalResult",
+          "chunkID",
+          "source",
+          "excerpt",
+          "score",
+          "retrievalMode",
+          "offsetStart",
+          "offsetEnd"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "RAG",
+        "path": "ios/Lumen/RAG/RAGSource.swift",
+        "responsibility": "`ios/Lumen/RAG/RAGSource.swift` owns RAGSource behavior and defines: RAGSource, id, type, title, ref.",
+        "sha256": "d755858337c1de1ed3d04897f836030f79f8d853d9d4f804f7d30a3d130db080",
+        "symbols": [
+          "RAGSource",
+          "id",
+          "type",
+          "title",
+          "ref"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "EventKit"
+        ],
+        "language": "swift",
+        "module": "Tools/Builtin",
+        "path": "ios/Lumen/Tools/Builtin/CalendarReadTool.swift",
+        "responsibility": "`ios/Lumen/Tools/Builtin/CalendarReadTool.swift` owns CalendarReadTool behavior and defines: CalendarReadTool, Provider, EventKitProvider, events, validateArguments, parse, execute, store, pred, definition.",
+        "sha256": "ebcfcc759a9a65779497978d6bf5f031d130de8638e17973a36a550d8679b577",
+        "symbols": [
+          "CalendarReadTool",
+          "Provider",
+          "EventKitProvider",
+          "events",
+          "validateArguments",
+          "parse",
+          "execute",
+          "store",
+          "pred",
+          "definition",
+          "provider",
+          "limit",
+          "f",
+          "start",
+          "rawStart",
+          "parsed"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "Contacts"
+        ],
+        "language": "swift",
+        "module": "Tools/Builtin",
+        "path": "ios/Lumen/Tools/Builtin/ContactsLookupTool.swift",
+        "responsibility": "`ios/Lumen/Tools/Builtin/ContactsLookupTool.swift` owns ContactsLookupTool behavior and defines: ContactsLookupTool, Provider, CNProvider, search, validateArguments, parse, execute, executeAfterPermissionGranted, keys, req.",
+        "sha256": "0dfcdacfabaa3e962e09eec4829e252024e404387865a328ed21d8e97d4bfeba",
+        "symbols": [
+          "ContactsLookupTool",
+          "Provider",
+          "CNProvider",
+          "search",
+          "validateArguments",
+          "parse",
+          "execute",
+          "executeAfterPermissionGranted",
+          "keys",
+          "req",
+          "out",
+          "name",
+          "row",
+          "definition",
+          "provider",
+          "q"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Tools/Builtin",
+        "path": "ios/Lumen/Tools/Builtin/DeviceStatusTool.swift",
+        "responsibility": "`ios/Lumen/Tools/Builtin/DeviceStatusTool.swift` owns DeviceStatusTool behavior and defines: DeviceStatusTool, validateArguments, execute, definition, snap, text.",
+        "sha256": "7e4574b9e49d8c545a039509df17451a4f75046730cfd0461602391708efe522",
+        "symbols": [
+          "DeviceStatusTool",
+          "validateArguments",
+          "execute",
+          "definition",
+          "snap",
+          "text"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Tools/Builtin",
+        "path": "ios/Lumen/Tools/Builtin/LocationSnapshotTool.swift",
+        "responsibility": "`ios/Lumen/Tools/Builtin/LocationSnapshotTool.swift` owns LocationSnapshotTool behavior and defines: LocationSnapshotTool, validateArguments, execute, definition.",
+        "sha256": "2855ce0fd3db07f15f74e7c1eb5ac6a14fa5b3718574ffb734991c99e67e239f",
+        "symbols": [
+          "LocationSnapshotTool",
+          "validateArguments",
+          "execute",
+          "definition"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "SwiftData"
+        ],
+        "language": "swift",
+        "module": "Tools/Builtin",
+        "path": "ios/Lumen/Tools/Builtin/MemorySearchTool.swift",
+        "responsibility": "`ios/Lumen/Tools/Builtin/MemorySearchTool.swift` owns MemorySearchTool behavior and defines: MemorySearchTool, Args, validateArguments, parse, execute, query, limit, pinnedOnly, topic, definition.",
+        "sha256": "fb036c4a26aaddba512fed52525bc8f0f83518fb29d64f7907d78b5427379f82",
+        "symbols": [
+          "MemorySearchTool",
+          "Args",
+          "validateArguments",
+          "parse",
+          "execute",
+          "query",
+          "limit",
+          "pinnedOnly",
+          "topic",
+          "definition",
+          "args",
+          "mc",
+          "engine",
+          "now",
+          "initial",
+          "q"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "UserNotifications"
+        ],
+        "language": "swift",
+        "module": "Tools/Builtin",
+        "path": "ios/Lumen/Tools/Builtin/NotificationTool.swift",
+        "responsibility": "`ios/Lumen/Tools/Builtin/NotificationTool.swift` owns NotificationTool behavior and defines: NotificationTool, validateArguments, execute, definition, content.",
+        "sha256": "b5a938c6d02e7157fd5d38eab45bd17f71668754674faa2e722a8d91864e46c1",
+        "symbols": [
+          "NotificationTool",
+          "validateArguments",
+          "execute",
+          "definition",
+          "content"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation",
+          "UIKit"
+        ],
+        "language": "swift",
+        "module": "Tools/Builtin",
+        "path": "ios/Lumen/Tools/Builtin/OpenURLTool.swift",
+        "responsibility": "`ios/Lumen/Tools/Builtin/OpenURLTool.swift` owns OpenURLTool behavior and defines: OpenURLTool, validateArguments, execute, definition, raw, url, scheme, opened.",
+        "sha256": "6f3b621f0cddb2649bff2c7763aab0d53dc5c47d3ab29d3e7e46cea61f7eb630",
+        "symbols": [
+          "OpenURLTool",
+          "validateArguments",
+          "execute",
+          "definition",
+          "raw",
+          "url",
+          "scheme",
+          "opened"
+        ]
+      }
+    ]
+  },
+  "injectionPolicy": {
+    "maxPromptCharacters": 6000,
+    "privacy": "static repo source only; generated/build/model/private-local folders excluded",
+    "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
+    "target": "AgentGroundingPromptComposer"
+  },
+  "manifestCommit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
+  "manifestIntentCount": 22,
+  "manifestToolCount": 53,
+  "schemaVersion": "1.0.0",
+  "sourceFamilies": [
+    "codebase_home_corpus",
+    "codebase_home_sft"
+  ]
+}

@@ -37,11 +37,13 @@ AGENT_SOURCE_FAMILIES: dict[str, set[str]] = {
     "rem": {
         "rem_reflection",
         "runtime_audit_repairs",
+        "codebase_home_sft",
     },
     "fleet": {
         "manifest_grounding_cards",
         "fleet_system_prompts",
         "cross_model_training",
+        "codebase_home_sft",
     },
 }
 
@@ -85,6 +87,8 @@ AGENT_TASK_TYPES: dict[str, set[str]] = {
         "reflection_and_memory_policy",
         "runtime_manifest_drift_repair",
         "dataset_repair",
+        "codebase_home_grounding",
+        "codebase_home_overview",
         "memory_ttl_policy",
         "self_eval_repair",
     },
@@ -95,6 +99,8 @@ AGENT_TASK_TYPES: dict[str, set[str]] = {
         "fleet_delegation_preference",
         "fleet_private_state_boundary",
         "manifest_grounding",
+        "codebase_home_grounding",
+        "codebase_home_overview",
         "role_directory",
     },
 }

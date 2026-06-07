@@ -164,8 +164,9 @@ def compile_embedding_datasets(
         add_pair(f"Where is `{file_hash.path}` represented in the source map?", doc_id, "code_domain_query_to_source_map", {"path": file_hash.path})
         add_pair(f"Find the code file related to {file_hash.path.split('/')[-1]}", doc_id, "source_file_name_query", {"path": file_hash.path})
 
-    for family in ("tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs", "eval_scenarios"):
-        for index, record in enumerate(datasets.get(family, [])[:300]):
+    for family in ("tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs", "eval_scenarios", "codebase_home_corpus"):
+        limit = 700 if family == "codebase_home_corpus" else 300
+        for index, record in enumerate(datasets.get(family, [])[:limit]):
             doc_id = _record_to_corpus(add_doc, family, index, record)
             query = _query_for_dataset_record(family, record)
             if query:
@@ -261,9 +262,23 @@ def _record_to_corpus(add_doc: Any, family: str, index: int, record: dict[str, A
         "manifest_grounding_cards": "manifest_grounding_card",
         "runtime_audit_repairs": "repair_sample",
         "eval_scenarios": "eval_scenario",
+        "codebase_home_corpus": "codebase_home_module",
     }.get(family, family)
-    title = str(record.get("title") or record.get("taskType") or record.get("type") or f"{family}:{record_id}")
-    text = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    title = str(record.get("title") or record.get("path") or record.get("taskType") or record.get("type") or f"{family}:{record_id}")
+    if family == "codebase_home_corpus":
+        text = "\n".join(
+            [
+                f"Path: {record.get('path')}",
+                f"Module: {record.get('module')}",
+                f"Language: {record.get('language')}",
+                f"Responsibility: {record.get('responsibility')}",
+                f"Symbols: {', '.join(record.get('symbols') or [])}",
+                f"Imports: {', '.join(record.get('imports') or [])}",
+                f"Evidence:\n{record.get('evidenceSnippet') or ''}",
+            ]
+        )
+    else:
+        text = json.dumps(record, ensure_ascii=False, sort_keys=True)
     return add_doc(object_type, record_id, title, text, {"sourceFamily": family})
 
 
@@ -280,6 +295,15 @@ def _query_for_dataset_record(family: str, record: dict[str, Any]) -> str:
         return str(record.get("query") or record.get("toolID") or record.get("id") or "Find the matching tool schema.")
     if family == "manifest_grounding_cards":
         return str(record.get("query") or record.get("summary") or record.get("id") or "Find the manifest grounding card.")
+    if family == "codebase_home_corpus":
+        path = str(record.get("path") or "")
+        module = str(record.get("module") or "")
+        symbols = record.get("symbols") if isinstance(record.get("symbols"), list) else []
+        if path == ".":
+            return "What are the main modules in Lumen's app codebase home?"
+        if symbols:
+            return f"Where is `{symbols[0]}` implemented in the Lumen codebase?"
+        return f"Which file owns `{module}` behavior in Lumen?"
     return ""
 
 

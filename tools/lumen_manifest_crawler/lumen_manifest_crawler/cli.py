@@ -69,7 +69,7 @@ def generate(
         return
 
     runtime_audit_reports = load_runtime_audit_reports(runtime_audit)
-    datasets = generate_all_datasets(manifest, runtime_audit_paths=runtime_audit, deterministic=deterministic)
+    datasets = generate_all_datasets(manifest, root=root, runtime_audit_paths=runtime_audit, deterministic=deterministic)
     report = validate_manifest(manifest, datasets, strict=strict)
     should_generate_full_fleet_artifacts = generate_system_prompts or cross_model_train_dir is not None
     fleet_artifacts = generate_fleet_artifacts(manifest) if should_generate_full_fleet_artifacts else None

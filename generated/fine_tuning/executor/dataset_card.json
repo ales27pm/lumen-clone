@@ -1,22 +1,24 @@
 {
   "agent": "executor",
-  "availableSFTRecords": 1244,
+  "availableSFTRecords": 1486,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
     "sentinelSafe": true
   },
   "deterministic": true,
-  "manifestCommit": "65446a07258bc6fa06111e5f968527101570bbe6",
+  "manifestCommit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
   "recordCounts": {
     "eval": 111,
     "train_dpo": 11,
-    "train_sft": 645,
+    "train_sft": 686,
     "val_dpo": 2,
-    "val_sft": 114
+    "val_sft": 121
   },
   "sourceFamilies": [
     "approval_boundary_samples",
+    "codebase_home_corpus",
+    "codebase_home_sft",
     "cross_model_training",
     "embedding_corpus",
     "embedding_dataset_card",
@@ -41,6 +43,7 @@
     "approval_granted",
     "approval_rejected",
     "approval_required_tool",
+    "codebase_home_grounding",
     "embedding_corpus",
     "embedding_dataset_card",
     "embedding_eval_retrieval",

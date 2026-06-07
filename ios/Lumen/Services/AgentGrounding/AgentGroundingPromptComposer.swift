@@ -4,18 +4,35 @@ nonisolated enum AgentGroundingPromptComposer {
     static func composeSystemPrompt(for slot: LumenModelSlot, fallbackSystemPrompt: String) -> String {
         let fallback = fallbackSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let bundledPrompt = try? BundledAgentGroundingStore(bundle: .main).systemPrompt(for: slot.rawValue)
+        let store = BundledAgentGroundingStore(bundle: .main)
+        guard let bundledPrompt = try? store.systemPrompt(for: slot.rawValue)
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !bundledPrompt.isEmpty else {
             return fallbackSystemPrompt
         }
 
+        let loadedRuntimeGrounding = (try? store.loadRuntimeGroundingPrompt(maxCharacters: 6_000))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let runtimeGrounding = (loadedRuntimeGrounding?.isEmpty == false) ? loadedRuntimeGrounding : nil
+
+        let groundedPrompt: String
+        if let runtimeGrounding {
+            groundedPrompt = """
+            \(bundledPrompt)
+
+            Bundled runtime grounding:
+            \(runtimeGrounding)
+            """
+        } else {
+            groundedPrompt = bundledPrompt
+        }
+
         guard !fallback.isEmpty else {
-            return bundledPrompt
+            return groundedPrompt
         }
 
         return """
-        \(bundledPrompt)
+        \(groundedPrompt)
 
         Runtime caller context and user configuration:
         \(fallback)

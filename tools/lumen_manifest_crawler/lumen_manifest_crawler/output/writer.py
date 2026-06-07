@@ -73,6 +73,7 @@ def write_outputs(
                 handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
     _write_embedding_outputs(output_dir / "embedding", datasets)
+    _write_runtime_grounding_outputs(output_dir, manifest, datasets)
 
     if fine_tuning_datasets is not None:
         _write_fine_tuning_outputs(fine_tuning_output_dir or (output_dir / "fine_tuning"), fine_tuning_datasets)
@@ -202,6 +203,129 @@ def _write_embedding_outputs(root: Path, datasets: dict[str, list[dict[str, Any]
         json.dumps(card, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _write_runtime_grounding_outputs(
+    output_dir: Path,
+    manifest: AgentBehaviorManifest,
+    datasets: dict[str, list[dict[str, Any]]],
+) -> None:
+    codebase_records = [
+        record for record in datasets.get("codebase_home_corpus", [])
+        if isinstance(record, dict)
+    ]
+    if not codebase_records:
+        return
+
+    module_counts: dict[str, int] = {}
+    language_counts: dict[str, int] = {}
+    for record in codebase_records:
+        module = str(record.get("module") or "unknown")
+        language = str(record.get("language") or "unknown")
+        module_counts[module] = module_counts.get(module, 0) + 1
+        language_counts[language] = language_counts.get(language, 0) + 1
+
+    selected_records = _select_runtime_grounding_records(codebase_records)
+    bundle = {
+        "schemaVersion": "1.0.0",
+        "artifactKind": "agent_grounding_runtime_bundle",
+        "sourceFamilies": ["codebase_home_corpus", "codebase_home_sft"],
+        "manifestCommit": manifest.sourceIntegrity.commit,
+        "manifestToolCount": len(manifest.tools),
+        "manifestIntentCount": len(manifest.intents),
+        "codebaseHome": {
+            "recordCount": len(codebase_records),
+            "moduleCounts": dict(sorted(module_counts.items())),
+            "languageCounts": dict(sorted(language_counts.items())),
+            "selectedFiles": selected_records,
+        },
+        "injectionPolicy": {
+            "target": "AgentGroundingPromptComposer",
+            "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
+            "privacy": "static repo source only; generated/build/model/private-local folders excluded",
+            "maxPromptCharacters": 6000,
+        },
+    }
+    (output_dir / "runtime_grounding_bundle.json").write_text(
+        json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "runtime_grounding_prompt.md").write_text(
+        _runtime_grounding_prompt(bundle),
+        encoding="utf-8",
+    )
+
+
+def _select_runtime_grounding_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    priority_tokens = (
+        "AgentGrounding/",
+        "Assistant/",
+        "Services/Agent",
+        "Services/Tools/",
+        "Services/Intent",
+        "Memory/",
+        "RAG/",
+        "Tools/",
+        "tools/lumen_manifest_crawler/",
+        "docs/",
+    )
+
+    def score(record: dict[str, Any]) -> tuple[int, str]:
+        path = str(record.get("path") or "")
+        priority = min((idx for idx, token in enumerate(priority_tokens) if token in path), default=99)
+        return priority, path
+
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in sorted(records, key=score):
+        path = str(record.get("path") or "")
+        if path == "." or path in seen:
+            continue
+        seen.add(path)
+        selected.append({
+            "path": path,
+            "module": record.get("module"),
+            "language": record.get("language"),
+            "sha256": record.get("sha256"),
+            "responsibility": record.get("responsibility"),
+            "symbols": list(record.get("symbols") or [])[:16],
+            "imports": list(record.get("imports") or [])[:16],
+        })
+        if len(selected) >= 80:
+            break
+    return selected
+
+
+def _runtime_grounding_prompt(bundle: dict[str, Any]) -> str:
+    home = bundle.get("codebaseHome") if isinstance(bundle.get("codebaseHome"), dict) else {}
+    modules = home.get("moduleCounts") if isinstance(home.get("moduleCounts"), dict) else {}
+    selected = home.get("selectedFiles") if isinstance(home.get("selectedFiles"), list) else []
+    top_modules = sorted(modules.items(), key=lambda item: (-int(item[1]), str(item[0])))[:24]
+    lines = [
+        "# Lumen Runtime Grounding Bundle",
+        "",
+        "Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.",
+        "",
+        f"- Manifest commit: `{bundle.get('manifestCommit') or 'unknown'}`",
+        f"- Tools: `{bundle.get('manifestToolCount')}`",
+        f"- Intents: `{bundle.get('manifestIntentCount')}`",
+        f"- Codebase-home records: `{home.get('recordCount')}`",
+        "",
+        "## Top Modules",
+    ]
+    lines.extend(f"- `{name}`: {count} files" for name, count in top_modules)
+    lines.extend(["", "## Key Files"])
+    for record in selected[:60]:
+        path = record.get("path") or ""
+        module = record.get("module") or ""
+        responsibility = " ".join(str(record.get("responsibility") or "").split())[:220]
+        symbols = ", ".join(str(symbol) for symbol in (record.get("symbols") or [])[:8])
+        if symbols:
+            lines.append(f"- `{path}` ({module}): {responsibility} Symbols: {symbols}.")
+        else:
+            lines.append(f"- `{path}` ({module}): {responsibility}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _write_fine_tuning_outputs(root: Path, datasets: dict[str, AgentFineTuningDataset]) -> None:
