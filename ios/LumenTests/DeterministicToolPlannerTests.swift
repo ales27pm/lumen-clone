@@ -101,4 +101,14 @@ struct DeterministicToolPlannerTests {
         #expect(action?.tool == "memory.recall")
         #expect(action?.args["query"]?.stringValue == "user name")
     }
+
+    @Test func memorySaveThenRecallPlansBothActions() async throws {
+        let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."
+        let routing = IntentRouter.classify(prompt)
+        let steps = DeterministicToolPlanner.planSteps(routing: routing, prompt: prompt, availableToolIDs: routing.allowedToolIDs)
+        #expect(steps.map(\.tool) == ["memory.save", "memory.recall"])
+        #expect(steps.first?.args["content"]?.stringValue.contains("prefer concise bullet points") == true)
+        #expect(steps.last?.args["query"]?.stringValue == "prefer concise bullet points")
+    }
+
 }

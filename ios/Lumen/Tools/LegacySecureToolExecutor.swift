@@ -3,7 +3,23 @@ import SwiftData
 
 @MainActor
 enum LegacySecureToolExecutor {
-    private static let readOnlyAllowlist: Set<String> = ["weather", "maps.search", "rag.search", "memory.recall", "files.read", "trigger.list"]
+    private static let readOnlyAllowlist: Set<String> = [
+        "weather",
+        "maps.search",
+        "maps.directions",
+        "location.current",
+        "web.search",
+        "web.fetch",
+        "rag.search",
+        "rag.index_files",
+        "rag.index_photos",
+        "memory.recall",
+        "memory.save",
+        "files.read",
+        "trigger.list",
+        "alarm.authorization_status",
+        "alarm.list"
+    ]
 
     static func execute(_ toolID: String, arguments: [String: String], approval: ToolExecutionApproval = .autonomous, conversationID: UUID? = nil, turnID: UUID? = nil, modelContext: ModelContext? = nil, isBackground: Bool = false) async -> String {
         await execute(toolID: toolID, arguments: AgentJSONArguments(stringDictionary: arguments), approval: approval, conversationID: conversationID, turnID: turnID, modelContext: modelContext, isBackground: isBackground)
@@ -14,6 +30,16 @@ enum LegacySecureToolExecutor {
     }
 
     static func execute(toolID: String, arguments: AgentJSONArguments, approval: ToolExecutionApproval = .autonomous, conversationID: UUID? = nil, turnID: UUID? = nil, modelContext: ModelContext? = nil, isBackground: Bool = false) async -> String {
+        let rawNormalized = toolID
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: ".")
+            .replacingOccurrences(of: " ", with: ".")
+
+        if rawNormalized == "open" || rawNormalized == "open.url" || rawNormalized == "openurl" {
+            return "Tool denied by legacy secure policy."
+        }
+
         let canonical = ToolRouteGuard.canonicalToolID(toolID)
         let mappedSecureID: String? = {
             switch canonical {
@@ -31,13 +57,14 @@ enum LegacySecureToolExecutor {
             return result.modelText
         }
 
+        if readOnlyAllowlist.contains(canonical) {
+            return await ToolExecutor.shared.execute(canonical, arguments: arguments, approval: approval)
+        }
+
         let lower = canonical.lowercased()
         if lower.contains("delete") || lower.contains("send") || lower.contains("open") || lower.contains("call") || lower.contains("mail") || lower.contains("message") || lower.contains("web") {
             return "Tool denied by legacy secure policy. Open the app to approve this action."
         }
-        guard readOnlyAllowlist.contains(canonical) else {
-            return "Tool unavailable pending secure migration."
-        }
-        return await ToolExecutor.shared.execute(canonical, arguments: arguments, approval: approval)
+        return "Tool unavailable pending secure migration."
     }
 }

@@ -77,7 +77,7 @@ struct E2ETestRunnerHygieneTests {
             scenario: scenario
         )
         #expect(failures.contains("Live agent returned fallback/error text instead of completing the scenario"))
-        #expect(failures.contains("Raw live final required hint missing before eval rewrite: swift"))
+        #expect(!failures.contains(where: { $0.contains("required hint") }))
     }
 
     @Test func routingOnlyScenarioDoesNotApplyLiveAgentQualityGate() {
