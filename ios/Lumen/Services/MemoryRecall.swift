@@ -11,7 +11,6 @@ enum MemoryRecall {
     ) async -> [MemoryContextItem] {
         let rawItems = await MemoryStore.recall(query: query, context: context, limit: limit)
         return rawItems.compactMap { item in
-            MemoryStore.migrateExpiryIfNeeded(for: item)
             guard !MemoryStore.isExpired(item) else { return nil }
             let content = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !content.isEmpty else { return nil }
@@ -20,7 +19,7 @@ enum MemoryRecall {
                 scope: scope(for: item),
                 authority: authority(for: item),
                 createdAt: item.createdAt,
-                expiresAt: item.expiresAt,
+                expiresAt: MemoryStore.inferredExpiresAt(for: item),
                 source: item.source,
                 topic: item.topic
             )
