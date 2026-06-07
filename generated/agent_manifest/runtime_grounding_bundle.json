@@ -227,7 +227,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift` owns BundledAgentGroundingStore behavior and defines: BundledFleetSystemPrompt, RuntimeGroundingBundle, RuntimeCodebaseHome, RuntimeGroundingFile, RuntimeGroundingInjectionPolicy, BundledAgentGroundingStoreError, for, GroundingResourceLoader, BundledAgentGroundingStore, fileExtension.",
-        "sha256": "2b41679d211b9398cc915437d5c703251113f140fba03a18249709ae34d484bf",
+        "sha256": "033789ef1ff0bfae086dd3d5dd4d77b364c0310389f2e2e946c0a9a0e70ace86",
         "symbols": [
           "BundledFleetSystemPrompt",
           "RuntimeGroundingBundle",
@@ -977,7 +977,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser, ExtractedJSONObject, StreamingJSONScanner.",
-        "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d",
+        "sha256": "3687ced1ce042f674a2c9be62e2f7ce5607defa4ec01d40b955e7ef9e037525c",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -2050,7 +2050,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
+  "manifestCommit": "50aa14941fa9502956abd4592e6285d570cf59f9",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

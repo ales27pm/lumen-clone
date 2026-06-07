@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
+    "commit": "50aa14941fa9502956abd4592e6285d570cf59f9",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -31,7 +31,7 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
+        "sha256": "3687ced1ce042f674a2c9be62e2f7ce5607defa4ec01d40b955e7ef9e037525c"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",

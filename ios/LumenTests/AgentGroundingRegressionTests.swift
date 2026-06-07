@@ -386,6 +386,29 @@ extension AgentGroundingRegressionTests {
         #expect(!response.text.lowercased().contains("compatibility mode"))
     }
 
+    @Test func compatibilityGreetingDoesNotExposeNativeBuildFallback() async {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Hi",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 64,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: false)
+
+        let response = await SlotAgentService.deterministicCompatibilityResponseForTests(original: req, effective: req, options: options)
+
+        #expect(response.steps.isEmpty)
+        #expect(response.text == "Hi. How can I help?")
+        #expect(!response.text.lowercased().contains("compatibility mode"))
+        #expect(!response.text.lowercased().contains("native build"))
+    }
+
     @Test func compatibilityMemorySaveThenRecallReportsRememberedPreference() async {
         let tools = ToolRegistry.all.filter { ["memory.save", "memory.recall"].contains($0.id) }
         let req = AgentRequest(

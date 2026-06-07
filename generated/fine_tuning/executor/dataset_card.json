@@ -1,13 +1,13 @@
 {
   "agent": "executor",
-  "availableSFTRecords": 1486,
+  "availableSFTRecords": 1487,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
     "sentinelSafe": true
   },
   "deterministic": true,
-  "manifestCommit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
+  "manifestCommit": "50aa14941fa9502956abd4592e6285d570cf59f9",
   "recordCounts": {
     "eval": 111,
     "train_dpo": 11,

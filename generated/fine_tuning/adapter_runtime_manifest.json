@@ -39,7 +39,7 @@
       "recordCounts": {
         "eval": 93,
         "train_dpo": 14,
-        "train_sft": 1104,
+        "train_sft": 1103,
         "val_dpo": 3,
         "val_sft": 195
       },
@@ -84,7 +84,7 @@
       "recordCounts": {
         "eval": 4,
         "train_dpo": 7,
-        "train_sft": 445,
+        "train_sft": 444,
         "val_dpo": 1,
         "val_sft": 78
       },
