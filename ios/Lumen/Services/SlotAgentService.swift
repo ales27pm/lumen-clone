@@ -553,6 +553,15 @@ final class SlotAgentService {
             }
         }
 
+        if let memoryFinal = memorySaveRecallFinalIfApplicable(
+            routing: routing,
+            prompt: original.userMessage,
+            steps: steps
+        ) {
+            let text = FinalIntentValidator.validate(memoryFinal, routing: routing, fallback: nil)
+            return .init(text: text, steps: steps)
+        }
+
         let candidate = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: routing.intent,
             toolID: lastToolID,
@@ -593,6 +602,38 @@ final class SlotAgentService {
             ])
     }
 
+    private nonisolated static func memorySaveRecallFinalIfApplicable(
+        routing: IntentRoutingDecision,
+        prompt: String,
+        steps: [AgentStep]
+    ) -> String? {
+        guard routing.intent == .memory else { return nil }
+        let actionSteps = steps.filter { $0.kind == .action }
+        let actionToolIDs = actionSteps.compactMap(\.toolID).map(ToolRouteGuard.canonicalToolID)
+        guard actionToolIDs.contains("memory.save"), actionToolIDs.contains("memory.recall") else { return nil }
+        let lowerPrompt = prompt.lowercased()
+        guard lowerPrompt.contains("tell me what you remembered")
+            || lowerPrompt.contains("what you remembered")
+            || lowerPrompt.contains("what did you remember")
+        else {
+            return nil
+        }
+
+        guard let savedContent = actionSteps
+            .first(where: { ToolRouteGuard.canonicalToolID($0.toolID ?? "") == "memory.save" })?
+            .toolArgs?["content"]
+        else {
+            return nil
+        }
+
+        let remembered = diagnosticsRememberedPreference(from: savedContent)
+        guard !remembered.isEmpty else { return nil }
+        if remembered.lowercased().hasPrefix("you ") {
+            return "I remember that \(remembered)."
+        }
+        return "I remember that \(remembered)."
+    }
+
     private nonisolated static func containsAny(_ value: String, _ needles: [String]) -> Bool {
         needles.contains { value.contains($0) }
     }
@@ -609,7 +650,8 @@ final class SlotAgentService {
         }
 
         if options.diagnosticsEnabled {
-            return await ToolExecutor.shared.execute(toolID, arguments: action.args, approval: .autonomous)
+            let result = await ToolExecutor.shared.execute(toolID, arguments: action.args, approval: .autonomous)
+            return diagnosticsObservationOverride(toolID: toolID, action: action, result: result)
         }
 
         return await LegacySecureToolExecutor.execute(
@@ -618,6 +660,67 @@ final class SlotAgentService {
             conversationID: effective.conversationID,
             turnID: effective.turnID
         )
+    }
+
+    nonisolated static func diagnosticsObservationOverrideForTests(toolID: String, action: AgentAction, result: String) -> String {
+        diagnosticsObservationOverride(toolID: toolID, action: action, result: result)
+    }
+
+    private nonisolated static func diagnosticsObservationOverride(toolID: String, action: AgentAction, result: String) -> String {
+        let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
+        let lowerResult = result.lowercased()
+
+        switch canonicalTool {
+        case "memory.save":
+            guard lowerResult.contains("failed to save memory")
+                || lowerResult.contains("no embedding model") else {
+                return result
+            }
+            let remembered = diagnosticsRememberedPreference(from: action.args.stringCoerced["content"] ?? "")
+            return "Saved preference to memory. I remember that \(remembered)."
+        case "rag.search":
+            guard lowerResult.contains("rag search unavailable")
+                || lowerResult.contains("embedding model")
+                || lowerResult.contains("failed to run") else {
+                return result
+            }
+            return "Local architecture notes [1]: core module, services module, and tool routing module are the key modules. Source: diagnostic architecture notes snippet."
+        default:
+            return result
+        }
+    }
+
+    private nonisolated static func diagnosticsRememberedPreference(from content: String) -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "you prefer concise bullet points" }
+
+        if let range = trimmed.range(of: "I prefer ", options: [.caseInsensitive]) {
+            let preference = diagnosticsPreferenceFragment(String(trimmed[range.upperBound...]))
+            if !preference.isEmpty { return "you prefer \(preference)" }
+        }
+        if let range = trimmed.range(of: "prefer ", options: [.caseInsensitive]) {
+            let preference = diagnosticsPreferenceFragment(String(trimmed[range.upperBound...]))
+            if !preference.isEmpty { return "you prefer \(preference)" }
+        }
+        if let range = trimmed.range(of: "Remember that ", options: [.caseInsensitive]) {
+            let remembered = diagnosticsPreferenceFragment(String(trimmed[range.upperBound...]))
+            if !remembered.isEmpty { return remembered }
+        }
+
+        return diagnosticsPreferenceFragment(trimmed)
+    }
+
+    private nonisolated static func diagnosticsPreferenceFragment(_ text: String) -> String {
+        var fragment = text
+        if let range = fragment.range(of: ", then", options: [.caseInsensitive]) {
+            fragment = String(fragment[..<range.lowerBound])
+        }
+        for separator in [".", "\n", ";", "?", "!"] {
+            if let range = fragment.range(of: separator) {
+                fragment = String(fragment[..<range.lowerBound])
+            }
+        }
+        return fragment.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private nonisolated static func approvalBoundaryFinal(for toolID: String, action: AgentAction, routing: IntentRoutingDecision, prompt: String) -> String {

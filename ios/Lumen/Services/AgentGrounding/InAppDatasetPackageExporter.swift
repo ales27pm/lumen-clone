@@ -12,6 +12,7 @@ nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
     let recentTraces: [AgentBehaviorTrace]
     let traceSelectedToolAllowedCount: Int
     let traceParseErrorCount: Int
+    let improveLoop: ImproveLoopDataset
     let exportPolicy: InAppDatasetExportPolicy
 }
 
@@ -40,7 +41,7 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.1.0"
+    static let schemaVersion = "1.2.0"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
@@ -57,6 +58,12 @@ nonisolated enum InAppDatasetPackageExporter {
     ) -> LumenInAppDatasetPackage {
         let traces = AgentBehaviorTraceRecorder.recent(limit: traceLimit)
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
+        let improveLoop = ImproveLoopSampleGate.buildDataset(
+            behaviorAudit: mergedBehaviorAudit,
+            traces: traces,
+            scenarioResults: includeScenarioResults ? scenarioResults : [],
+            sourceCommit: mergedBehaviorAudit?.sourceCommit
+        )
         return LumenInAppDatasetPackage(
             schemaVersion: schemaVersion,
             generatedAt: Date(),
@@ -74,7 +81,9 @@ nonisolated enum InAppDatasetPackageExporter {
             recentTraces: traces,
             traceSelectedToolAllowedCount: traces.reduce(into: 0) { count, trace in
                 guard let selectedToolID = trace.selectedToolID else { return }
-                if trace.allowedToolIDs.contains(selectedToolID) {
+                let selected = ToolRouteGuard.canonicalToolID(selectedToolID)
+                let allowed = Set(trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
+                if allowed.contains(selected) {
                     count += 1
                 }
             },
@@ -83,9 +92,10 @@ nonisolated enum InAppDatasetPackageExporter {
                     count += 1
                 }
             },
+            improveLoop: improveLoop,
             exportPolicy: InAppDatasetExportPolicy(
                 format: "agent-grounding-runtime-json-package",
-                privacy: "contains only manifest audit failures, behavior violations, and bounded runtime trace prefixes; no full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are exported",
+                privacy: "contains only manifest audit failures, behavior violations, bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are exported",
                 promptPolicy: "promptPrefix fields are bounded and should be treated as diagnostic snippets only",
                 traceLimit: traceLimit,
                 source: "RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
@@ -125,6 +135,7 @@ nonisolated enum InAppDatasetPackageExporter {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(package)
         try data.write(to: url, options: [.atomic])
+        try writeImproveLoopJSONL(package.improveLoop, directory: directory, timestamp: Self.safeTimestamp(package.generatedAt))
         return InAppDatasetPackageExportResult(url: url, package: package)
     }
 
@@ -210,6 +221,24 @@ nonisolated enum InAppDatasetPackageExporter {
             return false
         }
         return stage.contains("json") || stage.contains("orchestrator") || stage.contains("executor") || trace.slot.lowercased() == "cortex"
+    }
+
+    private static func writeImproveLoopJSONL(_ dataset: ImproveLoopDataset, directory: URL, timestamp: String) throws {
+        try writeJSONL(dataset.acceptedTraining, to: directory.appendingPathComponent("accepted_training-\(timestamp).jsonl", isDirectory: false))
+        try writeJSONL(dataset.quarantinedSamples, to: directory.appendingPathComponent("quarantined_samples-\(timestamp).jsonl", isDirectory: false))
+        try writeJSONL(dataset.regressionTests, to: directory.appendingPathComponent("regression_tests-\(timestamp).jsonl", isDirectory: false))
+    }
+
+    private static func writeJSONL<T: Encodable>(_ records: [T], to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var data = Data()
+        for record in records {
+            data.append(try encoder.encode(record))
+            data.append(0x0A)
+        }
+        try data.write(to: url, options: [.atomic])
     }
 
     private static func safeTimestamp(_ date: Date) -> String {
