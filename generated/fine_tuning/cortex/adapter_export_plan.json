@@ -5,15 +5,17 @@
   "agent": "cortex",
   "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
   "datasetCard": {
-    "manifestCommit": "65446a07258bc6fa06111e5f968527101570bbe6",
+    "manifestCommit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
     "recordCounts": {
       "eval": 555,
       "train_dpo": 8,
-      "train_sft": 206,
+      "train_sft": 286,
       "val_dpo": 1,
-      "val_sft": 36
+      "val_sft": 50
     },
     "sourceFamilies": [
+      "codebase_home_corpus",
+      "codebase_home_sft",
       "cortex_routing",
       "cross_model_training",
       "embedding_corpus",
@@ -29,6 +31,8 @@
       "train_sft"
     ],
     "taskTypes": [
+      "codebase_home_grounding",
+      "codebase_home_overview",
       "cortex_routing",
       "embedding_corpus",
       "embedding_dataset_card",

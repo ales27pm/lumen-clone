@@ -162,6 +162,19 @@ def test_fleet_has_model_slot_coverage(compiled_fine_tuning: tuple) -> None:
         assert slot.id in blob
 
 
+def test_codebase_home_records_route_to_fleet_and_rem() -> None:
+    repo_root = _repo_root()
+    manifest = generate_manifest(repo_root)
+    datasets = generate_all_datasets(manifest, root=repo_root)
+    fine_tuning = compile_agent_fine_tuning_datasets(manifest, datasets)
+
+    assert datasets["codebase_home_corpus"]
+    assert datasets["codebase_home_sft"]
+    for agent in ("fleet", "rem"):
+        records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+        assert any(record["metadata"]["sourceFamily"] == "codebase_home_sft" for record in records)
+
+
 def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> None:
     required = {
         "agent",

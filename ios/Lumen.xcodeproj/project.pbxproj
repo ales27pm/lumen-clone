@@ -278,6 +278,10 @@
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_improvement_loop",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/fleet_system_prompts.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/runtime_grounding_bundle.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/runtime_grounding_prompt.md",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/dataset/codebase_home_corpus.jsonl",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/agent_manifest/dataset/codebase_home_sft.jsonl",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AgentGrounding/cross_model_training/cross_model_training.jsonl",
 			);
 			runOnlyForDeploymentPostprocessing = 0;

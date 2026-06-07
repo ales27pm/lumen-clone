@@ -122,6 +122,7 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
     runtime_reports = load_runtime_audit_reports(list(config.runtime_audit_paths))
     datasets = generate_all_datasets(
         manifest,
+        root=root,
         runtime_audit_paths=list(config.runtime_audit_paths) if config.runtime_audit_paths else None,
         deterministic=config.deterministic,
     )

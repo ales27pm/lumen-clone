@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from lumen_manifest_crawler.dataset.codebase_home import generate_codebase_home_records
 from lumen_manifest_crawler.dataset.cortex import generate_cortex_records
 from lumen_manifest_crawler.dataset.compiler import (
     DatasetCompilerConfig,
@@ -40,11 +41,13 @@ def generate_role_datasets(manifest: AgentBehaviorManifest) -> dict[str, list[di
 def generate_all_datasets(
     manifest: AgentBehaviorManifest,
     *,
+    root: Path | None = None,
     runtime_audit_paths: list[Path] | None = None,
     deterministic: bool = True,
 ) -> dict[str, list[dict[str, Any]]]:
     """Compile role datasets plus normalized runtime-audit-derived datasets."""
     role_records = generate_role_datasets(manifest)
+    codebase_home_records = generate_codebase_home_records(root) if root is not None else {}
     runtime_audit_reports = load_runtime_audit_reports(runtime_audit_paths)
     compiled = compile_state_of_art_datasets(
         manifest,
@@ -55,6 +58,7 @@ def generate_all_datasets(
     datasets: dict[str, list[dict[str, Any]]] = {
         **role_records,
         **compiled.records,
+        **codebase_home_records,
     }
     embedding = compile_embedding_datasets(manifest, datasets)
     return {

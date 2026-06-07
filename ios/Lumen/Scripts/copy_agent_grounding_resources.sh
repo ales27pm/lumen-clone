@@ -123,6 +123,8 @@ require_file "$AGENT_MANIFEST_DIR/fleet_system_prompts.json" 'fleet_system_promp
 require_file "$AGENT_MANIFEST_DIR/manifest_validation_report.json" 'manifest_validation_report.json'
 require_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.sha256" 'AgentBehaviorManifest.sha256'
 require_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.incremental.sha256" 'AgentBehaviorManifest.incremental.sha256'
+require_file "$AGENT_MANIFEST_DIR/runtime_grounding_bundle.json" 'runtime_grounding_bundle.json'
+require_file "$AGENT_MANIFEST_DIR/runtime_grounding_prompt.md" 'runtime_grounding_prompt.md'
 require_file "$AGENT_MANIFEST_DIR/dataset_manifest.json" 'dataset_manifest.json'
 require_file "$AGENT_MANIFEST_DIR/dataset_index.csv" 'dataset_index.csv'
 require_file "$AGENT_MANIFEST_DIR/tool_registry.csv" 'tool_registry.csv'
@@ -136,6 +138,8 @@ require_file "$AGENT_MANIFEST_DIR/dataset/eval_scenarios.jsonl" 'dataset/eval_sc
 require_file "$AGENT_MANIFEST_DIR/dataset/tool_schema_cards.jsonl" 'dataset/tool_schema_cards.jsonl'
 require_file "$AGENT_MANIFEST_DIR/dataset/manifest_grounding_cards.jsonl" 'dataset/manifest_grounding_cards.jsonl'
 require_file "$AGENT_MANIFEST_DIR/dataset/runtime_audit_repairs.jsonl" 'dataset/runtime_audit_repairs.jsonl'
+require_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_corpus.jsonl" 'dataset/codebase_home_corpus.jsonl'
+require_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_sft.jsonl" 'dataset/codebase_home_sft.jsonl'
 
 require_file "$CROSS_MODEL_DIR/cross_model_training.jsonl" 'cross_model_training.jsonl'
 require_file "$CROSS_MODEL_DIR/train_sft_cross.jsonl" 'train_sft_cross.jsonl'

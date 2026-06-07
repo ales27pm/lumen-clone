@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "6e890e2e22d7fac0eb48059e19a753db7b25b409",
+    "commit": "db026705dd97118c998ef3cd671d1b9b73bb6d5a",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -15,7 +15,7 @@
       },
       {
         "path": "ios/Lumen/Models/MemoryContextItem.swift",
-        "sha256": "0b0ea5c4b38d3adfa1b0f30d4d776215d82627f961bb359bacb0ea038bf910da"
+        "sha256": "4cb506038184f7aeaaa4c55d1dc58631489987fe61ceaeb356a76994cd8ac5ba"
       },
       {
         "path": "ios/Lumen/Models/MemoryItem.swift",
@@ -31,15 +31,15 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "de587826cc1e89e21db224b3e7355b77ffc6c5599bf782ae9b47347a1ccfd01b"
+        "sha256": "03361af45a96f656f6cd3e41098600e8850c77df43667167679c5cffb694459d"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "sha256": "0b238b3b31d28d513755ba4c41b5c1c788d00be8c27db5ae8f1820ceeda06e41"
+        "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
-        "sha256": "4155b9378b2b8039cf12c07c0820419aeb7e4f4f7315330658482dd9501a46ce"
+        "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
       },
       {
         "path": "ios/Lumen/Services/MimicryProfile.swift",
@@ -47,7 +47,7 @@
       },
       {
         "path": "ios/Lumen/Services/ModelFleet.swift",
-        "sha256": "23ce9bbafbfcd2c7f4ca685a69f954bf22d6c687d6a90ca55b9af8fc7f8bc102"
+        "sha256": "2f6f8e209ceb5191a1d5d40991cbe295f9d346f1f3feac32b33144f0f5594d03"
       },
       {
         "path": "ios/Lumen/Services/RemCycleService.swift",
@@ -59,7 +59,7 @@
       },
       {
         "path": "ios/Lumen/Views/ChatView.swift",
-        "sha256": "300d46e32a3d18d07d233559d2790b644be94ade9e5c9028023e835a4310d573"
+        "sha256": "b56f3430168a95e0cdb3875841cff565abecaf92307e4f35d2b00572b25e3923"
       }
     ]
   },

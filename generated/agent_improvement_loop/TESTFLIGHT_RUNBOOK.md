@@ -4,10 +4,10 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 
 ## Build identity
 
-- Manifest fingerprint: `06ec4a4d253a01a28995c7e25cbbc856ab48e3d929f558f190515014896d6b8a`
-- Manifest commit: `65446a07258bc6fa06111e5f968527101570bbe6`
+- Manifest fingerprint: `3eb6ec7788ba832420cb6943d5832bd9b31f9688f3b3463f5a3302c23f7d9e54`
+- Manifest commit: `db026705dd97118c998ef3cd671d1b9b73bb6d5a`
 - Build label: `None`
-- Expected export: `lumen-agent-grounding-audit-*.json or lumen-live-e2e-report-*.json from Agent Grounding > Export Runtime Audit Package or End-to-end tests > Export Live E2E Report JSON`
+- Expected export: `lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package`
 
 ## Required app flow
 
@@ -17,11 +17,11 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 4. Open the in-app Agent Grounding screen.
 5. Tap `Run Agent Grounding Audit`.
 6. Tap `Export In-App Dataset Package`.
-7. Share/save the produced `lumen-agent-grounding-audit-*.json or lumen-live-e2e-report-*.json` file.
+7. Share/save the produced `lumen-in-app-dataset-*.json` file.
 8. Feed it into the next loop:
 
 ```bash
-python -m lumen_manifest_crawler improve-loop --root /home/ales27pm/Lumen --output /home/ales27pm/Lumen/generated/agent_manifest --loop-output /home/ales27pm/Lumen/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'
+python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'
 ```
 
 ## Scenario queue

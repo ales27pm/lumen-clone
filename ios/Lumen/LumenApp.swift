@@ -182,6 +182,8 @@ final class AppStartupCoordinator {
             try await GroundingResourceLoader.shared.verifyRequiredResourcesAsync()
             _ = try await GroundingResourceLoader.shared.loadManifestAsync()
             _ = try await GroundingResourceLoader.shared.loadFleetSystemPromptsAsync()
+            _ = try await GroundingResourceLoader.shared.loadRuntimeGroundingBundleAsync()
+            _ = try await GroundingResourceLoader.shared.loadRuntimeGroundingPromptAsync()
             await MainActor.run {
                 appState.runtime.updateBootStep(id: "grounding", detail: "Bundled agent grounding resources ready", state: .complete)
             }

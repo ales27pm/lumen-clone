@@ -1,11 +1,46 @@
 import Foundation
 
-public struct BundledFleetSystemPrompt: Codable, Hashable, Sendable {
+nonisolated public struct BundledFleetSystemPrompt: Codable, Hashable, Sendable {
     public let slotID: String?
     public let role: String?
     public let systemPrompt: String?
     public let system_prompt: String?
 
+}
+
+nonisolated public struct RuntimeGroundingBundle: Codable, Hashable, Sendable {
+    public let schemaVersion: String
+    public let artifactKind: String
+    public let sourceFamilies: [String]
+    public let manifestCommit: String?
+    public let manifestToolCount: Int?
+    public let manifestIntentCount: Int?
+    public let codebaseHome: RuntimeCodebaseHome
+    public let injectionPolicy: RuntimeGroundingInjectionPolicy
+}
+
+nonisolated public struct RuntimeCodebaseHome: Codable, Hashable, Sendable {
+    public let recordCount: Int
+    public let moduleCounts: [String: Int]
+    public let languageCounts: [String: Int]
+    public let selectedFiles: [RuntimeGroundingFile]
+}
+
+nonisolated public struct RuntimeGroundingFile: Codable, Hashable, Sendable {
+    public let path: String
+    public let module: String?
+    public let language: String?
+    public let sha256: String?
+    public let responsibility: String?
+    public let symbols: [String]
+    public let imports: [String]
+}
+
+nonisolated public struct RuntimeGroundingInjectionPolicy: Codable, Hashable, Sendable {
+    public let target: String
+    public let purpose: String
+    public let privacy: String
+    public let maxPromptCharacters: Int
 }
 
 public enum BundledAgentGroundingStoreError: LocalizedError, Sendable {
@@ -46,6 +81,14 @@ public actor GroundingResourceLoader {
     public func loadManifestValidationReportAsync() throws -> Data {
         try store.loadValidationReportData()
     }
+
+    public func loadRuntimeGroundingBundleAsync() throws -> RuntimeGroundingBundle {
+        try store.loadRuntimeGroundingBundle()
+    }
+
+    public func loadRuntimeGroundingPromptAsync() throws -> String {
+        try store.loadRuntimeGroundingPrompt()
+    }
 }
 
 public final class BundledAgentGroundingStore: @unchecked Sendable {
@@ -75,7 +118,7 @@ public final class BundledAgentGroundingStore: @unchecked Sendable {
         }
     }
 
-    public func loadManifest() throws -> AgentBehaviorManifest {
+    public nonisolated func loadManifest() throws -> AgentBehaviorManifest {
         let url = try fileURL("AgentGrounding/agent_manifest/AgentBehaviorManifest", extension: "json")
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(AgentBehaviorManifest.self, from: data)
@@ -110,6 +153,22 @@ public final class BundledAgentGroundingStore: @unchecked Sendable {
         return try Data(contentsOf: url)
     }
 
+    public nonisolated func loadRuntimeGroundingBundle() throws -> RuntimeGroundingBundle {
+        let url = try fileURL("AgentGrounding/agent_manifest/runtime_grounding_bundle", extension: "json")
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(RuntimeGroundingBundle.self, from: data)
+    }
+
+    public nonisolated func loadRuntimeGroundingPrompt(maxCharacters: Int? = nil) throws -> String {
+        let url = try fileURL("AgentGrounding/agent_manifest/runtime_grounding_prompt", extension: "md")
+        let text = try String(contentsOf: url, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let maxCharacters, text.count > maxCharacters else {
+            return text
+        }
+        return String(text.prefix(maxCharacters)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public nonisolated func crossModelTrainingFileURL(named fileName: String) throws -> URL {
         let base = try crossModelTrainingDirectoryURL
         let url = base.appendingPathComponent(fileName)
@@ -131,6 +190,10 @@ public final class BundledAgentGroundingStore: @unchecked Sendable {
         _ = try fileURL("AgentGrounding/agent_manifest/fleet_system_prompts", extension: "json")
         _ = try fileURL("AgentGrounding/agent_manifest/manifest_validation_report", extension: "json")
         _ = try fileURL("AgentGrounding/agent_manifest/AgentBehaviorManifest", extension: "md")
+        _ = try fileURL("AgentGrounding/agent_manifest/runtime_grounding_bundle", extension: "json")
+        _ = try fileURL("AgentGrounding/agent_manifest/runtime_grounding_prompt", extension: "md")
+        _ = try fileURL("AgentGrounding/agent_manifest/dataset/codebase_home_corpus", extension: "jsonl")
+        _ = try fileURL("AgentGrounding/agent_manifest/dataset/codebase_home_sft", extension: "jsonl")
         _ = try crossModelTrainingFileURL(named: "cross_model_training.jsonl")
         _ = try crossModelTrainingFileURL(named: "train_sft_cross.jsonl")
         _ = try crossModelTrainingFileURL(named: "val_sft_cross.jsonl")
