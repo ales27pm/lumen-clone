@@ -110,6 +110,34 @@ struct DeterministicToolPlannerTests {
         #expect(action?.tool == "calendar.list")
     }
 
+    @Test func calendarShowAppointmentsDoesNotCreateEvent() async throws {
+        let routing = IntentRouter.classify("Show my appointments tomorrow")
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Show my appointments tomorrow",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .calendar)
+        #expect(action?.tool == "calendar.list")
+    }
+
+    @Test func calendarStandaloneNumberWordDoesNotBecomeHour() async throws {
+        let routing = IntentRouter.classify("Schedule three appointments tomorrow")
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Schedule three appointments tomorrow",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        let baseline = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Schedule appointments tomorrow",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .calendar)
+        #expect(action?.tool == "calendar.create")
+        #expect(action?.args["startsInMinutes"]?.stringValue == baseline?.args["startsInMinutes"]?.stringValue)
+    }
+
 
     @Test func memoryNameSaveNormalizesFact() async throws {
         let routing = IntentRouter.classify("Can you remember that my name is Alexis?")

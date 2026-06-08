@@ -117,13 +117,16 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .calendar:
+            if isCalendarListIntent(text) {
+                return action("calendar.list")
+            }
             if isCalendarCreateIntent(text) {
                 return action("calendar.create", [
                     "title": .string(extractCalendarTitle(from: prompt)),
                     "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
                 ])
             }
-            if containsAny(text, ["list", "show", "upcoming", "today", "tomorrow"]) { return action("calendar.list") }
+            if containsAny(text, ["today", "tomorrow"]) { return action("calendar.list") }
             return nil
         case .reminder:
             if containsAny(text, ["list", "show", "pending"]) { return action("reminders.list") }
@@ -295,12 +298,17 @@ nonisolated enum DeterministicToolPlanner {
             && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"])
     }
 
-    private static func isCalendarCreateIntent(_ text: String) -> Bool {
+    private static func isCalendarListIntent(_ text: String) -> Bool {
         containsAny(text, [
-            "create event", "create an event", "add event", "add an event",
-            "schedule", "set an appointment", "appointment", "meeting",
-            "put ", "book "
+            "list", "show", "upcoming", "what's on", "what is on",
+            "check my calendar", "calendar events", "events today", "events tomorrow",
+            "do i have", "any meetings", "any appointments"
         ])
+    }
+
+    private static func isCalendarCreateIntent(_ text: String) -> Bool {
+        containsAny(text, ["set an appointment", "set appointment", "schedule", "book "])
+            || (containsAny(text, ["create", "add", "put "]) && containsAny(text, ["event", "appointment", "meeting", "calendar"]))
     }
 
     private static func extractCalendarTitle(from prompt: String) -> String {
@@ -357,7 +365,7 @@ nonisolated enum DeterministicToolPlanner {
             "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
             "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12
         ]
-        for (word, hour) in words where text.contains(" at \(word)") || text.contains(" \(word) ") {
+        for (word, hour) in words where text.contains(" at \(word)") {
             let pm = text.contains("pm") || text.contains("afternoon") || text.contains("evening")
             return pm && hour < 12 ? hour + 12 : hour
         }

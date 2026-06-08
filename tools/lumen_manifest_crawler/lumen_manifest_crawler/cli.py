@@ -321,12 +321,16 @@ def framework_diagnose(
 
 @framework_app.command("ingest")
 def framework_ingest(
+    workflow: str = typer.Argument("improve-loop", help="Ingestion workflow to run; currently only improve-loop is supported."),
     runtime_audit: Annotated[Optional[list[Path]], typer.Option("--runtime-audit", help="Runtime audit export file or directory. Can be passed multiple times.")] = None,
     root: Path = typer.Option(Path("."), "--root", help="Repository root."),
     require_testflight_runtime_audit: bool = typer.Option(False, "--require-testflight-runtime-audit", help="Treat missing TestFlight audit as a hard gap."),
     fail_on_validation: bool = typer.Option(False, "--fail-on-validation", help="Exit non-zero on critical/error gaps."),
 ) -> None:
     """Run improve-loop ingestion through the framework entrypoint."""
+    if workflow != "improve-loop":
+        console.print(f"[red]Unsupported framework ingest workflow: {workflow}[/red]")
+        raise typer.Exit(code=2)
     resolved_root = root.resolve()
     audit_paths = tuple(runtime_audit or [resolved_root / "exports"])
     result = run_agent_improvement_loop(

@@ -330,7 +330,7 @@ struct ChatView: View {
         }
 
         guard !Task.isCancelled, activeTurnID == turnID, generationController.isCurrent(requestID, for: conversation.id) else {
-            emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-agent", "reason": "turn-not-current"])
+            emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-agent", "reason": chatCancellationReason(turnID: turnID, requestID: requestID)])
             return
         }
         finalText = await repairSchemaPlaceholderFinalIfNeeded(finalText, userText: text, routing: routing, memories: memories, attachments: attachments)
@@ -455,7 +455,7 @@ struct ChatView: View {
         }
 
         guard !Task.isCancelled, activeTurnID == turnID, generationController.isCurrent(requestID, for: conversation.id) else {
-            emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-plain", "reason": "turn-not-current"])
+            emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-plain", "reason": chatCancellationReason(turnID: turnID, requestID: requestID)])
             return
         }
         let completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: request.id)
@@ -524,6 +524,14 @@ struct ChatView: View {
 
     private func chatTraceSHA256(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func chatCancellationReason(turnID: UUID, requestID: UUID) -> String {
+        if Task.isCancelled { return "task-cancelled" }
+        if activeTurnID != turnID { return "turn-replaced" }
+        if !generationController.isCurrent(requestID, for: conversation.id) { return "request-replaced" }
+        if let reason = AppCancellationBus.shared.lastCancellationReason { return reason }
+        return "generation-stopped"
     }
 
     private func safeShortTermContext(excludingCurrentUserMessageID currentID: UUID? = nil, maxTurns: Int = 4) -> [(role: MessageRole, content: String)] {
