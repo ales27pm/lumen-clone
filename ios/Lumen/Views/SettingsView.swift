@@ -147,55 +147,11 @@ struct SettingsView: View {
                     #endif
 
                     NavigationLink {
-                        AgentGroundingAuditView(registryProvider: LiveRuntimeToolRegistryProvider())
+                        DeveloperConsoleView()
                     } label: {
-                        Label("Agent grounding audit", systemImage: "checkmark.seal.text.page")
+                        Label("Developer Console", systemImage: "wrench.and.screwdriver")
                     }
-                    .accessibilityIdentifier("settings.developer.agentGroundingAudit")
-
-                    NavigationLink {
-                        E2ETestRunnerView()
-                    } label: {
-                        Label("End-to-end tests", systemImage: "testtube.2")
-                    }
-                    .accessibilityIdentifier("settings.developer.e2eTests")
-
-                    if PersistentRuntimeDiagnosticsAvailability.isDeveloperVisible {
-                        NavigationLink {
-                            PersistentRuntimeDiagnosticsView()
-                        } label: {
-                            Label("Persistent runtime diagnostics", systemImage: "waveform.path.ecg.rectangle")
-                        }
-                        .accessibilityIdentifier("settings.developer.persistentRuntimeDiagnostics")
-                    }
-
-                    Button {
-                        runDeveloperChecks()
-                    } label: {
-                        Label("Run storage checks", systemImage: "checkmark.circle")
-                    }
-                    .accessibilityIdentifier("settings.developer.runTests")
-
-                    NavigationLink {
-                        DeveloperTextView(title: "Logs", bodyText: logsText)
-                    } label: {
-                        Label("Logs", systemImage: "doc.text.magnifyingglass")
-                    }
-                    .accessibilityIdentifier("settings.developer.logs")
-
-                    NavigationLink {
-                        DeveloperTextView(title: "Debug", bodyText: debugText)
-                    } label: {
-                        Label("Debug", systemImage: "ladybug")
-                    }
-                    .accessibilityIdentifier("settings.developer.debug")
-
-                    NavigationLink {
-                        DeveloperTextView(title: "Diagnostic", bodyText: diagnosticText)
-                    } label: {
-                        Label("Diagnostic", systemImage: "stethoscope")
-                    }
-                    .accessibilityIdentifier("settings.developer.diagnostic")
+                    .accessibilityIdentifier("settings.developer.console")
                 }
 
                 Section {
@@ -208,14 +164,6 @@ struct SettingsView: View {
                     Text("Privacy")
                 } footer: {
                     Text("Review which system features Lumen can access.")
-                }
-
-                Section("Diagnostics") {
-                    NavigationLink {
-                        DiagnosticsView()
-                    } label: {
-                        Label("Diagnostics", systemImage: "waveform.path.ecg")
-                    }
                 }
 
                 Section("About") {
@@ -389,7 +337,7 @@ private struct DeveloperTextView: View {
     }
 }
 
-private struct E2ETestRunnerView: View {
+struct E2ETestRunnerView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
     @State private var isRunning = false

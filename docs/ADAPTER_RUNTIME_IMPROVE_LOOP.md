@@ -4,6 +4,11 @@ This document is a drift guard. It describes the runtime architecture, artifact 
 
 The goal is speed and stability on iPhone. The default Qwen3 runtime must never regress to loading multiple full chat GGUFs per role.
 
+For the complete developer testing, debugging, diagnostics, TestFlight, and
+learning workflow, use `docs/DEVELOPER_IMPROVE_FRAMEWORK.md` as the canonical
+framework. This document owns the Qwen3 adapter-runtime invariants inside that
+framework.
+
 ## Non-negotiable runtime invariant
 
 Default Qwen3 runtime shape:

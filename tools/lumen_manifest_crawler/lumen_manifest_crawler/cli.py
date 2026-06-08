@@ -16,6 +16,14 @@ from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
+from lumen_manifest_crawler.developer_framework import (
+    FrameworkEnvironment,
+    analyze_reports,
+    build_framework_jobs,
+    load_framework_snapshot,
+    run_framework_job,
+    serve_framework,
+)
 from lumen_manifest_crawler.fleet_artifacts import generate_fleet_artifacts, generate_manifest_markdown
 from lumen_manifest_crawler.improvement_loop import AgentImprovementLoopConfig, run_agent_improvement_loop
 from lumen_manifest_crawler.output.writer import write_outputs
@@ -26,6 +34,8 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(no_args_is_help=True)
 generate_app = typer.Typer(help="Generate AgentBehaviorManifest.json and grounded datasets.", invoke_without_command=True)
 app.add_typer(generate_app, name="generate")
+framework_app = typer.Typer(help="Run the consolidated developer framework.")
+app.add_typer(framework_app, name="framework")
 console = Console()
 
 
@@ -209,6 +219,144 @@ def improve_loop(
     console.print(f"[green]Wrote loop outputs to {loop_output.resolve()}[/green]")
     if fail_on_validation and not result.passed:
         raise typer.Exit(code=1)
+
+
+def _framework_environment(value: str) -> FrameworkEnvironment:
+    try:
+        return FrameworkEnvironment(value)
+    except ValueError as exc:
+        allowed = ", ".join(item.value for item in FrameworkEnvironment)
+        raise typer.BadParameter(f"environment must be one of: {allowed}") from exc
+
+
+@framework_app.command("status")
+def framework_status(
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    environment: str = typer.Option("auto", "--environment", help="Framework environment: auto, macos, ubuntu."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Print consolidated framework state."""
+    snapshot = load_framework_snapshot(root, _framework_environment(environment))
+    if json_output:
+        console.print(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    console.print(f"[bold]Environment:[/bold] {snapshot['environment']}")
+    console.print(f"[bold]Authoritative live layer:[/bold] {snapshot['authoritativeLiveLayer']}")
+    console.print(f"[bold]Gaps:[/bold] {snapshot['gapCount']}")
+    console.print(f"[bold]Jobs:[/bold] {len(snapshot['availableJobs'])}")
+    for gap in snapshot["gaps"][:10]:
+        if isinstance(gap, dict):
+            console.print(f"  [yellow]- {gap.get('severity', 'unknown')}[/yellow] {gap.get('title') or gap.get('category')}")
+
+
+@framework_app.command("plan")
+def framework_plan(
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    environment: str = typer.Option("auto", "--environment", help="Framework environment: auto, macos, ubuntu."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Print the whitelisted framework job queue."""
+    env = _framework_environment(environment)
+    jobs = [job.output_dict() for job in build_framework_jobs(root.resolve(), env)]
+    if json_output:
+        console.print(json.dumps({"jobs": jobs}, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    for job in jobs:
+        console.print(f"[bold]{job['id']}[/bold] [{job['environment']}/{job['evidenceLayer']}]")
+        console.print(f"  {job['description']}")
+        console.print(f"  [dim]{shlex.join(job['command'])}[/dim]")
+
+
+@framework_app.command("run")
+def framework_run(
+    job_id: str = typer.Argument(..., help="Whitelisted framework job id."),
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    environment: str = typer.Option("auto", "--environment", help="Framework environment: auto, macos, ubuntu."),
+) -> None:
+    """Run one whitelisted framework job."""
+    try:
+        returncode = run_framework_job(root, job_id, _framework_environment(environment))
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+    if returncode != 0:
+        raise typer.Exit(code=returncode)
+
+
+@framework_app.command("serve")
+def framework_serve(
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    environment: str = typer.Option("auto", "--environment", help="Framework environment: auto, macos, ubuntu."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host."),
+    port: int = typer.Option(8776, "--port", help="Bind port."),
+    open_browser: bool = typer.Option(False, "--open", help="Open browser after starting."),
+) -> None:
+    """Serve the local developer framework UI."""
+    raise typer.Exit(code=serve_framework(root, host, port, _framework_environment(environment), open_browser=open_browser))
+
+
+@framework_app.command("diagnose")
+def framework_diagnose(
+    path: Annotated[Optional[list[Path]], typer.Option("--path", help="Report, log, JSON file, or directory to analyze.")] = None,
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    output: Optional[Path] = typer.Option(Path("generated/developer_framework/framework_report.json"), "--output", help="Output report path."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+) -> None:
+    """Analyze local logs, reports, and runtime exports."""
+    paths = path or [Path("exports"), Path("runtime-audits"), Path("generated/agent_improvement_loop")]
+    report = analyze_reports(root, paths)
+    if output:
+        out = output if output.is_absolute() else root.resolve() / output
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if json_output:
+        console.print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    console.print(f"[bold]Runtime reports:[/bold] {report['reportCount']}")
+    console.print(f"[bold]Runtime failures:[/bold] {report['runtimeFailureCount']}")
+    console.print(f"[bold]Plain findings:[/bold] {len(report['plainFindings'])}")
+
+
+@framework_app.command("ingest")
+def framework_ingest(
+    runtime_audit: Annotated[Optional[list[Path]], typer.Option("--runtime-audit", help="Runtime audit export file or directory. Can be passed multiple times.")] = None,
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    require_testflight_runtime_audit: bool = typer.Option(False, "--require-testflight-runtime-audit", help="Treat missing TestFlight audit as a hard gap."),
+    fail_on_validation: bool = typer.Option(False, "--fail-on-validation", help="Exit non-zero on critical/error gaps."),
+) -> None:
+    """Run improve-loop ingestion through the framework entrypoint."""
+    resolved_root = root.resolve()
+    audit_paths = tuple(runtime_audit or [resolved_root / "exports"])
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=resolved_root,
+            output=resolved_root / "generated/agent_manifest",
+            loop_output=resolved_root / "generated/agent_improvement_loop",
+            runtime_audit_paths=audit_paths,
+            require_testflight_runtime_audit=require_testflight_runtime_audit,
+        )
+    )
+    console.print(f"[bold]Loop passed:[/bold] {result.passed}")
+    console.print(f"[bold]Gaps:[/bold] {len(result.gaps)}")
+    if fail_on_validation and not result.passed:
+        raise typer.Exit(code=1)
+
+
+@framework_app.command("train")
+def framework_train(
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Print Ubuntu training jobs instead of running."),
+) -> None:
+    """Dispatch the Ubuntu LoRA training/publishing profile."""
+    jobs = [job for job in build_framework_jobs(root.resolve(), FrameworkEnvironment.UBUNTU) if job.id in {"ubuntu-preflight", "train-adapters", "convert-adapters", "hf-resolve"}]
+    if dry_run:
+        for job in jobs:
+            console.print(f"[bold]{job.id}[/bold] {shlex.join(job.command)}")
+        return
+    for job in jobs:
+        returncode = run_framework_job(root, job.id, FrameworkEnvironment.UBUNTU)
+        if returncode != 0:
+            raise typer.Exit(code=returncode)
 
 
 def _manifest_fingerprint(manifest: Any) -> str:
