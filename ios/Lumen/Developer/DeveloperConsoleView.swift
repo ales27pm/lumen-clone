@@ -33,6 +33,9 @@ struct DeveloperConsoleView: View {
         }
         .navigationTitle("Developer Console")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.background, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .safeAreaPadding(.top, 8)
         .task {
             model.loadCachedDiagnostics()
         }
@@ -50,6 +53,8 @@ struct DeveloperConsoleView: View {
             LabeledContent("Live authority", value: "Live E2E")
             LabeledContent("Runtime mode", value: appState.isGenerating ? "Generating" : "Idle")
             LabeledContent("Model family", value: LumenModelFamily.persistedSelected.displayName)
+            LabeledContent("Agent adapters", value: "Shared base + role LoRAs")
+            LabeledContent("Role loop", value: "Cortex / Executor / Mouth / REM")
             Text(model.statusMessage)
                 .font(.caption)
                 .foregroundStyle(Theme.textSecondary)
@@ -118,7 +123,7 @@ struct DeveloperConsoleView: View {
             NavigationLink {
                 PersistentRuntimeDiagnosticsView()
             } label: {
-                Label("Export persistent logs", systemImage: "doc.zipper")
+                Label("Export chat runtime traces", systemImage: "doc.zipper")
             }
         }
     }

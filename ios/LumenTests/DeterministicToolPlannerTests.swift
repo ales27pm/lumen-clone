@@ -86,6 +86,30 @@ struct DeterministicToolPlannerTests {
         #expect(action?.args["schedule"]?.stringValue == "once")
     }
 
+    @Test func calendarAppointmentTomorrowMorningPlansCreateNotList() async throws {
+        let routing = IntentRouter.classify("Set an appointment for tomorrow morning at nine in my calendar")
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Set an appointment for tomorrow morning at nine in my calendar",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .calendar)
+        #expect(action?.tool == "calendar.create")
+        #expect(action?.args["title"]?.stringValue == "Appointment")
+        #expect(Int(action?.args["startsInMinutes"]?.stringValue ?? "0") ?? 0 > 0)
+    }
+
+    @Test func calendarUpcomingPromptStillPlansList() async throws {
+        let routing = IntentRouter.classify("List my upcoming calendar events")
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "List my upcoming calendar events",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .calendar)
+        #expect(action?.tool == "calendar.list")
+    }
+
 
     @Test func memoryNameSaveNormalizesFact() async throws {
         let routing = IntentRouter.classify("Can you remember that my name is Alexis?")

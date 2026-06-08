@@ -339,6 +339,7 @@ nonisolated enum PersistentRuntimeDiagnosticSignalKind: String, Codable, Sendabl
     case slotAgentEndEmitted
     case slotAgentContinuationFinished
     case slotAgentCancel
+    case chatRuntimeTrace
     case groundingCost
     case uiUpdate
     case sceneTransition

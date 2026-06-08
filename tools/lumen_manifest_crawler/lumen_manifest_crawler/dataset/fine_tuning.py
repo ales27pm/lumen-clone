@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from lumen_manifest_crawler.dataset.adapter_export import augment_unsloth_config_for_adapter_export
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
@@ -836,9 +837,9 @@ def _backfill_rem_runtime_repairs(
 def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[str, Any]:
     high_reasoning = agent in {"cortex", "executor", "rem"}
     fleet_strategy = "train_first" if agent == "fleet" else "per_slot_adapter"
-    return {
+    base_config = {
         "agent": agent,
-        "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+        "base_model_name": "Qwen/Qwen3-1.7B",
         "max_seq_length": config.max_sequence_length,
         "load_in_4bit": True,
         "lora_r": 24 if high_reasoning else 16,
@@ -851,12 +852,13 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         "warmup_steps": 20,
         "dataset_dir": f"generated/fine_tuning/{agent}",
         "output_dir": f"models/lora/{agent}",
-        "gguf_output_dir": f"models/gguf_merged/{agent}_merged_gguf",
+        "gguf_output_dir": f"models/gguf_release_bake/{agent}_merged_gguf",
         "gguf_quantization": "q4_k_m",
         "gguf_repo_id": "ales27pm/lumen-fleet-gguf",
         "fleet_strategy": fleet_strategy,
         "merge_target": "cortex" if agent == "fleet" else None,
     }
+    return augment_unsloth_config_for_adapter_export(agent, base_config)
 
 
 def _unique_sorted_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:

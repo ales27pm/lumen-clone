@@ -39,6 +39,9 @@ def test_framework_snapshot_is_valid_without_generated_artifacts(tmp_path: Path)
     assert snapshot["gapCount"] == 0
     live = [layer for layer in snapshot["evidenceLayers"] if layer["id"] == EvidenceLayer.LIVE_E2E.value][0]
     assert live["ownsScenarioPassFail"] is True
+    assert snapshot["adapterRuntime"]["runtimeShape"] == "one_shared_chat_base_plus_role_lora_adapters"
+    assert {role["id"] for role in snapshot["adapterRuntime"]["roles"]} == {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
+    assert "runtime_trace_presence" in snapshot["adapterRuntime"]["promotionGates"]
 
 
 def test_framework_snapshot_reads_loop_gaps_and_prompts(tmp_path: Path) -> None:
