@@ -171,7 +171,7 @@ struct DeveloperConsoleView: View {
         }
 
         Section("Offline Loop Handoff") {
-            Text("1. Export Agent Grounding runtime audit package.\n2. Export Live E2E report JSON.\n3. Share both files to the macOS improve-loop.\n4. Ingest with `python -m lumen_manifest_crawler improve-loop --runtime-audit <json>`.")
+            Text("1. Export Agent Grounding runtime audit package.\n2. Export Live E2E report JSON.\n3. Share both files to the macOS improve-loop.\n4. Ingest with `python -m lumen_manifest_crawler framework ingest improve-loop --runtime-audit <json>`.")
                 .font(.caption)
                 .foregroundStyle(Theme.textSecondary)
         }

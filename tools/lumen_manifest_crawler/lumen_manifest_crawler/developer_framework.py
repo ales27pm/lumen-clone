@@ -8,9 +8,11 @@ scripts instead of duplicating crawler, training, visual, or Hugging Face logic.
 from __future__ import annotations
 
 import html
+import ipaddress
 import json
 import os
 import platform
+import secrets
 import shlex
 import subprocess
 import sys
@@ -433,6 +435,18 @@ def _iter_report_files(paths: Iterable[Path]) -> Iterable[Path]:
             yield path
 
 
+def _framework_job_env(root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    pythonpath_entries = [
+        str((root / "tools/lumen_manifest_crawler").resolve()),
+        str(root.resolve()),
+    ]
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries + ([existing] if existing else []))
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    return env
+
+
 class FrameworkJobRunner:
     def __init__(self, root: Path, environment: FrameworkEnvironment) -> None:
         self.root = root.resolve()
@@ -462,10 +476,7 @@ class FrameworkJobRunner:
             self.state.log.append(line.rstrip())
 
     def _run(self, job: FrameworkJob) -> None:
-        env = os.environ.copy()
-        crawler_root = str((self.root / "tools/lumen_manifest_crawler").resolve())
-        env["PYTHONPATH"] = crawler_root if not env.get("PYTHONPATH") else f"{crawler_root}{os.pathsep}{env['PYTHONPATH']}"
-        env.setdefault("PYTHONUNBUFFERED", "1")
+        env = _framework_job_env(self.root)
         self._append("$ " + shlex.join(job.command))
         try:
             # Security: job.command comes only from build_framework_jobs(), selected by
@@ -502,7 +513,7 @@ def run_framework_job(root: Path, job_id: str, environment: FrameworkEnvironment
         raise ValueError(f"Unknown framework job: {job_id}")
     # Security: the external job id is resolved to the internal whitelist above;
     # subprocess.run receives a shell=False argv list, not a shell command string.
-    completed = subprocess.run(list(job.command), cwd=root, check=False)
+    completed = subprocess.run(list(job.command), cwd=root, check=False, env=_framework_job_env(root))
     return int(completed.returncode)
 
 
@@ -528,13 +539,14 @@ def serve_framework(
         )
     env = resolve_environment(environment)
     runner = FrameworkJobRunner(root, env)
+    csrf_token = secrets.token_urlsafe(32)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "LumenDeveloperFrameworkHTTP/1.0"
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path in {"/", "/index.html"}:
-                self._send_html(_index_html(root, env))
+                self._send_html(_index_html(root, env, csrf_token))
                 return
             if self.path == "/status.json":
                 payload = load_framework_snapshot(root, env)
@@ -549,6 +561,9 @@ def serve_framework(
         def do_POST(self) -> None:  # noqa: N802
             prefix = "/run/"
             if self.path.startswith(prefix):
+                if not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), csrf_token):
+                    self._send_json({"ok": False, "message": "Invalid CSRF token."}, HTTPStatus.FORBIDDEN)
+                    return
                 job_id = self.path[len(prefix):]
                 ok, message = runner.start(job_id)
                 self._send_json({"ok": ok, "message": message, "job": runner.snapshot()}, HTTPStatus.ACCEPTED if ok else HTTPStatus.BAD_REQUEST)
@@ -592,7 +607,12 @@ def serve_framework(
 
 def _is_loopback_host(host: str) -> bool:
     normalized = host.strip().casefold()
-    return normalized in {"127.0.0.1", "::1", "localhost"}
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 _INDEX_TEMPLATE = """<!doctype html>
@@ -649,8 +669,9 @@ td, th {{ border-bottom:1px solid var(--line); padding:7px; text-align:left; ver
 </section>
 </main>
 <script>
+const csrfToken = {csrf_token_json};
 async function runJob(id) {{
-  const res = await fetch('/run/' + encodeURIComponent(id), {{ method: 'POST' }});
+  const res = await fetch('/run/' + encodeURIComponent(id), {{ method: 'POST', headers: {{ 'X-CSRF-Token': csrfToken }} }});
   const payload = await res.json();
   if (!payload.ok) alert(payload.message || 'Job failed to start');
   await refresh();
@@ -679,5 +700,9 @@ refresh();
 </html>"""
 
 
-def _index_html(root: Path, env: FrameworkEnvironment) -> str:
-    return _INDEX_TEMPLATE.format(root=html.escape(str(root.resolve())), env=html.escape(env.value))
+def _index_html(root: Path, env: FrameworkEnvironment, csrf_token: str = "") -> str:
+    return _INDEX_TEMPLATE.format(
+        root=html.escape(str(root.resolve())),
+        env=html.escape(env.value),
+        csrf_token_json=json.dumps(csrf_token),
+    )

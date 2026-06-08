@@ -12,6 +12,7 @@ from lumen_manifest_crawler.developer_framework import (
     build_framework_jobs,
     load_framework_snapshot,
     resolve_environment,
+    run_framework_job,
 )
 
 
@@ -87,10 +88,35 @@ def test_analyze_reports_uses_narrow_hf_upload_failure_heuristic(tmp_path: Path)
 
 def test_loopback_host_detection_rejects_public_bindings() -> None:
     assert _is_loopback_host("127.0.0.1") is True
+    assert _is_loopback_host("127.42.0.9") is True
     assert _is_loopback_host("localhost") is True
+    assert _is_loopback_host("::1") is True
     assert _is_loopback_host("0.0.0.0") is False
 
 
 def test_resolve_environment_accepts_explicit_values() -> None:
     assert resolve_environment("macos") == FrameworkEnvironment.MACOS
     assert resolve_environment("ubuntu") == FrameworkEnvironment.UBUNTU
+
+
+def test_run_framework_job_bootstraps_repo_local_pythonpath(tmp_path: Path) -> None:
+    package_dir = tmp_path / "tools" / "lumen_manifest_crawler" / "lumen_manifest_crawler"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "__main__.py").write_text(
+        """
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[sys.argv.index("--root") + 1])
+(root / "framework-status-ran").write_text("ok", encoding="utf-8")
+raise SystemExit(0)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    jobs = {job.id: job for job in build_framework_jobs(tmp_path, FrameworkEnvironment.MACOS)}
+    assert jobs["status"].command[1:4] == ("-m", "lumen_manifest_crawler", "framework")
+
+    assert run_framework_job(tmp_path, "status", FrameworkEnvironment.MACOS) == 0
+    assert (tmp_path / "framework-status-ran").read_text(encoding="utf-8") == "ok"
