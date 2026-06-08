@@ -99,6 +99,8 @@ UBUNTU_TRAINING_JOB_IDS = (
     "hf-upload-dry-run",
 )
 
+AGENT_ADAPTER_ROLES = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
+
 
 def resolve_environment(value: FrameworkEnvironment | str = FrameworkEnvironment.AUTO) -> FrameworkEnvironment:
     raw = value.value if isinstance(value, FrameworkEnvironment) else str(value)
@@ -276,6 +278,62 @@ def _read_jsonl(path: Path, limit: int = 50) -> list[dict[str, Any]]:
     return records
 
 
+def adapter_runtime_contract() -> dict[str, Any]:
+    return {
+        "schemaVersion": "lumen.agent_adapter_runtime/1.0.0",
+        "modelFamily": "qwen3",
+        "runtimeShape": "one_shared_chat_base_plus_role_lora_adapters",
+        "sharedChatBase": {
+            "repoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
+            "fileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+            "baseModelID": "Qwen/Qwen3-1.7B",
+            "loadPolicy": "load_once",
+        },
+        "embeddingModel": {
+            "repoID": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+            "fileName": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+            "uses": ["source_map", "tool_schema", "memory", "rag", "repair_retrieval"],
+        },
+        "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
+        "roles": [
+            {
+                "id": role,
+                "adapterFile": f"lumen-{role}-lora.gguf",
+                "trainingOutputDir": f"models/lora/{role}",
+                "convertedOutput": f"models/lora_qwen3_gguf/lumen-{role}-lora.gguf",
+                "promptBinding": "systemPrompt",
+            }
+            for role in AGENT_ADAPTER_ROLES
+        ],
+        "workflow": [
+            "compile_role_datasets",
+            "train_lora_adapters",
+            "validate_role_evals",
+            "convert_lora_to_gguf",
+            "upload_hf_artifacts",
+            "ship_testflight",
+            "export_runtime_traces",
+            "ingest_gaps_and_repairs",
+        ],
+        "invariants": [
+            "do_not_train_or_ship_six_role_baked_full_ggufs_by_default",
+            "role_switches_must_not_unload_the_shared_chat_base",
+            "adapter_activation_must_clear_previous_lora_adapters",
+            "adapter_failures_must_be_visible_in_runtime_traces",
+            "live_e2e_remains_the_only_scenario_pass_fail_owner",
+        ],
+        "promotionGates": [
+            "manifest_only_tool_use",
+            "strict_json_validity",
+            "approval_boundary_correctness",
+            "sentinel_suppression",
+            "runtime_trace_presence",
+            "latency_and_memory_budget",
+            "testflight_live_e2e",
+        ],
+    }
+
+
 def load_framework_snapshot(root: Path, environment: FrameworkEnvironment | str = FrameworkEnvironment.AUTO) -> dict[str, Any]:
     root = root.resolve()
     env = resolve_environment(environment)
@@ -310,6 +368,7 @@ def load_framework_snapshot(root: Path, environment: FrameworkEnvironment | str 
         "testflightScenarios": scenarios,
         "visualSummary": visual_summary,
         "hfManifest": hf_manifest,
+        "adapterRuntime": adapter_runtime_contract(),
         "availableJobs": [job.output_dict() for job in jobs],
     }
 
@@ -584,6 +643,10 @@ td, th {{ border-bottom:1px solid var(--line); padding:7px; text-align:left; ver
 <h2>Evidence Layers</h2>
 <div id="evidence"></div>
 </section>
+<section class="panel">
+<h2>Agent Adapter Runtime</h2>
+<div id="adapter"></div>
+</section>
 </main>
 <script>
 async function runJob(id) {{
@@ -605,6 +668,9 @@ async function refresh() {{
   document.getElementById('jobs').innerHTML = `<table><thead><tr><th>Job</th><th>Layer</th><th></th></tr></thead><tbody>${{(jobsPayload.jobs || []).map(j => `<tr><td><strong>${{esc(j.title)}}</strong><br><span class="muted">${{esc(j.description)}}</span><br><code>${{esc((j.command || []).join(' '))}}</code></td><td>${{esc(j.evidenceLayer)}}</td><td><button onclick="runJob('${{esc(j.id)}}')">Run</button></td></tr>`).join('')}}</tbody></table>`;
   document.getElementById('gaps').textContent = JSON.stringify((status.gaps || []).slice(0, 20), null, 2);
   document.getElementById('evidence').innerHTML = `<table><tbody>${{(status.evidenceLayers || []).map(l => `<tr><td>${{esc(l.id)}}</td><td>${{l.ownsScenarioPassFail ? '<span class="ok">scenario pass/fail owner</span>' : '<span class="muted">diagnostic</span>'}}</td></tr>`).join('')}}</tbody></table>`;
+  const adapter = status.adapterRuntime || {{}};
+  const roles = adapter.roles || [];
+  document.getElementById('adapter').innerHTML = `<p><strong>${{esc(adapter.runtimeShape || 'unknown')}}</strong><br><span class="muted">${{esc(adapter.sharedChatBase?.repoID || '')}} / ${{esc(adapter.sharedChatBase?.fileName || '')}}</span></p><table><thead><tr><th>Role</th><th>Adapter</th><th>Training Output</th></tr></thead><tbody>${{roles.map(r => `<tr><td>${{esc(r.id)}}</td><td>${{esc(r.adapterFile)}}</td><td><code>${{esc(r.trainingOutputDir)}}</code></td></tr>`).join('')}}</tbody></table><p class="muted">Gates: ${{esc((adapter.promotionGates || []).join(', '))}}</p>`;
 }}
 setInterval(refresh, 1500);
 refresh();

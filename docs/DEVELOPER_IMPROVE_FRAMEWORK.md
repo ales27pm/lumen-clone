@@ -17,6 +17,12 @@ TestFlight exports. Local checks, simulator checks, static manifests, and
 diagnostic exports are required support layers, but they do not replace
 TestFlight/device evidence.
 
+The default model-improvement target is adapter-first: one Qwen3 shared chat
+base, one Qwen3 embedding model, and role-specific LoRA adapters for Cortex,
+Executor, Mouth, Mimicry, REM, and Fleet. The developer process must improve
+those adapters and prompts as one runtime system, not as disconnected full
+model replacements.
+
 ## Framework Contract
 
 Every improvement pass must answer six questions:
@@ -29,6 +35,16 @@ Every improvement pass must answer six questions:
 5. What change removes the gap without weakening privacy, runtime invariants,
    or evidence ownership?
 6. Which new artifacts should the next loop learn from?
+
+For adapter work, the same pass must also answer:
+
+- Which agent role owns the failure: Cortex routing, Executor tool JSON, Mouth
+  finalization, Mimicry style, REM repair, Fleet self-knowledge, embedding
+  retrieval, or shared runtime loading?
+- Did the trace show the expected Qwen3 shared-base plus role-adapter path, or
+  did it fall back to baseline prompts, missing adapters, or no model?
+- Which dataset, prompt, eval, adapter config, runtime binding, or release
+  artifact should change?
 
 The loop is intentionally one auditable pass at a time. External automation may
 repeat the pass, but each iteration must leave behind state, gaps, reports, and
@@ -44,7 +60,7 @@ visual success alone.
 | `static_source` | Source-of-truth extraction | Swift source, manifest crawler | No |
 | `local_validation` | Preflight correctness | pytest, build readiness, invariant scripts | No |
 | `simulator_validation` | Optional runtime preflight | Xcode simulator build/test/smoke | No |
-| `device_runtime` | Shipped-runtime diagnostic truth | TestFlight Agent Grounding exports, runtime traces | No |
+| `device_runtime` | Shipped-runtime diagnostic truth | TestFlight Agent Grounding exports, persistent chat/runtime traces | No |
 | `live_e2e` | Shipped-runtime scenario truth | Live E2E report JSON | Yes |
 | `training_feedback` | Learning inputs | repair samples, SFT/DPO/eval datasets | No |
 
@@ -53,6 +69,9 @@ Rules:
 - `live_e2e` is the only layer that can claim a real scenario passed or failed.
 - Agent Grounding exports are runtime evidence, grounding evidence, behavior
   audit evidence, and trace evidence.
+- Persistent chat runtime traces are device-runtime evidence. They explain what
+  the shipped app routed, planned, approved, observed, and returned for a chat
+  turn, but they do not claim scenario pass/fail.
 - Static scenario checks are useful diagnostics, but they are non-live.
 - Empty runtime trace exports are gaps. They must not be hidden by passing
   static checks.
@@ -87,6 +106,81 @@ samples, and explicit runtime audit JSON. They must not become unrestricted raw
 prompts, transcripts, contacts, files, photos, memory bodies, or tool payload
 bodies.
 
+Chat runtime traces are recorded as persistent diagnostic events keyed by
+conversation and turn when available. The trace schema records phase names,
+tool IDs, route/plan decisions, approval boundaries, observation/final lengths,
+model family, adapter runtime mode, role list, and SHA-256 digests of prompt or
+output text. It intentionally avoids raw prompt, transcript, contact, file,
+photo, memory, and tool payload bodies.
+
+Canonical chat trace phases include:
+
+```text
+start
+budget_decision
+path
+routing
+direct_final
+clarification
+planned_actions
+action_selected
+approval_boundary
+observation
+memory_final
+final
+cancelled
+fallback
+error
+```
+
+### Agent Adapter Runtime
+
+The developer framework treats agent adapters as first-class workflow state.
+The canonical runtime shape is:
+
+```text
+Qwen3 shared chat base loaded once
+Qwen3 embedding model for retrieval/repair
+Cortex LoRA adapter for routing/planning
+Executor LoRA adapter for strict tool JSON
+Mouth LoRA adapter for final user-visible answers
+Mimicry LoRA adapter for explicit style adaptation
+REM LoRA adapter for repair, memory policy, and regression samples
+Fleet LoRA adapter for model-slot and delegation self-knowledge
+```
+
+Adapter workflow phases:
+
+```text
+compile_role_datasets
+train_lora_adapters
+validate_role_evals
+convert_lora_to_gguf
+upload_hf_artifacts
+ship_testflight
+export_runtime_traces
+ingest_gaps_and_repairs
+```
+
+Role ownership:
+
+| Role | Owns | Failure signals | Improvement artifact |
+|---|---|---|---|
+| Cortex | intent, route, plan, approval risk | wrong intent, missing action, invalid tool selection | routing SFT/DPO, route evals, system prompt |
+| Executor | manifest-valid tool JSON | invented tool, missing args, approval bypass | tool-call SFT/DPO, schema evals |
+| Mouth | user-visible final answer | sentinel leak, raw JSON, false success | final-answer SFT/DPO, safety evals |
+| Mimicry | requested style adaptation | style drift, fact drift, unsafe impersonation | style records and evals |
+| REM | diagnosis and repair | missed gap, weak repair sample, memory policy drift | runtime repair samples, regression evals |
+| Fleet | slot directory and delegation | invented slot, wrong peer, bad boundary | fleet self-knowledge records |
+
+Adapter invariants:
+
+- Do not train or ship six role-baked full GGUFs as the default path.
+- Role switches must not unload the shared Qwen3 chat base.
+- Adapter activation must clear any previously active LoRA adapter.
+- Adapter failures must be visible in runtime traces and ingested as gaps.
+- Live E2E remains the only scenario pass/fail owner.
+
 ### 2. Diagnose
 
 Convert evidence into gaps. A gap should identify the failing layer and the
@@ -99,6 +193,9 @@ validation
 validation_warning
 command_failure
 runtime_drift
+adapter_runtime_drift
+adapter_training_gap
+adapter_eval_gap
 dataset_coverage
 agent_fine_tuning_coverage
 agent_eval_coverage
@@ -129,6 +226,8 @@ Plans should target one or more of:
 
 ```text
 Swift runtime or diagnostics wiring
+Qwen3 shared-base or role-adapter binding
+agent role system prompts
 manifest extraction
 runtime ingest and normalization
 dataset compiler
@@ -148,6 +247,8 @@ Implementation rules:
 - Do not make Agent Grounding static checks look like live E2E results.
 - Do not weaken `agent_grounding_no_recent_model_traces`.
 - Do not silently switch the Qwen3 default back to role-baked full GGUFs.
+- Do not merge role adapters into full GGUFs except as an explicit release-bake
+  step after adapter eval and live-runtime gates pass.
 - Do not commit model binaries, LoRA adapters, checkpoints, or release-baked
   GGUFs to GitHub.
 
@@ -160,6 +261,14 @@ python tools/check_adapter_runtime_invariants.py
 python -m pytest tools/lumen_manifest_crawler/tests
 scripts/check-ios-build-readiness.sh
 scripts/validate_lumen_ios.sh
+```
+
+Adapter-specific validation must include:
+
+```bash
+python tools/check_adapter_runtime_invariants.py
+python tools/lumen_terminal_improve_loop.py --mode preflight --dry-run --skip-pytest
+python tools/lumen_dev.py plan --root . --environment ubuntu
 ```
 
 On macOS with Xcode, use the simulator as a preflight:
@@ -188,6 +297,15 @@ generated/agent_improvement_loop/next_action_prompts.jsonl
 
 Runtime failures should become repair samples, regression evals, stricter
 schemas, stronger traces, or targeted code fixes.
+
+Adapter failures should become one or more of:
+
+- role-specific SFT records;
+- DPO preference pairs for the failing role;
+- eval scenarios for the promotion gate that failed;
+- prompt/instruction updates for that role;
+- runtime binding fixes for adapter activation, fallback, or trace reporting;
+- Hugging Face artifact manifest fixes.
 
 ## Canonical Commands
 
@@ -276,12 +394,24 @@ shipped-runtime developer surface for:
 - evidence-layer ownership;
 - Agent Grounding runtime audit package export;
 - live E2E report export;
-- persistent runtime diagnostics;
+- persistent chat/runtime trace export;
 - bounded logs and diagnostic text;
 - export-packet guidance for the offline loop.
 
 The console intentionally labels Agent Grounding outputs as diagnostic/runtime
 evidence and Live E2E outputs as the scenario pass/fail owner.
+
+The canonical export packet for a developer pass contains:
+
+- Agent Grounding runtime audit package;
+- Live E2E JSON report;
+- persistent runtime diagnostics logs, including `chatRuntimeTrace` events;
+- optional screenshots or tester notes attached to the same scenario;
+- build, device, model-family, route, tool, and approval metadata.
+
+This packet is the bridge from shipped-device behavior into the offline
+diagnose, repair, dataset, evaluation, and training loop. A trace gap should
+be treated as an observation gap, not as a passing scenario.
 
 ## Required Artifacts
 
