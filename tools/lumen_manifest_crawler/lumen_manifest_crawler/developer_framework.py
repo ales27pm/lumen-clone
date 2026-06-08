@@ -22,7 +22,7 @@ from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
 
@@ -89,6 +89,17 @@ class FrameworkJobState:
         }
 
 
+JobDefinition = Mapping[str, Any]
+
+UBUNTU_TRAINING_JOB_IDS = (
+    "ubuntu-preflight",
+    "train-adapters",
+    "convert-adapters",
+    "hf-resolve",
+    "hf-upload-dry-run",
+)
+
+
 def resolve_environment(value: FrameworkEnvironment | str = FrameworkEnvironment.AUTO) -> FrameworkEnvironment:
     raw = value.value if isinstance(value, FrameworkEnvironment) else str(value)
     if raw != FrameworkEnvironment.AUTO.value:
@@ -99,25 +110,43 @@ def resolve_environment(value: FrameworkEnvironment | str = FrameworkEnvironment
     return FrameworkEnvironment.UBUNTU if system == "linux" else FrameworkEnvironment.MACOS
 
 
+def _make_jobs(root: Path, env: FrameworkEnvironment, definitions: Sequence[JobDefinition]) -> list[FrameworkJob]:
+    py = sys.executable
+    jobs: list[FrameworkJob] = []
+    for definition in definitions:
+        raw_command = tuple(definition["command"])
+        command = (py, *raw_command[1:]) if raw_command and raw_command[0] == "PYTHON" else raw_command
+        jobs.append(
+            FrameworkJob(
+                id=str(definition["id"]),
+                title=str(definition["title"]),
+                environment=env,
+                evidence_layer=definition["evidence_layer"],
+                command=tuple(str(part) for part in command),
+                description=str(definition["description"]),
+                outputs=tuple(str(output) for output in definition.get("outputs", ())),
+                requires_confirmation=bool(definition.get("requires_confirmation", False)),
+            )
+        )
+    return jobs
+
+
 def build_framework_jobs(root: Path, environment: FrameworkEnvironment | str = FrameworkEnvironment.AUTO) -> list[FrameworkJob]:
     env = resolve_environment(environment)
-    py = sys.executable
-    common: list[FrameworkJob] = [
-        FrameworkJob(
-            id="status",
-            title="Framework status",
-            environment=env,
-            evidence_layer=EvidenceLayer.LOCAL_VALIDATION,
-            command=(py, "-m", "lumen_manifest_crawler", "framework", "status", "--root", str(root)),
-            description="Print consolidated framework state.",
-        ),
-        FrameworkJob(
-            id="ingest-runtime",
-            title="Ingest runtime exports",
-            environment=env,
-            evidence_layer=EvidenceLayer.DEVICE_RUNTIME,
-            command=(
-                py,
+    common_defs: list[JobDefinition] = [
+        {
+            "id": "status",
+            "title": "Framework status",
+            "evidence_layer": EvidenceLayer.LOCAL_VALIDATION,
+            "command": ("PYTHON", "-m", "lumen_manifest_crawler", "framework", "status", "--root", str(root)),
+            "description": "Print consolidated framework state.",
+        },
+        {
+            "id": "ingest-runtime",
+            "title": "Ingest runtime exports",
+            "evidence_layer": EvidenceLayer.DEVICE_RUNTIME,
+            "command": (
+                "PYTHON",
                 "-m",
                 "lumen_manifest_crawler",
                 "improve-loop",
@@ -126,84 +155,77 @@ def build_framework_jobs(root: Path, environment: FrameworkEnvironment | str = F
                 "--runtime-audit",
                 str(root / "exports"),
             ),
-            description="Run improve-loop with repo exports as runtime audit input.",
-            outputs=("generated/agent_improvement_loop/loop_state.json",),
-        ),
+            "description": "Run improve-loop with repo exports as runtime audit input.",
+            "outputs": ("generated/agent_improvement_loop/loop_state.json",),
+        },
     ]
 
     if env == FrameworkEnvironment.UBUNTU:
-        return common + [
-            FrameworkJob(
-                id="ubuntu-preflight",
-                title="Ubuntu training preflight",
-                environment=env,
-                evidence_layer=EvidenceLayer.LOCAL_VALIDATION,
-                command=(py, "tools/lumen_terminal_improve_loop.py", "--mode", "preflight", "--dry-run", "--skip-pytest"),
-                description="Check adapter runtime invariants and Qwen3 training config readiness.",
-            ),
-            FrameworkJob(
-                id="train-adapters",
-                title="Train role LoRA adapters",
-                environment=env,
-                evidence_layer=EvidenceLayer.TRAINING_FEEDBACK,
-                command=(py, "tools/lumen_terminal_improve_loop.py", "--mode", "train", "--resume", "--assistant-only-loss"),
-                description="Train role adapters from generated fine-tuning datasets.",
-                outputs=("models/lora_qwen3_bootstrap",),
-                requires_confirmation=True,
-            ),
-            FrameworkJob(
-                id="convert-adapters",
-                title="Convert LoRA adapters to GGUF",
-                environment=env,
-                evidence_layer=EvidenceLayer.TRAINING_FEEDBACK,
-                command=(py, "tools/lumen_terminal_improve_loop.py", "--mode", "convert", "--resume", "--base-model-id", "Qwen/Qwen3-1.7B"),
-                description="Convert trained LoRA adapters to GGUF with an explicit base.",
-                outputs=("models/lora_qwen3_gguf",),
-                requires_confirmation=True,
-            ),
-            FrameworkJob(
-                id="hf-resolve",
-                title="Resolve Hugging Face artifact manifest",
-                environment=env,
-                evidence_layer=EvidenceLayer.TRAINING_FEEDBACK,
-                command=(py, "tools/hf_artifacts/publish_hf_artifacts.py", "--skip-upload"),
-                description="Write resolved HF artifact manifest without uploading.",
-                outputs=("generated/hf_artifacts/lumen_hf_artifact_manifest.resolved.json",),
-            ),
-            FrameworkJob(
-                id="hf-upload-dry-run",
-                title="Dry-run Hugging Face upload",
-                environment=env,
-                evidence_layer=EvidenceLayer.TRAINING_FEEDBACK,
-                command=(py, "tools/hf_artifacts/publish_hf_artifacts.py", "--dry-run"),
-                description="Validate and print HF uploads without uploading.",
-            ),
+        env_defs: list[JobDefinition] = [
+            {
+                "id": "ubuntu-preflight",
+                "title": "Ubuntu training preflight",
+                "evidence_layer": EvidenceLayer.LOCAL_VALIDATION,
+                "command": ("PYTHON", "tools/lumen_terminal_improve_loop.py", "--mode", "preflight", "--dry-run", "--skip-pytest"),
+                "description": "Check adapter runtime invariants and Qwen3 training config readiness.",
+            },
+            {
+                "id": "train-adapters",
+                "title": "Train role LoRA adapters",
+                "evidence_layer": EvidenceLayer.TRAINING_FEEDBACK,
+                "command": ("PYTHON", "tools/lumen_terminal_improve_loop.py", "--mode", "train", "--resume", "--assistant-only-loss"),
+                "description": "Train role adapters from generated fine-tuning datasets.",
+                "outputs": ("models/lora_qwen3_bootstrap",),
+                "requires_confirmation": True,
+            },
+            {
+                "id": "convert-adapters",
+                "title": "Convert LoRA adapters to GGUF",
+                "evidence_layer": EvidenceLayer.TRAINING_FEEDBACK,
+                "command": ("PYTHON", "tools/lumen_terminal_improve_loop.py", "--mode", "convert", "--resume", "--base-model-id", "Qwen/Qwen3-1.7B"),
+                "description": "Convert trained LoRA adapters to GGUF with an explicit base.",
+                "outputs": ("models/lora_qwen3_gguf",),
+                "requires_confirmation": True,
+            },
+            {
+                "id": "hf-resolve",
+                "title": "Resolve Hugging Face artifact manifest",
+                "evidence_layer": EvidenceLayer.TRAINING_FEEDBACK,
+                "command": ("PYTHON", "tools/hf_artifacts/publish_hf_artifacts.py", "--skip-upload"),
+                "description": "Write resolved HF artifact manifest without uploading.",
+                "outputs": ("generated/hf_artifacts/lumen_hf_artifact_manifest.resolved.json",),
+            },
+            {
+                "id": "hf-upload-dry-run",
+                "title": "Dry-run Hugging Face upload",
+                "evidence_layer": EvidenceLayer.TRAINING_FEEDBACK,
+                "command": ("PYTHON", "tools/hf_artifacts/publish_hf_artifacts.py", "--dry-run"),
+                "description": "Validate and print HF uploads without uploading.",
+            },
         ]
+        return _make_jobs(root, env, common_defs + env_defs)
 
-    return common + [
-        FrameworkJob(
-            id="adapter-invariants",
-            title="Adapter invariant check",
-            environment=env,
-            evidence_layer=EvidenceLayer.LOCAL_VALIDATION,
-            command=(py, "tools/check_adapter_runtime_invariants.py"),
-            description="Verify Qwen3 adapter-first runtime and training invariants.",
-        ),
-        FrameworkJob(
-            id="build-readiness",
-            title="iOS build readiness",
-            environment=env,
-            evidence_layer=EvidenceLayer.LOCAL_VALIDATION,
-            command=("scripts/check-ios-build-readiness.sh",),
-            description="Run static iOS readiness checks and Xcode availability reporting.",
-        ),
-        FrameworkJob(
-            id="improve-loop",
-            title="Generate manifest and improve-loop artifacts",
-            environment=env,
-            evidence_layer=EvidenceLayer.STATIC_SOURCE,
-            command=(
-                py,
+    env_defs = [
+        {
+            "id": "adapter-invariants",
+            "title": "Adapter invariant check",
+            "evidence_layer": EvidenceLayer.LOCAL_VALIDATION,
+            "command": ("PYTHON", "tools/check_adapter_runtime_invariants.py"),
+            "description": "Verify Qwen3 adapter-first runtime and training invariants.",
+        },
+        {
+            "id": "build-readiness",
+            "title": "iOS build readiness",
+            "evidence_layer": EvidenceLayer.LOCAL_VALIDATION,
+            "command": ("scripts/check-ios-build-readiness.sh",),
+            "description": "Run static iOS readiness checks and Xcode availability reporting.",
+        },
+        {
+            "id": "improve-loop",
+            "title": "Generate manifest and improve-loop artifacts",
+            "evidence_layer": EvidenceLayer.STATIC_SOURCE,
+            "command": (
+                "PYTHON",
                 "-m",
                 "lumen_manifest_crawler",
                 "improve-loop",
@@ -214,19 +236,19 @@ def build_framework_jobs(root: Path, environment: FrameworkEnvironment | str = F
                 "--loop-output",
                 str(root / "generated/agent_improvement_loop"),
             ),
-            description="Generate manifest, datasets, gaps, prompts, and TestFlight runbook.",
-            outputs=("generated/agent_manifest", "generated/agent_improvement_loop"),
-        ),
-        FrameworkJob(
-            id="visual-dashboard",
-            title="Generate visual dashboard",
-            environment=env,
-            evidence_layer=EvidenceLayer.LOCAL_VALIDATION,
-            command=(py, "tools/run_visual_improve_loop_v2.py", "--root", str(root), "--skip-tests"),
-            description="Run visual improve-loop dashboard generation.",
-            outputs=("generated/visual_improve_loop/index.html",),
-        ),
+            "description": "Generate manifest, datasets, gaps, prompts, and TestFlight runbook.",
+            "outputs": ("generated/agent_manifest", "generated/agent_improvement_loop"),
+        },
+        {
+            "id": "visual-dashboard",
+            "title": "Generate visual dashboard",
+            "evidence_layer": EvidenceLayer.LOCAL_VALIDATION,
+            "command": ("PYTHON", "tools/run_visual_improve_loop_v2.py", "--root", str(root), "--skip-tests"),
+            "description": "Run visual improve-loop dashboard generation.",
+            "outputs": ("generated/visual_improve_loop/index.html",),
+        },
     ]
+    return _make_jobs(root, env, common_defs + env_defs)
 
 
 def _read_json(path: Path) -> Any:
@@ -304,19 +326,7 @@ def analyze_reports(root: Path, paths: Sequence[Path]) -> dict[str, Any]:
     ]
     plain_findings: list[dict[str, Any]] = []
     for path in _iter_report_files(resolved):
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        lower = text.casefold()
-        if "traceback" in lower:
-            plain_findings.append({"severity": "error", "type": "python_traceback", "source": str(path)})
-        if "xcodebuild" in lower and ("error:" in lower or "build failed" in lower):
-            plain_findings.append({"severity": "error", "type": "xcodebuild_failure", "source": str(path)})
-        if "hugging face" in lower and ("error" in lower or "failed" in lower):
-            plain_findings.append({"severity": "warning", "type": "hf_upload_failure", "source": str(path)})
-        if "no model loaded" in lower or "routing-only checks completed" in lower:
-            plain_findings.append({"severity": "error", "type": "invalid_live_e2e_no_model", "source": str(path)})
+        plain_findings.extend(_scan_plain_text_findings(path))
     return {
         "schemaVersion": "lumen.developer_framework.report_analysis/1.0.0",
         "reportCount": len(reports),
@@ -324,6 +334,36 @@ def analyze_reports(root: Path, paths: Sequence[Path]) -> dict[str, Any]:
         "runtimeFailures": failures[:100],
         "plainFindings": plain_findings,
     }
+
+
+def _scan_plain_text_findings(path: Path) -> list[dict[str, Any]]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    lower = text.casefold()
+    findings: list[dict[str, Any]] = []
+    if "traceback" in lower:
+        findings.append({"severity": "error", "type": "python_traceback", "source": str(path)})
+    if "xcodebuild" in lower and ("error:" in lower or "build failed" in lower):
+        findings.append({"severity": "error", "type": "xcodebuild_failure", "source": str(path)})
+    if _looks_like_hf_upload_failure(lower):
+        findings.append({"severity": "warning", "type": "hf_upload_failure", "source": str(path)})
+    if "no model loaded" in lower or "routing-only checks completed" in lower:
+        findings.append({"severity": "error", "type": "invalid_live_e2e_no_model", "source": str(path)})
+    return findings
+
+
+def _looks_like_hf_upload_failure(lower_text: str) -> bool:
+    mentions_hf = "hugging face" in lower_text or "huggingface.co" in lower_text
+    mentions_upload = "upload" in lower_text or "push_to_hub" in lower_text
+    has_failure = (
+        "error:" in lower_text
+        or "[error" in lower_text
+        or "upload failed" in lower_text
+        or "failed to upload" in lower_text
+    )
+    return mentions_hf and mentions_upload and has_failure
 
 
 def _iter_report_files(paths: Iterable[Path]) -> Iterable[Path]:
@@ -369,6 +409,8 @@ class FrameworkJobRunner:
         env.setdefault("PYTHONUNBUFFERED", "1")
         self._append("$ " + shlex.join(job.command))
         try:
+            # Security: job.command comes only from build_framework_jobs(), selected by
+            # whitelisted job id, and is executed with shell=False argument vectors.
             process = subprocess.Popen(
                 list(job.command),
                 cwd=self.root,
@@ -399,11 +441,32 @@ def run_framework_job(root: Path, job_id: str, environment: FrameworkEnvironment
     job = jobs.get(job_id)
     if job is None:
         raise ValueError(f"Unknown framework job: {job_id}")
+    # Security: the external job id is resolved to the internal whitelist above;
+    # subprocess.run receives a shell=False argv list, not a shell command string.
     completed = subprocess.run(list(job.command), cwd=root, check=False)
     return int(completed.returncode)
 
 
-def serve_framework(root: Path, host: str, port: int, environment: FrameworkEnvironment | str = FrameworkEnvironment.AUTO, *, open_browser: bool = False) -> int:
+def serve_framework(
+    root: Path,
+    host: str,
+    port: int,
+    environment: FrameworkEnvironment | str = FrameworkEnvironment.AUTO,
+    *,
+    open_browser: bool = False,
+    allow_remote: bool = False,
+) -> int:
+    if not _is_loopback_host(host):
+        if not allow_remote:
+            print(
+                "Refusing to bind Lumen Developer Framework to a non-loopback host. "
+                "Use --allow-remote only on trusted networks."
+            )
+            return 2
+        print(
+            "WARNING: serving Lumen Developer Framework on a non-loopback host. "
+            "Local developer jobs and logs may be reachable from the network."
+        )
     env = resolve_environment(environment)
     runner = FrameworkJobRunner(root, env)
 
@@ -468,10 +531,12 @@ def serve_framework(root: Path, host: str, port: int, environment: FrameworkEnvi
     return 0
 
 
-def _index_html(root: Path, env: FrameworkEnvironment) -> str:
-    escaped_root = html.escape(str(root.resolve()))
-    escaped_env = html.escape(env.value)
-    return f"""<!doctype html>
+def _is_loopback_host(host: str) -> bool:
+    normalized = host.strip().casefold()
+    return normalized in {"127.0.0.1", "::1", "localhost"}
+
+
+_INDEX_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -497,7 +562,7 @@ td, th {{ border-bottom:1px solid var(--line); padding:7px; text-align:left; ver
 <body>
 <main>
 <header>
-<p class="muted">root: {escaped_root} · environment: {escaped_env}</p>
+<p class="muted">root: {root} · environment: {env}</p>
 <h1>Lumen Developer Framework</h1>
 </header>
 <div class="grid">
@@ -546,3 +611,7 @@ refresh();
 </script>
 </body>
 </html>"""
+
+
+def _index_html(root: Path, env: FrameworkEnvironment) -> str:
+    return _INDEX_TEMPLATE.format(root=html.escape(str(root.resolve())), env=html.escape(env.value))

@@ -120,7 +120,6 @@ struct DeveloperConsoleView: View {
             } label: {
                 Label("Export persistent logs", systemImage: "doc.zipper")
             }
-            .disabled(!PersistentRuntimeDiagnosticsAvailability.isDeveloperVisible)
         }
     }
 
