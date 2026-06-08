@@ -4,6 +4,11 @@
 
 It wraps the existing `lumen_manifest_crawler improve-loop` command, runs the adapter-first fine-tuning output pass, writes the TestFlight handoff queue, runs the release-bake manifest pass, writes first-class Qwen3 embedding retrieval datasets, and generates a standalone visual dashboard.
 
+The visual runner is a UI and orchestration surface over the canonical
+developer improve framework in `docs/DEVELOPER_IMPROVE_FRAMEWORK.md`. It must
+preserve the same evidence-layer rules: TestFlight/device exports are the
+primary live-runtime truth, and only live E2E exports own scenario pass/fail.
+
 The v2 runner is repo-rooted: every relative output path is resolved against `--root`, not against the shell's current working directory. This prevents generated loop artifacts from being scattered outside the repository when the script is invoked from another directory.
 
 > `tools/run_visual_improve_loop.py` remains the first visual draft. Prefer `tools/run_visual_improve_loop_v2.py` for real use.

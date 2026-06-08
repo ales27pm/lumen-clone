@@ -2,6 +2,11 @@
 
 This document prevents the improve-loop from mixing different evidence layers.
 
+This is the evidence-layer authority for the broader developer improve
+framework described in `docs/DEVELOPER_IMPROVE_FRAMEWORK.md`. The framework
+defines the full loop; this document defines which export owns which kind of
+runtime evidence.
+
 ## Export buttons by layer
 
 The developer UI now exposes exports for every layer, while keeping ownership explicit.
