@@ -18,6 +18,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
 from lumen_manifest_crawler.developer_framework import (
     FrameworkEnvironment,
+    UBUNTU_TRAINING_JOB_IDS,
     analyze_reports,
     build_framework_jobs,
     load_framework_snapshot,
@@ -290,9 +291,10 @@ def framework_serve(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind host."),
     port: int = typer.Option(8776, "--port", help="Bind port."),
     open_browser: bool = typer.Option(False, "--open", help="Open browser after starting."),
+    allow_remote: bool = typer.Option(False, "--allow-remote", help="Allow binding to a non-loopback host; exposes local developer jobs and logs."),
 ) -> None:
     """Serve the local developer framework UI."""
-    raise typer.Exit(code=serve_framework(root, host, port, _framework_environment(environment), open_browser=open_browser))
+    raise typer.Exit(code=serve_framework(root, host, port, _framework_environment(environment), open_browser=open_browser, allow_remote=allow_remote))
 
 
 @framework_app.command("diagnose")
@@ -348,7 +350,8 @@ def framework_train(
     dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Print Ubuntu training jobs instead of running."),
 ) -> None:
     """Dispatch the Ubuntu LoRA training/publishing profile."""
-    jobs = [job for job in build_framework_jobs(root.resolve(), FrameworkEnvironment.UBUNTU) if job.id in {"ubuntu-preflight", "train-adapters", "convert-adapters", "hf-resolve"}]
+    job_by_id = {job.id: job for job in build_framework_jobs(root.resolve(), FrameworkEnvironment.UBUNTU)}
+    jobs = [job_by_id[job_id] for job_id in UBUNTU_TRAINING_JOB_IDS]
     if dry_run:
         for job in jobs:
             console.print(f"[bold]{job.id}[/bold] {shlex.join(job.command)}")

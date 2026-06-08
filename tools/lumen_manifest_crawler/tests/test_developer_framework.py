@@ -6,6 +6,8 @@ from pathlib import Path
 from lumen_manifest_crawler.developer_framework import (
     EvidenceLayer,
     FrameworkEnvironment,
+    UBUNTU_TRAINING_JOB_IDS,
+    _is_loopback_host,
     analyze_reports,
     build_framework_jobs,
     load_framework_snapshot,
@@ -24,7 +26,9 @@ def test_framework_jobs_include_macos_and_ubuntu_profiles(tmp_path: Path) -> Non
     assert "ubuntu-preflight" in ubuntu_jobs
     assert "train-adapters" in ubuntu_jobs
     assert "hf-resolve" in ubuntu_jobs
+    assert "hf-upload-dry-run" in ubuntu_jobs
     assert ubuntu_jobs["train-adapters"].requires_confirmation is True
+    assert UBUNTU_TRAINING_JOB_IDS[-1] == "hf-upload-dry-run"
 
 
 def test_framework_snapshot_is_valid_without_generated_artifacts(tmp_path: Path) -> None:
@@ -63,6 +67,25 @@ def test_analyze_reports_flags_plain_no_model_evidence(tmp_path: Path) -> None:
     analysis = analyze_reports(tmp_path, [report])
 
     assert analysis["plainFindings"][0]["type"] == "invalid_live_e2e_no_model"
+
+
+def test_analyze_reports_uses_narrow_hf_upload_failure_heuristic(tmp_path: Path) -> None:
+    noisy = tmp_path / "hf-noisy.log"
+    noisy.write_text("Hugging Face model card says prior training failed but no upload was attempted.", encoding="utf-8")
+    upload = tmp_path / "hf-upload.log"
+    upload.write_text("huggingface.co upload failed: token expired", encoding="utf-8")
+
+    analysis = analyze_reports(tmp_path, [noisy, upload])
+
+    hf_findings = [finding for finding in analysis["plainFindings"] if finding["type"] == "hf_upload_failure"]
+    assert len(hf_findings) == 1
+    assert hf_findings[0]["source"] == str(upload)
+
+
+def test_loopback_host_detection_rejects_public_bindings() -> None:
+    assert _is_loopback_host("127.0.0.1") is True
+    assert _is_loopback_host("localhost") is True
+    assert _is_loopback_host("0.0.0.0") is False
 
 
 def test_resolve_environment_accepts_explicit_values() -> None:
