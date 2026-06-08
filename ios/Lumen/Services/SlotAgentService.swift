@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SwiftUI
 
 private final class SlotAgentCancellationRegistration: @unchecked Sendable {
@@ -55,16 +56,32 @@ final class SlotAgentService {
             let task = Task.detached(priority: .userInitiated) {
                 defer { registration.unregister() }
                 do {
+                    Self.emitChatTrace(req: req, phase: "start", values: [
+                        "promptChars": String(req.userMessage.count),
+                        "promptBytes": String(req.userMessage.utf8.count),
+                        "promptSHA256": Self.sha256(req.userMessage),
+                        "historyCount": String(req.history.count),
+                        "attachmentCount": String(req.attachments.count),
+                        "inputToolCount": String(req.availableTools.count),
+                        "memoryCount": String(req.relevantMemories.count),
+                        "maxSteps": String(req.maxSteps),
+                        "maxTokens": String(req.maxTokens),
+                        "temperature": String(req.temperature),
+                        "topP": String(req.topP)
+                    ])
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentStart, values: ["promptChars": String(req.userMessage.count), "toolCount": String(req.availableTools.count), "memoryCount": String(req.relevantMemories.count)]))
                     try cancellationToken.checkCancellation()
                     let budgetDecision = await MainActor.run { Self.agentBudgetDecision(for: req, options: options) }
+                    Self.emitChatTrace(req: req, phase: "budget_decision", values: ["decision": Self.traceValue(for: budgetDecision)])
                     switch budgetDecision {
                     case .cancel:
+                        Self.emitChatTrace(req: req, phase: "cancelled", values: ["reason": "resource-scene-inactive"])
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": "resource-scene-inactive"]))
                         continuation.finish()
                         Self.emitContinuationFinished(path: "cancel")
                         return
                     case .fallback:
+                        Self.emitChatTrace(req: req, phase: "fallback", values: ["reason": "resource-budget-fallback"])
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-fallback"]))
                         if options.diagnosticsEnabled {
                             let response = await Self.deterministicCompatibilityResponse(original: req, effective: req, options: options)
@@ -94,6 +111,7 @@ final class SlotAgentService {
                     }
 
                     if Self.shouldUseFastAgentPath(req) {
+                        Self.emitChatTrace(req: req, phase: "path", values: ["path": "fast-agent"])
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "fast-agent"]))
                         let groundingStart = ProcessInfo.processInfo.systemUptime
                         let grounded = Self.fastGroundingResult(for: req, options: options)
@@ -116,6 +134,7 @@ final class SlotAgentService {
                     }
 
                     try cancellationToken.checkCancellation()
+                    Self.emitChatTrace(req: req, phase: "path", values: ["path": "normal-agent"])
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "normal-agent"]))
                     let groundingStart = ProcessInfo.processInfo.systemUptime
                     let grounded = await self.prepareGroundedRequest(req, options: options, cancellationToken: cancellationToken)
@@ -135,10 +154,12 @@ final class SlotAgentService {
                     continuation.finish()
                     Self.emitContinuationFinished(path: "normal-agent")
                 } catch is CancellationError {
+                    Self.emitChatTrace(req: req, phase: "cancelled", values: ["reason": AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"])
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"]))
                     continuation.finish()
                     Self.emitContinuationFinished(path: "cancelled")
                 } catch {
+                    Self.emitChatTrace(req: req, phase: "error", values: ["errorCode": RuntimeMetricErrorSanitizer.code(for: error)])
                     continuation.finish()
                     Self.emitContinuationFinished(path: "error")
                 }
@@ -415,6 +436,30 @@ final class SlotAgentService {
 
     enum AgentBudgetDecision: Sendable, Equatable { case allow, cancel, fallback }
 
+    private nonisolated static func traceValue(for decision: AgentBudgetDecision) -> String {
+        switch decision {
+        case .allow: return "allow"
+        case .cancel: return "cancel"
+        case .fallback: return "fallback"
+        }
+    }
+
+    private nonisolated static func emitChatTrace(req: AgentRequest, phase: String, values: [String: String] = [:]) {
+        var payload = values
+        payload["phase"] = phase
+        payload["turnID"] = req.turnID?.uuidString ?? "none"
+        payload["conversationID"] = req.conversationID?.uuidString ?? "none"
+        payload["schemaVersion"] = "lumen.chat_runtime_trace/1.0.0"
+        payload["modelFamily"] = LumenModelFamily.persistedSelected.rawValue
+        payload["adapterRuntime"] = LumenModelFamily.persistedSelected == .qwen3 ? "shared-base-role-lora" : "baseline-family"
+        payload["agentRoles"] = "cortex,executor,mouth,mimicry,rem,fleet"
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .chatRuntimeTrace, values: payload))
+    }
+
+    private nonisolated static func sha256(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     @MainActor
     static func agentBudgetDecision(for req: AgentRequest, options: LegacyAgentRunOptions) -> AgentBudgetDecision {
         let snapshot = ResourceBudgetGate.diagnosticSnapshot()
@@ -494,10 +539,20 @@ final class SlotAgentService {
     private nonisolated static func deterministicCompatibilityResponse(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> DeterministicCompatibilityResponse {
         let routing = IntentRouter.classify(original.userMessage)
         let availableToolIDs = Set(effective.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        Self.emitChatTrace(req: original, phase: "routing", values: [
+            "intent": routing.intent.rawValue,
+            "requiresClarification": String(routing.requiresClarification),
+            "allowedToolIDs": routing.allowedToolIDs.sorted().joined(separator: ","),
+            "effectiveToolIDs": availableToolIDs.sorted().joined(separator: ",")
+        ])
 
         func directAnswer() -> DeterministicCompatibilityResponse {
             let candidate = deterministicAnswer(for: effective)
             let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: nil)
+            Self.emitChatTrace(req: original, phase: "direct_final", values: [
+                "finalChars": String(text.count),
+                "finalSHA256": Self.sha256(text)
+            ])
             return .init(text: text, steps: [])
         }
 
@@ -508,6 +563,10 @@ final class SlotAgentService {
         if routing.requiresClarification {
             let candidate = routing.clarificationPrompt ?? deterministicAnswer(for: effective)
             let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: nil)
+            Self.emitChatTrace(req: original, phase: "clarification", values: [
+                "finalChars": String(text.count),
+                "finalSHA256": Self.sha256(text)
+            ])
             return .init(text: text, steps: [])
         }
 
@@ -516,8 +575,16 @@ final class SlotAgentService {
             prompt: original.userMessage,
             availableToolIDs: availableToolIDs
         )
+        Self.emitChatTrace(req: original, phase: "planned_actions", values: [
+            "count": String(plannedActions.count),
+            "toolIDs": plannedActions.map { ToolRouteGuard.canonicalToolID($0.tool) }.joined(separator: ",")
+        ])
         guard !availableToolIDs.isEmpty, !plannedActions.isEmpty else {
             let text = FinalIntentValidator.validate(IntentRouter.unavailableMessage(for: routing), routing: routing, fallback: nil)
+            Self.emitChatTrace(req: original, phase: "unavailable_final", values: [
+                "finalChars": String(text.count),
+                "finalSHA256": Self.sha256(text)
+            ])
             return .init(text: text, steps: [])
         }
 
@@ -527,10 +594,21 @@ final class SlotAgentService {
 
         for (index, action) in plannedActions.enumerated() {
             let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
+            Self.emitChatTrace(req: original, phase: "action_selected", values: [
+                "index": String(index),
+                "toolID": canonicalActionTool,
+                "argKeys": action.args.keys.sorted().joined(separator: ","),
+                "requiresApproval": String(ToolRouteGuard.requiresUserApproval(canonicalActionTool))
+            ])
             if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
                 let approval = approvalBoundaryFinal(for: canonicalActionTool, action: action, routing: routing, prompt: original.userMessage)
                 let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
                 let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
+                Self.emitChatTrace(req: original, phase: "approval_boundary", values: [
+                    "toolID": canonicalActionTool,
+                    "finalChars": String(text.count),
+                    "finalSHA256": Self.sha256(text)
+                ])
                 return .init(text: text, steps: steps + [step])
             }
 
@@ -544,11 +622,21 @@ final class SlotAgentService {
                 availableToolIDs: availableToolIDs
             )
             steps.append(AgentStep(kind: .observation, content: result, toolID: canonicalActionTool))
+            Self.emitChatTrace(req: original, phase: "observation", values: [
+                "toolID": canonicalActionTool,
+                "observationChars": String(result.count),
+                "observationSHA256": Self.sha256(result)
+            ])
             lastObservation = result
             lastToolID = canonicalActionTool
 
             if index < plannedActions.count - 1, shouldStopPlannedChain(after: result) {
                 let text = FinalIntentValidator.validate(result, routing: routing, fallback: IntentRouter.unavailableMessage(for: routing))
+                Self.emitChatTrace(req: original, phase: "chain_stopped", values: [
+                    "toolID": canonicalActionTool,
+                    "finalChars": String(text.count),
+                    "finalSHA256": Self.sha256(text)
+                ])
                 return .init(text: text, steps: steps)
             }
         }
@@ -559,6 +647,10 @@ final class SlotAgentService {
             steps: steps
         ) {
             let text = FinalIntentValidator.validate(memoryFinal, routing: routing, fallback: nil)
+            Self.emitChatTrace(req: original, phase: "memory_final", values: [
+                "finalChars": String(text.count),
+                "finalSHA256": Self.sha256(text)
+            ])
             return .init(text: text, steps: steps)
         }
 
@@ -570,6 +662,12 @@ final class SlotAgentService {
         ) ?? lastObservation
         let fallback = IntentRouter.unavailableMessage(for: routing)
         let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: fallback)
+        Self.emitChatTrace(req: original, phase: "final", values: [
+            "toolID": lastToolID,
+            "finalChars": String(text.count),
+            "finalSHA256": Self.sha256(text),
+            "stepCount": String(steps.count)
+        ])
         return .init(text: text, steps: steps)
     }
 

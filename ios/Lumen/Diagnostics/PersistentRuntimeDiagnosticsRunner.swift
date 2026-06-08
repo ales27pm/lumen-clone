@@ -616,6 +616,10 @@ actor PersistentRuntimeDiagnosticsRunner {
     }
 
     private func handleSignal(_ signal: PersistentRuntimeDiagnosticSignal) async {
+        if signal.kind == .chatRuntimeTrace {
+            await store.appendEvent(PersistentDiagnosticEvent(code: signal.kind.rawValue, message: signal.values["phase"] ?? signal.kind.rawValue, values: signal.values), recordID: state.activeRunID, campaignID: campaign?.id)
+            return
+        }
         guard state.activeRunID != nil else { return }
         if signal.kind == .sceneTransition {
             if signal.values["phase"] == "inactive" || signal.values["phase"] == "background" {

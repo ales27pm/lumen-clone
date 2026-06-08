@@ -117,7 +117,16 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .calendar:
-            if containsAny(text, ["list", "show", "upcoming", "today", "tomorrow"]) { return action("calendar.list") }
+            if isCalendarListIntent(text) {
+                return action("calendar.list")
+            }
+            if isCalendarCreateIntent(text) {
+                return action("calendar.create", [
+                    "title": .string(extractCalendarTitle(from: prompt)),
+                    "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
+                ])
+            }
+            if containsAny(text, ["today", "tomorrow"]) { return action("calendar.list") }
             return nil
         case .reminder:
             if containsAny(text, ["list", "show", "pending"]) { return action("reminders.list") }
@@ -287,6 +296,80 @@ nonisolated enum DeterministicToolPlanner {
     private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool {
         containsAny(text, ["remember", "save", "note", "keep this in mind"])
             && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"])
+    }
+
+    private static func isCalendarListIntent(_ text: String) -> Bool {
+        containsAny(text, [
+            "list", "show", "upcoming", "what's on", "what is on",
+            "check my calendar", "calendar events", "events today", "events tomorrow",
+            "do i have", "any meetings", "any appointments"
+        ])
+    }
+
+    private static func isCalendarCreateIntent(_ text: String) -> Bool {
+        containsAny(text, ["set an appointment", "set appointment", "schedule", "book "])
+            || (containsAny(text, ["create", "add", "put "]) && containsAny(text, ["event", "appointment", "meeting", "calendar"]))
+    }
+
+    private static func extractCalendarTitle(from prompt: String) -> String {
+        if let called = firstCapture(in: prompt, pattern: #"(?i)\bcalled\s+([^.!?\n]+)"#) {
+            let cleaned = cleanCapturedValue(called)
+            if !cleaned.isEmpty { return cleaned }
+        }
+        let lower = normalized(prompt)
+        if lower.contains("appointment") { return "Appointment" }
+        if lower.contains("meeting") { return "Meeting" }
+        return "Event"
+    }
+
+    private static func calendarStartOffsetMinutes(from text: String) -> Int {
+        if let explicitMinutes = extractMinutes(from: text) {
+            return explicitMinutes
+        }
+
+        let now = Date()
+        var calendar = Calendar.current
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        var target = now
+
+        if text.contains("tomorrow") {
+            target = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(24 * 60 * 60)
+        }
+
+        let hour = calendarHour(from: text)
+            ?? (text.contains("morning") ? 9 : nil)
+            ?? (text.contains("afternoon") ? 13 : nil)
+            ?? (text.contains("evening") ? 18 : nil)
+        if let hour {
+            let base = text.contains("tomorrow") ? target : now
+            let start = calendar.startOfDay(for: base)
+            target = calendar.date(byAdding: .hour, value: hour, to: start) ?? target
+        } else if !text.contains("tomorrow") {
+            target = now.addingTimeInterval(60 * 60)
+        }
+
+        if target <= now {
+            target = calendar.date(byAdding: .day, value: 1, to: target) ?? now.addingTimeInterval(60 * 60)
+        }
+        return max(1, Int(target.timeIntervalSince(now) / 60))
+    }
+
+    private static func calendarHour(from text: String) -> Int? {
+        if let value = firstCapture(in: text, pattern: #"(?i)\bat\s+([0-9]{1,2})(?::[0-9]{2})?\s*(?:am|pm)?"#),
+           let raw = Int(value) {
+            let pm = text.contains("pm") || text.contains("afternoon") || text.contains("evening")
+            if pm, raw < 12 { return raw + 12 }
+            return raw == 12 && text.contains("am") ? 0 : min(max(raw, 0), 23)
+        }
+        let words = [
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+            "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12
+        ]
+        for (word, hour) in words where text.contains(" at \(word)") {
+            let pm = text.contains("pm") || text.contains("afternoon") || text.contains("evening")
+            return pm && hour < 12 ? hour + 12 : hour
+        }
+        return nil
     }
 
     private static func extractMemoryRecallQuery(from prompt: String) -> String {

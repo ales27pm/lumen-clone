@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import CryptoKit
 
 enum SchemaPlaceholderDetector {
     private static let repairFallback = "I couldn't produce a valid answer. Try rephrasing, or switch off Agent Mode for this prompt."
@@ -262,6 +263,12 @@ struct ChatView: View {
     }
 
     private func runAgent(turnID: UUID, requestID: UUID, text: String, routing: IntentRoutingDecision, memories: [MemoryContextItem], attachments: [ChatAttachment], recentContext: [(role: MessageRole, content: String)]) async {
+        emitChatViewTrace(turnID: turnID, phase: "chat_agent_start", text: text, values: [
+            "path": "chat-view-agent",
+            "intent": routing.intent.rawValue,
+            "attachmentCount": String(attachments.count),
+            "memoryCount": String(memories.count)
+        ])
         let enabledTools = ToolRegistry.all.filter { appState.enabledToolIDs.contains($0.id) }
         let routedTools = enabledTools.filter { IntentRouter.isToolAllowed($0.id, for: routing) }
         let baseSystemPrompt = conversation.systemPrompt ?? appState.systemPrompt
@@ -322,13 +329,22 @@ struct ChatView: View {
             }
         }
 
-        guard !Task.isCancelled, activeTurnID == turnID, generationController.isCurrent(requestID, for: conversation.id) else { return }
+        guard !Task.isCancelled, activeTurnID == turnID, generationController.isCurrent(requestID, for: conversation.id) else {
+            emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-agent", "reason": chatCancellationReason(turnID: turnID, requestID: requestID)])
+            return
+        }
         finalText = await repairSchemaPlaceholderFinalIfNeeded(finalText, userText: text, routing: routing, memories: memories, attachments: attachments)
         finalText = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
         finalText = FinalIntentValidator.validate(finalText, routing: routing, fallback: nil)
         let sanitizedSteps = AgentStepContentBudget.boundedSanitizedSteps(steps)
 
         let persistedFinal = FinalOutputSanitizer.sanitizeUserVisibleText(finalText).text
+        emitChatViewTrace(turnID: turnID, phase: "chat_agent_final", text: text, values: [
+            "path": "chat-view-agent",
+            "stepCount": String(sanitizedSteps.count),
+            "finalChars": String(persistedFinal.count),
+            "finalSHA256": chatTraceSHA256(persistedFinal)
+        ])
         let assistantMsg = ChatMessage(role: .assistant, content: persistedFinal, agentSteps: sanitizedSteps, visibleContent: persistedFinal)
         #if DEBUG
         if appState.developerTraceModeEnabled {
@@ -397,6 +413,11 @@ struct ChatView: View {
     }
 
     private func runPlain(turnID: UUID, requestID: UUID, text: String, memories: [MemoryContextItem], attachments: [ChatAttachment]) async {
+        emitChatViewTrace(turnID: turnID, phase: "plain_start", text: text, values: [
+            "path": "chat-view-plain",
+            "attachmentCount": String(attachments.count),
+            "memoryCount": String(memories.count)
+        ])
         let request = GenerateRequest(
             id: requestID,
             sessionID: conversation.id.uuidString,
@@ -433,11 +454,22 @@ struct ChatView: View {
             }
         }
 
-        guard !Task.isCancelled, activeTurnID == turnID, generationController.isCurrent(requestID, for: conversation.id) else { return }
+        guard !Task.isCancelled, activeTurnID == turnID, generationController.isCurrent(requestID, for: conversation.id) else {
+            emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-plain", "reason": chatCancellationReason(turnID: turnID, requestID: requestID)])
+            return
+        }
         let completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: request.id)
         let modelVisibleAnswer = completedPayload?.visibleAnswer ?? accumulated
         let sanitized = AssistantOutputSanitizer.sanitize(modelVisibleAnswer, lastUserMessage: text)
         let finalized = FinalOutputSanitizer.sanitizeUserVisibleText(sanitized).text
+        emitChatViewTrace(turnID: turnID, phase: "plain_final", text: text, values: [
+            "path": "chat-view-plain",
+            "modelName": request.modelName,
+            "finalChars": String(finalized.count),
+            "finalSHA256": chatTraceSHA256(finalized),
+            "finishReason": completedPayload?.finishReason ?? "unknown",
+            "parserWarningCount": String(completedPayload?.parserWarnings.count ?? 0)
+        ])
         let assistantMsg = ChatMessage(
             role: .assistant,
             content: finalized,
@@ -473,6 +505,33 @@ struct ChatView: View {
         conversation.updatedAt = Date()
         saveConversationIfBudgetAllows(estimatedBytes: finalized.utf8.count + 4096)
         appState.isGenerating = false
+    }
+
+    private func emitChatViewTrace(turnID: UUID, phase: String, text: String, values: [String: String] = [:]) {
+        var payload = values
+        payload["phase"] = phase
+        payload["schemaVersion"] = "lumen.chat_runtime_trace/1.0.0"
+        payload["conversationID"] = conversation.id.uuidString
+        payload["turnID"] = turnID.uuidString
+        payload["promptChars"] = String(text.count)
+        payload["promptBytes"] = String(text.utf8.count)
+        payload["promptSHA256"] = chatTraceSHA256(text)
+        payload["modelFamily"] = LumenModelFamily.persistedSelected.rawValue
+        payload["adapterRuntime"] = LumenModelFamily.persistedSelected == .qwen3 ? "shared-base-role-lora" : "baseline-family"
+        payload["agentRoles"] = "cortex,executor,mouth,mimicry,rem,fleet"
+        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .chatRuntimeTrace, values: payload))
+    }
+
+    private func chatTraceSHA256(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func chatCancellationReason(turnID: UUID, requestID: UUID) -> String {
+        if Task.isCancelled { return "task-cancelled" }
+        if activeTurnID != turnID { return "turn-replaced" }
+        if !generationController.isCurrent(requestID, for: conversation.id) { return "request-replaced" }
+        if let reason = AppCancellationBus.shared.lastCancellationReason { return reason }
+        return "generation-stopped"
     }
 
     private func safeShortTermContext(excludingCurrentUserMessageID currentID: UUID? = nil, maxTurns: Int = 4) -> [(role: MessageRole, content: String)] {
