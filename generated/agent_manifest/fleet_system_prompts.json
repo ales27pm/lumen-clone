@@ -1418,7 +1418,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+        "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -2420,7 +2420,7 @@
     "slotID": "cortex",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+      "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -3480,7 +3480,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+        "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -4471,7 +4471,7 @@
     "slotID": "embedding",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+      "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -6332,7 +6332,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+        "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -7331,7 +7331,7 @@
     "slotID": "executor",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+      "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -8399,7 +8399,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+        "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -9396,7 +9396,7 @@
     "slotID": "mimicry",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+      "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -10464,7 +10464,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+        "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -11461,7 +11461,7 @@
     "slotID": "mouth",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+      "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -12531,7 +12531,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+        "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -13531,7 +13531,7 @@
     "slotID": "rem",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+      "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
       "domains": {
         "chat": 2,
         "fleet": 1,

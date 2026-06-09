@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+    "commit": "4bd0a3e44b65bc13862219029daec380c50db459",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",

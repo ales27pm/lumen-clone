@@ -7,7 +7,7 @@
     "sentinelSafe": true
   },
   "deterministic": true,
-  "manifestCommit": "6f04fd982acb64822d881da359be3a10d6175681",
+  "manifestCommit": "4bd0a3e44b65bc13862219029daec380c50db459",
   "recordCounts": {
     "eval": 4,
     "train_dpo": 7,
