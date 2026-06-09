@@ -71,6 +71,8 @@ def _normalize_payload(value: Any, *, source: str) -> list[dict[str, Any]]:
         return _flatten_evidence_layer_envelope(value, source=source)
     if _is_in_app_package(value):
         return [_flatten_in_app_package(value, source=source)]
+    if _is_persistent_runtime_diagnostics_export(value):
+        return [_flatten_persistent_runtime_diagnostics(value, source=source)]
     if _is_e2e_json_report(value):
         return [flatten_e2e_json_report(value, source=source)]
     if isinstance(value.get("failures"), list):
@@ -205,7 +207,7 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -216,6 +218,16 @@ def _is_in_app_package(value: dict[str, Any]) -> bool:
                 "recentTraces",
             )
         )
+    )
+
+
+def _is_persistent_runtime_diagnostics_export(value: dict[str, Any]) -> bool:
+    state = value.get("state")
+    return (
+        isinstance(state, dict)
+        and isinstance(state.get("records"), list)
+        and isinstance(value.get("ndjson"), str)
+        and "exportedAt" in value
     )
 
 
@@ -277,7 +289,16 @@ def _should_report_trace_parse_error(trace: dict[str, Any]) -> bool:
         and raw_output.startswith("You are Lumen, a helpful, concise on-device AI assistant.")
     ):
         return False
-    return True
+    return _trace_has_tool_scope(trace)
+
+
+def _trace_has_tool_scope(trace: dict[str, Any]) -> bool:
+    selected_tool_id = str(trace.get("selectedToolID") or "")
+    allowed_tool_ids = trace.get("allowedToolIDs")
+    allowed_tool_ids = allowed_tool_ids if isinstance(allowed_tool_ids, list) else []
+    requires_approval = trace.get("requiresApproval")
+    approval_mode = str(trace.get("approvalMode") or "")
+    return bool(selected_tool_id or allowed_tool_ids or requires_approval is True or approval_mode)
 
 
 def _trace_tool_failure(
@@ -332,6 +353,58 @@ def _empty_agent_grounding_trace_failure(package: dict[str, Any], export_policy:
         ),
         "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
     }
+
+
+def _flatten_persistent_runtime_diagnostics(package: dict[str, Any], *, source: str) -> dict[str, Any]:
+    state = package.get("state")
+    state = state if isinstance(state, dict) else {}
+    records = list(_iter_dicts(state.get("records", []) or []))
+    status_counts: dict[str, int] = {}
+    failures: list[dict[str, Any]] = []
+    for record in records:
+        status = str(record.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        if status == "passed" or _is_expected_diagnostics_cancellation(record):
+            continue
+        failures.append({
+            "type": "persistent_diagnostics_scenario_not_passed",
+            "agent": "runtime",
+            "expected": ["Persistent diagnostics scenario should pass or be an explicitly expected cancellation."],
+            "actual": status,
+            "scenario": record.get("scenario"),
+            "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+            "sourceLayer": "persistentRuntimeDiagnostics.records",
+            "diagnosticRecordID": record.get("id"),
+        })
+    ndjson = package.get("ndjson")
+    ndjson_line_count = len([line for line in str(ndjson).splitlines() if line.strip()])
+    return {
+        "_source": source,
+        "_sourceFormat": "persistent_runtime_diagnostics_export",
+        "_sourceLayer": "persistentRuntimeDiagnostics",
+        "generatedAt": package.get("exportedAt"),
+        "appVersion": package.get("appVersion"),
+        "deviceModel": package.get("deviceModel"),
+        "systemName": package.get("systemName"),
+        "systemVersion": package.get("systemVersion"),
+        "campaign": package.get("campaign") if isinstance(package.get("campaign"), dict) else None,
+        "recordCount": len(records),
+        "statusCounts": dict(sorted(status_counts.items())),
+        "metricKitPayloadCount": len(package.get("metricKitPayloads", []) or []) if isinstance(package.get("metricKitPayloads"), list) else 0,
+        "ndjsonLineCount": ndjson_line_count,
+        "failures": failures,
+    }
+
+
+def _is_expected_diagnostics_cancellation(record: dict[str, Any]) -> bool:
+    if str(record.get("status") or "") != "cancelled":
+        return False
+    metrics = record.get("metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    if metrics.get("didCancel") is not True:
+        return False
+    reason = str(metrics.get("cancellationReason") or "")
+    return reason == "persistent-diagnostics-agent-cancel"
 
 
 def _collect_trace_failures(

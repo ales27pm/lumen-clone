@@ -48,13 +48,16 @@ struct DeveloperConsoleView: View {
 
     @ViewBuilder
     private var overviewSections: some View {
+        let runtimeContract = LumenTrainedModelRuntimeRegistry.selected
+
         Section("Status") {
             LabeledContent("Framework", value: "Observe → Diagnose → Plan → Change → Validate → Learn")
             LabeledContent("Live authority", value: "Live E2E")
             LabeledContent("Runtime mode", value: appState.isGenerating ? "Generating" : "Idle")
-            LabeledContent("Model family", value: LumenModelFamily.persistedSelected.displayName)
-            LabeledContent("Agent adapters", value: "Shared base + role LoRAs")
-            LabeledContent("Role loop", value: "Cortex / Executor / Mouth / REM")
+            LabeledContent("Model family", value: runtimeContract.family.displayName)
+            LabeledContent("Trained base", value: runtimeContract.sharedBaseModelID)
+            LabeledContent("Adapter runtime", value: runtimeContract.mode)
+            LabeledContent("Adapter roles", value: runtimeContract.adapterRoleIDs.joined(separator: " / "))
             Text(model.statusMessage)
                 .font(.caption)
                 .foregroundStyle(Theme.textSecondary)

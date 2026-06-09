@@ -176,6 +176,18 @@ nonisolated enum FinalIntentValidator {
             "replacementSource": replacementSource,
             "reason": reason
         ]))
+        RuntimeFallbackLogger.record(
+            source: "final-intent-validator",
+            primaryBehavior: "use model candidate as final user-visible response",
+            fallbackBehavior: "replace candidate with validated fallback response",
+            reason: reason,
+            consequence: "primary model final text was not safe or intent-compatible",
+            values: [
+                "intent": intent.rawValue,
+                "candidateLength": String(candidateLength),
+                "replacementSource": replacementSource
+            ]
+        )
     }
 
     private static func looksLikeCredentialLeak(_ lower: String) -> Bool {

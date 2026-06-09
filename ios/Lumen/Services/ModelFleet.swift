@@ -138,13 +138,15 @@ nonisolated struct LumenModelFleetSnapshot: Sendable, Hashable {
     let mode: LumenFleetRuntimeMode
     let assignments: [LumenModelSlot: LumenModelAssignment]
     let missingSlots: [LumenModelSlot]
+    let missingAdapterSlots: [LumenModelSlot]
     let targetResidentSlots: Set<LumenModelSlot>
     let runtimeResidentSlots: Set<LumenModelSlot>
 
-    init(mode: LumenFleetRuntimeMode = .v1MultiResident, assignments: [LumenModelSlot: LumenModelAssignment], missingSlots: [LumenModelSlot], targetResidentSlots: Set<LumenModelSlot> = [], runtimeResidentSlots: Set<LumenModelSlot> = []) {
+    init(mode: LumenFleetRuntimeMode = .v1MultiResident, assignments: [LumenModelSlot: LumenModelAssignment], missingSlots: [LumenModelSlot], missingAdapterSlots: [LumenModelSlot] = [], targetResidentSlots: Set<LumenModelSlot> = [], runtimeResidentSlots: Set<LumenModelSlot> = []) {
         self.mode = mode
         self.assignments = assignments
         self.missingSlots = missingSlots
+        self.missingAdapterSlots = missingAdapterSlots
         self.targetResidentSlots = targetResidentSlots
         self.runtimeResidentSlots = runtimeResidentSlots
     }
@@ -153,6 +155,10 @@ nonisolated struct LumenModelFleetSnapshot: Sendable, Hashable {
 
     var isRunnableV1: Bool {
         assignment(for: .cortex) != nil && assignment(for: .executor) != nil && assignment(for: .mouth) != nil && assignment(for: .mimicry) != nil
+    }
+
+    var isFullyAdapted: Bool {
+        missingAdapterSlots.isEmpty
     }
 }
 
@@ -178,12 +184,15 @@ enum LumenModelFleetResolver {
         let activeText = activeChatModelID.flatMap { id in textModels.first { $0.id.uuidString == id } }
         let fallbackText = activeText ?? preferredTextModel(from: textModels)
         let selectedFamily = LumenModelFamily.persistedSelected
-        let qwen3AdapterBase = (activeText?.isQwen3SharedAdapterBase == true ? activeText : nil)
-            ?? textModels.filter(\.isQwen3SharedAdapterBase).sorted { $0.downloadedAt > $1.downloadedAt }.first
+        let runtimeContract = LumenTrainedModelRuntimeRegistry.contract(for: selectedFamily)
+        let qwen3AdapterBase = selectedFamily == .qwen3
+            ? ((activeText.map { isSharedBase($0, contract: runtimeContract) } == true ? activeText : nil)
+                ?? textModels.filter { isSharedBase($0, contract: runtimeContract) }.sorted { $0.downloadedAt > $1.downloadedAt }.first)
+            : nil
 
         if selectedFamily == .qwen3, let sharedBase = qwen3AdapterBase {
-            for slot in [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem] {
-                let adapter = preferredAdapter(for: slot, storedModels: adapterModels)
+            for slot in runtimeContract.runtimeSlots {
+                let adapter = preferredAdapter(for: slot, storedModels: adapterModels, contract: runtimeContract)
                 assignments[slot] = assignment(slot: slot, model: sharedBase, family: .qwen3, adapter: adapter)
             }
         } else {
@@ -202,7 +211,9 @@ enum LumenModelFleetResolver {
         }
 
         let missing = LumenModelSlot.allCases.filter { assignments[$0] == nil }
-        return LumenModelFleetSnapshot(mode: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? .qwen3AdapterRuntime : .v1MultiResident, assignments: assignments, missingSlots: missing, targetResidentSlots: Set(assignments.keys), runtimeResidentSlots: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? [.cortex] : [])
+        let mode: LumenFleetRuntimeMode = selectedFamily == .qwen3 && qwen3AdapterBase != nil ? .qwen3AdapterRuntime : .v1MultiResident
+        let missingAdapterSlots = mode == .qwen3AdapterRuntime ? runtimeContract.runtimeSlots.filter { assignments[$0]?.adapterPath == nil } : []
+        return LumenModelFleetSnapshot(mode: mode, assignments: assignments, missingSlots: missing, missingAdapterSlots: missingAdapterSlots, targetResidentSlots: Set(assignments.keys), runtimeResidentSlots: mode == .qwen3AdapterRuntime ? [.cortex] : [])
     }
 
     nonisolated private static func resolveV1(activeChatModelID: String?, activeEmbeddingModelID: String?, selectedFamily: LumenModelFamily, storedModels: [StoredModelLoadItem]) -> LumenModelFleetSnapshot {
@@ -212,12 +223,15 @@ enum LumenModelFleetResolver {
         let adapterModels = existingStoredModels.filter { $0.modelRole == .roleAdapter }
         let activeText = activeChatModelID.flatMap { id in textModels.first { $0.id.uuidString == id } }
         let fallbackText = activeText ?? preferredTextModel(from: textModels)
-        let qwen3AdapterBase = (activeText?.isQwen3SharedAdapterBase == true ? activeText : nil)
-            ?? textModels.filter(\.isQwen3SharedAdapterBase).sorted { $0.downloadedAt > $1.downloadedAt }.first
+        let runtimeContract = LumenTrainedModelRuntimeRegistry.contract(for: selectedFamily)
+        let qwen3AdapterBase = selectedFamily == .qwen3
+            ? ((activeText.map { isSharedBase($0, contract: runtimeContract) } == true ? activeText : nil)
+                ?? textModels.filter { isSharedBase($0, contract: runtimeContract) }.sorted { $0.downloadedAt > $1.downloadedAt }.first)
+            : nil
 
         if selectedFamily == .qwen3, let sharedBase = qwen3AdapterBase {
-            for slot in [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem] {
-                let adapter = preferredAdapter(for: slot, storedModels: adapterModels)
+            for slot in runtimeContract.runtimeSlots {
+                let adapter = preferredAdapter(for: slot, storedModels: adapterModels, contract: runtimeContract)
                 assignments[slot] = assignment(slot: slot, model: sharedBase, family: .qwen3, adapter: adapter)
             }
         } else {
@@ -236,10 +250,20 @@ enum LumenModelFleetResolver {
         }
 
         let missing = LumenModelSlot.allCases.filter { assignments[$0] == nil }
-        return LumenModelFleetSnapshot(mode: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? .qwen3AdapterRuntime : .v1MultiResident, assignments: assignments, missingSlots: missing, targetResidentSlots: Set(assignments.keys), runtimeResidentSlots: selectedFamily == .qwen3 && qwen3AdapterBase != nil ? [.cortex] : [])
+        let mode: LumenFleetRuntimeMode = selectedFamily == .qwen3 && qwen3AdapterBase != nil ? .qwen3AdapterRuntime : .v1MultiResident
+        let missingAdapterSlots = mode == .qwen3AdapterRuntime ? runtimeContract.runtimeSlots.filter { assignments[$0]?.adapterPath == nil } : []
+        return LumenModelFleetSnapshot(mode: mode, assignments: assignments, missingSlots: missing, missingAdapterSlots: missingAdapterSlots, targetResidentSlots: Set(assignments.keys), runtimeResidentSlots: mode == .qwen3AdapterRuntime ? [.cortex] : [])
     }
 
-    nonisolated private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
+    nonisolated private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem], contract: LumenTrainedModelRuntimeContract) -> StoredModelLoadItem? {
+        if let role = contract.adapterRole(for: slot) {
+            if let exact = storedModels.filter({ $0.repoId == role.adapterRepoID && $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
+                return exact
+            }
+            if let exactFile = storedModels.filter({ $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
+                return exactFile
+            }
+        }
         let slotToken = slot.rawValue
         let scored = storedModels.compactMap { model -> (model: StoredModelLoadItem, rank: Int)? in
             let text = [model.name, model.repoId, model.fileName, model.localPath].joined(separator: " ").lowercased()
@@ -343,7 +367,15 @@ enum LumenModelFleetResolver {
         )
     }
 
-    private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModel]) -> StoredModel? {
+    private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModel], contract: LumenTrainedModelRuntimeContract) -> StoredModel? {
+        if let role = contract.adapterRole(for: slot) {
+            if let exact = storedModels.filter({ $0.repoId == role.adapterRepoID && $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
+                return exact
+            }
+            if let exactFile = storedModels.filter({ $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
+                return exactFile
+            }
+        }
         let slotToken = slot.rawValue
         let scored = storedModels.compactMap { model -> (model: StoredModel, rank: Int)? in
             let text = [model.name, model.repoId, model.fileName, model.localPath].joined(separator: " ").lowercased()
@@ -455,6 +487,14 @@ enum LumenModelFleetResolver {
         FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path)
     }
 
+    nonisolated private static func isSharedBase(_ model: StoredModelLoadItem, contract: LumenTrainedModelRuntimeContract) -> Bool {
+        contract.matchesSharedBase(repoID: model.repoId, fileName: model.fileName)
+    }
+
+    private static func isSharedBase(_ model: StoredModel, contract: LumenTrainedModelRuntimeContract) -> Bool {
+        contract.matchesSharedBase(repoID: model.repoId, fileName: model.fileName)
+    }
+
     nonisolated private static func tokenSet(_ value: String) -> Set<String> {
         Set(value.split { !$0.isLetter && !$0.isNumber }.map(String.init))
     }
@@ -475,19 +515,5 @@ enum LumenModelFleetResolver {
             adapterFileName: adapter?.fileName,
             adapterScale: 1.0
         )
-    }
-}
-
-
-private extension StoredModel {
-    var isQwen3SharedAdapterBase: Bool {
-        repoId == "ales27pm/lumen-qwen3-bootstrap-gguf" && fileName == "lumen-qwen3-fast-shared-q4_k_m.gguf"
-    }
-}
-
-
-private extension StoredModelLoadItem {
-    var isQwen3SharedAdapterBase: Bool {
-        repoId == "ales27pm/lumen-qwen3-bootstrap-gguf" && fileName == "lumen-qwen3-fast-shared-q4_k_m.gguf"
     }
 }

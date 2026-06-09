@@ -902,11 +902,21 @@ def _build_runtime_audit_repair_records(  # NOSONAR
         return []
     records: list[dict[str, Any]] = []
     known_tools = sorted(tool.id for tool in manifest.tools)
+    seen_failure_signatures: set[str] = set()
+    seen_clean_signatures: set[str] = set()
     for report_index, report in enumerate(runtime_audit_reports):
         failures = report.get("failures") if isinstance(report, dict) else None
         if not isinstance(failures, list):
             continue
         if not failures:
+            clean_signature = _stable_id({
+                "type": "runtime_audit_clean",
+                "sourceFormat": report.get("_sourceFormat"),
+                "sourceLayer": report.get("_sourceLayer"),
+            })
+            if clean_signature in seen_clean_signatures:
+                continue
+            seen_clean_signatures.add(clean_signature)
             payload = {
                 "failureType": "runtime_audit_clean",
                 "scenario": "runtime_audit_report",
@@ -949,6 +959,12 @@ def _build_runtime_audit_repair_records(  # NOSONAR
         for failure_index, failure in enumerate(failures):
             if not isinstance(failure, dict):
                 continue
+            if not _runtime_failure_is_training_repairable(failure):
+                continue
+            signature = _runtime_failure_signature(failure)
+            if signature in seen_failure_signatures:
+                continue
+            seen_failure_signatures.add(signature)
             repair = _repair_for_runtime_failure(failure, known_tools)
             payload = {
                 "failureType": failure.get("type"),
@@ -977,6 +993,38 @@ def _build_runtime_audit_repair_records(  # NOSONAR
                 },
             })
     return records
+
+
+def _runtime_failure_is_training_repairable(failure: dict[str, Any]) -> bool:
+    failure_type = str(failure.get("type") or "")
+    source_layer = str(failure.get("sourceLayer") or "")
+    if failure_type in {
+        "agent_grounding_no_recent_model_traces",
+        "persistent_diagnostics_scenario_not_passed",
+    }:
+        return False
+    if source_layer.endswith(".exportQuality") or source_layer == "persistentRuntimeDiagnostics.records":
+        return False
+    return True
+
+
+def _runtime_failure_signature(failure: dict[str, Any]) -> str:
+    repair_sample = failure.get("repairSample")
+    repair_signature: Any = None
+    if isinstance(repair_sample, dict):
+        repair_signature = {
+            "violationCode": repair_sample.get("violationCode"),
+            "promptPrefix": repair_sample.get("promptPrefix"),
+            "expected": repair_sample.get("expected"),
+        }
+    return _stable_id({
+        "type": failure.get("type"),
+        "agent": failure.get("agent"),
+        "scenario": failure.get("scenario"),
+        "sourceLayer": failure.get("sourceLayer"),
+        "actual": failure.get("actual"),
+        "repair": repair_signature,
+    })
 
 
 def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str]) -> dict[str, Any]:

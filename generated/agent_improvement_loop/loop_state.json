@@ -7,9 +7,9 @@
       "cortex": {
         "eval": 555,
         "trainDPO": 8,
-        "trainSFT": 286,
+        "trainSFT": 289,
         "valDPO": 1,
-        "valSFT": 50
+        "valSFT": 51
       },
       "executor": {
         "eval": 111,
@@ -21,9 +21,9 @@
       "fleet": {
         "eval": 93,
         "trainDPO": 14,
-        "trainSFT": 1103,
+        "trainSFT": 1114,
         "valDPO": 3,
-        "valSFT": 195
+        "valSFT": 196
       },
       "mimicry": {
         "eval": 3,
@@ -42,24 +42,24 @@
       "rem": {
         "eval": 4,
         "trainDPO": 7,
-        "trainSFT": 444,
+        "trainSFT": 455,
         "valDPO": 1,
-        "valSFT": 78
+        "valSFT": 80
       }
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_corpus": 434,
-      "codebase_home_sft": 434,
+      "codebase_home_corpus": 440,
+      "codebase_home_sft": 440,
       "cortex_routing": 69,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 962,
+      "embedding_corpus": 974,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 1131,
-      "embedding_hard_negatives": 1131,
-      "embedding_train_pairs": 1004,
-      "embedding_train_triplets": 1014,
-      "embedding_val_pairs": 127,
+      "embedding_eval_retrieval": 1143,
+      "embedding_hard_negatives": 1143,
+      "embedding_train_pairs": 1018,
+      "embedding_train_triplets": 1026,
+      "embedding_val_pairs": 125,
       "embedding_val_triplets": 117,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
@@ -68,47 +68,58 @@
       "mouth_responses": 53,
       "negative_samples": 53,
       "rem_reflection": 5,
-      "runtime_audit_repairs": 1,
+      "runtime_audit_repairs": 7,
       "tool_schema_cards": 91,
       "train_sft": 298,
       "validation_sft": 53
     },
     "familyCount": 24,
-    "recordCount": 7756
+    "recordCount": 7834
   },
-  "errorGapCount": 0,
-  "gapCount": 0,
+  "errorGapCount": 4,
+  "gapCount": 4,
   "manifest": {
-    "commit": "50aa14941fa9502956abd4592e6285d570cf59f9",
-    "fingerprint": "371c6f00a325100601567e86127e2d6504c8195b71edeadfd3e617d1f3bf6069",
+    "commit": "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+    "fingerprint": "a597927e71c973c3db48e0ac1d085d9194d036a9794ea3c4d548125c2ece27ef",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
     "toolCount": 53
   },
-  "nextActionPromptCount": 1,
+  "nextActionPromptCount": 4,
   "output": "/Users/ales27pm/lumen-clone/generated/agent_manifest",
-  "passed": true,
+  "passed": false,
   "root": "/Users/ales27pm/lumen-clone",
   "runtime": {
-    "failureCount": 0,
-    "failureTypes": {},
-    "reportCount": 1,
-    "sourceLayers": {}
+    "failureCount": 4,
+    "failureTypes": {
+      "agent_grounding_no_recent_model_traces": 1,
+      "missing_required_tool_action": 2,
+      "trace_parse_error": 1
+    },
+    "reportCount": 5,
+    "sourceLayers": {
+      "agentBehaviorTraceRecorder": 1,
+      "agentGroundingRuntimeAudit.exportQuality": 1,
+      "agentModelBehaviorAuditor.repairSamples": 2
+    }
   },
   "runtimeAuditInputs": [
-    "/private/tmp/codex-remote-attachments/019ea2e1-5b32-7840-bc3c-be268baf6ee3/F669C4CA-412D-4D1F-852B-7E96E210358C/1-lumen-agent-grounding-audit-2026-06-07T18-02-30Z-a2bc16ee-aeb4-4620-a782-93382f2c60e2.json",
-    "/private/tmp/codex-remote-attachments/019ea2e1-5b32-7840-bc3c-be268baf6ee3/F669C4CA-412D-4D1F-852B-7E96E210358C/2-lumen-live-e2e-report-2026-06-07T17-58-03Z-d265b51a-ccda-407b-95ec-f6cf7c883872.json"
+    "/Users/ales27pm/lumen-clone/runtime-audits/2026-06-08-second-improve-loop/1-persistent-runtime-diagnostics-export.json",
+    "/Users/ales27pm/lumen-clone/runtime-audits/2026-06-08-second-improve-loop/2-lumen-live-e2e-report-2026-06-08T23-50-09Z-3eef925b-2fbc-4041-833b-4acaefb80ecf.json",
+    "/Users/ales27pm/lumen-clone/runtime-audits/2026-06-08-second-improve-loop/3-lumen-live-e2e-report-2026-06-08T23-49-46Z-dae44325-1c08-40c5-9814-48166a13612a.json",
+    "/Users/ales27pm/lumen-clone/runtime-audits/2026-06-08-second-improve-loop/4-lumen-agent-grounding-audit-2026-06-08T23-56-02Z-db8e545a-8842-497c-a87d-de92f0d8a827.json",
+    "/Users/ales27pm/lumen-clone/runtime-audits/2026-06-08-second-improve-loop/5-lumen-agent-grounding-audit-2026-06-08T23-49-25Z-a5deb496-392f-4882-bc15-539f86168527.json"
   ],
   "schemaVersion": "1.1.0",
   "startedAt": "1970-01-01T00:00:00+00:00",
   "testFlight": {
-    "buildLabel": null,
+    "buildLabel": "1.0.0-20260608194336",
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "371c6f00a325100601567e86127e2d6504c8195b71edeadfd3e617d1f3bf6069",
+    "manifestFingerprint": "a597927e71c973c3db48e0ac1d085d9194d036a9794ea3c4d548125c2ece27ef",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
-    "requireRuntimeAuditForPass": false,
+    "requireRuntimeAuditForPass": true,
     "requiresTestFlightAppRun": true,
     "runbookPath": "TESTFLIGHT_RUNBOOK.md",
     "runtimeAuditProvided": true,

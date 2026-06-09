@@ -124,6 +124,18 @@ nonisolated struct ReasoningAwareStreamParser: Sendable {
         if sawReasoningBlock && visibleAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let fallback = config.fallbackWhenOnlyReasoning
             visibleAnswer = fallback
+            RuntimeFallbackLogger.record(
+                source: "reasoning-aware-stream-parser",
+                primaryBehavior: "emit model visible final answer",
+                fallbackBehavior: "emit only-reasoning fallback response",
+                reason: "reasoning-without-visible-answer",
+                consequence: "primary model response lacked user-visible final text",
+                values: [
+                    "rawOutputChars": String(rawModelOutput.count),
+                    "reasoningChars": String(reasoningTrace.count),
+                    "warningCount": String(warnings.count + 1)
+                ]
+            )
             delta = ReasoningAwareStreamParserDelta(
                 visibleDelta: delta.visibleDelta + fallback,
                 reasoningDelta: delta.reasoningDelta,

@@ -3,9 +3,9 @@
   "adapterDirectory": "models/lora/mimicry",
   "adapterID": "lumen-mimicry-adapter",
   "agent": "mimicry",
-  "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+  "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "50aa14941fa9502956abd4592e6285d570cf59f9",
+    "manifestCommit": "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
     "recordCounts": {
       "eval": 3,
       "train_dpo": 9,

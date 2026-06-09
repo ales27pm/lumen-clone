@@ -61,6 +61,7 @@ struct LumenFleetTests {
             role: .embedding,
             localPath: "/tmp/qwen3-embedding-0.6b-q4_k_m.gguf"
         )
+        try materializeModelFiles(chat, embedding)
 
         let snapshot = LumenModelFleetResolver.resolveV1(
             activeChatModelID: chat.id.uuidString,
@@ -102,6 +103,7 @@ struct LumenFleetTests {
             role: .embedding,
             localPath: "/tmp/vectors.gguf"
         )
+        try materializeModelFiles(chat, customEmbedding)
 
         let snapshot = LumenModelFleetResolver.resolveV1(
             activeChatModelID: chat.id.uuidString,
@@ -134,6 +136,7 @@ struct LumenFleetTests {
             role: .chat,
             localPath: "/tmp/models/gguf_release_bake/cortex_merged_gguf/lumen-cortex-release-bake-q4_k_m.gguf"
         )
+        try materializeModelFiles(sharedBase, cortexReleaseBake)
 
         let snapshot = LumenModelFleetResolver.resolveV1(
             activeChatModelID: sharedBase.id.uuidString,
@@ -166,6 +169,7 @@ struct LumenFleetTests {
             role: .chat,
             localPath: "/tmp/models/lora/cortex/cortex.lora"
         )
+        try materializeModelFiles(sharedBase, cortexAdapter)
 
         let snapshot = LumenModelFleetResolver.resolveV1(
             activeChatModelID: sharedBase.id.uuidString,
@@ -176,6 +180,108 @@ struct LumenFleetTests {
         #expect(snapshot.assignment(for: .cortex)?.modelID == sharedBase.id)
         #expect(snapshot.assignment(for: .executor)?.modelID == sharedBase.id)
         #expect(snapshot.assignments.values.allSatisfy { $0.modelID != cortexAdapter.id })
+    }
+
+    @Test func qwen3RuntimeContractDescribesTrainedModelAndAdapters() async throws {
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+        #expect(contract.sharedBaseModelID == "Qwen/Qwen3-1.7B")
+        #expect(contract.sharedBaseRepoID == "ales27pm/lumen-qwen3-bootstrap-gguf")
+        #expect(contract.adapterRoles.count == 6)
+        #expect(contract.runtimeSlots == [.cortex, .executor, .mouth, .mimicry, .rem])
+        #expect(contract.adapterRole(roleID: "fleet")?.slot == nil)
+        #expect(contract.mergeAdaptersByDefault == false)
+        #expect(contract.releaseBakeManualOnly == true)
+        #expect(contract.traceValues["trainedBaseModelID"] == "Qwen/Qwen3-1.7B")
+    }
+
+    @Test @MainActor func qwen3ResolverReportsMissingRoleAdapters() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen3
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+        let sharedBase = StoredModel(
+            name: "Qwen3 Fast Shared Chat Base",
+            repoId: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: 1,
+            quantization: "Q4_K_M",
+            parameters: "1.7B",
+            role: .chat,
+            localPath: "/tmp/\(contract.sharedBaseFileName)"
+        )
+        try materializeModelFiles(sharedBase)
+
+        let snapshot = LumenModelFleetResolver.resolveV1(
+            activeChatModelID: sharedBase.id.uuidString,
+            activeEmbeddingModelID: nil,
+            storedModels: [sharedBase]
+        )
+
+        #expect(snapshot.mode == .qwen3AdapterRuntime)
+        #expect(snapshot.isRunnableV1)
+        #expect(snapshot.missingAdapterSlots == [.cortex, .executor, .mouth, .mimicry, .rem])
+        #expect(!snapshot.isFullyAdapted)
+    }
+
+    @Test @MainActor func qwen3ResolverPrefersContractAdapterArtifactOverLooseHints() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen3
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+        let executorRole = try #require(contract.adapterRole(for: .executor))
+        let sharedBase = StoredModel(
+            name: "Qwen3 Fast Shared Chat Base",
+            repoId: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: 1,
+            quantization: "Q4_K_M",
+            parameters: "1.7B",
+            role: .chat,
+            localPath: "/tmp/\(contract.sharedBaseFileName)"
+        )
+        let exactExecutorAdapter = StoredModel(
+            name: "Executor role adapter",
+            repoId: executorRole.adapterRepoID,
+            fileName: executorRole.adapterFileName,
+            sizeBytes: 1,
+            quantization: "GGUF",
+            parameters: "LoRA",
+            role: .roleAdapter,
+            localPath: "/tmp/\(executorRole.adapterFileName)"
+        )
+        let looseHintAdapter = StoredModel(
+            name: "Executor-looking wrong artifact",
+            repoId: "local/misleading-adapters",
+            fileName: "not-the-trained-executor-lora.gguf",
+            sizeBytes: 1,
+            quantization: "GGUF",
+            parameters: "LoRA",
+            role: .roleAdapter,
+            localPath: "/tmp/not-the-trained-executor-lora.gguf"
+        )
+        try materializeModelFiles(sharedBase, exactExecutorAdapter, looseHintAdapter)
+
+        let snapshot = LumenModelFleetResolver.resolveV1(
+            activeChatModelID: sharedBase.id.uuidString,
+            activeEmbeddingModelID: nil,
+            storedModels: [sharedBase, looseHintAdapter, exactExecutorAdapter]
+        )
+
+        #expect(snapshot.assignment(for: .executor)?.adapterID == exactExecutorAdapter.id)
+        #expect(snapshot.assignment(for: .executor)?.adapterFileName == executorRole.adapterFileName)
+    }
+}
+
+private func materializeModelFiles(_ models: StoredModel...) throws {
+    let fileManager = FileManager.default
+    for model in models {
+        let url = URL(fileURLWithPath: model.localPath)
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if !fileManager.fileExists(atPath: url.path) {
+            fileManager.createFile(atPath: url.path, contents: Data(), attributes: nil)
+        }
     }
 }
 

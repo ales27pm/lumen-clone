@@ -69,6 +69,17 @@ public final class RuntimeManifestAuditor {
                 usedRuntimeFallback: false
             )
         } catch {
+            RuntimeFallbackLogger.record(
+                source: "runtime-manifest-auditor",
+                primaryBehavior: "load generated AgentBehaviorManifest from store or bundle",
+                fallbackBehavior: "use synthetic runtime manifest",
+                reason: "missing-agent-behavior-manifest",
+                consequence: "runtime grounding uses synthetic manifest instead of trained app behavior manifest",
+                values: [
+                    "resourceName": resourceName,
+                    "errorCode": RuntimeMetricErrorSanitizer.code(for: error)
+                ]
+            )
             return RuntimeManifestLoadResult(
                 manifest: syntheticManifestFromRuntimeRegistry(missingResourceName: resourceName),
                 source: "bundled-missing-runtime-fallback",

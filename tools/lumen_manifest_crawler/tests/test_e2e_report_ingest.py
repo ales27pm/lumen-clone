@@ -522,3 +522,71 @@ def test_in_app_package_ignores_cortex_prompt_echo_parse_errors(tmp_path: Path):
 
     assert report["traceParseErrorCount"] == 1
     assert all(failure["type"] != "trace_parse_error" for failure in report["failures"])
+
+
+def test_in_app_package_ignores_non_tool_scoped_parse_errors(tmp_path: Path):
+    report_path = tmp_path / "lumen-agent-grounding-audit-direct-chat.json"
+    import json
+
+    package = {
+        "schemaVersion": "1.1.0",
+        "generatedAt": "2026-06-08T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [
+            {
+                "slot": "cortex",
+                "stage": "agent-json",
+                "parseError": "noJSONObject",
+                "promptPrefix": "Explain precision and recall in plain English.",
+                "rawOutputPrefix": "Precision is about exactness; recall is about coverage.",
+                "selectedToolID": None,
+                "allowedToolIDs": [],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    report = load_runtime_audit_reports([report_path])[0]
+
+    assert report["traceParseErrorCount"] == 1
+    assert all(failure["type"] != "trace_parse_error" for failure in report["failures"])
+
+
+def test_in_app_package_reports_tool_scoped_parse_errors(tmp_path: Path):
+    report_path = tmp_path / "lumen-agent-grounding-audit-tool-scoped-parse.json"
+    import json
+
+    package = {
+        "schemaVersion": "1.1.0",
+        "generatedAt": "2026-06-08T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [
+            {
+                "slot": "cortex",
+                "stage": "agent-json",
+                "parseError": "noJSONObject",
+                "promptPrefix": "Search my calendar for next event",
+                "rawOutputPrefix": "No events in the next 7 days.",
+                "selectedToolID": None,
+                "allowedToolIDs": ["calendar.list"],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    report = load_runtime_audit_reports([report_path])[0]
+
+    assert report["traceParseErrorCount"] == 1
+    assert any(failure["type"] == "trace_parse_error" for failure in report["failures"])

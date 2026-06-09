@@ -1,19 +1,19 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 1023,
+  "availableSFTRecords": 1073,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
     "sentinelSafe": true
   },
   "deterministic": true,
-  "manifestCommit": "50aa14941fa9502956abd4592e6285d570cf59f9",
+  "manifestCommit": "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
   "recordCounts": {
     "eval": 4,
     "train_dpo": 7,
-    "train_sft": 444,
+    "train_sft": 455,
     "val_dpo": 1,
-    "val_sft": 78
+    "val_sft": 80
   },
   "sourceFamilies": [
     "codebase_home_corpus",
@@ -23,8 +23,9 @@
     "embedding_dataset_card",
     "embedding_eval_retrieval",
     "embedding_hard_negatives",
+    "embedding_train_pairs",
     "embedding_train_triplets",
-    "embedding_val_pairs",
+    "embedding_val_triplets",
     "manifest_grounding_cards",
     "rem_reflection",
     "runtime_audit_repairs",
@@ -38,8 +39,9 @@
     "embedding_dataset_card",
     "embedding_eval_retrieval",
     "embedding_hard_negatives",
+    "embedding_train_pairs",
     "embedding_train_triplets",
-    "embedding_val_pairs",
+    "embedding_val_triplets",
     "fleet_delegation",
     "fleet_delegation_preference",
     "fleet_peer_knowledge",

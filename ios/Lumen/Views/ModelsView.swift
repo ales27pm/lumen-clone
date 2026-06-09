@@ -336,7 +336,7 @@ struct ModelsView: View {
 private extension LumenModelFleetSnapshot {
     func withRuntimeResidentPaths(_ loadedPaths: Set<String>) -> LumenModelFleetSnapshot {
         let runtimeSlots = Set(assignments.compactMap { slot, assignment in loadedPaths.contains(assignment.localPath) ? slot : nil })
-        return LumenModelFleetSnapshot(mode: mode, assignments: assignments, missingSlots: missingSlots, targetResidentSlots: targetResidentSlots, runtimeResidentSlots: runtimeSlots)
+        return LumenModelFleetSnapshot(mode: mode, assignments: assignments, missingSlots: missingSlots, missingAdapterSlots: missingAdapterSlots, targetResidentSlots: targetResidentSlots, runtimeResidentSlots: runtimeSlots)
     }
 }
 

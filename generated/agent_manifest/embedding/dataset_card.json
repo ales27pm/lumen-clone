@@ -1,11 +1,11 @@
 {
   "counts": {
-    "corpus": 962,
-    "evalRetrieval": 1131,
-    "hardNegatives": 1131,
-    "trainPairs": 1004,
-    "trainTriplets": 1014,
-    "valPairs": 127,
+    "corpus": 974,
+    "evalRetrieval": 1143,
+    "hardNegatives": 1143,
+    "trainPairs": 1018,
+    "trainTriplets": 1026,
+    "valPairs": 125,
     "valTriplets": 117
   },
   "families": [

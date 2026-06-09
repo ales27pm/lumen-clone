@@ -82,6 +82,14 @@ final class SlotAgentService {
                         return
                     case .fallback:
                         Self.emitChatTrace(req: req, phase: "fallback", values: ["reason": "resource-budget-fallback"])
+                        RuntimeFallbackLogger.record(
+                            source: "slot-agent-budget",
+                            primaryBehavior: "run local model-backed slot agent",
+                            fallbackBehavior: "return deterministic compatibility response",
+                            reason: "resource-budget-fallback",
+                            consequence: "wanted primary agent behavior did not run",
+                            values: Self.requestFallbackValues(req)
+                        )
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-fallback"]))
                         if options.diagnosticsEnabled {
                             let response = await Self.deterministicCompatibilityResponse(original: req, effective: req, options: options)
@@ -446,14 +454,64 @@ final class SlotAgentService {
 
     private nonisolated static func emitChatTrace(req: AgentRequest, phase: String, values: [String: String] = [:]) {
         var payload = values
+        LumenTrainedModelRuntimeRegistry.selected.traceValues.forEach { key, value in
+            payload[key] = value
+        }
         payload["phase"] = phase
         payload["turnID"] = req.turnID?.uuidString ?? "none"
         payload["conversationID"] = req.conversationID?.uuidString ?? "none"
         payload["schemaVersion"] = "lumen.chat_runtime_trace/1.0.0"
-        payload["modelFamily"] = LumenModelFamily.persistedSelected.rawValue
-        payload["adapterRuntime"] = LumenModelFamily.persistedSelected == .qwen3 ? "shared-base-role-lora" : "baseline-family"
-        payload["agentRoles"] = "cortex,executor,mouth,mimicry,rem,fleet"
         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .chatRuntimeTrace, values: payload))
+    }
+
+    private nonisolated static func requestFallbackValues(_ req: AgentRequest) -> [String: String] {
+        [
+            "turnID": req.turnID?.uuidString ?? "none",
+            "conversationID": req.conversationID?.uuidString ?? "none",
+            "promptSHA256": RuntimeFallbackLogger.promptHash(req.userMessage),
+            "promptChars": String(req.userMessage.count),
+            "toolCount": String(req.availableTools.count),
+            "memoryCount": String(req.relevantMemories.count)
+        ]
+    }
+
+    private nonisolated static func recordCompatibilityBehaviorTrace(
+        req: AgentRequest,
+        routing: IntentRoutingDecision,
+        event: AgentBehaviorTrace.Event,
+        slot: String,
+        stage: String,
+        rawOutput: String,
+        selectedToolID: String? = nil,
+        toolArguments: [String: String] = [:],
+        allowedToolIDs: Set<String>,
+        requiresApproval: Bool? = nil,
+        approvalMode: String? = nil,
+        emittedFinalInActionTurn: Bool = false
+    ) {
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: event,
+                slot: slot,
+                stage: stage,
+                intent: routing.intent.rawValue,
+                promptPrefix: ModelOutputSanitizer.boundedPrefix(req.userMessage, limit: 1200),
+                rawOutputPrefix: ModelOutputSanitizer.boundedPrefix(rawOutput, limit: 1600),
+                selectedToolID: selectedToolID,
+                toolArguments: toolArguments,
+                allowedToolIDs: allowedToolIDs.sorted(),
+                requiresApproval: requiresApproval,
+                approvalMode: approvalMode,
+                parseError: nil,
+                emittedFinalInActionTurn: emittedFinalInActionTurn,
+                modelFamily: LumenModelFamily.persistedSelected.rawValue,
+                runtimePath: "deterministic-compatibility",
+                activeAdapterSlot: nil,
+                promptCharCount: req.userMessage.count
+            )
+        )
     }
 
     private nonisolated static func sha256(_ text: String) -> String {
@@ -553,6 +611,15 @@ final class SlotAgentService {
                 "finalChars": String(text.count),
                 "finalSHA256": Self.sha256(text)
             ])
+            Self.recordCompatibilityBehaviorTrace(
+                req: original,
+                routing: routing,
+                event: .finalAnswer,
+                slot: "mouth",
+                stage: "compatibility-direct-final",
+                rawOutput: text,
+                allowedToolIDs: availableToolIDs
+            )
             return .init(text: text, steps: [])
         }
 
@@ -567,6 +634,15 @@ final class SlotAgentService {
                 "finalChars": String(text.count),
                 "finalSHA256": Self.sha256(text)
             ])
+            Self.recordCompatibilityBehaviorTrace(
+                req: original,
+                routing: routing,
+                event: .finalAnswer,
+                slot: "mouth",
+                stage: "compatibility-clarification-final",
+                rawOutput: text,
+                allowedToolIDs: availableToolIDs
+            )
             return .init(text: text, steps: [])
         }
 
@@ -585,6 +661,15 @@ final class SlotAgentService {
                 "finalChars": String(text.count),
                 "finalSHA256": Self.sha256(text)
             ])
+            Self.recordCompatibilityBehaviorTrace(
+                req: original,
+                routing: routing,
+                event: .finalAnswer,
+                slot: "mouth",
+                stage: "compatibility-unavailable-final",
+                rawOutput: text,
+                allowedToolIDs: availableToolIDs
+            )
             return .init(text: text, steps: [])
         }
 
@@ -609,11 +694,37 @@ final class SlotAgentService {
                     "finalChars": String(text.count),
                     "finalSHA256": Self.sha256(text)
                 ])
+                Self.recordCompatibilityBehaviorTrace(
+                    req: original,
+                    routing: routing,
+                    event: .toolAction,
+                    slot: "executor",
+                    stage: "compatibility-approval-boundary",
+                    rawOutput: approval,
+                    selectedToolID: canonicalActionTool,
+                    toolArguments: action.args.stringCoerced,
+                    allowedToolIDs: availableToolIDs,
+                    requiresApproval: true,
+                    approvalMode: "boundary",
+                    emittedFinalInActionTurn: true
+                )
                 return .init(text: text, steps: steps + [step])
             }
 
             let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
             steps.append(actionStep)
+            Self.recordCompatibilityBehaviorTrace(
+                req: original,
+                routing: routing,
+                event: .toolAction,
+                slot: "executor",
+                stage: "compatibility-tool-action",
+                rawOutput: action.displayContent,
+                selectedToolID: canonicalActionTool,
+                toolArguments: action.args.stringCoerced,
+                allowedToolIDs: availableToolIDs,
+                requiresApproval: false
+            )
             let result = await compatibilityObservation(
                 toolID: canonicalActionTool,
                 action: action,
@@ -637,6 +748,17 @@ final class SlotAgentService {
                     "finalChars": String(text.count),
                     "finalSHA256": Self.sha256(text)
                 ])
+                Self.recordCompatibilityBehaviorTrace(
+                    req: original,
+                    routing: routing,
+                    event: .finalAnswer,
+                    slot: "mouth",
+                    stage: "compatibility-chain-stopped-final",
+                    rawOutput: text,
+                    selectedToolID: canonicalActionTool,
+                    allowedToolIDs: availableToolIDs,
+                    emittedFinalInActionTurn: true
+                )
                 return .init(text: text, steps: steps)
             }
         }
@@ -651,6 +773,17 @@ final class SlotAgentService {
                 "finalChars": String(text.count),
                 "finalSHA256": Self.sha256(text)
             ])
+            Self.recordCompatibilityBehaviorTrace(
+                req: original,
+                routing: routing,
+                event: .finalAnswer,
+                slot: "mouth",
+                stage: "compatibility-memory-final",
+                rawOutput: text,
+                selectedToolID: lastToolID.isEmpty ? nil : lastToolID,
+                allowedToolIDs: availableToolIDs,
+                emittedFinalInActionTurn: true
+            )
             return .init(text: text, steps: steps)
         }
 
@@ -668,6 +801,17 @@ final class SlotAgentService {
             "finalSHA256": Self.sha256(text),
             "stepCount": String(steps.count)
         ])
+        Self.recordCompatibilityBehaviorTrace(
+            req: original,
+            routing: routing,
+            event: .finalAnswer,
+            slot: "mouth",
+            stage: "compatibility-final",
+            rawOutput: text,
+            selectedToolID: lastToolID.isEmpty ? nil : lastToolID,
+            allowedToolIDs: availableToolIDs,
+            emittedFinalInActionTurn: true
+        )
         return .init(text: text, steps: steps)
     }
 

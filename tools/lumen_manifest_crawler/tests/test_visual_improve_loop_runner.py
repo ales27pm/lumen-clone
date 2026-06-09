@@ -121,6 +121,31 @@ def test_runtime_audit_discovery_accepts_realistic_export_and_rejects_loop_state
     assert bad not in found
 
 
+def test_runtime_audit_discovery_accepts_live_e2e_report_names(tmp_path: Path) -> None:
+    runner = _load_runner()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    report = export_dir / "lumen-live-e2e-report-2026-06-08T23-26-36Z.json"
+    report.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0.0",
+                "exportPolicy": {
+                    "format": "live-e2e-test-report-json",
+                    "sourceLayer": "e2eTestReport",
+                    "ownsLiveE2EScenarios": True,
+                },
+                "payload": {"passed": 1, "failed": 0, "results": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    found = runner.find_runtime_audit_json(export_dir)
+
+    assert report in found
+
+
 def test_dashboard_outputs_escape_dynamic_content(tmp_path: Path) -> None:
     runner = _load_runner()
     root = tmp_path / "repo"
