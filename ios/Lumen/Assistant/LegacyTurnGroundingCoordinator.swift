@@ -89,6 +89,22 @@ final class LegacyTurnGroundingCoordinator {
             AgentGroundingInstrumentation.mark("after LegacyPromptAssembler.assemble", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: assembleStart))
             AgentGroundingInstrumentation.mark("after LegacyTurnGroundingCoordinator.prepareGroundedRequest", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: requestStart))
             PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .groundingCost, values: ["elapsedMs": String(Int(AgentGroundingInstrumentation.elapsedMs(since: requestStart))), "sectionCount": String(fallbackSections.count), "promptChars": String(assembled.estimatedChars), "toolCount": String(request.externalAvailableTools.count), "memoryCount": String(request.externalRelevantMemories.count), "source": "degraded"]))
+            RuntimeFallbackLogger.record(
+                source: "legacy-grounding-coordinator",
+                primaryBehavior: "build grounding from live ModelContext",
+                fallbackBehavior: "assemble degraded external memory/tool sections",
+                reason: degraded.joined(separator: ",").isEmpty ? "missing-model-context" : degraded.joined(separator: ","),
+                consequence: "grounding may omit app-state and persisted context needed by the primary behavior",
+                values: [
+                    "turnID": request.turnID?.uuidString ?? "none",
+                    "conversationID": request.conversationID?.uuidString ?? "none",
+                    "promptSHA256": RuntimeFallbackLogger.promptHash(request.userMessage),
+                    "promptChars": String(request.userMessage.count),
+                    "sectionCount": String(fallbackSections.count),
+                    "toolCount": String(request.externalAvailableTools.count),
+                    "memoryCount": String(request.externalRelevantMemories.count)
+                ]
+            )
             return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: nil, sections: fallbackSections, bridgedTools: request.externalAvailableTools, degradedReasons: degraded, metricsSummary: "degraded", truncationOccurred: assembled.truncationOccurred)
         }
 
@@ -119,4 +135,3 @@ final class LegacyTurnGroundingCoordinator {
         .init(systemPrompt: request.baseSystemPrompt, userMessage: request.userMessage, grounding: nil, sections: [], bridgedTools: [], degradedReasons: ["cancelled"], metricsSummary: "cancelled", truncationOccurred: false)
     }
 }
-

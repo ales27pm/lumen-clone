@@ -121,6 +121,36 @@ struct DeterministicToolPlannerTests {
         #expect(action?.tool == "calendar.list")
     }
 
+    @Test func calendarSearchNextEventPlansList() async throws {
+        let routing = IntentRouter.classify("Search my calendar for next event")
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Search my calendar for next event",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .calendar)
+        #expect(action?.tool == "calendar.list")
+    }
+
+    @Test func calendarReadOnlyPromptsDefaultToList() async throws {
+        let prompts = [
+            "When is my next meeting?",
+            "What's on my schedule today?",
+            "Do I have any appointments tomorrow?"
+        ]
+
+        for prompt in prompts {
+            let routing = IntentRouter.classify(prompt)
+            let action = DeterministicToolPlanner.plan(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(routing.intent == .calendar)
+            #expect(action?.tool == "calendar.list")
+        }
+    }
+
     @Test func calendarStandaloneNumberWordDoesNotBecomeHour() async throws {
         let routing = IntentRouter.classify("Schedule three appointments tomorrow")
         let action = DeterministicToolPlanner.plan(

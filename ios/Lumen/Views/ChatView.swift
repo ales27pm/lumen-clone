@@ -509,6 +509,9 @@ struct ChatView: View {
 
     private func emitChatViewTrace(turnID: UUID, phase: String, text: String, values: [String: String] = [:]) {
         var payload = values
+        LumenTrainedModelRuntimeRegistry.selected.traceValues.forEach { key, value in
+            payload[key] = value
+        }
         payload["phase"] = phase
         payload["schemaVersion"] = "lumen.chat_runtime_trace/1.0.0"
         payload["conversationID"] = conversation.id.uuidString
@@ -516,9 +519,6 @@ struct ChatView: View {
         payload["promptChars"] = String(text.count)
         payload["promptBytes"] = String(text.utf8.count)
         payload["promptSHA256"] = chatTraceSHA256(text)
-        payload["modelFamily"] = LumenModelFamily.persistedSelected.rawValue
-        payload["adapterRuntime"] = LumenModelFamily.persistedSelected == .qwen3 ? "shared-base-role-lora" : "baseline-family"
-        payload["agentRoles"] = "cortex,executor,mouth,mimicry,rem,fleet"
         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .chatRuntimeTrace, values: payload))
     }
 

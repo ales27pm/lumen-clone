@@ -93,6 +93,14 @@ nonisolated enum ToolNetworkResilience {
     }
 
     static func fallbackMessage(for errorClass: ToolNetworkErrorClass, context: String) -> String {
+        RuntimeFallbackLogger.record(
+            source: "tool-network-resilience",
+            primaryBehavior: "return live network tool result",
+            fallbackBehavior: "return bounded network failure message",
+            reason: errorClass.rawValue,
+            consequence: "tool result unavailable for the primary user request",
+            values: ["context": context]
+        )
         switch errorClass {
         case .timeout: return "\(context) timed out. Please try again in a moment."
         case .dns: return "\(context) is currently unreachable due to a network lookup issue."

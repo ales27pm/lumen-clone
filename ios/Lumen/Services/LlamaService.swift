@@ -1465,6 +1465,19 @@ final actor AppLlamaService {
             logger.info(
                 "event=llama.chat.runtime_init_cpu_fallback_success path=\(path, privacy: .public) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public)"
             )
+            RuntimeFallbackLogger.record(
+                source: "llama-runtime-init",
+                primaryBehavior: "initialize accelerated llama runtime",
+                fallbackBehavior: "initialize CPU/non-offload llama runtime",
+                reason: RuntimeMetricErrorSanitizer.code(for: error),
+                consequence: "primary acceleration behavior unavailable; latency and energy may degrade",
+                values: [
+                    "slot": slot.rawValue,
+                    "modelPathSHA256": RuntimeFallbackLogger.promptHash(path),
+                    "contextSize": String(contextSize),
+                    "batchSize": String(batchSize)
+                ]
+            )
         }
         chatRuntimes[slot] = ChatRuntime(
             service: service,
@@ -1636,10 +1649,11 @@ final actor AppLlamaService {
 
     private func currentAdapterTraceMetadata(slot: LumenModelSlot) -> LlamaAdapterTraceMetadata {
         let loaded = roleAdapters[slot]
+        let roleContract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen3).adapterRole(for: slot)
         return LlamaAdapterTraceMetadata(
             modelFamily: sharedChatRuntime == nil ? nil : LumenModelFamily.qwen3.rawValue,
             baseModelPath: sharedChatBasePath,
-            adapterID: loaded.map { "\($0.slot.rawValue):\($0.path)" },
+            adapterID: loaded.map { _ in roleContract?.adapterID ?? "\(slot.rawValue):adapter" },
             adapterSlot: loaded?.slot.rawValue,
             adapterPath: loaded?.path,
             adapterApplied: activeAdapterSlot == slot && loaded != nil,

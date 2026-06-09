@@ -261,7 +261,8 @@ final class DeveloperConsoleModel {
     }
 
     func debugText(appState: AppState) -> String {
-        """
+        let runtimeContract = LumenTrainedModelRuntimeRegistry.selected
+        return """
         Runtime:
         • isGenerating: \(appState.isGenerating ? "true" : "false")
         • agentModeEnabled: \(appState.agentModeEnabled ? "true" : "false")
@@ -272,6 +273,15 @@ final class DeveloperConsoleModel {
 
         Fleet:
         • selectedModelFamily: \(LumenModelFamily.persistedSelected.rawValue)
+        • trainedModelContract: \(runtimeContract.schemaVersion)
+        • trainedBaseModelID: \(runtimeContract.sharedBaseModelID)
+        • adapterRuntimeMode: \(runtimeContract.mode)
+        • adapterRoles: \(runtimeContract.adapterRoleIDs.joined(separator: ","))
+        • adapterFiles: \(runtimeContract.adapterFileNames.joined(separator: ","))
+        • loadBaseModelOnce: \(runtimeContract.loadBaseModelOnce ? "true" : "false")
+        • selectAdapterByAgentSlot: \(runtimeContract.selectAdapterByAgentSlot ? "true" : "false")
+        • mergeAdaptersByDefault: \(runtimeContract.mergeAdaptersByDefault ? "true" : "false")
+        • releaseBakeManualOnly: \(runtimeContract.releaseBakeManualOnly ? "true" : "false")
         • autoDownloadFleetModels: \(appState.autoDownloadFleetModels ? "true" : "false")
         • confirmFleetDownloads: \(appState.confirmFleetDownloads ? "true" : "false")
 

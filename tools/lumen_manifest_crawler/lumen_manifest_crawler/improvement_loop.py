@@ -671,6 +671,10 @@ def _build_gap_report(  # NOSONAR
 
 
 def _runtime_recommendation(failure_type: str) -> str:
+    if failure_type == "agent_grounding_no_recent_model_traces":
+        return "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence."
+    if failure_type == "persistent_diagnostics_scenario_not_passed":
+        return "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact."
     if "unknown_tool" in failure_type or "unmanifested" in failure_type or "missing_live_tool" in failure_type:
         return "Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples."
     if "argument" in failure_type:
@@ -681,6 +685,8 @@ def _runtime_recommendation(failure_type: str) -> str:
         return "Add Mouth sanitizer and persisted-step sentinel suppression regression samples."
     if "not_allowed" in failure_type or "routing" in failure_type:
         return "Add Cortex routing contrast samples for the violated intent/tool pair."
+    if failure_type == "trace_parse_error":
+        return "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope."
     return "Convert this failure into a REM repair sample and add a regression eval."
 
 

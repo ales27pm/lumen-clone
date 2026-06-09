@@ -5,13 +5,13 @@
       "adapterDirectory": "models/lora/cortex",
       "adapterID": "lumen-cortex-adapter",
       "agent": "cortex",
-      "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 555,
         "train_dpo": 8,
-        "train_sft": 286,
+        "train_sft": 289,
         "val_dpo": 1,
-        "val_sft": 50
+        "val_sft": 51
       },
       "systemPrompt": "You are Cortex, Lumen’s routing and planning agent. Select manifest-approved tools, persist required action steps, and delegate execution to Executor."
     },
@@ -20,7 +20,7 @@
       "adapterDirectory": "models/lora/executor",
       "adapterID": "lumen-executor-adapter",
       "agent": "executor",
-      "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 111,
         "train_dpo": 11,
@@ -35,13 +35,13 @@
       "adapterDirectory": "models/lora/fleet",
       "adapterID": "lumen-fleet-adapter",
       "agent": "fleet",
-      "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 93,
         "train_dpo": 14,
-        "train_sft": 1103,
+        "train_sft": 1114,
         "val_dpo": 3,
-        "val_sft": 195
+        "val_sft": 196
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -50,7 +50,7 @@
       "adapterDirectory": "models/lora/mimicry",
       "adapterID": "lumen-mimicry-adapter",
       "agent": "mimicry",
-      "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 3,
         "train_dpo": 9,
@@ -65,7 +65,7 @@
       "adapterDirectory": "models/lora/mouth",
       "adapterID": "lumen-mouth-adapter",
       "agent": "mouth",
-      "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 5,
         "train_dpo": 10,
@@ -80,19 +80,19 @@
       "adapterDirectory": "models/lora/rem",
       "adapterID": "lumen-rem-adapter",
       "agent": "rem",
-      "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+      "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 4,
         "train_dpo": 7,
-        "train_sft": 444,
+        "train_sft": 455,
         "val_dpo": 1,
-        "val_sft": 78
+        "val_sft": 80
       },
       "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
     }
   ],
   "baseModelIDs": [
-    "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
+    "Qwen/Qwen3-1.7B"
   ],
   "mode": "adapter_first",
   "releaseBakePolicy": {
@@ -109,5 +109,5 @@
     "selectAdapterByAgentSlot": true
   },
   "schemaVersion": "1.0.0",
-  "sharedBaseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
+  "sharedBaseModelID": "Qwen/Qwen3-1.7B"
 }

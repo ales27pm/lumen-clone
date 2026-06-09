@@ -117,16 +117,14 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .calendar:
-            if isCalendarListIntent(text) {
-                return action("calendar.list")
-            }
             if isCalendarCreateIntent(text) {
                 return action("calendar.create", [
                     "title": .string(extractCalendarTitle(from: prompt)),
                     "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
                 ])
             }
-            if containsAny(text, ["today", "tomorrow"]) { return action("calendar.list") }
+            if isCalendarReadIntent(text) { return action("calendar.list") }
+            if has("calendar.list") { return action("calendar.list") }
             return nil
         case .reminder:
             if containsAny(text, ["list", "show", "pending"]) { return action("reminders.list") }
@@ -298,11 +296,12 @@ nonisolated enum DeterministicToolPlanner {
             && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"])
     }
 
-    private static func isCalendarListIntent(_ text: String) -> Bool {
+    private static func isCalendarReadIntent(_ text: String) -> Bool {
         containsAny(text, [
-            "list", "show", "upcoming", "what's on", "what is on",
-            "check my calendar", "calendar events", "events today", "events tomorrow",
-            "do i have", "any meetings", "any appointments"
+            "list", "show", "search", "find", "read", "check", "upcoming",
+            "what's on", "what is on", "calendar", "event", "events",
+            "appointment", "appointments", "meeting", "meetings", "schedule",
+            "today", "tomorrow", "next", "do i have", "any"
         ])
     }
 

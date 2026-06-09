@@ -95,11 +95,20 @@ struct FleetStatusCard: View {
 
     private var summaryText: String {
         let mode = snapshot.mode.displayName
+        if !snapshot.missingAdapterSlots.isEmpty {
+            return "Base assigned, missing adapters: \(snapshot.missingAdapterSlots.map(\.displayName).joined(separator: ", ")) · \(mode)"
+        }
         if snapshot.missingSlots.isEmpty { return "All logical slots assigned · \(mode)." }
         return "Missing: \(snapshot.missingSlots.map(\.displayName).joined(separator: ", ")) · \(mode)"
     }
 
     private func statusText(for assignment: LumenModelAssignment) -> String {
+        if snapshot.missingAdapterSlots.contains(assignment.slot) {
+            return "shared base · adapter missing"
+        }
+        if assignment.usesRoleAdapter {
+            return loadedPaths.contains(assignment.localPath) ? "runtime resident · adapter assigned" : "adapter assigned · base pending"
+        }
         if loadedPaths.contains(assignment.localPath) { return "runtime resident · loaded" }
         if snapshot.runtimeResidentSlots.contains(assignment.slot) { return "runtime resident · not loaded" }
         if snapshot.targetResidentSlots.contains(assignment.slot) {
@@ -109,6 +118,8 @@ struct FleetStatusCard: View {
     }
 
     private func statusColor(for assignment: LumenModelAssignment) -> Color {
+        if snapshot.missingAdapterSlots.contains(assignment.slot) { return .orange }
+        if assignment.usesRoleAdapter { return Theme.accent }
         if loadedPaths.contains(assignment.localPath) { return Theme.accent }
         if snapshot.runtimeResidentSlots.contains(assignment.slot) { return .orange }
         return snapshot.targetResidentSlots.contains(assignment.slot) ? Theme.textSecondary : Theme.textTertiary

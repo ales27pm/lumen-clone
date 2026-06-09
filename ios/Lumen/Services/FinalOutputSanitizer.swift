@@ -255,6 +255,17 @@ nonisolated enum FinalOutputSanitizer {
         if text.isEmpty {
             mark(.emptyAfterSanitization)
             text = fallback
+            RuntimeFallbackLogger.record(
+                source: "final-output-sanitizer",
+                primaryBehavior: "sanitize model output into non-empty user-visible response",
+                fallbackBehavior: "emit sanitizer fallback response",
+                reason: "empty-after-sanitization",
+                consequence: "primary model text was fully removed by safety/output filters",
+                values: [
+                    "rawChars": String(raw.count),
+                    "removedArtifacts": removed.map(\.rawValue).joined(separator: ",")
+                ]
+            )
         }
 
         let hadUnsafeLeakage = !removed.isEmpty

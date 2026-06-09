@@ -387,6 +387,7 @@ extension AgentGroundingRegressionTests {
     }
 
     @Test func compatibilityGreetingDoesNotExposeNativeBuildFallback() async {
+        AgentBehaviorTraceRecorder.clear()
         let req = AgentRequest(
             systemPrompt: "sys",
             history: [],
@@ -407,6 +408,43 @@ extension AgentGroundingRegressionTests {
         #expect(response.text == "Hi. How can I help?")
         #expect(!response.text.lowercased().contains("compatibility mode"))
         #expect(!response.text.lowercased().contains("native build"))
+        #expect(AgentBehaviorTraceRecorder.recent(limit: 1).last?.stage == "compatibility-direct-final")
+    }
+
+    @Test func compatibilityCalendarNextEventProducesListActionTrace() async {
+        AgentBehaviorTraceRecorder.clear()
+        let tools = ToolRegistry.all.filter { ["calendar.create", "calendar.list"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search my calendar for next event",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: true)
+
+        let response = await SlotAgentService.deterministicCompatibilityResponseForTests(original: req, effective: req, options: options)
+        let actionToolIDs = response.steps
+            .filter { $0.kind == .action }
+            .compactMap(\.toolID)
+            .map(ToolRouteGuard.canonicalToolID)
+        let traces = AgentBehaviorTraceRecorder.recent(limit: 10)
+        let hasCalendarListActionTrace = traces.contains { trace in
+            trace.event == AgentBehaviorTrace.Event.toolAction && trace.selectedToolID == "calendar.list"
+        }
+        let hasCompatibilityFinalTrace = traces.contains { trace in
+            trace.event == AgentBehaviorTrace.Event.finalAnswer && trace.runtimePath == "deterministic-compatibility"
+        }
+
+        #expect(actionToolIDs == ["calendar.list"])
+        #expect(response.text.lowercased().contains("event"))
+        #expect(hasCalendarListActionTrace)
+        #expect(hasCompatibilityFinalTrace)
     }
 
     @Test func compatibilityMemorySaveThenRecallReportsRememberedPreference() async {

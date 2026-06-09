@@ -616,8 +616,8 @@ actor PersistentRuntimeDiagnosticsRunner {
     }
 
     private func handleSignal(_ signal: PersistentRuntimeDiagnosticSignal) async {
-        if signal.kind == .chatRuntimeTrace {
-            await store.appendEvent(PersistentDiagnosticEvent(code: signal.kind.rawValue, message: signal.values["phase"] ?? signal.kind.rawValue, values: signal.values), recordID: state.activeRunID, campaignID: campaign?.id)
+        if signal.kind == .chatRuntimeTrace || signal.kind == .fallbackUsed {
+            await store.appendEvent(PersistentDiagnosticEvent(code: signal.kind.rawValue, message: signal.values["phase"] ?? signal.values["reason"] ?? signal.kind.rawValue, values: signal.values), recordID: state.activeRunID, campaignID: campaign?.id)
             return
         }
         guard state.activeRunID != nil else { return }

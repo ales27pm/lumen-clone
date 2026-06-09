@@ -1847,9 +1847,31 @@ final class AgentService {
             case .empty: return "Summarize the observations into a direct answer."
             }
         }
+
+        var diagnosticReason: String {
+            switch self {
+            case .duplicate: return "duplicate-tool-call"
+            case .maxSteps: return "max-agent-steps"
+            case .malformed: return "malformed-agent-turn"
+            case .empty: return "empty-agent-turn"
+            }
+        }
     }
 
     private func synthesizeFallback(req: AgentRequest, observations: [(tool: String, result: String)], reason: FallbackReason) async -> String {
+        RuntimeFallbackLogger.record(
+            source: "agent-service-structured-turn",
+            primaryBehavior: "continue structured agent turn JSON",
+            fallbackBehavior: "synthesize final answer from observations",
+            reason: reason.diagnosticReason,
+            consequence: "agent stopped using primary structured action loop",
+            values: [
+                "turnID": req.turnID?.uuidString ?? "none",
+                "conversationID": req.conversationID?.uuidString ?? "none",
+                "promptSHA256": RuntimeFallbackLogger.promptHash(req.userMessage),
+                "observationCount": String(observations.count)
+            ]
+        )
         guard !observations.isEmpty else {
             return "I couldn't find a confident answer. Try rephrasing the question."
         }
@@ -1893,6 +1915,20 @@ final class AgentService {
         streamedThought: String,
         parseError: AgentTurnParseError
     ) async -> String {
+        RuntimeFallbackLogger.record(
+            source: "agent-service-unstructured-output",
+            primaryBehavior: "parse model output as structured agent turn",
+            fallbackBehavior: "repair or extract plain text final answer",
+            reason: parseError.rawValue,
+            consequence: "model output bypassed primary structured agent protocol",
+            values: [
+                "turnID": req.turnID?.uuidString ?? "none",
+                "conversationID": req.conversationID?.uuidString ?? "none",
+                "promptSHA256": RuntimeFallbackLogger.promptHash(req.userMessage),
+                "rawOutputChars": String(rawOutput.count),
+                "streamedThoughtChars": String(streamedThought.count)
+            ]
+        )
         if let direct = Self.firstUsefulPlainTextFallback(from: rawOutput) {
             return direct
         }

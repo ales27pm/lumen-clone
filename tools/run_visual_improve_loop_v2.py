@@ -35,6 +35,10 @@ RUNTIME_AUDIT_NAME_HINTS = (
     "in_app_dataset",
     "agent-grounding",
     "agent_grounding",
+    "e2e",
+    "e2e-report",
+    "live-e2e",
+    "live_e2e",
     "testflight",
 )
 RUNTIME_AUDIT_EXCLUDE_HINTS = (
@@ -354,6 +358,12 @@ def is_runtime_audit_candidate(path: Path) -> bool:
     if not isinstance(payload, dict):
         return False
     keys = {str(key).lower() for key in payload}
+    export_policy = payload.get("exportPolicy")
+    if isinstance(export_policy, dict):
+        source_layer = str(export_policy.get("sourceLayer") or "").casefold()
+        source_format = str(export_policy.get("format") or "").casefold()
+        if "e2e" in source_layer or "e2e" in source_format:
+            return True
     if {"failures", "traces", "runtime", "events", "toolcalls", "tool_calls"}.intersection(keys):
         return True
     sample = json.dumps(payload, ensure_ascii=False)[:20000].lower()

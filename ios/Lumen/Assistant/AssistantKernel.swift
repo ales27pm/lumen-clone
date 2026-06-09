@@ -46,6 +46,22 @@ final class AssistantKernel {
         let decision = ComputePolicy.decide(for: context)
         let request = TextGenerationRequest(prompt: context.input, systemPrompt: "", maxTokens: decision.maxTokens)
         let start = Date()
+        if selection.runtime == .deterministicFallback {
+            RuntimeFallbackLogger.record(
+                source: "assistant-kernel-runtime-selection",
+                primaryBehavior: "run preferred on-device model runtime",
+                fallbackBehavior: "run deterministic fallback runtime",
+                reason: selection.reason,
+                consequence: "primary model runtime did not handle this turn",
+                values: [
+                    "task": String(describing: context.task),
+                    "promptSHA256": RuntimeFallbackLogger.promptHash(context.input),
+                    "promptChars": String(context.input.count),
+                    "isForeground": String(context.isForeground),
+                    "allowHeavyRuntime": String(decision.allowHeavyRuntime)
+                ]
+            )
+        }
 
         do {
             let output: String
