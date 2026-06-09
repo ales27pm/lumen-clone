@@ -38,3 +38,7 @@ ios/Lumen/Assets.xcassets/
 # Keep generated algorithmic art previews local-only; binary screenshots make PR diffs unreadable.
 generated/algorithmic_philosophies/**/screenshots/
 ios/Lumen/Resources/AlgorithmicPhilosophies/**/screenshots/
+
+# macOS
+.DS_Store
+**/.DS_Store

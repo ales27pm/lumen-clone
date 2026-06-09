@@ -921,7 +921,7 @@ nonisolated enum E2ETestRunner {
     ) -> ModelRuntimeEvidence? {
         let promptNeedle = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let matchingTraces = AgentBehaviorTraceRecorder.recent(limit: 64).reversed().filter { trace in
-            guard trace.createdAt >= startedAt else { return nil }
+            guard trace.createdAt >= startedAt else { return false }
             let promptPrefix = trace.promptPrefix.lowercased()
             if !promptNeedle.isEmpty, !promptPrefix.contains(promptNeedle) {
                 return false
@@ -930,7 +930,7 @@ nonisolated enum E2ETestRunner {
         }
 
         if let modelTrace = matchingTraces.first(where: { trace in
-            trace.event == .modelTurn && trace.runtimePath != "deterministic-compatibility"
+            trace.event == AgentBehaviorTrace.Event.modelTurn && trace.runtimePath != "deterministic-compatibility"
         }) {
             return ModelRuntimeEvidence(
                 runtimePath: modelTrace.runtimePath ?? "unknown",
