@@ -5,11 +5,11 @@
   "agent": "rem",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+    "manifestCommit": "6f04fd982acb64822d881da359be3a10d6175681",
     "recordCounts": {
       "eval": 4,
       "train_dpo": 7,
-      "train_sft": 455,
+      "train_sft": 453,
       "val_dpo": 1,
       "val_sft": 80
     },
@@ -23,7 +23,6 @@
       "embedding_hard_negatives",
       "embedding_train_pairs",
       "embedding_train_triplets",
-      "embedding_val_triplets",
       "manifest_grounding_cards",
       "rem_reflection",
       "runtime_audit_repairs",
@@ -38,7 +37,6 @@
       "embedding_hard_negatives",
       "embedding_train_pairs",
       "embedding_train_triplets",
-      "embedding_val_triplets",
       "fleet_delegation",
       "fleet_delegation_preference",
       "fleet_peer_knowledge",

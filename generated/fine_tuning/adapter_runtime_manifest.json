@@ -9,7 +9,7 @@
       "recordCounts": {
         "eval": 555,
         "train_dpo": 8,
-        "train_sft": 289,
+        "train_sft": 288,
         "val_dpo": 1,
         "val_sft": 51
       },
@@ -39,7 +39,7 @@
       "recordCounts": {
         "eval": 93,
         "train_dpo": 14,
-        "train_sft": 1114,
+        "train_sft": 1113,
         "val_dpo": 3,
         "val_sft": 196
       },
@@ -69,7 +69,7 @@
       "recordCounts": {
         "eval": 5,
         "train_dpo": 10,
-        "train_sft": 132,
+        "train_sft": 133,
         "val_dpo": 2,
         "val_sft": 23
       },
@@ -84,7 +84,7 @@
       "recordCounts": {
         "eval": 4,
         "train_dpo": 7,
-        "train_sft": 455,
+        "train_sft": 453,
         "val_dpo": 1,
         "val_sft": 80
       },
