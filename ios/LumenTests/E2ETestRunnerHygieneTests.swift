@@ -101,6 +101,49 @@ struct E2ETestRunnerHygieneTests {
         #expect(failures.isEmpty)
     }
 
+    @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .toolAction,
+                slot: "executor",
+                stage: "compatibility-tool-action",
+                intent: "weather",
+                promptPrefix: "What is the weather here?",
+                rawOutputPrefix: "weather()",
+                selectedToolID: "weather",
+                toolArguments: [:],
+                allowedToolIDs: ["weather"],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: false,
+                modelFamily: "qwen3",
+                runtimePath: "deterministic-compatibility",
+                activeAdapterSlot: nil
+            )
+        )
+
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "What is the weather here?",
+            acceptsPolicyFirstEvidence: true
+        ))
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "What is the weather here?",
+            acceptsPolicyFirstEvidence: false
+        ))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func runStandardScenarioLoopRunsOffMainThreadWhenDetached() async {
         #if DEBUG
         let scenario = E2ETestScenario(

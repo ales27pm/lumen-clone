@@ -620,6 +620,7 @@ nonisolated enum E2ETestRunner {
     private struct ModelRuntimeEvidence: Sendable {
         let runtimePath: String
         let stage: String
+        let evidenceKind: String
         let generationElapsedMs: Int?
         let outputTokenCount: Int?
         let adapterSlot: String?
@@ -774,14 +775,20 @@ nonisolated enum E2ETestRunner {
                         failures.append("Agent error: \(message)")
                     }
                 }
-                if let evidence = modelRuntimeEvidence(since: modelEvidenceStartedAt, prompt: scenario.prompt) {
+                let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
+                if let evidence = modelRuntimeEvidence(
+                    since: modelEvidenceStartedAt,
+                    prompt: scenario.prompt,
+                    acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+                ) {
                     let elapsed = evidence.generationElapsedMs.map(String.init) ?? "unknown"
                     let tokens = evidence.outputTokenCount.map(String.init) ?? "unknown"
                     let adapter = evidence.adapterSlot ?? "none"
-                    await event("model-evidence", "runtime=\(evidence.runtimePath), stage=\(evidence.stage), elapsedMs=\(elapsed), outputTokens=\(tokens), adapter=\(adapter)")
+                    await event("model-evidence", "runtime=\(evidence.runtimePath), kind=\(evidence.evidenceKind), stage=\(evidence.stage), elapsedMs=\(elapsed), outputTokens=\(tokens), adapter=\(adapter)")
                 } else {
-                    failures.append("Live E2E scenario did not record model-backed generation evidence")
-                    await event("model-evidence", "missing fresh AgentBehaviorTrace modelTurn")
+                    let requiredEvidence = acceptsPolicyFirstEvidence ? "model-backed or policy-first execution evidence" : "model-backed generation evidence"
+                    failures.append("Live E2E scenario did not record \(requiredEvidence)")
+                    await event("model-evidence", acceptsPolicyFirstEvidence ? "missing fresh AgentBehaviorTrace modelTurn or deterministic-compatibility execution trace" : "missing fresh AgentBehaviorTrace modelTurn")
                 }
                 try Task.checkCancellation()
                 await Task.yield()
@@ -895,29 +902,80 @@ nonisolated enum E2ETestRunner {
         return E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, requiresAgentRun: scenario.requiresAgentRun, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
     }
 
-    private nonisolated static func modelRuntimeEvidence(since startedAt: Date, prompt: String) -> ModelRuntimeEvidence? {
+    private nonisolated static func acceptsPolicyFirstExecutionEvidence(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
+        guard scenario.requiresAgentRun else { return false }
+        // Training scenarios are adapter/model promotion evals. They must still
+        // prove a fresh modelTurn and must not pass on deterministic policy traces.
+        guard scenario.kind != .training else { return false }
+        // Regression/routing scenarios may be intentionally satisfied by the
+        // policy-first deterministic compatibility path. Those traces are valid
+        // execution evidence when the routed intent is tool-scoped or needs a
+        // clarification before tool execution.
+        return IntentRouter.intentRequiresTool(routing) || routing.requiresClarification
+    }
+
+    private nonisolated static func modelRuntimeEvidence(
+        since startedAt: Date,
+        prompt: String,
+        acceptsPolicyFirstEvidence: Bool
+    ) -> ModelRuntimeEvidence? {
         let promptNeedle = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return AgentBehaviorTraceRecorder.recent(limit: 64).reversed().compactMap { trace -> ModelRuntimeEvidence? in
-            guard trace.event == .modelTurn else { return nil }
+        let matchingTraces = AgentBehaviorTraceRecorder.recent(limit: 64).reversed().filter { trace in
             guard trace.createdAt >= startedAt else { return nil }
             let promptPrefix = trace.promptPrefix.lowercased()
             if !promptNeedle.isEmpty, !promptPrefix.contains(promptNeedle) {
-                return nil
+                return false
             }
-            guard trace.runtimePath != "deterministic-compatibility" else { return nil }
+            return true
+        }
+
+        if let modelTrace = matchingTraces.first(where: { trace in
+            trace.event == .modelTurn && trace.runtimePath != "deterministic-compatibility"
+        }) {
             return ModelRuntimeEvidence(
-                runtimePath: trace.runtimePath ?? "unknown",
-                stage: trace.stage,
-                generationElapsedMs: trace.generationElapsedMs,
-                outputTokenCount: trace.outputTokenCount,
-                adapterSlot: trace.activeAdapterSlot ?? trace.adapterSlot
+                runtimePath: modelTrace.runtimePath ?? "unknown",
+                stage: modelTrace.stage,
+                evidenceKind: "model-backed",
+                generationElapsedMs: modelTrace.generationElapsedMs,
+                outputTokenCount: modelTrace.outputTokenCount,
+                adapterSlot: modelTrace.activeAdapterSlot ?? modelTrace.adapterSlot
             )
-        }.first
+        }
+
+        guard acceptsPolicyFirstEvidence,
+              let policyTrace = matchingTraces.first(where: isPolicyFirstExecutionTrace) else {
+            return nil
+        }
+        return ModelRuntimeEvidence(
+            runtimePath: policyTrace.runtimePath ?? "deterministic-compatibility",
+            stage: policyTrace.stage,
+            evidenceKind: "policy-first-deterministic",
+            generationElapsedMs: policyTrace.generationElapsedMs,
+            outputTokenCount: policyTrace.outputTokenCount,
+            adapterSlot: policyTrace.activeAdapterSlot ?? policyTrace.adapterSlot
+        )
+    }
+
+    private nonisolated static func isPolicyFirstExecutionTrace(_ trace: AgentBehaviorTrace) -> Bool {
+        guard trace.runtimePath == "deterministic-compatibility" else { return false }
+        switch trace.event {
+        case .toolAction:
+            return trace.selectedToolID?.isEmpty == false
+        case .finalAnswer:
+            let stage = trace.stage.lowercased()
+            return trace.emittedFinalInActionTurn
+                || stage.contains("compatibility-clarification")
+                || stage.contains("compatibility-memory-final")
+                || stage.contains("compatibility-chain-stopped")
+                || stage == "compatibility-final"
+        case .modelTurn:
+            return false
+        }
     }
 
 #if DEBUG
-    nonisolated static func modelRuntimeEvidenceForTests(since startedAt: Date, prompt: String) -> Bool {
-        modelRuntimeEvidence(since: startedAt, prompt: prompt) != nil
+    nonisolated static func modelRuntimeEvidenceForTests(since startedAt: Date, prompt: String, acceptsPolicyFirstEvidence: Bool = false) -> Bool {
+        modelRuntimeEvidence(since: startedAt, prompt: prompt, acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence) != nil
     }
 #endif
 

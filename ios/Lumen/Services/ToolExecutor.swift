@@ -316,6 +316,9 @@ nonisolated enum ToolRouteGuard {
             if out["messageId"] == nil {
                 out["messageId"] = arguments["id"] ?? arguments["messageID"] ?? arguments["message"]
             }
+            if out["id"] == nil {
+                out["id"] = out["messageId"] ?? arguments["messageID"] ?? arguments["message"]
+            }
         case "outlook.draft.create", "outlook.mail.send", "outlook.message.forward":
             if out["to"] == nil {
                 out["to"] = arguments["recipient"] ?? arguments["recipients"] ?? arguments["email"]

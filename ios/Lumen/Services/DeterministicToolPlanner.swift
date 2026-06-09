@@ -23,7 +23,7 @@ nonisolated enum DeterministicToolPlanner {
             if text.contains("unread") { args["unreadOnly"] = .string("true") }
             return AgentAction(tool: canonical, args: args)
         case "outlook.message.read":
-            return AgentAction(tool: canonical, args: ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")])
+            return AgentAction(tool: canonical, args: outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest"))
         default:
             return AgentAction(tool: canonical, args: [:])
         }
@@ -51,11 +51,11 @@ nonisolated enum DeterministicToolPlanner {
                availableToolIDs.contains("outlook.message.read") {
                 return [
                     AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
-                    AgentAction(tool: "outlook.message.read", args: ["messageId": .string("latest")])
+                    AgentAction(tool: "outlook.message.read", args: outlookMessageReadArgs("latest"))
                 ]
             }
             if availableToolIDs.contains("outlook.message.read") {
-                return [AgentAction(tool: "outlook.message.read", args: ["messageId": .string("latest")])]
+                return [AgentAction(tool: "outlook.message.read", args: outlookMessageReadArgs("latest"))]
             }
         }
         if let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
@@ -184,6 +184,14 @@ nonisolated enum DeterministicToolPlanner {
         }
     }
 
+    private static func outlookMessageReadArgs(_ messageID: String) -> AgentJSONArguments {
+        let value = messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "latest" : messageID
+        return [
+            "messageId": .string(value),
+            "id": .string(value)
+        ]
+    }
+
     private static func planOutlook(text: String, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         func can(_ tool: String) -> Bool { availableToolIDs.contains(tool) }
         func action(_ tool: String, _ args: AgentJSONArguments = [:]) -> AgentAction? { can(tool) ? AgentAction(tool: tool, args: args) : nil }
@@ -198,7 +206,7 @@ nonisolated enum DeterministicToolPlanner {
         }
         if isLatestOutlookReadIntent(text) {
             return action("outlook.messages.list", ["limit": .string("1")])
-                ?? action("outlook.message.read", ["messageId": .string("latest")])
+                ?? action("outlook.message.read", outlookMessageReadArgs("latest"))
         }
         if containsAny(text, ["reply all", "reply-all", "respond to all"]) {
             return action("outlook.message.reply_all", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
