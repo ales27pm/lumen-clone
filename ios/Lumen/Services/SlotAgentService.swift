@@ -676,8 +676,13 @@ final class SlotAgentService {
         var steps: [AgentStep] = []
         var lastObservation = ""
         var lastToolID = ""
+        var latestOutlookMessageID: String?
 
-        for (index, action) in plannedActions.enumerated() {
+        for (index, plannedAction) in plannedActions.enumerated() {
+            var action = plannedAction
+            if ToolRouteGuard.canonicalToolID(action.tool) == "outlook.message.read" {
+                action = resolvedOutlookMessageReadAction(action, latestMessageID: latestOutlookMessageID)
+            }
             let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
             Self.emitChatTrace(req: original, phase: "action_selected", values: [
                 "index": String(index),
@@ -740,6 +745,10 @@ final class SlotAgentService {
             ])
             lastObservation = result
             lastToolID = canonicalActionTool
+            if canonicalActionTool == "outlook.messages.list",
+               let messageID = extractOutlookMessageID(from: result) {
+                latestOutlookMessageID = messageID
+            }
 
             if index < plannedActions.count - 1, shouldStopPlannedChain(after: result) {
                 let text = FinalIntentValidator.validate(result, routing: routing, fallback: IntentRouter.unavailableMessage(for: routing))
@@ -813,6 +822,44 @@ final class SlotAgentService {
             emittedFinalInActionTurn: true
         )
         return .init(text: text, steps: steps)
+    }
+
+    private nonisolated static func resolvedOutlookMessageReadAction(_ action: AgentAction, latestMessageID: String?) -> AgentAction {
+        var args = action.args
+        let current = args["messageId"]?.stringValue
+            ?? args["id"]?.stringValue
+            ?? args["message"]?.stringValue
+        let normalized = current?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let shouldReplace = normalized == nil
+            || normalized == ""
+            || normalized == "latest"
+            || normalized == "first"
+            || normalized == "#1"
+        let resolved = shouldReplace ? latestMessageID : current
+        guard let resolved, !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            if args["messageId"] == nil { args["messageId"] = .string("latest") }
+            if args["id"] == nil { args["id"] = .string(args["messageId"]?.stringValue ?? "latest") }
+            return AgentAction(tool: action.tool, args: args)
+        }
+        args["messageId"] = .string(resolved)
+        args["id"] = .string(resolved)
+        return AgentAction(tool: action.tool, args: args)
+    }
+
+    private nonisolated static func extractOutlookMessageID(from observation: String) -> String? {
+        for rawLine in observation.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard line.lowercased().hasPrefix("id:") else { continue }
+            let value = line.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { return String(value) }
+        }
+
+        let pattern = #"(?im)^\s*id:\s*([^\s]+)\s*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = observation as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        guard let match = regex.firstMatch(in: observation, range: range), match.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     nonisolated static func deterministicCompatibilityResponseForTests(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> (text: String, steps: [AgentStep]) {
