@@ -1,3 +1,41 @@
 {
-  "gaps": []
+  "gaps": [
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\"} [1]",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\"} [1]",
+          "intent": "rag",
+          "name": "Training eval: local knowledge grounding",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
+        ],
+        "problem": "Sanitized output still contains hidden reasoning",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\"} [1]",
+          "correctedOutput": "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\"} [1]",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "scenario": "Search my files for architecture notes and summarize key modules.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "68988f64bd7f160822b15b2e",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    }
+  ]
 }

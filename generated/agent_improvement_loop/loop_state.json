@@ -7,7 +7,7 @@
       "cortex": {
         "eval": 555,
         "trainDPO": 8,
-        "trainSFT": 287,
+        "trainSFT": 288,
         "valDPO": 1,
         "valSFT": 51
       },
@@ -35,7 +35,7 @@
       "mouth": {
         "eval": 5,
         "trainDPO": 10,
-        "trainSFT": 132,
+        "trainSFT": 133,
         "valDPO": 2,
         "valSFT": 23
       },
@@ -58,9 +58,9 @@
       "embedding_eval_retrieval": 1142,
       "embedding_hard_negatives": 1142,
       "embedding_train_pairs": 1018,
-      "embedding_train_triplets": 1021,
+      "embedding_train_triplets": 1022,
       "embedding_val_pairs": 124,
-      "embedding_val_triplets": 121,
+      "embedding_val_triplets": 120,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -76,11 +76,11 @@
     "familyCount": 24,
     "recordCount": 7831
   },
-  "errorGapCount": 0,
-  "gapCount": 0,
+  "errorGapCount": 1,
+  "gapCount": 1,
   "manifest": {
-    "commit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
-    "fingerprint": "7714e41e5f3de76c523a4aa0aabd345f6370fb01b990ca56b0eb9323fc60c656",
+    "commit": "6f04fd982acb64822d881da359be3a10d6175681",
+    "fingerprint": "64856ddbf9cdfbc518fd8a57cd696d7d899bea7d36d98a5aa567f75e0675fc5c",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
@@ -88,23 +88,30 @@
   },
   "nextActionPromptCount": 1,
   "output": "/Users/ales27pm/lumen-clone/generated/agent_manifest",
-  "passed": true,
+  "passed": false,
   "root": "/Users/ales27pm/lumen-clone",
   "runtime": {
-    "failureCount": 0,
-    "failureTypes": {},
-    "reportCount": 5,
-    "sourceLayers": {}
+    "failureCount": 1,
+    "failureTypes": {
+      "e2e_response_quality_rag": 1
+    },
+    "reportCount": 4,
+    "sourceLayers": {
+      "e2eTestReport.evidenceLayer": 1
+    }
   },
   "runtimeAuditInputs": [
-    "runtime-audits/2026-06-09-third-improve-loop"
+    "/Users/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-05-09T19-16-04Z-edf67849-4911-45e3-bf18-00f4af251488.json",
+    "/Users/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-05-09T19-40-57Z-b6b16997-41aa-42b7-b52f-00c5bd5bafe3.json",
+    "/Users/ales27pm/lumen-clone/exports/lumen-live-e2e-report-2026-05-09T19-12-05Z-2cc5f76e-e20f-46bb-9de3-931bbe49b1a8.json",
+    "/Users/ales27pm/lumen-clone/exports/lumen-live-e2e-report-2026-05-09T19-15-24Z-a8be4863-bfe6-4ea7-ac44-ff424f8a33c7.json"
   ],
   "schemaVersion": "1.1.0",
   "startedAt": "1970-01-01T00:00:00+00:00",
   "testFlight": {
     "buildLabel": null,
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "7714e41e5f3de76c523a4aa0aabd345f6370fb01b990ca56b0eb9323fc60c656",
+    "manifestFingerprint": "64856ddbf9cdfbc518fd8a57cd696d7d899bea7d36d98a5aa567f75e0675fc5c",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,

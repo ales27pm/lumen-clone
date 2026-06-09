@@ -96,7 +96,7 @@ def test_agent_grounding_schema_1_2_package_ingests_as_runtime_audit(tmp_path: P
                     "violationCode": "missing_required_tool_action",
                     "expected": "calendar.create",
                     "badOutput": "No action step was persisted.",
-                    "correctedOutput": "Select calendar.create.",
+                    "correctedOutput": "calendar.create(title=\"Appointment\", start=\"2026-06-08T23:30:00Z\")",
                     "promptPrefix": "Set an appointment.",
                 }
             ]

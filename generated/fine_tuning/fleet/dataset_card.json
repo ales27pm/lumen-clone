@@ -7,11 +7,11 @@
     "sentinelSafe": true
   },
   "deterministic": true,
-  "manifestCommit": "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+  "manifestCommit": "6f04fd982acb64822d881da359be3a10d6175681",
   "recordCounts": {
     "eval": 93,
     "train_dpo": 14,
-    "train_sft": 1114,
+    "train_sft": 1113,
     "val_dpo": 3,
     "val_sft": 196
   },
