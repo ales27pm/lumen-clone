@@ -28,16 +28,11 @@ private enum RuntimeToolArgumentInferencer {
         let lowered = trimmed.lowercased()
         guard !["none", "no args", "n/a"].contains(lowered) else { return [] }
 
-        let normalized = trimmed
-            .replacingOccurrences(of: " or ", with: ", ")
-            .replacingOccurrences(of: " plus ", with: ", ")
-            .replacingOccurrences(of: " depending on ", with: ", ")
-
         var specs: [(name: String, required: Bool)] = []
         var optionalGroup = false
 
-        for rawPart in normalized.split(whereSeparator: { character in
-            character == "," || character == ";" || character == "/"
+        for rawPart in trimmed.split(whereSeparator: { character in
+            character == "," || character == ";"
         }) {
             var token = String(rawPart).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { continue }
@@ -53,18 +48,17 @@ private enum RuntimeToolArgumentInferencer {
                 continue
             }
 
-            let pieces = token.split(whereSeparator: { $0.isWhitespace })
-            guard let first = pieces.first else { continue }
-            let name = String(first).trimmingCharacters(in: CharacterSet(charactersIn: "`'\".:"))
-            let loweredName = name.lowercased()
-            guard !["none", "args", "arg"].contains(loweredName) else { continue }
-            if typeHintWords.contains(loweredName), pieces.count > 1 { continue }
-            guard isValidArgumentName(name) else { continue }
-            guard !specs.contains(where: { $0.name == name }) else {
-                optionalGroup = tokenOptional
-                continue
+            for (index, alias) in argumentAliases(from: token).enumerated() {
+                let pieces = alias.split(whereSeparator: { $0.isWhitespace })
+                guard let first = pieces.first else { continue }
+                let name = String(first).trimmingCharacters(in: CharacterSet(charactersIn: "`'\".:"))
+                let loweredName = name.lowercased()
+                guard !["none", "args", "arg"].contains(loweredName) else { continue }
+                if typeHintWords.contains(loweredName), pieces.count > 1 { continue }
+                guard isValidArgumentName(name) else { continue }
+                guard !specs.contains(where: { $0.name == name }) else { continue }
+                specs.append((name: name, required: !tokenOptional && index == 0))
             }
-            specs.append((name: name, required: !tokenOptional))
             optionalGroup = tokenOptional
         }
 
@@ -105,6 +99,16 @@ private enum RuntimeToolArgumentInferencer {
             }
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func argumentAliases(from value: String) -> [String] {
+        value
+            .replacingOccurrences(of: " depending on ", with: " or ")
+            .replacingOccurrences(of: " plus ", with: " or ")
+            .components(separatedBy: " or ")
+            .flatMap { $0.components(separatedBy: "/") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     private static func isValidArgumentName(_ value: String) -> Bool {

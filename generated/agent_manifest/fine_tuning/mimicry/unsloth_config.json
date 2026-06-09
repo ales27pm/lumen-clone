@@ -1,10 +1,28 @@
 {
+  "adapterExport": {
+    "adapterArtifact": "models/lora/mimicry",
+    "adapterDirectory": "models/lora/mimicry",
+    "adapterID": "lumen-mimicry-adapter",
+    "agent": "mimicry",
+    "baseModelID": "Qwen/Qwen3-1.7B",
+    "enabled": true,
+    "mergeAdaptersByDefault": false,
+    "rollbackUnit": "adapter",
+    "saveAdapterByDefault": true,
+    "trainBaseModelWeights": false
+  },
+  "adapter_output_dir": "models/lora/mimicry",
   "agent": "mimicry",
-  "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+  "artifactMode": "adapter_first",
+  "artifact_mode": "adapter_first",
+  "baseModelID": "Qwen/Qwen3-1.7B",
+  "base_model_name": "Qwen/Qwen3-1.7B",
   "batch_size": 2,
   "dataset_dir": "generated/fine_tuning/mimicry",
+  "defaultExportArtifact": "lora_adapter",
+  "default_export_artifact": "lora_adapter",
   "fleet_strategy": "per_slot_adapter",
-  "gguf_output_dir": "models/gguf_merged/mimicry_merged_gguf",
+  "gguf_output_dir": "models/gguf_release_bake/mimicry_merged_gguf",
   "gguf_quantization": "q4_k_m",
   "gguf_repo_id": "ales27pm/lumen-fleet-gguf",
   "gradient_accumulation_steps": 8,
@@ -14,8 +32,17 @@
   "lora_dropout": 0.0,
   "lora_r": 16,
   "max_seq_length": 4096,
+  "mergeExport": {
+    "allowManualExport": true,
+    "enabledByDefault": false,
+    "phase": "optional_release_bake",
+    "reason": "Keep one shared base model plus role adapters during iterative training; merge only for release/runtime backends that cannot load adapters dynamically.",
+    "requiresPassingEvalGates": true
+  },
+  "merge_adapters_by_default": false,
   "merge_target": null,
   "num_train_epochs": 1,
   "output_dir": "models/lora/mimicry",
+  "release_bake_enabled_by_default": false,
   "warmup_steps": 20
 }

@@ -589,12 +589,12 @@ struct E2ETestRunnerView: View {
                 format: "live-e2e-test-report-json",
                 sourceLayer: "e2eTestReport",
                 ownsLiveE2EScenarios: true,
-                includesDeterministicStaticScenarios: false,
+                includesDeterministicStaticScenarios: latestReport.results.contains { !$0.requiresAgentRun },
                 privacy: "Contains prompts, final outputs, failures, and event logs from the current local E2E run. Review before sharing outside the improve-loop.",
                 notes: [
                     "This is the live E2E model/test layer export.",
-                    "Scenarios with requiresAgentRun=true are intended to exercise the loaded SlotAgentService path.",
-                    "If a scenario says no model loaded or routing-only checks completed, the offline ingester treats it as invalid E2E evidence."
+                    "Scenarios with requiresAgentRun=true must exercise AgentService's model-backed generation path and record fresh AgentBehaviorTrace modelTurn evidence.",
+                    "Routing-only tool coverage scenarios are static guard checks; if a live scenario says no model loaded, routing-only checks completed, or has no model-evidence event, the offline ingester treats it as invalid E2E evidence."
                 ]
             )
             lastExportURL = result.url
@@ -918,7 +918,7 @@ private extension E2ETestRunnerView {
 
         var buttonTitle: String {
             switch self {
-            case .standard: return "Run full E2E suite"
+            case .standard: return "Run standard E2E suite"
             case .trainingValidation: return "Run training validation"
             }
         }
@@ -940,7 +940,7 @@ private extension E2ETestRunnerView {
         var footerText: String {
             switch self {
             case .standard:
-                return "Runs deterministic routing checks plus live agent scenarios for tool boundaries, chat quality, stale-context regressions, and final-answer validation. Export creates a live E2E JSON layer with ownsLiveE2EScenarios=true."
+                return "Runs static routing/tool guard coverage plus live model-backed agent scenarios. Live scenarios must record fresh model runtime evidence before export is accepted as live E2E evidence."
             case .trainingValidation:
                 return "Runs multi-scenario in-app validation using trained models in real agent flows, then summarizes failures as training signals for the next fine-tuning cycle. Export creates a live E2E JSON layer with ownsLiveE2EScenarios=true."
             }

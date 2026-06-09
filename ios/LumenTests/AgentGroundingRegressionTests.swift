@@ -11,6 +11,7 @@ struct AgentGroundingRegressionTests {
         "outlook.message.delete", "outlook.message.reply", "outlook.message.reply_all", "outlook.message.forward"
     ]
 
+    @MainActor
     @Test func runtimeAuditorHasNoUnmanifestedOutlookToolsWhenManifestContainsThem() async throws {
         let tools = Self.outlookTools.map { RuntimeToolDefinition(id: $0) }
         let manifest = makeManifest(tools: tools, intent: "outlook", allowed: Self.outlookTools)
@@ -18,6 +19,17 @@ struct AgentGroundingRegressionTests {
         let report = auditor.audit(manifest: manifest)
         #expect(report.passed)
         #expect(!report.failures.contains(where: { $0.type == "unmanifested_live_tool" && ($0.actual?.hasPrefix("outlook") ?? false) }))
+    }
+
+    @MainActor
+    @Test func liveRuntimeSchemaTreatsOutlookAliasesAsAlternatives() async throws {
+        let tools = LiveRuntimeToolRegistryProvider().currentToolDefinitions()
+        let read = try #require(tools.first(where: { $0.id == "outlook.message.read" }))
+        let argsByName = Dictionary(uniqueKeysWithValues: read.arguments.map { ($0.name, $0) })
+
+        #expect(argsByName["messageId"]?.required == true)
+        #expect(argsByName["id"]?.required == false)
+        #expect(read.arguments.filter(\.required).map(\.name) == ["messageId"])
     }
 
     @MainActor
@@ -445,6 +457,59 @@ extension AgentGroundingRegressionTests {
         #expect(response.text.lowercased().contains("event"))
         #expect(hasCalendarListActionTrace)
         #expect(hasCompatibilityFinalTrace)
+    }
+
+    @Test func liveE2EModelEvidenceRequiresFreshModelTurnTrace() {
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date()
+        let prompt = "Explain actor isolation in Swift."
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .finalAnswer,
+            slot: "mouth",
+            stage: "compatibility-direct-final",
+            intent: "chat",
+            promptPrefix: prompt,
+            rawOutputPrefix: "Actor isolation protects mutable state.",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            modelFamily: "qwen3",
+            runtimePath: "deterministic-compatibility",
+            promptCharCount: prompt.count
+        ))
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt) == false)
+
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "mouth",
+            stage: "agent-json",
+            intent: "chat",
+            promptPrefix: prompt,
+            rawOutputPrefix: "{\"final\":\"Actor isolation protects mutable state.\"}",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: true,
+            modelFamily: "qwen3",
+            adapterSlot: "mouth",
+            generationElapsedMs: 1200,
+            runtimePath: "sharedAdapter",
+            activeAdapterSlot: "mouth",
+            promptCharCount: prompt.count
+        ))
+
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt))
     }
 
     @Test func compatibilityMemorySaveThenRecallReportsRememberedPreference() async {

@@ -179,6 +179,7 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
             "prompt": result.get("prompt"),
             "intent": result.get("actualIntent") or result.get("expectedIntent"),
             "expectedIntent": result.get("expectedIntent"),
+            "requiresAgentRun": result.get("requiresAgentRun") is True,
             "failures": "; ".join(str(item) for item in result.get("failures", []) if item) if isinstance(result.get("failures"), list) else result.get("failures"),
             "final": result.get("finalText"),
             "events": result.get("events") or [],
@@ -503,6 +504,8 @@ def _behavior_failures(behavior_audit: dict[str, Any]) -> list[dict[str, Any]]:
     repair_samples = behavior_audit.get("repairSamples")
     if isinstance(repair_samples, list):
         for sample in _iter_dicts(repair_samples):
+            if not _is_actionable_behavior_repair_sample(sample):
+                continue
             failures.append(
                 {
                     "type": sample.get("violationCode") or "behavior_repair_sample",
@@ -538,3 +541,26 @@ def _behavior_failures(behavior_audit: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return failures
+
+
+def _is_actionable_behavior_repair_sample(sample: dict[str, Any]) -> bool:
+    corrected = str(sample.get("correctedOutput") or "").strip()
+    if not corrected:
+        return False
+    lowered = corrected.lower()
+    meta_instruction_prefixes = (
+        "emit a tool call",
+        "select a manifest",
+        "ask for clarification",
+        "return only",
+        "regenerate ",
+    )
+    if lowered.startswith(meta_instruction_prefixes):
+        return False
+    if corrected.startswith("{") or corrected.startswith("["):
+        return True
+    if "(" in corrected and ")" in corrected:
+        return True
+    if corrected.endswith("?"):
+        return True
+    return False

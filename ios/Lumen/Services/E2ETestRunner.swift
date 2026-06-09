@@ -380,6 +380,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     let prompt: String
     let expectedIntent: String
     let actualIntent: String
+    let requiresAgentRun: Bool
     let passed: Bool
     let failures: [String]
     let finalText: String
@@ -403,6 +404,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         prompt: String,
         expectedIntent: String,
         actualIntent: String,
+        requiresAgentRun: Bool = false,
         passed: Bool,
         failures: [String],
         finalText: String,
@@ -425,6 +427,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         self.prompt = prompt
         self.expectedIntent = expectedIntent
         self.actualIntent = actualIntent
+        self.requiresAgentRun = requiresAgentRun
         self.passed = passed
         self.failures = failures
         self.finalText = finalText
@@ -450,6 +453,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         prompt = try c.decode(String.self, forKey: .prompt)
         expectedIntent = try c.decode(String.self, forKey: .expectedIntent)
         actualIntent = try c.decode(String.self, forKey: .actualIntent)
+        requiresAgentRun = try c.decodeIfPresent(Bool.self, forKey: .requiresAgentRun) ?? false
         passed = try c.decode(Bool.self, forKey: .passed)
         failures = try c.decode([String].self, forKey: .failures)
         finalText = try c.decode(String.self, forKey: .finalText)
@@ -572,7 +576,7 @@ nonisolated enum E2ETestRunner {
             } catch is CancellationError {
                 break
             } catch {
-                let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
+                let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", requiresAgentRun: scenario.requiresAgentRun, passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
                 results.append(result)
                 E2ETestLogStore.append(result)
                 await onResult?(result)
@@ -611,6 +615,14 @@ nonisolated enum E2ETestRunner {
                 recoveredAfterRewrite?.removedArtifacts ?? []
             )
         }
+    }
+
+    private struct ModelRuntimeEvidence: Sendable {
+        let runtimePath: String
+        let stage: String
+        let generationElapsedMs: Int?
+        let outputTokenCount: Int?
+        let adapterSlot: String?
     }
 
     private static func runScenario(_ scenario: E2ETestScenario, config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onEvent: EventCallback? = nil) async throws -> E2ETestResult {
@@ -726,6 +738,7 @@ nonisolated enum E2ETestRunner {
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
                 await Task.yield()
+                let modelEvidenceStartedAt = Date()
                 let runOptions = LegacyAgentRunOptions(
                     modelContext: nil,
                     conversationID: req.conversationID,
@@ -733,9 +746,9 @@ nonisolated enum E2ETestRunner {
                     groundingMode: .slotAgent,
                     allowDegradedGrounding: false,
                     preventDoubleGrounding: true,
-                    diagnosticsEnabled: true
+                    diagnosticsEnabled: false
                 )
-                for await agentEvent in await SlotAgentService.shared.run(req, options: runOptions) {
+                for await agentEvent in await AgentService.shared.run(req, options: runOptions) {
                     try Task.checkCancellation()
                     await Task.yield()
                     switch agentEvent {
@@ -760,6 +773,15 @@ nonisolated enum E2ETestRunner {
                         collectPerformanceSample(force: true)
                         failures.append("Agent error: \(message)")
                     }
+                }
+                if let evidence = modelRuntimeEvidence(since: modelEvidenceStartedAt, prompt: scenario.prompt) {
+                    let elapsed = evidence.generationElapsedMs.map(String.init) ?? "unknown"
+                    let tokens = evidence.outputTokenCount.map(String.init) ?? "unknown"
+                    let adapter = evidence.adapterSlot ?? "none"
+                    await event("model-evidence", "runtime=\(evidence.runtimePath), stage=\(evidence.stage), elapsedMs=\(elapsed), outputTokens=\(tokens), adapter=\(adapter)")
+                } else {
+                    failures.append("Live E2E scenario did not record model-backed generation evidence")
+                    await event("model-evidence", "missing fresh AgentBehaviorTrace modelTurn")
                 }
                 try Task.checkCancellation()
                 await Task.yield()
@@ -870,8 +892,34 @@ nonisolated enum E2ETestRunner {
         try Task.checkCancellation()
         await Task.yield()
         let matrix = await performanceMatrix(from: performanceSamples, startedAt: started, finishedAt: endedAt)
-        return E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
+        return E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, requiresAgentRun: scenario.requiresAgentRun, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
     }
+
+    private nonisolated static func modelRuntimeEvidence(since startedAt: Date, prompt: String) -> ModelRuntimeEvidence? {
+        let promptNeedle = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return AgentBehaviorTraceRecorder.recent(limit: 64).reversed().compactMap { trace -> ModelRuntimeEvidence? in
+            guard trace.event == .modelTurn else { return nil }
+            guard trace.createdAt >= startedAt else { return nil }
+            let promptPrefix = trace.promptPrefix.lowercased()
+            if !promptNeedle.isEmpty, !promptPrefix.contains(promptNeedle) {
+                return nil
+            }
+            guard trace.runtimePath != "deterministic-compatibility" else { return nil }
+            return ModelRuntimeEvidence(
+                runtimePath: trace.runtimePath ?? "unknown",
+                stage: trace.stage,
+                generationElapsedMs: trace.generationElapsedMs,
+                outputTokenCount: trace.outputTokenCount,
+                adapterSlot: trace.activeAdapterSlot ?? trace.adapterSlot
+            )
+        }.first
+    }
+
+#if DEBUG
+    nonisolated static func modelRuntimeEvidenceForTests(since startedAt: Date, prompt: String) -> Bool {
+        modelRuntimeEvidence(since: startedAt, prompt: prompt) != nil
+    }
+#endif
 
     nonisolated private static func performanceMatrix(from samples: [E2EPerformanceSample], startedAt: Date, finishedAt: Date) async -> E2EPerformanceMatrix {
         let residentSamples = samples.compactMap(\.residentMemoryMB)

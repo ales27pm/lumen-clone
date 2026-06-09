@@ -89,7 +89,7 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
     if _scenario_skipped_live_model_run(scenario):
-        return "Load the configured chat model/fleet and rerun this scenario through SlotAgentService; do not emit routing-only fallback as a passing E2E result."
+        return "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence."
     if required_hint and normalized_intent == "memory":
         remembered = _derive_memory_content_from_prompt(prompt)
         base = final if _is_useful_final(final, intent=intent) else f"Remembered: {remembered}."
@@ -221,7 +221,27 @@ def _scenario_skipped_live_model_run(scenario: dict[str, Any]) -> bool:
     events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
     event_text = " ".join(str(event) for event in events).casefold()
     haystack = "\n".join([final, failures, event_text])
-    return "no model loaded" in haystack or "routing-only checks completed" in haystack
+    if (
+        "no model loaded" in haystack
+        or "routing-only checks completed" in haystack
+        or "did not record model-backed generation evidence" in haystack
+        or "missing fresh agentbehaviortrace modelturn" in haystack
+    ):
+        return True
+    if scenario.get("requiresAgentRun") is True and not _scenario_has_model_evidence_event(events):
+        return True
+    return False
+
+
+def _scenario_has_model_evidence_event(events: list[Any]) -> bool:
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        phase = str(event.get("phase") or "").casefold()
+        message = str(event.get("message") or "").casefold()
+        if phase == "model-evidence" and "runtime=" in message and "missing" not in message:
+            return True
+    return False
 
 
 def _clean_prompt(prompt: str) -> str:
@@ -237,7 +257,7 @@ def _clean_derived_fragment(value: str) -> str:
 def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None) -> str:
     intent = _scenario_intent(scenario)
     if _scenario_skipped_live_model_run(scenario):
-        return f"For `{intent}` E2E evals, a scenario marked as requiring an agent/model run must fail closed if no model is loaded."
+        return f"For `{intent}` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded."
     if required_hint:
         return f"For `{intent}` E2E evals, the final answer must include required hint `{required_hint}` while remaining natural and useful."
     return f"Use failed `{intent}` E2E prompts and final outputs as next-cycle fine-tuning repair examples."

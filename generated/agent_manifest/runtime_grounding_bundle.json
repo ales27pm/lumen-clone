@@ -6,8 +6,8 @@
       "markdown": 42,
       "mixed": 1,
       "plist": 3,
-      "python": 72,
-      "swift": 301
+      "python": 73,
+      "swift": 303
     },
     "moduleCounts": {
       "AppIntents": 7,
@@ -21,13 +21,13 @@
       "Background": 4,
       "Brand": 2,
       "Developer": 2,
-      "Diagnostics": 16,
+      "Diagnostics": 17,
       "Memory": 7,
       "Models": 15,
       "Permissions": 6,
       "RAG": 9,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
-      "Services": 54,
+      "Services": 55,
       "Services/AgentGrounding": 13,
       "Services/Diagnostics": 1,
       "Services/IntentClassification": 5,
@@ -53,9 +53,9 @@
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 1,
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 36,
-      "tools/lumen_manifest_crawler/tests": 18
+      "tools/lumen_manifest_crawler/tests": 19
     },
-    "recordCount": 440,
+    "recordCount": 443,
     "selectedFiles": [
       {
         "imports": [
@@ -311,8 +311,8 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, isValidArgumentName, inferredType, numericMarkers, typeHintWords.",
-        "sha256": "dab1473fdb922ce57880defdb41132670497071ccb52125c5390bb6f26264a94",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, argumentAliases, isValidArgumentName, inferredType, numericMarkers.",
+        "sha256": "43e075335d31155bf052f25eafc1ddf7515e70460f85f86343675e45db061177",
         "symbols": [
           "LiveRuntimeToolRegistryProvider",
           "RuntimeToolArgumentInferencer",
@@ -320,13 +320,13 @@
           "arguments",
           "argsBody",
           "removeParentheticalText",
+          "argumentAliases",
           "isValidArgumentName",
           "inferredType",
           "numericMarkers",
           "typeHintWords",
           "trimmed",
           "lowered",
-          "normalized",
           "specs",
           "optionalGroup",
           "token"
@@ -340,7 +340,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` owns RuntimeManifestAuditor behavior and defines: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAuditor, RuntimeManifestAuditError, loadBundledManifest, loadManifestFromStoreBundleOrRuntimeFallback, loadBundledManifestOrRuntimeFallback, syntheticManifestFromRuntimeRegistry, audit.",
-        "sha256": "69c150ced28bba393a585ad395b6adacf50a6d49b16edf8bd2f2d605b27efb98",
+        "sha256": "c116ec3e67482de5836437c7d425acb7a834aff3fe27cea0da79a2910bd9586a",
         "symbols": [
           "RuntimeAgentManifestAuditReport",
           "RuntimeManifestFailure",
@@ -432,7 +432,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, buildGroundingContext, runTextTurn, executeTool, router, metricsStore, toolRegistry, memoryEngine.",
-        "sha256": "cdb6e1672261f73a95688e500a636f402db7b1c53823733936da8f8d5efc4c9c",
+        "sha256": "447f5cf735c186670e6a05023658201c130662f82a467140182f75842b3cf1c5",
         "symbols": [
           "AssistantKernel",
           "KernelError",
@@ -779,7 +779,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift",
         "responsibility": "`ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, cancelledResult, grounding, sections.",
-        "sha256": "daa12e3c65b9bbc0f70781b7e5764d625d02aec424447d498c99487c2c592fa3",
+        "sha256": "7cc993127bac86c5e99de118bd3e88050e5849ecc35ebc9bd5722e0f8258eff9",
         "symbols": [
           "LegacyTurnGroundingOutput",
           "LegacyTurnGroundingCoordinator",
@@ -978,7 +978,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser, ExtractedJSONObject, StreamingJSONScanner.",
-        "sha256": "3687ced1ce042f674a2c9be62e2f7ce5607defa4ec01d40b955e7ef9e037525c",
+        "sha256": "253c7433a3ab5d96ba2a7365a06305d76f1d5fa4cc1e57fa2b84060f07eb8ea4",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -1293,7 +1293,7 @@
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/ToolNetworkResilience.swift",
         "responsibility": "`ios/Lumen/Services/Tools/ToolNetworkResilience.swift` owns ToolNetworkResilience behavior and defines: ToolNetworkErrorClass, ToolRetryPolicy, ToolRequestMetrics, ToolCircuitBreaker, ToolNetworkTelemetry, Notification, ToolNetworkResilience, allowRequest, record, emit.",
-        "sha256": "305d109f74c8da4c3144021057a79e6969eec7cc72cd823a230271ef03c56dfb",
+        "sha256": "98667f9945ee7ecc2925a5c2377794644590430df96e13898a27eb2a0d006b67",
         "symbols": [
           "ToolNetworkErrorClass",
           "ToolRetryPolicy",
@@ -2051,7 +2051,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+  "manifestCommit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",
