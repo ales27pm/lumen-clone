@@ -73,6 +73,46 @@ def test_analyze_reports_flags_plain_no_model_evidence(tmp_path: Path) -> None:
     assert analysis["plainFindings"][0]["type"] == "invalid_live_e2e_no_model"
 
 
+def test_analyze_reports_does_not_flag_json_policy_notes_as_no_model_evidence(tmp_path: Path) -> None:
+    report = tmp_path / "live-e2e.json"
+    report.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0.0",
+                "exportPolicy": {
+                    "sourceLayer": "e2eTestReport",
+                    "format": "live-e2e-test-report-json",
+                    "ownsLiveE2EScenarios": True,
+                    "notes": [
+                        "If a scenario says no model loaded or routing-only checks completed, the offline ingester treats it as invalid E2E evidence."
+                    ],
+                },
+                "payload": {
+                    "passed": 1,
+                    "failed": 0,
+                    "results": [
+                        {
+                            "title": "Loaded model scenario",
+                            "passed": True,
+                            "prompt": "Explain actor isolation in Swift.",
+                            "actualIntent": "chat",
+                            "expectedIntent": "chat",
+                            "finalText": "Actor isolation protects mutable state in concurrent Swift code.",
+                            "events": [],
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    analysis = analyze_reports(tmp_path, [report])
+
+    assert analysis["runtimeFailureCount"] == 0
+    assert analysis["plainFindings"] == []
+
+
 def test_analyze_reports_uses_narrow_hf_upload_failure_heuristic(tmp_path: Path) -> None:
     noisy = tmp_path / "hf-noisy.log"
     noisy.write_text("Hugging Face model card says prior training failed but no upload was attempted.", encoding="utf-8")

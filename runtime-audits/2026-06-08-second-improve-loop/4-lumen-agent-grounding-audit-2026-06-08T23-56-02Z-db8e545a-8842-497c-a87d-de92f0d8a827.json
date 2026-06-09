@@ -1,0 +1,219 @@
+{
+  "app" : {
+    "buildNumber" : "20260608194336",
+    "bundleIdentifier" : "com.27pm.lumenclone",
+    "name" : "Lumen",
+    "shortVersion" : "1.0.0"
+  },
+  "behaviorAudit" : {
+    "generatedAt" : "2026-06-08T23:56:01Z",
+    "passed" : false,
+    "recommendations" : [
+
+    ],
+    "repairSamples" : [
+      {
+        "agent" : "cortex",
+        "badOutput" : "No action step was persisted.",
+        "correctedOutput" : "Select a manifest-allowed tool for this intent or ask a clarification question if required arguments are missing.",
+        "createdAt" : "2026-06-08T23:56:01Z",
+        "curriculum" : "tool_routing",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "08C13FB9-503B-4924-8F83-495CFB508180",
+        "lesson" : "Tool-backed intents require a manifest-allowed action step.",
+        "promptPrefix" : "Search my calendar for next event",
+        "violationCode" : "missing_required_tool_action"
+      }
+    ],
+    "score" : 0.9814814814814815,
+    "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+    "traceCount" : 27,
+    "violationCount" : 1,
+    "violations" : [
+      {
+        "actual" : "No action step was persisted.",
+        "agent" : "cortex",
+        "code" : "missing_required_tool_action",
+        "createdAt" : "2026-06-08T23:56:01Z",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "61852947-DBBE-4F23-803D-2F3AA379E558",
+        "problem" : "The model produced no tool action even though the static manifest/runtime router expects a tool-backed intent.",
+        "promptPrefix" : "Search my calendar for next event",
+        "severity" : "error"
+      }
+    ]
+  },
+  "exportPolicy" : {
+    "deterministicScenarioPolicy" : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results.",
+    "format" : "agent-grounding-runtime-json-package",
+    "includesDeterministicStaticScenarios" : false,
+    "ownsLiveE2EScenarios" : false,
+    "privacy" : "contains only manifest audit failures, behavior violations, bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are exported",
+    "promptPolicy" : "promptPrefix fields are bounded and should be treated as diagnostic snippets only",
+    "source" : "RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
+    "sourceLayer" : "agentGroundingRuntimeAudit",
+    "traceLimit" : 200
+  },
+  "generatedAt" : "2026-06-08T23:56:02Z",
+  "improveLoop" : {
+    "acceptedTraining" : [
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "No action step was persisted.",
+        "canonicalToolID" : "missing",
+        "correctedOutput" : "Select a manifest-allowed tool for this intent or ask a clarification question if required arguments are missing.",
+        "createdAt" : "2026-06-08T23:56:02Z",
+        "disposition" : "accepted_training",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "C7ACFD8D-8EDE-43C1-B718-B3C94758A3B7",
+        "lesson" : "Tool-backed intents require a manifest-allowed action step.",
+        "promptPrefix" : "Search my calendar for next event",
+        "sampleType" : "cortex_json_contract",
+        "slot" : "cortex",
+        "source" : "behavior_repair_sample",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14"
+      }
+    ],
+    "counters" : {
+      "accepted" : 1,
+      "architectureFailureRejected" : 1,
+      "legacyToolNamespaceRejected" : 0,
+      "quarantined" : 1,
+      "regression" : 1,
+      "resourceFallbackRejected" : 0,
+      "staleTraceRejected" : 0
+    },
+    "generatedAt" : "2026-06-08T23:56:02Z",
+    "quarantinedSamples" : [
+      {
+        "allowedToolIDs" : [
+          "calendar.create",
+          "calendar.list"
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "No action step was persisted.",
+        "canonicalToolID" : "calendar.create",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-08T23:56:02Z",
+        "disposition" : "quarantined",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "0B0ED200-08BB-4650-9131-B9450A52C3B9",
+        "lesson" : "The model produced no tool action even though the static manifest/runtime router expects a tool-backed intent.",
+        "promptPrefix" : "Search my calendar for next event",
+        "rejectionReason" : "architecture/runtime failure; convert to regression before training",
+        "sampleType" : "rejected_architecture_failure",
+        "slot" : "cortex",
+        "source" : "runtime_violation",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14"
+      }
+    ],
+    "regressionTests" : [
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "I hit an internal response-format issue. Please try again.",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-08T23:56:02Z",
+        "disposition" : "regression_test",
+        "expected" : "",
+        "id" : "591945E2-1BF1-4A4F-949D-2A58A6112528",
+        "lesson" : "noJSONObject",
+        "promptPrefix" : "Yo",
+        "sampleType" : "cortex_json_contract",
+        "slot" : "cortex",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "C86C228C-45CC-455A-8A2C-6A7A6BFE7B89"
+      }
+    ],
+    "schemaVersion" : "2026.06.07-policy-first-adapter-specialized"
+  },
+  "manifestSource" : "application-support-current:AgentManifest/AgentBehaviorManifest.json",
+  "recentTraces" : [
+    {
+      "accelerationDiagnostic" : "See accelerationDiagnostics for parsed llama.cpp Metal/offload evidence.",
+      "accelerationDiagnostics" : {
+        "actualBackend" : "metal",
+        "actualKQVOffload" : true,
+        "actualOffloadedLayers" : 29,
+        "actualTotalLayers" : 29,
+        "aneUsedByCurrentRuntime" : false,
+        "backendRequested" : "metal",
+        "metalDeviceAvailable" : true,
+        "metalDeviceName" : "Apple A18 Pro GPU",
+        "metalDeviceUsed" : "Apple A18 Pro GPU",
+        "metalUnifiedMemory" : true,
+        "notes" : [
+          "llama_kv_cache_unified: layer  22: dev = Metal",
+          "llama_kv_cache_unified: layer  23: dev = Metal",
+          "llama_kv_cache_unified: layer  24: dev = Metal",
+          "llama_kv_cache_unified: layer  25: dev = Metal",
+          "llama_kv_cache_unified: layer  26: dev = Metal",
+          "llama_kv_cache_unified: layer  27: dev = Metal",
+          "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+          "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+          "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+        ],
+        "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+        "requestedGpuLayers" : 999,
+        "requestedKQVOffload" : true,
+        "verificationLevel" : "confirmed"
+      },
+      "activeAdapterSlot" : "cortex",
+      "adapterActivationMs" : 0,
+      "adapterApplied" : true,
+      "adapterID" : "cortex:/var/mobile/Containers/Data/Application/911E79BB-DD45-492F-8BE7-E521E7756CED/Documents/Models/lumen-cortex-lora.gguf",
+      "adapterPath" : "/var/mobile/Containers/Data/Application/911E79BB-DD45-492F-8BE7-E521E7756CED/Documents/Models/lumen-cortex-lora.gguf",
+      "adapterScale" : 1,
+      "adapterSlot" : "cortex",
+      "allowedToolIDs" : [
+
+      ],
+      "baseModelPath" : "/var/mobile/Containers/Data/Application/911E79BB-DD45-492F-8BE7-E521E7756CED/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf",
+      "createdAt" : "2026-06-08T23:50:33Z",
+      "emittedFinalInActionTurn" : false,
+      "ensureReadyMs" : 0,
+      "estimatedPromptTokenCount" : 255,
+      "event" : "modelTurn",
+      "generationElapsedMs" : 476,
+      "id" : "C86C228C-45CC-455A-8A2C-6A7A6BFE7B89",
+      "maxTokensEffective" : 64,
+      "maxTokensRequested" : 64,
+      "messageBuildMs" : 0,
+      "modelFamily" : "qwen3",
+      "parseError" : "noJSONObject",
+      "promptCharCount" : 1021,
+      "promptPrefix" : "Yo",
+      "rawOutputPrefix" : "I hit an internal response-format issue. Please try again.",
+      "runtimePath" : "sharedAdapter",
+      "slot" : "cortex",
+      "stage" : "chat",
+      "toolArguments" : {
+
+      }
+    }
+  ],
+  "runtimeManifestAudit" : {
+    "failures" : [
+
+    ],
+    "generatedAt" : "2026-06-08T23:56:01Z",
+    "passed" : true,
+    "recommendedDatasetRepairs" : [
+
+    ],
+    "score" : 1
+  },
+  "scenarioResults" : [
+
+  ],
+  "schemaVersion" : "1.2.0",
+  "traceParseErrorCount" : 1,
+  "traceSelectedToolAllowedCount" : 0,
+  "usedRuntimeFallback" : false
+}

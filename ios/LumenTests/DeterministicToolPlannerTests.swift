@@ -20,7 +20,7 @@ struct DeterministicToolPlannerTests {
         let steps = DeterministicToolPlanner.planSteps(routing: routing, prompt: "Read the latest email", availableToolIDs: ["outlook.messages.list", "outlook.message.read"])
         #expect(steps.map(\.tool) == ["outlook.messages.list", "outlook.message.read"])
         #expect(steps.first?.args["limit"]?.stringValue == "1")
-        #expect(steps.last?.args["message"]?.stringValue == "latest")
+        #expect(steps.last?.args["messageId"]?.stringValue == "latest")
     }
 
     @Test func outlookLatestPlansReadOnlyWhenListUnavailable() async throws {
@@ -37,7 +37,7 @@ struct DeterministicToolPlannerTests {
         )
         #expect(steps.count == 1)
         #expect(steps.first?.tool == "outlook.message.read")
-        #expect(steps.first?.args["message"]?.stringValue == "latest")
+        #expect(steps.first?.args["messageId"]?.stringValue == "latest")
     }
 
     @Test func whereAreWePlansCurrentLocation() async throws {

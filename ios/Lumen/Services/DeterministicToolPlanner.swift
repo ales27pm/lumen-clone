@@ -23,7 +23,7 @@ nonisolated enum DeterministicToolPlanner {
             if text.contains("unread") { args["unreadOnly"] = .string("true") }
             return AgentAction(tool: canonical, args: args)
         case "outlook.message.read":
-            return AgentAction(tool: canonical, args: ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")])
+            return AgentAction(tool: canonical, args: ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")])
         default:
             return AgentAction(tool: canonical, args: [:])
         }
@@ -51,11 +51,11 @@ nonisolated enum DeterministicToolPlanner {
                availableToolIDs.contains("outlook.message.read") {
                 return [
                     AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
-                    AgentAction(tool: "outlook.message.read", args: ["message": .string("latest")])
+                    AgentAction(tool: "outlook.message.read", args: ["messageId": .string("latest")])
                 ]
             }
             if availableToolIDs.contains("outlook.message.read") {
-                return [AgentAction(tool: "outlook.message.read", args: ["message": .string("latest")])]
+                return [AgentAction(tool: "outlook.message.read", args: ["messageId": .string("latest")])]
             }
         }
         if let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
@@ -198,28 +198,28 @@ nonisolated enum DeterministicToolPlanner {
         }
         if isLatestOutlookReadIntent(text) {
             return action("outlook.messages.list", ["limit": .string("1")])
-                ?? action("outlook.message.read", ["message": .string("latest")])
+                ?? action("outlook.message.read", ["messageId": .string("latest")])
         }
         if containsAny(text, ["reply all", "reply-all", "respond to all"]) {
-            return action("outlook.message.reply_all", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
+            return action("outlook.message.reply_all", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
         }
         if containsAny(text, ["reply", "respond"]) {
-            return action("outlook.message.reply", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
+            return action("outlook.message.reply", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
         }
         if text.contains("forward") {
-            var args: AgentJSONArguments = ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")]
+            var args: AgentJSONArguments = ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
             if let body = extractOutlookBody(from: prompt), !body.isEmpty { args["body"] = .string(body) }
             return action("outlook.message.forward", args)
         }
-        if text.contains("archive") { return action("outlook.message.archive", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
-        if containsAny(text, ["delete", "trash"]) { return action("outlook.message.delete", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
-        if text.contains("mark") && text.contains("unread") { return action("outlook.message.mark_unread", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
-        if text.contains("mark") && text.contains("read") { return action("outlook.message.mark_read", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
+        if text.contains("archive") { return action("outlook.message.archive", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
+        if containsAny(text, ["delete", "trash"]) { return action("outlook.message.delete", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
+        if text.contains("mark") && text.contains("unread") { return action("outlook.message.mark_unread", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
+        if text.contains("mark") && text.contains("read") { return action("outlook.message.mark_read", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
         if text.contains("move") {
             guard let destination = extractOutlookDestinationFolder(from: text) else { return nil }
             return action("outlook.message.move", [
-                "message": .string(extractOutlookMessageReference(from: text) ?? "latest"),
+                "messageId": .string(extractOutlookMessageReference(from: text) ?? "latest"),
                 "destination": .string(destination)
             ])
         }

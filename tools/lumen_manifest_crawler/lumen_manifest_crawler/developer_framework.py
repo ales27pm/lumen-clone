@@ -410,9 +410,17 @@ def _scan_plain_text_findings(path: Path) -> list[dict[str, Any]]:
         findings.append({"severity": "error", "type": "xcodebuild_failure", "source": str(path)})
     if _looks_like_hf_upload_failure(lower):
         findings.append({"severity": "warning", "type": "hf_upload_failure", "source": str(path)})
-    if "no model loaded" in lower or "routing-only checks completed" in lower:
+    if _should_scan_plain_no_model_evidence(path) and ("no model loaded" in lower or "routing-only checks completed" in lower):
         findings.append({"severity": "error", "type": "invalid_live_e2e_no_model", "source": str(path)})
     return findings
+
+
+def _should_scan_plain_no_model_evidence(path: Path) -> bool:
+    # JSON evidence is normalized structurally by load_runtime_audit_reports().
+    # Whole-file substring scans are only appropriate for text logs; JSON
+    # exports can legitimately carry policy notes that describe invalid
+    # evidence phrases without any scenario having emitted them.
+    return path.suffix.casefold() not in {".json"}
 
 
 def _looks_like_hf_upload_failure(lower_text: str) -> bool:

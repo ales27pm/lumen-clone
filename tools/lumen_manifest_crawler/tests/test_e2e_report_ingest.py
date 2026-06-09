@@ -129,6 +129,39 @@ def test_load_runtime_audit_reports_ingests_text_e2e_report(tmp_path: Path):
     assert len(report["failures"]) == 2
 
 
+def test_behavior_repair_samples_skip_meta_instructions(tmp_path: Path):
+    report_path = tmp_path / "behavior-audit.json"
+    report_path.write_text(
+        """{
+          "generatedAt": "2026-06-09T01:55:41Z",
+          "repairSamples": [
+            {
+              "agent": "executor",
+              "violationCode": "missing_required_tool_argument",
+              "promptPrefix": "Read my latest email",
+              "badOutput": "message",
+              "correctedOutput": "Emit a tool call with every required manifest argument populated, or ask for clarification before tool execution.",
+              "lesson": "Executor must satisfy required argument schemas exactly or request clarification."
+            },
+            {
+              "agent": "executor",
+              "violationCode": "missing_required_tool_argument",
+              "promptPrefix": "Read my latest email",
+              "badOutput": "outlook.message.read(message=latest)",
+              "correctedOutput": "outlook.messages.list(limit=1)",
+              "lesson": "List the mailbox before reading a contextual message reference."
+            }
+          ]
+        }""",
+        encoding="utf-8",
+    )
+
+    failures = load_runtime_audit_reports([report_path])[0]["failures"]
+
+    assert len(failures) == 1
+    assert failures[0]["repairSample"]["correctedOutput"] == "outlook.messages.list(limit=1)"
+
+
 def test_e2e_failures_become_repair_samples_with_corrected_outputs(tmp_path: Path):
     report_path = tmp_path / "e2e-report.md"
     report_path.write_text(E2E_REPORT, encoding="utf-8")
@@ -261,6 +294,71 @@ def test_ingestion_flags_e2e_no_model_fallback_as_invalid_evidence(tmp_path: Pat
     assert failure["e2eScenario"]["skippedLiveModelRun"] is True
     assert "routing-only fallback is not valid E2E evidence" in failure["expected"][0]
     assert "Load the configured chat model" in failure["repairSample"]["correctedOutput"]
+    assert "AgentService" in failure["repairSample"]["correctedOutput"]
+
+
+def test_ingestion_flags_live_e2e_without_model_evidence_event(tmp_path: Path):
+    report_path = tmp_path / "e2e-missing-model-evidence.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "scenarios": [
+            {
+                "name": "chat should run model",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "Explain actor isolation in Swift.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": [],
+                "final": "Actor isolation protects mutable state.",
+                "events": [{"phase": "models", "message": "chat fleet ready"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert len(normalized["failures"]) == 1
+    failure = normalized["failures"][0]
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is True
+    assert "must execute an actual loaded chat model" in failure["expected"][0]
+
+
+def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
+    report_path = tmp_path / "e2e-with-model-evidence.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "scenarios": [
+            {
+                "name": "chat should run model",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "Explain actor isolation in Swift.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": [],
+                "final": "Actor isolation protects mutable state.",
+                "events": [
+                    {"phase": "models", "message": "chat fleet ready"},
+                    {"phase": "model-evidence", "message": "runtime=sharedAdapter, stage=agent-json, elapsedMs=6400, outputTokens=42, adapter=mouth"},
+                ],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"] == []
 
 
 def test_in_app_package_preserves_trace_selected_tool_allowed_count(tmp_path: Path):

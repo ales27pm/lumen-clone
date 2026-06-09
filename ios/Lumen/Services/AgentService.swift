@@ -1320,7 +1320,19 @@ final class AgentService {
     }
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
-        SlotAgentService.shared.run(req, options: options)
+        if options.diagnosticsEnabled {
+            return SlotAgentService.shared.run(req, options: options)
+        }
+
+        return AsyncStream { continuation in
+            let task = Task { @MainActor in
+                let effectiveRequest = options.allowDegradedGrounding
+                    ? Self.applyLegacyGroundingAssembly(req)
+                    : req
+                await self.runLoop(effectiveRequest, continuation: continuation)
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
     }
 
     private func runLoop(_ req: AgentRequest, continuation: AsyncStream<AgentEvent>.Continuation) async {

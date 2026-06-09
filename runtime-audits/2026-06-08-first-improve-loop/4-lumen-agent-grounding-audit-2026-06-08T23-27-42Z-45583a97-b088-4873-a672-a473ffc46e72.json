@@ -1,0 +1,140 @@
+{
+  "app" : {
+    "buildNumber" : "20260608191147",
+    "bundleIdentifier" : "com.27pm.lumenclone",
+    "name" : "Lumen",
+    "shortVersion" : "1.0.0"
+  },
+  "behaviorAudit" : {
+    "generatedAt" : "2026-06-08T23:27:41Z",
+    "passed" : false,
+    "recommendations" : [
+
+    ],
+    "repairSamples" : [
+      {
+        "agent" : "cortex",
+        "badOutput" : "No action step was persisted.",
+        "correctedOutput" : "Select a manifest-allowed tool for this intent or ask a clarification question if required arguments are missing.",
+        "createdAt" : "2026-06-08T23:27:41Z",
+        "curriculum" : "tool_routing",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "58A2D3C9-375D-419C-B751-FC2F3CE5A0C9",
+        "lesson" : "Tool-backed intents require a manifest-allowed action step.",
+        "promptPrefix" : "Search my calendar for next event",
+        "violationCode" : "missing_required_tool_action"
+      }
+    ],
+    "score" : 0.9761904761904762,
+    "sourceCommit" : "50aa14941fa9502956abd4592e6285d570cf59f9",
+    "traceCount" : 21,
+    "violationCount" : 1,
+    "violations" : [
+      {
+        "actual" : "No action step was persisted.",
+        "agent" : "cortex",
+        "code" : "missing_required_tool_action",
+        "createdAt" : "2026-06-08T23:27:41Z",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "797C8375-0EDE-4C13-B637-358AD9F4FBFC",
+        "problem" : "The model produced no tool action even though the static manifest/runtime router expects a tool-backed intent.",
+        "promptPrefix" : "Search my calendar for next event",
+        "severity" : "error"
+      }
+    ]
+  },
+  "exportPolicy" : {
+    "deterministicScenarioPolicy" : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results.",
+    "format" : "agent-grounding-runtime-json-package",
+    "includesDeterministicStaticScenarios" : false,
+    "ownsLiveE2EScenarios" : false,
+    "privacy" : "contains only manifest audit failures, behavior violations, bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are exported",
+    "promptPolicy" : "promptPrefix fields are bounded and should be treated as diagnostic snippets only",
+    "source" : "RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
+    "sourceLayer" : "agentGroundingRuntimeAudit",
+    "traceLimit" : 200
+  },
+  "generatedAt" : "2026-06-08T23:27:42Z",
+  "improveLoop" : {
+    "acceptedTraining" : [
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "No action step was persisted.",
+        "canonicalToolID" : "missing",
+        "correctedOutput" : "Select a manifest-allowed tool for this intent or ask a clarification question if required arguments are missing.",
+        "createdAt" : "2026-06-08T23:27:42Z",
+        "disposition" : "accepted_training",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "D79D8496-AA65-4E31-850B-3A28308FEAF7",
+        "lesson" : "Tool-backed intents require a manifest-allowed action step.",
+        "promptPrefix" : "Search my calendar for next event",
+        "sampleType" : "cortex_json_contract",
+        "slot" : "cortex",
+        "source" : "behavior_repair_sample",
+        "sourceCommit" : "50aa14941fa9502956abd4592e6285d570cf59f9"
+      }
+    ],
+    "counters" : {
+      "accepted" : 1,
+      "architectureFailureRejected" : 1,
+      "legacyToolNamespaceRejected" : 0,
+      "quarantined" : 1,
+      "regression" : 0,
+      "resourceFallbackRejected" : 0,
+      "staleTraceRejected" : 0
+    },
+    "generatedAt" : "2026-06-08T23:27:42Z",
+    "quarantinedSamples" : [
+      {
+        "allowedToolIDs" : [
+          "calendar.create",
+          "calendar.list"
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "No action step was persisted.",
+        "canonicalToolID" : "calendar.create",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-08T23:27:42Z",
+        "disposition" : "quarantined",
+        "expected" : "Intent calendar should select one of: calendar.create, calendar.list",
+        "id" : "B208CD7D-5345-4EA1-B30D-ABE6831E50EC",
+        "lesson" : "The model produced no tool action even though the static manifest/runtime router expects a tool-backed intent.",
+        "promptPrefix" : "Search my calendar for next event",
+        "rejectionReason" : "architecture/runtime failure; convert to regression before training",
+        "sampleType" : "rejected_architecture_failure",
+        "slot" : "cortex",
+        "source" : "runtime_violation",
+        "sourceCommit" : "50aa14941fa9502956abd4592e6285d570cf59f9"
+      }
+    ],
+    "regressionTests" : [
+
+    ],
+    "schemaVersion" : "2026.06.07-policy-first-adapter-specialized"
+  },
+  "manifestSource" : "application-support-current:AgentManifest/AgentBehaviorManifest.json",
+  "recentTraces" : [
+
+  ],
+  "runtimeManifestAudit" : {
+    "failures" : [
+
+    ],
+    "generatedAt" : "2026-06-08T23:27:41Z",
+    "passed" : true,
+    "recommendedDatasetRepairs" : [
+
+    ],
+    "score" : 1
+  },
+  "scenarioResults" : [
+
+  ],
+  "schemaVersion" : "1.2.0",
+  "traceParseErrorCount" : 0,
+  "traceSelectedToolAllowedCount" : 0,
+  "usedRuntimeFallback" : false
+}

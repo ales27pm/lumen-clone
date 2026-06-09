@@ -1,0 +1,1975 @@
+{
+  "app" : {
+    "buildNumber" : "20260608194337",
+    "bundleIdentifier" : "com.27pm.lumenclone",
+    "name" : "Lumen",
+    "shortVersion" : "1.0.0"
+  },
+  "behaviorAudit" : {
+    "generatedAt" : "2026-06-09T01:51:29Z",
+    "passed" : false,
+    "recommendations" : [
+      "Regenerate Tool Executor schema samples and reinforce required argument coverage."
+    ],
+    "repairSamples" : [
+      {
+        "agent" : "executor",
+        "badOutput" : "message",
+        "correctedOutput" : "Emit a tool call with every required manifest argument populated, or ask for clarification before tool execution.",
+        "createdAt" : "2026-06-09T01:51:29Z",
+        "curriculum" : "tool_routing",
+        "expected" : "outlook.message.read.id: string, required=true",
+        "id" : "B0AE2F82-C319-4D6B-BF46-B92CD370A3C8",
+        "lesson" : "Executor must satisfy required argument schemas exactly or request clarification.",
+        "promptPrefix" : "Read my latest email",
+        "violationCode" : "missing_required_tool_argument"
+      },
+      {
+        "agent" : "executor",
+        "badOutput" : "message",
+        "correctedOutput" : "Emit a tool call with every required manifest argument populated, or ask for clarification before tool execution.",
+        "createdAt" : "2026-06-09T01:51:29Z",
+        "curriculum" : "tool_routing",
+        "expected" : "outlook.message.read.messageId: string, required=true",
+        "id" : "73410BC0-DF71-4790-BCBE-AA06EC0B8D47",
+        "lesson" : "Executor must satisfy required argument schemas exactly or request clarification.",
+        "promptPrefix" : "Read my latest email",
+        "violationCode" : "missing_required_tool_argument"
+      }
+    ],
+    "score" : 0.875,
+    "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+    "traceCount" : 8,
+    "violationCount" : 2,
+    "violations" : [
+      {
+        "actual" : "message",
+        "agent" : "executor",
+        "code" : "missing_required_tool_argument",
+        "createdAt" : "2026-06-09T01:51:29Z",
+        "expected" : "outlook.message.read.id: string, required=true",
+        "id" : "6102919D-2C51-4A78-BF36-23AD92A3F7C3",
+        "problem" : "Executor omitted a required argument from the static manifest schema.",
+        "promptPrefix" : "Read my latest email",
+        "severity" : "error"
+      },
+      {
+        "actual" : "message",
+        "agent" : "executor",
+        "code" : "missing_required_tool_argument",
+        "createdAt" : "2026-06-09T01:51:29Z",
+        "expected" : "outlook.message.read.messageId: string, required=true",
+        "id" : "2DA7F1FF-1894-41C6-BD80-1C863D787690",
+        "problem" : "Executor omitted a required argument from the static manifest schema.",
+        "promptPrefix" : "Read my latest email",
+        "severity" : "error"
+      }
+    ]
+  },
+  "exportPolicy" : {
+    "deterministicScenarioPolicy" : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results.",
+    "format" : "agent-grounding-runtime-json-package",
+    "includesDeterministicStaticScenarios" : false,
+    "ownsLiveE2EScenarios" : false,
+    "privacy" : "contains only manifest audit failures, behavior violations, bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are exported",
+    "promptPolicy" : "promptPrefix fields are bounded and should be treated as diagnostic snippets only",
+    "source" : "RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
+    "sourceLayer" : "agentGroundingRuntimeAudit",
+    "traceLimit" : 200
+  },
+  "generatedAt" : "2026-06-09T01:51:37Z",
+  "improveLoop" : {
+    "acceptedTraining" : [
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "message",
+        "canonicalToolID" : "execution",
+        "correctedOutput" : "Emit a tool call with every required manifest argument populated, or ask for clarification before tool execution.",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "accepted_training",
+        "expected" : "outlook.message.read.messageId: string, required=true",
+        "id" : "8AD56691-1457-415B-88E7-6630A541B464",
+        "lesson" : "Executor must satisfy required argument schemas exactly or request clarification.",
+        "promptPrefix" : "Read my latest email",
+        "sampleType" : "executor_argument_extraction",
+        "slot" : "executor",
+        "source" : "behavior_repair_sample",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14"
+      },
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "message",
+        "canonicalToolID" : "execution",
+        "correctedOutput" : "Emit a tool call with every required manifest argument populated, or ask for clarification before tool execution.",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "accepted_training",
+        "expected" : "outlook.message.read.id: string, required=true",
+        "id" : "9EC0B440-A81E-479E-A8A0-809919131499",
+        "lesson" : "Executor must satisfy required argument schemas exactly or request clarification.",
+        "promptPrefix" : "Read my latest email",
+        "sampleType" : "executor_argument_extraction",
+        "slot" : "executor",
+        "source" : "behavior_repair_sample",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14"
+      }
+    ],
+    "counters" : {
+      "accepted" : 2,
+      "architectureFailureRejected" : 0,
+      "legacyToolNamespaceRejected" : 0,
+      "quarantined" : 19,
+      "regression" : 18,
+      "resourceFallbackRejected" : 0,
+      "staleTraceRejected" : 0
+    },
+    "generatedAt" : "2026-06-09T01:51:37Z",
+    "quarantinedSamples" : [
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "",
+        "id" : "FFF871C1-4E2D-4F15-8D72-45F4FD6A062F",
+        "intent" : "chat",
+        "lesson" : "compatibility-direct-final",
+        "promptPrefix" : "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "3720E16C-76AA-40D8-81EE-FB3579158C74"
+      },
+      {
+        "allowedToolIDs" : [
+          "files.read",
+          "photos.search",
+          "rag.index_files",
+          "rag.index_photos",
+          "rag.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "No matching files found for 'Search my files for architecture notes and summarize key modules. service component package'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+        "canonicalToolID" : "rag.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "files.read,photos.search,rag.index_files,rag.index_photos,rag.search",
+        "id" : "AB21C044-5AF8-44CC-8E57-1F49C3A0BC5E",
+        "intent" : "rag",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Search my files for architecture notes and summarize key modules.",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "DEAD0C5D-352A-43D0-897E-FC28C1C7D7BA"
+      },
+      {
+        "allowedToolIDs" : [
+          "memory.recall",
+          "memory.save"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "I remember that you prefer concise bullet points.",
+        "canonicalToolID" : "memory.recall",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "memory.recall,memory.save",
+        "id" : "B4F60424-F868-4E0C-8911-FBB17A0339DC",
+        "intent" : "memory",
+        "lesson" : "compatibility-memory-final",
+        "promptPrefix" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "7F863EC8-F855-4726-97C0-B142EA3BD987"
+      },
+      {
+        "allowedToolIDs" : [
+          "web.fetch",
+          "web.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Swift Concurrency Deep Dive: From GCD to Async/Await Best Practices\nhttps://medium.com/techtrends-digest/swift-concurrency-deep-dive-from-gcd-to-async-await-best-practices-0d63333e72d5\n\n4. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n5. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n6. Swift Concurrency Best Practices - Wesley de Groot\nhttps://wesleydegroot.nl/blog/swift-concurrency-best-practices\n\n<lumen_web_payload>{\"results\":[{\"source\":\"developer.apple.com\",\"title\":\"Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\",\"url\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\",\"mediaKind\":\"page\"},{\"source\":\"medium.com\",\"title\":\"Con",
+        "canonicalToolID" : "web.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "web.fetch,web.search",
+        "id" : "DC95539D-9FB2-4BAA-906B-1B6D289B67AA",
+        "intent" : "webSearch",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "CF698532-1173-4337-A53E-5EC098FCDEF2"
+      },
+      {
+        "allowedToolIDs" : [
+          "location.current",
+          "weather"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+        "canonicalToolID" : "weather",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "location.current,weather",
+        "id" : "2EBA40AC-CDE1-48B1-80BA-D171782940EB",
+        "intent" : "weather",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "What is the weather here and should I carry an umbrella?",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "1F3CD2D8-1015-438C-A81E-1BE7AD836EFC"
+      },
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Actor isolation means Swift protects data owned by an actor so only that actor can touch it directly. Other code has to await access, which helps prevent races.",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "",
+        "id" : "596BFFBE-DF07-41CB-9AF7-AC23271A8561",
+        "intent" : "chat",
+        "lesson" : "compatibility-direct-final",
+        "promptPrefix" : "Explain actor isolation in Swift in simple terms.",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "77213DB2-0BCA-4399-9C6B-FEA5124F7CC0"
+      },
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Three hinge-fitting tips: mark the leaf with a sharp knife, pare to the line in thin passes, and test-fit often so the hinge sits flush without deep gaps.",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "",
+        "id" : "92CBCF0C-E7C5-4E28-AA43-7FD7BA3D828F",
+        "intent" : "chat",
+        "lesson" : "compatibility-direct-final",
+        "promptPrefix" : "Give me three tips for fitting a door hinge cleanly.",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "4C2EC20E-5F87-4D8A-AF02-98D3013BD497"
+      },
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "A sharp chisel is safer because it needs less force, follows the cut more predictably, and is less likely to slip. A dull edge makes you push harder, which reduces control.",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "",
+        "id" : "C4B9170E-1079-4FB8-AB2D-AD915B67938D",
+        "intent" : "chat",
+        "lesson" : "compatibility-direct-final",
+        "promptPrefix" : "Explain why a sharp chisel is safer than a dull one.",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "E992889C-3729-4731-A42F-BAF67341311F"
+      },
+      {
+        "allowedToolIDs" : [
+          "contacts.search",
+          "mail.draft"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Who should I send it to, and what should it say?",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "contacts.search,mail.draft",
+        "id" : "3D00E6D9-723F-4C79-9479-1FEF4FB96E11",
+        "intent" : "emailDraft",
+        "lesson" : "compatibility-clarification-final",
+        "promptPrefix" : "Draft a email",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "CD88523D-40E6-474F-B9A9-9860464882C3"
+      },
+      {
+        "allowedToolIDs" : [
+          "web.fetch",
+          "web.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Web search results:\n1. 10 Steps to Build a DIY Underground Bushcraft Survival Shelter\nhttps://www.bushcraftbasecamp.com/10-steps-to-build-a-diy-underground-bushcraft-survival-shelter/\n\n2. How To Build An Underground Shelter - Battlbox.com\nhttps://www.battlbox.com/blogs/outdoors/how-to-build-an-underground-shelter-a-comprehensive-guide\n\n3. Underground Survival Shelters: How to Build, Live, and Thrive Safely\nhttps://prepperswill.com/underground-survival-shelters-how-to-live-store-and-thrive-below-the-surface/\n\n4. Building A Concrete Underground Shelter: Diy Guide | ShunTool\nhttps://shuntool.com/article/how-to-build-your-own-concrete-underground-shelter\n\n5. Complete DIY Underground Shelter Build | Step by Step.\nhttps://m.youtube.com/watch?v=C3U7XW_V8SI\n\n<lumen_web_payload>{\"kind\":\"searchResults\",\"query\":\"Search web for diy underground shelter\",\"generatedAt\":\"2026-06-09T01:49:04Z\",\"results\":[{\"title\":\"10 Steps to Build a DIY Underground Bushcraft Survival Shelter\",\"mediaKind\":\"page\",\"url\":\"https:\\/\\/www.bushcraftbasecamp.com\\/10-steps-to-build-a-diy-underground-bushcraft-survival-shelter\\/\",\"source\":\"www.bushcraftbasecamp.com\"},{\"title\":\"How To Build An Underground Shelter - Battlbox.c",
+        "canonicalToolID" : "web.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "web.fetch,web.search",
+        "id" : "9404C555-B702-4D26-8175-6910DEC87431",
+        "intent" : "webSearch",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Search web for diy underground shelter",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "7E541F09-5BDA-4F5F-B714-803BE06807EB"
+      },
+      {
+        "allowedToolIDs" : [
+          "location.current",
+          "weather"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+        "canonicalToolID" : "weather",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "location.current,weather",
+        "id" : "EAC3A4DC-FEC2-4507-BC76-603B17AE6745",
+        "intent" : "weather",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "What is the weather here?",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "CAA35902-F57E-4775-B81C-6D2430F4492E"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "I'm ready. Tell me what you want to do next.",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "calendar.list,contacts.search,device.status,memory.recall,notify.local,position.snapshot,rag.search,web.fetch",
+        "id" : "B19C7B2A-3594-442C-B452-51396A9C2EC9",
+        "intent" : "chat",
+        "lesson" : "compatibility-direct-final",
+        "promptPrefix" : "Show on map",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "009EC236-2EF6-482D-9DD9-CAAC578B18D6"
+      },
+      {
+        "allowedToolIDs" : [
+          "location.current",
+          "maps.directions",
+          "maps.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Current location: Current location: 46.0061, -73.1647 (±20m)",
+        "canonicalToolID" : "location.current",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "location.current,maps.directions,maps.search",
+        "id" : "9A664873-92F1-4E4F-8513-93B13121CA45",
+        "intent" : "maps",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Where am I",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "CF807610-2D3C-4EC3-94A8-A4765517118D"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "outlook.attachments.list",
+          "outlook.draft.create",
+          "outlook.folders.list",
+          "outlook.mail.send",
+          "outlook.message.archive",
+          "outlook.message.delete",
+          "outlook.message.forward",
+          "outlook.message.mark_read",
+          "outlook.message.mark_unread",
+          "outlook.message.move",
+          "outlook.message.read",
+          "outlook.message.reply",
+          "outlook.message.reply_all",
+          "outlook.messages.list",
+          "outlook.messages.search",
+          "outlook.status",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Outlook tools are unavailable in this build right now.",
+        "canonicalToolID" : "outlook.message.read",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "calendar.list,contacts.search,device.status,memory.recall,notify.local,outlook.attachments.list,outlook.draft.create,outlook.folders.list,outlook.mail.send,outlook.message.archive,outlook.message.delete,outlook.message.forward,outlook.message.mark_read,outlook.message.mark_unread,outlook.message.move,outlook.message.read,outlook.message.reply,outlook.message.reply_all,outlook.messages.list,outlook.messages.search,outlook.status,position.snapshot,rag.search,web.fetch",
+        "id" : "37534293-8439-41DC-A3ED-BE59450D0E33",
+        "intent" : "outlook",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Read my latest email",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "3925F5F8-F747-4640-A931-44AFF1471C07"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "phone.call",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Phone call tools are unavailable in this build right now.",
+        "canonicalToolID" : "contacts.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "calendar.list,contacts.search,device.status,memory.recall,notify.local,phone.call,position.snapshot,rag.search,web.fetch",
+        "id" : "EA62D4B2-145A-4D82-BBDF-41ADCC35F5A7",
+        "intent" : "phoneCall",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Call Julie Charlebois",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "49282107-9CAD-4FE7-B460-187336C2E58F"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.create",
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "No events in the next 7 days.",
+        "canonicalToolID" : "calendar.list",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "calendar.create,calendar.list,contacts.search,device.status,memory.recall,notify.local,position.snapshot,rag.search,web.fetch",
+        "id" : "C680C21C-BAC8-4A1B-9FB4-7C2272070491",
+        "intent" : "calendar",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Search calendar for the next event",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "4AD876B3-3E82-40C5-8E82-9C9F673DA639"
+      },
+      {
+        "allowedToolIDs" : [
+          "memory.recall",
+          "memory.save"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Memory recall:\n• User's name is Alexis",
+        "canonicalToolID" : "memory.recall",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "memory.recall,memory.save",
+        "id" : "82C58795-79DA-4D1F-8D64-12BD584DDC7A",
+        "intent" : "memory",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "What is my name",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "5DD31331-555E-4869-8E0E-33FBEF63C3C7"
+      },
+      {
+        "allowedToolIDs" : [
+          "memory.recall",
+          "memory.save"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Saved to memory: Saved: User's name is Alexis",
+        "canonicalToolID" : "memory.save",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "memory.recall,memory.save",
+        "id" : "4A0282E8-8E7E-4920-B31D-BC51127D73A2",
+        "intent" : "memory",
+        "lesson" : "compatibility-final",
+        "promptPrefix" : "Remember that my name is Alexis",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "6F5CA7EA-16B6-4298-8A91-F89D1826A759"
+      },
+      {
+        "allowedToolIDs" : [
+
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Hi. How can I help?",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "quarantined",
+        "expected" : "",
+        "id" : "A5DDDA80-7AB3-4684-8275-BC1E386D9B18",
+        "intent" : "chat",
+        "lesson" : "compatibility-direct-final",
+        "promptPrefix" : "Yo",
+        "rejectionReason" : "raw trace has no trusted corrected output",
+        "sampleType" : "rejected_uncorrected_model_output",
+        "slot" : "mouth",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "10E76E27-96EA-4811-AE11-2FA0169A3448"
+      }
+    ],
+    "regressionTests" : [
+      {
+        "allowedToolIDs" : [
+          "contacts.search",
+          "mail.draft"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+        "canonicalToolID" : "mail.draft",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "contacts.search,mail.draft",
+        "id" : "0A23E101-8423-4B5F-8843-24DAB035645C",
+        "intent" : "emailDraft",
+        "lesson" : "compatibility-approval-boundary",
+        "promptPrefix" : "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "B6336CDB-4C9B-4C21-B979-9D541E23345E"
+      },
+      {
+        "allowedToolIDs" : [
+          "trigger.cancel",
+          "trigger.create",
+          "trigger.list"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+        "canonicalToolID" : "trigger.create",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "trigger.cancel,trigger.create,trigger.list",
+        "id" : "EA3EEBAE-2057-470C-ADE7-6F0D2D622A64",
+        "intent" : "trigger",
+        "lesson" : "compatibility-approval-boundary",
+        "promptPrefix" : "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "12A31608-9F48-4B21-80FE-3EA630A3B865"
+      },
+      {
+        "allowedToolIDs" : [
+          "files.read",
+          "photos.search",
+          "rag.index_files",
+          "rag.index_photos",
+          "rag.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "rag.search(query=Search my files for architecture notes and summarize key modules. service component package)",
+        "canonicalToolID" : "rag.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "files.read,photos.search,rag.index_files,rag.index_photos,rag.search",
+        "id" : "A2800FB0-75F1-479C-871A-A8D01B4DFFBF",
+        "intent" : "rag",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Search my files for architecture notes and summarize key modules.",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "F0F12F0B-FCD7-4FF0-9BB6-59839E9869CF"
+      },
+      {
+        "allowedToolIDs" : [
+          "memory.recall",
+          "memory.save"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "memory.recall(query=prefer concise bullet points)",
+        "canonicalToolID" : "memory.recall",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "memory.recall,memory.save",
+        "id" : "CF11A8F5-A867-4682-93AE-E860A76676F1",
+        "intent" : "memory",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "F22B674C-3121-4E32-95AE-B9700B03C5D2"
+      },
+      {
+        "allowedToolIDs" : [
+          "memory.recall",
+          "memory.save"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "memory.save(content=I prefer concise bullet points, then tell me what you remembered, kind=fact)",
+        "canonicalToolID" : "memory.save",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "memory.recall,memory.save",
+        "id" : "6834BF0A-8DF1-459B-A3F6-98221F14738B",
+        "intent" : "memory",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "90C653F4-AB44-4B21-AE78-CCD93006706F"
+      },
+      {
+        "allowedToolIDs" : [
+          "web.fetch",
+          "web.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "web.search(query=Search the web for two recent Swift concurrency best practices and summarize them.)",
+        "canonicalToolID" : "web.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "web.fetch,web.search",
+        "id" : "96818724-C935-4EFE-9D24-4B037F6765D1",
+        "intent" : "webSearch",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "C24563A8-BCBE-42AF-89CC-FF3211D7EBF3"
+      },
+      {
+        "allowedToolIDs" : [
+          "location.current",
+          "weather"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "weather()",
+        "canonicalToolID" : "weather",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "location.current,weather",
+        "id" : "D5A90738-2CAC-4A59-BE1D-BF68DF87227F",
+        "intent" : "weather",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "What is the weather here and should I carry an umbrella?",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "3523932D-03BC-437C-8CF7-D8FF04E5575F"
+      },
+      {
+        "allowedToolIDs" : [
+          "web.fetch",
+          "web.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "web.search(query=Search web for diy underground shelter)",
+        "canonicalToolID" : "web.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "web.fetch,web.search",
+        "id" : "817CBE9C-F505-4CC6-A2CA-4DD5D5C201B9",
+        "intent" : "webSearch",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Search web for diy underground shelter",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "5DCBD28F-6828-4F55-9669-4084C19D5863"
+      },
+      {
+        "allowedToolIDs" : [
+          "location.current",
+          "weather"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "weather()",
+        "canonicalToolID" : "weather",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "location.current,weather",
+        "id" : "20BF2493-DB20-452B-9849-19CC9DA6CBBE",
+        "intent" : "weather",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "What is the weather here?",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "39C61FDA-E019-4175-A803-C08588CCD9C6"
+      },
+      {
+        "allowedToolIDs" : [
+          "location.current",
+          "maps.directions",
+          "maps.search"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "location.current()",
+        "canonicalToolID" : "location.current",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "location.current,maps.directions,maps.search",
+        "id" : "1FD1C4A9-3853-42DB-9C2B-606E8717089F",
+        "intent" : "maps",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Where am I",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "4455FC1B-5A42-4B04-9433-B7124BB6BF29"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "outlook.attachments.list",
+          "outlook.draft.create",
+          "outlook.folders.list",
+          "outlook.mail.send",
+          "outlook.message.archive",
+          "outlook.message.delete",
+          "outlook.message.forward",
+          "outlook.message.mark_read",
+          "outlook.message.mark_unread",
+          "outlook.message.move",
+          "outlook.message.read",
+          "outlook.message.reply",
+          "outlook.message.reply_all",
+          "outlook.messages.list",
+          "outlook.messages.search",
+          "outlook.status",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "outlook.message.read(message=latest)",
+        "canonicalToolID" : "outlook.message.read",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "calendar.list,contacts.search,device.status,memory.recall,notify.local,outlook.attachments.list,outlook.draft.create,outlook.folders.list,outlook.mail.send,outlook.message.archive,outlook.message.delete,outlook.message.forward,outlook.message.mark_read,outlook.message.mark_unread,outlook.message.move,outlook.message.read,outlook.message.reply,outlook.message.reply_all,outlook.messages.list,outlook.messages.search,outlook.status,position.snapshot,rag.search,web.fetch",
+        "id" : "514F12BA-A3BB-4378-B3AC-F0899BA9B57D",
+        "intent" : "outlook",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Read my latest email",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "15258D0A-DDC1-4913-B2D8-E7D37DDB4661"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "outlook.attachments.list",
+          "outlook.draft.create",
+          "outlook.folders.list",
+          "outlook.mail.send",
+          "outlook.message.archive",
+          "outlook.message.delete",
+          "outlook.message.forward",
+          "outlook.message.mark_read",
+          "outlook.message.mark_unread",
+          "outlook.message.move",
+          "outlook.message.read",
+          "outlook.message.reply",
+          "outlook.message.reply_all",
+          "outlook.messages.list",
+          "outlook.messages.search",
+          "outlook.status",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "outlook.messages.list(limit=1)",
+        "canonicalToolID" : "outlook.messages.list",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "calendar.list,contacts.search,device.status,memory.recall,notify.local,outlook.attachments.list,outlook.draft.create,outlook.folders.list,outlook.mail.send,outlook.message.archive,outlook.message.delete,outlook.message.forward,outlook.message.mark_read,outlook.message.mark_unread,outlook.message.move,outlook.message.read,outlook.message.reply,outlook.message.reply_all,outlook.messages.list,outlook.messages.search,outlook.status,position.snapshot,rag.search,web.fetch",
+        "id" : "ADBCAC5F-40A6-4166-80CD-E09727D2B6D6",
+        "intent" : "outlook",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Read my latest email",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "DB1BFF0F-1966-416D-A8F4-BC1D11B0C3FA"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "phone.call",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "contacts.search(query=Julie Charlebois)",
+        "canonicalToolID" : "contacts.search",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "calendar.list,contacts.search,device.status,memory.recall,notify.local,phone.call,position.snapshot,rag.search,web.fetch",
+        "id" : "D5DCA9DA-8947-4918-B84D-32B1E3E8500C",
+        "intent" : "phoneCall",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Call Julie Charlebois",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "4D187756-24B3-4580-87F0-B00A8829CC7A"
+      },
+      {
+        "allowedToolIDs" : [
+          "calendar.create",
+          "calendar.list",
+          "contacts.search",
+          "device.status",
+          "memory.recall",
+          "notify.local",
+          "position.snapshot",
+          "rag.search",
+          "web.fetch"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "calendar.list()",
+        "canonicalToolID" : "calendar.list",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "calendar.create,calendar.list,contacts.search,device.status,memory.recall,notify.local,position.snapshot,rag.search,web.fetch",
+        "id" : "4A6B7F1B-6886-4530-A2B4-D0E0A3B215FC",
+        "intent" : "calendar",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Search calendar for the next event",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "D27A1F64-406D-4A3C-A129-6C63A6F2687C"
+      },
+      {
+        "allowedToolIDs" : [
+          "memory.recall",
+          "memory.save"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "memory.recall(query=user name)",
+        "canonicalToolID" : "memory.recall",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "memory.recall,memory.save",
+        "id" : "53C02875-079B-4361-B851-AB592F7E6218",
+        "intent" : "memory",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "What is my name",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "7F4A426F-E01D-4C12-9D08-E8C614839369"
+      },
+      {
+        "allowedToolIDs" : [
+          "memory.recall",
+          "memory.save"
+        ],
+        "authority" : "model_generated",
+        "badOutput" : "memory.save(content=User's name is Alexis, kind=fact)",
+        "canonicalToolID" : "memory.save",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "memory.recall,memory.save",
+        "id" : "586BAEB2-7332-4DEA-8571-1015595E763D",
+        "intent" : "memory",
+        "lesson" : "compatibility-tool-action",
+        "promptPrefix" : "Remember that my name is Alexis",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "behavior_trace",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14",
+        "sourceTraceID" : "D5F37163-C6A0-4A16-8470-0F45741609E7"
+      },
+      {
+        "allowedToolIDs" : [
+          "outlook.message.read.messageid"
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "message",
+        "canonicalToolID" : "outlook.message.read.messageid",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "outlook.message.read.messageId: string, required=true",
+        "id" : "3DA0574E-F1B5-463A-B477-DB298F1ADEED",
+        "lesson" : "Executor omitted a required argument from the static manifest schema.",
+        "promptPrefix" : "Read my latest email",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "runtime_violation",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14"
+      },
+      {
+        "allowedToolIDs" : [
+          "outlook.message.read.id"
+        ],
+        "authority" : "audit_derived",
+        "badOutput" : "message",
+        "canonicalToolID" : "outlook.message.read.id",
+        "correctedOutput" : "",
+        "createdAt" : "2026-06-09T01:51:37Z",
+        "disposition" : "regression_test",
+        "expected" : "outlook.message.read.id: string, required=true",
+        "id" : "A55D3E4B-8509-42E8-9D99-7B645434B390",
+        "lesson" : "Executor omitted a required argument from the static manifest schema.",
+        "promptPrefix" : "Read my latest email",
+        "sampleType" : "deterministic_regression",
+        "slot" : "executor",
+        "source" : "runtime_violation",
+        "sourceCommit" : "e67da16bbd246b8747ec35b2b72d8e0a5cc6ad14"
+      }
+    ],
+    "schemaVersion" : "2026.06.07-policy-first-adapter-specialized"
+  },
+  "manifestSource" : "application-support-stale-replaced",
+  "recentTraces" : [
+    {
+      "allowedToolIDs" : [
+
+      ],
+      "createdAt" : "2026-06-09T01:45:35Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "finalAnswer",
+      "id" : "10E76E27-96EA-4811-AE11-2FA0169A3448",
+      "intent" : "chat",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 2,
+      "promptPrefix" : "Yo",
+      "rawOutputPrefix" : "Hi. How can I help?",
+      "runtimePath" : "deterministic-compatibility",
+      "slot" : "mouth",
+      "stage" : "compatibility-direct-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "memory.recall",
+        "memory.save"
+      ],
+      "createdAt" : "2026-06-09T01:45:52Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "D5F37163-C6A0-4A16-8470-0F45741609E7",
+      "intent" : "memory",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 31,
+      "promptPrefix" : "Remember that my name is Alexis",
+      "rawOutputPrefix" : "memory.save(content=User's name is Alexis, kind=fact)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "memory.save",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "content" : "User's name is Alexis",
+        "kind" : "fact"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "memory.recall",
+        "memory.save"
+      ],
+      "createdAt" : "2026-06-09T01:45:52Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "6F5CA7EA-16B6-4298-8A91-F89D1826A759",
+      "intent" : "memory",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 31,
+      "promptPrefix" : "Remember that my name is Alexis",
+      "rawOutputPrefix" : "Saved to memory: Saved: User's name is Alexis",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "memory.save",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "memory.recall",
+        "memory.save"
+      ],
+      "createdAt" : "2026-06-09T01:46:00Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "7F4A426F-E01D-4C12-9D08-E8C614839369",
+      "intent" : "memory",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 15,
+      "promptPrefix" : "What is my name",
+      "rawOutputPrefix" : "memory.recall(query=user name)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "memory.recall",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "query" : "user name"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "memory.recall",
+        "memory.save"
+      ],
+      "createdAt" : "2026-06-09T01:46:01Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "5DD31331-555E-4869-8E0E-33FBEF63C3C7",
+      "intent" : "memory",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 15,
+      "promptPrefix" : "What is my name",
+      "rawOutputPrefix" : "Memory recall:\n• User's name is Alexis",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "memory.recall",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.create",
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:46:23Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "D27A1F64-406D-4A3C-A129-6C63A6F2687C",
+      "intent" : "calendar",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 34,
+      "promptPrefix" : "Search calendar for the next event",
+      "rawOutputPrefix" : "calendar.list()",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "calendar.list",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.create",
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:46:23Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "4AD876B3-3E82-40C5-8E82-9C9F673DA639",
+      "intent" : "calendar",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 34,
+      "promptPrefix" : "Search calendar for the next event",
+      "rawOutputPrefix" : "No events in the next 7 days.",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "calendar.list",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "phone.call",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:46:37Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "4D187756-24B3-4580-87F0-B00A8829CC7A",
+      "intent" : "phoneCall",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 21,
+      "promptPrefix" : "Call Julie Charlebois",
+      "rawOutputPrefix" : "contacts.search(query=Julie Charlebois)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "contacts.search",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "query" : "Julie Charlebois"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "phone.call",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:46:37Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "49282107-9CAD-4FE7-B460-187336C2E58F",
+      "intent" : "phoneCall",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 21,
+      "promptPrefix" : "Call Julie Charlebois",
+      "rawOutputPrefix" : "Phone call tools are unavailable in this build right now.",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "contacts.search",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "outlook.attachments.list",
+        "outlook.draft.create",
+        "outlook.folders.list",
+        "outlook.mail.send",
+        "outlook.message.archive",
+        "outlook.message.delete",
+        "outlook.message.forward",
+        "outlook.message.mark_read",
+        "outlook.message.mark_unread",
+        "outlook.message.move",
+        "outlook.message.read",
+        "outlook.message.reply",
+        "outlook.message.reply_all",
+        "outlook.messages.list",
+        "outlook.messages.search",
+        "outlook.status",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:47:20Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "DB1BFF0F-1966-416D-A8F4-BC1D11B0C3FA",
+      "intent" : "outlook",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 20,
+      "promptPrefix" : "Read my latest email",
+      "rawOutputPrefix" : "outlook.messages.list(limit=1)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "outlook.messages.list",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "limit" : "1"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "outlook.attachments.list",
+        "outlook.draft.create",
+        "outlook.folders.list",
+        "outlook.mail.send",
+        "outlook.message.archive",
+        "outlook.message.delete",
+        "outlook.message.forward",
+        "outlook.message.mark_read",
+        "outlook.message.mark_unread",
+        "outlook.message.move",
+        "outlook.message.read",
+        "outlook.message.reply",
+        "outlook.message.reply_all",
+        "outlook.messages.list",
+        "outlook.messages.search",
+        "outlook.status",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:47:26Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "15258D0A-DDC1-4913-B2D8-E7D37DDB4661",
+      "intent" : "outlook",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 20,
+      "promptPrefix" : "Read my latest email",
+      "rawOutputPrefix" : "outlook.message.read(message=latest)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "outlook.message.read",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "message" : "latest"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "outlook.attachments.list",
+        "outlook.draft.create",
+        "outlook.folders.list",
+        "outlook.mail.send",
+        "outlook.message.archive",
+        "outlook.message.delete",
+        "outlook.message.forward",
+        "outlook.message.mark_read",
+        "outlook.message.mark_unread",
+        "outlook.message.move",
+        "outlook.message.read",
+        "outlook.message.reply",
+        "outlook.message.reply_all",
+        "outlook.messages.list",
+        "outlook.messages.search",
+        "outlook.status",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:47:27Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "3925F5F8-F747-4640-A931-44AFF1471C07",
+      "intent" : "outlook",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 20,
+      "promptPrefix" : "Read my latest email",
+      "rawOutputPrefix" : "Outlook tools are unavailable in this build right now.",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "outlook.message.read",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "location.current",
+        "maps.directions",
+        "maps.search"
+      ],
+      "createdAt" : "2026-06-09T01:47:49Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "4455FC1B-5A42-4B04-9433-B7124BB6BF29",
+      "intent" : "maps",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 10,
+      "promptPrefix" : "Where am I",
+      "rawOutputPrefix" : "location.current()",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "location.current",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "location.current",
+        "maps.directions",
+        "maps.search"
+      ],
+      "createdAt" : "2026-06-09T01:47:50Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "CF807610-2D3C-4EC3-94A8-A4765517118D",
+      "intent" : "maps",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 10,
+      "promptPrefix" : "Where am I",
+      "rawOutputPrefix" : "Current location: Current location: 46.0061, -73.1647 (±20m)",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "location.current",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "calendar.list",
+        "contacts.search",
+        "device.status",
+        "memory.recall",
+        "notify.local",
+        "position.snapshot",
+        "rag.search",
+        "web.fetch"
+      ],
+      "createdAt" : "2026-06-09T01:48:04Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "finalAnswer",
+      "id" : "009EC236-2EF6-482D-9DD9-CAAC578B18D6",
+      "intent" : "chat",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 11,
+      "promptPrefix" : "Show on map",
+      "rawOutputPrefix" : "I'm ready. Tell me what you want to do next.",
+      "runtimePath" : "deterministic-compatibility",
+      "slot" : "mouth",
+      "stage" : "compatibility-direct-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "location.current",
+        "weather"
+      ],
+      "createdAt" : "2026-06-09T01:49:02Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "39C61FDA-E019-4175-A803-C08588CCD9C6",
+      "intent" : "weather",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 25,
+      "promptPrefix" : "What is the weather here?",
+      "rawOutputPrefix" : "weather()",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "weather",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "location.current",
+        "weather"
+      ],
+      "createdAt" : "2026-06-09T01:49:03Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "CAA35902-F57E-4775-B81C-6D2430F4492E",
+      "intent" : "weather",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 25,
+      "promptPrefix" : "What is the weather here?",
+      "rawOutputPrefix" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "weather",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "web.fetch",
+        "web.search"
+      ],
+      "createdAt" : "2026-06-09T01:49:03Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "5DCBD28F-6828-4F55-9669-4084C19D5863",
+      "intent" : "webSearch",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 38,
+      "promptPrefix" : "Search web for diy underground shelter",
+      "rawOutputPrefix" : "web.search(query=Search web for diy underground shelter)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "web.search",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "query" : "Search web for diy underground shelter"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "web.fetch",
+        "web.search"
+      ],
+      "createdAt" : "2026-06-09T01:49:04Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "7E541F09-5BDA-4F5F-B714-803BE06807EB",
+      "intent" : "webSearch",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 38,
+      "promptPrefix" : "Search web for diy underground shelter",
+      "rawOutputPrefix" : "Web search results:\n1. 10 Steps to Build a DIY Underground Bushcraft Survival Shelter\nhttps://www.bushcraftbasecamp.com/10-steps-to-build-a-diy-underground-bushcraft-survival-shelter/\n\n2. How To Build An Underground Shelter - Battlbox.com\nhttps://www.battlbox.com/blogs/outdoors/how-to-build-an-underground-shelter-a-comprehensive-guide\n\n3. Underground Survival Shelters: How to Build, Live, and Thrive Safely\nhttps://prepperswill.com/underground-survival-shelters-how-to-live-store-and-thrive-below-the-surface/\n\n4. Building A Concrete Underground Shelter: Diy Guide | ShunTool\nhttps://shuntool.com/article/how-to-build-your-own-concrete-underground-shelter\n\n5. Complete DIY Underground Shelter Build | Step by Step.\nhttps://m.youtube.com/watch?v=C3U7XW_V8SI\n\n<lumen_web_payload>{\"kind\":\"searchResults\",\"query\":\"Search web for diy underground shelter\",\"generatedAt\":\"2026-06-09T01:49:04Z\",\"results\":[{\"title\":\"10 Steps to Build a DIY Underground Bushcraft Survival Shelter\",\"mediaKind\":\"page\",\"url\":\"https:\\/\\/www.bushcraftbasecamp.com\\/10-steps-to-build-a-diy-underground-bushcraft-survival-shelter\\/\",\"source\":\"www.bushcraftbasecamp.com\"},{\"title\":\"How To Build An Underground Shelter - Battlbox.com\",\"mediaKind\":\"page\",\"url\":\"https:\\/\\/www.battlbox.com\\/blogs\\/outdoors\\/how-to-build-an-underground-shelter-a-comprehensive-guide\",\"source\":\"www.battlbox.com\"},{\"title\":\"Underground Survival Shelters: How to Build, Live, and Thrive Safely\",\"mediaKind\":\"page\",\"url\":\"https:\\/\\/prepperswill.com\\/underground-survival-shelters-how-to-live-store-and-thrive-below-the-surface\\/\",\"source\":\"prepperswill.",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "web.search",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "contacts.search",
+        "mail.draft"
+      ],
+      "createdAt" : "2026-06-09T01:49:04Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "finalAnswer",
+      "id" : "CD88523D-40E6-474F-B9A9-9860464882C3",
+      "intent" : "emailDraft",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 13,
+      "promptPrefix" : "Draft a email",
+      "rawOutputPrefix" : "Who should I send it to, and what should it say?",
+      "runtimePath" : "deterministic-compatibility",
+      "slot" : "mouth",
+      "stage" : "compatibility-clarification-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+
+      ],
+      "createdAt" : "2026-06-09T01:49:04Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "finalAnswer",
+      "id" : "E992889C-3729-4731-A42F-BAF67341311F",
+      "intent" : "chat",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 52,
+      "promptPrefix" : "Explain why a sharp chisel is safer than a dull one.",
+      "rawOutputPrefix" : "A sharp chisel is safer because it needs less force, follows the cut more predictably, and is less likely to slip. A dull edge makes you push harder, which reduces control.",
+      "runtimePath" : "deterministic-compatibility",
+      "slot" : "mouth",
+      "stage" : "compatibility-direct-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+
+      ],
+      "createdAt" : "2026-06-09T01:49:05Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "finalAnswer",
+      "id" : "4C2EC20E-5F87-4D8A-AF02-98D3013BD497",
+      "intent" : "chat",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 52,
+      "promptPrefix" : "Give me three tips for fitting a door hinge cleanly.",
+      "rawOutputPrefix" : "Three hinge-fitting tips: mark the leaf with a sharp knife, pare to the line in thin passes, and test-fit often so the hinge sits flush without deep gaps.",
+      "runtimePath" : "deterministic-compatibility",
+      "slot" : "mouth",
+      "stage" : "compatibility-direct-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+
+      ],
+      "createdAt" : "2026-06-09T01:49:05Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "finalAnswer",
+      "id" : "77213DB2-0BCA-4399-9C6B-FEA5124F7CC0",
+      "intent" : "chat",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 49,
+      "promptPrefix" : "Explain actor isolation in Swift in simple terms.",
+      "rawOutputPrefix" : "Actor isolation means Swift protects data owned by an actor so only that actor can touch it directly. Other code has to await access, which helps prevent races.",
+      "runtimePath" : "deterministic-compatibility",
+      "slot" : "mouth",
+      "stage" : "compatibility-direct-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "location.current",
+        "weather"
+      ],
+      "createdAt" : "2026-06-09T01:49:08Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "3523932D-03BC-437C-8CF7-D8FF04E5575F",
+      "intent" : "weather",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 56,
+      "promptPrefix" : "What is the weather here and should I carry an umbrella?",
+      "rawOutputPrefix" : "weather()",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "weather",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "location.current",
+        "weather"
+      ],
+      "createdAt" : "2026-06-09T01:49:08Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "1F3CD2D8-1015-438C-A81E-1BE7AD836EFC",
+      "intent" : "weather",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 56,
+      "promptPrefix" : "What is the weather here and should I carry an umbrella?",
+      "rawOutputPrefix" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "weather",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "web.fetch",
+        "web.search"
+      ],
+      "createdAt" : "2026-06-09T01:49:08Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "C24563A8-BCBE-42AF-89CC-FF3211D7EBF3",
+      "intent" : "webSearch",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 82,
+      "promptPrefix" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+      "rawOutputPrefix" : "web.search(query=Search the web for two recent Swift concurrency best practices and summarize them.)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "web.search",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "query" : "Search the web for two recent Swift concurrency best practices and summarize them."
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "web.fetch",
+        "web.search"
+      ],
+      "createdAt" : "2026-06-09T01:49:09Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "CF698532-1173-4337-A53E-5EC098FCDEF2",
+      "intent" : "webSearch",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 82,
+      "promptPrefix" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+      "rawOutputPrefix" : "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Swift Concurrency Deep Dive: From GCD to Async/Await Best Practices\nhttps://medium.com/techtrends-digest/swift-concurrency-deep-dive-from-gcd-to-async-await-best-practices-0d63333e72d5\n\n4. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n5. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n6. Swift Concurrency Best Practices - Wesley de Groot\nhttps://wesleydegroot.nl/blog/swift-concurrency-best-practices\n\n<lumen_web_payload>{\"results\":[{\"source\":\"developer.apple.com\",\"title\":\"Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\",\"url\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\",\"mediaKind\":\"page\"},{\"source\":\"medium.com\",\"title\":\"Concurrency in Swift: A Detailed Guide - Medium\",\"url\":\"https:\\/\\/medium.com\\/@gauravharkhani01\\/concurrency-in-swift-a-detailed-guide-3158941afc2e\",\"mediaKind\":\"page\"},{\"source\":\"medium.com\",\"title\":\"Swift Concurrency Deep Dive: From GCD to Async\\/Await Best Practices\",\"url\":\"https:\\/\\/medium.com\\/techtrends-digest\\/swift-concurrency-deep-dive-from-gcd-to-async-await-best-practices-0d63333e72d5\",\"me",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "web.search",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "memory.recall",
+        "memory.save"
+      ],
+      "createdAt" : "2026-06-09T01:49:10Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "90C653F4-AB44-4B21-AE78-CCD93006706F",
+      "intent" : "memory",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 79,
+      "promptPrefix" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+      "rawOutputPrefix" : "memory.save(content=I prefer concise bullet points, then tell me what you remembered, kind=fact)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "memory.save",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "content" : "I prefer concise bullet points, then tell me what you remembered",
+        "kind" : "fact"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "memory.recall",
+        "memory.save"
+      ],
+      "createdAt" : "2026-06-09T01:49:10Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "F22B674C-3121-4E32-95AE-B9700B03C5D2",
+      "intent" : "memory",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 79,
+      "promptPrefix" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+      "rawOutputPrefix" : "memory.recall(query=prefer concise bullet points)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "memory.recall",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "query" : "prefer concise bullet points"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "memory.recall",
+        "memory.save"
+      ],
+      "createdAt" : "2026-06-09T01:49:10Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "7F863EC8-F855-4726-97C0-B142EA3BD987",
+      "intent" : "memory",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 79,
+      "promptPrefix" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+      "rawOutputPrefix" : "I remember that you prefer concise bullet points.",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "memory.recall",
+      "slot" : "mouth",
+      "stage" : "compatibility-memory-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "files.read",
+        "photos.search",
+        "rag.index_files",
+        "rag.index_photos",
+        "rag.search"
+      ],
+      "createdAt" : "2026-06-09T01:49:10Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "toolAction",
+      "id" : "F0F12F0B-FCD7-4FF0-9BB6-59839E9869CF",
+      "intent" : "rag",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 65,
+      "promptPrefix" : "Search my files for architecture notes and summarize key modules.",
+      "rawOutputPrefix" : "rag.search(query=Search my files for architecture notes and summarize key modules. service component package)",
+      "requiresApproval" : false,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "rag.search",
+      "slot" : "executor",
+      "stage" : "compatibility-tool-action",
+      "toolArguments" : {
+        "query" : "Search my files for architecture notes and summarize key modules. service component package"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "files.read",
+        "photos.search",
+        "rag.index_files",
+        "rag.index_photos",
+        "rag.search"
+      ],
+      "createdAt" : "2026-06-09T01:49:10Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "finalAnswer",
+      "id" : "DEAD0C5D-352A-43D0-897E-FC28C1C7D7BA",
+      "intent" : "rag",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 65,
+      "promptPrefix" : "Search my files for architecture notes and summarize key modules.",
+      "rawOutputPrefix" : "No matching files found for 'Search my files for architecture notes and summarize key modules. service component package'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "rag.search",
+      "slot" : "mouth",
+      "stage" : "compatibility-final",
+      "toolArguments" : {
+
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "trigger.cancel",
+        "trigger.create",
+        "trigger.list"
+      ],
+      "approvalMode" : "boundary",
+      "createdAt" : "2026-06-09T01:49:22Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "toolAction",
+      "id" : "12A31608-9F48-4B21-80FE-3EA630A3B865",
+      "intent" : "trigger",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 76,
+      "promptPrefix" : "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+      "rawOutputPrefix" : "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+      "requiresApproval" : true,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "trigger.create",
+      "slot" : "executor",
+      "stage" : "compatibility-approval-boundary",
+      "toolArguments" : {
+        "inMinutes" : "120",
+        "prompt" : "summarize reminders tonight and confirm what will run.",
+        "schedule" : "once",
+        "title" : "Reminder summary"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+        "contacts.search",
+        "mail.draft"
+      ],
+      "approvalMode" : "boundary",
+      "createdAt" : "2026-06-09T01:49:22Z",
+      "emittedFinalInActionTurn" : true,
+      "event" : "toolAction",
+      "id" : "B6336CDB-4C9B-4C21-B979-9D541E23345E",
+      "intent" : "emailDraft",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 82,
+      "promptPrefix" : "Draft an email to Alex with a professional update and ask one clarifying question.",
+      "rawOutputPrefix" : "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+      "requiresApproval" : true,
+      "runtimePath" : "deterministic-compatibility",
+      "selectedToolID" : "mail.draft",
+      "slot" : "executor",
+      "stage" : "compatibility-approval-boundary",
+      "toolArguments" : {
+        "body" : "",
+        "subject" : "",
+        "to" : "Alex with a professional update"
+      }
+    },
+    {
+      "allowedToolIDs" : [
+
+      ],
+      "createdAt" : "2026-06-09T01:49:22Z",
+      "emittedFinalInActionTurn" : false,
+      "event" : "finalAnswer",
+      "id" : "3720E16C-76AA-40D8-81EE-FB3579158C74",
+      "intent" : "chat",
+      "modelFamily" : "qwen3",
+      "promptCharCount" : 85,
+      "promptPrefix" : "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+      "rawOutputPrefix" : "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+      "runtimePath" : "deterministic-compatibility",
+      "slot" : "mouth",
+      "stage" : "compatibility-direct-final",
+      "toolArguments" : {
+
+      }
+    }
+  ],
+  "runtimeManifestAudit" : {
+    "failures" : [
+
+    ],
+    "generatedAt" : "2026-06-09T01:51:29Z",
+    "passed" : true,
+    "recommendedDatasetRepairs" : [
+
+    ],
+    "score" : 1
+  },
+  "scenarioResults" : [
+
+  ],
+  "schemaVersion" : "1.2.0",
+  "traceParseErrorCount" : 0,
+  "traceSelectedToolAllowedCount" : 28,
+  "usedRuntimeFallback" : false
+}

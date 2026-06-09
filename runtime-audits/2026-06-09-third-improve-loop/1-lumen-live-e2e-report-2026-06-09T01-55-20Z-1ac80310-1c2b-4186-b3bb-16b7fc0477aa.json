@@ -1,0 +1,900 @@
+{
+  "app" : {
+    "buildNumber" : "20260608194337",
+    "bundleIdentifier" : "com.27pm.lumenclone",
+    "name" : "Lumen",
+    "shortVersion" : "1.0.0"
+  },
+  "exportPolicy" : {
+    "format" : "live-e2e-test-report-json",
+    "includesDeterministicStaticScenarios" : false,
+    "notes" : [
+      "This is the live E2E model/test layer export.",
+      "Scenarios with requiresAgentRun=true are intended to exercise the loaded SlotAgentService path.",
+      "If a scenario says no model loaded or routing-only checks completed, the offline ingester treats it as invalid E2E evidence."
+    ],
+    "ownsLiveE2EScenarios" : true,
+    "privacy" : "Contains prompts, final outputs, failures, and event logs from the current local E2E run. Review before sharing outside the improve-loop.",
+    "sourceLayer" : "e2eTestReport"
+  },
+  "generatedAt" : "2026-06-09T01:55:20Z",
+  "payload" : {
+    "failed" : 0,
+    "finishedAt" : "2026-06-09T01:55:17Z",
+    "id" : "903A9DF3-8E74-4753-87F7-075B5E6D7814",
+    "passed" : 7,
+    "results" : [
+      {
+        "actualIntent" : "weather",
+        "events" : [
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "0E159634-0710-4EC5-B923-93429B941DDD",
+            "message" : "What is the weather here and should I carry an umbrella?",
+            "phase" : "start",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "78E1A98C-26E1-4BAD-B95A-9FD24935E34D",
+            "message" : "actual=weather, expected=weather",
+            "phase" : "intent",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "71091F88-AE74-4368-97A2-5C5DF60E3E75",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "B8F9A447-CAC3-4C25-96CE-8386493EF787",
+            "message" : "available=location.current,weather",
+            "phase" : "tools",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "51E3597B-B11D-467C-96C5-9C2E4D75038D",
+            "message" : "action: weather()",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "BAB1CF8A-39AE-46FB-AA8D-958D7B09CC77",
+            "message" : "observation: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "5954BE7D-B327-4403-B312-CA6895EE2087",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "26AA5C3B-3D29-4E54-9012-908831733B30",
+            "message" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+            "phase" : "final",
+            "scenarioID" : "training-weather-grounded"
+          }
+        ],
+        "expectedIntent" : "weather",
+        "failures" : [
+
+        ],
+        "finalText" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+        "finishedAt" : "2026-06-09T01:55:02Z",
+        "id" : "18FB4887-4122-4C70-9B0D-84949D5FA739",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 17.241379310344826,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 393.51851851851853,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 927.8820266723633,
+          "eventDensityCPUProxyPercent" : 42.37486102123691,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 927.9406204223633,
+          "sampleCount" : 4
+        },
+        "prompt" : "What is the weather here and should I carry an umbrella?",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-08T21:45",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-weather-grounded",
+        "startedAt" : "2026-06-09T01:55:02Z",
+        "title" : "Training eval: weather stays grounded"
+      },
+      {
+        "actualIntent" : "webSearch",
+        "events" : [
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "2148ADA8-CC8E-4EE9-B50B-776008FBFC93",
+            "message" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+            "phase" : "start",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "1BED8140-0E45-4808-87EF-16E1D4FAC11A",
+            "message" : "actual=webSearch, expected=webSearch",
+            "phase" : "intent",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "B4D14A15-B576-4B68-B14D-3F4C43924664",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:02Z",
+            "id" : "725BA6A0-C6CF-476E-9DD8-5501A7CD63AE",
+            "message" : "available=web.fetch,web.search",
+            "phase" : "tools",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "E2EA5869-3A64-43E2-B5A0-CDF3AB1124DC",
+            "message" : "action: web.search(query=Search the web for two recent Swift concurrency best practices and summarize them.)",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "3A25B4F9-6D9F-433B-95EF-A6261DD0EFEE",
+            "message" : "observation: Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Best Practices - Wesley de Groot\nhttps://wesleydegroot.nl/blog/swift-concurrency-best-practices\n\n2. Best Practices for Writing Concurrent Swift Code\nhttps://commitstudiogs.medium.com/best-practices-for-writing-concurrent-swift-code-3fab8734ce6c\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. WWDC 2025 Deep Dive: Mastering Swift Concurrency&#x27;s Evolution Path\nhttps://dev.to/arshtechpro/wwdc-2025-deep-dive-mastering-swift-concurrencys-evolution-path-3mpj\n\n5. Concurrency - Documentation\nhttps://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/\n\n6. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n<lumen_web_payload>{\"media\":[{\"title\":\"Swift Concurrency Best Practices - Wesley de Groot\",\"sourcePageURL\":\"https:\\/\\/wesleydegroot.nl\\/blog\\/swift-concurrency-best-practices\",\"kind\":\"page\",\"url\":\"https:\\/\\/wesleydegroot.nl\\/blog\\/swift-concurrency-best-practices\"},{\"title\":\"Best Practices for Writing Concurrent Swift Code\",\"sourcePageURL\":\"https:\\/\\/commitstudiogs.medium.com\\/best-practices-for-writing-concurrent-swift-code-3fab8734ce6c\",\"kind\":\"page\",\"url\":\"https:\\/\\/commitstudiogs.medium.com\\/best-practices-for-writing-concurrent-swift-code-3fab8734ce6c\"},{\"title\":\"Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\",\"sourcePageURL\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\",\"kind\":\"page\",\"url\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\"},{\"title\":\"WWDC 2025 Deep Dive: Mastering Swift Concurrency&#x27;s Evolution Path\",\"sourcePageURL\":\"https:\\/\\/dev.to\\/arshtechpro\\/wwdc-2025-deep-dive-mastering-swift-concurrencys-evolution-path-3mpj\",\"kind\":\"page\",\"url\":\"https:\\/\\/dev.to\\/arshtechpro\\/wwdc-2025-deep-dive-mastering-swift-concurrencys-evolution-path-3mpj\"},{\"title\":\"Concurrency - Documentation\",\"sourcePageURL\":\"https:\\/\\/docs.swift.org\\/swift-book\\/documentation\\/the-swift-programming-language\\/concurrency\\/\",\"kind\":\"page\",\"url\":\"https:\\/\\/docs.swift.org\\/swift-book\\/documentation\\/the-swift-programming-language\\/concurrency\\/\"},{\"title\":\"Swift Concurrency: The Complete Guide - atelier-socle.com\",\"sourcePageURL\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-modern\",\"kind\":\"page\",\"url\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-modern\"},{\"title\":\"Swift 6.2 Introduces Approachable Concurrency to Simplify ... - InfoQ\",\"sourcePageURL\":\"https:\\/\\/www.infoq.com\\/news\\/2025\\/08\\/swift62-approachable-concurrency\\/\",\"kind\":\"page\",\"url\":\"https:\\/\\/www.infoq.com\\/news\\/2025\\/08\\/swift62-approachable-concurrency\\/\"},{\"title\":\"Concurrency Best Practices in Swift: Mastering Safe and Efficient Code\",\"sourcePageURL\":\"https:\\/\\/softwarepatternslexicon.com\\/swift\\/concurrency-patterns-in-swift\\/concurrency-best-practices-in-swift\\/\",\"kind\":\"page\",\"url\":\"https:\\/\\/softwarepatternslexicon.com\\/swift\\/concurrency-patterns-in-swift\\/concurrency-best-practices-in-swift\\/\"}],\"generatedAt\":\"2026-06-09T01:55:03Z\",\"query\":\"Search the web for two recent Swift concurrency best practices and summarize them.\",\"results\":[{\"title\":\"Swift Concurrency Best Practices - Wesley de Groot\",\"url\":\"https:\\/\\/wesleydegroot.nl\\/blog\\/swift-concurrency-best-practices\",\"source\":\"wesleydegroot.nl\",\"mediaKind\":\"page\"},{\"title\":\"Best Practices for Writing Concurrent Swift Code\",\"url\":\"https:\\/\\/commitstudiogs.medium.com\\/best-practices-for-writing-concurrent-swift-code-3fab8734ce6c\",\"source\":\"commitstudiogs.medium.com\",\"mediaKind\":\"page\"},{\"title\":\"Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\",\"url\":\"https:\\/\\/developer.apple.com\\/videos\\/play\\/wwdc2025\\/268\\/\",\"source\":\"developer.apple.com\",\"mediaKind\":\"page\"},{\"title\":\"WWDC 2025 Deep Dive: Mastering Swift Concurrency&#x27;s Evolution Path\",\"url\":\"https:\\/\\/dev.to\\/arshtechpro\\/wwdc-2025-deep-dive-mastering-swift-concurrencys-evolution-path-3mpj\",\"source\":\"dev.to\",\"mediaKind\":\"page\"},{\"title\":\"Concurrency - Documentation\",\"url\":\"https:\\/\\/docs.swift.org\\/swift-book\\/documentation\\/the-swift-programming-language\\/concurrency\\/\",\"source\":\"docs.swift.org\",\"mediaKind\":\"page\"},{\"title\":\"Swift Concurrency: The Complete Guide - atelier-socle.com\",\"url\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-modern\",\"source\":\"www.atelier-socle.com\",\"mediaKind\":\"page\"},{\"title\":\"Swift 6.2 Introduces Approachable Concurrency to Simplify ... - InfoQ\",\"url\":\"https:\\/\\/www.infoq.com\\/news\\/2025\\/08\\/swift62-approachable-concurrency\\/\",\"source\":\"www.infoq.com\",\"mediaKind\":\"page\"},{\"title\":\"Concurrency Best Practices in Swift: Mastering Safe and Efficient Code\",\"url\":\"https:\\/\\/softwarepatternslexicon.com\\/swift\\/concurrency-patterns-in-swift\\/concurrency-best-practices-in-swift\\/\",\"source\":\"softwarepatternslexicon.com\",\"mediaKind\":\"page\"}],\"kind\":\"searchResults\"}</lumen_web_payload>",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "E02445C9-6CBC-42B1-9A55-B128200EBDED",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "83EEF8E0-C189-4411-AE5B-D3AA3D33593B",
+            "message" : "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Best Practices - Wesley de Groot\nhttps://wesleydegroot.nl/blog/swift-concurrency-best-practices\n\n2. Best Practices for Writing Concurrent Swift Code\nhttps://commitstudiogs.medium.com/best-practices-for-writing-concurrent-swift-code-3fab8734ce6c\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. WWDC 2025 Deep Dive: Mastering Swift Concurrency&#x27;s Evolution Path\nhttps://dev.to/arshtechpro/wwdc-2025-deep-dive-mastering-swift-concurrencys-evolution-path-3mpj\n\n5. Concurrency - Documentation\nhttps://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/\n\n6. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern",
+            "phase" : "final",
+            "scenarioID" : "training-web-research"
+          }
+        ],
+        "expectedIntent" : "webSearch",
+        "failures" : [
+
+        ],
+        "finalText" : "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Best Practices - Wesley de Groot\nhttps://wesleydegroot.nl/blog/swift-concurrency-best-practices\n\n2. Best Practices for Writing Concurrent Swift Code\nhttps://commitstudiogs.medium.com/best-practices-for-writing-concurrent-swift-code-3fab8734ce6c\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. WWDC 2025 Deep Dive: Mastering Swift Concurrency&#x27;s Evolution Path\nhttps://dev.to/arshtechpro/wwdc-2025-deep-dive-mastering-swift-concurrencys-evolution-path-3mpj\n\n5. Concurrency - Documentation\nhttps://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/\n\n6. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern",
+        "finishedAt" : "2026-06-09T01:55:03Z",
+        "id" : "ED9805E6-9207-45EB-AD28-23F9C874F8EB",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 17.241379310344826,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 393.51851851851853,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 927.9343704223633,
+          "eventDensityCPUProxyPercent" : 10.722894671071819,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 927.9718704223633,
+          "sampleCount" : 5
+        },
+        "prompt" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "rawFinalHadUnsafeLeakage" : true,
+        "rawFinalPrefix" : "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Best Practices - Wesley de Groot\nhttps://wesleydegroot.nl/blog/swift-concurrency-best-practices",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Best Practices - Wesley de Groot\nhttps://wesleydegroot.nl/blog/swift-concurrency-best-practices",
+        "sanitizedFinalRemovedArtifacts" : [
+          "lumenWebPayload",
+          "rawToolPayload"
+        ],
+        "scenarioID" : "training-web-research",
+        "startedAt" : "2026-06-09T01:55:02Z",
+        "title" : "Training eval: web research synthesis"
+      },
+      {
+        "actualIntent" : "memory",
+        "events" : [
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "2DCA465D-90F6-4EC9-A953-D58D16A69BF2",
+            "message" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            "phase" : "start",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "94F64D08-7545-4902-A1B5-75B425AB88CF",
+            "message" : "actual=memory, expected=memory",
+            "phase" : "intent",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "E89E4B10-9486-4AEA-AF0B-96E977DC8361",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:03Z",
+            "id" : "97CCC479-5110-43A3-A44C-3BAD661A110F",
+            "message" : "available=memory.recall,memory.save",
+            "phase" : "tools",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "B645FACE-84CE-4C8B-A729-763F659A6986",
+            "message" : "action: memory.save(content=I prefer concise bullet points, then tell me what you remembered, kind=fact)",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "69C5F822-E675-4990-AFAE-0338FFF61130",
+            "message" : "observation: Saved: I prefer concise bullet points, then tell me what you remembered",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "D44B5F21-0877-4354-93DD-A20E772A1ACD",
+            "message" : "action: memory.recall(query=prefer concise bullet points)",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "6906083C-3F27-4352-8F74-7DA3B1A8470E",
+            "message" : "observation: • I prefer concise bullet points, then tell me what you remembered\n• User asked: Set an appointment tomorrow morning at nine with the doctor. Assistant: Approval required for calendar.create. I did not create an event yet.\n• User's name is Alexis\n• User asked: What is the weather. Assistant: Weather update: Weather at your location: · clear sky · 19°C · feels like 18°C · humidity 62% · wind 9 km/h · gusts 20 km/h · cloud cover 0% · updated 2026-06-0",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "637C9392-9FD8-45EF-9429-43C43ADF73DE",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "01FB5478-95F2-440C-9619-0071EAB64EFE",
+            "message" : "I remember that you prefer concise bullet points.",
+            "phase" : "final",
+            "scenarioID" : "training-memory-loop"
+          }
+        ],
+        "expectedIntent" : "memory",
+        "failures" : [
+
+        ],
+        "finalText" : "I remember that you prefer concise bullet points.",
+        "finishedAt" : "2026-06-09T01:55:04Z",
+        "id" : "F3C35322-0046-405B-B68F-7E08BF65EC04",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 17.241379310344826,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 393.51851851851853,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 928.0695266723633,
+          "eventDensityCPUProxyPercent" : 82.10248560276553,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 928.0968704223633,
+          "sampleCount" : 4
+        },
+        "prompt" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "I remember that you prefer concise bullet points.",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "I remember that you prefer concise bullet points.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-memory-loop",
+        "startedAt" : "2026-06-09T01:55:03Z",
+        "title" : "Training eval: memory save/recall"
+      },
+      {
+        "actualIntent" : "rag",
+        "events" : [
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "9C9177E1-60C0-4CDA-B6B7-3EBC27FAB193",
+            "message" : "Search my files for architecture notes and summarize key modules.",
+            "phase" : "start",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "7766A97F-D1DB-427A-A413-53707F34875D",
+            "message" : "actual=rag, expected=rag",
+            "phase" : "intent",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "EFE637F9-75D5-4496-8E69-B9E8E3421EA2",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "CF240044-57E7-4ED3-B827-B6A82575F2BB",
+            "message" : "available=files.read,photos.search,rag.index_files,rag.index_photos,rag.search",
+            "phase" : "tools",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "A1AD889F-ABDA-4515-AFBD-4947ED300A9F",
+            "message" : "action: rag.search(query=Search my files for architecture notes and summarize key modules. service component package)",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:04Z",
+            "id" : "065EDE07-3010-4036-B4AA-99CF85449E62",
+            "message" : "observation: No matching files found for 'Search my files for architecture notes and summarize key modules. service component package'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "A71707B6-4EDC-4DC0-B592-9F18B136746B",
+            "message" : "missing_hints=[], rewrite_attempted=true, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "2842630F-3850-4A48-AB86-166A9E04E3C4",
+            "message" : "[1] No matching files found for 'Search my files for architecture notes and summarize key modules'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+            "phase" : "final",
+            "scenarioID" : "training-rag-grounding"
+          }
+        ],
+        "expectedIntent" : "rag",
+        "failures" : [
+
+        ],
+        "finalText" : "[1] No matching files found for 'Search my files for architecture notes and summarize key modules'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+        "finishedAt" : "2026-06-09T01:55:17Z",
+        "id" : "58963428-5F88-4E99-AC8E-8FDAF3E3950E",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 12.082158679017317,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 352.0499952655999,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 945.3898391723633,
+          "eventDensityCPUProxyPercent" : 0.7394794632311231,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 962.7062454223633,
+          "sampleCount" : 4
+        },
+        "prompt" : "Search my files for architecture notes and summarize key modules.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "No matching files found for 'Search my files for architecture notes and summarize key modules. service component package'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+        "rewriteAttempted" : true,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "[1] No matching files found for 'Search my files for architecture notes and summarize key modules'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-rag-grounding",
+        "startedAt" : "2026-06-09T01:55:04Z",
+        "title" : "Training eval: local knowledge grounding"
+      },
+      {
+        "actualIntent" : "trigger",
+        "events" : [
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "A9C4D19A-BD3F-41EB-97FD-35BB0D402401",
+            "message" : "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            "phase" : "start",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "673B36A2-307F-40BB-A4CA-9F91537A1ECF",
+            "message" : "actual=trigger, expected=trigger",
+            "phase" : "intent",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "50BEB074-1BDC-4D11-9D93-F4331D1397DC",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "B83CB684-1D15-424C-AB8E-C272C138F657",
+            "message" : "available=trigger.cancel,trigger.create,trigger.list",
+            "phase" : "tools",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "69FFAB9D-58D2-4DA0-B444-EBE1A5BCF81A",
+            "message" : "approvalBoundary: Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+            "phase" : "step",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "F304AF6F-460E-4F8D-B0F2-4E499EDBD402",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "2CC332ED-ED8F-4CEA-9DCD-B84D86499548",
+            "message" : "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+            "phase" : "final",
+            "scenarioID" : "training-scheduler-agent"
+          }
+        ],
+        "expectedIntent" : "trigger",
+        "failures" : [
+
+        ],
+        "finalText" : "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+        "finishedAt" : "2026-06-09T01:55:17Z",
+        "id" : "82AE58F6-AB43-47E1-8163-BDB543B554B4",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 12.082158679017317,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 352.0499952655999,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 962.7999954223633,
+          "eventDensityCPUProxyPercent" : 100,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 962.8312454223633,
+          "sampleCount" : 4
+        },
+        "prompt" : "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-scheduler-agent",
+        "startedAt" : "2026-06-09T01:55:17Z",
+        "title" : "Training eval: trigger scheduling quality"
+      },
+      {
+        "actualIntent" : "emailDraft",
+        "events" : [
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "D42B31D5-35FF-43E0-9F6F-5E0F76CE34DF",
+            "message" : "Draft an email to Alex with a professional update and ask one clarifying question.",
+            "phase" : "start",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "377612CD-7935-4520-BD24-E09B326651A9",
+            "message" : "actual=emailDraft, expected=emailDraft",
+            "phase" : "intent",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "F145A4CA-3A46-465A-BEF4-E65FB0BF881E",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "FF486404-DA39-42B5-8687-207B869622F8",
+            "message" : "available=contacts.search,mail.draft",
+            "phase" : "tools",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "2CA99B40-1EEF-47CF-8645-1C1F39D3CF16",
+            "message" : "approvalBoundary: Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+            "phase" : "step",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "D31FEFA4-F288-4CCF-B14D-0971238C61CA",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-communication-draft"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "0665B2DC-794B-41C1-AC50-462EA9475C1B",
+            "message" : "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+            "phase" : "final",
+            "scenarioID" : "training-communication-draft"
+          }
+        ],
+        "expectedIntent" : "emailDraft",
+        "failures" : [
+
+        ],
+        "finalText" : "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+        "finishedAt" : "2026-06-09T01:55:17Z",
+        "id" : "4E634C70-6BF5-4558-B243-5F4AA91473B0",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 12.082158679017317,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 352.0499952655999,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 962.9015579223633,
+          "eventDensityCPUProxyPercent" : 100,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 962.9249954223633,
+          "sampleCount" : 4
+        },
+        "prompt" : "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-communication-draft",
+        "startedAt" : "2026-06-09T01:55:17Z",
+        "title" : "Training eval: communication drafting"
+      },
+      {
+        "actualIntent" : "chat",
+        "events" : [
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "89E57CD2-E2B9-4352-B71D-5F22365A2C05",
+            "message" : "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+            "phase" : "start",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "19F2CF78-0FEB-4CB9-8BBC-75B06D3B998C",
+            "message" : "actual=chat, expected=chat",
+            "phase" : "intent",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "B41DF053-153C-409F-A9D3-DE08781B7828",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "F494EDBA-2B29-4146-85A0-D753916C7623",
+            "message" : "available=",
+            "phase" : "tools",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "E32696EE-1B6E-4867-9443-DBAE81B6A576",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-general-chat"
+          },
+          {
+            "createdAt" : "2026-06-09T01:55:17Z",
+            "id" : "A5F60F77-BCFD-40B3-926D-7E8AD95795AE",
+            "message" : "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+            "phase" : "final",
+            "scenarioID" : "training-general-chat"
+          }
+        ],
+        "expectedIntent" : "chat",
+        "failures" : [
+
+        ],
+        "finalText" : "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+        "finishedAt" : "2026-06-09T01:55:17Z",
+        "id" : "199C7003-58FE-4B63-A419-CCA43CE741F6",
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 12.082158679017317,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 352.0499952655999,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 962.9914016723633,
+          "eventDensityCPUProxyPercent" : 100,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 963.0187454223633,
+          "sampleCount" : 4
+        },
+        "prompt" : "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matche",
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matche",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-general-chat",
+        "startedAt" : "2026-06-09T01:55:17Z",
+        "title" : "Training eval: pure chat quality"
+      }
+    ],
+    "startedAt" : "2026-06-09T01:55:02Z"
+  },
+  "schemaVersion" : "1.0.0"
+}
