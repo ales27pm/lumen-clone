@@ -43,6 +43,10 @@ private enum RuntimeToolArgumentInferencer {
             if lowerToken.hasPrefix("optional ") {
                 token = String(token.dropFirst("optional ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            if token.lowercased().hasPrefix("plus ") {
+                token = String(token.dropFirst("plus ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            token = removeDependencyPhrases(from: token)
             guard !token.isEmpty else {
                 optionalGroup = true
                 continue
@@ -57,7 +61,7 @@ private enum RuntimeToolArgumentInferencer {
                 if typeHintWords.contains(loweredName), pieces.count > 1 { continue }
                 guard isValidArgumentName(name) else { continue }
                 guard !specs.contains(where: { $0.name == name }) else { continue }
-                specs.append((name: name, required: !tokenOptional && index == 0))
+                specs.append((name: name, required: !tokenOptional))
             }
             optionalGroup = tokenOptional
         }
@@ -101,10 +105,18 @@ private enum RuntimeToolArgumentInferencer {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static func removeDependencyPhrases(from value: String) -> String {
+        var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        for marker in [" depending on schedule", " depending on the schedule"] {
+            if let range = token.range(of: marker, options: [.caseInsensitive]) {
+                token.removeSubrange(range.lowerBound..<token.endIndex)
+            }
+        }
+        return token.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func argumentAliases(from value: String) -> [String] {
         value
-            .replacingOccurrences(of: " depending on ", with: " or ")
-            .replacingOccurrences(of: " plus ", with: " or ")
             .components(separatedBy: " or ")
             .flatMap { $0.components(separatedBy: "/") }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

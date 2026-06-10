@@ -22,14 +22,41 @@ struct AgentGroundingRegressionTests {
     }
 
     @MainActor
-    @Test func liveRuntimeSchemaTreatsOutlookAliasesAsAlternatives() async throws {
+    @Test func liveRuntimeSchemaTreatsOutlookAliasesAsRequiredAlternatives() async throws {
         let tools = LiveRuntimeToolRegistryProvider().currentToolDefinitions()
         let read = try #require(tools.first(where: { $0.id == "outlook.message.read" }))
         let argsByName = Dictionary(uniqueKeysWithValues: read.arguments.map { ($0.name, $0) })
 
         #expect(argsByName["messageId"]?.required == true)
-        #expect(argsByName["id"]?.required == false)
-        #expect(read.arguments.filter(\.required).map(\.name) == ["messageId"])
+        #expect(argsByName["id"]?.required == true)
+        #expect(Set(read.arguments.filter(\.required).map(\.name)) == Set(["messageId", "id"]))
+    }
+
+    @MainActor
+    @Test func liveRuntimeSchemaAlignsAliasAndPlusArgumentsWithManifest() async throws {
+        let tools = LiveRuntimeToolRegistryProvider().currentToolDefinitions()
+
+        let messagesDraft = try #require(tools.first(where: { $0.id == "messages.draft" }))
+        let messageArgs = Dictionary(uniqueKeysWithValues: messagesDraft.arguments.map { ($0.name, $0) })
+        #expect(messageArgs["recipient"]?.required == true)
+        #expect(messageArgs["number"]?.required == true)
+        #expect(messageArgs["message"]?.required == true)
+        #expect(messageArgs["text"]?.required == true)
+
+        let mailDraft = try #require(tools.first(where: { $0.id == "mail.draft" }))
+        let mailArgs = Dictionary(uniqueKeysWithValues: mailDraft.arguments.map { ($0.name, $0) })
+        #expect(mailArgs["recipient"]?.required == true)
+        #expect(mailArgs["email"]?.required == true)
+        #expect(mailArgs["message"]?.required == true)
+        #expect(mailArgs["text"]?.required == true)
+
+        let triggerCreate = try #require(tools.first(where: { $0.id == "trigger.create" }))
+        let triggerArgs = Dictionary(uniqueKeysWithValues: triggerCreate.arguments.map { ($0.name, $0) })
+        #expect(triggerArgs["plus"] == nil)
+        #expect(triggerArgs["inMinutes"]?.required == true)
+        #expect(triggerArgs["atTime"]?.required == true)
+        #expect(triggerArgs["intervalSeconds"]?.required == true)
+        #expect(triggerArgs["beforeMinutes"]?.required == true)
     }
 
     @MainActor
