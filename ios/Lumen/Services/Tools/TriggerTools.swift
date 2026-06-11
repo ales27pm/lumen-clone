@@ -43,7 +43,7 @@ enum TriggerTools {
         if all.isEmpty { return "No scheduled runs." }
         return all.map { t in
             let next = t.nextFireAt?.formatted(date: .abbreviated, time: .shortened) ?? (t.isPaused ? "paused" : "—")
-            return "• \(t.title) — \(t.kind.label) — next: \(next)"
+            return "• \(t.title) — \(t.kind.label) — next: \(next) — UUID: \(t.id.uuidString)"
         }.joined(separator: "\n")
     }
 
@@ -63,7 +63,7 @@ enum TriggerTools {
         }
         guard matches.count == 1, let m = matches.first else {
             if matches.count > 1 {
-                return "Multiple triggers match \"\(token)\". Provide the trigger UUID."
+                return "Multiple triggers match \"\(token)\". Use the UUID from the list to disambiguate."
             }
             return "No trigger matching \"\(token)\"."
         }
