@@ -2,7 +2,7 @@ import Testing
 @testable import Lumen
 
 struct AlarmMutationUUIDContractTests {
-    @Test func alarmMutationPlannerAcceptsOnlyUUIDArguments() async throws {
+    @Test func alarmMutationPlannerAcceptsOnlyUUIDArguments() {
         let uuid = "00000000-0000-0000-0000-000000000000"
         let cases: [(String, String)] = [
             ("Pause alarm \(uuid)", "alarm.pause"),
@@ -26,13 +26,14 @@ struct AlarmMutationUUIDContractTests {
         }
     }
 
-    @Test func alarmMutationPlannerRejectsTitleOnlyMutations() async throws {
+    @Test func alarmMutationPlannerRejectsTitleOnlyMutations() {
+        let missingTitle = "alarm-title-that-definitely-does-not-exist-7B5899F1-DFEE-4C39-9F56-A25AF4D70C9D"
         let prompts = [
-            "Pause alarm named test",
-            "Resume alarm named test",
-            "Stop alarm named test",
-            "Snooze alarm named test",
-            "Cancel alarm named test"
+            "Pause alarm named \(missingTitle)",
+            "Resume alarm named \(missingTitle)",
+            "Stop alarm named \(missingTitle)",
+            "Snooze alarm named \(missingTitle)",
+            "Cancel alarm named \(missingTitle)"
         ]
 
         for prompt in prompts {
