@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(AlarmKit)
+import AlarmKit
+#endif
+
 nonisolated enum DeterministicToolPlanner {
     static func planForSpecificTool(toolID: String, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         let canonical = ToolRouteGuard.canonicalToolID(toolID)
@@ -356,9 +360,37 @@ nonisolated enum DeterministicToolPlanner {
         }
         let title = extractAlarmTitle(from: prompt, fallback: "")
         if !title.isEmpty {
+            // Attempt title→UUID lookup
+            if let uuid = lookupAlarmUUIDByTitle(title) {
+                return ["id": .string(uuid)]
+            }
             return ["title": .string(title)]
         }
         return [:]
+    }
+
+    private static func lookupAlarmUUIDByTitle(_ title: String) -> String? {
+#if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            do {
+                let alarms = try AlarmManager.shared.alarms
+                let matches = alarms.filter { alarm in
+                    String(describing: alarm).localizedCaseInsensitiveContains(title) ||
+                    (Mirror(reflecting: alarm).children.first { $0.label == "title" }?.value as? String)?.localizedCaseInsensitiveCompare(title) == .orderedSame
+                }
+                // Only return UUID if exactly one match found
+                if matches.count == 1, let alarm = matches.first {
+                    if let id = Mirror(reflecting: alarm).children.first(where: { $0.label == "id" })?.value as? UUID {
+                        return id.uuidString
+                    }
+                }
+            } catch {
+                // Lookup failed, return nil
+                return nil
+            }
+        }
+#endif
+        return nil
     }
 
     private static func firstUUID(in text: String) -> String? {
