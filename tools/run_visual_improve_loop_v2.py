@@ -218,6 +218,17 @@ def build_env(root: Path) -> dict[str, str]:
     return env
 
 
+def crawler_python(root: Path) -> str:
+    """Return a Python interpreter with the crawler CLI dependencies."""
+    for candidate in (
+        root / ".venv" / "bin" / "python3",
+        root / ".venv" / "bin" / "python",
+    ):
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return sys.executable
+
+
 def _append_optional_improve_flags(
     improve: list[str], args: argparse.Namespace, runtime_audits: list[Path]
 ) -> None:
@@ -246,7 +257,7 @@ def _build_improve_command(
 ) -> list[str]:
     """Build the improve-loop command argv."""
     improve = [
-        sys.executable,
+        crawler_python(root),
         "-m",
         "lumen_manifest_crawler",
         "improve-loop",
@@ -325,7 +336,7 @@ def build_command_queue(
     commands: list[dict[str, Any]] = []
 
     if not args.skip_tests:
-        default_test = [sys.executable, "-m", "pytest", "tools/lumen_manifest_crawler/tests"]
+        default_test = [crawler_python(root), "-m", "pytest", "tools/lumen_manifest_crawler/tests"]
         commands.append(
             {
                 "name": "test manifest crawler",

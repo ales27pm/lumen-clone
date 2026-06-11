@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(AlarmKit)
+import AlarmKit
+#endif
+
 nonisolated enum DeterministicToolPlanner {
     static func planForSpecificTool(toolID: String, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         let canonical = ToolRouteGuard.canonicalToolID(toolID)
@@ -158,11 +162,59 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .alarm:
-            if containsAny(text, ["list", "status"]) { return action("alarm.list") ?? action("alarm.authorization_status") }
+            if containsAny(text, ["request", "prompt", "ask"]) && containsAny(text, ["authorization", "permission", "access"]) {
+                return action("alarm.request_authorization")
+            }
+            if containsAny(text, ["authorization", "permission", "access", "status"]) && containsAny(text, ["check", "show", "status", "authorized", "allowed"]) {
+                return action("alarm.authorization_status")
+            }
+            if containsAny(text, ["pause"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.pause", args)
+            }
+            if containsAny(text, ["resume"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.resume", args)
+            }
+            if containsAny(text, ["stop"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.stop", args)
+            }
+            if containsAny(text, ["snooze"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.snooze", args)
+            }
+            if containsAny(text, ["cancel", "delete", "remove"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.cancel", args)
+            }
+            if containsAny(text, ["countdown", "timer"]) {
+                guard let seconds = countdownDurationSeconds(from: text) else { return nil }
+                return action("alarm.countdown", [
+                    "title": .string(extractAlarmTitle(from: prompt, fallback: "Countdown")),
+                    "durationSeconds": .string(String(seconds))
+                ])
+            }
+            if containsAny(text, ["list", "show", "active alarms", "all alarms"]) { return action("alarm.list") }
+            if isAlarmScheduleIntent(text) {
+                return action("alarm.schedule", [
+                    "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
+                    "inMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
+                ])
+            }
             return nil
         case .trigger:
             if text.contains("list") { return action("trigger.list") }
-            if text.contains("cancel"), let token = extractContactQuery(from: prompt), !token.isEmpty { return action("trigger.cancel", ["id": .string(token)]) }
+            if text.contains("cancel") {
+                let token = extractTriggerCancelIdentifier(from: prompt)
+                guard !token.isEmpty else { return nil }
+                return action("trigger.cancel", ["id": .string(token)])
+            }
             if has("trigger.create") {
                 var args: AgentJSONArguments = [
                     "title": .string(extractTriggerTitle(from: prompt)),
@@ -281,6 +333,92 @@ nonisolated enum DeterministicToolPlanner {
             return nil
         }
         return max(1, min(value, 24 * 60))
+    }
+
+    private static func countdownDurationSeconds(from text: String) -> Int? {
+        if let minutes = extractMinutes(from: text) {
+            return minutes * 60
+        }
+        if let seconds = firstCapture(in: text, pattern: #"(?i)\b(\d+)\s*(?:second|seconds|sec|secs)\b"#).flatMap(Int.init) {
+            return max(1, min(seconds, 24 * 60 * 60))
+        }
+        return nil
+    }
+
+    private static func isAlarmScheduleIntent(_ text: String) -> Bool {
+        let hasAlarmTarget = containsAny(text, ["alarm", "wake me", "wake us"])
+        guard hasAlarmTarget else { return false }
+        return containsAny(text, [
+            "schedule", "set an alarm", "set alarm", "create an alarm", "create alarm",
+            "add an alarm", "add alarm", "wake me", "wake us"
+        ])
+    }
+
+    private static func alarmMutationArgs(from prompt: String) -> AgentJSONArguments {
+        if let uuid = firstUUID(in: prompt) {
+            return ["id": .string(uuid)]
+        }
+        let title = extractAlarmTitle(from: prompt, fallback: "")
+        if !title.isEmpty {
+            // Attempt title→UUID lookup
+            if let uuid = lookupAlarmUUIDByTitle(title) {
+                return ["id": .string(uuid)]
+            }
+            return ["title": .string(title)]
+        }
+        return [:]
+    }
+
+    private static func lookupAlarmUUIDByTitle(_ title: String) -> String? {
+#if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            do {
+                let alarms = try AlarmManager.shared.alarms
+                let matches = alarms.filter { alarm in
+                    String(describing: alarm).localizedCaseInsensitiveContains(title) ||
+                    (Mirror(reflecting: alarm).children.first { $0.label == "title" }?.value as? String)?.localizedCaseInsensitiveCompare(title) == .orderedSame
+                }
+                // Only return UUID if exactly one match found
+                if matches.count == 1, let alarm = matches.first {
+                    if let id = Mirror(reflecting: alarm).children.first(where: { $0.label == "id" })?.value as? UUID {
+                        return id.uuidString
+                    }
+                }
+            } catch {
+                // Lookup failed, return nil
+                return nil
+            }
+        }
+#endif
+        return nil
+    }
+
+    private static func firstUUID(in text: String) -> String? {
+        firstCapture(
+            in: text,
+            pattern: #"(\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b)"#
+        )
+    }
+
+    private static func extractAlarmTitle(from prompt: String, fallback: String) -> String {
+        if let named = firstCapture(in: prompt, pattern: #"(?i)\b(?:named|called)\s+([^.!?\n]+)"#) {
+            let cleaned = cleanCapturedValue(named)
+            if !cleaned.isEmpty { return cleaned }
+        }
+        return fallback
+    }
+
+    private static func extractTriggerCancelIdentifier(from prompt: String) -> String {
+        if let uuid = firstUUID(in: prompt) {
+            return uuid
+        }
+        if let named = firstCapture(in: prompt, pattern: #"(?i)\b(?:named|called)\s+([^.!?\n]+)"#) {
+            return cleanCapturedValue(named)
+        }
+        if let trigger = firstCapture(in: prompt, pattern: #"(?i)\bcancel\s+(?:the\s+)?(?:trigger|scheduled run|agent run)\s+([^.!?\n]+)"#) {
+            return cleanCapturedValue(trigger)
+        }
+        return ""
     }
 
     private static func extractTriggerTitle(from prompt: String) -> String {

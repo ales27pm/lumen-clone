@@ -195,4 +195,80 @@ struct DeterministicToolPlannerTests {
         #expect(steps.last?.args["query"]?.stringValue == "prefer concise bullet points")
     }
 
+    @Test func alarmCommandFamilyPlansExpectedTools() async throws {
+        let cases: [(String, String)] = [
+            ("Check alarm authorization status", "alarm.authorization_status"),
+            ("Request alarm authorization", "alarm.request_authorization"),
+            ("Set an alarm for tomorrow at 7", "alarm.schedule"),
+            ("Start a countdown timer for 10 minutes", "alarm.countdown"),
+            ("List alarms", "alarm.list"),
+            ("Pause alarm 00000000-0000-0000-0000-000000000000", "alarm.pause"),
+            ("Resume alarm 00000000-0000-0000-0000-000000000000", "alarm.resume"),
+            ("Stop alarm 00000000-0000-0000-0000-000000000000", "alarm.stop"),
+            ("Snooze alarm 00000000-0000-0000-0000-000000000000", "alarm.snooze"),
+            ("Cancel alarm 00000000-0000-0000-0000-000000000000", "alarm.cancel")
+        ]
+
+        for (prompt, expectedTool) in cases {
+            let routing = IntentRouter.classify(prompt)
+            let action = DeterministicToolPlanner.plan(routing: routing, prompt: prompt, availableToolIDs: routing.allowedToolIDs)
+            #expect(routing.intent == .alarm)
+            #expect(action?.tool == expectedTool)
+        }
+    }
+
+    @Test func alarmPlannerSuppliesRequiredArguments() async throws {
+        let countdownRouting = IntentRouter.classify("Start a countdown timer for 10 minutes")
+        let countdown = DeterministicToolPlanner.plan(routing: countdownRouting, prompt: "Start a countdown timer for 10 minutes", availableToolIDs: countdownRouting.allowedToolIDs)
+        #expect(countdown?.args["durationSeconds"]?.stringValue == "600")
+
+        let pauseRouting = IntentRouter.classify("Pause alarm 00000000-0000-0000-0000-000000000000")
+        let pause = DeterministicToolPlanner.plan(routing: pauseRouting, prompt: "Pause alarm 00000000-0000-0000-0000-000000000000", availableToolIDs: pauseRouting.allowedToolIDs)
+        #expect(pause?.args["id"]?.stringValue == "00000000-0000-0000-0000-000000000000")
+
+        let cancelRouting = IntentRouter.classify("Cancel alarm 00000000-0000-0000-0000-000000000000")
+        let cancel = DeterministicToolPlanner.plan(routing: cancelRouting, prompt: "Cancel alarm 00000000-0000-0000-0000-000000000000", availableToolIDs: cancelRouting.allowedToolIDs)
+        #expect(cancel?.args["id"]?.stringValue == "00000000-0000-0000-0000-000000000000")
+    }
+
+    @Test func alarmCancelRequiresUUID() async throws {
+        let routing = IntentRouter.classify("Cancel alarm named morning wakeup")
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Cancel alarm named morning wakeup",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .alarm)
+        #expect(action == nil)
+    }
+
+    @Test func alarmPlannerDoesNotScheduleFromBareAlarmPrompt() async throws {
+        let routing = IntentRouter.classify("alarm")
+        let action = DeterministicToolPlanner.plan(routing: routing, prompt: "alarm", availableToolIDs: routing.allowedToolIDs)
+        #expect(routing.intent == .alarm)
+        #expect(action == nil)
+    }
+
+    @Test func triggerCancelRequiresIdentifier() async throws {
+        let ambiguousPrompt = "Cancel that scheduled run"
+        let ambiguousRouting = IntentRouter.classify(ambiguousPrompt)
+        let ambiguous = DeterministicToolPlanner.plan(
+            routing: ambiguousRouting,
+            prompt: ambiguousPrompt,
+            availableToolIDs: ambiguousRouting.allowedToolIDs
+        )
+        #expect(ambiguousRouting.intent == .trigger)
+        #expect(ambiguous == nil)
+
+        let namedPrompt = "Cancel trigger named morning summary"
+        let namedRouting = IntentRouter.classify(namedPrompt)
+        let named = DeterministicToolPlanner.plan(
+            routing: namedRouting,
+            prompt: namedPrompt,
+            availableToolIDs: namedRouting.allowedToolIDs
+        )
+        #expect(named?.tool == "trigger.cancel")
+        #expect(named?.args["id"]?.stringValue == "morning summary")
+    }
+
 }

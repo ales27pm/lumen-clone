@@ -42,4 +42,5 @@ ios/Lumen/Resources/AlgorithmicPhilosophies/**/screenshots/
 # macOS
 .DS_Store
 **/.DS_Store
+exports/
 exports/testflight-20260609-0426/

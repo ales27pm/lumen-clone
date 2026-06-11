@@ -7,7 +7,7 @@
       "mixed": 1,
       "plist": 3,
       "python": 73,
-      "swift": 303
+      "swift": 306
     },
     "moduleCounts": {
       "AppIntents": 7,
@@ -20,8 +20,8 @@
       "Assistant": 19,
       "Background": 4,
       "Brand": 2,
-      "Developer": 2,
-      "Diagnostics": 17,
+      "Developer": 3,
+      "Diagnostics": 19,
       "Memory": 7,
       "Models": 15,
       "Permissions": 6,
@@ -55,7 +55,7 @@
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 36,
       "tools/lumen_manifest_crawler/tests": 19
     },
-    "recordCount": 443,
+    "recordCount": 446,
     "selectedFiles": [
       {
         "imports": [
@@ -311,8 +311,8 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, argumentAliases, isValidArgumentName, inferredType, numericMarkers.",
-        "sha256": "43e075335d31155bf052f25eafc1ddf7515e70460f85f86343675e45db061177",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, removeDependencyPhrases, argumentAliases, isValidArgumentName, inferredType.",
+        "sha256": "306f49245236cd5d2a186102a148e936f0b5e2dd2ae5a6a0f8a43267bb625b15",
         "symbols": [
           "LiveRuntimeToolRegistryProvider",
           "RuntimeToolArgumentInferencer",
@@ -320,6 +320,7 @@
           "arguments",
           "argsBody",
           "removeParentheticalText",
+          "removeDependencyPhrases",
           "argumentAliases",
           "isValidArgumentName",
           "inferredType",
@@ -328,8 +329,7 @@
           "trimmed",
           "lowered",
           "specs",
-          "optionalGroup",
-          "token"
+          "optionalGroup"
         ]
       },
       {
@@ -1007,7 +1007,7 @@
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
         "responsibility": "`ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: AlarmTools, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause, resume, stop.",
-        "sha256": "42e6cf15859d5a5120e976b6d2faefff398bb3acf378e4bf33dda7dd37aae97c",
+        "sha256": "0e08d353f084baa49f528f99772eea424d6015de04f21665345ff3a51daa87a7",
         "symbols": [
           "AlarmTools",
           "authorizationStatus",
@@ -1322,7 +1322,7 @@
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/TriggerTools.swift",
         "responsibility": "`ios/Lumen/Services/Tools/TriggerTools.swift` owns TriggerTools behavior and defines: TriggerTools, create, list, cancel, container, ctx, title, prompt, schedule, trigger.",
-        "sha256": "02c0049e7a1453fad79a309819b613258b7bb00e7d6e34459dfbccff693bab15",
+        "sha256": "ef3e5c5be5941dd3f2d40cfb88a2e5590c5815b3d8454d9a90142162737b553f",
         "symbols": [
           "TriggerTools",
           "create",
@@ -2051,7 +2051,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "4bd0a3e44b65bc13862219029daec380c50db459",
+  "manifestCommit": "80bab05fe567e74ae82e2198ec40b680a18fc31a",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

@@ -271,6 +271,26 @@ nonisolated enum ToolRouteGuard {
             return "outlook.message.reply_all"
         case "outlook.forward", "outlook.message.forward", "email.forward":
             return "outlook.message.forward"
+        case "alarm.auth.status", "alarm.authorization", "alarm.authorization.status", "alarm.authorization_status", "alarm.status", "alarm.permission.status":
+            return "alarm.authorization_status"
+        case "alarm.request.auth", "alarm.request.authorization", "alarm.request_authorization", "request.alarm.authorization", "request.alarm.permission":
+            return "alarm.request_authorization"
+        case "alarm.schedule", "schedule.alarm", "create.alarm", "set.alarm", "alarm.create":
+            return "alarm.schedule"
+        case "alarm.countdown", "countdown.alarm", "start.countdown", "timer.start", "start.timer":
+            return "alarm.countdown"
+        case "alarm.list", "list.alarms", "alarms.list", "show.alarms":
+            return "alarm.list"
+        case "alarm.pause", "pause.alarm":
+            return "alarm.pause"
+        case "alarm.resume", "resume.alarm":
+            return "alarm.resume"
+        case "alarm.stop", "stop.alarm":
+            return "alarm.stop"
+        case "alarm.snooze", "snooze.alarm":
+            return "alarm.snooze"
+        case "alarm.cancel", "cancel.alarm", "delete.alarm":
+            return "alarm.cancel"
         default:
             return id
         }

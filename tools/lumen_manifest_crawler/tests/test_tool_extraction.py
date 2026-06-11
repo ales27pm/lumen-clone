@@ -52,7 +52,7 @@ def test_args_contract_derives_arguments_from_description():
           id: "trigger.create",
           name: "Schedule Agent Run",
           category: .productivity,
-          description: "Schedule a background agent run. Args: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule.",
+          description: "Schedule a background agent run. Args: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes.",
           icon: "alarm",
           tint: "orange",
           requiresApproval: true,
@@ -65,8 +65,17 @@ def test_args_contract_derives_arguments_from_description():
     ToolDefinitionExtractor().extract(SwiftFile(Path("ToolDefinition.swift"), "ToolDefinition.swift", text), manifest)
     tool = manifest.tools[0]
     assert tool.permissionKey is None
-    assert tool.description == "Schedule a background agent run. Args: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule."
+    assert tool.description == "Schedule a background agent run. Args: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes."
     assert [arg.name for arg in tool.arguments] == ["title", "prompt", "schedule", "inMinutes", "atTime", "intervalSeconds", "beforeMinutes"]
+    assert {arg.name: arg.required for arg in tool.arguments} == {
+        "title": True,
+        "prompt": True,
+        "schedule": True,
+        "inMinutes": False,
+        "atTime": False,
+        "intervalSeconds": False,
+        "beforeMinutes": False,
+    }
     assert {arg.name: arg.type for arg in tool.arguments} == {
         "title": "string",
         "prompt": "string",
@@ -85,14 +94,14 @@ def test_args_contract_handles_optional_group_and_type_hints():
         ToolDefinition(
           id: "alarm.schedule",
           name: "Schedule Alarm",
-          description: "Schedule an AlarmKit alarm. Args: title, inMinutes or timestamp, optional repeats, snoozeMinutes.",
+          description: "Schedule an AlarmKit alarm. Args: title, inMinutes, optional timestamp/repeats/snoozeMinutes.",
           requiresApproval: true,
           permissionKey: "NSAlarmKitUsageDescription"
         ),
         ToolDefinition(
           id: "alarm.cancel",
           name: "Cancel Alarm",
-          description: "Cancel a scheduled alarm. Args: id UUID or title fallback.",
+          description: "Cancel a scheduled alarm. Args: id UUID.",
           requiresApproval: true,
           permissionKey: "NSAlarmKitUsageDescription"
         )
@@ -106,7 +115,7 @@ def test_args_contract_handles_optional_group_and_type_hints():
     assert [(arg.name, arg.type, arg.required) for arg in alarm_schedule.arguments] == [
         ("title", "string", True),
         ("inMinutes", "number", True),
-        ("timestamp", "string", True),
+        ("timestamp", "string", False),
         ("repeats", "bool", False),
         ("snoozeMinutes", "number", False),
     ]
@@ -114,5 +123,4 @@ def test_args_contract_handles_optional_group_and_type_hints():
     alarm_cancel = next(tool for tool in manifest.tools if tool.id == "alarm.cancel")
     assert [(arg.name, arg.type) for arg in alarm_cancel.arguments] == [
         ("id", "string"),
-        ("title", "string"),
     ]
