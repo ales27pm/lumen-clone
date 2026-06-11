@@ -168,7 +168,11 @@ nonisolated enum DeterministicToolPlanner {
             if containsAny(text, ["resume"]) { return action("alarm.resume", alarmMutationArgs(from: prompt)) }
             if containsAny(text, ["stop"]) { return action("alarm.stop", alarmMutationArgs(from: prompt)) }
             if containsAny(text, ["snooze"]) { return action("alarm.snooze", alarmMutationArgs(from: prompt)) }
-            if containsAny(text, ["cancel", "delete", "remove"]) { return action("alarm.cancel", alarmMutationArgs(from: prompt)) }
+            if containsAny(text, ["cancel", "delete", "remove"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.cancel", args)
+            }
             if containsAny(text, ["countdown", "timer"]) {
                 guard let seconds = countdownDurationSeconds(from: text) else { return nil }
                 return action("alarm.countdown", [
@@ -177,7 +181,7 @@ nonisolated enum DeterministicToolPlanner {
                 ])
             }
             if containsAny(text, ["list", "show", "active alarms", "all alarms"]) { return action("alarm.list") }
-            if containsAny(text, ["schedule", "set", "create", "alarm"]) {
+            if isAlarmScheduleIntent(text) {
                 return action("alarm.schedule", [
                     "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
                     "inMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
@@ -188,7 +192,8 @@ nonisolated enum DeterministicToolPlanner {
             if text.contains("list") { return action("trigger.list") }
             if text.contains("cancel") {
                 let token = extractTriggerCancelIdentifier(from: prompt)
-                return action("trigger.cancel", token.isEmpty ? [:] : ["id": .string(token)])
+                guard !token.isEmpty else { return nil }
+                return action("trigger.cancel", ["id": .string(token)])
             }
             if has("trigger.create") {
                 var args: AgentJSONArguments = [
@@ -318,6 +323,15 @@ nonisolated enum DeterministicToolPlanner {
             return max(1, min(seconds, 24 * 60 * 60))
         }
         return nil
+    }
+
+    private static func isAlarmScheduleIntent(_ text: String) -> Bool {
+        let hasAlarmTarget = containsAny(text, ["alarm", "wake me", "wake us"])
+        guard hasAlarmTarget else { return false }
+        return containsAny(text, [
+            "schedule", "set an alarm", "set alarm", "create an alarm", "create alarm",
+            "add an alarm", "add alarm", "wake me", "wake us"
+        ])
     }
 
     private static func alarmMutationArgs(from prompt: String) -> AgentJSONArguments {

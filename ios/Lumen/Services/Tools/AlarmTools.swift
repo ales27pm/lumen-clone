@@ -97,34 +97,7 @@ enum AlarmTools {
 #endif
             }
         }
-
-#if canImport(AlarmKit)
-        if #available(iOS 26.0, *), !trimmed.isEmpty {
-            do {
-                let query = trimmed.lowercased()
-                let matches = try AlarmManager.shared.alarms.compactMap { alarm -> UUID? in
-                    let description = String(describing: alarm)
-                    guard description.lowercased().contains(query) else { return nil }
-                    return firstUUID(in: description)
-                }
-                if let match = matches.first {
-                    try AlarmManager.shared.cancel(id: match)
-                    return "Alarm cancel completed for \(match.uuidString)."
-                }
-                return "No alarm matching \"\(trimmed)\" was found."
-            } catch {
-                return "Alarm cancel failed: \(error.localizedDescription)"
-            }
-        }
-#endif
-
-        return await mutateAlarm(id: trimmed, actionName: "cancel") {
-#if canImport(AlarmKit)
-            if #available(iOS 26.0, *) {
-                try AlarmManager.shared.cancel(id: $0)
-            }
-#endif
-        }
+        return "Invalid alarm id. Provide the alarm UUID from `alarm.list` in `id`."
     }
 
     static func pause(id: String) async -> String {
@@ -195,11 +168,4 @@ enum AlarmTools {
         return "AlarmKit requires iOS 26.0+ and an AlarmKit-capable runtime. Requested \"\(title)\" for \(fireDate.formatted(date: .abbreviated, time: .shortened))."
     }
 
-    private static func firstUUID(in text: String) -> UUID? {
-        let pattern = #"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let ns = text as NSString
-        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
-        return UUID(uuidString: ns.substring(with: match.range))
-    }
 }

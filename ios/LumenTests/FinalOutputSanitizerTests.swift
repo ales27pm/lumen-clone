@@ -111,6 +111,11 @@ struct FinalOutputSanitizerTests {
 
         let thinkResponseUnderscore = FinalOutputSanitizer.sanitizeUserVisibleText("<think_response>secret</think_response>\nClean")
         #expect(thinkResponseUnderscore.text == "Clean")
+
+        let malformedThinkLikeJSON = FinalOutputSanitizer.sanitizeUserVisibleText(#"<thinkle":"architecture notes","reasoning":[{"source":"local"}]} [1]"#)
+        #expect(!malformedThinkLikeJSON.text.lowercased().contains("<think"))
+        #expect(malformedThinkLikeJSON.text == FinalOutputSanitizer.fallback)
+        #expect(malformedThinkLikeJSON.removedArtifacts.contains(.malformedThinkPrefix))
     }
 
     @Test func sanitizedHiddenMarkerVariantsDoNotLeak() {
@@ -120,6 +125,7 @@ struct FinalOutputSanitizerTests {
             "<analysis>secret",
             "Answer\n<reasoning>secret</reasoning>",
             "<think_response>secret</think_response>\nClean",
+            #"<thinkle":"architecture notes","reasoning":[{"source":"local"}]} [1]"#,
             "<chain_of_thought>secret</chain_of_thought> Safe"
         ]
 
