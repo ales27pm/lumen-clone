@@ -14,7 +14,7 @@ struct LumenControlTowerView: View {
                     }
                 }
                 Button {
-                    model.refresh()
+                    model.refreshNow()
                 } label: {
                     Label("Refresh snapshot", systemImage: "arrow.clockwise")
                 }
@@ -87,8 +87,10 @@ struct LumenControlTowerView: View {
         .navigationTitle("Control Tower")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            model.startIfNeeded()
-            model.refresh()
+            model.startVisibleRefresh()
+        }
+        .onDisappear {
+            model.stopVisibleRefresh()
         }
     }
 }
@@ -100,6 +102,25 @@ final class LumenControlTowerModel {
     var snapshot = AgentWorkflowMonitor.shared.snapshot()
     var coverage = ToolScenarioBank.coverageSummary()
     var scenarioPreview: [ToolScenarioBankEntry] = Array(ToolScenarioBank.entries().prefix(24))
+
+    @ObservationIgnored
+    private var visibleRefreshTask: Task<Void, Never>?
+
+    func startVisibleRefresh() {
+        startIfNeeded()
+        visibleRefreshTask?.cancel()
+        visibleRefreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.refresh()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    func stopVisibleRefresh() {
+        visibleRefreshTask?.cancel()
+        visibleRefreshTask = nil
+    }
 
     func startIfNeeded() {
         _ = AgentWorkflowMonitor.shared.start()
@@ -113,7 +134,10 @@ final class LumenControlTowerModel {
         } else {
             _ = AgentWorkflowMonitor.shared.start()
         }
-        monitoringEnabled = AgentWorkflowMonitor.shared.isMonitoring
+        refreshNow()
+    }
+
+    func refreshNow() {
         refresh()
     }
 
@@ -126,7 +150,7 @@ final class LumenControlTowerModel {
 
     func reset() {
         AgentWorkflowMonitor.shared.reset()
-        refresh()
+        refreshNow()
     }
 
     func reportText() -> String {
