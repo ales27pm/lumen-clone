@@ -133,16 +133,10 @@ nonisolated enum ToolScenarioBank {
     }
 
     private static func requiredSlots(for toolID: String, requiresApproval: Bool) -> [AgentWorkflowSlot] {
-        var slots: [AgentWorkflowSlot] = [.cortex]
+        var slots: [AgentWorkflowSlot] = [.cortex, .executor]
         if toolID.hasPrefix("memory.") || toolID.hasPrefix("rag.") || toolID.hasPrefix("files.") {
             slots.append(.rem)
             slots.append(.embedding)
-        }
-        if toolID.hasPrefix("web.") || toolID.hasPrefix("outlook.") || toolID.hasPrefix("mail.") || toolID.hasPrefix("messages.") || toolID.hasPrefix("maps.") || toolID == "weather" || toolID.hasPrefix("alarm.") || toolID.hasPrefix("trigger.") {
-            slots.append(.executor)
-        }
-        if requiresApproval {
-            slots.append(.executor)
         }
         slots.append(.mimicry)
         slots.append(.mouth)
