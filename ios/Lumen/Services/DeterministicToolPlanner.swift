@@ -158,11 +158,38 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .alarm:
-            if containsAny(text, ["list", "status"]) { return action("alarm.list") ?? action("alarm.authorization_status") }
+            if containsAny(text, ["request", "prompt", "ask"]) && containsAny(text, ["authorization", "permission", "access"]) {
+                return action("alarm.request_authorization")
+            }
+            if containsAny(text, ["authorization", "permission", "access", "status"]) && containsAny(text, ["check", "show", "status", "authorized", "allowed"]) {
+                return action("alarm.authorization_status")
+            }
+            if containsAny(text, ["pause"]) { return action("alarm.pause", alarmMutationArgs(from: prompt)) }
+            if containsAny(text, ["resume"]) { return action("alarm.resume", alarmMutationArgs(from: prompt)) }
+            if containsAny(text, ["stop"]) { return action("alarm.stop", alarmMutationArgs(from: prompt)) }
+            if containsAny(text, ["snooze"]) { return action("alarm.snooze", alarmMutationArgs(from: prompt)) }
+            if containsAny(text, ["cancel", "delete", "remove"]) { return action("alarm.cancel", alarmMutationArgs(from: prompt)) }
+            if containsAny(text, ["countdown", "timer"]) {
+                guard let seconds = countdownDurationSeconds(from: text) else { return nil }
+                return action("alarm.countdown", [
+                    "title": .string(extractAlarmTitle(from: prompt, fallback: "Countdown")),
+                    "durationSeconds": .string(String(seconds))
+                ])
+            }
+            if containsAny(text, ["list", "show", "active alarms", "all alarms"]) { return action("alarm.list") }
+            if containsAny(text, ["schedule", "set", "create", "alarm"]) {
+                return action("alarm.schedule", [
+                    "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
+                    "inMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
+                ])
+            }
             return nil
         case .trigger:
             if text.contains("list") { return action("trigger.list") }
-            if text.contains("cancel"), let token = extractContactQuery(from: prompt), !token.isEmpty { return action("trigger.cancel", ["id": .string(token)]) }
+            if text.contains("cancel") {
+                let token = extractTriggerCancelIdentifier(from: prompt)
+                return action("trigger.cancel", token.isEmpty ? [:] : ["id": .string(token)])
+            }
             if has("trigger.create") {
                 var args: AgentJSONArguments = [
                     "title": .string(extractTriggerTitle(from: prompt)),
@@ -281,6 +308,55 @@ nonisolated enum DeterministicToolPlanner {
             return nil
         }
         return max(1, min(value, 24 * 60))
+    }
+
+    private static func countdownDurationSeconds(from text: String) -> Int? {
+        if let minutes = extractMinutes(from: text) {
+            return minutes * 60
+        }
+        if let seconds = firstCapture(in: text, pattern: #"(?i)\b(\d+)\s*(?:second|seconds|sec|secs)\b"#).flatMap(Int.init) {
+            return max(1, min(seconds, 24 * 60 * 60))
+        }
+        return nil
+    }
+
+    private static func alarmMutationArgs(from prompt: String) -> AgentJSONArguments {
+        if let uuid = firstUUID(in: prompt) {
+            return ["id": .string(uuid)]
+        }
+        let title = extractAlarmTitle(from: prompt, fallback: "")
+        if !title.isEmpty {
+            return ["title": .string(title)]
+        }
+        return [:]
+    }
+
+    private static func firstUUID(in text: String) -> String? {
+        firstCapture(
+            in: text,
+            pattern: #"(\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b)"#
+        )
+    }
+
+    private static func extractAlarmTitle(from prompt: String, fallback: String) -> String {
+        if let named = firstCapture(in: prompt, pattern: #"(?i)\b(?:named|called)\s+([^.!?\n]+)"#) {
+            let cleaned = cleanCapturedValue(named)
+            if !cleaned.isEmpty { return cleaned }
+        }
+        return fallback
+    }
+
+    private static func extractTriggerCancelIdentifier(from prompt: String) -> String {
+        if let uuid = firstUUID(in: prompt) {
+            return uuid
+        }
+        if let named = firstCapture(in: prompt, pattern: #"(?i)\b(?:named|called)\s+([^.!?\n]+)"#) {
+            return cleanCapturedValue(named)
+        }
+        if let trigger = firstCapture(in: prompt, pattern: #"(?i)\bcancel\s+(?:the\s+)?(?:trigger|scheduled run|agent run)\s+([^.!?\n]+)"#) {
+            return cleanCapturedValue(trigger)
+        }
+        return ""
     }
 
     private static func extractTriggerTitle(from prompt: String) -> String {

@@ -155,8 +155,9 @@ nonisolated enum ToolScenarioBank {
         if toolID.hasPrefix("maps.") || toolID == "location.current" { return UserIntent.maps.rawValue }
         if toolID.hasPrefix("calendar.") { return UserIntent.calendar.rawValue }
         if toolID.hasPrefix("reminders.") { return UserIntent.reminder.rawValue }
-        if toolID.hasPrefix("alarm.") || toolID.hasPrefix("trigger.") { return UserIntent.trigger.rawValue }
-        if toolID.hasPrefix("contacts.") { return UserIntent.contacts.rawValue }
+        if toolID.hasPrefix("alarm.") { return UserIntent.alarm.rawValue }
+        if toolID.hasPrefix("trigger.") { return UserIntent.trigger.rawValue }
+        if toolID.hasPrefix("contacts.") { return UserIntent.contactSearch.rawValue }
         if toolID.hasPrefix("photos.") || toolID == "camera.capture" { return UserIntent.camera.rawValue }
         return nil
     }
