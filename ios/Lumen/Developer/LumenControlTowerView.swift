@@ -102,26 +102,23 @@ final class LumenControlTowerModel {
     var scenarioPreview: [ToolScenarioBankEntry] = Array(ToolScenarioBank.entries().prefix(24))
 
     func startIfNeeded() {
-        if AgentWorkflowMonitor.shared.start() {
-            monitoringEnabled = true
-        } else {
-            monitoringEnabled = true
-        }
+        _ = AgentWorkflowMonitor.shared.start()
+        monitoringEnabled = AgentWorkflowMonitor.shared.isMonitoring
         refresh()
     }
 
     func toggleMonitoring() {
-        if monitoringEnabled {
+        if AgentWorkflowMonitor.shared.isMonitoring {
             AgentWorkflowMonitor.shared.stop()
-            monitoringEnabled = false
         } else {
             _ = AgentWorkflowMonitor.shared.start()
-            monitoringEnabled = true
         }
+        monitoringEnabled = AgentWorkflowMonitor.shared.isMonitoring
         refresh()
     }
 
     func refresh() {
+        monitoringEnabled = AgentWorkflowMonitor.shared.isMonitoring
         snapshot = AgentWorkflowMonitor.shared.snapshot()
         coverage = ToolScenarioBank.coverageSummary()
         scenarioPreview = Array(ToolScenarioBank.entries().prefix(24))
