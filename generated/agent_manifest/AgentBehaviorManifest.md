@@ -1,7 +1,7 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Commit: `4bd0a3e44b65bc13862219029daec380c50db459`
+- Commit: `80bab05fe567e74ae82e2198ec40b680a18fc31a`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol
@@ -114,14 +114,13 @@
 
 ### `alarm.cancel`
 - Display name: Cancel Alarm
-- Description: Cancel a scheduled alarm. Args: id UUID or title fallback.
+- Description: Cancel a scheduled alarm. Args: id UUID.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: id UUID or title fallback Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: id UUID or title fallback Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Inferred from ToolDefinition description Args contract: id UUID Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.cancel` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.countdown`
@@ -180,17 +179,17 @@
 
 ### `alarm.schedule`
 - Display name: Schedule Alarm
-- Description: Schedule an AlarmKit alarm. Args: title, inMinutes or timestamp, optional repeats, snoozeMinutes.
+- Description: Schedule an AlarmKit alarm. Args: title, inMinutes, optional timestamp/repeats/snoozeMinutes.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, inMinutes or timestamp, optional repeats, snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `inMinutes`: number, required. Inferred from ToolDefinition description Args contract: title, inMinutes or timestamp, optional repeats, snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `timestamp`: string, required. Inferred from ToolDefinition description Args contract: title, inMinutes or timestamp, optional repeats, snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `repeats`: bool, optional. Inferred from ToolDefinition description Args contract: title, inMinutes or timestamp, optional repeats, snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `snoozeMinutes`: number, optional. Inferred from ToolDefinition description Args contract: title, inMinutes or timestamp, optional repeats, snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `inMinutes`: number, required. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `timestamp`: string, optional. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `repeats`: bool, optional. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `snoozeMinutes`: number, optional. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.schedule` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.snooze`
@@ -291,19 +290,19 @@
 
 ### `mail.draft`
 - Display name: Draft Email
-- Description: Compose an email draft using the system mail composer. Args: to or recipient or email, subject, body or message or text.
+- Description: Compose an email draft using the system mail composer. Args: to, subject, body, optional recipient/email/message/text.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or email, subject, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `recipient`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or email, subject, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `email`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or email, subject, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `subject`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or email, subject, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or email, subject, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `message`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or email, subject, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `text`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or email, subject, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `subject`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `recipient`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `email`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `message`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `text`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `mail.draft` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `maps.directions`
@@ -353,18 +352,18 @@
 
 ### `messages.draft`
 - Display name: Draft Message
-- Description: Compose an iMessage/SMS draft. Args: to or recipient or number, body or message or text.
+- Description: Compose an iMessage/SMS draft. Args: to, body, optional recipient/number/message/text.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or number, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `recipient`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or number, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `number`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or number, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or number, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `message`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or number, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `text`: string, required. Inferred from ToolDefinition description Args contract: to or recipient or number, body or message or text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `recipient`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `number`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `message`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `text`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `messages.draft` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `motion.activity`
@@ -379,14 +378,14 @@
 
 ### `outlook.attachments.list`
 - Display name: List Outlook Attachments
-- Description: List attachment metadata for one Outlook message. Args: messageId or id.
+- Description: List attachment metadata for one Outlook message. Args: messageId, optional id.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.attachments.list` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.draft.create`
@@ -429,119 +428,119 @@
 
 ### `outlook.message.archive`
 - Display name: Archive Outlook Message
-- Description: Move an Outlook message to Archive. Args: messageId or id. Requires explicit approval.
+- Description: Move an Outlook message to Archive. Args: messageId, optional id. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.archive` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.delete`
 - Display name: Delete Outlook Message
-- Description: Delete an Outlook message. Args: messageId or id. Requires explicit approval.
+- Description: Delete an Outlook message. Args: messageId, optional id. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.delete` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.forward`
 - Display name: Forward Outlook Message
-- Description: Forward an Outlook message. Args: messageId or id, to, optional body/comment. Requires explicit approval.
+- Description: Forward an Outlook message. Args: messageId, to, optional id/body/comment. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, to, optional body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, to, optional body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, to, optional body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, optional. Inferred from ToolDefinition description Args contract: messageId or id, to, optional body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `comment`: string, optional. Inferred from ToolDefinition description Args contract: messageId or id, to, optional body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, optional. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `comment`: string, optional. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.forward` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.mark_read`
 - Display name: Mark Outlook Read
-- Description: Mark an Outlook message as read. Args: messageId or id. Requires explicit approval.
+- Description: Mark an Outlook message as read. Args: messageId, optional id. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.mark_read` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.mark_unread`
 - Display name: Mark Outlook Unread
-- Description: Mark an Outlook message as unread. Args: messageId or id. Requires explicit approval.
+- Description: Mark an Outlook message as unread. Args: messageId, optional id. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.mark_unread` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.move`
 - Display name: Move Outlook Message
-- Description: Move an Outlook message to a folder. Args: messageId or id, destination or destinationId. Requires explicit approval.
+- Description: Move an Outlook message to a folder. Args: messageId, destination, optional id/destinationId. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, destination or destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, destination or destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `destination`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, destination or destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `destinationId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, destination or destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `destination`: string, required. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `destinationId`: string, optional. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.move` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.read`
 - Display name: Read Outlook Message
-- Description: Read one Outlook message body by id. Args: messageId or id.
+- Description: Read one Outlook message body by id. Args: messageId, optional id.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.read` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.reply`
 - Display name: Reply Outlook Message
-- Description: Reply to an Outlook message. Args: messageId or id, body/comment. Requires explicit approval.
+- Description: Reply to an Outlook message. Args: messageId, body, optional id/comment. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `comment`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `comment`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.reply` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.reply_all`
 - Display name: Reply All Outlook Message
-- Description: Reply-all to an Outlook message. Args: messageId or id, body/comment. Requires explicit approval.
+- Description: Reply-all to an Outlook message. Args: messageId, body, optional id/comment. Requires explicit approval.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `comment`: string, required. Inferred from ToolDefinition description Args contract: messageId or id, body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `comment`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.reply_all` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.messages.list`
@@ -660,31 +659,31 @@
 
 ### `trigger.cancel`
 - Display name: Cancel Trigger
-- Description: Cancel a scheduled agent run. Args: title or id.
+- Description: Cancel a scheduled agent run. Args: id, optional title.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: title or id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Inferred from ToolDefinition description Args contract: id, optional title Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, optional. Inferred from ToolDefinition description Args contract: id, optional title Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `trigger.cancel` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `trigger.create`
 - Display name: Schedule Agent Run
-- Description: Schedule a background agent run. Args: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule.
+- Description: Schedule a background agent run. Args: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `prompt`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `schedule`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `inMinutes`: number, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `atTime`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `intervalSeconds`: number, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `beforeMinutes`: number, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, plus inMinutes/atTime/intervalSeconds/beforeMinutes depending on schedule Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `prompt`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `schedule`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `inMinutes`: number, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `atTime`: string, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `intervalSeconds`: number, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `beforeMinutes`: number, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `trigger.create` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `trigger.list`

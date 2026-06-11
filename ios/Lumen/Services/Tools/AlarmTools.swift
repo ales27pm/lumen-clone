@@ -87,13 +87,17 @@ enum AlarmTools {
     }
 
     static func cancel(id: String) async -> String {
-        await mutateAlarm(id: id, actionName: "cancel") {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if UUID(uuidString: trimmed) != nil {
+            return await mutateAlarm(id: trimmed, actionName: "cancel") {
 #if canImport(AlarmKit)
-            if #available(iOS 26.0, *) {
-                try AlarmManager.shared.cancel(id: $0)
-            }
+                if #available(iOS 26.0, *) {
+                    try AlarmManager.shared.cancel(id: $0)
+                }
 #endif
+            }
         }
+        return "Invalid alarm id. Provide the alarm UUID from `alarm.list` in `id`."
     }
 
     static func pause(id: String) async -> String {
@@ -127,7 +131,7 @@ enum AlarmTools {
     }
 
     static func snooze(id: String) async -> String {
-        await mutateAlarm(id: id, actionName: "countdown") {
+        await mutateAlarm(id: id, actionName: "snooze") {
 #if canImport(AlarmKit)
             if #available(iOS 26.0, *) {
                 try AlarmManager.shared.countdown(id: $0)
@@ -163,4 +167,5 @@ enum AlarmTools {
         _ = snoozeMinutes
         return "AlarmKit requires iOS 26.0+ and an AlarmKit-capable runtime. Requested \"\(title)\" for \(fireDate.formatted(date: .abbreviated, time: .shortened))."
     }
+
 }

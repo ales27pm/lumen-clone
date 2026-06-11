@@ -4,13 +4,13 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `7831`
-- Runtime audit reports: `4`
-- Runtime failures: `1`
+- Dataset records: `8128`
+- Runtime audit reports: `14`
+- Runtime failures: `79`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `1`
-- Next action prompts: `1`
+- Gaps: `79`
+- Next action prompts: `79`
 
 ## TestFlight handoff
 
@@ -18,7 +18,152 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app datase
 
 ## Top gaps
 
-### ERROR — e2e_response_quality_rag
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — argument_mismatch
+
+- Category: `runtime_drift`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+
+### ERROR — e2e_response_quality_chat
+
+- Category: `runtime_drift`
+- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+
+### ERROR — e2e_response_quality_chat
+
+- Category: `runtime_drift`
+- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+
+### ERROR — e2e_response_quality_chat
 
 - Category: `runtime_drift`
 - Recommendation: Convert this failure into a REM repair sample and add a regression eval.

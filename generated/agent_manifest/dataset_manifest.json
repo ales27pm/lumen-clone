@@ -10,7 +10,7 @@
     "mouth_responses": 53,
     "negative_samples": 53,
     "rem_reflection": 5,
-    "runtime_audit_repairs": 3,
+    "runtime_audit_repairs": 49,
     "tool_schema_cards": 91,
     "train_sft": 298,
     "validation_sft": 53
@@ -18,13 +18,13 @@
   "deterministic": true,
   "generatedAt": "1970-01-01T00:00:00+00:00",
   "hashes": {
-    "dpo_preference_pairs": "fe30237492e17dfdeb3679726e4d4c887a156338004e7be17602d6f32163e191",
-    "eval_scenarios": "5f34ab53fd1f6b05fd6116622711240f475fc8d777e11be4f0c4272d1b89a5fc",
+    "dpo_preference_pairs": "4f767adaddc8004a98edfdd72b4ed9097d199d6890731154f06b8c300a9ca48f",
+    "eval_scenarios": "8ac66d5a364a7593019eed8b564b6e2aae93deaf3b38d8edb4f057ab45e2de95",
     "manifest_grounding_cards": "1d0cef01d0db5365957b22d31f0ed18e24e713ec7b7494aea9d584189d308107",
-    "runtime_audit_repairs": "cabb1951dc521497df05a53d2c25ece3ce84d9e2aa8bd64169cb90880d48ac3a",
-    "tool_schema_cards": "7eb7f8cbbd1e82805e78f5815addd074e1bdb1f08eaefa66db1caba245dc43ba",
-    "train_sft": "54e382947b8dfaacb66d29eab48671ee8b9f91f8c91ff21427543267fe4e3ae4",
-    "validation_sft": "25b7909e38ce960db6b7684d865017abdabc09a6fb07b5f735ffd60c78f7f853"
+    "runtime_audit_repairs": "dd967b3032a8283cd3dc557a477393dcece69195f58358d7706689172803878b",
+    "tool_schema_cards": "e95a82a2e0844e81174a6e7186e651d546b924a884c2794ed7553f8d8bfabc83",
+    "train_sft": "1e5a24d9267b15daa4b475c4fe6ffc8dd55d71ed038369e4646c9e36ce0fb432",
+    "validation_sft": "cc9850ee6728f34ec51076bcf7a3a461a159a63073b0de312c8e6d53feb38258"
   },
   "manifest": {
     "commit": null,
@@ -46,9 +46,10 @@
     ],
     "runtimeAuditFormats": [
       "live-e2e-test-report-json",
-      "lumen_in_app_dataset_package"
+      "lumen_in_app_dataset_package",
+      "persistent_runtime_diagnostics_export"
     ],
-    "runtimeAuditReports": 4,
+    "runtimeAuditReports": 14,
     "staticSwiftSourceFiles": 13
   },
   "trainingPolicy": {

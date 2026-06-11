@@ -43,16 +43,30 @@ enum TriggerTools {
         if all.isEmpty { return "No scheduled runs." }
         return all.map { t in
             let next = t.nextFireAt?.formatted(date: .abbreviated, time: .shortened) ?? (t.isPaused ? "paused" : "—")
-            return "• \(t.title) — \(t.kind.label) — next: \(next)"
+            return "• \(t.title) — \(t.kind.label) — next: \(next) — UUID: \(t.id.uuidString)"
         }.joined(separator: "\n")
     }
 
     static func cancel(title: String) async -> String {
+        let token = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            return "Missing trigger id or exact title."
+        }
         guard let container = SharedContainer.shared else { return "Store unavailable." }
         let ctx = ModelContext(container)
         let all = (try? ctx.fetch(FetchDescriptor<Trigger>())) ?? []
-        let match = all.first { $0.title.localizedCaseInsensitiveContains(title) || $0.id.uuidString == title }
-        guard let m = match else { return "No trigger matching \"\(title)\"." }
+        let matches: [Trigger]
+        if UUID(uuidString: token) != nil {
+            matches = all.filter { $0.id.uuidString.caseInsensitiveCompare(token) == .orderedSame }
+        } else {
+            matches = all.filter { $0.title.caseInsensitiveCompare(token) == .orderedSame }
+        }
+        guard matches.count == 1, let m = matches.first else {
+            if matches.count > 1 {
+                return "Multiple triggers match \"\(token)\". Use the UUID from the list to disambiguate."
+            }
+            return "No trigger matching \"\(token)\"."
+        }
         ctx.delete(m)
         try? ctx.save()
         return "Cancelled \"\(m.title)\"."

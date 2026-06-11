@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 MODEL_FAMILY_SELECTION = ROOT / "ios/Lumen/Services/ModelFamilySelection.swift"
+MODEL_ADAPTER_RUNTIME_CONTRACT = ROOT / "ios/Lumen/Services/ModelAdapterRuntimeContract.swift"
 MODEL_FLEET = ROOT / "ios/Lumen/Services/ModelFleet.swift"
 LLAMA_SERVICE = ROOT / "ios/Lumen/Services/LlamaService.swift"
 SLOT_COORDINATOR = ROOT / "ios/Lumen/Services/SlotModelRuntimeCoordinator.swift"
@@ -69,22 +70,27 @@ def section_after_marker(text: str, marker: str) -> str:
 
 
 def check_catalog() -> None:
-    text = read(MODEL_FAMILY_SELECTION)
-    qwen3 = section_after_marker(text, "static var qwen3BootstrapModels")
+    catalog = section_after_marker(read(MODEL_FAMILY_SELECTION), "static var qwen3BootstrapModels")
+    contract = section_after_marker(read(MODEL_ADAPTER_RUNTIME_CONTRACT), "static let qwen3AdapterBootstrapContract")
 
     require(
-        qwen3.count("lumen-qwen3-fast-shared-q4_k_m.gguf") == 1,
+        "qwen3AdapterBootstrapContract" in catalog
+        and "contract.sharedBaseFileName" in catalog
+        and contract.count('sharedBaseFileName: "lumen-qwen3-fast-shared-q4_k_m.gguf"') == 1,
         "Qwen3 default catalog must contain exactly one shared chat base filename.",
     )
     for adapter in sorted(EXPECTED_ADAPTERS):
-        require(adapter in qwen3, f"Qwen3 default catalog missing adapter: {adapter}")
+        require(adapter in contract, f"Qwen3 default catalog missing adapter: {adapter}")
     for release_bake in sorted(RELEASE_BAKE_DEFAULTS):
         require(
-            release_bake not in qwen3,
+            release_bake not in catalog and release_bake not in contract,
             f"Qwen3 default catalog must not include release-bake artifact: {release_bake}",
         )
     require(
-        "lumen-fleet-lora.gguf" in qwen3 and "roleID" in qwen3,
+        'roleID: "fleet"' in contract
+        and "lumen-fleet-lora.gguf" in contract
+        and "contract.adapterRoles.map" in catalog
+        and "role: .roleAdapter" in catalog,
         "Fleet adapter must be represented as a role adapter, not by abusing embedding slot metadata.",
     )
 

@@ -51,4 +51,4 @@ alarm.pause,Pause Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolD
 alarm.resume,Resume Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
 alarm.stop,Stop Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
 alarm.snooze,Snooze Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
-alarm.cancel,Cancel Alarm,True,NSAlarmKitUsageDescription,2,ios/Lumen/Models/ToolDefinition.swift
+alarm.cancel,Cancel Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift

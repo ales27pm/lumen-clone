@@ -115,10 +115,9 @@ class ToolDefinitionExtractor(SwiftExtractor):
         if not body or body.lower() in {"none", "no args", "n/a"}:
             return []
 
-        normalized = body.replace(" or ", ", ").replace(" plus ", ", ").replace(" depending on ", ", ")
         specs: list[tuple[str, bool]] = []
         optional_group = False
-        for raw in re.split(r"[,;/]", normalized):
+        for raw in re.split(r"[,;]", body):
             token = raw.strip()
             if not token:
                 continue
@@ -126,19 +125,26 @@ class ToolDefinitionExtractor(SwiftExtractor):
             token_lower = token.lower()
             token_optional = optional_group or token_lower.startswith("optional ")
             token = OPTIONAL_PREFIX_PATTERN.sub("", token).strip()
+            if token.lower().startswith("plus "):
+                token = token[5:].strip()
+            token = re.sub(r"\s+depending on (?:the )?schedule\b.*$", "", token, flags=re.I).strip()
             if not token:
                 optional_group = True
                 continue
-            parts = token.split()
-            name = parts[0].strip("`'\".:") if parts else token.strip("`'\".:")
-            if name.lower() in {"none", "args", "arg"}:
-                continue
-            if name.lower() in ARG_TYPE_HINT_WORDS and len(parts) > 1:
-                continue
-            if not ARG_NAME_PATTERN.fullmatch(name):
-                continue
-            if not any(existing == name for existing, _ in specs):
-                specs.append((name, token_optional))
+            for alias in re.split(r"\s+or\s+|/", token):
+                alias = alias.strip()
+                if not alias:
+                    continue
+                parts = alias.split()
+                name = parts[0].strip("`'\".:") if parts else alias.strip("`'\".:")
+                if name.lower() in {"none", "args", "arg"}:
+                    continue
+                if name.lower() in ARG_TYPE_HINT_WORDS and len(parts) > 1:
+                    continue
+                if not ARG_NAME_PATTERN.fullmatch(name):
+                    continue
+                if not any(existing == name for existing, _ in specs):
+                    specs.append((name, token_optional))
             optional_group = token_optional
 
         return [

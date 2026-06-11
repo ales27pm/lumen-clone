@@ -3,6 +3,1047 @@
     {
       "category": "runtime_drift",
       "evidence": {
+        "actual": "recipient:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "recipient:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "messages.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "cd4ae8c5bfca4a125c81f45d",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "message:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "message:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "messages.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "f6e1ce6b631683835ca303bd",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "text:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "text:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "messages.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "8cbdbc4dbfab5bcf38eaef64",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "number:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "number:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "messages.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "d299b10e5f32f0f5aa0c373f",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "text:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "text:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "mail.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "3989b69eff512d7a48f62f1e",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "message:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "message:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "mail.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "fe50620c1b829971c3d0055c",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "email:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "email:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "mail.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "9646ad27a7fb43671f23a057",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "recipient:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "recipient:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "mail.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "02d0cb090f8cef9a74c16c77",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.read",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "0e38514f8c9c3aa544edd988",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.attachments.list",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "205832a73b5fc12cdaa43a71",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.mark_read",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "feb55ae3a94234499aa26a82",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.mark_unread",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "5ca78001b440679b6afc33a1",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.move",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "5351fd337215b1225fab8f5e",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "destinationId:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "destinationId:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.move",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "73346614b21834e0b5589405",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.archive",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "a1f68f3a900236b38e66d54e",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.delete",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "97e574691ce965033d769fdb",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.reply",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "b3131a12c4e0e1f4d22133d6",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "comment:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "comment:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.reply",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "437c86337884254b951aad54",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.reply_all",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "266d9b0643a1264a26cfc4bb",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "comment:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "comment:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.reply_all",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "cd18f827317bc32e11dd878d",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.forward",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "f255222cbf23113837577019",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "beforeMinutes:number:required=false",
+        "agent": "runtime",
+        "expected": [
+          "beforeMinutes:number:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "trigger.create",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "3765dd052789b6008564b060",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "atTime:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "atTime:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "trigger.create",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "1bb0355e99973866b1821b76",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "intervalSeconds:number:required=false",
+        "agent": "runtime",
+        "expected": [
+          "intervalSeconds:number:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "trigger.create",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "226185267c46f4073bc3fb05",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "trigger.cancel",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "aa77c08e0b428117211b31a3",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "timestamp:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "timestamp:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "alarm.schedule",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "d76d4c3a00cb17b44b9cfdc1",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "title:string:required=false",
+        "agent": "runtime",
+        "expected": [
+          "title:string:required=true"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "alarm.cancel",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "a22d42b1ef93cd795da0eaf9",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "intent": "chat",
+          "name": "Normal chat does not force tools",
+          "prompt": "Explain why a sharp chisel is safer than a dull one.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain why a sharp chisel is safer than a dull one.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain why a sharp chisel is safer than a dull one.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "c7843ed1c793afdff6b506da",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "intent": "chat",
+          "name": "Carpentry chat stays direct",
+          "prompt": "Give me three tips for fitting a door hinge cleanly.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Give me three tips for fitting a door hinge cleanly.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Give me three tips for fitting a door hinge cleanly.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "cade55c2ff129adca45837fb",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "intent": "chat",
+          "name": "Code explanation stays chat",
+          "prompt": "Explain actor isolation in Swift in simple terms.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain actor isolation in Swift in simple terms.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain actor isolation in Swift in simple terms.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "ca9827aa74f9a0277ea982c2",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "intent": "chat",
+          "name": "Normal chat does not force tools",
+          "prompt": "Explain why a sharp chisel is safer than a dull one.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain why a sharp chisel is safer than a dull one.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain why a sharp chisel is safer than a dull one.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "c7843ed1c793afdff6b506da",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "intent": "chat",
+          "name": "Carpentry chat stays direct",
+          "prompt": "Give me three tips for fitting a door hinge cleanly.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Give me three tips for fitting a door hinge cleanly.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Give me three tips for fitting a door hinge cleanly.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "cade55c2ff129adca45837fb",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "intent": "chat",
+          "name": "Code explanation stays chat",
+          "prompt": "Explain actor isolation in Swift in simple terms.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain actor isolation in Swift in simple terms.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain actor isolation in Swift in simple terms.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "ca9827aa74f9a0277ea982c2",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I hit an internal response-format issue. Please try again.",
+          "intent": "chat",
+          "name": "Normal chat does not force tools",
+          "prompt": "Explain why a sharp chisel is safer than a dull one.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain why a sharp chisel is safer than a dull one.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain why a sharp chisel is safer than a dull one.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "e4ecf009693ef78994923043",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I hit an internal response-format issue. Please try again.",
+          "intent": "chat",
+          "name": "Carpentry chat stays direct",
+          "prompt": "Give me three tips for fitting a door hinge cleanly.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Give me three tips for fitting a door hinge cleanly.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Give me three tips for fitting a door hinge cleanly.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "b0c97b0bbc6d69a39823d017",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I hit an internal response-format issue. Please try again.",
+          "intent": "chat",
+          "name": "Code explanation stays chat",
+          "prompt": "Explain actor isolation in Swift in simple terms.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain actor isolation in Swift in simple terms.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain actor isolation in Swift in simple terms.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "b99363599b0c49d0671d32c6",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+          "intent": "chat",
+          "name": "Training eval: pure chat quality",
+          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "38ac5984776bcade54acd6cf",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.\n\nwhat should\n\nwho should",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "emailDraft",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.\n\nwhat should\n\nwho should",
+          "intent": "emailDraft",
+          "name": "Vague email draft asks clarification",
+          "prompt": "Draft a email",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.\n\nwhat should\n\nwho should",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Draft a email",
+          "violationCode": "e2e_response_quality_emaildraft"
+        },
+        "scenario": "Draft a email",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_emaildraft"
+      },
+      "id": "37e86c7d17ef7714b4aab361",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_emaildraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.\n\nwhat should\n\nwho should",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "emailDraft",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.\n\nwhat should\n\nwho should",
+          "intent": "emailDraft",
+          "name": "Vague email draft asks clarification",
+          "prompt": "Draft a email",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.\n\nwhat should\n\nwho should",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Draft a email",
+          "violationCode": "e2e_response_quality_emaildraft"
+        },
+        "scenario": "Draft a email",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_emaildraft"
+      },
+      "id": "37e86c7d17ef7714b4aab361",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_emaildraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "emailDraft",
+          "final": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
+          "intent": "emailDraft",
+          "name": "Vague email draft asks clarification",
+          "prompt": "Draft a email",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Draft a email",
+          "violationCode": "e2e_response_quality_emaildraft"
+        },
+        "scenario": "Draft a email",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_emaildraft"
+      },
+      "id": "2410ebc1f59b4286b17afa65",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_emaildraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "emailDraft",
+          "final": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+          "intent": "emailDraft",
+          "name": "Training eval: communication drafting",
+          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "violationCode": "e2e_response_quality_emaildraft"
+        },
+        "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_emaildraft"
+      },
+      "id": "34cf3db25ca063c4df5bd801",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_emaildraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
+          "intent": "memory",
+          "name": "Training eval: memory save/recall",
+          "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "881aefbfda1bcc42f7d374d1",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
         "actual": "<thinkle\":\"architecture notes\",\"module(s)\":[\"architecture notes\"],\"reasoning\":[{\"file\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\",\"id\":\"1\"}],\"source\":\"/Users/username/Library/Containers/com.example.app/Documents/architecture_notes.md\"} [1]",
         "agent": "mouth",
         "e2eScenario": {
@@ -36,6 +1077,873 @@
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
       "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+          "intent": "rag",
+          "name": "Training eval: local knowledge grounding",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `rag` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "scenario": "Search my files for architecture notes and summarize key modules.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "ab6af3a8a60401b19a7637ec",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "trigger",
+          "final": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+          "intent": "trigger",
+          "name": "Training eval: trigger scheduling quality",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `trigger` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "violationCode": "e2e_response_quality_trigger"
+        },
+        "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_trigger"
+      },
+      "id": "79a0ab0ac229965c59772df6",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_trigger"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Weather tool output could not be validated. Try again or provide a city.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "weather",
+          "final": "Weather tool output could not be validated. Try again or provide a city.",
+          "intent": "weather",
+          "name": "Weather here must not create events",
+          "prompt": "What is the weather here?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What is the weather here?",
+          "violationCode": "e2e_response_quality_weather"
+        },
+        "scenario": "What is the weather here?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_weather"
+      },
+      "id": "ddb71aa9eb8425e6ab7d53a5",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_weather"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Weather tool output could not be validated. Try again or provide a city.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "weather",
+          "final": "Weather tool output could not be validated. Try again or provide a city.",
+          "intent": "weather",
+          "name": "Weather here must not create events",
+          "prompt": "What is the weather here?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What is the weather here?",
+          "violationCode": "e2e_response_quality_weather"
+        },
+        "scenario": "What is the weather here?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_weather"
+      },
+      "id": "ddb71aa9eb8425e6ab7d53a5",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_weather"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Weather tool output could not be validated. Try again or provide a city.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "weather",
+          "final": "Weather tool output could not be validated. Try again or provide a city.",
+          "intent": "weather",
+          "name": "Weather here must not create events",
+          "prompt": "What is the weather here?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What is the weather here?",
+          "violationCode": "e2e_response_quality_weather"
+        },
+        "scenario": "What is the weather here?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_weather"
+      },
+      "id": "d31377ff0811359a0b50b694",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_weather"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Weather tool output could not be validated. Try again or provide a city.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "weather",
+          "final": "Weather tool output could not be validated. Try again or provide a city.",
+          "intent": "weather",
+          "name": "Training eval: weather stays grounded",
+          "prompt": "What is the weather here and should I carry an umbrella?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What is the weather here and should I carry an umbrella?",
+          "violationCode": "e2e_response_quality_weather"
+        },
+        "scenario": "What is the weather here and should I carry an umbrella?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_weather"
+      },
+      "id": "c52c3932ab6cacf716b2aca1",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_weather"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "webSearch",
+          "final": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "intent": "webSearch",
+          "name": "Web search must not create calendar event",
+          "prompt": "Search web for diy underground shelter",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Search web for diy underground shelter",
+          "violationCode": "e2e_response_quality_websearch"
+        },
+        "scenario": "Search web for diy underground shelter",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_websearch"
+      },
+      "id": "a9bdebd31071510eb05bedad",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_websearch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "webSearch",
+          "final": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "intent": "webSearch",
+          "name": "Web search must not create calendar event",
+          "prompt": "Search web for diy underground shelter",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Search web for diy underground shelter",
+          "violationCode": "e2e_response_quality_websearch"
+        },
+        "scenario": "Search web for diy underground shelter",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_websearch"
+      },
+      "id": "a9bdebd31071510eb05bedad",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_websearch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "webSearch",
+          "final": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "intent": "webSearch",
+          "name": "Web search must not create calendar event",
+          "prompt": "Search web for diy underground shelter",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Search web for diy underground shelter",
+          "violationCode": "e2e_response_quality_websearch"
+        },
+        "scenario": "Search web for diy underground shelter",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_websearch"
+      },
+      "id": "a9bdebd31071510eb05bedad",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_websearch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\n\nswift",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "webSearch",
+          "final": "I hit an internal response-format issue. Please try again.\n\nswift",
+          "intent": "webSearch",
+          "name": "Training eval: web research synthesis",
+          "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\n\nswift",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Search the web for two recent Swift concurrency best practices and summarize them.",
+          "violationCode": "e2e_response_quality_websearch"
+        },
+        "scenario": "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_websearch"
+      },
+      "id": "7408efb7326fb457841d5f07",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_websearch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "agent": "runtime",
+        "expected": [
+          "inMinutes"
+        ],
+        "problem": "Manifest argument is absent from runtime tool definition.",
+        "scenario": "trigger.create",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "missing_live_argument"
+      },
+      "id": "a620579042cf6ff3ee040ac1",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "missing_live_argument"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "84E94AC4-E59F-4CD0-981A-90A2E5AA232B",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "5fb58d641fb7c502571697cb",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "B9019814-9FDA-44C6-9620-D66FE57B44C7",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "9b6d3557604ff3fb26cbe63e",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "0B4B293E-272E-4665-86F9-464E73A419AE",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "585058445aa486bce8b65764",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "D1BDB8D2-94C9-4B4B-A912-D12EFF6A6F6B",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainDeveloperTraceBypass",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "23985e7954a24bdf692b5e31",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "85DA8237-C7E4-4903-9DA5-410AD5551649",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "agentFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "0ed84104db72dffa6ab19c73",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "91D52C53-C40A-4957-94EC-4B4BC4461F7D",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "dryRunPromptBudgetOnly",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "39508fc6bb1667c44861fae8",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "cancelled",
+        "agent": "runtime",
+        "diagnosticRecordID": "3FF5AAFD-E5A9-49FF-89F6-32CFE2E5AE6D",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "0e8082a75d998f487cf381b7",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "cancelled",
+        "agent": "runtime",
+        "diagnosticRecordID": "CC4668A3-C7A5-40BA-A0B7-73A4566C6A08",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "6a7aef0646c2debd71c80604",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "DF35BF7A-3C4C-4CA0-88B3-25F86D0E826A",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "agentToolPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "ae533bef9861164a7985e866",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "interrupted",
+        "agent": "runtime",
+        "diagnosticRecordID": "8DC191C0-39F4-4F2F-A327-CBD7E5B97730",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "dryRunPromptBudgetOnly",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "cf7e9558d42f575405b8ece1",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "84E94AC4-E59F-4CD0-981A-90A2E5AA232B",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "5fb58d641fb7c502571697cb",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "B9019814-9FDA-44C6-9620-D66FE57B44C7",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "9b6d3557604ff3fb26cbe63e",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "0B4B293E-272E-4665-86F9-464E73A419AE",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "585058445aa486bce8b65764",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "D1BDB8D2-94C9-4B4B-A912-D12EFF6A6F6B",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "plainDeveloperTraceBypass",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "23985e7954a24bdf692b5e31",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "85DA8237-C7E4-4903-9DA5-410AD5551649",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "agentFastPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "0ed84104db72dffa6ab19c73",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "91D52C53-C40A-4957-94EC-4B4BC4461F7D",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "dryRunPromptBudgetOnly",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "39508fc6bb1667c44861fae8",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "cancelled",
+        "agent": "runtime",
+        "diagnosticRecordID": "3FF5AAFD-E5A9-49FF-89F6-32CFE2E5AE6D",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "0e8082a75d998f487cf381b7",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "cancelled",
+        "agent": "runtime",
+        "diagnosticRecordID": "CC4668A3-C7A5-40BA-A0B7-73A4566C6A08",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "6a7aef0646c2debd71c80604",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "DF35BF7A-3C4C-4CA0-88B3-25F86D0E826A",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "agentToolPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "ae533bef9861164a7985e866",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "interrupted",
+        "agent": "runtime",
+        "diagnosticRecordID": "8DC191C0-39F4-4F2F-A327-CBD7E5B97730",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "dryRunPromptBudgetOnly",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "cf7e9558d42f575405b8ece1",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "interrupted",
+        "agent": "runtime",
+        "diagnosticRecordID": "39E500A8-E65A-4BFA-A3DD-1D770D14153E",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "e16eb071049f0c4f887ade82",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "interrupted",
+        "agent": "runtime",
+        "diagnosticRecordID": "664EFBE3-58C6-4EB8-90B4-CE4FA7562EE5",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "5ed59c9a97bf06ee3ed2cba3",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "8335577E-0921-483A-8EC3-67CEFD02693D",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "agentToolPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "e325ab3d138facf2c3b0f211",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "5CCEB691-E3DE-4811-A129-5270BB62B219",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "86d56c2b0a631c53a8cc9db8",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "plus",
+        "agent": "runtime",
+        "expected": [
+          "atTime",
+          "beforeMinutes",
+          "inMinutes",
+          "intervalSeconds",
+          "prompt",
+          "schedule",
+          "title"
+        ],
+        "problem": "Runtime exposes an argument absent from the manifest.",
+        "scenario": "trigger.create",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "unmanifested_live_argument"
+      },
+      "id": "b300559fb36aabfc77ede14d",
+      "recommendedAction": "Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.",
+      "severity": "error",
+      "title": "unmanifested_live_argument"
     }
   ]
 }

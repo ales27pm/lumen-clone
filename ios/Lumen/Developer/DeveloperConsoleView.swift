@@ -71,6 +71,12 @@ struct DeveloperConsoleView: View {
 
         Section("Core Modules") {
             NavigationLink {
+                LumenControlTowerView()
+            } label: {
+                Label("Control Tower", systemImage: "gauge.with.dots.needle.67percent")
+            }
+
+            NavigationLink {
                 DiagnosticsView()
             } label: {
                 Label("Diagnostics", systemImage: "waveform.path.ecg")
@@ -112,6 +118,12 @@ struct DeveloperConsoleView: View {
 
         Section("Export Packet") {
             NavigationLink {
+                LumenControlTowerView()
+            } label: {
+                Label("Inspect Control Tower workflow snapshot", systemImage: "gauge.with.dots.needle.67percent")
+            }
+
+            NavigationLink {
                 AgentGroundingAuditView(registryProvider: LiveRuntimeToolRegistryProvider())
             } label: {
                 Label("Prepare runtime audit package", systemImage: "square.and.arrow.up")
@@ -134,6 +146,12 @@ struct DeveloperConsoleView: View {
     @ViewBuilder
     private var workflowSections: some View {
         Section("Fixed Actions") {
+            NavigationLink {
+                LumenControlTowerView()
+            } label: {
+                Label("Open Control Tower", systemImage: "gauge.with.dots.needle.67percent")
+            }
+
             Button {
                 Task { await model.collectDiagnostics() }
             } label: {
@@ -276,7 +294,7 @@ private struct DeveloperFindingRow: View {
     }
 }
 
-private struct DeveloperConsoleTextView: View {
+struct DeveloperConsoleTextView: View {
     let title: String
     let bodyText: String
 
