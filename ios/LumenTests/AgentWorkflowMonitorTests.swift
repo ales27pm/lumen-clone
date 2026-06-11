@@ -62,6 +62,44 @@ struct AgentWorkflowMonitorTests {
         #expect(snapshot.events.last?.tokensPerSecond == 12.5)
     }
 
+    @Test func workflowMonitorClearsCrossSlotActiveStateForSameTurn() throws {
+        let monitor = AgentWorkflowMonitor(maxEvents: 20)
+        monitor.ingestForTests(.init(kind: .chatRuntimeTrace, values: [
+            "phase": "chat_agent_start",
+            "turnID": "turn-cross-slot",
+            "conversationID": "conversation-cross-slot"
+        ], at: Date()))
+        monitor.ingestForTests(.init(kind: .chatRuntimeTrace, values: [
+            "phase": "chat_agent_final",
+            "turnID": "turn-cross-slot",
+            "conversationID": "conversation-cross-slot",
+            "finalChars": "24"
+        ], at: Date()))
+
+        let snapshot = monitor.snapshot()
+        #expect(snapshot.events[0].slot == .runtime)
+        #expect(snapshot.events[0].status == .running)
+        #expect(snapshot.events[1].slot == .mouth)
+        #expect(snapshot.events[1].status == .done)
+        #expect(snapshot.activeBySlot.isEmpty)
+    }
+
+    @Test func workflowMonitorClearsActiveStateOnFallback() throws {
+        let monitor = AgentWorkflowMonitor(maxEvents: 20)
+        monitor.ingestForTests(.init(kind: .chatRuntimeTrace, values: [
+            "phase": "start",
+            "turnID": "turn-fallback"
+        ], at: Date()))
+        monitor.ingestForTests(.init(kind: .fallbackUsed, values: [
+            "reason": "empty-after-sanitization",
+            "turnID": "turn-fallback"
+        ], at: Date()))
+
+        let snapshot = monitor.snapshot()
+        #expect(snapshot.fallbackCount == 1)
+        #expect(snapshot.activeBySlot.isEmpty)
+    }
+
     @Test func workflowMonitorReportIsJSONEncodable() throws {
         let monitor = AgentWorkflowMonitor(maxEvents: 5)
         monitor.ingestForTests(.init(kind: .chatRuntimeTrace, values: [
