@@ -234,6 +234,25 @@ nonisolated final class AgentWorkflowMonitor: @unchecked Sendable {
         var fallbackCount = 0
         var errorCount = 0
 
+        func clearActive(for event: AgentWorkflowEvent, slotKey: String) {
+            active[slotKey] = nil
+            let matchingKeys = active.compactMap { key, activeEvent -> String? in
+                if let turnID = event.turnID, !turnID.isEmpty, activeEvent.turnID == turnID {
+                    return key
+                }
+                if event.turnID == nil,
+                   let conversationID = event.conversationID,
+                   !conversationID.isEmpty,
+                   activeEvent.conversationID == conversationID {
+                    return key
+                }
+                return nil
+            }
+            for key in matchingKeys {
+                active[key] = nil
+            }
+        }
+
         for event in copied {
             let key = event.slot.rawValue
             last[key] = event
@@ -241,15 +260,15 @@ nonisolated final class AgentWorkflowMonitor: @unchecked Sendable {
             case .running:
                 active[key] = event
             case .done:
-                active[key] = nil
+                clearActive(for: event, slotKey: key)
                 completed[key, default: 0] += 1
             case .failed:
-                active[key] = nil
+                clearActive(for: event, slotKey: key)
                 errorCount += 1
             case .cancelled:
-                active[key] = nil
+                clearActive(for: event, slotKey: key)
             case .fallback:
-                active[key] = nil
+                clearActive(for: event, slotKey: key)
                 fallbackCount += 1
             case .info:
                 break
