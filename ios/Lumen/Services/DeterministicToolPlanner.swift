@@ -164,10 +164,26 @@ nonisolated enum DeterministicToolPlanner {
             if containsAny(text, ["authorization", "permission", "access", "status"]) && containsAny(text, ["check", "show", "status", "authorized", "allowed"]) {
                 return action("alarm.authorization_status")
             }
-            if containsAny(text, ["pause"]) { return action("alarm.pause", alarmMutationArgs(from: prompt)) }
-            if containsAny(text, ["resume"]) { return action("alarm.resume", alarmMutationArgs(from: prompt)) }
-            if containsAny(text, ["stop"]) { return action("alarm.stop", alarmMutationArgs(from: prompt)) }
-            if containsAny(text, ["snooze"]) { return action("alarm.snooze", alarmMutationArgs(from: prompt)) }
+            if containsAny(text, ["pause"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.pause", args)
+            }
+            if containsAny(text, ["resume"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.resume", args)
+            }
+            if containsAny(text, ["stop"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.stop", args)
+            }
+            if containsAny(text, ["snooze"]) {
+                let args = alarmMutationArgs(from: prompt)
+                guard args["id"] != nil else { return nil }
+                return action("alarm.snooze", args)
+            }
             if containsAny(text, ["cancel", "delete", "remove"]) {
                 let args = alarmMutationArgs(from: prompt)
                 guard args["id"] != nil else { return nil }
