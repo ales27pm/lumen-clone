@@ -2,10 +2,10 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `4bd0a3e44b65bc13862219029daec380c50db459`
+- Manifest commit: `80bab05fe567e74ae82e2198ec40b680a18fc31a`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `443`
+- Codebase-home records: `446`
 
 ## Top Modules
 - `Services`: 55 files
@@ -14,9 +14,9 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `Views`: 30 files
 - `Services/LLM`: 21 files
 - `Assistant`: 19 files
+- `Diagnostics`: 19 files
 - `tools/lumen_manifest_crawler/tests`: 19 files
 - `tools/fine_tuning/unsloth`: 18 files
-- `Diagnostics`: 17 files
 - `Models`: 15 files
 - `Services/Tools`: 14 files
 - `System`: 14 files
@@ -43,7 +43,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift` owns BundledAgentGroundingStore behavior and defines: BundledFleetSystemPrompt, RuntimeGroundingBundle, RuntimeCodebaseHome, RuntimeGroundingFile, Runt Symbols: BundledFleetSystemPrompt, RuntimeGroundingBundle, RuntimeCodebaseHome, RuntimeGroundingFile, RuntimeGroundingInjectionPolicy, BundledAgentGroundingStoreError, for, GroundingResourceLoader.
 - `ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` owns ImproveLoopSampleGate behavior and defines: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, I Symbols: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, ImproveLoopTrainingSample, ImproveLoopDatasetCounters, ImproveLoopDataset, ImproveLoopSampleGate.
 - `ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExp Symbols: LumenInAppDatasetPackage, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, writePackage, exportDirectory.
-- `ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, Symbols: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, argumentAliases, isValidArgumentName.
+- `ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, Symbols: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, removeDependencyPhrases, argumentAliases.
 - `ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` owns RuntimeManifestAuditor behavior and defines: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAudito Symbols: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAuditor, RuntimeManifestAuditError, loadBundledManifest, loadManifestFromStoreBundleOrRuntimeFallback, loadBundledManifestOrRuntimeFallback.
 - `ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` owns RuntimeScenarioRunner behavior and defines: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt,  Symbols: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt, id, intent.
 - `ios/Lumen/Services/AgentGrounding/RuntimeToolRegistryProviding.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeToolRegistryProviding.swift` owns RuntimeToolRegistryProviding behavior and defines: RuntimeToolRegistryProviding, StaticRuntimeToolRegistryProvider, currentToolDefinitions, tool Symbols: RuntimeToolRegistryProviding, StaticRuntimeToolRegistryProvider, currentToolDefinitions, tools.
