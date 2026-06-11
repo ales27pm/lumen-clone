@@ -160,6 +160,12 @@ nonisolated final class AgentWorkflowMonitor: @unchecked Sendable {
     private var events: [AgentWorkflowEvent] = []
     private let maxEvents: Int
 
+    var isMonitoring: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return observerID != nil
+    }
+
     init(maxEvents: Int = 500, startObserving: Bool = false) {
         self.maxEvents = max(10, maxEvents)
         if startObserving {
@@ -174,19 +180,13 @@ nonisolated final class AgentWorkflowMonitor: @unchecked Sendable {
     @discardableResult
     func start() -> Bool {
         lock.lock()
-        if observerID != nil {
-            lock.unlock()
-            return false
-        }
-        lock.unlock()
+        defer { lock.unlock() }
+        guard observerID == nil else { return false }
 
         let id = PersistentRuntimeDiagnosticsObserver.shared.addObserver { [weak self] signal in
             self?.ingest(signal)
         }
-
-        lock.lock()
         observerID = id
-        lock.unlock()
         return true
     }
 
@@ -249,6 +249,7 @@ nonisolated final class AgentWorkflowMonitor: @unchecked Sendable {
             case .cancelled:
                 active[key] = nil
             case .fallback:
+                active[key] = nil
                 fallbackCount += 1
             case .info:
                 break
