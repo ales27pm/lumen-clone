@@ -280,11 +280,40 @@ nonisolated struct AgentBehaviorRepairSample: Codable, Sendable, Identifiable, H
     let curriculum: String
 }
 
+private final class AgentBehaviorTraceMemoryCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var traces: [AgentBehaviorTrace] = []
+    private let maxTraces = 512
+
+    func remember(_ trace: AgentBehaviorTrace) {
+        lock.lock()
+        traces.append(trace)
+        if traces.count > maxTraces {
+            traces.removeFirst(traces.count - maxTraces)
+        }
+        lock.unlock()
+    }
+
+    func recent(limit: Int) -> [AgentBehaviorTrace] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(traces.suffix(max(0, limit)))
+    }
+
+    func clear() {
+        lock.lock()
+        traces.removeAll()
+        lock.unlock()
+    }
+}
+
 nonisolated enum AgentBehaviorTraceRecorder {
     private static let fileName = "agent-behavior-traces.jsonl"
     private static let maxRecentReadBytes = 1_048_576
+    private static let memoryCache = AgentBehaviorTraceMemoryCache()
 
     static func record(_ trace: AgentBehaviorTrace) {
+        memoryCache.remember(trace)
         do {
             let directory = try diagnosticsDirectory()
             let url = directory.appendingPathComponent(fileName, isDirectory: false)
@@ -312,11 +341,12 @@ nonisolated enum AgentBehaviorTraceRecorder {
     static func recent(limit: Int = 200) -> [AgentBehaviorTrace] {
         let boundedLimit = max(0, limit)
         guard boundedLimit > 0, !Task.isCancelled else { return [] }
+        let inMemory = memoryCache.recent(limit: boundedLimit)
 
         do {
             let url = try diagnosticsDirectory().appendingPathComponent(fileName, isDirectory: false)
             let path = url.path(percentEncoded: false)
-            guard FileManager.default.fileExists(atPath: path) else { return [] }
+            guard FileManager.default.fileExists(atPath: path) else { return inMemory }
 
             let attributes = try FileManager.default.attributesOfItem(atPath: path)
             let fileSize = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
@@ -339,17 +369,30 @@ nonisolated enum AgentBehaviorTraceRecorder {
 
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            let traces = data.split(separator: 0x0A).compactMap { line -> AgentBehaviorTrace? in
+            let diskTraces = data.split(separator: 0x0A).compactMap { line -> AgentBehaviorTrace? in
                 var lineData = Data(line)
                 if lineData.last == 0x0D {
                     lineData.removeLast()
                 }
                 return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
             }
-            return Array(traces.suffix(boundedLimit))
+            return mergedRecentTraces(diskTraces, inMemory, limit: boundedLimit)
         } catch {
-            return []
+            return inMemory
         }
+    }
+
+    private static func mergedRecentTraces(_ groups: [AgentBehaviorTrace]..., limit: Int) -> [AgentBehaviorTrace] {
+        var byID: [UUID: AgentBehaviorTrace] = [:]
+        for trace in groups.flatMap({ $0 }) {
+            byID[trace.id] = trace
+        }
+        let sorted = Array(byID.values)
+            .sorted { lhs, rhs in
+                if lhs.createdAt == rhs.createdAt { return lhs.id.uuidString < rhs.id.uuidString }
+                return lhs.createdAt < rhs.createdAt
+            }
+        return Array(sorted.suffix(max(0, limit)))
     }
 
     private static func completeLineData(fromSuffixIncludingPreviousByte data: Data) -> Data {
@@ -376,6 +419,7 @@ nonisolated enum AgentBehaviorTraceRecorder {
     }
 
     static func clear() {
+        memoryCache.clear()
         do {
             let url = try diagnosticsDirectory().appendingPathComponent(fileName, isDirectory: false)
             if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {

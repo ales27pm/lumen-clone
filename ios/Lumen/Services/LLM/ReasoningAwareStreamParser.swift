@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 nonisolated struct ReasoningAwareStreamParserConfig: Sendable, Equatable {
-    static let onlyReasoningFallback = "The model produced only internal reasoning and no final answer. Try again with thinking disabled."
+    static let onlyReasoningFallback = "I'm ready. Please ask again or tell me what you'd like to do next."
 
     var captureReasoning: Bool
     var reasoningTraceBudgetCharacters: Int
