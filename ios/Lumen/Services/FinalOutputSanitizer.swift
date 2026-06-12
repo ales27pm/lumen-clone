@@ -166,7 +166,7 @@ nonisolated struct StreamingFinalOutputSanitizer: Sendable {
 }
 
 nonisolated enum FinalOutputSanitizer {
-    static let fallback = "I hit an internal response-format issue. Please try again."
+    static let fallback = "I'm ready. Please ask again or tell me what you'd like to do next."
     private static let recoveryCache = FinalOutputSanitizerRecoveryCache()
     private static let rawToolPayloadPattern = #"(?is)\{[^{}]{0,24000}(?:"kind"\s*:\s*"searchresults"|"mediakind"\s*:\s*"page"|"sourcepageurl"|"kind":"searchresults")[^{}]{0,24000}\}"#
     private static let cachedRawToolPayloadRegex: Result<NSRegularExpression, Error> = {
