@@ -142,6 +142,7 @@ nonisolated enum DeterministicToolPlanner {
         case .motion: return action("motion.activity")
         case .files:
             if let name = extractFileName(from: prompt) { return action("files.read", ["name": .string(name)]) }
+            if containsAny(text, ["attachment", "attached", "this file", "this document", "read file", "read document"]) { return action("files.read") }
             return nil
         case .memory:
             if isPersonalProfileRecallIntent(text) { return action("memory.recall", ["query": .string("user name")]) }
@@ -156,7 +157,7 @@ nonisolated enum DeterministicToolPlanner {
         case .rag:
             if containsAny(text, ["index photos", "reindex photos", "photo retrieval index"]) { return action("rag.index_photos") }
             if containsAny(text, ["reindex", "index files", "file retrieval index", "refresh retrieval index"]) { return action("rag.index_files") }
-            if containsAny(text, ["search"]) {
+            if containsAny(text, ["search", "summarize", "read", "show"]) {
                 let query = expandRAGQueryIfNeeded(originalPrompt: prompt)
                 return action("rag.search", ["query": .string(query)])
             }
@@ -251,12 +252,12 @@ nonisolated enum DeterministicToolPlanner {
             let q = extractOutlookSearchQuery(from: prompt)
             if !q.isEmpty { return action("outlook.messages.search", ["query": .string(q), "limit": .string("10")]) }
         }
-        if containsAny(text, ["new emails", "new email", "unread emails", "unread email", "inbox"]) {
+        if !text.contains("move") && containsAny(text, ["new emails", "new email", "unread emails", "unread email", "inbox"]) {
             var args: AgentJSONArguments = ["limit": .string("10")]
             if text.contains("unread") { args["unreadOnly"] = .string("true") }
             return action("outlook.messages.list", args)
         }
-        if isLatestOutlookReadIntent(text) {
+        if !containsAny(text, ["move", "archive", "delete", "trash", "mark"]) && isLatestOutlookReadIntent(text) {
             return action("outlook.messages.list", ["limit": .string("1")])
                 ?? action("outlook.message.read", outlookMessageReadArgs("latest"))
         }
@@ -452,7 +453,16 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func isCalendarCreateIntent(_ text: String) -> Bool {
-        containsAny(text, ["set an appointment", "set appointment", "schedule", "book "])
+        if containsAny(text, [
+            "what's on", "what is on", "do i have", "when is",
+            "next meeting", "next event", "show", "list", "search my calendar", "read my calendar"
+        ]) {
+            return false
+        }
+        if text.contains("my schedule") && !text.hasPrefix("schedule ") {
+            return false
+        }
+        return containsAny(text, ["set an appointment", "set appointment", "schedule", "book "])
             || (containsAny(text, ["create", "add", "put "]) && containsAny(text, ["event", "appointment", "meeting", "calendar"]))
     }
 

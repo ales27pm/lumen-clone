@@ -1110,7 +1110,8 @@ nonisolated enum E2ETestRunner {
             "routing-only checks completed",
             "full local model pipeline is temporarily running in compatibility mode",
             "full agent pipeline",
-            "please try again with thinking disabled"
+            "please try again with thinking disabled",
+            "please ask again or tell me what you'd like to do next"
         ]
         return invalidSignals.contains(where: { combined.contains($0) })
             ? "Live agent returned fallback/error text instead of completing the scenario"
