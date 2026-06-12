@@ -256,7 +256,7 @@ nonisolated enum IntentRouter {
         case .messageDraft: return "Message drafting is not available in this build yet."
         case .phoneCall: return "Phone call tools are unavailable in this build right now."
         case .contactSearch: return "Contact search is unavailable in this build right now."
-        case .calendar: return "Calendar tools are unavailable in this build right now."
+        case .calendar: return "Calendar event tools are unavailable in this build right now."
         case .reminder: return "Reminder tools are unavailable in this build right now."
         case .maps: return "Maps/location tools are unavailable in this build right now."
         case .photos: return "Photo tools are unavailable in this build right now."
@@ -315,6 +315,10 @@ nonisolated enum IntentRouter {
 
     private static func priorityOverride(forNormalizedText text: String) -> IntentRoutingDecision? {
         guard !text.isEmpty else { return nil }
+
+        if matchesAny(text, ["scheduled run", "agent run", "background agent", "cancel trigger", "create trigger", "list triggers"]) {
+            return IntentRoutingDecision(intent: .trigger, allowedToolIDs: triggerToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
 
         if isExplicitReminderIntent(text) {
             return IntentRoutingDecision(intent: .reminder, allowedToolIDs: reminderToolIDs, requiresClarification: false, clarificationPrompt: nil)
