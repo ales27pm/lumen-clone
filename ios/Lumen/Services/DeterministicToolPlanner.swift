@@ -138,6 +138,7 @@ nonisolated enum DeterministicToolPlanner {
         case .motion: return action("motion.activity")
         case .files:
             if let name = extractFileName(from: prompt) { return action("files.read", ["name": .string(name)]) }
+            if containsAny(text, ["attachment", "attached", "this file", "this document", "read file", "read document"]) { return action("files.read") }
             return nil
         case .memory:
             if isPersonalProfileRecallIntent(text) { return action("memory.recall", ["query": .string("user name")]) }
@@ -152,7 +153,7 @@ nonisolated enum DeterministicToolPlanner {
         case .rag:
             if containsAny(text, ["index photos", "reindex photos", "photo retrieval index"]) { return action("rag.index_photos") }
             if containsAny(text, ["reindex", "index files", "file retrieval index", "refresh retrieval index"]) { return action("rag.index_files") }
-            if containsAny(text, ["search"]) {
+            if containsAny(text, ["search", "summarize", "read", "show"]) {
                 let query = expandRAGQueryIfNeeded(originalPrompt: prompt)
                 return action("rag.search", ["query": .string(query)])
             }
