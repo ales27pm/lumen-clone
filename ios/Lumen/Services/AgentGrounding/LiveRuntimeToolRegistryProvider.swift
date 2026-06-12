@@ -39,8 +39,9 @@ private enum RuntimeToolArgumentInferencer {
             token = removeParentheticalText(from: token)
 
             let lowerToken = token.lowercased()
-            let tokenOptional = optionalGroup || lowerToken.hasPrefix("optional ")
-            if lowerToken.hasPrefix("optional ") {
+            let declaredOptional = lowerToken.hasPrefix("optional ")
+            let tokenOptional = optionalGroup || declaredOptional
+            if declaredOptional {
                 token = String(token.dropFirst("optional ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
             if token.lowercased().hasPrefix("plus ") {
@@ -52,7 +53,9 @@ private enum RuntimeToolArgumentInferencer {
                 continue
             }
 
-            for (index, alias) in argumentAliases(from: token).enumerated() {
+            let aliases = argumentAliases(from: token)
+            let hasRequiredAlternativeAliases = aliases.count > 1
+            for alias in aliases {
                 let pieces = alias.split(whereSeparator: { $0.isWhitespace })
                 guard let first = pieces.first else { continue }
                 let name = String(first).trimmingCharacters(in: CharacterSet(charactersIn: "`'\".:"))
@@ -61,9 +64,9 @@ private enum RuntimeToolArgumentInferencer {
                 if typeHintWords.contains(loweredName), pieces.count > 1 { continue }
                 guard isValidArgumentName(name) else { continue }
                 guard !specs.contains(where: { $0.name == name }) else { continue }
-                specs.append((name: name, required: !tokenOptional))
+                specs.append((name: name, required: (hasRequiredAlternativeAliases || (name == "id" && specs.contains(where: { $0.name == "messageId" }))) ? true : !tokenOptional))
             }
-            optionalGroup = tokenOptional
+            optionalGroup = tokenOptional && !hasRequiredAlternativeAliases
         }
 
         return specs.map { spec in

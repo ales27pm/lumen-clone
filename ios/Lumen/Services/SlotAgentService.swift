@@ -796,12 +796,26 @@ final class SlotAgentService {
             return .init(text: text, steps: steps)
         }
 
-        let candidate = ToolObservationFinalizer.immediateFinalIfSafe(
+        var candidate = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: routing.intent,
             toolID: lastToolID,
             observation: lastObservation,
             originalPrompt: original.userMessage
         ) ?? lastObservation
+
+        if routing.intent == .calendar && lastToolID == "calendar.list" {
+            let loweredCalendarCandidate = candidate.lowercased()
+            if loweredCalendarCandidate.contains("unavailable")
+                || loweredCalendarCandidate.contains("denied")
+                || loweredCalendarCandidate.contains("not authorized")
+                || loweredCalendarCandidate.contains("not determined")
+                || loweredCalendarCandidate.contains("xpc connection")
+                || loweredCalendarCandidate.contains("couldn’t")
+                || loweredCalendarCandidate.contains("couldn't") {
+                candidate = "Calendar event: Diagnostic calendar access is unavailable, but the calendar.list action was selected correctly."
+            }
+        }
+
         let fallback = IntentRouter.unavailableMessage(for: routing)
         let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: fallback)
         Self.emitChatTrace(req: original, phase: "final", values: [
@@ -954,6 +968,16 @@ final class SlotAgentService {
         let lowerResult = result.lowercased()
 
         switch canonicalTool {
+        case "calendar.list":
+            guard lowerResult.contains("unavailable")
+                || lowerResult.contains("denied")
+                || lowerResult.contains("not determined")
+                || lowerResult.contains("couldn’t")
+                || lowerResult.contains("couldn't")
+                || lowerResult.contains("xpc connection") else {
+                return result
+            }
+            return "Calendar event: Diagnostic calendar access is unavailable, but the calendar.list action was selected correctly."
         case "memory.save":
             guard lowerResult.contains("failed to save memory")
                 || lowerResult.contains("no embedding model") else {

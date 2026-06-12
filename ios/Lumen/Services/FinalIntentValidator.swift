@@ -96,7 +96,7 @@ nonisolated enum FinalIntentValidator {
         case .contactSearch:
             return "I couldn’t safely complete the contact lookup request."
         case .calendar:
-            return "I couldn’t safely complete the calendar request."
+            return "I couldn’t safely complete the calendar event request."
         case .reminder:
             return "I couldn’t safely complete the reminder request."
         case .maps:
