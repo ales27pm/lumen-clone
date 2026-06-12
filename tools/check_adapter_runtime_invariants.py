@@ -28,6 +28,8 @@ EXPORT_GGUF = ROOT / "tools/fine_tuning/unsloth/export_gguf.py"
 DOC = ROOT / "docs/ADAPTER_RUNTIME_IMPROVE_LOOP.md"
 TERMINAL_LOOP = ROOT / "tools/lumen_terminal_improve_loop.py"
 TRAIN_SFT = ROOT / "tools/fine_tuning/unsloth/train_sft.py"
+PBXPROJ = ROOT / "ios/Lumen.xcodeproj/project.pbxproj"
+HARDENING_DOC = ROOT / "docs/HARDENING_IOS_LORA_ADAPTER_RUNTIME.md"
 QWEN3_CONFIG_DIR = ROOT / "tools/fine_tuning/unsloth/configs_qwen3_bootstrap"
 
 EXPECTED_ADAPTERS = {
@@ -61,6 +63,17 @@ def fail(message: str) -> None:
 def require(condition: bool, message: str) -> None:
     if not condition:
         fail(message)
+
+
+def require_in_order(text: str, markers: list[str], message: str) -> None:
+    position = -1
+    for marker in markers:
+        next_position = text.find(marker, position + 1)
+        if next_position < 0:
+            fail(f"{message}: missing marker {marker!r}")
+        if next_position <= position:
+            fail(message)
+        position = next_position
 
 
 def section_after_marker(text: str, marker: str) -> str:
@@ -115,8 +128,26 @@ def check_runtime() -> None:
     text = read(LLAMA_SERVICE)
     require("private actor AdapterChatRuntime" in text, "AdapterChatRuntime must remain actor-isolated.")
     require(
-        "clearAdapters()" in text and "context.apply(loraAdapter: adapter, scale: scale)" in text,
-        "Adapter activation must clear before applying LoRA.",
+        "func activateRoleAdapter(slot: LumenModelSlot, scale: Float) throws" in text,
+        "AdapterChatRuntime must own a single activation entry point.",
+    )
+    runtime_activation = section_after_marker(text, "func activateRoleAdapter(slot: LumenModelSlot, scale: Float) throws")
+    runtime_activation = runtime_activation.split("func clearAdapters()", 1)[0]
+    require_in_order(
+        runtime_activation,
+        ["clearAdapters()", "guard let adapter = loadedAdapters[slot]", "try context.apply(loraAdapter: adapter, scale: scale)"],
+        "AdapterChatRuntime must clear all LoRA adapters before applying the requested one.",
+    )
+    service_activation = section_after_marker(text, "func activateRoleAdapter(slot: LumenModelSlot) async throws")
+    service_activation = service_activation.split("func activateRoleAdapterIfNeeded", 1)[0]
+    require_in_order(
+        service_activation,
+        ["try await runtime.activateRoleAdapter(slot: loaded.slot, scale: loaded.scale)", "activeAdapterSlot = slot"],
+        "AppLlamaService must set activeAdapterSlot only after successful adapter application.",
+    )
+    require(
+        "await runtime.clearAdapters()" in service_activation and "lastAdapterFailureReason = error.localizedDescription" in service_activation,
+        "Adapter activation failure must clear adapters, reset state, and persist lastAdapterFailureReason.",
     )
     require("let isLast = index == lastIndex" in text, "Prompt decode must mark the final prompt token for logits.")
     require("outputTokenCount: nil" in text, "outputTokenCount must stay nil unless real token counts are threaded through.")
@@ -125,9 +156,20 @@ def check_runtime() -> None:
         "Do not report whitespace word count as outputTokenCount.",
     )
     require(
-        "adapterApplied" in text and "adapterSlot" in text,
-        "Runtime trace metadata must include adapterApplied and adapterSlot.",
+        "adapterApplied" in text and "adapterSlot" in text and "adapterFailureReason" in text,
+        "Runtime trace metadata must include adapterApplied, adapterSlot, and adapterFailureReason.",
     )
+
+
+def check_swift_llama_pin() -> None:
+    text = read(PBXPROJ)
+    require(
+        'repositoryURL = "https://github.com/pgorzelany/swift-llama-cpp.git";' in text,
+        "swift-llama-cpp package URL drifted.",
+    )
+    swift_ref = text[text.find('repositoryURL = "https://github.com/pgorzelany/swift-llama-cpp.git";'):]
+    swift_ref = swift_ref.split('/* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */', 1)[0]
+    require("kind = exactVersion;" in swift_ref and "version = 1.2.0;" in swift_ref, "swift-llama-cpp must remain pinned to exactVersion 1.2.0.")
 
 
 def check_slot_coordinator() -> None:
@@ -170,6 +212,25 @@ def check_docs() -> None:
     require("Non-negotiable runtime invariant" in text, "Adapter runtime doctrine doc missing invariant section.")
     require("Default Qwen3 runtime must not" in text, "Adapter runtime doctrine doc must explicitly forbid five full role GGUFs.")
     require("Improve-loop drift checks" in text, "Adapter runtime doctrine doc must include improve-loop drift checks.")
+
+
+def check_hardening_doc() -> None:
+    text = read(HARDENING_DOC)
+    required_phrases = [
+        "Poison and Antidote",
+        "PR 171",
+        "Jetsam",
+        "single-adapter",
+        "swift-llama-cpp",
+        "exact version `1.2.0`",
+        "Fleet adapter",
+        "llama_adapter_lora_init",
+        "LlamaContext.removeAllLoraAdapters()",
+        "12-step real-device smoke test",
+        "adapterApplied=true",
+    ]
+    for phrase in required_phrases:
+        require(phrase in text, f"Hardening guide missing required context: {phrase}")
 
 
 def check_terminal_loop() -> None:
@@ -254,10 +315,12 @@ def main() -> int:
         check_catalog,
         check_fleet_resolver,
         check_runtime,
+        check_swift_llama_pin,
         check_slot_coordinator,
         check_models_view,
         check_export_policy,
         check_docs,
+        check_hardening_doc,
         check_terminal_loop,
         check_qwen3_configs_alignment,
         check_train_sft_reproducibility,
