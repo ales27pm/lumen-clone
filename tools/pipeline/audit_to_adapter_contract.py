@@ -39,11 +39,17 @@ MANIFEST_OUTPUT_DIR = Path("generated/agent_manifest")
 
 RUNTIME_AUDIT_GLOBS: tuple[str, ...] = (
     "exports/*.json",
+    "runtime-audits/**/*.json",
     "generated/runtime_audits/*.json",
     "generated/runtime_audit/*.json",
     "generated/testflight_exports/*.json",
     "generated/agent_improvement_loop/runtime_audits/*.json",
+    "Diagnostics/LumenDatasetExports/*.json",
 )
+
+IN_APP_DATASET_PACKAGE_SCHEMA_VERSIONS: tuple[str, ...] = ("1.0.0", "1.1.0", "1.2.0")
+IN_APP_DATASET_EXPORT_FORMAT = "agent-grounding-runtime-json-package"
+IN_APP_DATASET_SOURCE_LAYER = "agentGroundingRuntimeAudit"
 
 
 @dataclass(frozen=True)
@@ -120,7 +126,7 @@ def runtime_audit_candidates(root: Path) -> list[Path]:
 
 
 CONTRACT = AuditToAdapterPipelineContract(
-    schema_version="lumen.audit_to_adapter_pipeline/1.0.0",
+    schema_version="lumen.audit_to_adapter_pipeline/1.1.0",
     family="qwen3",
     mode="adapter-first",
     live_runtime_slots=LIVE_RUNTIME_SLOTS,
@@ -161,7 +167,7 @@ CONTRACT = AuditToAdapterPipelineContract(
     stages=(
         PipelineStageSpec(
             id="runtime_audit_ingest",
-            owner="tools/lumen_manifest_crawler",
+            owner="ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift + tools/lumen_manifest_crawler/dataset/runtime_ingest.py",
             command_hint="python -m lumen_manifest_crawler improve-loop --runtime-audit <audit.json> --generate-agent-fine-tuning",
             inputs=("ios/Lumen", *RUNTIME_AUDIT_GLOBS),
             outputs=(str(LOOP_OUTPUT_DIR / "loop_state.json"), str(MANIFEST_OUTPUT_DIR / "dataset_manifest.json"), str(FINE_TUNING_OUTPUT_DIR)),
@@ -211,7 +217,9 @@ CONTRACT = AuditToAdapterPipelineContract(
     invariants=(
         "Qwen3 default runtime loads one shared chat base and switches exactly one LoRA adapter per live role slot.",
         "Runtime audit JSONs are first-class training inputs and must carry adapterApplied/adapterSlot/adapterFailureReason when available.",
+        "In-app dataset packages must include exportPolicy.format=agent-grounding-runtime-json-package and sourceLayer=agentGroundingRuntimeAudit.",
         "Training produces PEFT adapter directories under models/lora_qwen3_bootstrap/<role>; GGUF conversion is a separate explicit stage.",
+        "Generated adapter export plans must point to models/lora_qwen3_bootstrap and models/lora_qwen3_gguf, not stale models/lora paths.",
         "Role adapters are stored as ModelRole.roleAdapter in iOS and are never directly activatable as chat or embedding models.",
         "Release-baked full GGUFs are manual fallback artifacts only and must not appear in the default Qwen3 app catalog.",
         "Fleet is a trained/downloadable role adapter artifact but not a live runtime slot until a dedicated slot contract is added.",
@@ -241,6 +249,9 @@ def validate_repository_alignment(root: Path, *, require_generated_artifacts: bo
         "iOS fleet resolver": "ios/Lumen/Services/ModelFleet.swift",
         "iOS llama runtime": "ios/Lumen/Services/LlamaService.swift",
         "iOS model bootstrap": "ios/Lumen/Services/ModelLaunchBootstrap.swift",
+        "in-app dataset exporter": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
+        "runtime ingest normalizer": "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/runtime_ingest.py",
+        "adapter export planner": "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/adapter_export.py",
         "terminal pipeline": "tools/lumen_terminal_improve_loop.py",
         "training script": "tools/fine_tuning/unsloth/train_sft.py",
     }
@@ -312,6 +323,41 @@ def validate_repository_alignment(root: Path, *, require_generated_artifacts: bo
         "ModelLoader.ensureChatLoaded",
     ):
         _require_contains(errors, bootstrap_text, needle, "ModelLaunchBootstrap")
+
+    exporter_text = texts.get("ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift", "")
+    for needle in (
+        'static let schemaVersion = "1.2.0"',
+        "agent-grounding-runtime-json-package",
+        "agentGroundingRuntimeAudit",
+        "recentTraces",
+        "ImproveLoopSampleGate.buildDataset",
+        "accepted_training",
+        "quarantined_samples",
+        "regression_tests",
+    ):
+        _require_contains(errors, exporter_text, needle, "InAppDatasetPackageExporter")
+
+    runtime_ingest_text = texts.get("tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/runtime_ingest.py", "")
+    for needle in (
+        "_is_in_app_package",
+        "_flatten_in_app_package",
+        "agent-grounding-runtime-json-package",
+        "recentTraces",
+        "traceSelectedToolAllowedCount",
+        "traceParseErrorCount",
+    ):
+        _require_contains(errors, runtime_ingest_text, needle, "runtime_ingest")
+
+    adapter_export_text = texts.get("tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/adapter_export.py", "")
+    for needle in (
+        'DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"',
+        'DEFAULT_ADAPTER_GGUF_OUTPUT_ROOT = "models/lora_qwen3_gguf"',
+        f'DEFAULT_ADAPTER_REPO_ID = "{ADAPTER_REPO_ID}"',
+        f'DEFAULT_SHARED_BASE_REPO_ID = "{SHARED_BASE_REPO_ID}"',
+        f'DEFAULT_SHARED_BASE_FILE_NAME = "{SHARED_BASE_FILE_NAME}"',
+        "adapterGGUFArtifact",
+    ):
+        _require_contains(errors, adapter_export_text, needle, "adapter_export")
 
     terminal_text = texts.get("tools/lumen_terminal_improve_loop.py", "")
     for needle in (
