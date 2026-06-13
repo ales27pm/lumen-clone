@@ -20,6 +20,7 @@ struct AssistantTurnContext: Sendable, Equatable {
     let lowPowerMode: Bool
     let thermalState: ProcessInfo.ThermalState
     let prefersFoundationModels: Bool
+    let allowHeavyRuntime: Bool
 
     init(
         task: AssistantTaskKind,
@@ -27,7 +28,8 @@ struct AssistantTurnContext: Sendable, Equatable {
         isForeground: Bool,
         lowPowerMode: Bool,
         thermalState: ProcessInfo.ThermalState,
-        prefersFoundationModels: Bool = true
+        prefersFoundationModels: Bool = true,
+        allowHeavyRuntime: Bool = true
     ) {
         self.task = task
         self.input = input
@@ -35,5 +37,6 @@ struct AssistantTurnContext: Sendable, Equatable {
         self.lowPowerMode = lowPowerMode
         self.thermalState = thermalState
         self.prefersFoundationModels = prefersFoundationModels
+        self.allowHeavyRuntime = allowHeavyRuntime
     }
 }

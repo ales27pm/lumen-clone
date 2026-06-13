@@ -63,12 +63,49 @@ nonisolated enum AgentKernelSource: String, Codable, Sendable, Equatable {
 }
 
 nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
-    var allowHeavyRuntime: Bool
-    var allowDegradedMode: Bool
-    var requireUserVisibleFinal: Bool
-    var diagnosticsEnabled: Bool
-    var maxSteps: Int
-    var prefersFoundationModels: Bool
+    let allowHeavyRuntime: Bool
+    let allowDegradedMode: Bool
+    let requireUserVisibleFinal: Bool
+    let diagnosticsEnabled: Bool
+    let maxSteps: Int
+    let prefersFoundationModels: Bool
+
+    init(
+        allowHeavyRuntime: Bool,
+        allowDegradedMode: Bool,
+        requireUserVisibleFinal: Bool,
+        diagnosticsEnabled: Bool,
+        maxSteps: Int,
+        prefersFoundationModels: Bool
+    ) {
+        self.allowHeavyRuntime = allowHeavyRuntime
+        self.allowDegradedMode = allowDegradedMode
+        self.requireUserVisibleFinal = requireUserVisibleFinal
+        self.diagnosticsEnabled = diagnosticsEnabled
+        self.maxSteps = max(1, maxSteps)
+        self.prefersFoundationModels = prefersFoundationModels
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            allowHeavyRuntime: try container.decode(Bool.self, forKey: .allowHeavyRuntime),
+            allowDegradedMode: try container.decode(Bool.self, forKey: .allowDegradedMode),
+            requireUserVisibleFinal: try container.decode(Bool.self, forKey: .requireUserVisibleFinal),
+            diagnosticsEnabled: try container.decode(Bool.self, forKey: .diagnosticsEnabled),
+            maxSteps: try container.decode(Int.self, forKey: .maxSteps),
+            prefersFoundationModels: try container.decode(Bool.self, forKey: .prefersFoundationModels)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case allowHeavyRuntime
+        case allowDegradedMode
+        case requireUserVisibleFinal
+        case diagnosticsEnabled
+        case maxSteps
+        case prefersFoundationModels
+    }
 
     static let chat = AgentKernelOptions(
         allowHeavyRuntime: true,
@@ -158,8 +195,8 @@ extension AgentKernelEvent {
             return .stepDelta(id: id, text: text)
         case .token(let text), .finalDelta(let text):
             return .finalDelta(text)
-        case .final(let text):
-            return .finalDelta(text)
+        case .final:
+            return nil
         case .done(let finalText, let steps):
             return .done(finalText: finalText, steps: steps)
         case .error(let message):
