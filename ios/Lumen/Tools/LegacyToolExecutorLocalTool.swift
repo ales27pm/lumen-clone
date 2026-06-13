@@ -22,7 +22,7 @@ struct LegacyToolExecutorLocalTool: LocalTool {
         )
     }
 
-    static var all: [LegacyToolExecutorLocalTool] {
+    @MainActor static var all: [LegacyToolExecutorLocalTool] {
         let nativeToolIDs = ProductivityLocalTool.nativeToolIDs
             .union(CommunicationLocalTool.nativeToolIDs)
         return ToolRegistry.all

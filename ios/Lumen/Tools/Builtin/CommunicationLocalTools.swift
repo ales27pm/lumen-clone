@@ -24,7 +24,7 @@ struct CommunicationLocalTool: LocalTool {
         "outlook.message.forward"
     ]
 
-    static var all: [CommunicationLocalTool] {
+    @MainActor static var all: [CommunicationLocalTool] {
         ToolRegistry.all
             .filter { nativeToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
             .map(CommunicationLocalTool.init)
