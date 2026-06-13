@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-private final class RuntimeFallbackEmissionGate: @unchecked Sendable {
+private nonisolated final class RuntimeFallbackEmissionGate: @unchecked Sendable {
     private let lock = NSLock()
     private let duplicateWindowSeconds: TimeInterval
     private var lastSignature: String?
