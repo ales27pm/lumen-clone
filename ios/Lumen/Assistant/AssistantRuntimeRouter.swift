@@ -8,7 +8,7 @@ struct AssistantRuntimeRouter {
 
     init(
         foundation: FoundationModelsRuntimeAdapter = .init(),
-        llama: LlamaRuntimeAdapter = .init(),
+        llama: LlamaRuntimeAdapter = .live(),
         fallback: DeterministicFallbackRuntime = .init(),
         coreML: CoreMLRuntimeAdapter = .init(modelURL: nil)
     ) {
