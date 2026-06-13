@@ -40,7 +40,6 @@ ALLOWED_LEGACY_CALLERS = {
     ("ios/Lumen/Services/TriggerScheduler.swift", 132, "AgentRunner.runHeadless"),
     ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 5, "LegacySecureToolExecutor"),
     ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 61, "ToolExecutor.shared.execute"),
-    ("ios/Lumen/Views/ChatView.swift", 296, "AgentService.shared.run"),
     ("ios/Lumen/Views/MessageBubble.swift", 533, "ToolExecutor.shared.execute"),
     ("ios/Lumen/Views/VoiceModeView.swift", 300, "AgentService.shared.run"),
     ("ios/Lumen/Voice/VoiceCommandRouter.swift", 11, "SlotAgentService.shared.run"),
