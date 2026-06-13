@@ -3,6 +3,8 @@ import SwiftData
 
 @MainActor
 final class AssistantKernel {
+    static let shared = AssistantKernel()
+
     enum KernelError: Error, Sendable, Equatable {
         case unsupportedTaskForTextTurn(AssistantTaskKind)
         case unsupportedRuntimeForTextTurn(AssistantRuntimeKind)
@@ -44,7 +46,17 @@ final class AssistantKernel {
         let selection = router.selection(for: context)
         guard selection.runtime != .coreML else { throw KernelError.unsupportedRuntimeForTextTurn(.coreML) }
         let decision = ComputePolicy.decide(for: context)
-        let request = TextGenerationRequest(prompt: context.input, systemPrompt: "", maxTokens: decision.maxTokens)
+        let request = TextGenerationRequest(
+            prompt: context.input,
+            systemPrompt: context.systemPrompt,
+            history: context.history,
+            temperature: context.temperature,
+            topP: context.topP,
+            repetitionPenalty: context.repetitionPenalty,
+            maxTokens: min(context.maxTokens, decision.maxTokens),
+            relevantMemories: context.relevantMemories,
+            attachments: context.attachments
+        )
         let start = Date()
         if selection.runtime == .deterministicFallback {
             RuntimeFallbackLogger.record(

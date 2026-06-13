@@ -271,9 +271,8 @@ struct ChatView: View {
         ])
         let baseSystemPrompt = conversation.systemPrompt ?? appState.systemPrompt
         let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
-        let kernelHistory = recentContext.compactMap { item -> AgentKernelMessage? in
-            guard let role = AgentKernelMessage.Role(rawValue: item.role.rawValue) else { return nil }
-            return AgentKernelMessage(role: role, content: item.content)
+        let kernelHistory = recentContext.map { item in
+            AgentKernelMessage(messageRole: item.role, content: item.content)
         }
         let kernelRequest = AgentKernelRequest(
             conversationID: conversation.id,
@@ -281,15 +280,21 @@ struct ChatView: View {
             userMessage: text,
             history: kernelHistory,
             systemPrompt: baseSystemPrompt,
+            relevantMemories: gatedMemories,
+            attachments: attachments,
             task: .chat,
             source: .chat,
             options: AgentKernelOptions(
                 allowHeavyRuntime: true,
                 allowDegradedMode: true,
                 requireUserVisibleFinal: true,
-                diagnosticsEnabled: true,
+                diagnosticsEnabled: false,
                 maxSteps: appState.maxAgentSteps,
-                prefersFoundationModels: true
+                prefersFoundationModels: true,
+                temperature: appState.temperature,
+                topP: appState.topP,
+                repetitionPenalty: appState.repetitionPenalty,
+                maxTokens: appState.maxTokens
             )
         )
 
@@ -297,7 +302,7 @@ struct ChatView: View {
         var finalText = ""
 
         var lastUIUpdate = Date.distantPast
-        let kernel = AssistantKernel()
+        let kernel = AssistantKernel.shared
         for await kernelEvent in kernel.run(kernelRequest, modelContext: modelContext) {
             guard let event = kernelEvent.legacyAgentEvent else { continue }
             if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }

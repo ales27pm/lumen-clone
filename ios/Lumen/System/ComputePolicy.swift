@@ -6,6 +6,20 @@ struct ComputePolicyInput: Sendable, Equatable {
     let lowPowerMode: Bool
     let thermalState: DeviceThermalState
     let allowHeavyRuntime: Bool
+
+    init(
+        task: AssistantTaskKind,
+        isForeground: Bool,
+        lowPowerMode: Bool,
+        thermalState: DeviceThermalState,
+        allowHeavyRuntime: Bool = true
+    ) {
+        self.task = task
+        self.isForeground = isForeground
+        self.lowPowerMode = lowPowerMode
+        self.thermalState = thermalState
+        self.allowHeavyRuntime = allowHeavyRuntime
+    }
 }
 
 struct ComputeDecision: Sendable, Equatable {
