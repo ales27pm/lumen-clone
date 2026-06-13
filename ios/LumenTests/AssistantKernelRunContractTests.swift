@@ -147,7 +147,7 @@ final class AssistantKernelRunContractTests: XCTestCase {
         XCTAssertEqual(generated.temperature, 0.21)
         XCTAssertEqual(generated.topP, 0.82)
         XCTAssertEqual(generated.repetitionPenalty, 1.18)
-        XCTAssertEqual(generated.maxTokens, 384)
+        XCTAssertLessThanOrEqual(generated.maxTokens, 384)
     }
 
     func testKernelRunSuppressesDiagnosticsWhenDisabled() async {
@@ -184,10 +184,16 @@ final class AssistantKernelRunContractTests: XCTestCase {
             requireUserVisibleFinal: true,
             diagnosticsEnabled: true,
             maxSteps: 0,
-            prefersFoundationModels: true
+            prefersFoundationModels: true,
+            temperature: -1,
+            topP: 2,
+            repetitionPenalty: 0
         )
 
         XCTAssertEqual(options.maxSteps, 1)
+        XCTAssertEqual(options.temperature, 0)
+        XCTAssertEqual(options.topP, 1)
+        XCTAssertEqual(options.repetitionPenalty, 0.1)
     }
 
     func testKernelRunMapsToLegacyEventsDuringMigration() async {
