@@ -28,7 +28,6 @@ LEGACY_PATTERNS = {
 # Line-specific snapshot of known callers before the Agent Kernel migration.
 # Shrink this list as each entrypoint is moved behind AssistantKernel.run(...).
 ALLOWED_LEGACY_CALLERS = {
-    ("ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift", 323, "RolePipelineAgentService.shared.run"),
     ("ios/Lumen/Services/AgentService.swift", 1324, "SlotAgentService.shared.run"),
     ("ios/Lumen/Services/AgentService.swift", 1465, "ToolExecutor.shared.execute"),
     ("ios/Lumen/Services/SlotAgentService.swift", 955, "ToolExecutor.shared.execute"),
