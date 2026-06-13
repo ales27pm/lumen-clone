@@ -749,7 +749,7 @@ nonisolated enum E2ETestRunner {
                     preventDoubleGrounding: true,
                     diagnosticsEnabled: false
                 )
-                for await agentEvent in await AgentService.shared.run(req, options: runOptions) {
+                for await agentEvent in AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions) {
                     try Task.checkCancellation()
                     await Task.yield()
                     switch agentEvent {
