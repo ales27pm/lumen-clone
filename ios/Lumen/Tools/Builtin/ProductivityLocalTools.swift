@@ -21,7 +21,7 @@ struct ProductivityLocalTool: LocalTool {
         "alarm.cancel"
     ]
 
-    static var all: [ProductivityLocalTool] {
+    @MainActor static var all: [ProductivityLocalTool] {
         ToolRegistry.all
             .filter { nativeToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
             .map(ProductivityLocalTool.init)

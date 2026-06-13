@@ -18,8 +18,8 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isSubset(of: ids))
     }
 
-    func testLegacyAdapterExcludesNativelyPortedProductivityTools() {
-        let legacyIDs = Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id })
+    func testLegacyAdapterExcludesNativelyPortedProductivityTools() async {
+        let legacyIDs = await MainActor.run { Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id }) }
         XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
     }
 
@@ -29,8 +29,8 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isSubset(of: ids))
     }
 
-    func testLegacyAdapterExcludesNativelyPortedCommunicationTools() {
-        let legacyIDs = Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id })
+    func testLegacyAdapterExcludesNativelyPortedCommunicationTools() async {
+        let legacyIDs = await MainActor.run { Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id }) }
         XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
     }
 

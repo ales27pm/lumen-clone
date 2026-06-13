@@ -1,6 +1,6 @@
 import Foundation
 
-struct LegacyPromptInjectionPolicy: Sendable {
+nonisolated struct LegacyPromptInjectionPolicy: Sendable {
     let memoryMax: Int
     let ragMax: Int
     let toolMax: Int
