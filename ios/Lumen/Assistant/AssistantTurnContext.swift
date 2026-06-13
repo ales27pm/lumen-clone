@@ -1,6 +1,6 @@
 import Foundation
 
-enum AssistantTaskKind: Sendable, Equatable {
+nonisolated enum AssistantTaskKind: Sendable, Equatable {
     case chat
     case agentPlan
     case toolDecision
