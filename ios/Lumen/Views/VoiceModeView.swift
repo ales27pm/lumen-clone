@@ -275,39 +275,21 @@ struct VoiceModeView: View {
             let routing = await IntentClassifierService.shared.route(text)
             AgentGroundingInstrumentation.mark("after IntentClassifierService.route", metrics: .init(promptChars: text.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: routeStart))
             let memories = await safeRecalledMemories(query: text, routing: routing)
-            let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
-            let kernelHistory = safeShortTermContext(in: convo, excludingCurrentUserMessageID: userMsg.id).map { item in
-                AgentKernelMessage(messageRole: item.role, content: item.content)
-            }
-            let kernelRequest = AgentKernelRequest(
-                conversationID: convo.id,
-                turnID: turnID,
-                userMessage: text,
-                history: kernelHistory,
-                systemPrompt: appState.systemPrompt,
-                relevantMemories: gatedMemories,
-                attachments: [],
-                task: .chat,
-                source: .voice,
-                options: AgentKernelOptions(
-                    allowHeavyRuntime: true,
-                    allowDegradedMode: true,
-                    requireUserVisibleFinal: true,
-                    diagnosticsEnabled: false,
-                    maxSteps: appState.maxAgentSteps,
-                    prefersFoundationModels: true,
-                    temperature: appState.temperature,
-                    topP: appState.topP,
-                    repetitionPenalty: appState.repetitionPenalty,
-                    maxTokens: appState.maxTokens
-                )
-            )
+            let history = safeShortTermContext(in: convo, excludingCurrentUserMessageID: userMsg.id)
 
             var finalText = ""
             var lastUIUpdate = Date.distantPast
-            let kernel = AssistantKernel.shared
-            for await kernelEvent in kernel.run(kernelRequest, modelContext: modelContext) {
-                guard let event = kernelEvent.legacyAgentEvent else { continue }
+            let eventStream = VoiceAgentRuntimeBridge.streamVoiceTurn(
+                text: text,
+                appState: appState,
+                routing: routing,
+                memories: memories,
+                history: history,
+                conversationID: convo.id,
+                turnID: turnID,
+                modelContext: modelContext
+            )
+            for await event in eventStream {
                 if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") || CPUWatchdogGuard.shared.shouldDegrade(category: .voice) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") { break }
                 let workStartedAt = ProcessInfo.processInfo.systemUptime
                 defer { CPUWatchdogGuard.shared.recordWork(category: .voice, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
