@@ -8,12 +8,14 @@ struct AssistantRuntimeRouter {
 
     init(
         foundation: FoundationModelsRuntimeAdapter = .init(),
-        llama: LlamaRuntimeAdapter = .init(),
+        llamaService: (any LlamaRuntimeStreamingService)? = nil,
+        llamaSlot: LumenModelSlot = .mouth,
+        llama: LlamaRuntimeAdapter? = nil,
         fallback: DeterministicFallbackRuntime = .init(),
         coreML: CoreMLRuntimeAdapter = .init(modelURL: nil)
     ) {
         self.foundation = foundation
-        self.llama = llama
+        self.llama = llama ?? .live(service: llamaService ?? AppLlamaService.shared, slot: llamaSlot)
         self.fallback = fallback
         self.coreML = coreML
     }

@@ -8,6 +8,14 @@ enum LocalRuntimeError: Error, Sendable, Equatable {
     case generationNotImplemented(AssistantRuntimeKind)
 }
 
+
+protocol LlamaRuntimeStreamingService: Sendable {
+    var isChatLoaded: Bool { get async }
+    func stream(_ req: GenerateRequest, slot: LumenModelSlot) async -> AsyncStream<GenerationToken>
+}
+
+extension AppLlamaService: LlamaRuntimeStreamingService {}
+
 enum CoreMLRuntimeError: Error, Sendable, Equatable {
     case unsupportedOnPlatform
     case modelNotConfigured
@@ -22,21 +30,40 @@ struct DeterministicFallbackRuntime: LocalTextGenerationRuntime {
     let kind: AssistantRuntimeKind = .deterministicFallback
     let isAvailable: Bool = true
     let unavailableReason: String? = nil
+    private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
+
+    init(generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil) {
+        self.generateHandler = generateHandler
+    }
 
     func generate(request: TextGenerationRequest) async throws -> String {
-        "Lumen is running in limited local mode."
+        if let generateHandler {
+            return try await generateHandler(request)
+        }
+        return "Lumen is running in limited local mode."
     }
 
     func handleMemoryPressure() async {}
 }
 
 struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
+    private enum LiveGenerationDefaults {
+        static let temperature = 0.7
+        static let topP = 0.9
+        static let repetitionPenalty = 1.1
+        static let modelName = "agent-kernel-llama"
+        static let streamErrorPrefix = "Generation error:"
+    }
+
     let kind: AssistantRuntimeKind = .llama
     let unavailableReason: String?
+    private let explicitlyAvailable: Bool
     private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
+    private let liveService: (any LlamaRuntimeStreamingService)?
+    private let liveSlot: LumenModelSlot
 
     var isAvailable: Bool {
-        generateHandler != nil
+        explicitlyAvailable || generateHandler != nil || liveService != nil
     }
 
     init(
@@ -44,7 +71,10 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         unavailableReason: String? = "llama text runtime is not directly wired to AssistantKernel",
         generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil
     ) {
+        self.explicitlyAvailable = isAvailable
         self.generateHandler = generateHandler
+        self.liveService = nil
+        self.liveSlot = .mouth
         if generateHandler != nil {
             self.unavailableReason = nil
         } else if isAvailable {
@@ -54,11 +84,59 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         }
     }
 
+    private init(liveService: any LlamaRuntimeStreamingService, liveSlot: LumenModelSlot) {
+        self.explicitlyAvailable = false
+        self.generateHandler = nil
+        self.liveService = liveService
+        self.liveSlot = liveSlot
+        self.unavailableReason = nil
+    }
+
+    static func live(service: any LlamaRuntimeStreamingService = AppLlamaService.shared, slot: LumenModelSlot = .mouth) -> LlamaRuntimeAdapter {
+        LlamaRuntimeAdapter(liveService: service, liveSlot: slot)
+    }
+
     func generate(request: TextGenerationRequest) async throws -> String {
-        guard let generateHandler else {
+        if let generateHandler {
+            return try await generateHandler(request)
+        }
+        guard let liveService else {
             throw LocalRuntimeError.unavailable(unavailableReason ?? "llama runtime unavailable")
         }
-        return try await generateHandler(request)
+        guard await liveService.isChatLoaded else {
+            throw LocalRuntimeError.unavailable("llama runtime has no loaded chat model")
+        }
+
+        let generationRequest = GenerateRequest(
+            systemPrompt: request.systemPrompt,
+            history: [],
+            userMessage: request.prompt,
+            temperature: LiveGenerationDefaults.temperature,
+            topP: LiveGenerationDefaults.topP,
+            repetitionPenalty: LiveGenerationDefaults.repetitionPenalty,
+            maxTokens: request.maxTokens,
+            modelName: LiveGenerationDefaults.modelName,
+            relevantMemories: []
+        )
+
+        var output = ""
+        streamLoop: for await token in await liveService.stream(generationRequest, slot: liveSlot) {
+            switch token {
+            case .text(let delta):
+                output += delta
+            case .done:
+                break streamLoop
+            }
+        }
+
+        let final = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !final.isEmpty else {
+            throw LocalRuntimeError.unavailable("llama runtime produced no visible output")
+        }
+        guard !final.hasPrefix(LiveGenerationDefaults.streamErrorPrefix) else {
+            throw LocalRuntimeError.unavailable("llama runtime stream failed during generation")
+        }
+        return final
     }
 
     func handleMemoryPressure() async {

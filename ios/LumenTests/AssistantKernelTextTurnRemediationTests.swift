@@ -29,7 +29,7 @@ final class AssistantKernelTextTurnRemediationTests: XCTestCase {
         }
     }
 
-    func testRunTextTurnFallsBackWhenLlamaIsMarkedAvailableButUnwired() async throws {
+    func testRunTextTurnFallsBackAfterMarkedAvailableLlamaFailsGeneration() async throws {
         let router = AssistantRuntimeRouter(llama: .init(isAvailable: true, unavailableReason: nil))
         let kernel = AssistantKernel(router: router)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
@@ -37,7 +37,7 @@ final class AssistantKernelTextTurnRemediationTests: XCTestCase {
         let output = try await kernel.runTextTurn(context)
 
         XCTAssertEqual(output, "Lumen is running in limited local mode.")
-        XCTAssertEqual(kernel.selectRuntime(for: context), .deterministicFallback)
+        XCTAssertEqual(kernel.selectRuntime(for: context), .llama)
     }
 
     func testRunTextTurnUsesInjectedLlamaGenerationAdapter() async throws {
