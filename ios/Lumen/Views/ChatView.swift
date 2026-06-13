@@ -269,31 +269,42 @@ struct ChatView: View {
             "attachmentCount": String(attachments.count),
             "memoryCount": String(memories.count)
         ])
-        let enabledTools = ToolRegistry.all.filter { appState.enabledToolIDs.contains($0.id) }
-        let routedTools = enabledTools.filter { IntentRouter.isToolAllowed($0.id, for: routing) }
         let baseSystemPrompt = conversation.systemPrompt ?? appState.systemPrompt
         let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
-        let req = AgentRequest(
-            systemPrompt: baseSystemPrompt,
-            history: recentContext,
+        let kernelHistory = recentContext.map { item in
+            AgentKernelMessage(messageRole: item.role, content: item.content)
+        }
+        let kernelRequest = AgentKernelRequest(
+            conversationID: conversation.id,
+            turnID: turnID,
             userMessage: text,
-            temperature: appState.temperature,
-            topP: appState.topP,
-            repetitionPenalty: appState.repetitionPenalty,
-            maxTokens: appState.maxTokens,
-            maxSteps: appState.maxAgentSteps,
-            availableTools: routedTools,
+            history: kernelHistory,
+            systemPrompt: baseSystemPrompt,
             relevantMemories: gatedMemories,
             attachments: attachments,
-            conversationID: conversation.id,
-            turnID: turnID
+            task: .chat,
+            source: .chat,
+            options: AgentKernelOptions(
+                allowHeavyRuntime: true,
+                allowDegradedMode: true,
+                requireUserVisibleFinal: true,
+                diagnosticsEnabled: false,
+                maxSteps: appState.maxAgentSteps,
+                prefersFoundationModels: true,
+                temperature: appState.temperature,
+                topP: appState.topP,
+                repetitionPenalty: appState.repetitionPenalty,
+                maxTokens: appState.maxTokens
+            )
         )
 
         var steps: [AgentStep] = []
         var finalText = ""
 
         var lastUIUpdate = Date.distantPast
-        for await event in AgentService.shared.run(req, options: .init(modelContext: nil, conversationID: conversation.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
+        let kernel = AssistantKernel.shared
+        for await kernelEvent in kernel.run(kernelRequest, modelContext: modelContext) {
+            guard let event = kernelEvent.legacyAgentEvent else { continue }
             if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
             let workStartedAt = ProcessInfo.processInfo.systemUptime
             defer { CPUWatchdogGuard.shared.recordWork(category: .chatGeneration, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
@@ -351,7 +362,7 @@ struct ChatView: View {
             let trace = makeAgentDeveloperTrace(
                 systemPrompt: baseSystemPrompt,
                 userPrompt: text,
-                modelName: "slot-agent",
+                modelName: "agent-kernel",
                 memories: gatedMemories,
                 steps: sanitizedSteps,
                 visibleAnswer: persistedFinal,
@@ -637,7 +648,7 @@ struct ChatView: View {
             messageID: messageID,
             modelName: modelName,
             systemPrompt: systemPrompt,
-            developerPrompt: SlotAgentService.mouthPromptHygieneRule,
+            developerPrompt: "Agent Kernel chat stream",
             userPrompt: userPrompt,
             resolvedContext: [],
             retrievedMemory: memories.map(traceMemoryItem),

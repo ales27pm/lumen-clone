@@ -109,14 +109,15 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
 
         let generationRequest = GenerateRequest(
             systemPrompt: request.systemPrompt,
-            history: [],
+            history: request.history,
             userMessage: request.prompt,
-            temperature: LiveGenerationDefaults.temperature,
-            topP: LiveGenerationDefaults.topP,
-            repetitionPenalty: LiveGenerationDefaults.repetitionPenalty,
+            temperature: request.temperature,
+            topP: request.topP,
+            repetitionPenalty: request.repetitionPenalty,
             maxTokens: request.maxTokens,
             modelName: LiveGenerationDefaults.modelName,
-            relevantMemories: []
+            relevantMemories: request.relevantMemories,
+            attachments: request.attachments
         )
 
         var output = ""
