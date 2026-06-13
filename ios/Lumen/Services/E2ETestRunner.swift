@@ -749,7 +749,10 @@ nonisolated enum E2ETestRunner {
                     preventDoubleGrounding: true,
                     diagnosticsEnabled: false
                 )
-                for await agentEvent in AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions) {
+                let agentEvents = await MainActor.run {
+                    AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
+                }
+                for await agentEvent in agentEvents {
                     try Task.checkCancellation()
                     await Task.yield()
                     switch agentEvent {
@@ -761,11 +764,14 @@ nonisolated enum E2ETestRunner {
                            forbiddenCanonicalToolIDs.contains(ToolRouteGuard.canonicalToolID(toolID)) {
                             failures.append("Forbidden tool selected by agent: \(toolID)")
                         }
-                    case .stepDelta:
+                    case .stepDelta, .toolInvocation, .toolResult, .diagnostic:
                         break
-                    case .finalDelta(let chunk):
+                    case .token(let chunk), .finalDelta(let chunk):
                         rawFinalText += chunk
                         collectPerformanceSample()
+                    case .final(let text):
+                        collectPerformanceSample(force: true)
+                        if !text.isEmpty { rawFinalText = text }
                     case .done(let text, let allSteps):
                         collectPerformanceSample(force: true)
                         if !text.isEmpty { rawFinalText = text }
