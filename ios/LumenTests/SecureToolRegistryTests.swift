@@ -23,6 +23,17 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
     }
 
+
+    func testCommunicationToolsAreRegisteredNatively() async {
+        let ids = await Set(SecureToolRegistry.shared.definitions().map(\.id))
+        XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isSubset(of: ids))
+    }
+
+    func testLegacyAdapterExcludesNativelyPortedCommunicationTools() {
+        let legacyIDs = Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id })
+        XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
+    }
+
     func testLegacyToolStatusClassifiesApprovalRequiredResponses() {
         XCTAssertEqual(
             LegacyToolExecutorLocalTool.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),
