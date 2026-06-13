@@ -68,7 +68,7 @@ final class AssistantKernel {
             let latency = Int(Date().timeIntervalSince(start) * 1000)
             try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: true, errorCode: nil, thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
             return output
-        } catch LocalRuntimeError.unavailable(let reason) where selection.runtime != .deterministicFallback {
+        } catch LocalRuntimeError.unavailable(let reason) where selection.runtime != .deterministicFallback && selection.runtime != .coreML {
             RuntimeFallbackLogger.record(
                 source: "assistant-kernel-runtime-unavailable",
                 primaryBehavior: "run selected on-device text runtime",
@@ -84,10 +84,16 @@ final class AssistantKernel {
                     "allowHeavyRuntime": String(decision.allowHeavyRuntime)
                 ]
             )
-            let fallbackOutput = try await router.fallback.generate(request: request)
-            let latency = Int(Date().timeIntervalSince(start) * 1000)
-            try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: AssistantRuntimeKind.deterministicFallback.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: "fallback_after_\(selection.runtime.rawValue)_unavailable", latencyMs: latency, success: true, errorCode: nil, thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
-            return fallbackOutput
+            do {
+                let fallbackOutput = try await router.fallback.generate(request: request)
+                let latency = Int(Date().timeIntervalSince(start) * 1000)
+                try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: AssistantRuntimeKind.deterministicFallback.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: "fallback_after_\(selection.runtime.rawValue)_unavailable", latencyMs: latency, success: true, errorCode: nil, thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
+                return fallbackOutput
+            } catch {
+                let latency = Int(Date().timeIntervalSince(start) * 1000)
+                try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: AssistantRuntimeKind.deterministicFallback.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: "fallback_after_\(selection.runtime.rawValue)_unavailable", latencyMs: latency, success: false, errorCode: RuntimeMetricErrorSanitizer.code(for: error), thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
+                throw error
+            }
         } catch {
             let latency = Int(Date().timeIntervalSince(start) * 1000)
             try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: false, errorCode: RuntimeMetricErrorSanitizer.code(for: error), thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
