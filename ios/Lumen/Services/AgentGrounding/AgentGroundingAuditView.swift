@@ -320,13 +320,26 @@ public struct AgentGroundingAuditView: View {
             )
 
             var finalText = ""
-            let events = await RolePipelineAgentService.shared.run(req)
+            let events = await AssistantKernel.shared.runLegacyAgentBridge(
+                req,
+                options: .init(
+                    modelContext: nil,
+                    conversationID: req.conversationID,
+                    turnID: req.turnID,
+                    groundingMode: .rolePipeline,
+                    allowDegradedGrounding: true,
+                    preventDoubleGrounding: true,
+                    diagnosticsEnabled: false
+                )
+            )
             for await event in events {
                 guard !Task.isCancelled else { return }
 
                 switch event {
-                case .finalDelta(let chunk):
+                case .token(let chunk), .finalDelta(let chunk):
                     finalText += chunk
+                case .final(let text):
+                    if !text.isEmpty { finalText = text }
                 case .done(let text, _):
                     if !text.isEmpty { finalText = text }
                 case .error(let message):
@@ -334,7 +347,7 @@ public struct AgentGroundingAuditView: View {
                         guard liveTraceSmokeRunID == runID else { return }
                         errorMessage = message
                     }
-                case .step, .stepDelta:
+                case .step, .stepDelta, .toolInvocation, .toolResult, .diagnostic:
                     break
                 }
             }
