@@ -34,9 +34,11 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     let kind: AssistantRuntimeKind = .llama
     let unavailableReason: String?
     private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
+    private let liveService: AppLlamaService?
+    private let liveSlot: LumenModelSlot
 
     var isAvailable: Bool {
-        generateHandler != nil
+        generateHandler != nil || liveService != nil
     }
 
     init(
@@ -45,6 +47,8 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil
     ) {
         self.generateHandler = generateHandler
+        self.liveService = nil
+        self.liveSlot = .mouth
         if generateHandler != nil {
             self.unavailableReason = nil
         } else if isAvailable {
@@ -54,11 +58,55 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         }
     }
 
+    private init(liveService: AppLlamaService, liveSlot: LumenModelSlot) {
+        self.generateHandler = nil
+        self.liveService = liveService
+        self.liveSlot = liveSlot
+        self.unavailableReason = nil
+    }
+
+    static func live(service: AppLlamaService = .shared, slot: LumenModelSlot = .mouth) -> LlamaRuntimeAdapter {
+        LlamaRuntimeAdapter(liveService: service, liveSlot: slot)
+    }
+
     func generate(request: TextGenerationRequest) async throws -> String {
-        guard let generateHandler else {
+        if let generateHandler {
+            return try await generateHandler(request)
+        }
+        guard let liveService else {
             throw LocalRuntimeError.unavailable(unavailableReason ?? "llama runtime unavailable")
         }
-        return try await generateHandler(request)
+        guard await liveService.isChatLoaded else {
+            throw LocalRuntimeError.unavailable("llama runtime has no loaded chat model")
+        }
+
+        let generationRequest = GenerateRequest(
+            systemPrompt: request.systemPrompt,
+            history: [],
+            userMessage: request.prompt,
+            temperature: 0.7,
+            topP: 0.9,
+            repetitionPenalty: 1.1,
+            maxTokens: request.maxTokens,
+            modelName: "agent-kernel-llama",
+            relevantMemories: []
+        )
+
+        var output = ""
+        for await token in await liveService.stream(generationRequest, slot: liveSlot) {
+            switch token {
+            case .text(let delta):
+                output += delta
+            case .done:
+                break
+            }
+        }
+
+        let final = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !final.isEmpty else {
+            throw LocalRuntimeError.unavailable("llama runtime produced no visible output")
+        }
+        return final
     }
 
     func handleMemoryPressure() async {
