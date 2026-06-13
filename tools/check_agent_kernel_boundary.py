@@ -41,8 +41,6 @@ ALLOWED_LEGACY_CALLERS = {
     ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 5, "LegacySecureToolExecutor"),
     ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 61, "ToolExecutor.shared.execute"),
     ("ios/Lumen/Views/MessageBubble.swift", 533, "ToolExecutor.shared.execute"),
-    ("ios/Lumen/Views/VoiceModeView.swift", 300, "AgentService.shared.run"),
-    ("ios/Lumen/Voice/VoiceCommandRouter.swift", 11, "SlotAgentService.shared.run"),
 }
 
 ALLOWED_MIGRATION_FILES = {

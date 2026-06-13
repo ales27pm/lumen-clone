@@ -275,29 +275,39 @@ struct VoiceModeView: View {
             let routing = await IntentClassifierService.shared.route(text)
             AgentGroundingInstrumentation.mark("after IntentClassifierService.route", metrics: .init(promptChars: text.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: routeStart))
             let memories = await safeRecalledMemories(query: text, routing: routing)
-            let tools = ToolRegistry.all
-                .filter { appState.enabledToolIDs.contains($0.id) }
-                .filter { IntentRouter.isToolAllowed($0.id, for: routing) }
-
             let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
-            let req = AgentRequest(
-                systemPrompt: appState.systemPrompt,
-                history: safeShortTermContext(in: convo, excludingCurrentUserMessageID: userMsg.id),
-                userMessage: text,
-                temperature: appState.temperature,
-                topP: appState.topP,
-                repetitionPenalty: appState.repetitionPenalty,
-                maxTokens: appState.maxTokens,
-                maxSteps: appState.maxAgentSteps,
-                availableTools: tools,
-                relevantMemories: gatedMemories,
+            let kernelHistory = safeShortTermContext(in: convo, excludingCurrentUserMessageID: userMsg.id).map { item in
+                AgentKernelMessage(messageRole: item.role, content: item.content)
+            }
+            let kernelRequest = AgentKernelRequest(
                 conversationID: convo.id,
-                turnID: turnID
+                turnID: turnID,
+                userMessage: text,
+                history: kernelHistory,
+                systemPrompt: appState.systemPrompt,
+                relevantMemories: gatedMemories,
+                attachments: [],
+                task: .chat,
+                source: .voice,
+                options: AgentKernelOptions(
+                    allowHeavyRuntime: true,
+                    allowDegradedMode: true,
+                    requireUserVisibleFinal: true,
+                    diagnosticsEnabled: false,
+                    maxSteps: appState.maxAgentSteps,
+                    prefersFoundationModels: true,
+                    temperature: appState.temperature,
+                    topP: appState.topP,
+                    repetitionPenalty: appState.repetitionPenalty,
+                    maxTokens: appState.maxTokens
+                )
             )
 
             var finalText = ""
             var lastUIUpdate = Date.distantPast
-            for await event in AgentService.shared.run(req, options: .init(modelContext: nil, conversationID: convo.id, turnID: turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)) {
+            let kernel = AssistantKernel.shared
+            for await kernelEvent in kernel.run(kernelRequest, modelContext: modelContext) {
+                guard let event = kernelEvent.legacyAgentEvent else { continue }
                 if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") || CPUWatchdogGuard.shared.shouldDegrade(category: .voice) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") { break }
                 let workStartedAt = ProcessInfo.processInfo.systemUptime
                 defer { CPUWatchdogGuard.shared.recordWork(category: .voice, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
