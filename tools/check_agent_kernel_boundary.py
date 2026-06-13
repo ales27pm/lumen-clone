@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Guard the Agent Kernel migration boundary.
 
-This first-pass guard intentionally allows the legacy callers that exist at the
-start of the migration. Each migration PR should delete entries from
-ALLOWED_LEGACY_CALLER_PATHS until the allowlist is empty. The script fails when a
-new production path starts calling legacy runtimes directly.
+This first-pass guard intentionally allows the legacy call sites that exist at
+the start of the migration. Each migration PR should delete entries from
+ALLOWED_LEGACY_CALLERS until the allowlist is empty. The script fails when a new
+production path starts calling legacy runtimes directly.
 """
 from __future__ import annotations
 
@@ -25,22 +25,25 @@ LEGACY_PATTERNS = {
     "LegacySecureToolExecutor": re.compile(r"\bLegacySecureToolExecutor\b"),
 }
 
-# Snapshot of known callers before the Agent Kernel migration. Shrink this list
-# as each entrypoint is moved behind AssistantKernel.run(...).
-ALLOWED_LEGACY_CALLER_PATHS = {
-    "ios/Lumen/AppIntents/LumenAskIntent.swift",
-    "ios/Lumen/Diagnostics/PersistentRuntimeDiagnosticsRunner.swift",
-    "ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift",
-    "ios/Lumen/Services/AgentRunner.swift",
-    "ios/Lumen/Services/AgentService.swift",
-    "ios/Lumen/Services/E2ETestRunner.swift",
-    "ios/Lumen/Services/SlotAgentService.swift",
-    "ios/Lumen/Services/TriggerScheduler.swift",
-    "ios/Lumen/Tools/LegacySecureToolExecutor.swift",
-    "ios/Lumen/Views/ChatView.swift",
-    "ios/Lumen/Views/MessageBubble.swift",
-    "ios/Lumen/Views/VoiceModeView.swift",
-    "ios/Lumen/Voice/VoiceCommandRouter.swift",
+# Line-specific snapshot of known callers before the Agent Kernel migration.
+# Shrink this list as each entrypoint is moved behind AssistantKernel.run(...).
+ALLOWED_LEGACY_CALLERS = {
+    ("ios/Lumen/AppIntents/LumenAskIntent.swift", 24, "AgentRunner.runHeadless"),
+    ("ios/Lumen/Diagnostics/PersistentRuntimeDiagnosticsRunner.swift", 409, "SlotAgentService.shared.run"),
+    ("ios/Lumen/Diagnostics/PersistentRuntimeDiagnosticsRunner.swift", 438, "SlotAgentService.shared.run"),
+    ("ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift", 323, "RolePipelineAgentService.shared.run"),
+    ("ios/Lumen/Services/AgentRunner.swift", 68, "RolePipelineAgentService.shared.run"),
+    ("ios/Lumen/Services/AgentService.swift", 1324, "SlotAgentService.shared.run"),
+    ("ios/Lumen/Services/AgentService.swift", 1465, "ToolExecutor.shared.execute"),
+    ("ios/Lumen/Services/E2ETestRunner.swift", 752, "AgentService.shared.run"),
+    ("ios/Lumen/Services/SlotAgentService.swift", 955, "ToolExecutor.shared.execute"),
+    ("ios/Lumen/Services/TriggerScheduler.swift", 132, "AgentRunner.runHeadless"),
+    ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 5, "LegacySecureToolExecutor"),
+    ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 61, "ToolExecutor.shared.execute"),
+    ("ios/Lumen/Views/ChatView.swift", 296, "AgentService.shared.run"),
+    ("ios/Lumen/Views/MessageBubble.swift", 533, "ToolExecutor.shared.execute"),
+    ("ios/Lumen/Views/VoiceModeView.swift", 300, "AgentService.shared.run"),
+    ("ios/Lumen/Voice/VoiceCommandRouter.swift", 11, "SlotAgentService.shared.run"),
 }
 
 ALLOWED_MIGRATION_FILES = {
@@ -74,7 +77,7 @@ def scan_file(path: pathlib.Path) -> list[tuple[int, str, str]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("roots", nargs="*", help="Files or directories to scan; defaults to ios/Lumen")
-    parser.add_argument("--strict", action="store_true", help="Fail on every legacy call, ignoring the initial allowlist")
+    parser.add_argument("--strict", action="store_true", help="Fail on every legacy call, including migration shims and the initial allowlist")
     args = parser.parse_args()
 
     roots = [REPO_ROOT / root for root in args.roots] if args.roots else DEFAULT_ROOTS
@@ -88,9 +91,10 @@ def main() -> int:
             continue
         for line_number, label, line in findings:
             record = f"{rel}:{line_number}: {label}: {line}"
-            if rel in ALLOWED_MIGRATION_FILES:
+            allowed_record = (rel, line_number, label)
+            if not args.strict and rel in ALLOWED_MIGRATION_FILES:
                 continue
-            if args.strict or rel not in ALLOWED_LEGACY_CALLER_PATHS:
+            if args.strict or allowed_record not in ALLOWED_LEGACY_CALLERS:
                 violations.append(record)
             else:
                 legacy_inventory.append(record)

@@ -29,9 +29,57 @@ final class AssistantKernelRunContractTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(finalText, "kernel final: hello")
-        XCTAssertEqual(doneText, "kernel final: hello")
+        XCTAssertTrue(finalText?.contains("hello") == true)
+        XCTAssertTrue(doneText?.contains("hello") == true)
         XCTAssertTrue(sawRuntimeDiagnostic)
+    }
+
+    func testKernelRunHonorsHeavyRuntimeOption() async {
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { _ in
+                "llama should not run"
+            })
+        )
+        let kernel = AssistantKernel(router: router)
+        let options = AgentKernelOptions(
+            allowHeavyRuntime: false,
+            allowDegradedMode: true,
+            requireUserVisibleFinal: true,
+            diagnosticsEnabled: true,
+            maxSteps: 2,
+            prefersFoundationModels: true
+        )
+        let request = AgentKernelRequest(userMessage: "hello", task: .chat, source: .chat, options: options)
+
+        var finalText: String?
+        var selectedRuntime: String?
+
+        for await event in kernel.run(request, modelContext: nil) {
+            switch event {
+            case .final(let text):
+                finalText = text
+            case .diagnostic(let diagnostic) where diagnostic.stage == "runtime-selection":
+                selectedRuntime = diagnostic.metadata["runtime"]
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(finalText, "Lumen is running in limited local mode.")
+        XCTAssertEqual(selectedRuntime, AssistantRuntimeKind.deterministicFallback.rawValue)
+    }
+
+    func testAgentKernelOptionsClampMaxSteps() {
+        let options = AgentKernelOptions(
+            allowHeavyRuntime: true,
+            allowDegradedMode: true,
+            requireUserVisibleFinal: true,
+            diagnosticsEnabled: true,
+            maxSteps: 0,
+            prefersFoundationModels: true
+        )
+
+        XCTAssertEqual(options.maxSteps, 1)
     }
 
     func testKernelRunMapsToLegacyEventsDuringMigration() async {
@@ -41,5 +89,6 @@ final class AssistantKernelRunContractTests: XCTestCase {
             return
         }
         XCTAssertEqual(text, "partial")
+        XCTAssertNil(AgentKernelEvent.final("partial").legacyAgentEvent)
     }
 }

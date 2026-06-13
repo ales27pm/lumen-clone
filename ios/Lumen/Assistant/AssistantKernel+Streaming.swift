@@ -24,7 +24,8 @@ extension AssistantKernel: AgentKernelRunning {
                     isForeground: request.source.isForeground,
                     lowPowerMode: lowPowerMode,
                     thermalState: thermalState,
-                    prefersFoundationModels: request.options.prefersFoundationModels
+                    prefersFoundationModels: request.options.prefersFoundationModels,
+                    allowHeavyRuntime: request.options.allowHeavyRuntime
                 )
 
                 let selectedRuntime = selectRuntime(for: turn)
@@ -37,13 +38,14 @@ extension AssistantKernel: AgentKernelRunning {
                             "task": String(describing: request.task),
                             "foreground": String(request.source.isForeground),
                             "allowHeavyRuntime": String(request.options.allowHeavyRuntime),
+                            "runtime": selectedRuntime.rawValue,
                             "lowPowerMode": String(lowPowerMode),
                             "thermalState": "\(thermalState.rawValue)"
                         ]
                     )))
                 }
 
-                if modelContext != nil, request.options.diagnosticsEnabled {
+                if let modelContext, request.options.diagnosticsEnabled {
                     let grounding = await buildGroundingContext(turn: turn, modelContext: modelContext)
                     continuation.yield(.diagnostic(.init(
                         stage: "grounding",

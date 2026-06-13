@@ -24,7 +24,7 @@ Make `AssistantKernel.run(...)` the target orchestration boundary for all future
 - runtime-selection diagnostic
 - optional grounding diagnostic
 - final delta
-- final text
+- final event
 - completion diagnostic
 - done event
 - error event
@@ -46,7 +46,7 @@ The existing `runTextTurn(_:)` implementation remains intact and is used under t
 - `ToolExecutor.shared.execute`
 - `LegacySecureToolExecutor`
 
-The guard includes a snapshot allowlist for known legacy callers. Each migration PR should shrink that allowlist.
+The guard includes a line-specific snapshot allowlist for known legacy callers. Each migration PR should shrink that allowlist. `--strict` ignores the legacy caller allowlist and reports every legacy call, while migration shim files remain exempt in normal mode only.
 
 ## Non-goals
 

@@ -9,13 +9,13 @@ struct AgentKernelRunOptions: @unchecked Sendable {
         case rolePipeline
     }
 
-    var modelContext: ModelContext?
-    var conversationID: UUID?
-    var turnID: UUID?
-    var groundingMode: GroundingMode
-    var allowDegradedGrounding: Bool
-    var preventDoubleGrounding: Bool
-    var diagnosticsEnabled: Bool
+    let modelContext: ModelContext?
+    let conversationID: UUID?
+    let turnID: UUID?
+    let groundingMode: GroundingMode
+    let allowDegradedGrounding: Bool
+    let preventDoubleGrounding: Bool
+    let diagnosticsEnabled: Bool
 
     static var `default`: AgentKernelRunOptions {
         .init(
