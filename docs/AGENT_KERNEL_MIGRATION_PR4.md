@@ -4,8 +4,8 @@ PR4 moves the foreground voice response path behind the Agent Kernel streaming b
 
 ## Goals
 
-- Replace `VoiceCommandRouter -> SlotAgentService.shared.run(...)` with `AssistantKernel.run(...)`.
-- Replace `VoiceModeView -> AgentService.shared.run(...)` with `AssistantKernel.run(...)`.
+- Replace voice callers with `VoiceAgentRuntimeBridge`, which keeps text-only voice turns on `AssistantKernel.run(...)`.
+- Preserve tool-capable voice intents through an explicit `AssistantKernel.runLegacyAgentBridge(...)` compatibility path until kernel-native tool stages are complete.
 - Preserve the existing voice UI stream by consuming `AgentKernelEvent.legacyAgentEvent` as a temporary bridge.
 - Keep routing, memory recall, memory gating, cancellation, CPU watchdog, `ResourceBudgetGate`, speech playback, final validation, persistence, and memory extraction behavior intact.
 - Remove both voice legacy caller entries from `tools/check_agent_kernel_boundary.py`, shrinking the allowlist from 15 to 13.
@@ -14,22 +14,24 @@ PR4 moves the foreground voice response path behind the Agent Kernel streaming b
 
 ```text
 VoiceCommandRouter.routeFinalTranscript(...)
-  -> AgentKernelRequest(source: .voice, task: .chat)
-  -> AssistantKernel.run(..., modelContext:)
+  -> VoiceAgentRuntimeBridge.streamVoiceTurn(...)
+  -> text-only: AgentKernelRequest(source: .voice, task: .chat)
+  -> text-only: AssistantKernel.run(..., modelContext:)
   -> AgentKernelEvent.legacyAgentEvent
 ```
 
 ```text
 VoiceModeView.runAgent(...)
-  -> AgentKernelRequest(source: .voice, task: .chat)
-  -> AssistantKernel.run(..., modelContext:)
+  -> VoiceAgentRuntimeBridge.streamVoiceTurn(...)
+  -> tool-capable intent: AgentRequest(availableTools:)
+  -> tool-capable intent: AssistantKernel.runLegacyAgentBridge(...)
   -> AgentKernelEvent.legacyAgentEvent
   -> existing voice streaming/speech/persistence path
 ```
 
 ## Intentional limitation
 
-This does not yet provide full tool parity for voice. Tool execution still needs a later migration from legacy `ToolExecutor` into `SecureToolRegistry` and kernel-owned tool stages.
+Kernel-native text generation does not yet provide full tool parity for voice. Tool-capable voice intents stay behind the kernel boundary through the legacy compatibility bridge, and tool execution still needs a later migration from legacy `ToolExecutor` into `SecureToolRegistry` and kernel-owned tool stages.
 
 ## Validation
 

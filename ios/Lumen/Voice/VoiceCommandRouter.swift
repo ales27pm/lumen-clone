@@ -6,15 +6,90 @@ struct VoiceCommandRouter {
     static func routeFinalTranscript(_ text: String, appState: AppState, conversation: Conversation, modelContext: ModelContext) async -> AsyncStream<AgentEvent> {
         let routing = await IntentClassifierService.shared.route(text)
         let memories = await MemoryRecall.recallAndNormalize(query: text, routing: routing, context: modelContext, limit: 8)
-        let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
         let turnID = UUID()
-        let kernelRequest = AgentKernelRequest(
+        let maxTokens = min(appState.maxTokens, ProcessInfo.processInfo.isLowPowerModeEnabled ? 384 : appState.maxTokens)
+        return VoiceAgentRuntimeBridge.streamVoiceTurn(
+            text: text,
+            appState: appState,
+            routing: routing,
+            memories: memories,
+            history: [],
             conversationID: conversation.id,
             turnID: turnID,
-            userMessage: text,
-            history: [],
-            systemPrompt: appState.systemPrompt,
+            modelContext: modelContext,
+            maxTokens: maxTokens
+        )
+    }
+}
+
+@MainActor
+enum VoiceAgentRuntimeBridge {
+    static func streamVoiceTurn(
+        text: String,
+        appState: AppState,
+        routing: IntentRoutingDecision,
+        memories: [MemoryContextItem],
+        history: [(role: MessageRole, content: String)],
+        conversationID: UUID,
+        turnID: UUID,
+        modelContext: ModelContext,
+        maxTokens: Int? = nil
+    ) -> AsyncStream<AgentEvent> {
+        let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
+        let effectiveMaxTokens = maxTokens ?? appState.maxTokens
+        let availableTools = enabledTools(for: routing, appState: appState)
+
+        if shouldUseLegacyToolPath(routing: routing, availableTools: availableTools) {
+            let request = makeLegacyAgentRequest(
+                text: text,
+                appState: appState,
+                history: history,
+                relevantMemories: gatedMemories,
+                availableTools: availableTools,
+                conversationID: conversationID,
+                turnID: turnID,
+                maxTokens: effectiveMaxTokens
+            )
+            let options = LegacyAgentRunOptions(
+                modelContext: modelContext,
+                conversationID: conversationID,
+                turnID: turnID,
+                groundingMode: .foregroundChat,
+                allowDegradedGrounding: true,
+                preventDoubleGrounding: true,
+                diagnosticsEnabled: false
+            )
+            return legacyEventStream(from: AssistantKernel.shared.runLegacyAgentBridge(request, options: options))
+        }
+
+        let request = makeKernelRequest(
+            text: text,
+            appState: appState,
+            history: history,
             relevantMemories: gatedMemories,
+            conversationID: conversationID,
+            turnID: turnID,
+            maxTokens: effectiveMaxTokens
+        )
+        return legacyEventStream(from: AssistantKernel.shared.run(request, modelContext: modelContext))
+    }
+
+    private static func makeKernelRequest(
+        text: String,
+        appState: AppState,
+        history: [(role: MessageRole, content: String)],
+        relevantMemories: [MemoryContextItem],
+        conversationID: UUID,
+        turnID: UUID,
+        maxTokens: Int
+    ) -> AgentKernelRequest {
+        AgentKernelRequest(
+            conversationID: conversationID,
+            turnID: turnID,
+            userMessage: text,
+            history: history.map { AgentKernelMessage(messageRole: $0.role, content: $0.content) },
+            systemPrompt: appState.systemPrompt,
+            relevantMemories: relevantMemories,
             attachments: [],
             task: .chat,
             source: .voice,
@@ -28,20 +103,58 @@ struct VoiceCommandRouter {
                 temperature: appState.temperature,
                 topP: appState.topP,
                 repetitionPenalty: appState.repetitionPenalty,
-                maxTokens: min(appState.maxTokens, ProcessInfo.processInfo.isLowPowerModeEnabled ? 384 : appState.maxTokens)
+                maxTokens: maxTokens
             )
         )
+    }
 
-        let kernel = AssistantKernel.shared
-        return AsyncStream { continuation in
-            let task = Task { @MainActor in
-                for await kernelEvent in kernel.run(kernelRequest, modelContext: modelContext) {
-                    guard let legacyEvent = kernelEvent.legacyAgentEvent else { continue }
-                    continuation.yield(legacyEvent)
+    private static func makeLegacyAgentRequest(
+        text: String,
+        appState: AppState,
+        history: [(role: MessageRole, content: String)],
+        relevantMemories: [MemoryContextItem],
+        availableTools: [ToolDefinition],
+        conversationID: UUID,
+        turnID: UUID,
+        maxTokens: Int
+    ) -> AgentRequest {
+        AgentRequest(
+            systemPrompt: appState.systemPrompt,
+            history: history,
+            userMessage: text,
+            temperature: appState.temperature,
+            topP: appState.topP,
+            repetitionPenalty: appState.repetitionPenalty,
+            maxTokens: maxTokens,
+            maxSteps: appState.maxAgentSteps,
+            availableTools: availableTools,
+            relevantMemories: relevantMemories,
+            attachments: [],
+            conversationID: conversationID,
+            turnID: turnID
+        )
+    }
+
+    private static func enabledTools(for routing: IntentRoutingDecision, appState: AppState) -> [ToolDefinition] {
+        ToolRegistry.all.filter { tool in
+            appState.enabledToolIDs.contains(tool.id) && IntentRouter.isToolAllowed(tool.id, for: routing)
+        }
+    }
+
+    private static func shouldUseLegacyToolPath(routing: IntentRoutingDecision, availableTools: [ToolDefinition]) -> Bool {
+        IntentRouter.intentRequiresTool(routing) && !availableTools.isEmpty
+    }
+
+    nonisolated private static func legacyEventStream(from kernelStream: AsyncStream<AgentKernelEvent>) -> AsyncStream<AgentEvent> {
+        AsyncStream { continuation in
+            let task = Task {
+                for await kernelEvent in kernelStream {
+                    guard let event = kernelEvent.legacyAgentEvent else { continue }
+                    continuation.yield(event)
                 }
                 continuation.finish()
             }
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 }
