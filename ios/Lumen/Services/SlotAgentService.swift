@@ -952,7 +952,15 @@ final class SlotAgentService {
             return "Tool \(toolID) is disabled. Enable it in Tools."
         }
 
-        let result = await ToolExecutor.shared.execute(toolID, arguments: action.args, approval: .autonomous)
+        let result = await SecureToolRegistry.shared.executeLegacyTool(
+            toolID,
+            arguments: action.args,
+            approval: .autonomous,
+            conversationID: effective.conversationID,
+            turnID: effective.turnID,
+            modelContext: options.modelContext,
+            isBackground: options.groundingMode == .headlessTrigger
+        )
         if options.diagnosticsEnabled {
             return diagnosticsObservationOverride(toolID: toolID, action: action, result: result)
         }

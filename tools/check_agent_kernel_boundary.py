@@ -29,16 +29,13 @@ LEGACY_PATTERNS = {
 # Shrink this list as each entrypoint is moved behind AssistantKernel.run(...).
 ALLOWED_LEGACY_CALLERS = {
     ("ios/Lumen/Services/AgentService.swift", 1324, "SlotAgentService.shared.run"),
-    ("ios/Lumen/Services/AgentService.swift", 1465, "ToolExecutor.shared.execute"),
-    ("ios/Lumen/Services/SlotAgentService.swift", 955, "ToolExecutor.shared.execute"),
     ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 5, "LegacySecureToolExecutor"),
-    ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 61, "ToolExecutor.shared.execute"),
-    ("ios/Lumen/Views/MessageBubble.swift", 533, "ToolExecutor.shared.execute"),
 }
 
 ALLOWED_MIGRATION_FILES = {
     "ios/Lumen/Assistant/AgentKernelContracts.swift",
     "ios/Lumen/Assistant/AssistantKernel+Streaming.swift",
+    "ios/Lumen/Tools/LegacyToolExecutorLocalTool.swift",
 }
 
 

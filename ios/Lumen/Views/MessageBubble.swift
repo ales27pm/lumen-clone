@@ -530,10 +530,11 @@ struct ToolCallCard: View {
 
         message.toolStatus = ToolStatus.running.rawValue
         Task {
-            let result = await ToolExecutor.shared.execute(
+            let result = await SecureToolRegistry.shared.executeLegacyTool(
                 toolID,
-                arguments: args,
-                approval: .userApproved
+                arguments: AgentJSONArguments(stringDictionary: args),
+                approval: .userApproved,
+                modelContext: modelContext
             )
             let validated = FinalIntentValidator.validate(result, routing: routing, fallback: nil)
             let presentation = ToolExecutionPresentation.presentation(for: toolID, rawResult: validated)
