@@ -125,9 +125,9 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         self.diagnosticsEnabled = diagnosticsEnabled
         self.maxSteps = max(1, maxSteps)
         self.prefersFoundationModels = prefersFoundationModels
-        self.temperature = temperature
-        self.topP = topP
-        self.repetitionPenalty = repetitionPenalty
+        self.temperature = min(max(temperature, 0.0), 2.0)
+        self.topP = min(max(topP, 0.0), 1.0)
+        self.repetitionPenalty = min(max(repetitionPenalty, 0.1), 3.0)
         self.maxTokens = max(1, maxTokens)
     }
 
