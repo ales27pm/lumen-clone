@@ -129,7 +129,7 @@ final class TriggerScheduler {
             do { try persist(context, operation: "runTriggerSkipped", scope: "Trigger") } catch { return nil }
             return trigger.lastResult
         }
-        let result = await AgentRunner.runHeadless(prompt: trigger.prompt, settings: settings, context: context, maxSteps: min(settings.maxAgentSteps, 3))
+        let result = await HeadlessAgentKernelRunner.run(prompt: trigger.prompt, settings: settings, context: context, maxSteps: min(settings.maxAgentSteps, 3), source: .trigger)
         trigger.lastRunAt = Date()
         trigger.lastResult = result.text
         updateNextFireAfterRun(for: trigger)
