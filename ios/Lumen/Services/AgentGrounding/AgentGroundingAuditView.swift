@@ -1,6 +1,31 @@
 import SwiftUI
 import SwiftData
 
+
+nonisolated enum AgentKernelBridgeSmokeTestExpectation {
+    static let buttonTitle = "Run Agent Kernel Bridge Smoke Test"
+    static let runningTitle = "Running Agent Kernel Bridge Smoke Test…"
+    static let startingSummary = "Starting Agent Kernel bridge smoke test…"
+    static let promptPrefix = "Agent Kernel bridge smoke test"
+    static let footerSentence = "The Agent Kernel bridge smoke test exercises the kernel-owned legacy bridge. Trace recording is observed when the bridged runtime records AgentBehaviorTrace entries; native SecureToolRegistry tool tracing lands in PR F."
+
+    static func completedSummary(recordedTraceCount: Int, tailChanged: Bool, producedOutput: Bool) -> String {
+        let traceObserved = recordedTraceCount > 0 || tailChanged
+        let countDescription = recordedTraceCount > 0 ? "\(recordedTraceCount)" : "new"
+
+        switch (producedOutput, traceObserved) {
+        case (true, true):
+            return "Agent Kernel bridge smoke test produced output and observed \(countDescription) trace(s). Export the runtime audit package again."
+        case (true, false):
+            return "Agent Kernel bridge smoke test produced output through the kernel bridge; no new AgentBehaviorTrace was observed. This is acceptable for bridge mode until native SecureToolRegistry tracing lands."
+        case (false, true):
+            return "Agent Kernel bridge smoke test observed \(countDescription) trace(s) but produced no visible output; check final stream handling."
+        case (false, false):
+            return "Agent Kernel bridge smoke test completed without visible output or new trace; confirm model availability and bridge wiring."
+        }
+    }
+}
+
 public struct AgentGroundingAuditView: View {
     private let auditor: RuntimeManifestAuditor
     private let scenarioRunner = RuntimeScenarioRunner()
@@ -40,9 +65,9 @@ public struct AgentGroundingAuditView: View {
                     runLiveTraceSmokeTest()
                 } label: {
                     if isRunningLiveTraceSmokeTest {
-                        Label(RolePipelineAgentService.smokeTestTraceExpectation.runningTitle, systemImage: "timer")
+                        Label(AgentKernelBridgeSmokeTestExpectation.runningTitle, systemImage: "timer")
                     } else {
-                        Label(RolePipelineAgentService.smokeTestTraceExpectation.buttonTitle, systemImage: "waveform.path.ecg")
+                        Label(AgentKernelBridgeSmokeTestExpectation.buttonTitle, systemImage: "waveform.path.ecg")
                     }
                 }
                 .disabled(isRunningLiveTraceSmokeTest)
@@ -58,7 +83,7 @@ public struct AgentGroundingAuditView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes an Agent Grounding runtime audit package for the offline loop: audit failures, behavior violations, and bounded diagnostic traces. Static scenario checks stay visible here but are not exported as live E2E model results. \(RolePipelineAgentService.smokeTestTraceExpectation.footerSentence)")
+                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes an Agent Grounding runtime audit package for the offline loop: audit failures, behavior violations, and bounded diagnostic traces. Static scenario checks stay visible here but are not exported as live E2E model results. \(AgentKernelBridgeSmokeTestExpectation.footerSentence)")
             }
 
             Section {
@@ -114,7 +139,7 @@ public struct AgentGroundingAuditView: View {
                         LabeledContent("Runtime failures", value: "\(lastExportPackage.runtimeManifestAudit?.failures.count ?? 0)")
                         LabeledContent("Behavior violations", value: "\(lastExportPackage.behaviorAudit?.violations.count ?? 0)")
                         if lastExportPackage.recentTraces.isEmpty {
-                            Label("No recent model/tool traces were exported. Run real model chat interactions before exporting; \(RolePipelineAgentService.smokeTestTraceExpectation.buttonTitle.lowercased()) only helps if it is configured for real-model tracing.", systemImage: "exclamationmark.triangle.fill")
+                            Label("No recent model/tool traces were exported. Run real model chat interactions before exporting; \(AgentKernelBridgeSmokeTestExpectation.buttonTitle.lowercased()) only helps if it is configured for real-model tracing.", systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
@@ -290,7 +315,7 @@ public struct AgentGroundingAuditView: View {
         let runID = UUID()
         isRunningLiveTraceSmokeTest = true
         liveTraceSmokeRunID = runID
-        lastLiveTraceSmokeSummary = RolePipelineAgentService.smokeTestTraceExpectation.startingSummary
+        lastLiveTraceSmokeSummary = AgentKernelBridgeSmokeTestExpectation.startingSummary
         errorMessage = nil
 
         let task = Task.detached(priority: .utility) {
@@ -309,7 +334,7 @@ public struct AgentGroundingAuditView: View {
             let req = AgentRequest(
                 systemPrompt: "You are Lumen. Answer concisely and do not expose hidden reasoning.",
                 history: [],
-                userMessage: "\(RolePipelineAgentService.smokeTestTraceExpectation.promptPrefix): explain in one sentence why a sharp chisel is safer than a dull one.",
+                userMessage: "\(AgentKernelBridgeSmokeTestExpectation.promptPrefix): explain in one sentence why a sharp chisel is safer than a dull one.",
                 temperature: 0.1,
                 topP: 0.7,
                 repetitionPenalty: 1.05,
@@ -361,7 +386,7 @@ public struct AgentGroundingAuditView: View {
                 trace.createdAt >= startedAt
             }.count
             let tailChanged = recentTraces.last?.id != beforeLastTraceID
-            let summary = RolePipelineAgentService.smokeTestTraceExpectation.completedSummary(
+            let summary = AgentKernelBridgeSmokeTestExpectation.completedSummary(
                 recordedTraceCount: recordedTraceCount,
                 tailChanged: tailChanged,
                 producedOutput: !finalText.isEmpty
