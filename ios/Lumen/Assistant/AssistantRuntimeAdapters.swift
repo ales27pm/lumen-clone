@@ -57,12 +57,13 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
 
     let kind: AssistantRuntimeKind = .llama
     let unavailableReason: String?
+    private let explicitlyAvailable: Bool
     private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
     private let liveService: (any LlamaRuntimeStreamingService)?
     private let liveSlot: LumenModelSlot
 
     var isAvailable: Bool {
-        generateHandler != nil || liveService != nil
+        explicitlyAvailable || generateHandler != nil || liveService != nil
     }
 
     init(
@@ -70,6 +71,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         unavailableReason: String? = "llama text runtime is not directly wired to AssistantKernel",
         generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil
     ) {
+        self.explicitlyAvailable = isAvailable
         self.generateHandler = generateHandler
         self.liveService = nil
         self.liveSlot = .mouth
@@ -83,6 +85,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     }
 
     private init(liveService: any LlamaRuntimeStreamingService, liveSlot: LumenModelSlot) {
+        self.explicitlyAvailable = false
         self.generateHandler = nil
         self.liveService = liveService
         self.liveSlot = liveSlot
@@ -117,12 +120,12 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         )
 
         var output = ""
-        for await token in await liveService.stream(generationRequest, slot: liveSlot) {
+        streamLoop: for await token in await liveService.stream(generationRequest, slot: liveSlot) {
             switch token {
             case .text(let delta):
                 output += delta
             case .done:
-                break
+                break streamLoop
             }
         }
 
