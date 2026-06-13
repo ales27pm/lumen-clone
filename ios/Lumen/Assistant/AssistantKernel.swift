@@ -16,10 +16,14 @@ final class AssistantKernel {
     private let memoryEngine = MemoryEngine()
     private let ragEngine = RAGEngine()
 
-    init(router: AssistantRuntimeRouter = .init(), metricsStore: RuntimeMetricsStore = .shared, toolRegistry: SecureToolRegistry = .shared) {
-        self.router = router
-        self.metricsStore = metricsStore
-        self.toolRegistry = toolRegistry
+    init(
+        router: AssistantRuntimeRouter? = nil,
+        metricsStore: RuntimeMetricsStore? = nil,
+        toolRegistry: SecureToolRegistry? = nil
+    ) {
+        self.router = router ?? AssistantRuntimeRouter()
+        self.metricsStore = metricsStore ?? .shared
+        self.toolRegistry = toolRegistry ?? .shared
     }
 
     func selectRuntime(for context: AssistantTurnContext) -> AssistantRuntimeKind {

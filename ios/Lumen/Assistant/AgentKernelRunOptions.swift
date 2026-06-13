@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-struct AgentKernelRunOptions: @unchecked Sendable {
-    enum GroundingMode: Sendable, Equatable {
+nonisolated struct AgentKernelRunOptions: @unchecked Sendable {
+    nonisolated enum GroundingMode: Sendable, Equatable {
         case foregroundChat
         case headlessTrigger
         case slotAgent

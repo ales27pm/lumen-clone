@@ -17,6 +17,7 @@ final class SecureToolRegistry {
             OpenURLTool(),
             NotificationTool()
         ] + ProductivityLocalTool.all
+          + CommunicationLocalTool.all
           + LegacyToolExecutorLocalTool.all
     }
 

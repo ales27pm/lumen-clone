@@ -141,7 +141,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     }
 
     func handleMemoryPressure() async {
-        await FleetRuntimeCleanup.unloadOptionalChatSlots()
+        await MainActor.run { FleetRuntimeCleanup.unloadOptionalChatSlots() }
     }
 }
 
