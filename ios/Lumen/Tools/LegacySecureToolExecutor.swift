@@ -58,7 +58,15 @@ enum LegacySecureToolExecutor {
         }
 
         if readOnlyAllowlist.contains(canonical) {
-            return await ToolExecutor.shared.execute(canonical, arguments: arguments, approval: approval)
+            return await SecureToolRegistry.shared.executeLegacyTool(
+                canonical,
+                arguments: arguments,
+                approval: approval,
+                conversationID: conversationID,
+                turnID: turnID,
+                modelContext: modelContext,
+                isBackground: isBackground
+            )
         }
 
         let lower = canonical.lowercased()

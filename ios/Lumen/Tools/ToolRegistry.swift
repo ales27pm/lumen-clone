@@ -6,9 +6,22 @@ final class SecureToolRegistry {
     static let shared = SecureToolRegistry()
     private let tools: [ToolID: any LocalTool]
 
-    init(tools: [any LocalTool] = [DeviceStatusTool(), MemorySearchTool(), RAGSearchTool(), CalendarReadTool(), ContactsLookupTool(), LocationSnapshotTool(), OpenURLTool(), NotificationTool()]) {
+    private static var defaultTools: [any LocalTool] {
+        [
+            DeviceStatusTool(),
+            MemorySearchTool(),
+            RAGSearchTool(),
+            CalendarReadTool(),
+            ContactsLookupTool(),
+            LocationSnapshotTool(),
+            OpenURLTool(),
+            NotificationTool()
+        ] + LegacyToolExecutorLocalTool.all
+    }
+
+    init(tools: [any LocalTool]? = nil) {
         var map: [ToolID: any LocalTool] = [:]
-        for tool in tools {
+        for tool in tools ?? Self.defaultTools {
             precondition(map[tool.definition.id] == nil, "Duplicate secure tool id: \(tool.definition.id)")
             map[tool.definition.id] = tool
         }
