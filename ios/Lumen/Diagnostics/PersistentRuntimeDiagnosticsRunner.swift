@@ -406,7 +406,7 @@ actor PersistentRuntimeDiagnosticsRunner {
             mutable.metrics.promptSHA256 = Self.sha256(req.userMessage)
             mutable.metrics.promptRedactionMode = "hash_and_size_only"
             let started = ProcessInfo.processInfo.systemUptime
-            for await event in await SlotAgentService.shared.run(req, options: .default) {
+            for await event in AssistantKernel.shared.runLegacyAgentBridge(req, options: .default) {
                 try Task.checkCancellation()
                 switch event {
                 case .finalDelta:
@@ -435,7 +435,7 @@ actor PersistentRuntimeDiagnosticsRunner {
                 var mutable = mutableStart
                 mutable.metrics.inputToolCount = req.availableTools.count
                 mutable.metrics.toolCount = req.availableTools.count
-                for await event in await SlotAgentService.shared.run(req, options: .default) {
+                for await event in AssistantKernel.shared.runLegacyAgentBridge(req, options: .default) {
                     try Task.checkCancellation()
                     if case .finalDelta = event { mutable.metrics.streamingUpdateCount += 1 }
                 }
