@@ -23,7 +23,9 @@ struct LegacyToolExecutorLocalTool: LocalTool {
     }
 
     static var all: [LegacyToolExecutorLocalTool] {
-        ToolRegistry.all.map(LegacyToolExecutorLocalTool.init)
+        ToolRegistry.all
+            .filter { !ProductivityLocalTool.nativeToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
+            .map(LegacyToolExecutorLocalTool.init)
     }
 
     func validateArguments(_ arguments: [String: String]) throws {}
