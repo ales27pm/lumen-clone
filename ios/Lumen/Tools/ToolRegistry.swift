@@ -16,7 +16,8 @@ final class SecureToolRegistry {
             LocationSnapshotTool(),
             OpenURLTool(),
             NotificationTool()
-        ] + LegacyToolExecutorLocalTool.all
+        ] + ProductivityLocalTool.all
+          + LegacyToolExecutorLocalTool.all
     }
 
     init(tools: [any LocalTool]? = nil) {
