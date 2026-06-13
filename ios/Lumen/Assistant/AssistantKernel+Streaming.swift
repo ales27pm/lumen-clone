@@ -21,11 +21,19 @@ extension AssistantKernel: AgentKernelRunning {
                 let turn = AssistantTurnContext(
                     task: request.task,
                     input: request.userMessage,
+                    systemPrompt: request.systemPrompt,
+                    history: request.history.map { (role: $0.role.messageRole, content: $0.content) },
+                    relevantMemories: request.relevantMemories,
+                    attachments: request.attachments,
                     isForeground: request.source.isForeground,
                     lowPowerMode: lowPowerMode,
                     thermalState: thermalState,
                     prefersFoundationModels: request.options.prefersFoundationModels,
-                    allowHeavyRuntime: request.options.allowHeavyRuntime
+                    allowHeavyRuntime: request.options.allowHeavyRuntime,
+                    temperature: request.options.temperature,
+                    topP: request.options.topP,
+                    repetitionPenalty: request.options.repetitionPenalty,
+                    maxTokens: request.options.maxTokens
                 )
 
                 let selectedRuntime = selectRuntime(for: turn)
@@ -69,14 +77,16 @@ extension AssistantKernel: AgentKernelRunning {
                         continuation.yield(.final(finalText))
                     }
                     let elapsed = Int(Date().timeIntervalSince(start) * 1000)
-                    continuation.yield(.diagnostic(.init(
-                        stage: "complete",
-                        message: "Agent Kernel turn completed",
-                        metadata: [
-                            "latencyMs": String(elapsed),
-                            "runtime": selectedRuntime.rawValue
-                        ]
-                    )))
+                    if request.options.diagnosticsEnabled {
+                        continuation.yield(.diagnostic(.init(
+                            stage: "complete",
+                            message: "Agent Kernel turn completed",
+                            metadata: [
+                                "latencyMs": String(elapsed),
+                                "runtime": selectedRuntime.rawValue
+                            ]
+                        )))
+                    }
                     continuation.yield(.done(finalText: finalText, steps: emittedSteps))
                 } catch {
                     let message = RuntimeMetricErrorSanitizer.code(for: error)

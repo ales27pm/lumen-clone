@@ -10,7 +10,35 @@ enum AssistantRuntimeKind: String, Sendable {
 struct TextGenerationRequest: Sendable {
     let prompt: String
     let systemPrompt: String
+    let history: [(role: MessageRole, content: String)]
+    let temperature: Double
+    let topP: Double
+    let repetitionPenalty: Double
     let maxTokens: Int
+    let relevantMemories: [MemoryContextItem]
+    let attachments: [ChatAttachment]
+
+    init(
+        prompt: String,
+        systemPrompt: String,
+        history: [(role: MessageRole, content: String)] = [],
+        temperature: Double = 0.7,
+        topP: Double = 0.9,
+        repetitionPenalty: Double = 1.1,
+        maxTokens: Int,
+        relevantMemories: [MemoryContextItem] = [],
+        attachments: [ChatAttachment] = []
+    ) {
+        self.prompt = prompt
+        self.systemPrompt = systemPrompt
+        self.history = history
+        self.temperature = temperature
+        self.topP = topP
+        self.repetitionPenalty = repetitionPenalty
+        self.maxTokens = max(1, maxTokens)
+        self.relevantMemories = relevantMemories
+        self.attachments = attachments
+    }
 }
 
 struct EmbeddingRequest: Sendable {

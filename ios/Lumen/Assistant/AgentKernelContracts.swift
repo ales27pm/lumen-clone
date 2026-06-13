@@ -14,6 +14,8 @@ nonisolated struct AgentKernelRequest: Sendable, Equatable, Identifiable {
     let userMessage: String
     let history: [AgentKernelMessage]
     let systemPrompt: String
+    let relevantMemories: [MemoryContextItem]
+    let attachments: [ChatAttachment]
     let task: AssistantTaskKind
     let source: AgentKernelSource
     let options: AgentKernelOptions
@@ -25,6 +27,8 @@ nonisolated struct AgentKernelRequest: Sendable, Equatable, Identifiable {
         userMessage: String,
         history: [AgentKernelMessage] = [],
         systemPrompt: String = "",
+        relevantMemories: [MemoryContextItem] = [],
+        attachments: [ChatAttachment] = [],
         task: AssistantTaskKind = .chat,
         source: AgentKernelSource = .chat,
         options: AgentKernelOptions = .chat
@@ -35,6 +39,8 @@ nonisolated struct AgentKernelRequest: Sendable, Equatable, Identifiable {
         self.userMessage = userMessage
         self.history = history
         self.systemPrompt = systemPrompt
+        self.relevantMemories = relevantMemories
+        self.attachments = attachments
         self.task = task
         self.source = source
         self.options = options
@@ -47,10 +53,37 @@ nonisolated struct AgentKernelMessage: Codable, Sendable, Equatable, Hashable {
         case user
         case assistant
         case tool
+
+        init(messageRole: MessageRole) {
+            switch messageRole {
+            case .system: self = .system
+            case .user: self = .user
+            case .assistant: self = .assistant
+            case .tool: self = .tool
+            }
+        }
+
+        var messageRole: MessageRole {
+            switch self {
+            case .system: return .system
+            case .user: return .user
+            case .assistant: return .assistant
+            case .tool: return .tool
+            }
+        }
     }
 
     let role: Role
     let content: String
+
+    init(role: Role, content: String) {
+        self.role = role
+        self.content = content
+    }
+
+    init(messageRole: MessageRole, content: String) {
+        self.init(role: Role(messageRole: messageRole), content: content)
+    }
 }
 
 nonisolated enum AgentKernelSource: String, Codable, Sendable, Equatable {
@@ -69,6 +102,10 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
     let diagnosticsEnabled: Bool
     let maxSteps: Int
     let prefersFoundationModels: Bool
+    let temperature: Double
+    let topP: Double
+    let repetitionPenalty: Double
+    let maxTokens: Int
 
     init(
         allowHeavyRuntime: Bool,
@@ -76,7 +113,11 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         requireUserVisibleFinal: Bool,
         diagnosticsEnabled: Bool,
         maxSteps: Int,
-        prefersFoundationModels: Bool
+        prefersFoundationModels: Bool,
+        temperature: Double = 0.7,
+        topP: Double = 0.9,
+        repetitionPenalty: Double = 1.1,
+        maxTokens: Int = 1024
     ) {
         self.allowHeavyRuntime = allowHeavyRuntime
         self.allowDegradedMode = allowDegradedMode
@@ -84,6 +125,10 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         self.diagnosticsEnabled = diagnosticsEnabled
         self.maxSteps = max(1, maxSteps)
         self.prefersFoundationModels = prefersFoundationModels
+        self.temperature = temperature
+        self.topP = topP
+        self.repetitionPenalty = repetitionPenalty
+        self.maxTokens = max(1, maxTokens)
     }
 
     init(from decoder: Decoder) throws {
@@ -94,7 +139,11 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
             requireUserVisibleFinal: try container.decode(Bool.self, forKey: .requireUserVisibleFinal),
             diagnosticsEnabled: try container.decode(Bool.self, forKey: .diagnosticsEnabled),
             maxSteps: try container.decode(Int.self, forKey: .maxSteps),
-            prefersFoundationModels: try container.decode(Bool.self, forKey: .prefersFoundationModels)
+            prefersFoundationModels: try container.decode(Bool.self, forKey: .prefersFoundationModels),
+            temperature: try container.decodeIfPresent(Double.self, forKey: .temperature) ?? 0.7,
+            topP: try container.decodeIfPresent(Double.self, forKey: .topP) ?? 0.9,
+            repetitionPenalty: try container.decodeIfPresent(Double.self, forKey: .repetitionPenalty) ?? 1.1,
+            maxTokens: try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? 1024
         )
     }
 
@@ -105,6 +154,10 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         case diagnosticsEnabled
         case maxSteps
         case prefersFoundationModels
+        case temperature
+        case topP
+        case repetitionPenalty
+        case maxTokens
     }
 
     static let chat = AgentKernelOptions(
@@ -113,7 +166,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         requireUserVisibleFinal: true,
         diagnosticsEnabled: true,
         maxSteps: 8,
-        prefersFoundationModels: true
+        prefersFoundationModels: true,
+        maxTokens: 1024
     )
 
     static let voice = AgentKernelOptions(
@@ -122,7 +176,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         requireUserVisibleFinal: true,
         diagnosticsEnabled: true,
         maxSteps: 6,
-        prefersFoundationModels: true
+        prefersFoundationModels: true,
+        maxTokens: 1024
     )
 
     static let headless = AgentKernelOptions(
@@ -131,7 +186,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         requireUserVisibleFinal: true,
         diagnosticsEnabled: true,
         maxSteps: 4,
-        prefersFoundationModels: false
+        prefersFoundationModels: false,
+        maxTokens: 512
     )
 
     static let diagnostics = AgentKernelOptions(
@@ -140,7 +196,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         requireUserVisibleFinal: true,
         diagnosticsEnabled: true,
         maxSteps: 3,
-        prefersFoundationModels: false
+        prefersFoundationModels: false,
+        maxTokens: 512
     )
 }
 
