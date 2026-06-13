@@ -23,8 +23,10 @@ struct LegacyToolExecutorLocalTool: LocalTool {
     }
 
     static var all: [LegacyToolExecutorLocalTool] {
-        ToolRegistry.all
-            .filter { !ProductivityLocalTool.nativeToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
+        let nativeToolIDs = ProductivityLocalTool.nativeToolIDs
+            .union(CommunicationLocalTool.nativeToolIDs)
+        return ToolRegistry.all
+            .filter { !nativeToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
             .map(LegacyToolExecutorLocalTool.init)
     }
 
