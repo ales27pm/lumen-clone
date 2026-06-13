@@ -278,9 +278,9 @@ extension AgentKernelSource {
 
     var isForeground: Bool {
         switch self {
-        case .chat, .voice, .diagnostics, .benchmark:
+        case .chat, .voice, .appIntent, .diagnostics, .benchmark:
             return true
-        case .appIntent, .trigger:
+        case .trigger:
             return false
         }
     }

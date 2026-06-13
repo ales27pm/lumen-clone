@@ -21,7 +21,7 @@ struct LumenAskIntent: AppIntent {
         }
         let ctx = ModelContext(container)
         let settings = SettingsSnapshot.loadFromDisk()
-        let result = await AgentRunner.runHeadless(prompt: trimmed, settings: settings, context: ctx, maxSteps: min(2, settings.maxAgentSteps))
+        let result = await HeadlessAgentKernelRunner.run(prompt: trimmed, settings: settings, context: ctx, maxSteps: min(2, settings.maxAgentSteps), source: .appIntent)
         let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let bounded = String((text.isEmpty ? LumenIntentResultRenderer.degraded("no response") : text).prefix(500))
         return .result(value: bounded)

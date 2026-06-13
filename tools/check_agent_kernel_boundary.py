@@ -28,16 +28,13 @@ LEGACY_PATTERNS = {
 # Line-specific snapshot of known callers before the Agent Kernel migration.
 # Shrink this list as each entrypoint is moved behind AssistantKernel.run(...).
 ALLOWED_LEGACY_CALLERS = {
-    ("ios/Lumen/AppIntents/LumenAskIntent.swift", 24, "AgentRunner.runHeadless"),
     ("ios/Lumen/Diagnostics/PersistentRuntimeDiagnosticsRunner.swift", 409, "SlotAgentService.shared.run"),
     ("ios/Lumen/Diagnostics/PersistentRuntimeDiagnosticsRunner.swift", 438, "SlotAgentService.shared.run"),
     ("ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift", 323, "RolePipelineAgentService.shared.run"),
-    ("ios/Lumen/Services/AgentRunner.swift", 68, "RolePipelineAgentService.shared.run"),
     ("ios/Lumen/Services/AgentService.swift", 1324, "SlotAgentService.shared.run"),
     ("ios/Lumen/Services/AgentService.swift", 1465, "ToolExecutor.shared.execute"),
     ("ios/Lumen/Services/E2ETestRunner.swift", 752, "AgentService.shared.run"),
     ("ios/Lumen/Services/SlotAgentService.swift", 955, "ToolExecutor.shared.execute"),
-    ("ios/Lumen/Services/TriggerScheduler.swift", 132, "AgentRunner.runHeadless"),
     ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 5, "LegacySecureToolExecutor"),
     ("ios/Lumen/Tools/LegacySecureToolExecutor.swift", 61, "ToolExecutor.shared.execute"),
     ("ios/Lumen/Views/MessageBubble.swift", 533, "ToolExecutor.shared.execute"),
