@@ -3,26 +3,33 @@ from __future__ import annotations
 import re
 from typing import Any
 
-ADAPTER_EXPORT_SCHEMA_VERSION = "1.0.0"
+ADAPTER_EXPORT_SCHEMA_VERSION = "1.1.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
-DEFAULT_LORA_OUTPUT_ROOT = "models/lora"
-DEFAULT_ADAPTER_DIR = DEFAULT_LORA_OUTPUT_ROOT
-DEFAULT_RELEASE_BAKE_OUTPUT_ROOT = "models/gguf_release_bake"
+DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
+DEFAULT_ADAPTER_GGUF_OUTPUT_ROOT = "models/lora_qwen3_gguf"
+DEFAULT_RELEASE_BAKE_OUTPUT_ROOT = "models/gguf_release_bake_qwen3_bootstrap"
+DEFAULT_ADAPTER_REPO_ID = "ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
+DEFAULT_SHARED_BASE_REPO_ID = "ales27pm/lumen-qwen3-bootstrap-gguf"
+DEFAULT_SHARED_BASE_FILE_NAME = "lumen-qwen3-fast-shared-q4_k_m.gguf"
 
 
 def adapter_artifact_name(agent: str) -> str:
     slug = re.sub(r"[^a-z0-9_.-]+", "-", agent.strip().casefold()).strip("-._")
-    return f"{slug or 'agent'}.lora"
+    return f"lumen-{slug or 'agent'}-lora.gguf"
 
 
 def adapter_output_dir(agent: str) -> str:
     return f"{DEFAULT_LORA_OUTPUT_ROOT}/{agent}"
 
 
+def adapter_gguf_output_path(agent: str) -> str:
+    return f"{DEFAULT_ADAPTER_GGUF_OUTPUT_ROOT}/{adapter_artifact_name(agent)}"
+
+
 def adapter_artifact_path(agent: str) -> str:
     # Unsloth/PEFT saves LoRA adapters as a directory containing adapter weights,
     # tokenizer/config metadata, and trainer state. The runtime contract must point
-    # at that real adapter directory, not at a synthetic standalone .lora filename.
+    # at that real adapter directory until the explicit LoRA->GGUF conversion stage.
     return adapter_output_dir(agent)
 
 
@@ -64,6 +71,7 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out["release_bake_enabled_by_default"] = False
     out["adapter_output_dir"] = adapter_output_dir(agent)
     out["output_dir"] = adapter_output_dir(agent)
+    out["adapter_gguf_output_path"] = adapter_gguf_output_path(agent)
     out["gguf_output_dir"] = release_bake_output_dir(agent)
     out["adapterExport"] = {
         "enabled": True,
@@ -71,7 +79,11 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "adapterID": f"lumen-{agent}-adapter",
         "adapterArtifact": adapter_artifact_path(agent),
         "adapterDirectory": adapter_output_dir(agent),
+        "adapterGGUFArtifact": adapter_gguf_output_path(agent),
+        "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
         "baseModelID": base_model_id,
+        "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
+        "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "trainBaseModelWeights": False,
         "saveAdapterByDefault": True,
         "mergeAdaptersByDefault": False,
@@ -94,9 +106,13 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "mode": "adapter_first",
         "agent": agent,
         "baseModelID": base_model_id,
+        "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
+        "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
+        "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
         "adapterID": f"lumen-{agent}-adapter",
         "adapterArtifact": adapter_artifact_path(agent),
         "adapterDirectory": adapter_output_dir(agent),
+        "adapterGGUFArtifact": adapter_gguf_output_path(agent),
         "systemPrompt": dataset_card.get("systemPrompt"),
         "datasetCard": {
             "manifestCommit": dataset_card.get("manifestCommit"),
@@ -122,6 +138,7 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         },
         "expectedArtifacts": {
             "adapterDirectory": adapter_output_dir(agent),
+            "adapterGGUF": adapter_gguf_output_path(agent),
             "trainSFT": "train_sft.jsonl",
             "validationSFT": "val_sft.jsonl",
             "trainDPO": "train_dpo.jsonl",
@@ -147,6 +164,8 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "adapterID": f"lumen-{agent}-adapter",
                 "adapterArtifact": adapter_artifact_path(agent),
                 "adapterDirectory": adapter_output_dir(agent),
+                "adapterGGUFArtifact": adapter_gguf_output_path(agent),
+                "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
                 "baseModelID": base_model_id,
                 "systemPrompt": dataset_card.get("systemPrompt"),
                 "recordCounts": dataset_card.get("recordCounts", {}),
@@ -158,6 +177,9 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "schemaVersion": ADAPTER_EXPORT_SCHEMA_VERSION,
         "mode": "adapter_first",
         "sharedBaseModelID": shared_base_model_id,
+        "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
+        "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
+        "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
         "baseModelIDs": sorted(base_model_ids),
         "runtimeStrategy": {
             "loadBaseModelOnce": True,
