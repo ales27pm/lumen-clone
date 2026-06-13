@@ -66,6 +66,15 @@ struct ProductivityLocalTool: LocalTool {
             )
         }
 
+        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: legacyToolID, arguments: args) {
+            return result(
+                invocation: invocation,
+                text: permissionFailure,
+                status: .denied,
+                metricsSummary: "permission_denied"
+            )
+        }
+
         let text: String
         switch legacyToolID {
         case "calendar.create":
