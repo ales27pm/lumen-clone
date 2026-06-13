@@ -12,6 +12,28 @@ final class SecureToolRegistryTests: XCTestCase {
         let defs = await SecureToolRegistry.shared.availableDefinitions(context: ctx, source: .backgroundTrigger)
         XCTAssertFalse(defs.contains(where: { $0.category == .sensitiveAction }))
     }
+
+    func testLegacyToolStatusClassifiesApprovalRequiredResponses() {
+        XCTAssertEqual(
+            LegacyToolExecutorLocalTool.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),
+            .requiresApproval
+        )
+        XCTAssertEqual(
+            LegacyToolExecutorLocalTool.status(from: "This tool requires explicit user approval before it can run: outlook.mail.send."),
+            .requiresApproval
+        )
+    }
+
+    func testLegacyToolStatusClassifiesPermissionFailuresAsDenied() {
+        XCTAssertEqual(
+            LegacyToolExecutorLocalTool.status(from: "I need calendar access to do that. Please enable it in Settings or provide an alternative."),
+            .denied
+        )
+        XCTAssertEqual(
+            LegacyToolExecutorLocalTool.status(from: "Missing required permission: contacts."),
+            .denied
+        )
+    }
 }
 
 private struct DuplicateToolForRegistryTest: LocalTool {
