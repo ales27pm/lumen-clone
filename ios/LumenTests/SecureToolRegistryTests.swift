@@ -13,6 +13,16 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertFalse(defs.contains(where: { $0.category == .sensitiveAction }))
     }
 
+    func testProductivityToolsAreRegisteredNatively() async {
+        let ids = await Set(SecureToolRegistry.shared.definitions().map(\.id))
+        XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isSubset(of: ids))
+    }
+
+    func testLegacyAdapterExcludesNativelyPortedProductivityTools() {
+        let legacyIDs = Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id })
+        XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
+    }
+
     func testLegacyToolStatusClassifiesApprovalRequiredResponses() {
         XCTAssertEqual(
             LegacyToolExecutorLocalTool.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),
