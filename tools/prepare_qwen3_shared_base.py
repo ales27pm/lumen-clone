@@ -110,14 +110,23 @@ print(out)
     return output
 
 
+def hf_cli(root: Path) -> str:
+    venv_hf = root / ".venv" / "bin" / "hf"
+    if venv_hf.is_file():
+        return str(venv_hf)
+    return "hf"
+
+
 def upload(output: Path, target_repo: str, private: bool) -> None:
-    create = ["hf", "repo", "create", target_repo, "--type", "model", "--yes"]
+    root = repo_root()
+    hf = hf_cli(root)
+    create = [hf, "repos", "create", target_repo, "--type", "model", "--exist-ok"]
     if private:
         create.append("--private")
     subprocess.run(create, check=False)
     subprocess.run(
         [
-            "hf",
+            hf,
             "upload",
             target_repo,
             str(output),

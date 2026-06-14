@@ -122,18 +122,195 @@ def build_sft_rows(
     tokenizer: Any,
     assistant_only_loss: bool,
     path: Path,
+    max_seq_length: int | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for index, record in enumerate(records):
         messages = normalize_chat_messages(record, row_index=index, path=path)
         if assistant_only_loss:
-            # TRL can only build assistant-only loss masks from conversational
-            # datasets. Keep the canonical `messages` column instead of eagerly
-            # rendering records into a plain text column.
-            rows.append({"messages": messages})
+            rows.append(
+                tokenize_assistant_only_row(
+                    tokenizer,
+                    messages,
+                    path=path,
+                    row_index=index,
+                    max_seq_length=max_seq_length,
+                )
+            )
         else:
             rows.append({"text": render_messages(tokenizer, messages)})
     return rows
+
+
+def _flatten_tokenizer_output(value: Any) -> list[int]:
+    if hasattr(value, "data") and isinstance(value.data, dict) and "input_ids" in value.data:
+        value = value.data["input_ids"]
+    if isinstance(value, list) and value and isinstance(value[0], list):
+        value = value[0]
+    if not isinstance(value, list):
+        raise ValueError("Tokenizer chat template must return a list of token ids")
+    return [int(token) for token in value]
+
+
+def _chat_template_input_ids(
+    tokenizer: Any,
+    messages: list[dict[str, str]],
+    *,
+    add_generation_prompt: bool,
+) -> list[int]:
+    rendered = tokenizer.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=add_generation_prompt,
+    )
+    if hasattr(rendered, "get"):
+        rendered = rendered.get("input_ids")
+    return _flatten_tokenizer_output(rendered)
+
+
+def _common_prefix_length(left: list[int], right: list[int]) -> int:
+    count = 0
+    for left_token, right_token in zip(left, right):
+        if left_token != right_token:
+            break
+        count += 1
+    return count
+
+
+def _tokenizer_supports_assistant_masks(tokenizer: Any) -> bool:
+    chat_template = getattr(tokenizer, "chat_template", "") or ""
+    return "{% generation" in chat_template
+
+
+def _derive_assistant_masks_from_template(
+    tokenizer: Any,
+    messages: list[dict[str, str]],
+    input_ids: list[int],
+    *,
+    path: Path,
+    row_index: int,
+) -> list[int]:
+    assistant_masks = [0] * len(input_ids)
+    for message_index, message in enumerate(messages):
+        if message["role"] != "assistant":
+            continue
+
+        if message_index == 0:
+            start = 0
+        else:
+            start_ids = _chat_template_input_ids(
+                tokenizer,
+                messages[:message_index],
+                add_generation_prompt=True,
+            )
+            start = (
+                len(start_ids)
+                if input_ids[: len(start_ids)] == start_ids
+                else _common_prefix_length(input_ids, start_ids)
+            )
+
+        end_ids = _chat_template_input_ids(
+            tokenizer,
+            messages[: message_index + 1],
+            add_generation_prompt=False,
+        )
+        end = (
+            len(end_ids)
+            if input_ids[: len(end_ids)] == end_ids
+            else _common_prefix_length(input_ids, end_ids)
+        )
+        if end <= start:
+            raise RuntimeError(
+                f"{path}:{row_index + 1} could not derive assistant token span from the tokenizer chat template"
+            )
+        for token_index in range(start, min(end, len(assistant_masks))):
+            assistant_masks[token_index] = 1
+    return assistant_masks
+
+
+def tokenize_assistant_only_row(
+    tokenizer: Any,
+    messages: list[dict[str, str]],
+    *,
+    path: Path,
+    row_index: int,
+    max_seq_length: int | None,
+) -> dict[str, list[int]]:
+    if not hasattr(tokenizer, "apply_chat_template"):
+        raise RuntimeError(
+            "Assistant-only loss requires a tokenizer with apply_chat_template(..., "
+            "return_assistant_tokens_mask=True)."
+        )
+
+    chat_template_kwargs = {
+        "tokenize": True,
+        "add_generation_prompt": False,
+        "return_dict": True,
+    }
+    if _tokenizer_supports_assistant_masks(tokenizer):
+        chat_template_kwargs["return_assistant_tokens_mask"] = True
+    processed = tokenizer.apply_chat_template(messages, **chat_template_kwargs)
+    if not hasattr(processed, "get"):
+        raise RuntimeError(
+            "Assistant-only loss requires apply_chat_template(..., return_dict=True) "
+            "to return input_ids and assistant token masks."
+        )
+
+    input_ids = _flatten_tokenizer_output(processed.get("input_ids"))
+    assistant_mask_value = processed.get("assistant_masks", processed.get("assistant_tokens_mask"))
+    if assistant_mask_value is None:
+        assistant_masks = _derive_assistant_masks_from_template(
+            tokenizer,
+            messages,
+            input_ids,
+            path=path,
+            row_index=row_index,
+        )
+    else:
+        assistant_masks = _flatten_tokenizer_output(assistant_mask_value)
+        if 1 not in assistant_masks:
+            assistant_masks = _derive_assistant_masks_from_template(
+                tokenizer,
+                messages,
+                input_ids,
+                path=path,
+                row_index=row_index,
+            )
+    if len(input_ids) != len(assistant_masks):
+        raise RuntimeError(
+            f"{path}:{row_index + 1} produced mismatched input_ids and assistant mask lengths "
+            f"({len(input_ids)} != {len(assistant_masks)})"
+        )
+
+    attention_mask_value = processed.get("attention_mask")
+    if attention_mask_value is None:
+        attention_mask = [1] * len(input_ids)
+    else:
+        attention_mask = _flatten_tokenizer_output(attention_mask_value)
+        if len(attention_mask) != len(input_ids):
+            raise RuntimeError(
+                f"{path}:{row_index + 1} produced mismatched input_ids and attention_mask lengths "
+                f"({len(input_ids)} != {len(attention_mask)})"
+            )
+
+    if max_seq_length is not None and max_seq_length > 0:
+        input_ids = input_ids[:max_seq_length]
+        attention_mask = attention_mask[:max_seq_length]
+        assistant_masks = assistant_masks[:max_seq_length]
+
+    labels = [token_id if mask else -100 for token_id, mask in zip(input_ids, assistant_masks)]
+    if all(label == -100 for label in labels):
+        raise RuntimeError(
+            f"{path}:{row_index + 1} has no assistant tokens after chat-template masking. "
+            "Check that the tokenizer chat template supports assistant token masks and "
+            "that max_seq_length does not truncate away the assistant response."
+        )
+
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "labels": labels,
+    }
 
 
 def _seed_everything(seed: int) -> None:
@@ -267,12 +444,14 @@ def main() -> None:
         tokenizer=tokenizer,
         assistant_only_loss=assistant_only_loss,
         path=train_path,
+        max_seq_length=int(cfg["max_seq_length"]),
     )
     val_rows = build_sft_rows(
         val_records,
         tokenizer=tokenizer,
         assistant_only_loss=assistant_only_loss,
         path=val_path,
+        max_seq_length=int(cfg["max_seq_length"]),
     )
 
     train_dataset = Dataset.from_list(train_rows)
@@ -299,12 +478,9 @@ def main() -> None:
         seed=seed,
         data_seed=seed,
     )
-    if assistant_only_loss:
-        # `assistant_only_loss` is supported by recent TRL SFTConfig; pass it
-        # through best-effort and let SFTConfig surface a clear error if the
-        # installed TRL version is too old.
-        sft_kwargs["assistant_only_loss"] = True
-    else:
+    # Assistant-only rows are pre-tokenized with masked labels, so TRL should
+    # treat them as an already-processed dataset instead of rebuilding masks.
+    if not assistant_only_loss:
         sft_kwargs["dataset_text_field"] = "text"
 
     training_args = SFTConfig(**sft_kwargs)

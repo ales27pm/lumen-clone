@@ -1,0 +1,1476 @@
+PASS lumen.audit_to_adapter_pipeline/1.1.0 (qwen3/adapter-first)
+Runtime audits discovered: 3
+
+== ensure shared base HF repo
+/home/ales27pm/lumen-clone/.venv/bin/hf repos create ales27pm/lumen-qwen3-bootstrap-gguf --type model --exist-ok
+[32m✓ Repo created[0m
+  repo_id: ales27pm/lumen-qwen3-bootstrap-gguf
+  url: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-gguf
+
+== upload shared base GGUF
+/home/ales27pm/lumen-clone/.venv/bin/hf upload-large-folder ales27pm/lumen-qwen3-bootstrap-gguf models/base_qwen3_fast --repo-type model
+[33mWarning: You are about to upload a large folder to the Hub using `hf upload-large-folder`. This is a new feature so feedback is very welcome!
+
+A few things to keep in mind:
+  - Repository limits still apply: https://huggingface.co/docs/hub/repositories-recommendations
+  - Do not start several processes in parallel.
+  - You can interrupt and resume the process at any time. The script will pick up where it left off except for partially uploaded files that would have to be entirely reuploaded.
+  - Do not upload the same folder to several repositories. If you need to do so, you must delete the `./.cache/huggingface/` folder first.
+
+Some temporary metadata will be stored under `models/base_qwen3_fast/.cache/huggingface`.
+  - You must not modify those files manually.
+  - You must not delete the `./.cache/huggingface/` folder while a process is running.
+  - You can delete the `./.cache/huggingface/` folder to reinitialize the upload state when process is not running. Files will have to be hashed and preuploaded again, except for already committed files.
+
+If the process output is too verbose, you can disable the progress bars with `--no-bars`. You can also entirely disable the status report with `--no-report`.
+
+For more details, run `hf upload-large-folder --help` or check the documentation at https://huggingface.co/docs/huggingface_hub/guides/upload#upload-a-large-folder.[0m
+Repo created: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-gguf
+Found 1 candidate files to upload
+Running validation checks on files to upload...
+Validation checks complete.
+Starting upload...
+Recovering from metadata files:   0%|          | 0/1 [00:00<?, ?it/s]Recovering from metadata files: 100%|██████████| 1/1 [00:00<00:00, 2593.88it/s]
+
+
+
+---------- 2026-06-14 19:24:39 (0:00:00) ----------
+Files:   hashed 0/1 (0.0/1.3G) | pre-uploaded: 0/0 (0.0/1.3G) (+1 unsure) | committed: 0/1 (0.0/1.3G) | ignored: 0
+Workers: hashing: 1 | get upload mode: 0 | pre-uploading: 0 | committing: 0 | waiting: 7
+---------------------------------------------------
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+  ...3-fast-shared-q4_k_m.gguf:   6%|▌         | 71.8MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:   6%|▌         | 71.8MB / 1.28GB            [A[AProcessing Files (0 / 1)      :   6%|▌         | 71.8MB / 1.28GB, 7.08MB/s  
+
+  ...3-fast-shared-q4_k_m.gguf:  18%|█▊        |  232MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  18%|█▊        |  232MB / 1.28GB, 22.7MB/s  
+
+  ...3-fast-shared-q4_k_m.gguf:  20%|██        |  261MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  20%|██        |  261MB / 1.28GB, 25.4MB/s  
+
+  ...3-fast-shared-q4_k_m.gguf:  20%|██        |  262MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  20%|██        |  262MB / 1.28GB, 25.2MB/s  
+New Data Upload               :   0%|          |  525kB /  134MB, 51.3kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  20%|██        |  262MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  20%|██        |  262MB / 1.28GB, 25.0MB/s  
+New Data Upload               :   1%|          | 1.05MB /  201MB,  102kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  265MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  265MB / 1.28GB, 25.0MB/s  
+New Data Upload               :   2%|▏         | 3.68MB /  201MB,  356kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  265MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  266MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  266MB / 1.28GB, 24.6MB/s  
+New Data Upload               :   2%|▏         | 4.73MB /  201MB,  450kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  267MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  267MB / 1.28GB, 24.5MB/s  
+New Data Upload               :   3%|▎         | 5.78MB /  201MB,  547kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  267MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  267MB / 1.28GB, 24.3MB/s  
+New Data Upload               :   3%|▎         | 6.30MB /  201MB,  592kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  268MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  268MB / 1.28GB, 24.1MB/s  
+New Data Upload               :   4%|▎         | 7.35MB /  201MB,  687kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  268MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  269MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  269MB / 1.28GB, 23.8MB/s  
+New Data Upload               :   4%|▍         | 8.40MB /  201MB,  774kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  270MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  270MB / 1.28GB, 23.7MB/s  
+New Data Upload               :   5%|▍         | 9.45MB /  201MB,  866kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  270MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  272MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  272MB / 1.28GB, 23.3MB/s  
+New Data Upload               :   5%|▌         | 10.5MB /  201MB,  949kB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██        |  272MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██▏       |  273MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██▏       |  273MB / 1.28GB, 23.0MB/s  
+New Data Upload               :   6%|▌         | 11.6MB /  201MB, 1.03MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██▏       |  274MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██▏       |  274MB / 1.28GB, 22.8MB/s  
+New Data Upload               :   6%|▋         | 12.6MB /  201MB, 1.12MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██▏       |  274MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██▏       |  275MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  21%|██▏       |  275MB / 1.28GB, 22.5MB/s  
+New Data Upload               :   7%|▋         | 13.7MB /  201MB, 1.20MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  21%|██▏       |  275MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  276MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  276MB / 1.28GB, 22.2MB/s  
+New Data Upload               :   7%|▋         | 14.7MB /  201MB, 1.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  277MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  277MB / 1.28GB, 22.1MB/s  
+New Data Upload               :   8%|▊         | 15.8MB /  201MB, 1.36MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  277MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  278MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  278MB / 1.28GB, 21.8MB/s  
+New Data Upload               :   8%|▊         | 16.8MB /  201MB, 1.43MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  279MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  279MB / 1.28GB, 21.7MB/s  
+New Data Upload               :   9%|▉         | 17.9MB /  201MB, 1.51MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  279MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  280MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  280MB / 1.28GB, 21.4MB/s  
+New Data Upload               :   9%|▉         | 18.9MB /  201MB, 1.58MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  280MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  281MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  281MB / 1.28GB, 21.1MB/s  
+New Data Upload               :  10%|▉         | 20.0MB /  201MB, 1.65MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  282MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  282MB / 1.28GB, 21.0MB/s  
+New Data Upload               :  10%|█         | 21.0MB /  201MB, 1.73MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  282MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  283MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  283MB / 1.28GB, 20.7MB/s  
+New Data Upload               :  11%|█         | 22.1MB /  201MB, 1.79MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  284MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  284MB / 1.28GB, 20.6MB/s  
+New Data Upload               :  11%|█▏        | 23.1MB /  201MB, 1.87MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  284MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  285MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  285MB / 1.28GB, 20.3MB/s  
+New Data Upload               :  12%|█▏        | 24.2MB /  201MB, 1.93MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  286MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  286MB / 1.28GB, 20.2MB/s  
+New Data Upload               :  13%|█▎        | 25.2MB /  201MB, 2.01MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  286MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  287MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  287MB / 1.28GB, 20.0MB/s  
+New Data Upload               :  13%|█▎        | 26.3MB /  201MB, 2.07MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  288MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  288MB / 1.28GB, 19.9MB/s  
+New Data Upload               :  14%|█▎        | 27.3MB /  201MB, 2.14MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  22%|██▏       |  288MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  289MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  289MB / 1.28GB, 19.6MB/s  
+New Data Upload               :  14%|█▍        | 28.4MB /  201MB, 2.20MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  290MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  290MB / 1.28GB, 19.5MB/s  
+New Data Upload               :  15%|█▍        | 29.4MB /  201MB, 2.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  290MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  292MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  292MB / 1.28GB, 19.3MB/s  
+New Data Upload               :  15%|█▌        | 30.5MB /  201MB, 2.32MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  293MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  293MB / 1.28GB, 19.2MB/s  
+New Data Upload               :  16%|█▌        | 31.5MB /  201MB, 2.40MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  293MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  294MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  294MB / 1.28GB, 19.0MB/s  
+New Data Upload               :  16%|█▌        | 32.6MB /  201MB, 2.45MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  295MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  295MB / 1.28GB, 18.9MB/s  
+New Data Upload               :  17%|█▋        | 33.6MB /  201MB, 2.52MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  295MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  296MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  296MB / 1.28GB, 18.7MB/s  
+New Data Upload               :  17%|█▋        | 34.7MB /  201MB, 2.56MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  297MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  297MB / 1.28GB, 18.6MB/s  
+New Data Upload               :  18%|█▊        | 35.7MB /  201MB, 2.63MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  297MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  298MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  298MB / 1.28GB, 18.4MB/s  
+New Data Upload               :  18%|█▊        | 36.8MB /  201MB, 2.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  299MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  299MB / 1.28GB, 18.3MB/s  
+New Data Upload               :  19%|█▉        | 37.8MB /  201MB, 2.75MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  299MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  300MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  300MB / 1.28GB, 18.1MB/s  
+New Data Upload               :  19%|█▉        | 38.9MB /  201MB, 2.79MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  301MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  301MB / 1.28GB, 18.0MB/s  
+New Data Upload               :  20%|█▉        | 39.9MB /  201MB, 2.86MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  23%|██▎       |  301MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▎       |  302MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▎       |  302MB / 1.28GB, 17.8MB/s  
+New Data Upload               :  20%|██        | 41.0MB /  201MB, 2.90MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▎       |  303MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▎       |  303MB / 1.28GB, 17.7MB/s  
+New Data Upload               :  21%|██        | 42.0MB /  201MB, 2.96MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▎       |  303MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▎       |  304MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▎       |  304MB / 1.28GB, 17.5MB/s  
+New Data Upload               :  21%|██▏       | 43.1MB /  201MB, 3.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  305MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  305MB / 1.28GB, 17.4MB/s  
+New Data Upload               :  22%|██▏       | 44.1MB /  201MB, 3.07MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  306MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  306MB / 1.28GB, 17.4MB/s  
+New Data Upload               :  22%|██▏       | 45.2MB /  201MB, 3.13MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  306MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  307MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  307MB / 1.28GB, 17.2MB/s  
+New Data Upload               :  23%|██▎       | 46.2MB /  201MB, 3.17MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  308MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  308MB / 1.28GB, 17.1MB/s  
+New Data Upload               :  23%|██▎       | 47.3MB /  201MB, 3.23MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  309MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  309MB / 1.28GB, 17.0MB/s  
+New Data Upload               :  24%|██▍       | 47.8MB /  201MB, 3.24MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  310MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  310MB / 1.28GB, 17.0MB/s  
+New Data Upload               :  24%|██▍       | 48.8MB /  201MB, 3.31MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  310MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  311MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  311MB / 1.28GB, 16.8MB/s  
+New Data Upload               :  25%|██▍       | 49.9MB /  201MB, 3.34MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  312MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  312MB / 1.28GB, 16.7MB/s  
+New Data Upload               :  25%|██▌       | 50.9MB /  201MB, 3.40MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  312MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  312MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  313MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  313MB / 1.28GB, 16.4MB/s  
+New Data Upload               :  26%|██▌       | 52.0MB /  201MB, 3.40MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  313MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  313MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  314MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  314MB / 1.28GB, 16.1MB/s  
+New Data Upload               :  26%|██▋       | 53.0MB /  201MB, 3.40MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  24%|██▍       |  314MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  315MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  315MB / 1.28GB, 15.9MB/s  
+New Data Upload               :  27%|██▋       | 54.1MB /  201MB, 3.44MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  315MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  316MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  316MB / 1.28GB, 15.7MB/s  
+New Data Upload               :  27%|██▋       | 55.1MB /  201MB, 3.47MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  316MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  317MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  317MB / 1.28GB, 15.5MB/s  
+New Data Upload               :  28%|██▊       | 56.2MB /  201MB, 3.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  317MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  317MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  318MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  318MB / 1.28GB, 15.2MB/s  
+New Data Upload               :  28%|██▊       | 56.7MB /  201MB, 3.45MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  318MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  318MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  319MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  319MB / 1.28GB, 14.9MB/s  
+New Data Upload               :  29%|██▊       | 57.8MB /  201MB, 3.45MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  320MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  320MB / 1.28GB, 14.9MB/s  
+New Data Upload               :  29%|██▉       | 58.8MB /  201MB, 3.51MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▍       |  320MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  320MB / 1.28GB, 14.8MB/s  
+New Data Upload               :  29%|██▉       | 59.3MB /  201MB, 3.53MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  322MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  322MB / 1.28GB, 14.8MB/s  
+New Data Upload               :  30%|███       | 60.9MB /  201MB, 3.62MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  322MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  324MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  324MB / 1.28GB, 14.7MB/s  
+New Data Upload               :  31%|███       | 62.5MB /  201MB, 3.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  324MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  324MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  324MB / 1.28GB, 14.5MB/s  
+New Data Upload               :  31%|███▏      | 63.0MB /  201MB, 3.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  325MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  325MB / 1.28GB, 14.4MB/s  
+New Data Upload               :  32%|███▏      | 63.5MB /  201MB, 3.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  326MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  326MB / 1.28GB, 14.4MB/s  
+New Data Upload               :  32%|███▏      | 65.1MB /  201MB, 3.79MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  327MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  327MB / 1.28GB, 14.3MB/s  
+New Data Upload               :  33%|███▎      | 65.6MB /  201MB, 3.80MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  25%|██▌       |  327MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  328MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  328MB / 1.28GB, 14.2MB/s  
+New Data Upload               :  33%|███▎      | 67.2MB /  201MB, 3.86MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  328MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  329MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  329MB / 1.28GB, 14.1MB/s  
+New Data Upload               :  34%|███▎      | 67.7MB /  201MB, 3.84MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  329MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  329MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  330MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  330MB / 1.28GB, 13.8MB/s  
+New Data Upload               :  34%|███▍      | 69.3MB /  201MB, 3.88MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  331MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  331MB / 1.28GB, 13.8MB/s  
+New Data Upload               :  35%|███▍      | 69.8MB /  201MB, 3.89MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  331MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  331MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  332MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  332MB / 1.28GB, 13.6MB/s  
+New Data Upload               :  35%|███▌      | 71.4MB /  201MB, 3.92MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  332MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  333MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  333MB / 1.28GB, 13.4MB/s  
+New Data Upload               :  36%|███▌      | 71.9MB /  201MB, 3.90MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  333MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  333MB / 1.28GB, 13.3MB/s  
+New Data Upload               :  36%|███▌      | 72.5MB /  201MB, 3.91MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  333MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  333MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  335MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  335MB / 1.28GB, 13.1MB/s  
+New Data Upload               :  37%|███▋      | 73.5MB /  201MB, 3.90MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  335MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  335MB / 1.28GB, 13.0MB/s  
+New Data Upload               :  37%|███▋      | 74.0MB /  201MB, 3.91MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  336MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  336MB / 1.28GB, 13.0MB/s  
+New Data Upload               :  37%|███▋      | 74.6MB /  201MB, 3.92MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▌       |  336MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▋       |  337MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▋       |  337MB / 1.28GB, 12.9MB/s  
+New Data Upload               :  38%|███▊      | 76.1MB /  201MB, 3.99MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▋       |  338MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▋       |  338MB / 1.28GB, 12.8MB/s  
+New Data Upload               :  38%|███▊      | 76.6MB /  201MB, 4.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▋       |  338MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▋       |  339MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▋       |  339MB / 1.28GB, 12.7MB/s  
+New Data Upload               :  39%|███▊      | 77.7MB /  201MB, 4.02MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▋       |  339MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▋       |  339MB / 1.28GB, 12.6MB/s  
+New Data Upload               :  39%|███▉      | 78.2MB /  201MB, 4.03MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  26%|██▋       |  340MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  26%|██▋       |  340MB / 1.28GB, 12.6MB/s  
+New Data Upload               :  39%|███▉      | 78.7MB /  201MB, 4.04MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  340MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  340MB / 1.28GB, 12.5MB/s  
+New Data Upload               :  39%|███▉      | 79.3MB /  201MB, 4.04MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  340MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  341MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  341MB / 1.28GB, 12.4MB/s  
+New Data Upload               :  40%|███▉      | 79.8MB /  201MB, 4.02MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  341MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  341MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  341MB / 1.28GB, 12.2MB/s  
+New Data Upload               :  40%|███▉      | 80.3MB /  201MB, 4.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  342MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  342MB / 1.28GB, 12.2MB/s  
+New Data Upload               :  40%|████      | 81.4MB /  201MB, 4.05MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  342MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  343MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  343MB / 1.28GB, 12.1MB/s  
+New Data Upload               :  41%|████      | 82.4MB /  201MB, 4.07MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  344MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  344MB / 1.28GB, 12.0MB/s  
+New Data Upload               :  41%|████      | 82.9MB /  201MB, 4.08MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  345MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  345MB / 1.28GB, 12.0MB/s  
+New Data Upload               :  41%|████▏     | 83.5MB /  201MB, 4.09MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  345MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  345MB / 1.28GB, 11.9MB/s  
+New Data Upload               :  42%|████▏     | 84.0MB /  201MB, 4.10MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  346MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  346MB / 1.28GB, 11.9MB/s  
+New Data Upload               :  42%|████▏     | 84.5MB /  201MB, 4.11MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  346MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  346MB / 1.28GB, 11.9MB/s  
+New Data Upload               :  42%|████▏     | 85.4MB /  201MB, 4.14MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  347MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  347MB / 1.28GB, 11.8MB/s  
+New Data Upload               :  43%|████▎     | 85.9MB /  201MB, 4.15MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  349MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  349MB / 1.28GB, 11.8MB/s  
+New Data Upload               :  43%|████▎     | 87.5MB /  201MB, 4.24MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  27%|██▋       |  350MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  350MB / 1.28GB, 11.8MB/s  
+New Data Upload               :  44%|████▍     | 88.5MB /  201MB, 4.29MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  29%|██▉       |  369MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  29%|██▉       |  369MB / 1.28GB, 13.3MB/s  
+New Data Upload               :  44%|████▍     | 89.1MB /  201MB, 4.30MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  36%|███▌      |  456MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  36%|███▌      |  456MB / 1.28GB, 19.9MB/s  
+New Data Upload               :  45%|████▍     | 89.6MB /  201MB, 4.30MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  41%|████      |  524MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  41%|████      |  524MB / 1.28GB, 25.0MB/s  
+New Data Upload               :  35%|███▍      | 92.7MB /  268MB, 4.51MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  50%|█████     |  644MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  50%|█████     |  644MB / 1.28GB, 34.1MB/s  
+New Data Upload               :  35%|███▍      | 93.8MB /  268MB, 4.56MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  714MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  714MB / 1.28GB, 39.2MB/s  
+New Data Upload               :  35%|███▌      | 94.3MB /  268MB, 4.57MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  714MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  714MB / 1.28GB, 39.0MB/s  
+New Data Upload               :  35%|███▌      | 94.9MB /  268MB, 4.57MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  715MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  715MB / 1.28GB, 38.7MB/s  
+New Data Upload               :  36%|███▌      | 95.4MB /  268MB, 4.58MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  715MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  716MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  716MB / 1.28GB, 38.2MB/s  
+New Data Upload               :  36%|███▌      | 96.5MB /  268MB, 4.59MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  717MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  717MB / 1.28GB, 38.0MB/s  
+New Data Upload               :  37%|███▋      | 98.0MB /  268MB, 4.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  718MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  718MB / 1.28GB, 37.8MB/s  
+New Data Upload               :  37%|███▋      | 98.6MB /  268MB, 4.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  718MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  718MB / 1.28GB, 37.5MB/s  
+New Data Upload               :  37%|███▋      | 99.1MB /  268MB, 4.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  719MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  719MB / 1.28GB, 37.3MB/s  
+New Data Upload               :  37%|███▋      | 99.6MB /  268MB, 4.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  721MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  721MB / 1.28GB, 37.1MB/s  
+New Data Upload               :  38%|███▊      |  101MB /  268MB, 4.78MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  721MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  721MB / 1.28GB, 36.8MB/s  
+New Data Upload               :  38%|███▊      |  102MB /  268MB, 4.78MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  721MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▌    |  721MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▋    |  723MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▋    |  723MB / 1.28GB, 36.1MB/s  
+New Data Upload               :  39%|███▊      |  103MB /  268MB, 4.79MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▋    |  723MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▋    |  723MB / 1.28GB, 35.9MB/s  
+New Data Upload               :  39%|███▊      |  104MB /  268MB, 4.80MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▋    |  724MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▋    |  724MB / 1.28GB, 35.6MB/s  
+New Data Upload               :  39%|███▉      |  104MB /  268MB, 4.80MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▋    |  724MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  56%|█████▋    |  724MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  56%|█████▋    |  724MB / 1.28GB, 35.1MB/s  
+New Data Upload               :  39%|███▉      |  105MB /  268MB, 4.77MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  726MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  726MB / 1.28GB, 35.0MB/s  
+New Data Upload               :  40%|███▉      |  107MB /  268MB, 4.89MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  726MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  727MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  727MB / 1.28GB, 34.5MB/s  
+New Data Upload               :  40%|████      |  108MB /  268MB, 4.86MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  728MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  728MB / 1.28GB, 34.4MB/s  
+New Data Upload               :  41%|████      |  109MB /  268MB, 4.90MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  729MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  729MB / 1.28GB, 34.2MB/s  
+New Data Upload               :  41%|████      |  110MB /  268MB, 4.94MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  730MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  730MB / 1.28GB, 34.0MB/s  
+New Data Upload               :  41%|████      |  110MB /  268MB, 4.95MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  730MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  730MB / 1.28GB, 33.7MB/s  
+New Data Upload               :  41%|████▏     |  111MB /  268MB, 4.95MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  730MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  731MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  731MB / 1.28GB, 33.3MB/s  
+New Data Upload               :  41%|████▏     |  111MB /  268MB, 4.92MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  732MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  732MB / 1.28GB, 33.1MB/s  
+New Data Upload               :  42%|████▏     |  113MB /  268MB, 5.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  733MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  733MB / 1.28GB, 32.9MB/s  
+New Data Upload               :  42%|████▏     |  113MB /  268MB, 5.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  733MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  733MB / 1.28GB, 32.7MB/s  
+New Data Upload               :  42%|████▏     |  114MB /  268MB, 5.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  734MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  734MB / 1.28GB, 32.5MB/s  
+New Data Upload               :  43%|████▎     |  114MB /  268MB, 5.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  735MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  735MB / 1.28GB, 32.4MB/s  
+New Data Upload               :  43%|████▎     |  116MB /  268MB, 5.09MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  735MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  736MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  736MB / 1.28GB, 31.9MB/s  
+New Data Upload               :  43%|████▎     |  117MB /  268MB, 5.05MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  736MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  736MB / 1.28GB, 31.7MB/s  
+New Data Upload               :  44%|████▎     |  117MB /  268MB, 5.05MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  57%|█████▋    |  736MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  738MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  738MB / 1.28GB, 31.4MB/s  
+New Data Upload               :  44%|████▍     |  119MB /  268MB, 5.10MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  738MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  739MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  739MB / 1.28GB, 30.9MB/s  
+New Data Upload               :  44%|████▍     |  119MB /  268MB, 5.06MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  739MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  741MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  741MB / 1.28GB, 30.6MB/s  
+New Data Upload               :  45%|████▌     |  121MB /  268MB, 5.14MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  741MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  741MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  741MB / 1.28GB, 30.2MB/s  
+New Data Upload               :  45%|████▌     |  122MB /  268MB, 5.10MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  742MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  742MB / 1.28GB, 30.0MB/s  
+New Data Upload               :  46%|████▌     |  122MB /  268MB, 5.11MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  743MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  743MB / 1.28GB, 29.9MB/s  
+New Data Upload               :  46%|████▌     |  124MB /  268MB, 5.19MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  744MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  744MB / 1.28GB, 29.7MB/s  
+New Data Upload               :  46%|████▋     |  125MB /  268MB, 5.19MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  744MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  744MB / 1.28GB, 29.6MB/s  
+New Data Upload               :  47%|████▋     |  125MB /  268MB, 5.19MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  745MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  745MB / 1.28GB, 29.4MB/s  
+New Data Upload               :  47%|████▋     |  126MB /  268MB, 5.19MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  746MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  746MB / 1.28GB, 29.2MB/s  
+New Data Upload               :  47%|████▋     |  127MB /  268MB, 5.23MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  747MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  747MB / 1.28GB, 29.1MB/s  
+New Data Upload               :  48%|████▊     |  128MB /  268MB, 5.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  747MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  748MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  748MB / 1.28GB, 28.7MB/s  
+New Data Upload               :  48%|████▊     |  129MB /  268MB, 5.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  749MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  749MB / 1.28GB, 28.6MB/s  
+New Data Upload               :  48%|████▊     |  129MB /  268MB, 5.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  58%|█████▊    |  749MB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  59%|█████▊    |  751MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  59%|█████▊    |  751MB / 1.28GB, 28.3MB/s  
+New Data Upload               :  49%|████▉     |  131MB /  268MB, 5.35MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  68%|██████▊   |  869MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   |  869MB / 1.28GB, 36.8MB/s  
+New Data Upload               :  49%|████▉     |  132MB /  268MB, 5.35MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  78%|███████▊  |  994MB / 1.28GB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  |  994MB / 1.28GB, 45.9MB/s  
+New Data Upload               :  49%|████▉     |  133MB /  268MB, 5.35MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  84%|████████▍ | 1.08GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.08GB / 1.28GB, 52.2MB/s  
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.09GB / 1.28GB, 52.0MB/s  
+New Data Upload               :  41%|████      |  135MB /  331MB, 5.43MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.09GB / 1.28GB, 51.7MB/s  
+New Data Upload               :  41%|████      |  135MB /  331MB, 5.43MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.09GB / 1.28GB, 51.3MB/s  
+New Data Upload               :  41%|████      |  136MB /  331MB, 5.46MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.09GB / 1.28GB, 51.0MB/s  
+New Data Upload               :  41%|████▏     |  137MB /  331MB, 5.46MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.09GB / 1.28GB, 50.7MB/s  
+New Data Upload               :  41%|████▏     |  137MB /  331MB, 5.46MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.09GB / 1.28GB, 50.0MB/s  
+New Data Upload               :  42%|████▏     |  138MB /  331MB, 5.46MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▍ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.09GB / 1.28GB, 49.7MB/s  
+New Data Upload               :  42%|████▏     |  139MB /  331MB, 5.46MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.09GB / 1.28GB, 49.3MB/s  
+New Data Upload               :  42%|████▏     |  139MB /  331MB, 5.45MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.09GB / 1.28GB, 49.0MB/s  
+New Data Upload               :  42%|████▏     |  140MB /  331MB, 5.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.09GB / 1.28GB, 48.7MB/s  
+New Data Upload               :  43%|████▎     |  141MB /  331MB, 5.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.09GB / 1.28GB, 48.5MB/s  
+New Data Upload               :  43%|████▎     |  143MB /  331MB, 5.57MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.09GB / 1.28GB, 47.8MB/s  
+New Data Upload               :  43%|████▎     |  143MB /  331MB, 5.52MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.09GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.09GB / 1.28GB, 47.1MB/s  
+New Data Upload               :  43%|████▎     |  144MB /  331MB, 5.48MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.10GB / 1.28GB, 46.9MB/s  
+New Data Upload               :  44%|████▎     |  145MB /  331MB, 5.52MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.10GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.10GB / 1.28GB, 46.2MB/s  
+New Data Upload               :  44%|████▍     |  145MB /  331MB, 5.47MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  85%|████████▌ | 1.10GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 45.6MB/s  
+New Data Upload               :  44%|████▍     |  146MB /  331MB, 5.43MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 45.3MB/s  
+New Data Upload               :  44%|████▍     |  147MB /  331MB, 5.51MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 45.0MB/s  
+New Data Upload               :  45%|████▍     |  148MB /  331MB, 5.51MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 44.8MB/s  
+New Data Upload               :  45%|████▍     |  149MB /  331MB, 5.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 44.5MB/s  
+New Data Upload               :  45%|████▌     |  149MB /  331MB, 5.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 44.2MB/s  
+New Data Upload               :  45%|████▌     |  150MB /  331MB, 5.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 43.9MB/s  
+New Data Upload               :  45%|████▌     |  150MB /  331MB, 5.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 43.6MB/s  
+New Data Upload               :  46%|████▌     |  151MB /  331MB, 5.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 43.4MB/s  
+New Data Upload               :  46%|████▌     |  152MB /  331MB, 5.57MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 43.2MB/s  
+New Data Upload               :  46%|████▌     |  153MB /  331MB, 5.61MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.10GB / 1.28GB, 42.9MB/s  
+New Data Upload               :  46%|████▋     |  154MB /  331MB, 5.61MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.10GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▌ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.11GB / 1.28GB, 42.3MB/s  
+New Data Upload               :  47%|████▋     |  154MB /  331MB, 5.56MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▋ | 1.11GB / 1.28GB, 42.0MB/s  
+New Data Upload               :  47%|████▋     |  155MB /  331MB, 5.60MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▋ | 1.11GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  86%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  86%|████████▋ | 1.11GB / 1.28GB, 41.6MB/s  
+New Data Upload               :  47%|████▋     |  157MB /  331MB, 5.67MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 41.4MB/s  
+New Data Upload               :  48%|████▊     |  158MB /  331MB, 5.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 41.1MB/s  
+New Data Upload               :  48%|████▊     |  159MB /  331MB, 5.70MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 40.8MB/s  
+New Data Upload               :  48%|████▊     |  159MB /  331MB, 5.70MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 40.3MB/s  
+New Data Upload               :  48%|████▊     |  160MB /  331MB, 5.65MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 40.0MB/s  
+New Data Upload               :  48%|████▊     |  160MB /  331MB, 5.65MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 39.8MB/s  
+New Data Upload               :  49%|████▊     |  161MB /  331MB, 5.65MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 39.5MB/s  
+New Data Upload               :  49%|████▊     |  162MB /  331MB, 5.65MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 39.0MB/s  
+New Data Upload               :  49%|████▉     |  163MB /  331MB, 5.64MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.11GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.11GB / 1.28GB, 38.8MB/s  
+New Data Upload               :  49%|████▉     |  164MB /  331MB, 5.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 38.6MB/s  
+New Data Upload               :  50%|████▉     |  165MB /  331MB, 5.75MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 38.4MB/s  
+New Data Upload               :  50%|█████     |  166MB /  331MB, 5.78MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 38.2MB/s  
+New Data Upload               :  50%|█████     |  167MB /  331MB, 5.78MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 37.9MB/s  
+New Data Upload               :  50%|█████     |  167MB /  331MB, 5.78MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 37.7MB/s  
+New Data Upload               :  51%|█████     |  168MB /  331MB, 5.77MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 37.5MB/s  
+New Data Upload               :  51%|█████     |  168MB /  331MB, 5.77MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 37.3MB/s  
+New Data Upload               :  51%|█████     |  169MB /  331MB, 5.80MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.12GB / 1.28GB, 37.0MB/s  
+New Data Upload               :  51%|█████▏    |  170MB /  331MB, 5.80MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  87%|████████▋ | 1.12GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.12GB / 1.28GB, 36.6MB/s  
+New Data Upload               :  52%|█████▏    |  172MB /  331MB, 5.83MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.12GB / 1.28GB, 36.4MB/s  
+New Data Upload               :  52%|█████▏    |  173MB /  331MB, 5.86MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.12GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.12GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.12GB / 1.28GB, 35.9MB/s  
+New Data Upload               :  52%|█████▏    |  173MB /  331MB, 5.82MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 35.8MB/s  
+New Data Upload               :  53%|█████▎    |  174MB /  331MB, 5.85MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 35.5MB/s  
+New Data Upload               :  53%|█████▎    |  175MB /  331MB, 5.85MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 35.3MB/s  
+New Data Upload               :  53%|█████▎    |  176MB /  331MB, 5.88MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 35.2MB/s  
+New Data Upload               :  53%|█████▎    |  177MB /  331MB, 5.91MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 34.7MB/s  
+New Data Upload               :  53%|█████▎    |  177MB /  331MB, 5.87MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 34.5MB/s  
+New Data Upload               :  54%|█████▎    |  178MB /  331MB, 5.86MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 34.3MB/s  
+New Data Upload               :  54%|█████▍    |  178MB /  331MB, 5.86MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 34.1MB/s  
+New Data Upload               :  54%|█████▍    |  179MB /  331MB, 5.85MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 33.9MB/s  
+New Data Upload               :  54%|█████▍    |  180MB /  331MB, 5.89MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 33.8MB/s  
+New Data Upload               :  55%|█████▍    |  182MB /  331MB, 5.96MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 33.6MB/s  
+New Data Upload               :  55%|█████▍    |  182MB /  331MB, 5.95MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 33.4MB/s  
+New Data Upload               :  55%|█████▌    |  183MB /  331MB, 5.99MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  88%|████████▊ | 1.13GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.13GB / 1.28GB, 32.9MB/s  
+New Data Upload               :  55%|█████▌    |  184MB /  331MB, 5.94MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▊ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▊ | 1.14GB / 1.28GB, 32.7MB/s  
+New Data Upload               :  56%|█████▌    |  184MB /  331MB, 5.93MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▊ | 1.14GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▊ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▊ | 1.14GB / 1.28GB, 32.4MB/s  
+New Data Upload               :  56%|█████▌    |  186MB /  331MB, 6.00MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▊ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▊ | 1.14GB / 1.28GB, 32.2MB/s  
+New Data Upload               :  56%|█████▋    |  187MB /  331MB, 5.99MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 32.0MB/s  
+New Data Upload               :  57%|█████▋    |  187MB /  331MB, 5.99MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 31.9MB/s  
+New Data Upload               :  57%|█████▋    |  188MB /  331MB, 6.02MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 31.7MB/s  
+New Data Upload               :  57%|█████▋    |  189MB /  331MB, 6.02MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 31.5MB/s  
+New Data Upload               :  57%|█████▋    |  189MB /  331MB, 6.01MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 31.3MB/s  
+New Data Upload               :  57%|█████▋    |  190MB /  331MB, 6.04MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 30.9MB/s  
+New Data Upload               :  58%|█████▊    |  191MB /  331MB, 5.99MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 30.8MB/s  
+New Data Upload               :  58%|█████▊    |  193MB /  331MB, 6.06MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.14GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.14GB / 1.28GB, 30.6MB/s  
+New Data Upload               :  58%|█████▊    |  193MB /  331MB, 6.06MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.15GB / 1.28GB, 30.5MB/s  
+New Data Upload               :  59%|█████▊    |  194MB /  331MB, 6.09MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.15GB / 1.28GB, 30.3MB/s  
+New Data Upload               :  59%|█████▉    |  195MB /  331MB, 6.08MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.15GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.15GB / 1.28GB, 29.9MB/s  
+New Data Upload               :  59%|█████▉    |  195MB /  331MB, 6.03MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  89%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.15GB / 1.28GB, 29.7MB/s  
+New Data Upload               :  59%|█████▉    |  196MB /  331MB, 6.03MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 29.6MB/s  
+New Data Upload               :  59%|█████▉    |  197MB /  331MB, 6.06MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 29.5MB/s  
+New Data Upload               :  60%|█████▉    |  198MB /  331MB, 6.09MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 29.3MB/s  
+New Data Upload               :  60%|██████    |  199MB /  331MB, 6.13MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 29.1MB/s  
+New Data Upload               :  60%|██████    |  199MB /  331MB, 6.12MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 29.0MB/s  
+New Data Upload               :  60%|██████    |  200MB /  331MB, 6.11MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 28.8MB/s  
+New Data Upload               :  61%|██████    |  201MB /  331MB, 6.11MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 28.6MB/s  
+New Data Upload               :  61%|██████    |  201MB /  331MB, 6.10MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 28.5MB/s  
+New Data Upload               :  61%|██████    |  202MB /  331MB, 6.09MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|████████▉ | 1.15GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.15GB / 1.28GB, 28.4MB/s  
+New Data Upload               :  61%|██████▏   |  203MB /  331MB, 6.16MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.16GB / 1.28GB, 28.2MB/s  
+New Data Upload               :  62%|██████▏   |  204MB /  331MB, 6.20MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.16GB / 1.28GB, 27.9MB/s  
+New Data Upload               :  62%|██████▏   |  205MB /  331MB, 6.18MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.16GB / 1.28GB, 27.8MB/s  
+New Data Upload               :  62%|██████▏   |  206MB /  331MB, 6.18MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.16GB / 1.28GB, 27.6MB/s  
+New Data Upload               :  62%|██████▏   |  206MB /  331MB, 6.17MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.16GB / 1.28GB, 27.4MB/s  
+New Data Upload               :  62%|██████▏   |  207MB /  331MB, 6.16MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.16GB / 1.28GB, 27.3MB/s  
+New Data Upload               :  63%|██████▎   |  208MB /  331MB, 6.19MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  90%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.16GB / 1.28GB, 27.0MB/s  
+New Data Upload               :  63%|██████▎   |  208MB /  331MB, 6.14MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.16GB / 1.28GB, 26.9MB/s  
+New Data Upload               :  64%|██████▎   |  211MB /  331MB, 6.25MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.16GB / 1.28GB, 26.8MB/s  
+New Data Upload               :  64%|██████▎   |  211MB /  331MB, 6.24MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.16GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.16GB / 1.28GB, 26.5MB/s  
+New Data Upload               :  64%|██████▍   |  213MB /  331MB, 6.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.16GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.16GB / 1.28GB, 26.2MB/s  
+New Data Upload               :  64%|██████▍   |  213MB /  331MB, 6.21MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.16GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.16GB / 1.28GB, 26.0MB/s  
+New Data Upload               :  64%|██████▍   |  214MB /  331MB, 6.21MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.17GB / 1.28GB, 25.9MB/s  
+New Data Upload               :  65%|██████▍   |  214MB /  331MB, 6.20MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.17GB / 1.28GB, 25.8MB/s  
+New Data Upload               :  65%|██████▌   |  216MB /  331MB, 6.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.17GB / 1.28GB, 25.7MB/s  
+New Data Upload               :  65%|██████▌   |  217MB /  331MB, 6.30MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.17GB / 1.28GB, 25.5MB/s  
+New Data Upload               :  66%|██████▌   |  217MB /  331MB, 6.29MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.17GB / 1.28GB, 25.4MB/s  
+New Data Upload               :  66%|██████▌   |  218MB /  331MB, 6.28MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.17GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████ | 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.17GB / 1.28GB, 25.1MB/s  
+New Data Upload               :  66%|██████▌   |  219MB /  331MB, 6.27MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████▏| 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████▏| 1.17GB / 1.28GB, 25.0MB/s  
+New Data Upload               :  66%|██████▌   |  219MB /  331MB, 6.26MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████▏| 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████▏| 1.17GB / 1.28GB, 24.9MB/s  
+New Data Upload               :  67%|██████▋   |  221MB /  331MB, 6.33MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  91%|█████████▏| 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  91%|█████████▏| 1.17GB / 1.28GB, 24.7MB/s  
+New Data Upload               :  67%|██████▋   |  222MB /  331MB, 6.32MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.17GB / 1.28GB, 24.6MB/s  
+New Data Upload               :  67%|██████▋   |  223MB /  331MB, 6.35MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.17GB / 1.28GB, 24.5MB/s  
+New Data Upload               :  67%|██████▋   |  223MB /  331MB, 6.35MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.17GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.17GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.17GB / 1.28GB, 24.2MB/s  
+New Data Upload               :  68%|██████▊   |  224MB /  331MB, 6.29MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 24.1MB/s  
+New Data Upload               :  68%|██████▊   |  225MB /  331MB, 6.36MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 24.0MB/s  
+New Data Upload               :  68%|██████▊   |  226MB /  331MB, 6.35MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.9MB/s  
+New Data Upload               :  68%|██████▊   |  226MB /  331MB, 6.34MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.7MB/s  
+New Data Upload               :  68%|██████▊   |  227MB /  331MB, 6.34MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.6MB/s  
+New Data Upload               :  69%|██████▉   |  228MB /  331MB, 6.37MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.3MB/s  
+New Data Upload               :  69%|██████▉   |  228MB /  331MB, 6.31MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.3MB/s  
+New Data Upload               :  69%|██████▉   |  230MB /  331MB, 6.38MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.2MB/s  
+New Data Upload               :  70%|██████▉   |  231MB /  331MB, 6.41MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.1MB/s  
+New Data Upload               :  70%|███████   |  232MB /  331MB, 6.44MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 23.0MB/s  
+New Data Upload               :  70%|███████   |  233MB /  331MB, 6.43MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 22.7MB/s  
+New Data Upload               :  70%|███████   |  233MB /  331MB, 6.37MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.18GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.18GB / 1.28GB, 22.6MB/s  
+New Data Upload               :  71%|███████   |  234MB /  331MB, 6.37MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.19GB / 1.28GB, 22.4MB/s  
+New Data Upload               :  71%|███████   |  234MB /  331MB, 6.36MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  92%|█████████▏| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.19GB / 1.28GB, 22.3MB/s  
+New Data Upload               :  71%|███████   |  235MB /  331MB, 6.35MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 22.2MB/s  
+New Data Upload               :  71%|███████   |  235MB /  331MB, 6.34MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 22.1MB/s  
+New Data Upload               :  71%|███████▏  |  237MB /  331MB, 6.41MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 22.1MB/s  
+New Data Upload               :  72%|███████▏  |  238MB /  331MB, 6.44MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 21.9MB/s  
+New Data Upload               :  72%|███████▏  |  238MB /  331MB, 6.43MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 21.7MB/s  
+New Data Upload               :  72%|███████▏  |  239MB /  331MB, 6.41MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 21.6MB/s  
+New Data Upload               :  72%|███████▏  |  240MB /  331MB, 6.41MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 21.5MB/s  
+New Data Upload               :  73%|███████▎  |  241MB /  331MB, 6.43MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 21.4MB/s  
+New Data Upload               :  73%|███████▎  |  243MB /  331MB, 6.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.19GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.19GB / 1.28GB, 21.2MB/s  
+New Data Upload               :  74%|███████▎  |  244MB /  331MB, 6.48MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.20GB / 1.28GB, 21.1MB/s  
+New Data Upload               :  74%|███████▎  |  244MB /  331MB, 6.47MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.20GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.20GB / 1.28GB, 20.9MB/s  
+New Data Upload               :  74%|███████▍  |  245MB /  331MB, 6.42MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.20GB / 1.28GB, 20.8MB/s  
+New Data Upload               :  74%|███████▍  |  246MB /  331MB, 6.45MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  93%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.20GB / 1.28GB, 20.7MB/s  
+New Data Upload               :  74%|███████▍  |  246MB /  331MB, 6.44MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▎| 1.20GB / 1.28GB, 20.7MB/s  
+New Data Upload               :  75%|███████▍  |  248MB /  331MB, 6.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▎| 1.20GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▎| 1.20GB / 1.28GB, 20.4MB/s  
+New Data Upload               :  75%|███████▌  |  249MB /  331MB, 6.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▎| 1.20GB / 1.28GB, 20.3MB/s  
+New Data Upload               :  75%|███████▌  |  249MB /  331MB, 6.48MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▎| 1.20GB / 1.28GB, 20.2MB/s  
+New Data Upload               :  75%|███████▌  |  250MB /  331MB, 6.47MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▎| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▎| 1.20GB / 1.28GB, 20.1MB/s  
+New Data Upload               :  76%|███████▌  |  251MB /  331MB, 6.46MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.20GB / 1.28GB, 20.1MB/s  
+New Data Upload               :  76%|███████▌  |  253MB /  331MB, 6.57MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.20GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.20GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.20GB / 1.28GB, 19.9MB/s  
+New Data Upload               :  76%|███████▋  |  253MB /  331MB, 6.51MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 19.8MB/s  
+New Data Upload               :  77%|███████▋  |  254MB /  331MB, 6.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 19.6MB/s  
+New Data Upload               :  77%|███████▋  |  256MB /  331MB, 6.56MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 19.3MB/s  
+New Data Upload               :  78%|███████▊  |  257MB /  331MB, 6.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 19.2MB/s  
+New Data Upload               :  78%|███████▊  |  257MB /  331MB, 6.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 19.2MB/s  
+New Data Upload               :  78%|███████▊  |  259MB /  331MB, 6.55MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 19.1MB/s  
+New Data Upload               :  78%|███████▊  |  260MB /  331MB, 6.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 19.0MB/s  
+New Data Upload               :  78%|███████▊  |  260MB /  331MB, 6.53MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  94%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.21GB / 1.28GB, 18.9MB/s  
+New Data Upload               :  79%|███████▊  |  261MB /  331MB, 6.52MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.21GB / 1.28GB, 18.9MB/s  
+New Data Upload               :  79%|███████▉  |  262MB /  331MB, 6.59MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.21GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.21GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.21GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.21GB / 1.28GB, 18.6MB/s  
+New Data Upload               :  80%|███████▉  |  264MB /  331MB, 6.56MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.21GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.22GB / 1.28GB, 18.4MB/s  
+New Data Upload               :  80%|████████  |  265MB /  331MB, 6.58MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.22GB / 1.28GB, 18.4MB/s  
+New Data Upload               :  80%|████████  |  266MB /  331MB, 6.61MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.22GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▍| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.22GB / 1.28GB, 18.1MB/s  
+New Data Upload               :  81%|████████  |  267MB /  331MB, 6.55MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.22GB / 1.28GB, 18.1MB/s  
+New Data Upload               :  81%|████████  |  267MB /  331MB, 6.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.22GB / 1.28GB, 18.0MB/s  
+New Data Upload               :  81%|████████  |  269MB /  331MB, 6.61MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.22GB / 1.28GB, 17.7MB/s  
+New Data Upload               :  81%|████████▏ |  270MB /  331MB, 6.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.22GB / 1.28GB, 17.5MB/s  
+New Data Upload               :  82%|████████▏ |  271MB /  331MB, 6.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.22GB / 1.28GB, 17.4MB/s  
+New Data Upload               :  82%|████████▏ |  272MB /  331MB, 6.51MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.22GB / 1.28GB, 17.3MB/s  
+New Data Upload               :  82%|████████▏ |  273MB /  331MB, 6.50MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  95%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.22GB / 1.28GB, 17.2MB/s  
+New Data Upload               :  82%|████████▏ |  273MB /  331MB, 6.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.22GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.22GB / 1.28GB, 17.1MB/s  
+New Data Upload               :  83%|████████▎ |  274MB /  331MB, 6.48MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 17.1MB/s  
+New Data Upload               :  83%|████████▎ |  274MB /  331MB, 6.48MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 17.0MB/s  
+New Data Upload               :  83%|████████▎ |  276MB /  331MB, 6.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 17.0MB/s  
+New Data Upload               :  83%|████████▎ |  276MB /  331MB, 6.53MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.9MB/s  
+New Data Upload               :  84%|████████▎ |  277MB /  331MB, 6.52MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.8MB/s  
+New Data Upload               :  84%|████████▍ |  278MB /  331MB, 6.55MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.8MB/s  
+New Data Upload               :  84%|████████▍ |  280MB /  331MB, 6.62MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.7MB/s  
+New Data Upload               :  85%|████████▍ |  280MB /  331MB, 6.61MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.7MB/s  
+New Data Upload               :  85%|████████▍ |  281MB /  331MB, 6.60MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.5MB/s  
+New Data Upload               :  85%|████████▍ |  281MB /  331MB, 6.54MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.5MB/s  
+New Data Upload               :  85%|████████▌ |  283MB /  331MB, 6.61MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▌| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.23GB / 1.28GB, 16.4MB/s  
+New Data Upload               :  85%|████████▌ |  283MB /  331MB, 6.60MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▋| 1.23GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▋| 1.23GB / 1.28GB, 16.3MB/s  
+New Data Upload               :  86%|████████▌ |  284MB /  331MB, 6.59MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▋| 1.24GB / 1.28GB, 16.2MB/s  
+New Data Upload               :  86%|████████▌ |  284MB /  331MB, 6.58MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▋| 1.24GB / 1.28GB, 16.1MB/s  
+New Data Upload               :  86%|████████▌ |  285MB /  331MB, 6.57MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  96%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▋| 1.24GB / 1.28GB, 16.1MB/s  
+New Data Upload               :  86%|████████▋ |  286MB /  331MB, 6.63MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 16.1MB/s  
+New Data Upload               :  87%|████████▋ |  287MB /  331MB, 6.62MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 16.0MB/s  
+New Data Upload               :  87%|████████▋ |  287MB /  331MB, 6.62MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.9MB/s  
+New Data Upload               :  87%|████████▋ |  288MB /  331MB, 6.61MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.8MB/s  
+New Data Upload               :  87%|████████▋ |  289MB /  331MB, 6.60MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.8MB/s  
+New Data Upload               :  88%|████████▊ |  290MB /  331MB, 6.66MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.8MB/s  
+New Data Upload               :  88%|████████▊ |  291MB /  331MB, 6.65MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.7MB/s  
+New Data Upload               :  88%|████████▊ |  291MB /  331MB, 6.64MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.7MB/s  
+New Data Upload               :  88%|████████▊ |  292MB /  331MB, 6.67MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.6MB/s  
+New Data Upload               :  88%|████████▊ |  293MB /  331MB, 6.66MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.24GB / 1.28GB, 15.4MB/s  
+New Data Upload               :  89%|████████▊ |  293MB /  331MB, 6.60MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.24GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.25GB / 1.28GB, 15.3MB/s  
+New Data Upload               :  89%|████████▉ |  295MB /  331MB, 6.66MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.25GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.25GB / 1.28GB, 15.2MB/s  
+New Data Upload               :  89%|████████▉ |  296MB /  331MB, 6.64MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.25GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.25GB / 1.28GB, 15.1MB/s  
+New Data Upload               :  90%|████████▉ |  298MB /  331MB, 6.66MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.25GB / 1.28GB, 15.0MB/s  
+New Data Upload               :  90%|█████████ |  299MB /  331MB, 6.65MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  97%|█████████▋| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.25GB / 1.28GB, 15.0MB/s  
+New Data Upload               :  90%|█████████ |  299MB /  331MB, 6.64MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.25GB / 1.28GB, 14.9MB/s  
+New Data Upload               :  90%|█████████ |  300MB /  331MB, 6.63MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.25GB / 1.28GB, 14.8MB/s  
+New Data Upload               :  91%|█████████ |  300MB /  331MB, 6.62MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.25GB / 1.28GB, 14.8MB/s  
+New Data Upload               :  91%|█████████ |  302MB /  331MB, 6.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.25GB / 1.28GB, 14.8MB/s  
+New Data Upload               :  91%|█████████ |  302MB /  331MB, 6.67MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.25GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.25GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.25GB / 1.28GB, 14.6MB/s  
+New Data Upload               :  91%|█████████▏|  303MB /  331MB, 6.62MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.6MB/s  
+New Data Upload               :  92%|█████████▏|  304MB /  331MB, 6.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.5MB/s  
+New Data Upload               :  92%|█████████▏|  305MB /  331MB, 6.67MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.5MB/s  
+New Data Upload               :  92%|█████████▏|  305MB /  331MB, 6.66MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.4MB/s  
+New Data Upload               :  93%|█████████▎|  308MB /  331MB, 6.72MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.4MB/s  
+New Data Upload               :  93%|█████████▎|  308MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.2MB/s  
+New Data Upload               :  93%|█████████▎|  309MB /  331MB, 6.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.2MB/s  
+New Data Upload               :  94%|█████████▎|  310MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.1MB/s  
+New Data Upload               :  94%|█████████▍|  311MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.1MB/s  
+New Data Upload               :  94%|█████████▍|  311MB /  331MB, 6.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  98%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.26GB / 1.28GB, 14.0MB/s  
+New Data Upload               :  94%|█████████▍|  312MB /  331MB, 6.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▊| 1.26GB / 1.28GB, 14.0MB/s  
+New Data Upload               :  94%|█████████▍|  313MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▊| 1.26GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▊| 1.26GB / 1.28GB, 13.9MB/s  
+New Data Upload               :  95%|█████████▍|  313MB /  331MB, 6.70MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▊| 1.26GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▊| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▊| 1.27GB / 1.28GB, 13.8MB/s  
+New Data Upload               :  95%|█████████▌|  315MB /  331MB, 6.72MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.8MB/s  
+New Data Upload               :  95%|█████████▌|  316MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.7MB/s  
+New Data Upload               :  96%|█████████▌|  317MB /  331MB, 6.72MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.6MB/s  
+New Data Upload               :  96%|█████████▌|  318MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.6MB/s  
+New Data Upload               :  96%|█████████▋|  320MB /  331MB, 6.77MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.4MB/s  
+New Data Upload               :  97%|█████████▋|  320MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.4MB/s  
+New Data Upload               :  97%|█████████▋|  321MB /  331MB, 6.70MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.4MB/s  
+New Data Upload               :  97%|█████████▋|  322MB /  331MB, 6.73MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.27GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.27GB / 1.28GB, 13.3MB/s  
+New Data Upload               :  97%|█████████▋|  323MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.28GB / 1.28GB, 13.2MB/s  
+New Data Upload               :  98%|█████████▊|  324MB /  331MB, 6.73MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf:  99%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.28GB / 1.28GB, 13.2MB/s  
+New Data Upload               :  98%|█████████▊|  325MB /  331MB, 6.73MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 13.1MB/s  
+New Data Upload               :  98%|█████████▊|  325MB /  331MB, 6.71MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 13.0MB/s  
+New Data Upload               :  98%|█████████▊|  326MB /  331MB, 6.69MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 13.0MB/s  
+New Data Upload               :  99%|█████████▊|  327MB /  331MB, 6.68MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 12.7MB/s  
+New Data Upload               :  99%|█████████▊|  327MB /  331MB, 6.58MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 12.7MB/s  
+New Data Upload               :  99%|█████████▉|  329MB /  331MB, 6.60MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 12.4MB/s  
+New Data Upload               : 100%|█████████▉|  330MB /  331MB, 6.49MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 12.2MB/s  
+New Data Upload               : 100%|█████████▉|  330MB /  331MB, 6.39MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 12.1MB/s  
+New Data Upload               : 100%|█████████▉|  331MB /  331MB, 6.37MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.28GB / 1.28GB, 11.7MB/s  
+New Data Upload               : 100%|█████████▉|  331MB /  331MB, 6.17MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|█████████▉| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            [A[AProcessing Files (1 / 1)      : 100%|██████████| 1.28GB / 1.28GB, 11.1MB/s  
+New Data Upload               : 100%|██████████|  331MB /  331MB, 5.87MB/s  [A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            [A[A
+
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            [A[AProcessing Files (1 / 1)      : 100%|██████████| 1.28GB / 1.28GB, 10.7MB/s  
+New Data Upload               : 100%|██████████|  331MB /  331MB, 5.66MB/s  
+  ...3-fast-shared-q4_k_m.gguf: 100%|██████████| 1.28GB / 1.28GB            
+Removing 1 file(s) from commit that have not changed.
+No files have been modified since last commit. Skipping to prevent empty commit.
+All files have been processed! Exiting worker.
+Is done: exiting main loop
+All files have been processed! Exiting worker.
+All files have been processed! Exiting worker.
+All files have been processed! Exiting worker.
+All files have been processed! Exiting worker.
+All files have been processed! Exiting worker.
+All files have been processed! Exiting worker.
+All files have been processed! Exiting worker.
+
+---------- 2026-06-14 19:25:39 (0:01:00) ----------
+Files:   hashed 1/1 (1.3G/1.3G) | pre-uploaded: 1/1 (1.3G/1.3G) | committed: 1/1 (1.3G/1.3G) | ignored: 0
+Workers: hashing: 0 | get upload mode: 0 | pre-uploading: 0 | committing: 0 | waiting: 0
+---------------------------------------------------
+Upload is complete!
+
+Completed stages:
+- ensure shared base HF repo: rc=0 elapsed=0.4s
+- upload shared base GGUF: rc=0 elapsed=60.6s
