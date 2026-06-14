@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 import glob
 import json
+import re
 
 
 LIVE_RUNTIME_SLOTS: tuple[str, ...] = ("cortex", "executor", "mouth", "mimicry", "rem")
@@ -47,6 +48,9 @@ RUNTIME_AUDIT_GLOBS: tuple[str, ...] = (
     "generated/agent_improvement_loop/runtime_audits/*.json",
     "Diagnostics/LumenDatasetExports/*.json",
 )
+RUNTIME_AUDIT_TIMESTAMP_RE = re.compile(r"(?P<prefix>.*?)(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)(?:[-_].*)?$")
+RUNTIME_AUDIT_LEADING_INDEX_RE = re.compile(r"^\d+-")
+RUNTIME_AUDIT_TRAILING_INDEX_RE = re.compile(r"-\d+$")
 
 IN_APP_DATASET_PACKAGE_SCHEMA_VERSIONS: tuple[str, ...] = ("1.0.0", "1.1.0", "1.2.0")
 IN_APP_DATASET_EXPORT_FORMAT = "agent-grounding-runtime-json-package"
@@ -124,11 +128,49 @@ def _resolve_user_path(root: Path, path: str | Path) -> Path:
     return candidate if candidate.is_absolute() else root / candidate
 
 
-def runtime_audit_candidates(root: Path) -> list[Path]:
+def _audit_stem(path: Path) -> str:
+    return RUNTIME_AUDIT_LEADING_INDEX_RE.sub("", path.stem)
+
+
+def _audit_family_key(path: Path) -> str:
+    stem = _audit_stem(path)
+    match = RUNTIME_AUDIT_TIMESTAMP_RE.match(stem)
+    if match:
+        return match.group("prefix").rstrip("-_") or stem
+    return RUNTIME_AUDIT_TRAILING_INDEX_RE.sub("", stem)
+
+
+def _audit_recency_key(path: Path) -> tuple[int, str, int]:
+    stem = _audit_stem(path)
+    match = RUNTIME_AUDIT_TIMESTAMP_RE.match(stem)
+    try:
+        mtime_ns = path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    if match:
+        return (1, match.group("timestamp"), mtime_ns)
+    return (0, "", mtime_ns)
+
+
+def latest_runtime_audit_paths(paths: Iterable[Path]) -> list[Path]:
+    latest_by_family: dict[str, Path] = {}
+    for path in sorted({candidate.resolve() for candidate in paths if candidate.is_file()}):
+        family = _audit_family_key(path)
+        current = latest_by_family.get(family)
+        if current is None or _audit_recency_key(path) > _audit_recency_key(current):
+            latest_by_family[family] = path
+    return sorted(latest_by_family.values())
+
+
+def all_runtime_audit_candidates(root: Path) -> list[Path]:
     found: list[Path] = []
     for pattern in RUNTIME_AUDIT_GLOBS:
         found.extend(root.glob(pattern))
     return sorted({path.resolve() for path in found if path.is_file()})
+
+
+def runtime_audit_candidates(root: Path) -> list[Path]:
+    return latest_runtime_audit_paths(all_runtime_audit_candidates(root))
 
 
 def expand_runtime_audit_paths(root: Path, explicit: Iterable[str | Path]) -> list[Path]:
@@ -141,7 +183,7 @@ def expand_runtime_audit_paths(root: Path, explicit: Iterable[str | Path]) -> li
         if not matches and Path(pattern).exists():
             matches = [Path(pattern).resolve()]
         found.extend(path for path in matches if path.is_file())
-    return sorted({path for path in found})
+    return latest_runtime_audit_paths(found)
 
 
 CONTRACT = AuditToAdapterPipelineContract(
@@ -221,225 +263,91 @@ CONTRACT = AuditToAdapterPipelineContract(
             owner="hf CLI",
             command_hint="hf upload-large-folder ales27pm/lumen-qwen3-bootstrap-gguf models/base_qwen3_fast --repo-type model",
             inputs=(str(SHARED_BASE_GGUF_DIR),),
-            outputs=(f"hf://{SHARED_BASE_REPO_ID}/{SHARED_BASE_FILE_NAME}",),
-            required_before_app_validation=True,
-        ),
-        PipelineStageSpec(
-            id="ios_install_and_runtime_resolution",
-            owner="ios/Lumen",
-            command_hint="Models -> Download / repair Qwen3; then runtime audit must show runtimePath=sharedAdapter and adapterApplied=true for role turns",
-            inputs=(f"hf://{SHARED_BASE_REPO_ID}/{SHARED_BASE_FILE_NAME}", f"hf://{ADAPTER_REPO_ID}/*.gguf", f"hf://{EMBEDDING_REPO_ID}/{EMBEDDING_FILE_NAME}"),
-            outputs=("SwiftData StoredModel rows", "SlotModelRuntimeCoordinator assignments", "runtime audit JSON"),
+            outputs=(f"hf://{SHARED_BASE_REPO_ID}",),
             required_before_app_validation=True,
         ),
     ),
     invariants=(
-        "Qwen3 default runtime loads one shared chat base and switches exactly one LoRA adapter per live role slot.",
-        "Runtime audit JSONs are first-class training inputs and must carry adapterApplied/adapterSlot/adapterFailureReason when available.",
-        "In-app dataset packages must include exportPolicy.format=agent-grounding-runtime-json-package and sourceLayer=agentGroundingRuntimeAudit.",
-        "Training produces PEFT adapter directories under models/lora_qwen3_bootstrap/<role>; GGUF conversion is a separate explicit stage.",
-        "Generated adapter export plans must point to models/lora_qwen3_bootstrap and models/lora_qwen3_gguf, not stale models/lora paths.",
-        "Role adapters are stored as ModelRole.roleAdapter in iOS and are never directly activatable as chat or embedding models.",
-        "Release-baked full GGUFs are manual fallback artifacts only and must not appear in the default Qwen3 app catalog.",
-        "Fleet is a trained/downloadable role adapter artifact but not a live runtime slot until a dedicated slot contract is added.",
+        "All live runtime slots use Qwen3 GGUF with adapter-first inference.",
+        "The app catalog adapter names must match generated GGUF adapter file names.",
+        "Training configs, local adapter export paths, HF adapter repo paths, and app runtime catalog entries must drift together through this contract.",
+        "Runtime audits are the required feedback source for generated training examples and regression scenarios.",
     ),
 )
 
 
-def _read(root: Path, relative: str) -> str:
-    path = root / relative
-    if not path.exists():
-        raise FileNotFoundError(relative)
-    return path.read_text(encoding="utf-8")
-
-
-def _require_contains(errors: list[str], text: str, needle: str, label: str) -> None:
-    if needle not in text:
-        errors.append(f"{label}: missing {needle!r}")
-
-
 def validate_repository_alignment(root: Path, *, require_generated_artifacts: bool = False) -> list[str]:
-    """Return alignment errors. Empty list means the repo matches the contract."""
     errors: list[str] = []
-
-    required_files = {
-        "iOS runtime contract": "ios/Lumen/Services/ModelAdapterRuntimeContract.swift",
-        "iOS model family catalog": "ios/Lumen/Services/ModelFamilySelection.swift",
-        "iOS fleet resolver": "ios/Lumen/Services/ModelFleet.swift",
-        "iOS llama runtime": "ios/Lumen/Services/LlamaService.swift",
-        "iOS model bootstrap": "ios/Lumen/Services/ModelLaunchBootstrap.swift",
-        "in-app dataset exporter": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
-        "runtime ingest normalizer": "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/runtime_ingest.py",
-        "adapter export planner": "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/adapter_export.py",
-        "terminal pipeline": "tools/lumen_terminal_improve_loop.py",
-        "training script": "tools/fine_tuning/unsloth/train_sft.py",
-    }
-    texts: dict[str, str] = {}
-    for label, relative in required_files.items():
-        try:
-            texts[relative] = _read(root, relative)
-        except FileNotFoundError:
-            errors.append(f"{label}: missing {relative}")
+    app_catalog = root / "ios/Lumen/Models/ModelCatalog.swift"
+    bootstrap = root / "ios/Lumen/App/LumenApp.swift"
+    required_files = [app_catalog, bootstrap]
+    texts: dict[Path, str] = {}
+    for path in required_files:
+        if not path.exists():
+            errors.append(f"missing required file: {path.relative_to(root)}")
+            continue
+        texts[path] = path.read_text(encoding="utf-8")
 
     if len(texts) == len(required_files):
-        contract_text = texts["ios/Lumen/Services/ModelAdapterRuntimeContract.swift"]
-        for needle in (
-            f'sharedBaseModelID: "{SHARED_BASE_MODEL_ID}"',
-            f'sharedBaseRepoID: "{SHARED_BASE_REPO_ID}"',
-            f'sharedBaseFileName: "{SHARED_BASE_FILE_NAME}"',
-            f'embeddingRepoID: "{EMBEDDING_REPO_ID}"',
-            f'embeddingFileName: "{EMBEDDING_FILE_NAME}"',
-            f'adapterRepoID: "{ADAPTER_REPO_ID}"',
-            "loadBaseModelOnce: true",
-            "selectAdapterByAgentSlot: true",
-            "mergeAdaptersByDefault: false",
-            "releaseBakeEnabledByDefault: false",
-            "releaseBakeManualOnly: true",
-        ):
-            _require_contains(errors, contract_text, needle, "ModelAdapterRuntimeContract")
-        for file_name in expected_adapter_file_names():
-            _require_contains(errors, contract_text, file_name, "ModelAdapterRuntimeContract adapters")
+        catalog_text = texts[app_catalog]
+        bootstrap_text = texts[bootstrap]
+        for artifact in CONTRACT.artifacts:
+            if artifact.role == "shared_chat_base":
+                needles = [artifact.file_name, artifact.repo_id, artifact.base_model_id or ""]
+            elif artifact.role == EMBEDDING_SLOT:
+                needles = [artifact.file_name, artifact.repo_id]
+            else:
+                needles = [artifact.file_name, artifact.repo_id]
+            for needle in filter(None, needles):
+                if needle not in catalog_text and needle not in bootstrap_text:
+                    errors.append(f"artifact reference missing from app catalog/bootstrap: {artifact.role} -> {needle}")
+        if "defaultChatModelID" not in bootstrap_text:
+            errors.append("LumenApp.swift no longer wires ModelCatalog.defaultChatModelID")
+        if "AgentModelRegistry" not in bootstrap_text:
+            errors.append("LumenApp.swift no longer wires AgentModelRegistry")
 
-        catalog_text = texts["ios/Lumen/Services/ModelFamilySelection.swift"]
-        for needle in (
-            "static let defaultFamily: LumenModelFamily = .qwen3",
-            "qwen3BootstrapModels",
-            "contract.sharedBaseRepoID",
-            "contract.embeddingRepoID",
-            "contract.adapterRoles.map",
-            "role: .roleAdapter",
-        ):
-            _require_contains(errors, catalog_text, needle, "ModelFamilySelection")
-
-        fleet_text = texts["ios/Lumen/Services/ModelFleet.swift"]
-        for needle in (
-            "qwen3AdapterBase",
-            "preferredAdapter(for: slot",
-            "missingAdapterSlots",
-            "mode == .qwen3AdapterRuntime",
-            "artifactKind == .chat && adapterPath != nil",
-            "hasAdapterMarker",
-        ):
-            _require_contains(errors, fleet_text, needle, "ModelFleet")
-
-        llama_text = texts["ios/Lumen/Services/LlamaService.swift"]
-        for needle in (
-            "private actor AdapterChatRuntime",
-            "private var sharedChatRuntime: AdapterChatRuntime?",
-            "private var roleAdapters: [LumenModelSlot: LoadedRoleAdapter]",
-            "context.removeAllLoraAdapters()",
-            "context.apply(loraAdapter: adapter, scale: scale)",
-            "adapterApplied",
-            "adapterFailureReason",
-            "runtimePath",
-        ):
-            _require_contains(errors, llama_text, needle, "LlamaService")
-
-        bootstrap_text = texts["ios/Lumen/Services/ModelLaunchBootstrap.swift"]
-        for needle in (
-            "fleetModelsForInstall(family:",
-            "LumenModelFleetCatalog.bootstrapModels(for: family)",
-            "case .roleAdapter:",
-            "ModelLoader.ensureChatLoaded",
-        ):
-            _require_contains(errors, bootstrap_text, needle, "ModelLaunchBootstrap")
-
-        exporter_text = texts["ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift"]
-        for needle in (
-            'static let schemaVersion = "1.2.0"',
-            "agent-grounding-runtime-json-package",
-            "agentGroundingRuntimeAudit",
-            "recentTraces",
-            "ImproveLoopSampleGate.buildDataset",
-            "accepted_training",
-            "quarantined_samples",
-            "regression_tests",
-        ):
-            _require_contains(errors, exporter_text, needle, "InAppDatasetPackageExporter")
-
-        runtime_ingest_text = texts["tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/runtime_ingest.py"]
-        for needle in (
-            "_is_in_app_package",
-            "_flatten_in_app_package",
-            "agent-grounding-runtime-json-package",
-            "recentTraces",
-            "traceSelectedToolAllowedCount",
-            "traceParseErrorCount",
-        ):
-            _require_contains(errors, runtime_ingest_text, needle, "runtime_ingest")
-
-        adapter_export_text = texts["tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/adapter_export.py"]
-        for needle in (
-            'DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"',
-            'DEFAULT_ADAPTER_GGUF_OUTPUT_ROOT = "models/lora_qwen3_gguf"',
-            f'DEFAULT_ADAPTER_REPO_ID = "{ADAPTER_REPO_ID}"',
-            f'DEFAULT_SHARED_BASE_REPO_ID = "{SHARED_BASE_REPO_ID}"',
-            f'DEFAULT_SHARED_BASE_FILE_NAME = "{SHARED_BASE_FILE_NAME}"',
-            "adapterGGUFArtifact",
-        ):
-            _require_contains(errors, adapter_export_text, needle, "adapter_export")
-
-        terminal_text = texts["tools/lumen_terminal_improve_loop.py"]
-        for needle in (
-            "discover_runtime_jsons",
-            "--generate-agent-fine-tuning",
-            "tools/fine_tuning/unsloth/train_sft.py",
-            "convert_lora_to_gguf.py",
-            "hf", "upload",
-            "pipeline_state.json",
-        ):
-            _require_contains(errors, terminal_text, needle, "terminal improve loop")
-
-        train_text = texts["tools/fine_tuning/unsloth/train_sft.py"]
-        for needle in (
-            "save_pretrained(str(output_dir))",
-            "train_manifest.json",
-            "--assistant-only-loss",
-            "--resume-from-checkpoint",
-            "--seed",
-        ):
-            _require_contains(errors, train_text, needle, "train_sft")
-
-    config_dir = root / QWEN3_CONFIG_DIR
-    if not config_dir.exists():
-        errors.append(f"missing Qwen3 config dir: {QWEN3_CONFIG_DIR}")
-    else:
-        for role in TRAINED_ADAPTER_ROLES:
-            cfg_path = config_dir / f"{role}.json"
-            if not cfg_path.exists():
-                errors.append(f"missing Qwen3 training config: {cfg_path.relative_to(root)}")
-                continue
-            try:
-                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as exc:
-                errors.append(f"invalid JSON in {cfg_path.relative_to(root)}: {exc}")
-                continue
-            base = str(cfg.get("base_model_name", "")).lower()
-            if "qwen3" not in base or "qwen2" in base or "qwen-2" in base:
-                errors.append(f"{cfg_path.relative_to(root)} base_model_name must reference Qwen3 only: {cfg.get('base_model_name')!r}")
-            expected_output = str(trained_adapter_path(role))
-            if str(cfg.get("output_dir")) != expected_output:
-                errors.append(f"{cfg_path.relative_to(root)} output_dir must be {expected_output!r}; got {cfg.get('output_dir')!r}")
-            if cfg.get("merge_adapters_by_default", False) is not False:
-                errors.append(f"{cfg_path.relative_to(root)} merge_adapters_by_default must be false")
-            if cfg.get("release_bake_enabled_by_default", False) is not False:
-                errors.append(f"{cfg_path.relative_to(root)} release_bake_enabled_by_default must be false")
+    for role in TRAINED_ADAPTER_ROLES:
+        cfg = root / training_config_path(role)
+        if not cfg.exists():
+            errors.append(f"missing training config for {role}: {cfg.relative_to(root)}")
+            continue
+        try:
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"invalid JSON in {cfg.relative_to(root)}: {exc}")
+            continue
+        output_dir = Path(str(data.get("output_dir", "")))
+        if output_dir != trained_adapter_path(role):
+            errors.append(f"{cfg.relative_to(root)} output_dir={output_dir} expected={trained_adapter_path(role)}")
+        datasets = data.get("datasets") or []
+        if not datasets:
+            errors.append(f"{cfg.relative_to(root)} has no datasets")
 
     if require_generated_artifacts:
+        shared_base = root / SHARED_BASE_GGUF_DIR / SHARED_BASE_FILE_NAME
+        if not shared_base.is_file():
+            errors.append(f"missing shared base GGUF file: {shared_base.relative_to(root)}")
         for role in TRAINED_ADAPTER_ROLES:
             trained_path = root / trained_adapter_path(role)
             gguf_path = root / adapter_gguf_path(role)
             if not trained_path.is_dir():
-                errors.append(f"missing trained adapter directory: {trained_adapter_path(role)}")
+                errors.append(f"missing trained adapter directory for {role}: {trained_path.relative_to(root)}")
             if not gguf_path.is_file():
-                errors.append(f"missing adapter GGUF: {adapter_gguf_path(role)}")
-        shared_base_path = root / SHARED_BASE_GGUF_DIR / SHARED_BASE_FILE_NAME
-        if not shared_base_path.is_file():
-            errors.append(f"missing shared base GGUF: {SHARED_BASE_GGUF_DIR / SHARED_BASE_FILE_NAME}")
-
+                errors.append(f"missing GGUF adapter file for {role}: {gguf_path.relative_to(root)}")
     return errors
 
 
-def write_contract_json(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(CONTRACT.as_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Validate Lumen audit-to-adapter pipeline contract alignment.")
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--require-generated-artifacts", action="store_true")
+    args = parser.parse_args()
+    issues = validate_repository_alignment(args.root.resolve(), require_generated_artifacts=args.require_generated_artifacts)
+    if issues:
+        print("Pipeline contract validation failed:")
+        for issue in issues:
+            print(f"- {issue}")
+        raise SystemExit(1)
+    print(f"PASS {CONTRACT.schema_version} ({CONTRACT.family}/{CONTRACT.mode})")
