@@ -4,13 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import sys
 from pathlib import Path
 
 from audit_package_inspector import assert_audit_requirements, inspect_audit_files
-from audit_to_adapter_contract import CONTRACT, runtime_audit_candidates
+from audit_to_adapter_contract import CONTRACT, expand_runtime_audit_paths
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -30,23 +29,10 @@ def resolve(root: Path, path: str | Path) -> Path:
     return candidate if candidate.is_absolute() else root / candidate
 
 
-def expand_runtime_audits(root: Path, explicit: list[str]) -> list[Path]:
-    if not explicit:
-        return runtime_audit_candidates(root)
-    found: list[Path] = []
-    for raw in explicit:
-        pattern = str(resolve(root, raw))
-        matches = [Path(path).resolve() for path in glob.glob(pattern, recursive=True)]
-        if not matches and Path(pattern).exists():
-            matches = [Path(pattern).resolve()]
-        found.extend(path for path in matches if path.is_file())
-    return sorted({path for path in found})
-
-
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     root = args.root.resolve()
-    paths = expand_runtime_audits(root, args.runtime_audit)
+    paths = expand_runtime_audit_paths(root, args.runtime_audit)
     summary = inspect_audit_files(paths)
     payload = summary.as_dict()
     payload["contractSchema"] = CONTRACT.schema_version
