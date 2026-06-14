@@ -25,7 +25,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _resolve(root: Path, target: Path) -> Path:
-    return target if target.is_absolute() else root / target
+    expanded = target.expanduser()
+    return expanded if expanded.is_absolute() else root / expanded
 
 
 def main(argv: list[str] | None = None) -> int:
