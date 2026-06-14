@@ -44,3 +44,4 @@ ios/Lumen/Resources/AlgorithmicPhilosophies/**/screenshots/
 **/.DS_Store
 exports/
 exports/testflight-20260609-0426/
+.venv

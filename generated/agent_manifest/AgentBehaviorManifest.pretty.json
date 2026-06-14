@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "80bab05fe567e74ae82e2198ec40b680a18fc31a",
+    "commit": "c50a21184d3dfced5f49a0b7163b5bb946d0ab69",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -31,11 +31,11 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "7bb2bf40c1688d433255a49f8e229c23575046f8c08bd71c1ef470890a52c098"
+        "sha256": "cde3cc460cb639d7baa868387cf4baf9fadea13424f8efd2c21569b0808bb898"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "sha256": "8bc793ca99b04c60ab7cd996c0207b2889ba39227305d59fb596c7960b0729ec"
+        "sha256": "7153dde2d566b53424844b7ea280ca2f0fa7407f25013f44082944c7f917184b"
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
@@ -59,7 +59,7 @@
       },
       {
         "path": "ios/Lumen/Views/ChatView.swift",
-        "sha256": "c2fb9e1a4b20c9563ff6ac4df47615590db02db41763e4673f7b824e25d76881"
+        "sha256": "3a31663b0a76923b9eddf37af9ef084d80b07e42aa0a071078ce41248878fd15"
       }
     ]
   },

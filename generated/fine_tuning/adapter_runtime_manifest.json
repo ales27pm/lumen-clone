@@ -1,24 +1,29 @@
 {
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "adapters": [
     {
-      "adapterArtifact": "models/lora/cortex",
-      "adapterDirectory": "models/lora/cortex",
+      "adapterArtifact": "models/lora_qwen3_bootstrap/cortex",
+      "adapterDirectory": "models/lora_qwen3_bootstrap/cortex",
+      "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-cortex-lora.gguf",
       "adapterID": "lumen-cortex-adapter",
+      "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "cortex",
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 555,
         "train_dpo": 8,
-        "train_sft": 303,
+        "train_sft": 309,
         "val_dpo": 1,
         "val_sft": 54
       },
       "systemPrompt": "You are Cortex, Lumen’s routing and planning agent. Select manifest-approved tools, persist required action steps, and delegate execution to Executor."
     },
     {
-      "adapterArtifact": "models/lora/executor",
-      "adapterDirectory": "models/lora/executor",
+      "adapterArtifact": "models/lora_qwen3_bootstrap/executor",
+      "adapterDirectory": "models/lora_qwen3_bootstrap/executor",
+      "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-executor-lora.gguf",
       "adapterID": "lumen-executor-adapter",
+      "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "executor",
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
@@ -31,24 +36,28 @@
       "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments."
     },
     {
-      "adapterArtifact": "models/lora/fleet",
-      "adapterDirectory": "models/lora/fleet",
+      "adapterArtifact": "models/lora_qwen3_bootstrap/fleet",
+      "adapterDirectory": "models/lora_qwen3_bootstrap/fleet",
+      "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-fleet-lora.gguf",
       "adapterID": "lumen-fleet-adapter",
+      "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "fleet",
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 84,
         "train_dpo": 14,
-        "train_sft": 1153,
+        "train_sft": 1184,
         "val_dpo": 2,
-        "val_sft": 204
+        "val_sft": 209
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
     {
-      "adapterArtifact": "models/lora/mimicry",
-      "adapterDirectory": "models/lora/mimicry",
+      "adapterArtifact": "models/lora_qwen3_bootstrap/mimicry",
+      "adapterDirectory": "models/lora_qwen3_bootstrap/mimicry",
+      "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-mimicry-lora.gguf",
       "adapterID": "lumen-mimicry-adapter",
+      "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mimicry",
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
@@ -61,32 +70,36 @@
       "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."
     },
     {
-      "adapterArtifact": "models/lora/mouth",
-      "adapterDirectory": "models/lora/mouth",
+      "adapterArtifact": "models/lora_qwen3_bootstrap/mouth",
+      "adapterDirectory": "models/lora_qwen3_bootstrap/mouth",
+      "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-mouth-lora.gguf",
       "adapterID": "lumen-mouth-adapter",
+      "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mouth",
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 5,
         "train_dpo": 10,
-        "train_sft": 147,
+        "train_sft": 138,
         "val_dpo": 2,
-        "val_sft": 26
+        "val_sft": 24
       },
       "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels."
     },
     {
-      "adapterArtifact": "models/lora/rem",
-      "adapterDirectory": "models/lora/rem",
+      "adapterArtifact": "models/lora_qwen3_bootstrap/rem",
+      "adapterDirectory": "models/lora_qwen3_bootstrap/rem",
+      "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
       "adapterID": "lumen-rem-adapter",
+      "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "rem",
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 4,
         "train_dpo": 7,
-        "train_sft": 496,
+        "train_sft": 527,
         "val_dpo": 1,
-        "val_sft": 88
+        "val_sft": 93
       },
       "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
     }
@@ -108,6 +121,8 @@
     "mergedExportPhase": "optional_release_bake",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
-  "sharedBaseModelID": "Qwen/Qwen3-1.7B"
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseModelID": "Qwen/Qwen3-1.7B",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf"
 }

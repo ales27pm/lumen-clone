@@ -1,17 +1,19 @@
 {
-  "adapterArtifact": "models/lora/fleet",
-  "adapterDirectory": "models/lora/fleet",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/fleet",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/fleet",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-fleet-lora.gguf",
   "adapterID": "lumen-fleet-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "fleet",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "80bab05fe567e74ae82e2198ec40b680a18fc31a",
+    "manifestCommit": "c50a21184d3dfced5f49a0b7163b5bb946d0ab69",
     "recordCounts": {
       "eval": 84,
       "train_dpo": 14,
-      "train_sft": 1153,
+      "train_sft": 1184,
       "val_dpo": 2,
-      "val_sft": 204
+      "val_sft": 209
     },
     "sourceFamilies": [
       "approval_boundary_samples",
@@ -87,7 +89,8 @@
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/fleet",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/fleet",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-fleet-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -113,6 +116,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
 }

@@ -1,0 +1,7 @@
+contract=lumen.audit_to_adapter_pipeline/1.1.0 family=qwen3 mode=adapter-first
+files=3 in_app_packages=1 traces=9
+adapterApplied true=6 false=3 missing=0
+trainingSignals accepted=2 regression=2
+WARN /home/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-06-13T09-57-35Z-3c370901-d877-4469-97cb-be29f52e669d.json: traceParseErrorCount package summary differs from recomputed trace count: 7 != 9
+WARN /home/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-06-13T09-57-35Z-3c370901-d877-4469-97cb-be29f52e669d.json: adapterApplied=false observed 3 time(s)
+PASS audit input inspection

@@ -1,17 +1,19 @@
 {
-  "adapterArtifact": "models/lora/rem",
-  "adapterDirectory": "models/lora/rem",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/rem",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/rem",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
   "adapterID": "lumen-rem-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "rem",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "80bab05fe567e74ae82e2198ec40b680a18fc31a",
+    "manifestCommit": "c50a21184d3dfced5f49a0b7163b5bb946d0ab69",
     "recordCounts": {
       "eval": 4,
       "train_dpo": 7,
-      "train_sft": 496,
+      "train_sft": 527,
       "val_dpo": 1,
-      "val_sft": 88
+      "val_sft": 93
     },
     "sourceFamilies": [
       "codebase_home_corpus",
@@ -53,7 +55,8 @@
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/rem",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/rem",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -79,6 +82,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
 }

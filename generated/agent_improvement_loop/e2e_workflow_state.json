@@ -1,0 +1,112 @@
+{
+  "ok": false,
+  "python": "/home/ales27pm/lumen-clone/.venv/bin/python",
+  "root": "/home/ales27pm/lumen-clone",
+  "runtime_audit_count_requested": 0,
+  "schema": "lumen.e2e_workflow_pipeline.state/1.0.0",
+  "stages": [
+    {
+      "command": [
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "tools/pipeline/inspect_audit_to_adapter_inputs.py",
+        "--root",
+        "/home/ales27pm/lumen-clone",
+        "--write",
+        "/home/ales27pm/lumen-clone/generated/agent_improvement_loop/e2e_audit_input_inspection.json",
+        "--require-runtime-audit",
+        "--require-adapter-traces",
+        "--require-training-signals"
+      ],
+      "description": "Inspect latest runtime audit inputs",
+      "elapsed_s": 0.04061707900837064,
+      "finished_at": "2026-06-14T22:39:15.634907+00:00",
+      "id": "inspect-audits",
+      "log_path": "generated/agent_improvement_loop/e2e_logs/14-inspect-audits.log",
+      "returncode": 0,
+      "started_at": "2026-06-14T22:39:15.594279+00:00"
+    },
+    {
+      "command": [
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "tools/pipeline/run_audit_to_adapter_pipeline.py",
+        "--mode",
+        "validate",
+        "--root",
+        "/home/ales27pm/lumen-clone",
+        "--python",
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "--train-python",
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "--seed",
+        "42",
+        "--large-folder-upload",
+        "--assistant-only-loss",
+        "--stop-on-error",
+        "--require-runtime-audit"
+      ],
+      "description": "Validate audit-to-adapter contract alignment",
+      "elapsed_s": 0.0441106369253248,
+      "finished_at": "2026-06-14T22:39:15.679550+00:00",
+      "id": "contract-validate",
+      "log_path": "generated/agent_improvement_loop/e2e_logs/15-contract-validate.log",
+      "returncode": 0,
+      "started_at": "2026-06-14T22:39:15.635433+00:00"
+    },
+    {
+      "command": [
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "tools/pipeline/run_audit_to_adapter_pipeline.py",
+        "--mode",
+        "ingest",
+        "--root",
+        "/home/ales27pm/lumen-clone",
+        "--python",
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "--train-python",
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "--seed",
+        "42",
+        "--large-folder-upload",
+        "--assistant-only-loss",
+        "--stop-on-error",
+        "--require-runtime-audit"
+      ],
+      "description": "Ingest audits, crawl code, and generate datasets",
+      "elapsed_s": 10.932603031978942,
+      "finished_at": "2026-06-14T22:39:26.612723+00:00",
+      "id": "ingest",
+      "log_path": "generated/agent_improvement_loop/e2e_logs/16-ingest.log",
+      "returncode": 0,
+      "started_at": "2026-06-14T22:39:15.680114+00:00"
+    },
+    {
+      "command": [
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "tools/pipeline/run_audit_to_adapter_pipeline.py",
+        "--mode",
+        "train-adapters",
+        "--root",
+        "/home/ales27pm/lumen-clone",
+        "--python",
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "--train-python",
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "--seed",
+        "42",
+        "--large-folder-upload",
+        "--assistant-only-loss",
+        "--stop-on-error",
+        "--require-runtime-audit"
+      ],
+      "description": "Train role adapters",
+      "elapsed_s": 14.359194842982106,
+      "finished_at": "2026-06-14T22:39:40.972456+00:00",
+      "id": "train-adapters",
+      "log_path": "generated/agent_improvement_loop/e2e_logs/17-train-adapters.log",
+      "returncode": 1,
+      "started_at": "2026-06-14T22:39:26.613255+00:00"
+    }
+  ],
+  "train_python": "/home/ales27pm/lumen-clone/.venv/bin/python",
+  "updated_at": "2026-06-14T22:39:40.972618+00:00"
+}

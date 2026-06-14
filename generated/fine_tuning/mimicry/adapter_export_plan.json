@@ -1,11 +1,13 @@
 {
-  "adapterArtifact": "models/lora/mimicry",
-  "adapterDirectory": "models/lora/mimicry",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/mimicry",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/mimicry",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-mimicry-lora.gguf",
   "adapterID": "lumen-mimicry-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "mimicry",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "80bab05fe567e74ae82e2198ec40b680a18fc31a",
+    "manifestCommit": "c50a21184d3dfced5f49a0b7163b5bb946d0ab69",
     "recordCounts": {
       "eval": 3,
       "train_dpo": 9,
@@ -43,7 +45,8 @@
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/mimicry",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/mimicry",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-mimicry-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -69,6 +72,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."
 }
