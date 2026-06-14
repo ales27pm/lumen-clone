@@ -53,7 +53,17 @@ class StageResult:
 StageFn = Callable[[Path, argparse.Namespace], list[StageResult]]
 
 
+def default_python() -> str:
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        candidate = Path(venv) / "bin" / "python"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return sys.executable
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    pipeline_python = default_python()
     parser = argparse.ArgumentParser(description="Run Lumen's audit-to-adapter pipeline.")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument(
@@ -66,8 +76,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--require-runtime-audit", action="store_true")
     parser.add_argument("--require-generated-artifacts", action="store_true")
     parser.add_argument("--state-file", type=Path, default=PIPELINE_STATE_FILE)
-    parser.add_argument("--python", default=sys.executable, help="Python interpreter for crawler/helper scripts.")
-    parser.add_argument("--train-python", default=os.environ.get("LUMEN_TRAIN_PYTHON", sys.executable), help="Python interpreter for Unsloth training/conversion.")
+    parser.add_argument("--python", default=pipeline_python, help="Python interpreter for crawler/helper scripts.")
+    parser.add_argument("--train-python", default=os.environ.get("LUMEN_TRAIN_PYTHON", pipeline_python), help="Python interpreter for Unsloth training/conversion.")
     parser.add_argument("--converter", type=Path, default=Path.home() / ".unsloth/llama.cpp/convert_lora_to_gguf.py")
     parser.add_argument("--base-model-id", default=SHARED_BASE_MODEL_ID)
     parser.add_argument("--seed", type=int, default=42)
@@ -326,11 +336,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "upload-base": [validate, upload_base],
         "full": [validate, ingest, train_adapters, convert_adapters, upload_adapters],
     }
-    results: list[StageResult] = []
+    history: list[StageResult] = getattr(args, "_stage_results")
     for stage_fn in pipelines[args.mode]:
-        results.extend(stage_fn(root, args))
+        stage_fn(root, args)
 
-    history = getattr(args, "_stage_results")
     write_state(root, args, history)
     if history:
         print("\nCompleted stages:")
