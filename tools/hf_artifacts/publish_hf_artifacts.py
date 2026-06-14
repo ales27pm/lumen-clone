@@ -70,7 +70,7 @@ def upload_file(repo_id: str, local_path: Path, path_in_repo: str, *, repo_type:
     print("$", " ".join(command))
     if dry_run:
         return
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, shell=False)
 
 
 def build_resolved_manifest(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:

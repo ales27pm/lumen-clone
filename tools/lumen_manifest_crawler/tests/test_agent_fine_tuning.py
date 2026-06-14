@@ -12,6 +12,11 @@ from lumen_manifest_crawler.output.writer import write_outputs
 from lumen_manifest_crawler.validators import validate_agent_fine_tuning_datasets, validate_manifest
 
 
+EXPECTED_SHARED_BASE_REPO = "ales27pm/lumen-qwen3-bootstrap-gguf"
+EXPECTED_SHARED_BASE_FILE = "lumen-qwen3-fast-shared-q4_k_m.gguf"
+EXPECTED_ADAPTER_REPO = "ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -66,6 +71,9 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
     runtime_manifest = json.loads((fine_tuning_output / "adapter_runtime_manifest.json").read_text(encoding="utf-8"))
 
     assert runtime_manifest["mode"] == "adapter_first"
+    assert runtime_manifest["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
+    assert runtime_manifest["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
+    assert runtime_manifest["adapterRepoID"] == EXPECTED_ADAPTER_REPO
     assert runtime_manifest["runtimeStrategy"]["loadBaseModelOnce"] is True
     assert runtime_manifest["runtimeStrategy"]["selectAdapterByAgentSlot"] is True
     assert runtime_manifest["runtimeStrategy"]["mergeAdaptersByDefault"] is False
@@ -74,7 +82,8 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
 
     adapters_by_agent = {entry["agent"]: entry for entry in runtime_manifest["adapters"]}
     for agent in AGENTS:
-        expected_adapter_dir = f"models/lora/{agent}"
+        expected_adapter_dir = f"models/lora_qwen3_bootstrap/{agent}"
+        expected_adapter_gguf = f"models/lora_qwen3_gguf/lumen-{agent}-lora.gguf"
         agent_dir = fine_tuning_output / agent
         config = json.loads((agent_dir / "unsloth_config.json").read_text(encoding="utf-8"))
         plan = json.loads((agent_dir / "adapter_export_plan.json").read_text(encoding="utf-8"))
@@ -83,9 +92,14 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert config["defaultExportArtifact"] == "lora_adapter"
         assert config["adapter_output_dir"] == expected_adapter_dir
         assert config["output_dir"] == expected_adapter_dir
+        assert config["adapter_gguf_output_path"] == expected_adapter_gguf
         assert config["adapterExport"]["agent"] == agent
         assert config["adapterExport"]["adapterArtifact"] == expected_adapter_dir
         assert config["adapterExport"]["adapterDirectory"] == expected_adapter_dir
+        assert config["adapterExport"]["adapterGGUFArtifact"] == expected_adapter_gguf
+        assert config["adapterExport"]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
+        assert config["adapterExport"]["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
+        assert config["adapterExport"]["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
         assert config["adapterExport"]["trainBaseModelWeights"] is False
         assert config["adapterExport"]["saveAdapterByDefault"] is True
         assert config["adapterExport"]["mergeAdaptersByDefault"] is False
@@ -94,11 +108,18 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
 
         assert adapters_by_agent[agent]["adapterArtifact"] == expected_adapter_dir
         assert adapters_by_agent[agent]["adapterDirectory"] == expected_adapter_dir
+        assert adapters_by_agent[agent]["adapterGGUFArtifact"] == expected_adapter_gguf
+        assert adapters_by_agent[agent]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
         assert plan["mode"] == "adapter_first"
         assert plan["agent"] == agent
+        assert plan["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
+        assert plan["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
+        assert plan["adapterRepoID"] == EXPECTED_ADAPTER_REPO
         assert plan["adapterArtifact"] == expected_adapter_dir
         assert plan["adapterDirectory"] == expected_adapter_dir
+        assert plan["adapterGGUFArtifact"] == expected_adapter_gguf
         assert plan["expectedArtifacts"]["adapterDirectory"] == expected_adapter_dir
+        assert plan["expectedArtifacts"]["adapterGGUF"] == expected_adapter_gguf
         assert plan["runtimeBinding"]["loadBaseModelOnce"] is True
         assert plan["runtimeBinding"]["selectAdapterByAgentSlot"] is True
         assert plan["exportPolicy"]["defaultArtifact"] == "adapter"
