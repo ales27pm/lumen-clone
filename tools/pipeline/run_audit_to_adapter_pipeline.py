@@ -123,10 +123,14 @@ def resolve_under_root(root: Path, path: str | Path, *, label: str) -> Path:
 
 
 def validate_executable_path(root: Path, value: str | Path, *, label: str) -> str:
-    path = resolve(root, value).resolve()
-    if not path.is_file() or not os.access(path, os.X_OK):
-        raise SystemExit(f"{label} must exist and be executable: {path}")
-    return str(path)
+    path = resolve(root, value)
+    # Preserve virtualenv launcher paths such as .venv/bin/python. Calling
+    # Path.resolve() here follows the symlink to /usr/bin/python3.12 and causes
+    # Python to drop the virtualenv site-packages at subprocess startup.
+    absolute_path = path if path.is_absolute() else Path.cwd() / path
+    if not absolute_path.is_file() or not os.access(absolute_path, os.X_OK):
+        raise SystemExit(f"{label} must exist and be executable: {absolute_path}")
+    return str(absolute_path)
 
 
 def validate_script_path(root: Path, value: str | Path, *, label: str) -> Path:
