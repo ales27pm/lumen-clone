@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import shlex
 import subprocess
 import sys
@@ -140,6 +141,19 @@ def validate_script_path(root: Path, value: str | Path, *, label: str) -> Path:
     return path
 
 
+def resolve_cli_command(root: Path, command: Sequence[str | Path]) -> list[str]:
+    printable = [str(part) for part in command]
+    if not printable:
+        return printable
+    if printable[0] == "hf":
+        venv_hf = root / ".venv" / "bin" / "hf"
+        if venv_hf.is_file() and os.access(venv_hf, os.X_OK):
+            printable[0] = str(venv_hf)
+        elif found := shutil.which("hf"):
+            printable[0] = found
+    return printable
+
+
 def validate_tool_paths(root: Path, args: argparse.Namespace) -> None:
     # This runner is intended for controlled developer/CI environments. Dynamic
     # interpreter/script paths are validated before command construction and are
@@ -165,7 +179,7 @@ def validate_stage_command(command: Sequence[str]) -> None:
 
 
 def run_stage(root: Path, args: argparse.Namespace, stage: str, command: Sequence[str | Path]) -> StageResult:
-    printable = [str(part) for part in command]
+    printable = resolve_cli_command(root, command)
     validate_stage_command(printable)
     print(f"\n== {stage}")
     print(shlex.join(printable))

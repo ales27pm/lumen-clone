@@ -7,7 +7,7 @@
   "agent": "rem",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "c50a21184d3dfced5f49a0b7163b5bb946d0ab69",
+    "manifestCommit": "c6534d7f9673d5d57b730cc567064daf8302dc11",
     "recordCounts": {
       "eval": 4,
       "train_dpo": 7,

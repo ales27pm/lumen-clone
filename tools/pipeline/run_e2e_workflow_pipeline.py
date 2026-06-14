@@ -208,9 +208,13 @@ def build_env(root: Path, args: argparse.Namespace) -> dict[str, str]:
     env = os.environ.copy()
     pipeline_path = str((root / "tools/pipeline").resolve())
     crawler_path = str((root / "tools/lumen_manifest_crawler").resolve())
+    venv_bin = root / ".venv" / "bin"
     existing_pythonpath = env.get("PYTHONPATH")
     additions = os.pathsep.join([pipeline_path, crawler_path])
     env["PYTHONPATH"] = additions if not existing_pythonpath else f"{additions}{os.pathsep}{existing_pythonpath}"
+    if venv_bin.is_dir():
+        existing_path = env.get("PATH", "")
+        env["PATH"] = f"{venv_bin}{os.pathsep}{existing_path}" if existing_path else str(venv_bin)
     env.setdefault("PYTHONUNBUFFERED", "1")
     env.setdefault("PYTHONHASHSEED", str(args.seed))
     env.setdefault("LUMEN_TRAIN_SEED", str(args.seed))

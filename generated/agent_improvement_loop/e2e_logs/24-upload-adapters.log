@@ -1,0 +1,3 @@
+PASS lumen.audit_to_adapter_pipeline/1.1.0 (qwen3/adapter-first)
+Runtime audits discovered: 3
+Adapter GGUF directory 'models/lora_qwen3_gguf' does not exist. Run convert-adapters first.
