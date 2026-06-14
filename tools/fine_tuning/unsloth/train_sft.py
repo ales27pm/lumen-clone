@@ -92,6 +92,50 @@ def render_messages(tokenizer: Any, messages: list[dict[str, str]]) -> str:
     return "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages)
 
 
+def normalize_chat_messages(record: dict[str, Any], *, row_index: int, path: Path) -> list[dict[str, str]]:
+    messages = record.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise ValueError(f"{path}:{row_index + 1} must contain a non-empty messages array")
+
+    normalized: list[dict[str, str]] = []
+    for message_index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            raise ValueError(f"{path}:{row_index + 1}.messages[{message_index}] must be an object")
+        role = message.get("role")
+        if role not in {"system", "user", "assistant", "tool"}:
+            raise ValueError(
+                f"{path}:{row_index + 1}.messages[{message_index}].role must be one of system, user, assistant, tool"
+            )
+        content = message.get("content", "")
+        if not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False, sort_keys=True)
+        normalized.append({"role": role, "content": content})
+
+    if not any(message["role"] == "assistant" for message in normalized):
+        raise ValueError(f"{path}:{row_index + 1} must contain at least one assistant message")
+    return normalized
+
+
+def build_sft_rows(
+    records: list[dict[str, Any]],
+    *,
+    tokenizer: Any,
+    assistant_only_loss: bool,
+    path: Path,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, record in enumerate(records):
+        messages = normalize_chat_messages(record, row_index=index, path=path)
+        if assistant_only_loss:
+            # TRL can only build assistant-only loss masks from conversational
+            # datasets. Keep the canonical `messages` column instead of eagerly
+            # rendering records into a plain text column.
+            rows.append({"messages": messages})
+        else:
+            rows.append({"text": render_messages(tokenizer, messages)})
+    return rows
+
+
 def _seed_everything(seed: int) -> None:
     os.environ.setdefault("PYTHONHASHSEED", str(seed))
     random.seed(seed)
@@ -213,16 +257,26 @@ def main() -> None:
 
     train_records = load_jsonl(train_path)
     val_records = load_jsonl(val_path)
-    train_rows = [{"text": render_messages(tokenizer, row["messages"])} for row in train_records]
-    val_rows = [{"text": render_messages(tokenizer, row["messages"])} for row in val_records]
-
-    train_dataset = Dataset.from_list(train_rows)
-    eval_dataset = Dataset.from_list(val_rows) if val_rows else None
 
     output_dir = Path(cfg["output_dir"]).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     assistant_only_loss = bool(args.assistant_only_loss or cfg.get("assistant_only_loss", False))
+    train_rows = build_sft_rows(
+        train_records,
+        tokenizer=tokenizer,
+        assistant_only_loss=assistant_only_loss,
+        path=train_path,
+    )
+    val_rows = build_sft_rows(
+        val_records,
+        tokenizer=tokenizer,
+        assistant_only_loss=assistant_only_loss,
+        path=val_path,
+    )
+
+    train_dataset = Dataset.from_list(train_rows)
+    eval_dataset = Dataset.from_list(val_rows) if val_rows else None
 
     sft_kwargs: dict[str, Any] = dict(
         output_dir=str(output_dir),
@@ -240,7 +294,6 @@ def main() -> None:
         bf16=bool(cfg.get("bf16", False)),
         fp16=bool(cfg.get("fp16", True)),
         report_to="none",
-        dataset_text_field="text",
         max_length=int(cfg["max_seq_length"]),
         packing=bool(cfg.get("packing", False)),
         seed=seed,
@@ -251,6 +304,8 @@ def main() -> None:
         # through best-effort and let SFTConfig surface a clear error if the
         # installed TRL version is too old.
         sft_kwargs["assistant_only_loss"] = True
+    else:
+        sft_kwargs["dataset_text_field"] = "text"
 
     training_args = SFTConfig(**sft_kwargs)
 
