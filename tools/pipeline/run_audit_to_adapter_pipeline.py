@@ -62,20 +62,19 @@ def executable_python(path: Path) -> str | None:
 
 
 def default_python(root: Path | None = None) -> str:
+    root = root or repo_root()
+    candidate = executable_python(root / ".venv" / "bin" / "python")
+    if candidate:
+        return candidate
     venv = os.environ.get("VIRTUAL_ENV")
     if venv:
         candidate = executable_python(Path(venv) / "bin" / "python")
         if candidate:
             return candidate
-    root = root or repo_root()
-    candidate = executable_python(root / ".venv" / "bin" / "python")
-    if candidate:
-        return candidate
     return sys.executable
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    pipeline_python = default_python()
     parser = argparse.ArgumentParser(description="Run Lumen's audit-to-adapter pipeline.")
     parser.add_argument("--root", type=Path, default=repo_root())
     parser.add_argument(
@@ -88,8 +87,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--require-runtime-audit", action="store_true")
     parser.add_argument("--require-generated-artifacts", action="store_true")
     parser.add_argument("--state-file", type=Path, default=PIPELINE_STATE_FILE)
-    parser.add_argument("--python", default=pipeline_python, help="Python interpreter for crawler/helper scripts.")
-    parser.add_argument("--train-python", default=os.environ.get("LUMEN_TRAIN_PYTHON", pipeline_python), help="Python interpreter for Unsloth training/conversion.")
+    parser.add_argument("--python", default=None, help="Python interpreter for crawler/helper scripts. Defaults to repo .venv when present.")
+    parser.add_argument("--train-python", default=None, help="Python interpreter for Unsloth training/conversion. Defaults to LUMEN_TRAIN_PYTHON or repo .venv.")
     parser.add_argument("--converter", type=Path, default=Path.home() / ".unsloth/llama.cpp/convert_lora_to_gguf.py")
     parser.add_argument("--base-model-id", default=SHARED_BASE_MODEL_ID)
     parser.add_argument("--seed", type=int, default=42)
@@ -141,10 +140,10 @@ def validate_tool_paths(root: Path, args: argparse.Namespace) -> None:
     # This runner is intended for controlled developer/CI environments. Dynamic
     # interpreter/script paths are validated before command construction and are
     # passed to subprocess as separate argv entries with shell=False.
-    if args.python == sys.executable:
+    if args.python is None:
         args.python = default_python(root)
-    if args.train_python == sys.executable:
-        args.train_python = os.environ.get("LUMEN_TRAIN_PYTHON", default_python(root))
+    if args.train_python is None:
+        args.train_python = os.environ.get("LUMEN_TRAIN_PYTHON") or default_python(root)
     args.python = validate_executable_path(root, args.python, label="--python")
     args.train_python = validate_executable_path(root, args.train_python, label="--train-python")
     if args.mode in {"convert-adapters", "full"}:
