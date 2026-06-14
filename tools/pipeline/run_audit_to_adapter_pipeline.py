@@ -53,19 +53,31 @@ class StageResult:
 StageFn = Callable[[Path, argparse.Namespace], list[StageResult]]
 
 
-def default_python() -> str:
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def executable_python(path: Path) -> str | None:
+    return str(path) if path.is_file() and os.access(path, os.X_OK) else None
+
+
+def default_python(root: Path | None = None) -> str:
     venv = os.environ.get("VIRTUAL_ENV")
     if venv:
-        candidate = Path(venv) / "bin" / "python"
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
+        candidate = executable_python(Path(venv) / "bin" / "python")
+        if candidate:
+            return candidate
+    root = root or repo_root()
+    candidate = executable_python(root / ".venv" / "bin" / "python")
+    if candidate:
+        return candidate
     return sys.executable
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     pipeline_python = default_python()
     parser = argparse.ArgumentParser(description="Run Lumen's audit-to-adapter pipeline.")
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--root", type=Path, default=repo_root())
     parser.add_argument(
         "--mode",
         choices=["validate", "ingest", "train-adapters", "convert-adapters", "upload-adapters", "upload-base", "full"],
@@ -129,6 +141,10 @@ def validate_tool_paths(root: Path, args: argparse.Namespace) -> None:
     # This runner is intended for controlled developer/CI environments. Dynamic
     # interpreter/script paths are validated before command construction and are
     # passed to subprocess as separate argv entries with shell=False.
+    if args.python == sys.executable:
+        args.python = default_python(root)
+    if args.train_python == sys.executable:
+        args.train_python = os.environ.get("LUMEN_TRAIN_PYTHON", default_python(root))
     args.python = validate_executable_path(root, args.python, label="--python")
     args.train_python = validate_executable_path(root, args.train_python, label="--train-python")
     if args.mode in {"convert-adapters", "full"}:
