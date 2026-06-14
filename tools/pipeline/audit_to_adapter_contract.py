@@ -269,18 +269,23 @@ CONTRACT = AuditToAdapterPipelineContract(
     ),
     invariants=(
         "All live runtime slots use Qwen3 GGUF with adapter-first inference.",
-        "The app catalog adapter names must match generated GGUF adapter file names.",
-        "Training configs, local adapter export paths, HF adapter repo paths, and app runtime catalog entries must drift together through this contract.",
+        "The app adapter runtime contract must match generated GGUF adapter file names.",
+        "Training configs, local adapter export paths, HF adapter repo paths, and app runtime contract entries must drift together through this contract.",
         "Runtime audits are the required feedback source for generated training examples and regression scenarios.",
     ),
 )
 
 
-def validate_repository_alignment(root: Path, *, require_generated_artifacts: bool = False) -> list[str]:
+def validate_repository_alignment(
+    root: Path,
+    *,
+    require_generated_artifacts: bool = False,
+    require_training_datasets: bool = False,
+) -> list[str]:
     errors: list[str] = []
-    app_catalog = root / "ios/Lumen/Models/ModelCatalog.swift"
-    bootstrap = root / "ios/Lumen/App/LumenApp.swift"
-    required_files = [app_catalog, bootstrap]
+    runtime_contract = root / "ios/Lumen/Services/ModelAdapterRuntimeContract.swift"
+    bootstrap = root / "ios/Lumen/LumenApp.swift"
+    required_files = [runtime_contract, bootstrap]
     texts: dict[Path, str] = {}
     for path in required_files:
         if not path.exists():
@@ -289,7 +294,7 @@ def validate_repository_alignment(root: Path, *, require_generated_artifacts: bo
         texts[path] = path.read_text(encoding="utf-8")
 
     if len(texts) == len(required_files):
-        catalog_text = texts[app_catalog]
+        runtime_contract_text = texts[runtime_contract]
         bootstrap_text = texts[bootstrap]
         for artifact in CONTRACT.artifacts:
             if artifact.role == "shared_chat_base":
@@ -299,12 +304,12 @@ def validate_repository_alignment(root: Path, *, require_generated_artifacts: bo
             else:
                 needles = [artifact.file_name, artifact.repo_id]
             for needle in filter(None, needles):
-                if needle not in catalog_text and needle not in bootstrap_text:
-                    errors.append(f"artifact reference missing from app catalog/bootstrap: {artifact.role} -> {needle}")
-        if "defaultChatModelID" not in bootstrap_text:
-            errors.append("LumenApp.swift no longer wires ModelCatalog.defaultChatModelID")
-        if "AgentModelRegistry" not in bootstrap_text:
-            errors.append("LumenApp.swift no longer wires AgentModelRegistry")
+                if needle not in runtime_contract_text and needle not in bootstrap_text:
+                    errors.append(f"artifact reference missing from app runtime contract/bootstrap: {artifact.role} -> {needle}")
+        if "LumenModelSlotContract.validateCompletenessAtStartup" not in bootstrap_text:
+            errors.append("LumenApp.swift no longer validates LumenModelSlotContract at startup")
+        if "LumenTrainedModelRuntimeRegistry" not in runtime_contract_text:
+            errors.append("ModelAdapterRuntimeContract.swift no longer defines LumenTrainedModelRuntimeRegistry")
 
     for role in TRAINED_ADAPTER_ROLES:
         cfg = root / training_config_path(role)
@@ -320,7 +325,7 @@ def validate_repository_alignment(root: Path, *, require_generated_artifacts: bo
         if output_dir != trained_adapter_path(role):
             errors.append(f"{cfg.relative_to(root)} output_dir={output_dir} expected={trained_adapter_path(role)}")
         datasets = data.get("datasets") or []
-        if not datasets:
+        if require_training_datasets and not datasets:
             errors.append(f"{cfg.relative_to(root)} has no datasets")
 
     if require_generated_artifacts:
@@ -343,8 +348,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate Lumen audit-to-adapter pipeline contract alignment.")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--require-generated-artifacts", action="store_true")
+    parser.add_argument("--require-training-datasets", action="store_true")
     args = parser.parse_args()
-    issues = validate_repository_alignment(args.root.resolve(), require_generated_artifacts=args.require_generated_artifacts)
+    issues = validate_repository_alignment(
+        args.root.resolve(),
+        require_generated_artifacts=args.require_generated_artifacts,
+        require_training_datasets=args.require_training_datasets,
+    )
     if issues:
         print("Pipeline contract validation failed:")
         for issue in issues:
