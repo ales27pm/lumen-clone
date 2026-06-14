@@ -47,6 +47,11 @@ class AuditInspection:
     accepted_training_count: int = 0
     quarantined_sample_count: int = 0
     regression_test_count: int = 0
+    e2e_scenario_count: int = 0
+    e2e_failed_count: int = 0
+    e2e_training_signal_count: int = 0
+    diagnostics_record_count: int = 0
+    diagnostics_failed_count: int = 0
     adapter_slots_seen: dict[str, int] = field(default_factory=dict)
     slots_seen: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -104,6 +109,26 @@ class AuditInspectionSummary:
         return self._sum("regression_test_count")
 
     @property
+    def e2e_scenario_count(self) -> int:
+        return self._sum("e2e_scenario_count")
+
+    @property
+    def e2e_failed_count(self) -> int:
+        return self._sum("e2e_failed_count")
+
+    @property
+    def e2e_training_signal_count(self) -> int:
+        return self._sum("e2e_training_signal_count")
+
+    @property
+    def diagnostics_record_count(self) -> int:
+        return self._sum("diagnostics_record_count")
+
+    @property
+    def diagnostics_failed_count(self) -> int:
+        return self._sum("diagnostics_failed_count")
+
+    @property
     def warnings(self) -> list[str]:
         out: list[str] = []
         for item in self.inspections:
@@ -136,6 +161,11 @@ class AuditInspectionSummary:
             "adapterAppliedMissingCount": self.adapter_applied_missing_count,
             "acceptedTrainingCount": self.accepted_training_count,
             "regressionTestCount": self.regression_test_count,
+            "e2eScenarioCount": self.e2e_scenario_count,
+            "e2eFailedCount": self.e2e_failed_count,
+            "e2eTrainingSignalCount": self.e2e_training_signal_count,
+            "diagnosticsRecordCount": self.diagnostics_record_count,
+            "diagnosticsFailedCount": self.diagnostics_failed_count,
             "hasAdapterTraces": self.has_adapter_traces,
             "hasTrainingSignals": self.has_training_signals,
             "warnings": self.warnings,
@@ -208,11 +238,25 @@ def inspect_payload(value: Any, inspection: AuditInspection) -> None:
         inspection.source_format = str(export_policy.get("format") or "evidence-layer-json")
         inspection.source_layer = str(export_policy.get("sourceLayer") or "unknown")
         inspection.generated_at = str(value.get("generatedAt") or "") or None
+        if inspection.source_layer == "e2eTestReport" or export_policy.get("ownsLiveE2EScenarios") is True:
+            if isinstance(payload, dict):
+                inspect_e2e_report_payload(payload, inspection)
+            else:
+                inspection.warnings.append("e2eTestReport payload is not a JSON object")
+            return
         inspect_payload(payload, inspection)
         return
 
     if is_in_app_dataset_package(value):
         inspect_in_app_package(value, inspection)
+        return
+
+    if is_persistent_runtime_diagnostics_export(value):
+        inspect_persistent_runtime_diagnostics(value, inspection)
+        return
+
+    if is_e2e_report_payload(value):
+        inspect_e2e_report_payload(value, inspection)
         return
 
     if isinstance(value.get("violations"), list) or isinstance(value.get("repairSamples"), list):
@@ -232,6 +276,76 @@ def inspect_payload(value: Any, inspection: AuditInspection) -> None:
 
 def is_evidence_layer_envelope(value: dict[str, Any]) -> bool:
     return isinstance(value.get("exportPolicy"), dict) and "payload" in value
+
+
+
+def is_persistent_runtime_diagnostics_export(value: dict[str, Any]) -> bool:
+    state = value.get("state")
+    return (
+        isinstance(state, dict)
+        and isinstance(state.get("records"), list)
+        and isinstance(value.get("ndjson"), str)
+        and "exportedAt" in value
+    )
+
+
+def is_e2e_report_payload(value: dict[str, Any]) -> bool:
+    return (
+        value.get("kind") in {"lumen_e2e_test_report", "e2e_test_report"}
+        or isinstance(value.get("trainingSignals"), list)
+        or isinstance(value.get("training_signals"), list)
+        or isinstance(value.get("scenarios"), list)
+        or isinstance(value.get("results"), list)
+    )
+
+
+def inspect_e2e_report_payload(report: dict[str, Any], inspection: AuditInspection) -> None:
+    if inspection.source_format == "unknown":
+        inspection.source_format = "lumen_e2e_test_report"
+    if inspection.source_layer == "unknown":
+        inspection.source_layer = "e2eTestReport.json"
+    scenarios = report.get("scenarios")
+    if not isinstance(scenarios, list):
+        scenarios = report.get("results") if isinstance(report.get("results"), list) else []
+    inspection.e2e_scenario_count += len([item for item in scenarios if isinstance(item, dict)])
+    failed = 0
+    for scenario in scenarios:
+        if isinstance(scenario, dict) and scenario.get("passed") is not True:
+            failed += 1
+    explicit_failed = report.get("failed")
+    if isinstance(explicit_failed, int):
+        failed = max(failed, explicit_failed)
+    inspection.e2e_failed_count += failed
+    signals = report.get("trainingSignals") or report.get("training_signals") or []
+    if isinstance(signals, list):
+        inspection.e2e_training_signal_count += len(signals)
+    if inspection.e2e_scenario_count == 0:
+        inspection.warnings.append("E2E report contains no scenario results")
+
+
+def inspect_persistent_runtime_diagnostics(package: dict[str, Any], inspection: AuditInspection) -> None:
+    inspection.source_format = "persistent_runtime_diagnostics_export"
+    inspection.source_layer = "persistentRuntimeDiagnostics"
+    inspection.generated_at = str(package.get("exportedAt") or "") or None
+    state = package.get("state") if isinstance(package.get("state"), dict) else {}
+    records = [item for item in state.get("records", []) if isinstance(item, dict)]
+    inspection.diagnostics_record_count += len(records)
+    inspection.diagnostics_failed_count += len(
+        [
+            item
+            for item in records
+            if str(item.get("status") or "") != "passed" and not is_expected_diagnostics_cancellation(item)
+        ]
+    )
+    if not records:
+        inspection.warnings.append("persistent diagnostics export contains no records")
+
+
+def is_expected_diagnostics_cancellation(record: dict[str, Any]) -> bool:
+    if str(record.get("status") or "") != "cancelled":
+        return False
+    metrics = record.get("metrics") if isinstance(record.get("metrics"), dict) else {}
+    return metrics.get("didCancel") is True and str(metrics.get("cancellationReason") or "") == "persistent-diagnostics-agent-cancel"
 
 
 def is_in_app_dataset_package(value: dict[str, Any]) -> bool:
