@@ -39,6 +39,8 @@ class AuditInspection:
     adapter_applied_missing_count: int = 0
     trace_parse_error_count: int = 0
     trace_selected_tool_allowed_count: int = 0
+    package_trace_parse_error_count: int = 0
+    package_trace_selected_tool_allowed_count: int = 0
     used_runtime_fallback: bool | None = None
     behavior_violation_count: int = 0
     repair_sample_count: int = 0
@@ -66,6 +68,9 @@ class AuditInspection:
 class AuditInspectionSummary:
     inspections: list[AuditInspection]
 
+    def _sum(self, attr: str) -> int:
+        return sum(getattr(item, attr) for item in self.inspections)
+
     @property
     def file_count(self) -> int:
         return len(self.inspections)
@@ -76,27 +81,27 @@ class AuditInspectionSummary:
 
     @property
     def trace_count(self) -> int:
-        return sum(item.trace_count for item in self.inspections)
+        return self._sum("trace_count")
 
     @property
     def adapter_applied_true_count(self) -> int:
-        return sum(item.adapter_applied_true_count for item in self.inspections)
+        return self._sum("adapter_applied_true_count")
 
     @property
     def adapter_applied_false_count(self) -> int:
-        return sum(item.adapter_applied_false_count for item in self.inspections)
+        return self._sum("adapter_applied_false_count")
 
     @property
     def adapter_applied_missing_count(self) -> int:
-        return sum(item.adapter_applied_missing_count for item in self.inspections)
+        return self._sum("adapter_applied_missing_count")
 
     @property
     def accepted_training_count(self) -> int:
-        return sum(item.accepted_training_count for item in self.inspections)
+        return self._sum("accepted_training_count")
 
     @property
     def regression_test_count(self) -> int:
-        return sum(item.regression_test_count for item in self.inspections)
+        return self._sum("regression_test_count")
 
     @property
     def warnings(self) -> list[str]:
@@ -155,7 +160,7 @@ def inspect_audit_file(path: Path) -> AuditInspection:
         value = json.loads(text)
     except json.JSONDecodeError:
         # Sidecar JSONL files are valid training evidence, but not runtime audit
-        # packages. Count them separately so the caller can choose how strict to be.
+        # packages. Count only syntactically valid JSONL records.
         return inspect_jsonl_sidecar(path, text)
 
     inspect_payload(value, inspection)
@@ -166,7 +171,17 @@ def inspect_audit_file(path: Path) -> AuditInspection:
 def inspect_jsonl_sidecar(path: Path, text: str) -> AuditInspection:
     inspection = AuditInspection(source=str(path), source_format="jsonl_sidecar", source_layer="improveLoopSidecar")
     name = path.name.lower()
-    records = [line for line in text.splitlines() if line.strip()]
+    records: list[Any] = []
+    invalid_count = 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            invalid_count += 1
+    if invalid_count:
+        inspection.warnings.append(f"ignored {invalid_count} invalid JSONL line(s)")
     if name.startswith("accepted_training"):
         inspection.accepted_training_count = len(records)
     elif name.startswith("quarantined_samples"):
@@ -235,8 +250,8 @@ def inspect_in_app_package(package: dict[str, Any], inspection: AuditInspection)
     inspection.source_layer = str(export_policy.get("sourceLayer") or IN_APP_DATASET_SOURCE_LAYER)
     inspection.generated_at = str(package.get("generatedAt") or "") or None
     inspection.used_runtime_fallback = package.get("usedRuntimeFallback") if isinstance(package.get("usedRuntimeFallback"), bool) else None
-    inspection.trace_selected_tool_allowed_count += int(package.get("traceSelectedToolAllowedCount") or 0)
-    inspection.trace_parse_error_count += int(package.get("traceParseErrorCount") or 0)
+    inspection.package_trace_selected_tool_allowed_count = int(package.get("traceSelectedToolAllowedCount") or 0)
+    inspection.package_trace_parse_error_count = int(package.get("traceParseErrorCount") or 0)
 
     if inspection.source_format != IN_APP_DATASET_EXPORT_FORMAT:
         inspection.warnings.append(f"unexpected export format: {inspection.source_format}")
@@ -255,6 +270,18 @@ def inspect_in_app_package(package: dict[str, Any], inspection: AuditInspection)
             inspect_trace(trace, inspection)
     if not traces:
         inspection.warnings.append("recentTraces is empty; this audit cannot prove live adapter behavior")
+
+    if traces:
+        if inspection.package_trace_selected_tool_allowed_count != inspection.trace_selected_tool_allowed_count:
+            inspection.warnings.append(
+                "traceSelectedToolAllowedCount package summary differs from recomputed trace count: "
+                f"{inspection.package_trace_selected_tool_allowed_count} != {inspection.trace_selected_tool_allowed_count}"
+            )
+        if inspection.package_trace_parse_error_count != inspection.trace_parse_error_count:
+            inspection.warnings.append(
+                "traceParseErrorCount package summary differs from recomputed trace count: "
+                f"{inspection.package_trace_parse_error_count} != {inspection.trace_parse_error_count}"
+            )
 
     improve_loop = package.get("improveLoop") if isinstance(package.get("improveLoop"), dict) else {}
     inspection.accepted_training_count += len([item for item in improve_loop.get("acceptedTraining", []) if isinstance(item, dict)])
