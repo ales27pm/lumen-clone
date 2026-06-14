@@ -1,104 +1,32 @@
 {
-  "schema": "lumen.improve_loop.pipeline_state/1.0.0",
-  "stages": {
-    "adapter-first manifest / optional release bake": {
-      "argv": [
-        "/home/ales27pm/.pyenv/versions/3.10.19/bin/python",
-        "tools/fine_tuning/unsloth/export_gguf.py",
-        "--config-dir",
-        "/home/ales27pm/Lumen/tools/fine_tuning/unsloth/configs_qwen3_bootstrap",
-        "--agents",
-        "cortex,executor,mouth,mimicry,rem,fleet",
-        "--quantization",
-        "q4_k_m",
-        "--output-root",
-        "/home/ales27pm/Lumen/models/gguf_release_bake_qwen3_bootstrap",
-        "--manifest-output",
-        "/home/ales27pm/Lumen/generated/fine_tuning/qwen3_bootstrap_release_bake_gguf_manifest.json",
-        "--skip-upload"
+  "agents": [
+    "cortex",
+    "executor",
+    "mouth",
+    "mimicry",
+    "rem",
+    "fleet"
+  ],
+  "contract_schema": "lumen.audit_to_adapter_pipeline/1.1.0",
+  "mode": "train-adapters",
+  "schema": "lumen.audit_to_adapter_pipeline.run_state/1.0.0",
+  "stages": [
+    {
+      "command": [
+        "/home/ales27pm/lumen-clone/.venv/bin/python",
+        "tools/fine_tuning/unsloth/train_sft.py",
+        "--config",
+        "tools/fine_tuning/unsloth/configs_qwen3_bootstrap/cortex.json",
+        "--seed",
+        "42",
+        "--assistant-only-loss"
       ],
-      "elapsed_s": 0.038,
-      "finished_at": "2026-05-09T22:04:44.117460+00:00",
-      "input_hash": "0c92cd6a15d3c419b0addfb120bba0652d4680c2e5505c35906b05b4227fd343",
-      "inputs": [
-        "tools/fine_tuning/unsloth/configs_qwen3_bootstrap"
-      ],
-      "note": "",
-      "outputs": [
-        "generated/fine_tuning/qwen3_bootstrap_release_bake_gguf_manifest.json"
-      ],
-      "returncode": 0,
-      "started_at": "2026-05-09T22:04:44.079652+00:00",
-      "status": "ok"
-    },
-    "augment loop summary with embedding state": {
-      "argv": [
-        "/home/ales27pm/.pyenv/versions/3.10.19/bin/python",
-        "tools/augment_loop_state_embedding.py",
-        "--loop-state",
-        "/home/ales27pm/Lumen/generated/agent_improvement_loop/loop_state.json",
-        "--embedding-dir",
-        "/home/ales27pm/Lumen/generated/agent_manifest/embedding",
-        "--print-summary"
-      ],
-      "elapsed_s": 0.033,
-      "finished_at": "2026-05-09T22:04:44.079156+00:00",
-      "input_hash": "4c36b653d65b19b268c2ef66f2ef684ce5b7d8852f593b61995199ce805fc044",
-      "inputs": [
-        "generated/agent_improvement_loop/loop_state.json",
-        "generated/agent_manifest/embedding"
-      ],
-      "note": "",
-      "outputs": [],
-      "returncode": 0,
-      "started_at": "2026-05-09T22:04:44.046171+00:00",
-      "status": "ok"
-    },
-    "crawl code + ingest JSON + generate datasets": {
-      "argv": [
-        "/home/ales27pm/.pyenv/versions/3.10.19/bin/python",
-        "-m",
-        "lumen_manifest_crawler",
-        "improve-loop",
-        "--root",
-        "/home/ales27pm/Lumen",
-        "--output",
-        "/home/ales27pm/Lumen/generated/agent_manifest",
-        "--loop-output",
-        "/home/ales27pm/Lumen/generated/agent_improvement_loop",
-        "--fine-tuning-output",
-        "/home/ales27pm/Lumen/generated/fine_tuning",
-        "--testflight-scenario-limit",
-        "120",
-        "--app-run-mode",
-        "testflight",
-        "--strict",
-        "--deterministic",
-        "--pretty",
-        "--generate-system-prompts",
-        "--generate-agent-fine-tuning",
-        "--runtime-audit",
-        "/home/ales27pm/Lumen/exports/lumen-agent-grounding-audit-2026-05-09T19-16-04Z-edf67849-4911-45e3-bf18-00f4af251488.json",
-        "--runtime-audit",
-        "/home/ales27pm/Lumen/exports/lumen-agent-grounding-audit-2026-05-09T19-40-57Z-b6b16997-41aa-42b7-b52f-00c5bd5bafe3.json"
-      ],
-      "elapsed_s": 3.283,
-      "finished_at": "2026-05-09T22:04:44.045408+00:00",
-      "input_hash": "8cc08150358897b0a34a87640f08aa74b28af06e69f21273cbcb0a4636189efd",
-      "inputs": [
-        "ios/Lumen",
-        "exports/lumen-agent-grounding-audit-2026-05-09T19-16-04Z-edf67849-4911-45e3-bf18-00f4af251488.json",
-        "exports/lumen-agent-grounding-audit-2026-05-09T19-40-57Z-b6b16997-41aa-42b7-b52f-00c5bd5bafe3.json"
-      ],
-      "note": "",
-      "outputs": [
-        "generated/agent_manifest/dataset_manifest.json",
-        "generated/agent_improvement_loop/loop_state.json"
-      ],
-      "returncode": 0,
-      "started_at": "2026-05-09T22:04:40.762198+00:00",
-      "status": "ok"
+      "elapsed_s": 14.315405031084083,
+      "finished_at": "2026-06-14T22:39:40.965525+00:00",
+      "returncode": 1,
+      "stage": "train cortex adapter",
+      "started_at": "2026-06-14T22:39:26.650111+00:00"
     }
-  },
-  "updated_at": "2026-05-09T22:04:44.117525+00:00"
+  ],
+  "updated_at": "2026-06-14T22:39:40.965725+00:00"
 }

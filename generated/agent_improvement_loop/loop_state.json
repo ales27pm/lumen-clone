@@ -1,24 +1,5 @@
 {
-  "commands": [
-    {
-      "command": [
-        "xcodebuild",
-        "build-for-testing",
-        "-project",
-        "ios/Lumen.xcodeproj",
-        "-scheme",
-        "Lumen",
-        "-destination",
-        "generic/platform=iOS Simulator"
-      ],
-      "cwd": "/Users/ales27pm/lumen-clone",
-      "name": "build_for_testflight",
-      "passed": true,
-      "returncode": 0,
-      "stderrTail": "",
-      "stdoutTail": "r\n    export TAPI_EXTRA_PRIVATE_HEADERS=\n    export TAPI_EXTRA_PROJECT_HEADERS=\n    export TAPI_EXTRA_PUBLIC_HEADERS=\n    export TAPI_FRAMEWORK_SEARCH_PATHS=\n    export TAPI_HEADER_SEARCH_PATHS=\n    export TAPI_LANGUAGE=objective-c\n    export TAPI_LANGUAGE_STANDARD=compiler-default\n    export TAPI_LIBRARY_SEARCH_PATHS=\" iphonesimulator26.2/usr/lib/swift\"\n    export TAPI_MODULES_VALIDATE_SYSTEM_HEADERS=NO\n    export TAPI_MODULE_CACHE_PATH=/Users/ales27pm/Library/Developer/Xcode/DerivedData/ModuleCache.noindex\n    export TAPI_PREPROCESSOR_DEFINITIONS=\"DEBUG=1  \"\n    export TAPI_PRODUCT_TYPE=com.apple.product-type.application\n    export TAPI_READ_DSYM=YES\n    export TAPI_REEXPORTED_FRAMEWORK_INSTALL_NAMES=\n    export TAPI_REEXPORTED_FRAMEWORK_NAMES=\n    export TAPI_REEXPORTED_LIBRARY_INSTALL_NAMES=\n    export TAPI_REEXPORTED_LIBRARY_NAMES=\n    export TAPI_REEXPORTED_LIBRARY_PATHS=\n    export TAPI_RUNPATH_SEARCH_PATHS=\" @executable_path/Frameworks @loader_path/Frameworks @executable_path/Frameworks @loader_path/Frameworks\"\n    export TAPI_SHARED_CACHE_ELIGIBLE=Automatic\n    export TAPI_SYSTEM_FRAMEWORK_SEARCH_PATHS=\n    export TAPI_SYSTEM_HEADER_SEARCH_PATHS=\n    export TAPI_TARGET_TRIPLE_ARCHS=\"arm64 x86_64\"\n    export TAPI_USE_SRCROOT=YES\n    export TAPI_VERIFY_AGAINST=\n    export TAPI_VERIFY_MODE=Pedantic\n    export TARGETED_DEVICE_FAMILY=1,2\n    export TARGETNAME=Lumen\n    export TARGET_BUILD_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Debug-iphonesimulator\n    export TARGET_BUILD_SUBPATH=\n    export TARGET_NAME=Lumen\n    export TARGET_TEMP_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex/Lumen.build/Debug-iphonesimulator/Lumen.build\n    export TEMP_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex/Lumen.build/Debug-iphonesimulator/Lumen.build\n    export TEMP_FILES_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex/Lumen.build/Debug-iphonesimulator/Lumen.build\n    export TEMP_FILE_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex/Lumen.build/Debug-iphonesimulator/Lumen.build\n    export TEMP_ROOT=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex\n    export TEMP_SANDBOX_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex/TemporaryTaskSandboxes\n    export TERM=dumb\n    export TEST_FRAMEWORK_SEARCH_PATHS=\" /Users/ales27pm/Downloads/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks iphonesimulator26.2/Developer/Library/Frameworks\"\n    export TEST_HOST=\n    export TEST_LIBRARY_SEARCH_PATHS=\" /Users/ales27pm/Downloads/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib\"\n    export TEXTURE_ATLAS_ENABLE_WARNINGS=Yes\n    export TEXTURE_ATLAS_FORMAT=RGBA8888_PNG\n    export TEXTURE_ATLAS_MAXIMUM_SIZE=2048x2048\n    export TMPDIR=/var/folders/jz/9ltjw1612zb1x1z5zmzzdppm0000gn/T/\n    export TOOLCHAINS=\n    export TOOLCHAIN_DIR=/Users/ales27pm/Downloads/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain\n    export TREAT_MISSING_BASELINES_AS_TEST_FAILURES=NO\n    export TREAT_MISSING_SCRIPT_PHASE_OUTPUTS_AS_ERRORS=NO\n    export TVOS_DEPLOYMENT_TARGET=15.6\n    export UID=501\n    export UNEXPORTED_SYMBOLS_FILE=\n    export UNINSTALLED_PRODUCTS_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex/UninstalledProducts\n    export UNLOCALIZED_RESOURCES_FOLDER_PATH=Lumen.app\n    export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_NO=Lumen.app/Resources\n    export UNLOCALIZED_RESOURCES_FOLDER_PATH_SHALLOW_BUNDLE_YES=Lumen.app\n    export UNSTRIPPED_PRODUCT=NO\n    export USER=ales27pm\n    export USER_APPS_DIR=/Users/ales27pm/Applications\n    export USER_LIBRARY_DIR=/Users/ales27pm/Library\n    export USE_DYNAMIC_NO_PIC=YES\n    export USE_GCC3_PFE_SUPPORT=\n    export USE_HEADERMAP=YES\n    export USE_HEADER_SYMLINKS=NO\n    export USE_SDK_TOOLCHAINS=NO\n    export VALIDATE_PLIST_FILES_WHILE_COPYING=NO\n    export VALIDATE_PRODUCT=NO\n    export VALIDATE_STRINGS_FILES_WHILE_COPYING=YES\n    export VALID_ARCHS=\"arm64 x86_64\"\n    export VERBOSE_PBXCP=NO\n    export VERSIONING_STUB=\n    export VERSIONING_SYSTEM=\n    export VERSIONPLIST_PATH=Lumen.app/version.plist\n    export VERSIONS_FOLDER_PATH=\n    export VERSION_INFO_BUILDER=ales27pm\n    export VERSION_INFO_EXPORT_DECL=\n    export VERSION_INFO_FILE=Lumen_vers.c\n    export VERSION_INFO_PREFIX=\n    export VERSION_INFO_STRING=\"\\\"@(#)PROGRAM:Lumen  PROJECT:Lumen-202606061919\\\"\"\n    export VERSION_INFO_SUFFIX=\n    export ValidateForStore=NO\n    export WARNING_CFLAGS=\n    export WATCHOS_DEPLOYMENT_TARGET=8.7\n    export WATCH_BUILT_PRODUCTS_DIR=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Debug-watchsimulator\n    export WORKSPACE_PATH=/Users/ales27pm/lumen-clone/ios/Lumen.xcodeproj/project.xcworkspace\n    export WRAPPER_EXTENSION=app\n    export WRAPPER_NAME=Lumen.app\n    export WRAPPER_PREFIX=\n    export WRAPPER_SUFFIX=.app\n    export WRAP_ASSET_PACKS_IN_SEPARATE_DIRECTORIES=NO\n    export XCODE_APP_SUPPORT_DIR=/Users/ales27pm/Downloads/Xcode.app/Contents/Developer/Library/Xcode\n    export XCODE_DEVELOPER_DIR_PATH=\n    export XCODE_PRODUCT_BUILD_VERSION=17C529\n    export XCODE_VERSION_ACTUAL=2630\n    export XCODE_VERSION_MAJOR=2600\n    export XCODE_VERSION_MINOR=2630\n    export XCSTRINGS_FORCE_BUILD_ALL_STRINGS=NO\n    export XCSTRINGS_LANGUAGES_TO_COMPILE=\n    export XIB_COMPILER_INFOPLIST_CONTENT_FILE=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Intermediates.noindex/Lumen.build/Debug-iphonesimulator/Lumen.build/-PartialInfo.plist\n    export XPCSERVICES_FOLDER_PATH=Lumen.app/XPCServices\n    export XPC_FLAGS=0x0\n    export XPC_SERVICE_NAME=0\n    export XROS_DEPLOYMENT_TARGET=1.3\n    export YACC=yacc\n    export YACCFLAGS=\n    export YACC_GENERATED_FILE_STEM=Standard\n    export YACC_GENERATE_DEBUGGING_DIRECTIVES=NO\n    export YACC_INSERT_LINE_DIRECTIVES=YES\n    export ZSH_TMUX_AUTOSTART=false\n    export ZSH_TMUX_AUTOSTARTED=true\n    export _=/usr/bin/python3\n    export _CLANG_ENABLE_TYPED_ALLOCATOR_SUPPORT_DEFAULT=compiler-default\n    export _CLANG_ENABLE_TYPED_ALLOCATOR_SUPPORT_DEFAULT_ENHANCED_SECURITY_NO=compiler-default\n    export _CLANG_ENABLE_TYPED_ALLOCATOR_SUPPORT_DEFAULT_ENHANCED_SECURITY_YES=YES\n    export _CLANG_TRIVIAL_AUTO_VAR_INIT_DEFAULT=default\n    export _CLANG_TRIVIAL_AUTO_VAR_INIT_DEFAULT_ENABLE_ZERO_INIT_NO=default\n    export _CLANG_TRIVIAL_AUTO_VAR_INIT_DEFAULT_ENABLE_ZERO_INIT_YES=zero\n    export _DISCOVER_COMMAND_LINE_LINKER_INPUTS=YES\n    export _DISCOVER_COMMAND_LINE_LINKER_INPUTS_INCLUDE_WL=YES\n    export _LD_MULTIARCH=YES\n    export _PREFIXED_SWIFT_VERSION=_5.0\n    export _REZ_PREFIX_FILE=/Users/ales27pm/lumen-clone/ios/\n    export _UNSAFE_BUFFER_USAGE_DEFAULT=DEFAULT\n    export _UNSAFE_BUFFER_USAGE_DEFAULT_ENABLE_SAFE_BUFFERS_NO=DEFAULT\n    export _UNSAFE_BUFFER_USAGE_DEFAULT_ENABLE_SAFE_BUFFERS_YES=YES_ERROR\n    export _WRAPPER_CONTENTS_DIR=\n    export _WRAPPER_CONTENTS_DIR_SHALLOW_BUNDLE_NO=/Contents\n    export _WRAPPER_PARENT_PATH=\n    export _WRAPPER_PARENT_PATH_SHALLOW_BUNDLE_NO=/..\n    export _WRAPPER_RESOURCES_DIR=\n    export _WRAPPER_RESOURCES_DIR_SHALLOW_BUNDLE_NO=/Resources\n    export __CFBundleIdentifier=com.openai.codex\n    export __CF_USER_TEXT_ENCODING=\"0x1F5:0x0:0x52\"\n    export __CLANG_ANALYZER_DIVIDE_BY_ZERO_NO_SILENCE_STRING=core.DivideZero\n    export __CLANG_ANALYZER_DIVIDE_BY_ZERO_YES_SILENCE_STRING=.\n    export __CLANG_ANALYZER_NULL_DEREFERENCE_NO_SILENCE_STRING=core.NullDereference\n    export __CLANG_ANALYZER_NULL_DEREFERENCE_YES_SILENCE_STRING=.\n    export __CLANG_ANALYZER_SILENCE_CHECKERS=YES\n    export __CLANG_ANALYZER_SILENCE_CHECKERS_LIST=\".;.\"\n    export __CPP_PREFIX_HEADER=\n    export __CREATE_INFOPLIST_SECTION_IN_BINARY=NO\n    export __DIAGNOSE_DEPRECATED_ARCHS=YES\n    export __ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS=NO\n    export __ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_NO_NO=NO\n    export __ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_NO_YES=YES\n    export __ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES_NO=YES\n    export __ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES_YES=YES\n    export __IIG_DEPLOYMENT_TARGET__=18.0\n    export __IIG_FRAMEWORK_NAME__=com.apple.product-type.application\n    export __INPUT_FILE_LIST_PATH__=\n    export __IS_NOT_MACOS=YES\n    export __IS_NOT_MACOS_macosx=NO\n    export __IS_NOT_SIMULATOR=NO\n    export __IS_NOT_SIMULATOR_simulator=NO\n    export __LIBRARY_HARDENING_DEFAULT_VALUE=debug\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_0_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_NO=debug\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_0_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES=debug\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_1_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES=fast\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_2_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES=fast\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_3_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES=fast\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_fast_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES=fast\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_s_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES=fast\n    export __LIBRARY_HARDENING_DEFAULT_VALUE_OPT_LEVEL_z_ENHANCED_SECURITY_OR_BOUNDS_SAFE_BUFFERS_YES=fast\n    export __OTHER_IIG_CFLAGS__=YES\n    export __SWIFT_ENFORCE_EXCLUSIVE_ACCESS_DEBUG_ENFORCEMENT_DEBUG=YES\n    export __SWIFT_ENFORCE_EXCLUSIVE_ACCESS_DEBUG_ENFORCEMENT_RELEASE=YES\n    export __infoplist_absolute__=/Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Debug-iphonesimulator/Lumen.app\n    export __infoplist_subpath__=Info.plist\n    export __no_validate_extension__=YES\n    export _exclude_ds_store_files_=\n    export _resolve_src_symlinks_=\n    export arch=undefined_arch\n    export build_file_compiler_flags=\n    export diagnostic_message_length=0\n    export mig_generate_client_sources=YES\n    export mig_generate_server_sources=NO\n    export print_note_include_stack=YES\n    export variant=normal\n    /bin/sh -c /var/folders/jz/9ltjw1612zb1x1z5zmzzdppm0000gn/T/SchemeScriptAction-kgSScd.sh\n[AgentGroundingResources] Resolved REPO_ROOT: /Users/ales27pm/lumen-clone\nWarning: unknown environment variable SWIFT_DEBUG_INFORMATION_FORMAT\nWarning: unknown environment variable SWIFT_DEBUG_INFORMATION_VERSION\nWarning: unknown environment variable SWIFT_DEBUG_INFORMATION_FORMAT\nWarning: unknown environment variable SWIFT_DEBUG_INFORMATION_VERSION\n[AgentGroundingResources] Copying generated artifacts into app bundle resources\n[AgentGroundingResources] Loop outputs: /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Debug-iphonesimulator/Lumen.app/AgentGrounding/agent_improvement_loop\n[AgentGroundingResources] Installed resources at: /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Debug-iphonesimulator/Lumen.app/AgentGrounding\n[AgentGroundingResources] Manifest: /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Debug-iphonesimulator/Lumen.app/AgentGrounding/agent_manifest/AgentBehaviorManifest.json\n[AgentGroundingResources] Prompts:  /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Debug-iphonesimulator/Lumen.app/AgentGrounding/agent_manifest/fleet_system_prompts.json\n\n** TEST BUILD SUCCEEDED **\n\n"
-    }
-  ],
+  "commands": [],
   "completedAt": "1970-01-01T00:00:00+00:00",
   "criticalGapCount": 0,
   "dataset": {
@@ -26,7 +7,7 @@
       "cortex": {
         "eval": 555,
         "trainDPO": 8,
-        "trainSFT": 303,
+        "trainSFT": 309,
         "valDPO": 1,
         "valSFT": 54
       },
@@ -40,9 +21,9 @@
       "fleet": {
         "eval": 84,
         "trainDPO": 14,
-        "trainSFT": 1153,
+        "trainSFT": 1184,
         "valDPO": 2,
-        "valSFT": 204
+        "valSFT": 209
       },
       "mimicry": {
         "eval": 3,
@@ -54,31 +35,31 @@
       "mouth": {
         "eval": 5,
         "trainDPO": 10,
-        "trainSFT": 147,
+        "trainSFT": 138,
         "valDPO": 2,
-        "valSFT": 26
+        "valSFT": 24
       },
       "rem": {
         "eval": 4,
         "trainDPO": 7,
-        "trainSFT": 496,
+        "trainSFT": 527,
         "valDPO": 1,
-        "valSFT": 88
+        "valSFT": 93
       }
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_corpus": 446,
-      "codebase_home_sft": 446,
+      "codebase_home_corpus": 478,
+      "codebase_home_sft": 478,
       "cortex_routing": 69,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 1022,
+      "embedding_corpus": 1058,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 1191,
-      "embedding_hard_negatives": 1191,
-      "embedding_train_pairs": 1067,
-      "embedding_train_triplets": 1070,
-      "embedding_val_pairs": 124,
+      "embedding_eval_retrieval": 1227,
+      "embedding_hard_negatives": 1227,
+      "embedding_train_pairs": 1098,
+      "embedding_train_triplets": 1106,
+      "embedding_val_pairs": 129,
       "embedding_val_triplets": 121,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
@@ -87,74 +68,61 @@
       "mouth_responses": 53,
       "negative_samples": 53,
       "rem_reflection": 5,
-      "runtime_audit_repairs": 49,
+      "runtime_audit_repairs": 53,
       "tool_schema_cards": 91,
       "train_sft": 298,
       "validation_sft": 53
     },
     "familyCount": 24,
-    "recordCount": 8128
+    "recordCount": 8376
   },
-  "errorGapCount": 79,
-  "gapCount": 79,
+  "errorGapCount": 55,
+  "gapCount": 55,
   "manifest": {
-    "commit": "80bab05fe567e74ae82e2198ec40b680a18fc31a",
-    "fingerprint": "4b39ee2fe7f3352acc50c1a7f032b2d068c2d37ee7a22ab9aea86990bb0af07d",
+    "commit": "c50a21184d3dfced5f49a0b7163b5bb946d0ab69",
+    "fingerprint": "9ee007160ce26b8a32f352f34ab37d48f841fe68f6be5e106afad1f1c6880ce9",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
     "toolCount": 53
   },
-  "nextActionPromptCount": 79,
-  "output": "/Users/ales27pm/lumen-clone/generated/agent_manifest",
+  "nextActionPromptCount": 55,
+  "output": "/home/ales27pm/lumen-clone/generated/agent_manifest",
   "passed": false,
-  "root": "/Users/ales27pm/lumen-clone",
+  "root": "/home/ales27pm/lumen-clone",
   "runtime": {
-    "failureCount": 79,
+    "failureCount": 55,
     "failureTypes": {
-      "argument_mismatch": 27,
-      "e2e_response_quality_chat": 10,
-      "e2e_response_quality_emaildraft": 4,
+      "argument_mismatch": 41,
+      "e2e_response_quality_chat": 1,
+      "e2e_response_quality_emaildraft": 1,
       "e2e_response_quality_memory": 1,
-      "e2e_response_quality_rag": 2,
+      "e2e_response_quality_rag": 1,
       "e2e_response_quality_trigger": 1,
-      "e2e_response_quality_weather": 4,
-      "e2e_response_quality_websearch": 4,
-      "missing_live_argument": 1,
-      "persistent_diagnostics_scenario_not_passed": 24,
-      "unmanifested_live_argument": 1
+      "e2e_response_quality_weather": 1,
+      "e2e_response_quality_websearch": 1,
+      "trace_parse_error": 7
     },
-    "reportCount": 14,
+    "reportCount": 3,
     "sourceLayers": {
-      "e2eTestReport.evidenceLayer": 26,
-      "persistentRuntimeDiagnostics.records": 24,
-      "runtimeManifestAudit": 29
+      "agentBehaviorTraceRecorder": 7,
+      "e2eTestReport.evidenceLayer": 7,
+      "runtimeManifestAudit": 41
     }
   },
   "runtimeAuditInputs": [
-    "/private/tmp/codex-remote-attachments/019eb460-7893-7ea0-b887-5df2cbe7d33b/FBB64368-39BE-4749-962F-E36987234056/1-lumen-agent-grounding-audit-2026-06-11T02-45-59Z-7ca1fbef-0a0b-4bbc-a8b8-1259e5013c24.json",
-    "/private/tmp/codex-remote-attachments/019eb460-7893-7ea0-b887-5df2cbe7d33b/FBB64368-39BE-4749-962F-E36987234056/2-persistent-runtime-diagnostics-export-17.json",
-    "/private/tmp/codex-remote-attachments/019eb460-7893-7ea0-b887-5df2cbe7d33b/FBB64368-39BE-4749-962F-E36987234056/4-persistent-runtime-diagnostics-export-16.json",
-    "/private/tmp/codex-remote-attachments/019eb460-7893-7ea0-b887-5df2cbe7d33b/FBB64368-39BE-4749-962F-E36987234056/5-lumen-live-e2e-report-2026-06-11T02-36-13Z-ed6a02ab-1d50-4c59-9f24-d90788d4eefd.json",
-    "/private/tmp/codex-remote-attachments/019eb460-7893-7ea0-b887-5df2cbe7d33b/FBB64368-39BE-4749-962F-E36987234056/6-lumen-agent-grounding-audit-2026-06-11T02-35-40Z-9c04f486-d930-4cec-b4ff-3121f1ce086e.json",
-    "/private/tmp/codex-remote-attachments/019eb460-7893-7ea0-b887-5df2cbe7d33b/FBB64368-39BE-4749-962F-E36987234056/7-lumen-live-e2e-report-2026-06-11T02-36-32Z-a71a0d97-9455-4d98-8c54-ee7f4831205c.json",
-    "/Users/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-05-09T19-16-04Z-edf67849-4911-45e3-bf18-00f4af251488.json",
-    "/Users/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-05-09T19-40-57Z-b6b16997-41aa-42b7-b52f-00c5bd5bafe3.json",
-    "/Users/ales27pm/lumen-clone/exports/lumen-live-e2e-report-2026-05-09T19-12-05Z-2cc5f76e-e20f-46bb-9de3-931bbe49b1a8.json",
-    "/Users/ales27pm/lumen-clone/exports/lumen-live-e2e-report-2026-05-09T19-15-24Z-a8be4863-bfe6-4ea7-ac44-ff424f8a33c7.json",
-    "/Users/ales27pm/lumen-clone/exports/testflight-20260609-0426/lumen-agent-grounding-audit-2026-06-09T04-26-22Z-28ed69fb-8e1d-4b64-8eaf-6af74120e27e.json",
-    "/Users/ales27pm/lumen-clone/exports/testflight-20260609-0426/lumen-live-e2e-report-2026-06-09T04-22-12Z-90d9cd13-6143-441e-a695-7a6ef65b809d.json",
-    "/Users/ales27pm/lumen-clone/exports/testflight-20260609-0426/lumen-live-e2e-report-2026-06-09T04-22-56Z-c806ad5d-e9ce-4884-8fae-bb0b661bfe73.json",
-    "/Users/ales27pm/lumen-clone/exports/testflight-20260609-0426/persistent-runtime-diagnostics-export 13.json"
+    "/home/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-06-13T09-57-35Z-3c370901-d877-4469-97cb-be29f52e669d.json",
+    "/home/ales27pm/lumen-clone/exports/lumen-live-e2e-report-2026-06-13T09-48-53Z-97ce1d87-5200-437f-81df-bc97c21285b7.json",
+    "/home/ales27pm/lumen-clone/runtime-audits/2026-06-09-third-improve-loop/4-persistent-runtime-diagnostics-export-11.json"
   ],
   "schemaVersion": "1.1.0",
   "startedAt": "1970-01-01T00:00:00+00:00",
   "testFlight": {
-    "buildLabel": "1.0.0 (20260608194342)",
+    "buildLabel": null,
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "4b39ee2fe7f3352acc50c1a7f032b2d068c2d37ee7a22ab9aea86990bb0af07d",
+    "manifestFingerprint": "9ee007160ce26b8a32f352f34ab37d48f841fe68f6be5e106afad1f1c6880ce9",
     "mode": "testflight",
-    "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
+    "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /home/ales27pm/lumen-clone --output /home/ales27pm/lumen-clone/generated/agent_manifest --loop-output /home/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
     "requiresTestFlightAppRun": true,
     "runbookPath": "TESTFLIGHT_RUNBOOK.md",

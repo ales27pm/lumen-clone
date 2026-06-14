@@ -1,0 +1,39 @@
+PASS lumen.audit_to_adapter_pipeline/1.1.0 (qwen3/adapter-first)
+Runtime audits discovered: 3
+
+== train cortex adapter
+/home/ales27pm/lumen-clone/.venv/bin/python tools/fine_tuning/unsloth/train_sft.py --config tools/fine_tuning/unsloth/configs_qwen3_bootstrap/cortex.json --seed 42 --assistant-only-loss
+Skipping import of cpp extensions due to incompatible torch version. Please upgrade to torch >= 2.11.0 (found 2.10.0+cu128).
+/home/ales27pm/lumen-clone/.venv/lib/python3.12/site-packages/unsloth/__init__.py:153: UserWarning: WARNING: Unsloth should be imported before [transformers, peft] to ensure all optimizations are applied. Your code may run slower or encounter memory issues without these optimizations.
+
+Please restructure your imports with 'import unsloth' at the top of your file.
+  from ._gpu_init import *
+🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
+🦥 Unsloth Zoo will now patch everything to make training faster!
+==((====))==  Unsloth 2026.6.6: Fast Qwen3 patching. Transformers: 5.5.0.
+   \\   /|    NVIDIA GeForce RTX 2070. Num GPUs = 1. Max memory: 7.601 GB. Platform: Linux.
+O^O/ \_/ \    Torch: 2.10.0+cu128. CUDA: 7.5. CUDA Toolkit: 12.8. Triton: 3.6.0
+\        /    Bfloat16 = FALSE. FA [Xformers = 0.0.35. FA2 = False]
+ "-____-"     Free license: http://github.com/unslothai/unsloth
+Unsloth: Fast downloading is enabled - ignore downloading bars which are red colored!
+Loading weights:   0%|          | 0/310 [00:00<?, ?it/s]Loading weights:   0%|          | 1/310 [00:00<00:41,  7.53it/s]Loading weights:  46%|████▌     | 143/310 [00:00<00:00, 738.03it/s]Loading weights:  93%|█████████▎| 287/310 [00:00<00:00, 1032.70it/s]Loading weights: 100%|██████████| 310/310 [00:00<00:00, 892.07it/s] 
+unsloth/Qwen3-1.7B-unsloth-bnb-4bit does not have a padding token! Will use pad_token = <|PAD_TOKEN|>.
+Unsloth 2026.6.6 patched 28 layers with 28 QKV layers, 28 O layers and 28 MLP layers.
+Traceback (most recent call last):
+  File "/home/ales27pm/lumen-clone/tools/fine_tuning/unsloth/train_sft.py", line 381, in <module>
+    main()
+  File "/home/ales27pm/lumen-clone/tools/fine_tuning/unsloth/train_sft.py", line 312, in main
+    trainer = SFTTrainer(
+              ^^^^^^^^^^^
+  File "/home/ales27pm/lumen-clone/.venv/lib/python3.12/site-packages/unsloth/trainer.py", line 565, in new_init
+    original_init(self, *args, **kwargs)
+  File "/home/ales27pm/lumen-clone/.venv/lib/python3.12/site-packages/unsloth/trainer.py", line 479, in new_init
+    original_init(self, *args, **kwargs)
+  File "/home/ales27pm/lumen-clone/unsloth_compiled_cache/UnslothSFTTrainer.py", line 1634, in __init__
+    super().__init__(
+  File "/home/ales27pm/lumen-clone/unsloth_compiled_cache/UnslothSFTTrainer.py", line 982, in __init__
+    train_dataset = self._prepare_dataset(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ales27pm/lumen-clone/unsloth_compiled_cache/UnslothSFTTrainer.py", line 1139, in _prepare_dataset
+    raise RuntimeError("Unsloth: You must specify a `formatting_func`")
+RuntimeError: Unsloth: You must specify a `formatting_func`

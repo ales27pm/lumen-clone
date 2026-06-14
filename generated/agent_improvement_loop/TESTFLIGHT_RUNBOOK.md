@@ -4,9 +4,9 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 
 ## Build identity
 
-- Manifest fingerprint: `4b39ee2fe7f3352acc50c1a7f032b2d068c2d37ee7a22ab9aea86990bb0af07d`
-- Manifest commit: `80bab05fe567e74ae82e2198ec40b680a18fc31a`
-- Build label: `1.0.0 (20260608194342)`
+- Manifest fingerprint: `9ee007160ce26b8a32f352f34ab37d48f841fe68f6be5e106afad1f1c6880ce9`
+- Manifest commit: `c50a21184d3dfced5f49a0b7163b5bb946d0ab69`
+- Build label: `None`
 - Expected export: `lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package`
 
 ## Required app flow
@@ -21,7 +21,7 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 8. Feed it into the next loop:
 
 ```bash
-python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'
+python -m lumen_manifest_crawler improve-loop --root /home/ales27pm/lumen-clone --output /home/ales27pm/lumen-clone/generated/agent_manifest --loop-output /home/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'
 ```
 
 ## Scenario queue
