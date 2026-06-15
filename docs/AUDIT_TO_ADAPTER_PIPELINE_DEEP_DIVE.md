@@ -1,5 +1,11 @@
 # Audit-to-adapter pipeline deep dive
 
+## Evidence status
+
+- **Label:** `static_analysis`
+- **What this document proves:** the static implementation map, package fields, inspection rules, and failure modes that the pipeline must check before trusting audit inputs.
+- **What this document does not prove:** that the app emitted fresh device traces, that adapter evidence appeared in a real run, or that any live E2E scenario passed.
+
 This is the deeper implementation map for the Lumen Qwen3 adapter-first loop. It complements `docs/AUDIT_TO_ADAPTER_PIPELINE.md`.
 
 ## Why the first contract was not enough

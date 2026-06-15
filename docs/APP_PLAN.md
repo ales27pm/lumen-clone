@@ -1,5 +1,11 @@
 # Lumen App Plan
 
+## Evidence status
+
+- **Label:** `planned_contract`
+- **What this document proves:** the strategic migration plan, target model stack, reversible configuration policy, and planned evaluation criteria.
+- **What this document does not prove:** that the plan has been implemented, that generated artifacts are fresh, or that runtime/device/live E2E validation has succeeded.
+
 This document tracks strategic implementation work for Lumen that should survive beyond one generated dataset cycle.
 
 ## Qwen3-first model migration plan
