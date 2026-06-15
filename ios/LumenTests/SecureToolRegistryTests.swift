@@ -18,40 +18,45 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isSubset(of: ids))
     }
 
-    func testLegacyAdapterExcludesNativelyPortedProductivityTools() async {
-        let legacyIDs = await MainActor.run { Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id }) }
-        XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
-    }
-
 
     func testCommunicationToolsAreRegisteredNatively() async {
         let ids = await Set(SecureToolRegistry.shared.definitions().map(\.id))
         XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isSubset(of: ids))
     }
 
-    func testLegacyAdapterExcludesNativelyPortedCommunicationTools() async {
-        let legacyIDs = await MainActor.run { Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id }) }
-        XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
+    func testAllCatalogToolsAreRegisteredAsNativeLocalTools() async {
+        let defaultIDs = await Set(SecureToolRegistry.shared.definitions().map(\.id))
+        let catalogIDs = Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
+        XCTAssertTrue(catalogIDs.isSubset(of: defaultIDs))
     }
 
-    func testLegacyToolStatusClassifiesApprovalRequiredResponses() {
+    func testNativeToolGroupsCoverEveryCatalogTool() async {
+        let nativeIDs = ProductivityLocalTool.nativeToolIDs
+            .union(CommunicationLocalTool.nativeToolIDs)
+            .union(LocationMediaHealthLocalTool.nativeToolIDs)
+            .union(KnowledgeLocalTool.nativeToolIDs)
+        let catalogIDs = Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
+        XCTAssertEqual(nativeIDs, catalogIDs)
+    }
+
+    func testToolResultStatusClassifiesApprovalRequiredResponses() {
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),
+            ToolResultStatusClassifier.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),
             .requiresApproval
         )
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "This tool requires explicit user approval before it can run: outlook.mail.send."),
+            ToolResultStatusClassifier.status(from: "This tool requires explicit user approval before it can run: outlook.mail.send."),
             .requiresApproval
         )
     }
 
-    func testLegacyToolStatusClassifiesPermissionFailuresAsDenied() {
+    func testToolResultStatusClassifiesPermissionFailuresAsDenied() {
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "I need calendar access to do that. Please enable it in Settings or provide an alternative."),
+            ToolResultStatusClassifier.status(from: "I need calendar access to do that. Please enable it in Settings or provide an alternative."),
             .denied
         )
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "Missing required permission: contacts."),
+            ToolResultStatusClassifier.status(from: "Missing required permission: contacts."),
             .denied
         )
     }

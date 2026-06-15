@@ -374,7 +374,7 @@ extension AgentGroundingRegressionTests {
             SecureToolDefinition(id: "contacts.lookup", displayName: "Lookup", description: "Lookup", category: .permissionRead, requiredPermissions: [.contacts], supportsBackgroundExecution: false, requiresUserApproval: false, argumentSchemaDescription: "{}", resultPrivacyLevel: .sensitive, maxOutputCharacters: 100)
         ]
 
-        let ids = LegacyToolSchemaBridge.toLegacyToolDefinitions(secure).map(\.id)
+        let ids = ToolSchemaBridge.toCatalogToolDefinitions(secure).map(\.id)
         #expect(ids.contains("rag.search"))
         #expect(ids.contains("contacts.search"))
     }

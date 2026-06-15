@@ -31,20 +31,20 @@ struct CommunicationLocalTool: LocalTool {
     }
 
     let definition: SecureToolDefinition
-    private let legacyToolID: String
+    private let toolID: String
 
-    init(_ legacy: ToolDefinition) {
-        let canonical = ToolRouteGuard.canonicalToolID(legacy.id)
-        self.legacyToolID = canonical
+    init(_ catalogTool: ToolDefinition) {
+        let canonical = ToolRouteGuard.canonicalToolID(catalogTool.id)
+        self.toolID = canonical
         self.definition = SecureToolDefinition(
             id: canonical,
-            displayName: legacy.name,
-            description: legacy.description,
-            category: Self.secureCategory(for: canonical, legacy: legacy),
+            displayName: catalogTool.name,
+            description: catalogTool.description,
+            category: Self.secureCategory(for: canonical, catalogTool: catalogTool),
             requiredPermissions: [],
-            supportsBackgroundExecution: !legacy.requiresApproval,
-            requiresUserApproval: legacy.requiresApproval,
-            argumentSchemaDescription: Self.argumentSchemaDescription(from: legacy.description),
+            supportsBackgroundExecution: !catalogTool.requiresApproval,
+            requiresUserApproval: catalogTool.requiresApproval,
+            argumentSchemaDescription: Self.argumentSchemaDescription(from: catalogTool.description),
             resultPrivacyLevel: .sensitive,
             maxOutputCharacters: Self.maxOutputCharacters(for: canonical)
         )
@@ -55,21 +55,21 @@ struct CommunicationLocalTool: LocalTool {
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         let approval: ToolExecutionApproval = invocation.source == .userInitiated ? .userApproved : .autonomous
         var args = ToolRouteGuard.normalizedArguments(
-            for: legacyToolID,
-            rawToolID: legacyToolID,
+            for: toolID,
+            rawToolID: toolID,
             arguments: invocation.arguments
         )
 
-        guard ToolRouteGuard.canExecuteTool(legacyToolID, arguments: args, approval: approval) else {
+        guard ToolRouteGuard.canExecuteTool(toolID, arguments: args, approval: approval) else {
             return result(
                 invocation: invocation,
-                text: ToolRouteGuard.approvalRequiredMessage(for: legacyToolID),
+                text: ToolRouteGuard.approvalRequiredMessage(for: toolID),
                 status: .requiresApproval,
                 metricsSummary: "approval_required"
             )
         }
 
-        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: legacyToolID, arguments: args) {
+        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
             return result(
                 invocation: invocation,
                 text: permissionFailure,
@@ -79,7 +79,7 @@ struct CommunicationLocalTool: LocalTool {
         }
 
         let text: String
-        switch legacyToolID {
+        switch toolID {
         case "contacts.search":
             text = await ContactsTools.searchContacts(query: args["query"] ?? "")
         case "messages.draft":
@@ -122,13 +122,13 @@ struct CommunicationLocalTool: LocalTool {
         case "outlook.message.forward":
             text = await OutlookTools.forward(args: args)
         default:
-            text = "Tool unavailable pending native communication migration: \(legacyToolID)."
+            text = "Unsupported native communication tool: \(toolID)."
         }
 
         return result(
             invocation: invocation,
             text: text,
-            status: LegacyToolExecutorLocalTool.status(from: text),
+            status: ToolResultStatusClassifier.status(from: text),
             metricsSummary: "native_communication_tool"
         )
     }
@@ -144,18 +144,18 @@ struct CommunicationLocalTool: LocalTool {
             status: status,
             displayText: text,
             modelText: text,
-            structuredPayload: ["toolID": legacyToolID, "implementation": "CommunicationLocalTool"],
+            structuredPayload: ["toolID": toolID, "implementation": "CommunicationLocalTool"],
             privacyLevel: definition.resultPrivacyLevel,
             metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)",
             errorCode: status == .success ? nil : status.rawValue
         )
     }
 
-    private static func secureCategory(for canonical: String, legacy: ToolDefinition) -> SecureToolCategory {
+    private static func secureCategory(for canonical: String, catalogTool: ToolDefinition) -> SecureToolCategory {
         if canonical.contains("delete") || canonical.contains("archive") || canonical.contains("move") {
             return .destructiveAction
         }
-        if legacy.requiresApproval {
+        if catalogTool.requiresApproval {
             return .sensitiveAction
         }
         return .readOnly

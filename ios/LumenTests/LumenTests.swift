@@ -334,9 +334,12 @@ struct LumenTests {
         #expect(SchemaPlaceholderDetector.repairOrFallback("Use two eggs and whisk.") == "Use two eggs and whisk.")
     }
 
-    @Test @MainActor func toolExecutorReturnsUnknownToolMessage() async throws {
-        let result = await ToolExecutor.shared.execute("tool.that.does.not.exist", arguments: [String: String]())
-        #expect(result == "Unknown tool: tool.that.does.not.exist")
+    @Test @MainActor func secureToolRegistryReturnsUnavailableForUnknownTool() async throws {
+        let invocation = ToolInvocation(id: UUID(), toolID: "tool.that.does.not.exist", arguments: [:], source: .modelProposed, conversationID: nil, turnID: nil, createdAt: Date())
+        let context = ToolExecutionContext(isForeground: true, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: .shared)
+        let result = await SecureToolRegistry.shared.execute(invocation, context: context)
+        #expect(result.status == .unavailable)
+        #expect(result.modelText == "Tool unavailable.")
     }
 
     @Test func agentStepCodecRoundTripPreservesValues() async throws {
