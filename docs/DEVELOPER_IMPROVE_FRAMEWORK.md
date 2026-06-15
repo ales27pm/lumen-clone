@@ -23,6 +23,8 @@ Executor, Mouth, Mimicry, REM, and Fleet. The developer process must improve
 those adapters and prompts as one runtime system, not as disconnected full
 model replacements.
 
+See `docs/RUNTIME_STATUS_MATRIX.md` for the current per-surface runtime status matrix and for the labels that distinguish the adapter-first product target from live, bridged, or planned surfaces.
+
 ## Framework Contract
 
 Every improvement pass must answer six questions:
