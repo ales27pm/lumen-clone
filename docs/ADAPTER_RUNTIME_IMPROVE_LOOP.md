@@ -1,5 +1,11 @@
 # Lumen Qwen3 Adapter Runtime and Improve-Loop Doctrine
 
+## Evidence status
+
+- **Label:** `planned_contract`
+- **What this document proves:** the intended Qwen3 adapter-runtime doctrine, artifact layout, runtime invariants, and improve-loop responsibilities.
+- **What this document does not prove:** that the current app build loaded adapters on device, avoided fallback behavior, or passed live E2E validation.
+
 This document is a drift guard. It describes the runtime architecture, artifact layout, training loop, release-bake policy, and runtime-audit fields that must remain aligned after the Qwen3 adapter-runtime migration.
 
 The goal is speed and stability on iPhone. The default Qwen3 runtime must never regress to loading multiple full chat GGUFs per role.

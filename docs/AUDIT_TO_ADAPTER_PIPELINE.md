@@ -1,5 +1,11 @@
 # Lumen audit-to-adapter pipeline
 
+## Evidence status
+
+- **Label:** `planned_contract`
+- **What this document proves:** the intended audit-to-adapter contract, artifact naming, stage ownership, and validation boundaries for the adapter-first loop.
+- **What this document does not prove:** that a specific audit export was captured on device, that adapters were trained or deployed, or that live E2E scenarios passed.
+
 This document is the canonical end-to-end contract for the Lumen Qwen3 adapter-first loop. It ties together the app runtime audit JSONs, code crawl, dataset generation, adapter training, GGUF adapter conversion, Hugging Face publication, and iOS installation/runtime selection.
 
 The machine-readable version lives in `tools/pipeline/audit_to_adapter_contract.py`. The validator is `tools/pipeline/validate_audit_to_adapter_pipeline.py`.

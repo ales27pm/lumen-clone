@@ -2,6 +2,22 @@
 
 This document prevents the improve-loop from mixing different evidence layers.
 
+## Reusable evidence status taxonomy
+
+Use these labels in documentation headers and generated reports to make clear what
+a document or artifact proves, and what it does not prove. The label is an
+evidence boundary, not a quality score.
+
+| Label | Meaning | Proves | Does not prove |
+|---|---|---|---|
+| `live_e2e` | A shipped app ran an end-to-end scenario through the live model path. | Real scenario pass/fail for the captured run. | General correctness outside the run, static completeness, or future device behavior. |
+| `device_runtime` | A shipped app produced runtime diagnostics, traces, or audits on device/TestFlight. | What the app observed, routed, loaded, traced, or diagnosed at runtime. | Scenario pass/fail unless the export is explicitly `live_e2e`. |
+| `simulator_validation` | A simulator build/test/smoke validated runtime wiring before device release. | Simulator-level build or behavior for the tested configuration. | TestFlight/device behavior, production performance, or live E2E scenario truth. |
+| `static_analysis` | Source, manifest, schema, or deterministic checks were inspected without live model execution. | Structural consistency, policy alignment, deterministic invariants, and likely gaps. | Runtime loading, model behavior, device performance, or live scenario pass/fail. |
+| `generated_artifact` | A generated manifest, dataset, report, package, or model artifact exists with declared provenance. | The artifact was produced with the recorded inputs, schema, and command/pipeline. | That the artifact is fresh, deployed, selected at runtime, or behaviorally correct. |
+| `planned_contract` | A design, roadmap, doctrine, or implementation contract records intended behavior. | The intended architecture, responsibilities, constraints, and acceptance criteria. | That the implementation already exists, is wired, or has passed runtime validation. |
+
+
 This is the evidence-layer authority for the broader developer improve
 framework described in `docs/DEVELOPER_IMPROVE_FRAMEWORK.md`. The framework
 defines the full loop; this document defines which export owns which kind of
