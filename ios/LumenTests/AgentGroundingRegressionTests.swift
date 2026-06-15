@@ -358,7 +358,9 @@ extension AgentGroundingRegressionTests {
     @Test func effectiveToolDefinitionsPreserveRouteScopedCanonicalTools() {
         let original = ToolRegistry.all.filter { ["weather", "location.current"].contains($0.id) }
         let grounded = [
-            ToolDefinition(id: "location.snapshot", name: "Location Snapshot", category: .location, description: "Secure location snapshot", icon: "location", tint: "teal", requiresApproval: false, permissionKey: "NSLocationWhenInUseUsageDescription")
+            ToolDefinition(id: "location.snapshot", name: "Location Snapshot", category: .location, description: "Secure location snapshot", icon: "location", tint: "teal", requiresApproval: false, permissionKey: "NSLocationWhenInUseUsageDescription"),
+            ToolDefinition(id: "calendar.create", name: "Create Event", category: .productivity, description: "Create calendar event", icon: "calendar", tint: "blue", requiresApproval: true, permissionKey: "NSCalendarsFullAccessUsageDescription"),
+            ToolDefinition(id: "alarm.list", name: "List Alarms", category: .productivity, description: "List alarms", icon: "alarm", tint: "orange", requiresApproval: false, permissionKey: nil)
         ]
 
         let effective = SlotAgentService.effectiveToolDefinitions(original: original, grounded: grounded)
@@ -366,6 +368,52 @@ extension AgentGroundingRegressionTests {
         #expect(ids.contains("weather"))
         #expect(ids.contains("location.current"))
         #expect(!ids.contains("location.snapshot"))
+        #expect(!ids.contains("calendar.create"))
+        #expect(!ids.contains("alarm.list"))
+    }
+
+    @Test func routeScopedToolDefinitionsIntersectFullRegistryWithIntentTools() {
+        let routing = IntentRouter.classify("What is the weather here and should I carry an umbrella?")
+
+        let scoped = SlotAgentService.routeScopedToolDefinitions(ToolRegistry.all, routing: routing)
+        let ids = Set(scoped.map { ToolRouteGuard.canonicalToolID($0.id) })
+
+        #expect(routing.intent == .weather)
+        #expect(ids == ["location.current", "weather"])
+        #expect(!ids.contains("calendar.create"))
+        #expect(!ids.contains("alarm.authorization_status"))
+    }
+
+    @Test func agentJSONGenerationPreservesRawStructuredOutput() {
+        let agentJSON = GenerateRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "user",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            modelName: "agent-json",
+            relevantMemories: []
+        )
+        let chat = GenerateRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "user",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            modelName: "chat",
+            relevantMemories: []
+        )
+
+        #expect(agentJSON.preservesRawStructuredAgentOutput)
+        #expect(!chat.preservesRawStructuredAgentOutput)
+    }
+
+    @Test func structuredAgentJSONUsesExecutorModelSlot() {
+        #expect(AgentService.structuredAgentModelSlotForTests == .executor)
     }
 
     @Test func secureToolAliasesBridgeToCanonicalLegacyDefinitions() {
@@ -567,6 +615,56 @@ extension AgentGroundingRegressionTests {
         #expect(lower.contains("prefer concise bullet points"))
         #expect(!lower.contains("unavailable"))
         #expect(!lower.contains("internal reasoning"))
+    }
+
+    @Test func agentServiceParseFailureRecoveryProducesWebSearchAction() async {
+        let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: false)
+
+        let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+        let actionToolIDs = recovery?.steps
+            .filter { $0.kind == .action }
+            .compactMap(\.toolID)
+            .map(ToolRouteGuard.canonicalToolID) ?? []
+
+        #expect(actionToolIDs.contains("web.search"))
+        #expect(recovery?.text.lowercased().contains("please ask again") == false)
+    }
+
+    @Test func agentServiceParseFailureRecoveryAnswersChatDirectly() async {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain actor isolation in Swift in simple terms.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: false)
+
+        let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+        let lower = recovery?.text.lowercased() ?? ""
+
+        #expect(recovery?.steps.isEmpty == true)
+        #expect(lower.contains("actor isolation"))
+        #expect(!lower.contains("please ask again"))
+        #expect(!lower.contains("i'm ready"))
     }
 
     @Test func diagnosticsMemoryEmbeddingFailureStillProducesGroundedRawAnswer() {

@@ -1314,6 +1314,7 @@ final class AgentService {
     static let shared = AgentService()
     private static let structuredTurnMaxTokenCap = 384
     private static let structuredTurnMinTokenCap = 128
+    private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
 
     func run(_ req: AgentRequest) -> AsyncStream<AgentEvent> {
         run(req, options: .default)
@@ -1329,13 +1330,13 @@ final class AgentService {
                 let effectiveRequest = options.allowDegradedGrounding
                     ? Self.applyLegacyGroundingAssembly(req)
                     : req
-                await self.runLoop(effectiveRequest, continuation: continuation)
+                await self.runLoop(effectiveRequest, options: options, continuation: continuation)
             }
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 
-    private func runLoop(_ req: AgentRequest, continuation: AsyncStream<AgentEvent>.Continuation) async {
+    private func runLoop(_ req: AgentRequest, options: LegacyAgentRunOptions, continuation: AsyncStream<AgentEvent>.Continuation) async {
         var steps: [AgentStep] = []
         var observations: [(tool: String, result: String)] = []
         var executedActionKeys: Set<String> = []
@@ -1369,7 +1370,7 @@ final class AgentService {
             var thoughtStepYielded = false
             var streamedFinalLen = 0
 
-            for await token in await AppLlamaService.shared.stream(genReq) {
+            for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
                 if Task.isCancelled { break }
                 switch token {
                 case .text(let s):
@@ -1501,7 +1502,7 @@ final class AgentService {
                 break stepsLoop
             }
 
-            // Malformed / empty output — repair into a user-facing final and persist diagnostics.
+            // Malformed / empty output - repair into a user-facing final and persist diagnostics.
             if let parseError = turn.parseError {
                 recordParseFailure(
                     req: req,
@@ -1512,6 +1513,16 @@ final class AgentService {
                     userTurn: userTurn,
                     stepIndex: stepIndex
                 )
+
+                if let recovery = await Self.structuredParseFailureRecovery(req: req, options: options) {
+                    for step in recovery.steps {
+                        steps.append(step)
+                        continuation.yield(.step(step))
+                    }
+                    finalAnswer = recovery.text
+                    continuation.yield(.finalDelta(finalAnswer))
+                    break stepsLoop
+                }
 
                 let reflectionText = diagnosticReflection(for: parseError, raw: raw)
                 let reflection = AgentStep(kind: .reflection, content: reflectionText)
@@ -1851,6 +1862,82 @@ final class AgentService {
         )
         AgentParseNoiseRecorder.record(trace)
     }
+
+    private nonisolated static func structuredParseFailureRecovery(
+        req: AgentRequest,
+        options: LegacyAgentRunOptions
+    ) async -> (text: String, steps: [AgentStep])? {
+        let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return nil }
+
+        let routing = IntentRouter.classify(prompt)
+        guard routing.intent != .unknown else { return nil }
+
+        let recoveryOptions = LegacyAgentRunOptions(
+            modelContext: options.modelContext,
+            conversationID: options.conversationID ?? req.conversationID,
+            turnID: options.turnID ?? req.turnID,
+            groundingMode: options.groundingMode,
+            allowDegradedGrounding: options.allowDegradedGrounding,
+            preventDoubleGrounding: options.preventDoubleGrounding,
+            diagnosticsEnabled: options.diagnosticsEnabled || options.groundingMode == .slotAgent
+        )
+        let recovery = await SlotAgentService.deterministicCompatibilityResponseForRecovery(
+            original: req,
+            effective: req,
+            options: recoveryOptions
+        )
+        let text = recovery.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isGenericParseRecoveryText(text) else { return nil }
+
+        if IntentRouter.intentRequiresTool(routing), !routing.requiresClarification {
+            let actionToolIDs = Set(recovery.steps
+                .filter { $0.kind == .action || $0.kind == .approvalBoundary }
+                .compactMap(\.toolID)
+                .map(ToolRouteGuard.canonicalToolID))
+            guard !actionToolIDs.isEmpty,
+                  actionToolIDs.contains(where: { routing.allowedToolIDs.contains($0) }) else {
+                return nil
+            }
+        }
+
+        RuntimeFallbackLogger.record(
+            source: "agent-service-structured-turn",
+            primaryBehavior: "parse model output as structured agent turn",
+            fallbackBehavior: "recover with deterministic route-scoped action/final",
+            reason: "parse-failure-deterministic-recovery",
+            consequence: "model-backed turn was preserved but repaired with policy-scoped execution",
+            values: [
+                "turnID": req.turnID?.uuidString ?? "none",
+                "conversationID": req.conversationID?.uuidString ?? "none",
+                "promptSHA256": RuntimeFallbackLogger.promptHash(req.userMessage),
+                "intent": routing.intent.rawValue,
+                "stepCount": String(recovery.steps.count)
+            ]
+        )
+        return (text, recovery.steps)
+    }
+
+    private nonisolated static func isGenericParseRecoveryText(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("please ask again or tell me what you'd like to do next")
+            || lower == "i'm ready. tell me what you want to do next."
+            || lower == FinalOutputSanitizer.fallback.lowercased()
+            || lower.contains("i couldn't produce a confident answer")
+    }
+
+#if DEBUG
+    nonisolated static var structuredAgentModelSlotForTests: LumenModelSlot {
+        structuredAgentModelSlot
+    }
+
+    nonisolated static func structuredParseFailureRecoveryForTests(
+        req: AgentRequest,
+        options: LegacyAgentRunOptions
+    ) async -> (text: String, steps: [AgentStep])? {
+        await structuredParseFailureRecovery(req: req, options: options)
+    }
+#endif
 
     // MARK: - Fallback synthesis
 

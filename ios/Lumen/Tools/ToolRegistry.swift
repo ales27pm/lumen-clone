@@ -67,4 +67,50 @@ final class SecureToolRegistry {
             return bounded
         }
     }
+
+    func executeLegacyTool(
+        _ rawToolID: String,
+        arguments: AgentJSONArguments,
+        approval: ToolExecutionApproval,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil,
+        modelContext: ModelContext? = nil,
+        isBackground: Bool = false
+    ) async -> String {
+        let canonicalToolID = ToolRouteGuard.canonicalToolID(rawToolID)
+        let normalizedArguments = ToolRouteGuard.normalizedArguments(
+            for: canonicalToolID,
+            rawToolID: rawToolID,
+            arguments: arguments.stringCoerced
+        )
+        let source: ToolInvocationSource
+        if approval == .userApproved {
+            source = .userInitiated
+        } else if isBackground {
+            source = .backgroundTrigger
+        } else {
+            source = .modelProposed
+        }
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: canonicalToolID,
+            arguments: normalizedArguments,
+            source: source,
+            conversationID: conversationID,
+            turnID: turnID,
+            createdAt: Date()
+        )
+        let context = ToolExecutionContext(
+            isForeground: !isBackground,
+            appState: nil,
+            modelContext: modelContext,
+            permissionRegistry: .shared,
+            metricsStore: .shared
+        )
+        let result = await execute(invocation, context: context)
+        if result.modelText == "Approval required." || result.modelText.isEmpty {
+            return result.displayText
+        }
+        return result.modelText
+    }
 }
