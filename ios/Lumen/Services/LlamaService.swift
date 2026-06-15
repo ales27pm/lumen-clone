@@ -117,6 +117,10 @@ nonisolated struct GenerateRequest: Sendable {
             reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters
         )
     }
+
+    var preservesRawStructuredAgentOutput: Bool {
+        modelName == "agent-json"
+    }
 }
 
 nonisolated enum GenerationToken: Sendable {
@@ -1211,6 +1215,7 @@ final actor AppLlamaService {
                         seed: groundedRequest.seed,
                         cancellationToken: cancellationToken
                     )
+                    let preservesStructuredAgentOutput = groundedRequest.preservesRawStructuredAgentOutput
                     var parser = ReasoningAwareStreamParser(
                         config: ReasoningAwareStreamParserConfig(
                             captureReasoning: groundedRequest.reasoningCaptureEnabled,
@@ -1228,40 +1233,58 @@ final actor AppLlamaService {
                             PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaFirstToken, values: ["latencyMs": String(firstTokenMs ?? 0)]))
                         }
                         outputChunks += 1
-                        let parsedDelta = parser.ingest(chunk)
-                        let safeDelta = streamingSanitizer.ingest(parsedDelta.visibleDelta)
-                        if !safeDelta.isEmpty {
-                            streamedSanitized += safeDelta
-                            continuation.yield(GenerationToken.text(safeDelta))
+                        if preservesStructuredAgentOutput {
+                            streamedSanitized += chunk
+                            continuation.yield(GenerationToken.text(chunk))
+                        } else {
+                            let parsedDelta = parser.ingest(chunk)
+                            let safeDelta = streamingSanitizer.ingest(parsedDelta.visibleDelta)
+                            if !safeDelta.isEmpty {
+                                streamedSanitized += safeDelta
+                                continuation.yield(GenerationToken.text(safeDelta))
+                            }
                         }
                         if outputChunks.isMultiple(of: LlamaRuntimeScheduling.decodeYieldTokenInterval) {
                             await Task.yield()
                         }
                     }
-                    let parserFinishDelta = parser.finish()
-                    let finishSafeDelta = streamingSanitizer.ingest(parserFinishDelta.visibleDelta)
-                    if !finishSafeDelta.isEmpty {
-                        streamedSanitized += finishSafeDelta
-                        continuation.yield(GenerationToken.text(finishSafeDelta))
-                    }
-                    let finalization = streamingSanitizer.finish()
+                    let parserResult: ReasoningAwareStreamParserResult
                     let sanitized: String
-                    switch finalization {
-                    case let .append(final, remainingDelta):
-                        sanitized = final.text
-                        if !remainingDelta.isEmpty {
-                            streamedSanitized += remainingDelta
-                            continuation.yield(GenerationToken.text(remainingDelta))
+                    if preservesStructuredAgentOutput {
+                        sanitized = streamedSanitized
+                        parserResult = ReasoningAwareStreamParserResult(
+                            rawModelOutput: streamedSanitized,
+                            reasoningText: nil,
+                            visibleAnswer: streamedSanitized,
+                            parserWarnings: [],
+                            unterminatedReasoningBlock: false,
+                            reasoningWasTruncated: false
+                        )
+                    } else {
+                        let parserFinishDelta = parser.finish()
+                        let finishSafeDelta = streamingSanitizer.ingest(parserFinishDelta.visibleDelta)
+                        if !finishSafeDelta.isEmpty {
+                            streamedSanitized += finishSafeDelta
+                            continuation.yield(GenerationToken.text(finishSafeDelta))
                         }
-                    case let .replace(final):
-                        sanitized = final.text
-                        logger.error("stream_finalization_mismatch slot=\(slot.rawValue, privacy: .public)")
+                        let finalization = streamingSanitizer.finish()
+                        switch finalization {
+                        case let .append(final, remainingDelta):
+                            sanitized = final.text
+                            if !remainingDelta.isEmpty {
+                                streamedSanitized += remainingDelta
+                                continuation.yield(GenerationToken.text(remainingDelta))
+                            }
+                        case let .replace(final):
+                            sanitized = final.text
+                            logger.error("stream_finalization_mismatch slot=\(slot.rawValue, privacy: .public)")
+                        }
+                        parserResult = parser.result
                     }
                     let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
                     let decodeMs = firstTokenMs.map { max(0, elapsedMs - $0) }
                     let preFirstTokenMs = firstTokenMs
                     let outputTokenEstimate = max(0, streamedSanitized.split(whereSeparator: \.isWhitespace).count)
-                    let parserResult = parser.result
                     let reasoningTokenEstimate = parserResult.reasoningText.map { max(0, $0.split(whereSeparator: \.isWhitespace).count) }
                     let tokenUsage = TraceTokenUsage(
                         promptTokens: estimatedPromptTokenCount,

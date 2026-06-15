@@ -360,6 +360,8 @@ final class SlotAgentService {
     nonisolated static func effectiveToolDefinitions(original: [ToolDefinition], grounded: [ToolDefinition]) -> [ToolDefinition] {
         guard !grounded.isEmpty else { return original }
 
+        let originalCanonicalIDs = Set(original.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let preserveOriginalScope = !originalCanonicalIDs.isEmpty
         var seen: Set<String> = []
         var merged: [ToolDefinition] = []
         func appendCanonical(_ tool: ToolDefinition) {
@@ -370,8 +372,23 @@ final class SlotAgentService {
         }
 
         original.forEach(appendCanonical)
-        grounded.forEach(appendCanonical)
+        grounded.forEach { tool in
+            let canonical = ToolRouteGuard.canonicalToolID(tool.id)
+            guard !preserveOriginalScope || originalCanonicalIDs.contains(canonical) else { return }
+            appendCanonical(tool)
+        }
         return merged
+    }
+
+    nonisolated static func routeScopedToolDefinitions(_ tools: [ToolDefinition], routing: IntentRoutingDecision) -> [ToolDefinition] {
+        guard IntentRouter.intentRequiresTool(routing), !routing.requiresClarification else { return [] }
+        var seen: Set<String> = []
+        return tools.compactMap { tool in
+            let canonical = ToolRouteGuard.canonicalToolID(tool.id)
+            guard routing.allowedToolIDs.contains(canonical), !seen.contains(canonical) else { return nil }
+            seen.insert(canonical)
+            return ToolRegistry.find(id: canonical) ?? tool
+        }
     }
 
     nonisolated static func sanitizeHistoryEntryForPromptContext(role: MessageRole, content: String) -> String? {
@@ -555,7 +572,7 @@ final class SlotAgentService {
         guard IntentRouter.intentRequiresTool(routing) else { return false }
         if routing.requiresClarification { return true }
 
-        let availableToolIDs = Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let availableToolIDs = Set(routeScopedToolDefinitions(req.availableTools, routing: routing).map { ToolRouteGuard.canonicalToolID($0.id) })
         return !DeterministicToolPlanner.planSteps(
             routing: routing,
             prompt: prompt,
@@ -596,7 +613,8 @@ final class SlotAgentService {
 
     private nonisolated static func deterministicCompatibilityResponse(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> DeterministicCompatibilityResponse {
         let routing = IntentRouter.classify(original.userMessage)
-        let availableToolIDs = Set(effective.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let scopedTools = routeScopedToolDefinitions(effective.availableTools, routing: routing)
+        let availableToolIDs = Set(scopedTools.map { ToolRouteGuard.canonicalToolID($0.id) })
         Self.emitChatTrace(req: original, phase: "routing", values: [
             "intent": routing.intent.rawValue,
             "requiresClarification": String(routing.requiresClarification),
@@ -876,9 +894,13 @@ final class SlotAgentService {
         return ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    nonisolated static func deterministicCompatibilityResponseForTests(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> (text: String, steps: [AgentStep]) {
+    nonisolated static func deterministicCompatibilityResponseForRecovery(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> (text: String, steps: [AgentStep]) {
         let response = await deterministicCompatibilityResponse(original: original, effective: effective, options: options)
         return (response.text, response.steps)
+    }
+
+    nonisolated static func deterministicCompatibilityResponseForTests(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> (text: String, steps: [AgentStep]) {
+        await deterministicCompatibilityResponseForRecovery(original: original, effective: effective, options: options)
     }
 
 
@@ -952,6 +974,11 @@ final class SlotAgentService {
             return "Tool \(toolID) is disabled. Enable it in Tools."
         }
 
+        if options.diagnosticsEnabled,
+           let diagnosticObservation = diagnosticsObservationWithoutExecution(toolID: toolID) {
+            return diagnosticObservation
+        }
+
         let result = await SecureToolRegistry.shared.executeLegacyTool(
             toolID,
             arguments: action.args,
@@ -965,6 +992,17 @@ final class SlotAgentService {
             return diagnosticsObservationOverride(toolID: toolID, action: action, result: result)
         }
         return result
+    }
+
+    private nonisolated static func diagnosticsObservationWithoutExecution(toolID: String) -> String? {
+        let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
+
+        switch canonicalTool {
+        case "calendar.list":
+            return "Calendar event: Diagnostic calendar access is unavailable, but the calendar.list action was selected correctly."
+        default:
+            return nil
+        }
     }
 
     nonisolated static func diagnosticsObservationOverrideForTests(toolID: String, action: AgentAction, result: String) -> String {
