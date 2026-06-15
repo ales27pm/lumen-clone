@@ -31,6 +31,9 @@ def write_outputs(
     fine_tuning_output_dir: Path | None = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    # AgentBehaviorManifest.json is intentionally source-derived and deterministic.
+    # Its artifactStatus field declares runtimeEvidence=false so synced app bundles
+    # cannot be mistaken for live TestFlight proof.
     canonical_path = output_dir / "AgentBehaviorManifest.json"
     manifest.write_json(canonical_path, pretty=False)
     if pretty:
