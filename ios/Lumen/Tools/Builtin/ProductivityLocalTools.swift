@@ -28,20 +28,20 @@ struct ProductivityLocalTool: LocalTool {
     }
 
     let definition: SecureToolDefinition
-    private let legacyToolID: String
+    private let toolID: String
 
-    init(_ legacy: ToolDefinition) {
-        let canonical = ToolRouteGuard.canonicalToolID(legacy.id)
-        self.legacyToolID = canonical
+    init(_ catalogTool: ToolDefinition) {
+        let canonical = ToolRouteGuard.canonicalToolID(catalogTool.id)
+        self.toolID = canonical
         self.definition = SecureToolDefinition(
             id: canonical,
-            displayName: legacy.name,
-            description: legacy.description,
-            category: Self.secureCategory(for: canonical, legacy: legacy),
+            displayName: catalogTool.name,
+            description: catalogTool.description,
+            category: Self.secureCategory(for: canonical, catalogTool: catalogTool),
             requiredPermissions: [],
             supportsBackgroundExecution: Self.supportsBackgroundExecution(canonical),
-            requiresUserApproval: legacy.requiresApproval,
-            argumentSchemaDescription: Self.argumentSchemaDescription(from: legacy.description),
+            requiresUserApproval: catalogTool.requiresApproval,
+            argumentSchemaDescription: Self.argumentSchemaDescription(from: catalogTool.description),
             resultPrivacyLevel: .moderate,
             maxOutputCharacters: 2_400
         )
@@ -52,21 +52,21 @@ struct ProductivityLocalTool: LocalTool {
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         let approval: ToolExecutionApproval = invocation.source == .userInitiated ? .userApproved : .autonomous
         let args = ToolRouteGuard.normalizedArguments(
-            for: legacyToolID,
-            rawToolID: legacyToolID,
+            for: toolID,
+            rawToolID: toolID,
             arguments: invocation.arguments
         )
 
-        guard ToolRouteGuard.canExecuteTool(legacyToolID, arguments: args, approval: approval) else {
+        guard ToolRouteGuard.canExecuteTool(toolID, arguments: args, approval: approval) else {
             return result(
                 invocation: invocation,
-                text: ToolRouteGuard.approvalRequiredMessage(for: legacyToolID),
+                text: ToolRouteGuard.approvalRequiredMessage(for: toolID),
                 status: .requiresApproval,
                 metricsSummary: "approval_required"
             )
         }
 
-        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: legacyToolID, arguments: args) {
+        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
             return result(
                 invocation: invocation,
                 text: permissionFailure,
@@ -76,7 +76,7 @@ struct ProductivityLocalTool: LocalTool {
         }
 
         let text: String
-        switch legacyToolID {
+        switch toolID {
         case "calendar.create":
             text = await CalendarTools.createEvent(
                 title: args["title"] ?? "New Event",
@@ -115,13 +115,13 @@ struct ProductivityLocalTool: LocalTool {
         case "alarm.cancel":
             text = await AlarmTools.cancel(id: args["id"] ?? args["title"] ?? "")
         default:
-            text = "Tool unavailable pending native productivity migration: \(legacyToolID)."
+            text = "Unsupported native productivity tool: \(toolID)."
         }
 
         return result(
             invocation: invocation,
             text: text,
-            status: LegacyToolExecutorLocalTool.status(from: text),
+            status: ToolResultStatusClassifier.status(from: text),
             metricsSummary: "native_productivity_tool"
         )
     }
@@ -137,18 +137,18 @@ struct ProductivityLocalTool: LocalTool {
             status: status,
             displayText: text,
             modelText: text,
-            structuredPayload: ["toolID": legacyToolID, "implementation": "ProductivityLocalTool"],
+            structuredPayload: ["toolID": toolID, "implementation": "ProductivityLocalTool"],
             privacyLevel: definition.resultPrivacyLevel,
             metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)",
             errorCode: status == .success ? nil : status.rawValue
         )
     }
 
-    private static func secureCategory(for canonical: String, legacy: ToolDefinition) -> SecureToolCategory {
+    private static func secureCategory(for canonical: String, catalogTool: ToolDefinition) -> SecureToolCategory {
         if canonical.contains("cancel") || canonical.contains("stop") {
             return .destructiveAction
         }
-        if legacy.requiresApproval {
+        if catalogTool.requiresApproval {
             return .sensitiveAction
         }
         switch canonical {

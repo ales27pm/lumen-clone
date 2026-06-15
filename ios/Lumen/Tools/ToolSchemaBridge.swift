@@ -1,10 +1,10 @@
 import Foundation
 
 @MainActor
-enum LegacyToolSchemaBridge {
-    nonisolated static func toLegacyToolDefinitions(_ secure: [SecureToolDefinition]) -> [ToolDefinition] {
+enum ToolSchemaBridge {
+    nonisolated static func toCatalogToolDefinitions(_ secure: [SecureToolDefinition]) -> [ToolDefinition] {
         secure.map {
-            if let canonical = canonicalLegacyToolDefinition(forSecureToolID: $0.id) {
+            if let canonical = canonicalCatalogToolDefinition(forSecureToolID: $0.id) {
                 return canonical
             }
             return ToolDefinition(
@@ -20,7 +20,7 @@ enum LegacyToolSchemaBridge {
         }
     }
 
-    nonisolated static func canonicalLegacyToolDefinition(forSecureToolID id: String) -> ToolDefinition? {
+    nonisolated static func canonicalCatalogToolDefinition(forSecureToolID id: String) -> ToolDefinition? {
         switch id {
         case "calendar.read":
             return ToolRegistry.find(id: "calendar.list")

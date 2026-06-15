@@ -42,7 +42,7 @@ final class LegacyTurnGroundingCoordinator {
         if let cached = await cache.get(key) {
             AgentGroundingInstrumentation.mark("after LegacyGroundingBridge.build", metrics: .init(sectionCount: cached.sections.count, toolCount: cached.secureTools.count, memoryCount: cached.grounding.memoryCount, promptChars: cached.renderedPromptContext.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: bridgeStart))
             PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .groundingCost, values: ["elapsedMs": String(Int(AgentGroundingInstrumentation.elapsedMs(since: bridgeStart))), "sectionCount": String(cached.sections.count), "promptChars": String(cached.renderedPromptContext.count), "toolCount": String(cached.secureTools.count), "memoryCount": String(cached.grounding.memoryCount), "source": "cache"]))
-            return .init(grounding: cached.grounding, sections: cached.sections, legacyTools: LegacyToolSchemaBridge.toLegacyToolDefinitions(cached.secureTools), promptInjection: cached.renderedPromptContext, metricsSummary: "cache")
+            return .init(grounding: cached.grounding, sections: cached.sections, legacyTools: ToolSchemaBridge.toCatalogToolDefinitions(cached.secureTools), promptInjection: cached.renderedPromptContext, metricsSummary: "cache")
         }
         let turn = AssistantTurnContext(task: task, input: userMessage, isForeground: !isBackground, lowPowerMode: lowPower, thermalState: ProcessInfo.processInfo.thermalState)
         let bundle = try await bridge.build(userMessage: userMessage, conversationID: conversationID, turnID: turnID, history: history, modelContext: modelContext, turn: turn, cancellationToken: cancellationToken)
@@ -61,7 +61,7 @@ final class LegacyTurnGroundingCoordinator {
             roleAwareBundle = .init(grounding: grounding, sections: sections, renderedPromptContext: rendered, secureTools: bundle.secureTools, metricsSummary: bundle.metricsSummary)
         }
         await cache.put(key, bundle: roleAwareBundle)
-        return .init(grounding: roleAwareBundle.grounding, sections: roleAwareBundle.sections, legacyTools: LegacyToolSchemaBridge.toLegacyToolDefinitions(roleAwareBundle.secureTools), promptInjection: roleAwareBundle.renderedPromptContext, metricsSummary: roleAwareBundle.metricsSummary)
+        return .init(grounding: roleAwareBundle.grounding, sections: roleAwareBundle.sections, legacyTools: ToolSchemaBridge.toCatalogToolDefinitions(roleAwareBundle.secureTools), promptInjection: roleAwareBundle.renderedPromptContext, metricsSummary: roleAwareBundle.metricsSummary)
     }
 
     func prepareGroundedRequest(_ request: LegacyGroundingRequest) async -> LegacyGroundingResult {
