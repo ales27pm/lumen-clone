@@ -7,6 +7,10 @@ from typing import Any
 from pydantic import BaseModel, Field, ConfigDict
 
 DETERMINISTIC_GENERATED_AT = "1970-01-01T00:00:00+00:00"
+# The checked-in manifest is a deterministic source-derived artifact, not a
+# timestamped runtime/TestFlight export. Keeping generatedAt fixed at the Unix
+# epoch makes repeated crawler runs byte-for-byte comparable when source inputs
+# do not change.
 
 
 class SourceFileHash(BaseModel):
@@ -17,6 +21,14 @@ class SourceFileHash(BaseModel):
 class SourceIntegrity(BaseModel):
     commit: str | None = None
     files: list[SourceFileHash] = Field(default_factory=list)
+
+
+class ArtifactStatusManifest(BaseModel):
+    artifactStatus: str = "deterministic_source_manifest"
+    deterministicBuild: bool = True
+    runtimeEvidence: bool = False
+    generatedAtPolicy: str = "unix_epoch_for_reproducible_source_artifact"
+    liveTestFlightProof: bool = False
 
 
 class AppManifestInfo(BaseModel):
@@ -156,6 +168,7 @@ class AgentBehaviorManifest(BaseModel):
     schemaVersion: str = "1.0.0"
     app: AppManifestInfo = Field(default_factory=AppManifestInfo)
     sourceIntegrity: SourceIntegrity = Field(default_factory=SourceIntegrity)
+    artifactStatus: ArtifactStatusManifest = Field(default_factory=ArtifactStatusManifest)
     fleet: FleetManifest = Field(default_factory=FleetManifest)
     fleetTopology: FleetTopologyManifest = Field(default_factory=FleetTopologyManifest)
     tools: list[ToolManifest] = Field(default_factory=list)
