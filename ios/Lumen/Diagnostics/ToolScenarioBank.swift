@@ -36,6 +36,7 @@ nonisolated struct ToolScenarioCoverageSummary: Codable, Sendable, Equatable {
 
 nonisolated enum ToolScenarioBank {
     static let minimumScenariosPerTool = 3
+    private static let sampleUUID = "00000000-0000-0000-0000-000000000000"
 
     static func entries(tools: [ToolDefinition] = ToolRegistry.all) -> [ToolScenarioBankEntry] {
         tools.flatMap { scenarios(for: $0) }
@@ -138,7 +139,9 @@ nonisolated enum ToolScenarioBank {
             slots.append(.rem)
             slots.append(.embedding)
         }
-        slots.append(.mimicry)
+        if requiresApproval {
+            slots.append(.mimicry)
+        }
         slots.append(.mouth)
         return Array(NSOrderedSet(array: slots).compactMap { $0 as? AgentWorkflowSlot })
     }
@@ -157,8 +160,12 @@ nonisolated enum ToolScenarioBank {
         if toolID.hasPrefix("reminders.") { return UserIntent.reminder.rawValue }
         if toolID.hasPrefix("alarm.") { return UserIntent.alarm.rawValue }
         if toolID.hasPrefix("trigger.") { return UserIntent.trigger.rawValue }
+        if toolID == "phone.call" { return UserIntent.phoneCall.rawValue }
         if toolID.hasPrefix("contacts.") { return UserIntent.contactSearch.rawValue }
-        if toolID.hasPrefix("photos.") || toolID == "camera.capture" { return UserIntent.camera.rawValue }
+        if toolID.hasPrefix("photos.") { return UserIntent.photos.rawValue }
+        if toolID == "camera.capture" { return UserIntent.camera.rawValue }
+        if toolID == "health.summary" { return UserIntent.health.rawValue }
+        if toolID == "motion.activity" { return UserIntent.motion.rawValue }
         return nil
     }
 
@@ -172,14 +179,17 @@ nonisolated enum ToolScenarioBank {
         case "rag.search": return "Search my local files for the latest Lumen diagnostics report."
         case "rag.index_files": return "Reindex my imported files."
         case "rag.index_photos": return "Reindex photo metadata for the last 3 months."
+        case "files.read": return "Read document diagnostics.txt from imported files."
         case "mail.draft": return "Draft an email to alex@example.com saying I will send the report tonight."
         case "messages.draft": return "Draft a message to 5551234567 saying I am running late."
+        case "outlook.status": return "Check Outlook sign in status."
+        case "outlook.folders.list": return "List my Outlook folders."
         case "outlook.messages.list": return "List my latest Outlook emails."
         case "outlook.message.read": return "Read my latest Outlook email."
         case "outlook.messages.search": return "Search Outlook for messages about invoices."
         case "outlook.draft.create": return "Create an Outlook draft to alex@example.com with subject Update and body All good."
         case "outlook.mail.send": return "Send an Outlook email to alex@example.com with subject Test and body Hello."
-        case "outlook.attachments.list": return "List attachments for the latest Outlook message."
+        case "outlook.attachments.list": return "List attachments for my latest Outlook email."
         case "outlook.message.reply": return "Reply to my latest Outlook email saying thanks."
         case "outlook.message.reply_all": return "Reply all to my latest Outlook email saying thanks."
         case "outlook.message.forward": return "Forward my latest Outlook email to alex@example.com."
@@ -199,11 +209,15 @@ nonisolated enum ToolScenarioBank {
         case "trigger.cancel": return "Cancel the trigger called nightly summary."
         case "trigger.list": return "List scheduled agent runs."
         case "alarm.schedule": return "Schedule an alarm called Test in 10 minutes."
-        case "alarm.cancel": return "Cancel the alarm called Test."
+        case "alarm.cancel": return "Cancel alarm \(sampleUUID)."
         case "alarm.countdown": return "Start a countdown called Focus for 5 minutes."
         case "alarm.list": return "List active alarms."
         case "alarm.authorization_status": return "Check alarm authorization status."
         case "alarm.request_authorization": return "Request permission to use alarms."
+        case "alarm.pause": return "Pause alarm \(sampleUUID)."
+        case "alarm.resume": return "Resume alarm \(sampleUUID)."
+        case "alarm.stop": return "Stop alarm \(sampleUUID)."
+        case "alarm.snooze": return "Snooze alarm \(sampleUUID)."
         case "contacts.search": return "Search my contacts for Alex."
         case "phone.call": return "Call 5551234567."
         case "photos.search": return "Search my photos for receipts."
@@ -216,16 +230,59 @@ nonisolated enum ToolScenarioBank {
 
     private static func alternatePrompt(for toolID: String, name: String) -> String {
         switch toolID {
-        case "weather": return "Do I need an umbrella here?"
-        case "web.search": return "Look up recent Swift concurrency best practices."
+        case "weather": return "Will it rain here today?"
+        case "web.search": return "Look up recent Swift concurrency best practices online."
+        case "web.fetch": return "Read this URL: https://example.com."
         case "memory.save": return "Keep in mind that I like short answers."
         case "memory.recall": return "Tell me what style I asked you to use."
-        case "mail.draft": return "Write a quick email for Alex: I will send it tonight."
+        case "rag.search": return "Find Lumen architecture notes in my local files."
+        case "rag.index_files": return "Refresh the file retrieval index."
+        case "rag.index_photos": return "Refresh the photo retrieval index."
+        case "files.read": return "Open local document diagnostics.txt."
+        case "mail.draft": return "Write a quick email to alex@example.com saying I will send it tonight."
         case "messages.draft": return "Text 5551234567 that I am late."
+        case "outlook.status": return "Am I signed in to Outlook?"
+        case "outlook.folders.list": return "Show Outlook mail folders."
+        case "outlook.messages.list": return "Show recent Outlook mail."
+        case "outlook.messages.search": return "Find invoice emails in Outlook."
+        case "outlook.message.read": return "Read the last email in Outlook."
+        case "outlook.attachments.list": return "Show attachments on the latest Outlook email."
+        case "outlook.draft.create": return "Compose an Outlook draft to alex@example.com subject Update body Done."
+        case "outlook.mail.send": return "Send Outlook mail to alex@example.com subject Test body Hello."
+        case "outlook.message.reply": return "Respond to my latest Outlook email saying thanks."
+        case "outlook.message.reply_all": return "Respond to all on my latest Outlook email saying thanks."
+        case "outlook.message.forward": return "Forward the last Outlook email to alex@example.com."
+        case "outlook.message.archive": return "Move latest Outlook email to archive."
+        case "outlook.message.delete": return "Trash the latest Outlook email."
+        case "outlook.message.mark_read": return "Set the latest Outlook email read."
+        case "outlook.message.mark_unread": return "Set the latest Outlook email unread."
+        case "outlook.message.move": return "Move latest Outlook email to inbox."
         case "location.current": return "Where am I right now?"
         case "maps.search": return "Find coffee near me."
-        case "outlook.message.read": return "Read the last email in Outlook."
+        case "maps.directions": return "Navigate to the nearest hardware store."
+        case "calendar.create": return "Set an appointment for tomorrow morning at nine in my calendar."
+        case "calendar.list": return "What's on my schedule today?"
+        case "reminders.create": return "Create a reminder to review logs."
+        case "reminders.list": return "List pending reminders."
         case "trigger.create": return "Run a reminder summary tonight in the background."
+        case "trigger.cancel": return "Cancel trigger named nightly summary."
+        case "trigger.list": return "Show scheduled agent runs."
+        case "alarm.authorization_status": return "Show alarm permission status."
+        case "alarm.request_authorization": return "Ask for alarm authorization."
+        case "alarm.schedule": return "Set an alarm for tomorrow at 7."
+        case "alarm.countdown": return "Start a timer for 10 minutes."
+        case "alarm.list": return "Show active alarms."
+        case "alarm.pause": return "Pause alarm \(sampleUUID)."
+        case "alarm.resume": return "Resume alarm \(sampleUUID)."
+        case "alarm.stop": return "Stop alarm \(sampleUUID)."
+        case "alarm.snooze": return "Snooze alarm \(sampleUUID)."
+        case "alarm.cancel": return "Delete alarm \(sampleUUID)."
+        case "contacts.search": return "Find Alex in my contacts."
+        case "phone.call": return "Dial 5551234567."
+        case "photos.search": return "Find receipt pictures in my photo library."
+        case "camera.capture": return "Take a photo now."
+        case "health.summary": return "Read my steps and sleep summary."
+        case "motion.activity": return "Am I walking or stationary right now?"
         default: return "Try \(name) using natural wording instead of exact arguments."
         }
     }
@@ -245,10 +302,32 @@ nonisolated enum ToolScenarioBank {
 
     private static func approvalPrompt(for toolID: String, name: String) -> String {
         switch toolID {
+        case "calendar.create": return "Create a calendar event called Approval Test in 10 minutes."
+        case "reminders.create": return "Remind me to check approval boundary."
+        case "mail.draft": return "Draft an email to alex@example.com saying approval boundary works."
+        case "messages.draft": return "Text 5551234567 that approval boundary works."
+        case "outlook.draft.create": return "Create an Outlook draft to alex@example.com with subject Approval and body Boundary."
         case "outlook.mail.send": return "Send a test email to alex@example.com."
+        case "outlook.message.reply": return "Reply to my latest Outlook email saying approved."
+        case "outlook.message.reply_all": return "Reply all to my latest Outlook email saying approved."
+        case "outlook.message.forward": return "Forward my latest Outlook email to alex@example.com."
+        case "outlook.message.archive": return "Archive my latest Outlook email."
         case "outlook.message.delete": return "Delete my latest Outlook email."
+        case "outlook.message.mark_read": return "Mark my latest Outlook email as read."
+        case "outlook.message.mark_unread": return "Mark my latest Outlook email as unread."
+        case "outlook.message.move": return "Move my latest Outlook email to Archive."
         case "phone.call": return "Call 5551234567 now."
         case "camera.capture": return "Take a picture now."
+        case "trigger.create": return "Schedule an agent run to summarize reminders tonight."
+        case "trigger.cancel": return "Cancel trigger named nightly summary."
+        case "alarm.request_authorization": return "Request alarm authorization."
+        case "alarm.schedule": return "Schedule an alarm called Approval in 10 minutes."
+        case "alarm.countdown": return "Start a countdown called Approval for 5 minutes."
+        case "alarm.pause": return "Pause alarm \(sampleUUID)."
+        case "alarm.resume": return "Resume alarm \(sampleUUID)."
+        case "alarm.stop": return "Stop alarm \(sampleUUID)."
+        case "alarm.snooze": return "Snooze alarm \(sampleUUID)."
+        case "alarm.cancel": return "Cancel alarm \(sampleUUID)."
         default: return "Use \(name) and require an approval boundary before execution."
         }
     }
