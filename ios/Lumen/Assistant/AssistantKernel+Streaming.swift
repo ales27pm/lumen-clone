@@ -16,6 +16,58 @@ extension AssistantKernel: AgentKernelRunning {
 
                 emitStep(.thought, "Agent Kernel accepted \(request.source.rawValue) turn for \(String(describing: request.task)).")
 
+                if request.task == .chat {
+                    let routing = IntentRouter.classify(request.userMessage)
+                    if IntentRouter.intentRequiresTool(routing) {
+                        if request.options.diagnosticsEnabled {
+                            continuation.yield(.diagnostic(.init(
+                                stage: "tool-routing-bridge",
+                                message: "Routing tool-backed chat turn through deterministic legacy bridge",
+                                metadata: [
+                                    "intent": routing.intent.rawValue,
+                                    "allowedToolIDs": routing.allowedToolIDs.sorted().joined(separator: ","),
+                                    "source": request.source.rawValue
+                                ]
+                            )))
+                        }
+
+                        let availableTools = ToolRegistry.all.filter { tool in
+                            routing.allowedToolIDs.contains(ToolRouteGuard.canonicalToolID(tool.id))
+                        }
+                        let legacyRequest = AgentRequest(
+                            systemPrompt: request.systemPrompt,
+                            history: request.history.map { (role: $0.role.messageRole, content: $0.content) },
+                            userMessage: request.userMessage,
+                            temperature: request.options.temperature,
+                            topP: request.options.topP,
+                            repetitionPenalty: request.options.repetitionPenalty,
+                            maxTokens: request.options.maxTokens,
+                            maxSteps: request.options.maxSteps,
+                            availableTools: availableTools,
+                            relevantMemories: request.relevantMemories,
+                            attachments: request.attachments,
+                            conversationID: request.conversationID,
+                            turnID: request.turnID
+                        )
+                        let groundingMode: LegacyAgentRunOptions.GroundingMode = request.source == .trigger ? .headlessTrigger : .slotAgent
+                        let legacyOptions = LegacyAgentRunOptions(
+                            modelContext: modelContext,
+                            conversationID: request.conversationID,
+                            turnID: request.turnID,
+                            groundingMode: groundingMode,
+                            allowDegradedGrounding: request.options.allowDegradedMode,
+                            preventDoubleGrounding: true,
+                            diagnosticsEnabled: true
+                        )
+
+                        for await bridgedEvent in runLegacyAgentBridge(legacyRequest, options: legacyOptions) {
+                            continuation.yield(bridgedEvent)
+                        }
+                        continuation.finish()
+                        return
+                    }
+                }
+
                 let thermalState = ProcessInfo.processInfo.thermalState
                 let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
                 let turn = AssistantTurnContext(
