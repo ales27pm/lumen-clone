@@ -18,40 +18,93 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isSubset(of: ids))
     }
 
-    func testLegacyAdapterExcludesNativelyPortedProductivityTools() async {
-        let legacyIDs = await MainActor.run { Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id }) }
-        XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
-    }
-
 
     func testCommunicationToolsAreRegisteredNatively() async {
         let ids = await Set(SecureToolRegistry.shared.definitions().map(\.id))
         XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isSubset(of: ids))
     }
 
-    func testLegacyAdapterExcludesNativelyPortedCommunicationTools() async {
-        let legacyIDs = await MainActor.run { Set(LegacyToolExecutorLocalTool.all.map { $0.definition.id }) }
-        XCTAssertTrue(CommunicationLocalTool.nativeToolIDs.isDisjoint(with: legacyIDs))
+    func testAllCatalogToolsAreRegisteredAsNativeLocalTools() async {
+        let defaultIDs = await Set(SecureToolRegistry.shared.definitions().map(\.id))
+        let catalogIDs = Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
+        XCTAssertTrue(catalogIDs.isSubset(of: defaultIDs))
     }
 
-    func testLegacyToolStatusClassifiesApprovalRequiredResponses() {
+    func testNativeToolGroupsCoverEveryCatalogTool() async {
+        let nativeIDs = ProductivityLocalTool.nativeToolIDs
+            .union(CommunicationLocalTool.nativeToolIDs)
+            .union(LocationMediaHealthLocalTool.nativeToolIDs)
+            .union(KnowledgeLocalTool.nativeToolIDs)
+        let catalogIDs = Set(ToolRegistry.all.map { ToolRouteGuard.canonicalToolID($0.id) })
+        XCTAssertEqual(nativeIDs, catalogIDs)
+    }
+
+
+    func testUnsupportedNativeToolOutputClassifiesAsUnavailable() {
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),
+            ToolResultStatusClassifier.status(from: "Unsupported native productivity tool: example.tool."),
+            .unavailable
+        )
+    }
+
+
+    func testMediaToolsAreNotBackgroundReadOnly() async {
+        let definitions = await SecureToolRegistry.shared.definitions()
+        XCTAssertEqual(definitions.first(where: { $0.id == "photos.search" })?.category, .userVisibleAction)
+        XCTAssertEqual(definitions.first(where: { $0.id == "camera.capture" })?.category, .sensitiveAction)
+    }
+
+    func testBackgroundAvailabilityExcludesMediaTools() async {
+        let ctx = ToolExecutionContext(isForeground: false, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: RuntimeMetricsStore.shared)
+        let defs = await SecureToolRegistry.shared.availableDefinitions(context: ctx, source: .backgroundTrigger)
+        let ids = Set(defs.map(\.id))
+        XCTAssertFalse(ids.contains("photos.search"))
+        XCTAssertFalse(ids.contains("camera.capture"))
+    }
+
+    func testWebToolsAreExternalNetworkCategory() async {
+        let definitions = await SecureToolRegistry.shared.definitions()
+        XCTAssertEqual(definitions.first(where: { $0.id == "web.search" })?.category, .externalNetwork)
+        XCTAssertEqual(definitions.first(where: { $0.id == "web.fetch" })?.category, .externalNetwork)
+    }
+
+    @MainActor func testMapsSearchWebFallbackDeniesForNetworkBeforeLocationPermission() async {
+        PermissionRegistry.shared.setNetworkAccessEnabled(false)
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "maps.search",
+            arguments: ["query": "how to build a bookshelf"],
+            source: .modelProposed,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+        let context = ToolExecutionContext(isForeground: true, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: .shared)
+        let result = await SecureToolRegistry.shared.execute(invocation, context: context)
+        XCTAssertEqual(result.status, .denied)
+        XCTAssertEqual(result.errorCode, "denied")
+        XCTAssertTrue(result.modelText.localizedCaseInsensitiveContains("Network tools are disabled"))
+        XCTAssertFalse(result.modelText.localizedCaseInsensitiveContains("location"))
+    }
+
+    func testToolResultStatusClassifiesApprovalRequiredResponses() {
+        XCTAssertEqual(
+            ToolResultStatusClassifier.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),
             .requiresApproval
         )
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "This tool requires explicit user approval before it can run: outlook.mail.send."),
+            ToolResultStatusClassifier.status(from: "This tool requires explicit user approval before it can run: outlook.mail.send."),
             .requiresApproval
         )
     }
 
-    func testLegacyToolStatusClassifiesPermissionFailuresAsDenied() {
+    func testToolResultStatusClassifiesPermissionFailuresAsDenied() {
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "I need calendar access to do that. Please enable it in Settings or provide an alternative."),
+            ToolResultStatusClassifier.status(from: "I need calendar access to do that. Please enable it in Settings or provide an alternative."),
             .denied
         )
         XCTAssertEqual(
-            LegacyToolExecutorLocalTool.status(from: "Missing required permission: contacts."),
+            ToolResultStatusClassifier.status(from: "Missing required permission: contacts."),
             .denied
         )
     }
