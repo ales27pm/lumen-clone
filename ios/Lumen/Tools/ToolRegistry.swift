@@ -18,7 +18,8 @@ final class SecureToolRegistry {
             NotificationTool()
         ] + ProductivityLocalTool.all
           + CommunicationLocalTool.all
-          + LegacyToolExecutorLocalTool.all
+          + LocationMediaHealthLocalTool.all
+          + KnowledgeLocalTool.all
     }
 
     init(tools: [any LocalTool]? = nil) {
