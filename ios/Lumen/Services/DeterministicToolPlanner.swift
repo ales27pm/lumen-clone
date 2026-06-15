@@ -5,14 +5,25 @@ import AlarmKit
 #endif
 
 nonisolated enum DeterministicToolPlanner {
+    private static let outlookMessageReferenceToolIDs: Set<String> = [
+        "outlook.message.read",
+        "outlook.attachments.list",
+        "outlook.message.mark_read",
+        "outlook.message.mark_unread",
+        "outlook.message.move",
+        "outlook.message.archive",
+        "outlook.message.delete",
+        "outlook.message.reply",
+        "outlook.message.reply_all",
+        "outlook.message.forward"
+    ]
+
     static func planForSpecificTool(toolID: String, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         let canonical = ToolRouteGuard.canonicalToolID(toolID)
         guard availableToolIDs.contains(canonical) else { return nil }
         let text = normalized(prompt)
         switch canonical {
-        case "camera.capture":
-            return AgentAction(tool: canonical, args: [:])
-        case "location.current":
+        case "camera.capture", "location.current", "outlook.status", "outlook.folders.list", "calendar.list", "reminders.list", "health.summary", "motion.activity", "trigger.list", "alarm.authorization_status", "alarm.list":
             return AgentAction(tool: canonical, args: [:])
         case "maps.search":
             let query = extractNearbySearchQuery(from: prompt) ?? extractDestination(from: prompt) ?? ""
@@ -20,14 +31,41 @@ nonisolated enum DeterministicToolPlanner {
         case "maps.directions":
             guard let destination = extractDestination(from: prompt), !destination.isEmpty else { return nil }
             return AgentAction(tool: canonical, args: ["destination": .string(destination)])
-        case "outlook.status":
+        case "weather":
+            if let destination = extractDestination(from: prompt) { return AgentAction(tool: canonical, args: ["location": .string(destination)]) }
             return AgentAction(tool: canonical, args: [:])
+        case "web.search":
+            let query = extractWebQuery(from: prompt)
+            return query.isEmpty ? nil : AgentAction(tool: canonical, args: ["query": .string(query)])
+        case "web.fetch":
+            guard let url = firstURL(in: prompt) else { return nil }
+            return AgentAction(tool: canonical, args: ["url": .string(url)])
         case "outlook.messages.list":
             var args: AgentJSONArguments = ["limit": .string("10")]
             if text.contains("unread") { args["unreadOnly"] = .string("true") }
             return AgentAction(tool: canonical, args: args)
-        case "outlook.message.read":
+        case "outlook.message.read", "outlook.attachments.list", "outlook.message.mark_read", "outlook.message.mark_unread", "outlook.message.archive", "outlook.message.delete":
             return AgentAction(tool: canonical, args: outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest"))
+        case "outlook.message.reply", "outlook.message.reply_all":
+            var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
+            args["body"] = .string(extractOutlookBody(from: prompt) ?? "")
+            return AgentAction(tool: canonical, args: args)
+        case "outlook.message.forward":
+            var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
+            if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
+            if let body = extractOutlookBody(from: prompt), !body.isEmpty { args["body"] = .string(body) }
+            return AgentAction(tool: canonical, args: args)
+        case "outlook.message.move":
+            var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
+            if let destination = extractOutlookDestinationFolder(from: text) { args["destination"] = .string(destination) }
+            return AgentAction(tool: canonical, args: args)
+        case "outlook.messages.search":
+            let query = extractOutlookSearchQuery(from: prompt)
+            return query.isEmpty ? nil : AgentAction(tool: canonical, args: ["query": .string(query), "limit": .string("10")])
+        case "outlook.draft.create", "outlook.mail.send":
+            var args: AgentJSONArguments = ["subject": .string(extractOutlookSubject(from: prompt)), "body": .string(extractOutlookBody(from: prompt) ?? "")]
+            if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
+            return AgentAction(tool: canonical, args: args)
         default:
             return AgentAction(tool: canonical, args: [:])
         }
@@ -35,6 +73,7 @@ nonisolated enum DeterministicToolPlanner {
 
     static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
         let text = normalized(prompt)
+
         if routing.intent == .memory, isMemorySaveThenRecallIntent(text) {
             var actions: [AgentAction] = []
             if let save = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs), ToolRouteGuard.canonicalToolID(save.tool) == "memory.save" {
@@ -50,18 +89,18 @@ nonisolated enum DeterministicToolPlanner {
             }
             if !actions.isEmpty { return actions }
         }
-        if routing.intent == .outlook, isLatestOutlookReadIntent(text) {
-            if availableToolIDs.contains("outlook.messages.list"),
-               availableToolIDs.contains("outlook.message.read") {
+
+        if routing.intent == .outlook, let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
+            let canonical = ToolRouteGuard.canonicalToolID(single.tool)
+            if outlookMessageReferenceToolIDs.contains(canonical), availableToolIDs.contains("outlook.messages.list"), needsFreshOutlookMessageContext(action: single, prompt: text) {
                 return [
                     AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
-                    AgentAction(tool: "outlook.message.read", args: outlookMessageReadArgs("latest"))
+                    single
                 ]
             }
-            if availableToolIDs.contains("outlook.message.read") {
-                return [AgentAction(tool: "outlook.message.read", args: outlookMessageReadArgs("latest"))]
-            }
+            return [single]
         }
+
         if let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
             return [single]
         }
@@ -85,11 +124,8 @@ nonisolated enum DeterministicToolPlanner {
             return query.isEmpty ? nil : AgentAction(tool: "web.search", args: ["query": .string(query)])
         case .emailDraft:
             var args: AgentJSONArguments = ["subject": .string(extractEmailSubject(from: prompt)), "body": .string(extractCommunicationBody(from: prompt))]
-            if let email = extractEmailAddress(from: prompt) {
-                args["to"] = .string(email)
-            } else if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty {
-                args["to"] = .string(recipient)
-            }
+            if let email = extractEmailAddress(from: prompt) { args["to"] = .string(email) }
+            else if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty { args["to"] = .string(recipient) }
             return action("mail.draft", args)
         case .messageDraft:
             var args: AgentJSONArguments = ["body": .string(extractCommunicationBody(from: prompt))]
@@ -97,9 +133,7 @@ nonisolated enum DeterministicToolPlanner {
             return action("messages.draft", args)
         case .phoneCall:
             if let phone = firstPhoneNumber(in: prompt) { return action("phone.call", ["number": .string(phone)]) }
-            if let query = extractCallTarget(from: prompt), !query.isEmpty {
-                return action("contacts.search", ["query": .string(query)])
-            }
+            if let query = extractCallTarget(from: prompt), !query.isEmpty { return action("contacts.search", ["query": .string(query)]) }
             return nil
         case .outlook:
             return planOutlook(text: text, prompt: prompt, availableToolIDs: availableToolIDs)
@@ -137,17 +171,22 @@ nonisolated enum DeterministicToolPlanner {
         case .contactSearch:
             if let q = extractContactQuery(from: prompt), !q.isEmpty { return action("contacts.search", ["query": .string(q)]) }
             return nil
-        case .photos: return action("photos.search", ["query": .string(extractDestination(from: prompt) ?? "")])
-        case .health: return action("health.summary")
-        case .motion: return action("motion.activity")
+        case .photos:
+            return action("photos.search", ["query": .string(extractDestination(from: prompt) ?? "")])
+        case .camera:
+            return action("camera.capture")
+        case .health:
+            return action("health.summary")
+        case .motion:
+            return action("motion.activity")
         case .files:
             if let name = extractFileName(from: prompt) { return action("files.read", ["name": .string(name)]) }
             if containsAny(text, ["attachment", "attached", "this file", "this document", "read file", "read document"]) { return action("files.read") }
             return nil
-        case .memory:
+        case .memory, .note:
             if isPersonalProfileRecallIntent(text) { return action("memory.recall", ["query": .string("user name")]) }
             if containsAny(text, ["what do you remember", "recall", "remember about"]) { return action("memory.recall", ["query": .string(extractContactQuery(from: prompt) ?? "")]) }
-            if containsAny(text, ["remember", "save", "my name is", "call me"]) {
+            if containsAny(text, ["remember", "save", "note", "keep this in mind", "my name is", "call me"]) {
                 return action("memory.save", [
                     "content": .string(extractMemoryFact(from: prompt)),
                     "kind": .string("fact")
@@ -163,12 +202,8 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .alarm:
-            if containsAny(text, ["request", "prompt", "ask"]) && containsAny(text, ["authorization", "permission", "access"]) {
-                return action("alarm.request_authorization")
-            }
-            if containsAny(text, ["authorization", "permission", "access", "status"]) && containsAny(text, ["check", "show", "status", "authorized", "allowed"]) {
-                return action("alarm.authorization_status")
-            }
+            if containsAny(text, ["request", "prompt", "ask"]) && containsAny(text, ["authorization", "permission", "access"]) { return action("alarm.request_authorization") }
+            if containsAny(text, ["authorization", "permission", "access", "status"]) && containsAny(text, ["check", "show", "status", "authorized", "allowed"]) { return action("alarm.authorization_status") }
             if containsAny(text, ["pause"]) {
                 let args = alarmMutationArgs(from: prompt)
                 guard args["id"] != nil else { return nil }
@@ -222,13 +257,9 @@ nonisolated enum DeterministicToolPlanner {
                     "prompt": .string(extractTriggerPrompt(from: prompt)),
                     "schedule": .string("once")
                 ]
-                if text.contains("tonight") {
-                    args["inMinutes"] = .string("120")
-                } else if let minutes = extractMinutes(from: text) {
-                    args["inMinutes"] = .string(String(minutes))
-                } else {
-                    args["inMinutes"] = .string("60")
-                }
+                if text.contains("tonight") { args["inMinutes"] = .string("120") }
+                else if let minutes = extractMinutes(from: text) { args["inMinutes"] = .string(String(minutes)) }
+                else { args["inMinutes"] = .string("60") }
                 return action("trigger.create", args)
             }
             return nil
@@ -239,15 +270,25 @@ nonisolated enum DeterministicToolPlanner {
 
     private static func outlookMessageReadArgs(_ messageID: String) -> AgentJSONArguments {
         let value = messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "latest" : messageID
-        return [
-            "messageId": .string(value),
-            "id": .string(value)
-        ]
+        return ["messageId": .string(value), "id": .string(value)]
+    }
+
+    private static func needsFreshOutlookMessageContext(action: AgentAction, prompt: String) -> Bool {
+        let args = action.args.stringCoerced
+        let raw = args["messageId"] ?? args["id"] ?? args["message"] ?? ""
+        let normalizedReference = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalizedReference.isEmpty { return true }
+        if ["latest", "last", "newest", "recent", "first", "#1", "this", "that", "it", "current", "selected"].contains(normalizedReference) { return true }
+        return containsAny(prompt, ["latest email", "latest outlook", "last email", "last outlook", "newest email", "recent email", "first email"])
     }
 
     private static func planOutlook(text: String, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         func can(_ tool: String) -> Bool { availableToolIDs.contains(tool) }
         func action(_ tool: String, _ args: AgentJSONArguments = [:]) -> AgentAction? { can(tool) ? AgentAction(tool: tool, args: args) : nil }
+
+        if containsAny(text, ["status", "connected", "signed in", "auth"]) { return action("outlook.status") }
+        if containsAny(text, ["folder", "folders"]) { return action("outlook.folders.list") }
+        if containsAny(text, ["attachment", "attachments", "paperclip"]) { return action("outlook.attachments.list", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if containsAny(text, ["search", "find", "invoice"]) {
             let q = extractOutlookSearchQuery(from: prompt)
             if !q.isEmpty { return action("outlook.messages.search", ["query": .string(q), "limit": .string("10")]) }
@@ -257,36 +298,36 @@ nonisolated enum DeterministicToolPlanner {
             if text.contains("unread") { args["unreadOnly"] = .string("true") }
             return action("outlook.messages.list", args)
         }
-        if !containsAny(text, ["move", "archive", "delete", "trash", "mark"]) && isLatestOutlookReadIntent(text) {
-            return action("outlook.messages.list", ["limit": .string("1")])
-                ?? action("outlook.message.read", outlookMessageReadArgs("latest"))
+        if !containsAny(text, ["move", "archive", "delete", "trash", "mark", "reply", "forward"]) && isLatestOutlookReadIntent(text) {
+            return action("outlook.message.read", outlookMessageReadArgs("latest"))
+                ?? action("outlook.messages.list", ["limit": .string("1")])
         }
         if containsAny(text, ["reply all", "reply-all", "respond to all"]) {
-            return action("outlook.message.reply_all", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
+            var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
+            args["body"] = .string(extractOutlookBody(from: prompt) ?? "")
+            return action("outlook.message.reply_all", args)
         }
         if containsAny(text, ["reply", "respond"]) {
-            return action("outlook.message.reply", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest"), "body": .string(extractOutlookBody(from: prompt) ?? "")])
+            var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
+            args["body"] = .string(extractOutlookBody(from: prompt) ?? "")
+            return action("outlook.message.reply", args)
         }
         if text.contains("forward") {
-            var args: AgentJSONArguments = ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]
+            var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
             if let body = extractOutlookBody(from: prompt), !body.isEmpty { args["body"] = .string(body) }
             return action("outlook.message.forward", args)
         }
-        if text.contains("archive") { return action("outlook.message.archive", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
-        if containsAny(text, ["delete", "trash"]) { return action("outlook.message.delete", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
-        if text.contains("mark") && text.contains("unread") { return action("outlook.message.mark_unread", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
-        if text.contains("mark") && text.contains("read") { return action("outlook.message.mark_read", ["messageId": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
+        if text.contains("archive") { return action("outlook.message.archive", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
+        if containsAny(text, ["delete", "trash"]) { return action("outlook.message.delete", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
+        if text.contains("mark") && text.contains("unread") { return action("outlook.message.mark_unread", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
+        if text.contains("mark") && text.contains("read") { return action("outlook.message.mark_read", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if text.contains("move") {
             guard let destination = extractOutlookDestinationFolder(from: text) else { return nil }
-            return action("outlook.message.move", [
-                "messageId": .string(extractOutlookMessageReference(from: text) ?? "latest"),
-                "destination": .string(destination)
-            ])
+            var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
+            args["destination"] = .string(destination)
+            return action("outlook.message.move", args)
         }
-        if containsAny(text, ["status", "connected", "signed in", "auth"]) { return action("outlook.status") }
-        if containsAny(text, ["folder", "folders"]) { return action("outlook.folders.list") }
-        if containsAny(text, ["attachment", "attachments", "paperclip"]) { return action("outlook.attachments.list", ["message": .string(extractOutlookMessageReference(from: text) ?? "latest")]) }
         if text.contains("send") && containsAny(text, ["email", "mail", "outlook", "hotmail"]) {
             var args: AgentJSONArguments = ["subject": .string(extractOutlookSubject(from: prompt)), "body": .string(extractOutlookBody(from: prompt) ?? "")]
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
@@ -304,69 +345,51 @@ nonisolated enum DeterministicToolPlanner {
 
     private static func normalized(_ text: String) -> String { text.lowercased().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool { needles.contains { value.contains($0) } }
+
     private static func expandRAGQueryIfNeeded(originalPrompt: String) -> String {
         let base = extractWebQuery(from: originalPrompt)
         let normalizedBase = base.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = normalizedBase.isEmpty ? originalPrompt : normalizedBase
         let lower = normalized(fallback)
         let architectureTerms = ["architecture", "module", "service", "component", "package"]
-        guard containsAny(lower, ["architecture", "module", "service", "component", "package", "design", "system"]) else {
-            return fallback
-        }
+        guard containsAny(lower, ["architecture", "module", "service", "component", "package", "design", "system"]) else { return fallback }
         var query = fallback
-        for term in architectureTerms where !lower.contains(term) {
-            query += " " + term
-        }
+        for term in architectureTerms where !lower.contains(term) { query += " " + term }
         return query
     }
+
     static func extractWebQuery(from text: String) -> String { SlotAgentService.shared_extractWebQuery(text) }
     static func extractOutlookSearchQuery(from text: String) -> String { SlotAgentService.shared_extractOutlookSearchQuery(text) }
     static func extractOutlookMessageReference(from text: String) -> String? { SlotAgentService.shared_extractOutlookMessageReference(text) }
     static func extractOutlookBody(from text: String) -> String? { let b = SlotAgentService.shared_extractOutlookBody(text); return b.isEmpty ? nil : b }
     static func firstURL(in text: String) -> String? { SlotAgentService.shared_firstURL(text) }
+
     private static func extractMinutes(from text: String) -> Int? {
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let regex = try? NSRegularExpression(pattern: #"(\d+)\s*(?:minute|minutes|min|mins)"#),
               let match = regex.firstMatch(in: text, range: nsRange),
               match.numberOfRanges > 1,
               let range = Range(match.range(at: 1), in: text),
-              let value = Int(text[range]) else {
-            return nil
-        }
+              let value = Int(text[range]) else { return nil }
         return max(1, min(value, 24 * 60))
     }
 
     private static func countdownDurationSeconds(from text: String) -> Int? {
-        if let minutes = extractMinutes(from: text) {
-            return minutes * 60
-        }
-        if let seconds = firstCapture(in: text, pattern: #"(?i)\b(\d+)\s*(?:second|seconds|sec|secs)\b"#).flatMap(Int.init) {
-            return max(1, min(seconds, 24 * 60 * 60))
-        }
+        if let minutes = extractMinutes(from: text) { return minutes * 60 }
+        if let seconds = firstCapture(in: text, pattern: #"(?i)\b(\d+)\s*(?:second|seconds|sec|secs)\b"#).flatMap(Int.init) { return max(1, min(seconds, 24 * 60 * 60)) }
         return nil
     }
 
     private static func isAlarmScheduleIntent(_ text: String) -> Bool {
         let hasAlarmTarget = containsAny(text, ["alarm", "wake me", "wake us"])
         guard hasAlarmTarget else { return false }
-        return containsAny(text, [
-            "schedule", "set an alarm", "set alarm", "create an alarm", "create alarm",
-            "add an alarm", "add alarm", "wake me", "wake us"
-        ])
+        return containsAny(text, ["schedule", "set an alarm", "set alarm", "create an alarm", "create alarm", "add an alarm", "add alarm", "wake me", "wake us"])
     }
 
     private static func alarmMutationArgs(from prompt: String) -> AgentJSONArguments {
-        if let uuid = firstUUID(in: prompt) {
-            return ["id": .string(uuid)]
-        }
+        if let uuid = firstUUID(in: prompt) { return ["id": .string(uuid)] }
         let title = extractAlarmTitle(from: prompt, fallback: "")
-        if !title.isEmpty {
-            // Attempt title→UUID lookup
-            if let uuid = lookupAlarmUUIDByTitle(title) {
-                return ["id": .string(uuid)]
-            }
-            return ["title": .string(title)]
-        }
+        if !title.isEmpty, let uuid = lookupAlarmUUIDByTitle(title) { return ["id": .string(uuid)] }
         return [:]
     }
 
@@ -379,26 +402,18 @@ nonisolated enum DeterministicToolPlanner {
                     String(describing: alarm).localizedCaseInsensitiveContains(title) ||
                     (Mirror(reflecting: alarm).children.first { $0.label == "title" }?.value as? String)?.localizedCaseInsensitiveCompare(title) == .orderedSame
                 }
-                // Only return UUID if exactly one match found
-                if matches.count == 1, let alarm = matches.first {
-                    if let id = Mirror(reflecting: alarm).children.first(where: { $0.label == "id" })?.value as? UUID {
-                        return id.uuidString
-                    }
+                if matches.count == 1, let alarm = matches.first,
+                   let id = Mirror(reflecting: alarm).children.first(where: { $0.label == "id" })?.value as? UUID {
+                    return id.uuidString
                 }
-            } catch {
-                // Lookup failed, return nil
-                return nil
-            }
+            } catch { return nil }
         }
 #endif
         return nil
     }
 
     private static func firstUUID(in text: String) -> String? {
-        firstCapture(
-            in: text,
-            pattern: #"(\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b)"#
-        )
+        firstCapture(in: text, pattern: #"(\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b)"#)
     }
 
     private static func extractAlarmTitle(from prompt: String, fallback: String) -> String {
@@ -410,15 +425,9 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func extractTriggerCancelIdentifier(from prompt: String) -> String {
-        if let uuid = firstUUID(in: prompt) {
-            return uuid
-        }
-        if let named = firstCapture(in: prompt, pattern: #"(?i)\b(?:named|called)\s+([^.!?\n]+)"#) {
-            return cleanCapturedValue(named)
-        }
-        if let trigger = firstCapture(in: prompt, pattern: #"(?i)\bcancel\s+(?:the\s+)?(?:trigger|scheduled run|agent run)\s+([^.!?\n]+)"#) {
-            return cleanCapturedValue(trigger)
-        }
+        if let uuid = firstUUID(in: prompt) { return uuid }
+        if let named = firstCapture(in: prompt, pattern: #"(?i)\b(?:named|called)\s+([^.!?\n]+)"#) { return cleanCapturedValue(named) }
+        if let trigger = firstCapture(in: prompt, pattern: #"(?i)\bcancel\s+(?:the\s+)?(?:trigger|scheduled run|agent run)\s+([^.!?\n]+)"#) { return cleanCapturedValue(trigger) }
         return ""
     }
 
@@ -429,41 +438,18 @@ nonisolated enum DeterministicToolPlanner {
         return "Scheduled agent run"
     }
 
-
-    private static func isPersonalProfileRecallIntent(_ text: String) -> Bool {
-        IntentRouter.isPersonalProfileRecallIntent(text)
-    }
-
-    private static func isLatestOutlookReadIntent(_ text: String) -> Bool {
-        containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"])
-    }
-
-    private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool {
-        containsAny(text, ["remember", "save", "note", "keep this in mind"])
-            && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"])
-    }
+    private static func isPersonalProfileRecallIntent(_ text: String) -> Bool { IntentRouter.isPersonalProfileRecallIntent(text) }
+    private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"]) }
+    private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
 
     private static func isCalendarReadIntent(_ text: String) -> Bool {
-        containsAny(text, [
-            "list", "show", "search", "find", "read", "check", "upcoming",
-            "what's on", "what is on", "calendar", "event", "events",
-            "appointment", "appointments", "meeting", "meetings", "schedule",
-            "today", "tomorrow", "next", "do i have", "any"
-        ])
+        containsAny(text, ["list", "show", "search", "find", "read", "check", "upcoming", "what's on", "what is on", "calendar", "event", "events", "appointment", "appointments", "meeting", "meetings", "schedule", "today", "tomorrow", "next", "do i have", "any"])
     }
 
     private static func isCalendarCreateIntent(_ text: String) -> Bool {
-        if containsAny(text, [
-            "what's on", "what is on", "do i have", "when is",
-            "next meeting", "next event", "show", "list", "search my calendar", "read my calendar"
-        ]) {
-            return false
-        }
-        if text.contains("my schedule") && !text.hasPrefix("schedule ") {
-            return false
-        }
-        return containsAny(text, ["set an appointment", "set appointment", "schedule", "book "])
-            || (containsAny(text, ["create", "add", "put "]) && containsAny(text, ["event", "appointment", "meeting", "calendar"]))
+        if containsAny(text, ["what's on", "what is on", "do i have", "when is", "next meeting", "next event", "show", "list", "search my calendar", "read my calendar"]) { return false }
+        if text.contains("my schedule") && !text.hasPrefix("schedule ") { return false }
+        return containsAny(text, ["set an appointment", "set appointment", "schedule", "book "]) || (containsAny(text, ["create", "add", "put "]) && containsAny(text, ["event", "appointment", "meeting", "calendar"]))
     }
 
     private static func extractCalendarTitle(from prompt: String) -> String {
@@ -478,23 +464,13 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func calendarStartOffsetMinutes(from text: String) -> Int {
-        if let explicitMinutes = extractMinutes(from: text) {
-            return explicitMinutes
-        }
-
+        if let explicitMinutes = extractMinutes(from: text) { return explicitMinutes }
         let now = Date()
         var calendar = Calendar.current
         calendar.locale = Locale(identifier: "en_US_POSIX")
         var target = now
-
-        if text.contains("tomorrow") {
-            target = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(24 * 60 * 60)
-        }
-
-        let hour = calendarHour(from: text)
-            ?? (text.contains("morning") ? 9 : nil)
-            ?? (text.contains("afternoon") ? 13 : nil)
-            ?? (text.contains("evening") ? 18 : nil)
+        if text.contains("tomorrow") { target = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(24 * 60 * 60) }
+        let hour = calendarHour(from: text) ?? (text.contains("morning") ? 9 : nil) ?? (text.contains("afternoon") ? 13 : nil) ?? (text.contains("evening") ? 18 : nil)
         if let hour {
             let base = text.contains("tomorrow") ? target : now
             let start = calendar.startOfDay(for: base)
@@ -502,24 +478,17 @@ nonisolated enum DeterministicToolPlanner {
         } else if !text.contains("tomorrow") {
             target = now.addingTimeInterval(60 * 60)
         }
-
-        if target <= now {
-            target = calendar.date(byAdding: .day, value: 1, to: target) ?? now.addingTimeInterval(60 * 60)
-        }
+        if target <= now { target = calendar.date(byAdding: .day, value: 1, to: target) ?? now.addingTimeInterval(60 * 60) }
         return max(1, Int(target.timeIntervalSince(now) / 60))
     }
 
     private static func calendarHour(from text: String) -> Int? {
-        if let value = firstCapture(in: text, pattern: #"(?i)\bat\s+([0-9]{1,2})(?::[0-9]{2})?\s*(?:am|pm)?"#),
-           let raw = Int(value) {
+        if let value = firstCapture(in: text, pattern: #"(?i)\bat\s+([0-9]{1,2})(?::[0-9]{2})?\s*(?:am|pm)?"#), let raw = Int(value) {
             let pm = text.contains("pm") || text.contains("afternoon") || text.contains("evening")
             if pm, raw < 12 { return raw + 12 }
             return raw == 12 && text.contains("am") ? 0 : min(max(raw, 0), 23)
         }
-        let words = [
-            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-            "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12
-        ]
+        let words = ["one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12]
         for (word, hour) in words where text.contains(" at \(word)") {
             let pm = text.contains("pm") || text.contains("afternoon") || text.contains("evening")
             return pm && hour < 12 ? hour + 12 : hour
@@ -540,18 +509,9 @@ nonisolated enum DeterministicToolPlanner {
 
     static func extractMemoryFact(from prompt: String) -> String {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let name = firstCapture(in: trimmed, pattern: #"(?i)\b(?:can you\s+)?(?:please\s+)?(?:remember|save|note)\s+(?:that\s+)?my name is\s+([^.!?\n]+)"#)
-            ?? firstCapture(in: trimmed, pattern: #"(?i)\bmy name is\s+([^.!?\n]+)"#) {
-            return "User's name is \(cleanCapturedValue(name))"
-        }
-        if let name = firstCapture(in: trimmed, pattern: #"(?i)\bcall me\s+([^.!?\n]+)"#) {
-            return "User prefers to be called \(cleanCapturedValue(name))"
-        }
-        if let fact = firstCapture(in: trimmed, pattern: #"(?i)\bremember that\s+(.+)"#)
-            ?? firstCapture(in: trimmed, pattern: #"(?i)\bsave this fact:?\s+(.+)"#)
-            ?? firstCapture(in: trimmed, pattern: #"(?i)\bkeep this in mind:?\s+(.+)"#) {
-            return normalizeFactSentence(fact)
-        }
+        if let name = firstCapture(in: trimmed, pattern: #"(?i)\b(?:can you\s+)?(?:please\s+)?(?:remember|save|note)\s+(?:that\s+)?my name is\s+([^.!?\n]+)"#) ?? firstCapture(in: trimmed, pattern: #"(?i)\bmy name is\s+([^.!?\n]+)"#) { return "User's name is \(cleanCapturedValue(name))" }
+        if let name = firstCapture(in: trimmed, pattern: #"(?i)\bcall me\s+([^.!?\n]+)"#) { return "User prefers to be called \(cleanCapturedValue(name))" }
+        if let fact = firstCapture(in: trimmed, pattern: #"(?i)\bremember that\s+(.+)"#) ?? firstCapture(in: trimmed, pattern: #"(?i)\bsave this fact:?\s+(.+)"#) ?? firstCapture(in: trimmed, pattern: #"(?i)\bkeep this in mind:?\s+(.+)"#) { return normalizeFactSentence(fact) }
         return normalizeFactSentence(trimmed)
     }
 
@@ -562,10 +522,7 @@ nonisolated enum DeterministicToolPlanner {
         return ns.substring(with: match.range(at: 1))
     }
 
-    private static func cleanCapturedValue(_ value: String) -> String {
-        value.trimmingCharacters(in: CharacterSet(charactersIn: " \t\n\r\"'.,!?"))
-    }
-
+    private static func cleanCapturedValue(_ value: String) -> String { value.trimmingCharacters(in: CharacterSet(charactersIn: " \t\n\r\"'.,!?")) }
     private static func normalizeFactSentence(_ value: String) -> String {
         let cleaned = cleanCapturedValue(value)
         guard !cleaned.isEmpty else { return value.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -592,7 +549,9 @@ nonisolated enum DeterministicToolPlanner {
         }
         return nil
     }
+
     static func extractContactQuery(from text: String) -> String? { extractDestination(from: text) }
+
     static func extractNearbySearchQuery(from text: String) -> String? {
         let lower = normalized(text)
         if let range = lower.range(of: "nearby ") {
@@ -605,12 +564,12 @@ nonisolated enum DeterministicToolPlanner {
         }
         if let range = lower.range(of: " near me") {
             let head = String(text[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let cleaned = head.replacingOccurrences(of: #"(?i)^(find|show|search|locate)\s+"#, with: "", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = head.replacingOccurrences(of: #"(?i)^(find|show|search|locate)\s+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
             return cleaned.isEmpty ? nil : cleaned
         }
         return nil
     }
+
     static func extractEmailAddress(from text: String) -> String? {
         let pattern = #"[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
@@ -618,19 +577,19 @@ nonisolated enum DeterministicToolPlanner {
         guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
         return ns.substring(with: match.range)
     }
+
     static func extractOutlookSubject(from text: String) -> String {
         let lower = text.lowercased()
         for marker in [" subject ", " subject:"] {
             if let range = lower.range(of: marker) {
                 let remainder = String(text[range.upperBound...])
-                if let bodyRange = remainder.lowercased().range(of: " body ") {
-                    return String(remainder[..<bodyRange.lowerBound]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?"))
-                }
+                if let bodyRange = remainder.lowercased().range(of: " body ") { return String(remainder[..<bodyRange.lowerBound]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?")) }
                 return remainder.trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?"))
             }
         }
         return ""
     }
+
     static func extractOutlookDestinationFolder(from text: String) -> String? {
         let lower = normalized(text)
         if lower.contains("junk") || lower.contains("spam") { return "junkemail" }
@@ -641,6 +600,7 @@ nonisolated enum DeterministicToolPlanner {
         if lower.contains("draft") { return "drafts" }
         return nil
     }
+
     static func extractFileName(from text: String) -> String? {
         let pattern = #"[A-Za-z0-9][A-Za-z0-9._-]*\.(?:md|txt|json|pdf|swift|docx|csv)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
@@ -658,19 +618,11 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func extractRecipientName(from text: String) -> String? {
-        extractNameAfterMarkers(
-            in: text,
-            markers: [" to ", " for "],
-            terminators: [" about ", " saying ", " that says ", " body ", " message ", " and ask ", " from contacts"]
-        )
+        extractNameAfterMarkers(in: text, markers: [" to ", " for "], terminators: [" about ", " saying ", " that says ", " body ", " message ", " and ask ", " from contacts"])
     }
 
     private static func extractCallTarget(from text: String) -> String? {
-        extractNameAfterMarkers(
-            in: text,
-            markers: ["place a call to ", "start a call to ", "call ", "phone "],
-            terminators: [" from contacts", " using contacts", " in contacts"]
-        )
+        extractNameAfterMarkers(in: text, markers: ["place a call to ", "start a call to ", "call ", "phone "], terminators: [" from contacts", " using contacts", " in contacts"])
     }
 
     private static func extractNameAfterMarkers(in text: String, markers: [String], terminators: [String]) -> String? {
@@ -679,9 +631,7 @@ nonisolated enum DeterministicToolPlanner {
             guard let range = lower.range(of: marker) else { continue }
             var remainder = String(text[range.upperBound...])
             let lowerRemainder = remainder.lowercased()
-            if let terminator = terminators.compactMap({ lowerRemainder.range(of: $0)?.lowerBound }).min() {
-                remainder = String(remainder[..<terminator])
-            }
+            if let terminator = terminators.compactMap({ lowerRemainder.range(of: $0)?.lowerBound }).min() { remainder = String(remainder[..<terminator]) }
             let cleaned = remainder.trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?"))
             return cleaned.isEmpty ? nil : cleaned
         }
@@ -691,9 +641,7 @@ nonisolated enum DeterministicToolPlanner {
     private static func extractCommunicationBody(from text: String) -> String {
         let lower = text.lowercased()
         for marker in [" saying ", " that says ", " body ", " body:", " message ", " about "] {
-            if let range = lower.range(of: marker) {
-                return String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?"))
-            }
+            if let range = lower.range(of: marker) { return String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?")) }
         }
         return ""
     }
