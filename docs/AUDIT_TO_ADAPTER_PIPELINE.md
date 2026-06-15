@@ -27,6 +27,8 @@ rem full GGUF
 
 Release-baked full GGUFs are manual fallback artifacts only. They must not appear in the default Qwen3 model catalog.
 
+See `docs/RUNTIME_STATUS_MATRIX.md` before interpreting the default runtime shape as shipped behavior: the adapter-first shape is the product target, while each app surface remains labeled as live, partial, compatibility bridge, or planned in the runtime matrix.
+
 ## Artifact contract
 
 ### Shared chat base
