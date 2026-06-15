@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "c6534d7f9673d5d57b730cc567064daf8302dc11",
+    "commit": "e4cc247bb3c18bb1888b03129ad743288c2f8092",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -62,6 +62,13 @@
         "sha256": "3a31663b0a76923b9eddf37af9ef084d80b07e42aa0a071078ce41248878fd15"
       }
     ]
+  },
+  "artifactStatus": {
+    "artifactStatus": "deterministic_source_manifest",
+    "deterministicBuild": true,
+    "runtimeEvidence": false,
+    "generatedAtPolicy": "unix_epoch_for_reproducible_source_artifact",
+    "liveTestFlightProof": false
   },
   "fleet": {
     "contractVersion": "2026.05.03-adapter-first",
