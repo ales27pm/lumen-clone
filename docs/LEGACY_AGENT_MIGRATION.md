@@ -2,6 +2,8 @@
 
 Phase 7 introduces `LegacyGroundingBridge` for legacy agent/headless paths.
 
+For a per-surface view of which entrypoints are live, partial, bridged, or planned, see `docs/RUNTIME_STATUS_MATRIX.md`.
+
 ## Now using bridge
 - `AgentRunner` headless path builds bounded grounding sections and secure-tool availability before constructing `AgentRequest`.
 
