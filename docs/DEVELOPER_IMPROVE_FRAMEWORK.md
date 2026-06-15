@@ -25,6 +25,8 @@ model replacements.
 
 See `docs/RUNTIME_STATUS_MATRIX.md` for the current per-surface runtime status matrix and for the labels that distinguish the adapter-first product target from live, bridged, or planned surfaces.
 
+See `docs/ARTIFACT_STATUS.md` for artifact classifications, regeneration commands, and freshness rules for historical runtime audits, crawler outputs, bundled manifests, and expected generated loop paths.
+
 ## Framework Contract
 
 Every improvement pass must answer six questions:
