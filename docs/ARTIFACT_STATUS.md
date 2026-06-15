@@ -1,0 +1,37 @@
+# Artifact Status and Freshness
+
+This document classifies generated or exported artifact paths used by the Lumen developer-improvement loop. It prevents stale exports, regenerated datasets, and expected-but-absent loop outputs from being mistaken for current live proof.
+
+## Artifact classes
+
+| Path | Status | How to use it | Regeneration or refresh command |
+|---|---|---|---|
+| `runtime-audits/` | Historical, dated runtime exports. | Treat each file as an archived snapshot from a specific app/TestFlight run. It is not equivalent to current live proof unless a runbook explicitly selects that file for the current pass. | Export a fresh in-app dataset package or E2E report from the shipped app, save it with a dated/build-labeled name, then pass it with `--runtime-audit` to `generate` or `improve-loop`. |
+| `tools/lumen_manifest_crawler/generated/` | Regenerable crawler and dataset-pipeline outputs. | Use these as checked-in examples or local tool outputs, not as hand-authored source of truth. They can be replaced by rerunning the crawler from Swift source and selected runtime inputs. | From `tools/lumen_manifest_crawler`: `python -m lumen_manifest_crawler generate --root ../.. --output generated/agent_manifest --pretty --generate-system-prompts --generate-agent-fine-tuning --fine-tuning-output generated/fine_tuning`. |
+| `ios/Lumen/AgentBehaviorManifest.json` | Bundled app resource. | This is the manifest copy shipped inside the iOS app bundle so the app can audit live runtime state against the manifest-derived training truth. Do not edit it by hand. | Regenerate `generated/agent_manifest/AgentBehaviorManifest.json` with the crawler, then copy/sync that JSON into `ios/Lumen/AgentBehaviorManifest.json` as part of the app resource update. |
+| `generated/agent_improvement_loop/` | Expected improvement-loop outputs. | Documentation and runbooks may mention these files before they exist in a fresh clone. Absence means the loop has not been run in that workspace, not that the paths are invalid. | Run `python -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop --runtime-audit <fresh-audit-or-report> --generate-system-prompts --generate-agent-fine-tuning`. |
+| Other `generated/...` paths mentioned in docs | Expected generated outputs. | Treat them as products of the manifest crawler, dataset compiler, adapter export, or improvement loop. They are not guaranteed to be present until the corresponding command has run. | Use the command attached to the owning pipeline: `generate` for manifest/datasets/fleet prompts, `improve-loop` for loop state/runbooks, and adapter export/training commands for model artifacts. |
+
+## Freshness rule
+
+A runtime proof is current only when all of the following are true:
+
+1. The audit/report file is explicitly selected by the current runbook, command line, CI job, or PR notes.
+2. The selected file identifies the app build, TestFlight build label, export time, or scenario run time closely enough to order it against other exports.
+3. The selected file was captured after the code, manifest, entitlement, dataset, or model-adapter change being validated.
+4. The selected file covers the scenario or surface being claimed; device-runtime grounding traces support diagnosis, while `live_e2e` reports own live scenario pass/fail.
+5. No newer selected audit for the same app build/scenario contradicts it.
+
+To identify the latest valid audit, prefer an explicit runbook selection first. If no runbook pins a file, sort candidate `runtime-audits/` inputs by embedded export timestamp/build label when available, then by filename date, then by filesystem modification time as a last resort. Record the chosen file in the next `improve-loop` invocation with `--runtime-audit` so the evidence selection is reproducible.
+
+A proof becomes obsolete when a newer app build is shipped, the bundled manifest changes, the runtime registry or adapter binding changes, the dataset/model artifacts being evaluated are regenerated, the relevant scenario definition changes, or a newer audit/E2E report supersedes the same surface. Obsolete evidence can still be ingested as training feedback, but it must not be cited as current live pass/fail proof.
+
+## Command pointers
+
+The crawler README contains concrete command examples for the two main refresh paths:
+
+- Manifest and dataset generation: `tools/lumen_manifest_crawler/README.md` section “Run locally”.
+- Closed improvement loop with runtime-audit ingestion: `tools/lumen_manifest_crawler/README.md` section “Run one closed improvement-loop cycle”.
+- Runtime audit ingestion for existing reports: `tools/lumen_manifest_crawler/README.md` section “Include in-app runtime audit data”.
+
+The same commands are implemented by the Typer CLI in `tools/lumen_manifest_crawler/lumen_manifest_crawler/cli.py` under `generate` and `improve-loop`.

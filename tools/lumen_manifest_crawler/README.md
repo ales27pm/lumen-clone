@@ -2,6 +2,8 @@
 
 The Lumen Manifest Crawler is the deterministic bridge between the Swift runtime, the in-app audit loop, and the model fine-tuning pipeline.
 
+For the status of generated files, bundled app resources, expected loop outputs, and runtime-audit freshness rules, see `../../docs/ARTIFACT_STATUS.md`.
+
 It extracts the real source-of-truth from the Lumen / monGARS codebase and writes an `AgentBehaviorManifest.json` plus role-specific, compiled, runtime-repair, and fleet self-knowledge artifacts for:
 
 - Cortex
