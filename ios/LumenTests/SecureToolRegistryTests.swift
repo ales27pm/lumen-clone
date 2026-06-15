@@ -47,6 +47,21 @@ final class SecureToolRegistryTests: XCTestCase {
         )
     }
 
+
+    func testMediaToolsAreNotBackgroundReadOnly() async {
+        let definitions = await SecureToolRegistry.shared.definitions()
+        XCTAssertEqual(definitions.first(where: { $0.id == "photos.search" })?.category, .userVisibleAction)
+        XCTAssertEqual(definitions.first(where: { $0.id == "camera.capture" })?.category, .sensitiveAction)
+    }
+
+    func testBackgroundAvailabilityExcludesMediaTools() async {
+        let ctx = ToolExecutionContext(isForeground: false, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: RuntimeMetricsStore.shared)
+        let defs = await SecureToolRegistry.shared.availableDefinitions(context: ctx, source: .backgroundTrigger)
+        let ids = Set(defs.map(\.id))
+        XCTAssertFalse(ids.contains("photos.search"))
+        XCTAssertFalse(ids.contains("camera.capture"))
+    }
+
     func testWebToolsAreExternalNetworkCategory() async {
         let definitions = await SecureToolRegistry.shared.definitions()
         XCTAssertEqual(definitions.first(where: { $0.id == "web.search" })?.category, .externalNetwork)

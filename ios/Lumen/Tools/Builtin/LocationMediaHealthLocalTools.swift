@@ -111,7 +111,7 @@ struct LocationMediaHealthLocalTool: LocalTool {
     private static func secureCategory(for canonical: String, catalogTool: ToolDefinition) -> SecureToolCategory {
         if catalogTool.requiresApproval { return .sensitiveAction }
         switch canonical {
-        case "maps.directions", "maps.search": return .userVisibleAction
+        case "maps.directions", "maps.search", "photos.search": return .userVisibleAction
         default: return .readOnly
         }
     }
