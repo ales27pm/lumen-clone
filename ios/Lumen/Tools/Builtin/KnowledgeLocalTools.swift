@@ -28,7 +28,7 @@ struct KnowledgeLocalTool: LocalTool {
             id: canonical,
             displayName: catalogTool.name,
             description: catalogTool.description,
-            category: .readOnly,
+            category: Self.secureCategory(for: canonical),
             requiredPermissions: [],
             supportsBackgroundExecution: true,
             requiresUserApproval: catalogTool.requiresApproval,
@@ -72,6 +72,13 @@ struct KnowledgeLocalTool: LocalTool {
 
     private func result(invocation: ToolInvocation, text: String, status: ToolResultStatus, metricsSummary: String) -> ToolResult {
         ToolResult(invocationID: invocation.id, status: status, displayText: text, modelText: text, structuredPayload: ["toolID": toolID, "implementation": "KnowledgeLocalTool"], privacyLevel: definition.resultPrivacyLevel, metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)", errorCode: status == .success ? nil : status.rawValue)
+    }
+
+    private static func secureCategory(for canonical: String) -> SecureToolCategory {
+        switch canonical {
+        case "web.search", "web.fetch": return .externalNetwork
+        default: return .readOnly
+        }
     }
 
     private static func maxOutputCharacters(for canonical: String) -> Int {

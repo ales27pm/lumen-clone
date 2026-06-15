@@ -45,7 +45,8 @@ nonisolated enum ToolResultStatusClassifier {
             "unavailable pending",
             "not available",
             "not configured",
-            "not signed in"
+            "not signed in",
+            "unsupported native"
         ]) {
             return .unavailable
         }
