@@ -39,6 +39,39 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertEqual(nativeIDs, catalogIDs)
     }
 
+
+    func testUnsupportedNativeToolOutputClassifiesAsUnavailable() {
+        XCTAssertEqual(
+            ToolResultStatusClassifier.status(from: "Unsupported native productivity tool: example.tool."),
+            .unavailable
+        )
+    }
+
+    func testWebToolsAreExternalNetworkCategory() async {
+        let definitions = await SecureToolRegistry.shared.definitions()
+        XCTAssertEqual(definitions.first(where: { $0.id == "web.search" })?.category, .externalNetwork)
+        XCTAssertEqual(definitions.first(where: { $0.id == "web.fetch" })?.category, .externalNetwork)
+    }
+
+    @MainActor func testMapsSearchWebFallbackDeniesForNetworkBeforeLocationPermission() async {
+        PermissionRegistry.shared.setNetworkAccessEnabled(false)
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "maps.search",
+            arguments: ["query": "how to build a bookshelf"],
+            source: .modelProposed,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+        let context = ToolExecutionContext(isForeground: true, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: .shared)
+        let result = await SecureToolRegistry.shared.execute(invocation, context: context)
+        XCTAssertEqual(result.status, .denied)
+        XCTAssertEqual(result.errorCode, "denied")
+        XCTAssertTrue(result.modelText.localizedCaseInsensitiveContains("Network tools are disabled"))
+        XCTAssertFalse(result.modelText.localizedCaseInsensitiveContains("location"))
+    }
+
     func testToolResultStatusClassifiesApprovalRequiredResponses() {
         XCTAssertEqual(
             ToolResultStatusClassifier.status(from: "Calendar event creation requires explicit user approval. I did not create an event."),

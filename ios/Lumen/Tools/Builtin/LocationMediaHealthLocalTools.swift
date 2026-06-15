@@ -47,32 +47,56 @@ struct LocationMediaHealthLocalTool: LocalTool {
         guard ToolRouteGuard.canExecuteTool(toolID, arguments: args, approval: approval) else {
             return result(invocation: invocation, text: ToolRouteGuard.approvalRequiredMessage(for: toolID), status: .requiresApproval, metricsSummary: "approval_required")
         }
-        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
-            return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
-        }
-
         let text: String
         switch toolID {
         case "location.current":
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+            }
             text = await LocationTools.currentLocation()
         case "weather":
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+            }
             text = await WeatherTools.currentWeather(location: args["location"] ?? args["city"] ?? args["query"])
         case "maps.directions":
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+            }
             text = LocationTools.openDirections(destination: args["destination"] ?? args["query"] ?? "")
         case "maps.search":
             let query = args["query"] ?? args["location"] ?? args["destination"] ?? ""
             if ToolRouteGuard.shouldUseWebSearchInsteadOfNearbySearch(query: query) {
+                let networkStatus = await context.permissionRegistry.currentStatus(for: .networkAccess)
+                guard networkStatus == .granted else {
+                    return result(invocation: invocation, text: "Network tools are disabled.", status: .denied, metricsSummary: "network_denied")
+                }
                 text = await WebTools.webSearch(query: query)
             } else {
+                if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                    return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+                }
                 text = await LocationTools.searchNearby(query: query)
             }
         case "photos.search":
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+            }
             text = await PhotosTools.searchPhotos(query: args["query"] ?? "")
         case "camera.capture":
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+            }
             text = await PhotosTools.captureImage()
         case "health.summary":
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+            }
             text = await HealthTools.healthSummary()
         case "motion.activity":
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
+            }
             text = await MotionTools.shared.motionActivity()
         default:
             text = "Unsupported native location/media/health tool: \(toolID)."
