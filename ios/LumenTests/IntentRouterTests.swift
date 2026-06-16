@@ -159,6 +159,48 @@ extension IntentRouterTests {
 
 
 extension IntentRouterTests {
+    @Test func liveScenarioFailurePromptsUseDeterministicPriorityRoutes() async throws {
+        let cases: [(String, UserIntent, String)] = [
+            ("Keep in mind that I like short answers.", .memory, "memory.save"),
+            ("Tell me what style I asked you to use.", .memory, "memory.recall"),
+            ("Text 5551234567 that I am late.", .messageDraft, "messages.draft"),
+            ("Am I signed in to Outlook?", .outlook, "outlook.status"),
+            ("Search my photos for receipts.", .photos, "photos.search"),
+            ("Find Lumen architecture notes in my local files.", .rag, "rag.search"),
+            ("Search my local files for the latest Lumen diagnostics report.", .rag, "rag.search"),
+            ("Run an agent reminder summary tonight in the background.", .trigger, "trigger.create"),
+            ("Fetch the page at https://example.com.", .webSearch, "web.fetch")
+        ]
+
+        for item in cases {
+            let decision = await IntentClassifierService.shared.route(item.0)
+            #expect(decision.intent == item.1, "Prompt \(item.0) routed as \(decision.intent.rawValue)")
+            #expect(IntentRouter.isToolAllowed(item.2, for: decision), "Prompt \(item.0) did not allow \(item.2)")
+        }
+    }
+
+    @Test func liveScenarioGeneratedPromptsStayExecutableForSpecificTools() async throws {
+        let entries = Dictionary(uniqueKeysWithValues: ToolScenarioBank.entries().map { ($0.expectedToolID + ":" + $0.kind.rawValue, $0) })
+        let expected: [(String, String)] = [
+            ("web.fetch:missingArgument", "web.fetch"),
+            ("maps.directions:missingArgument", "maps.directions"),
+            ("outlook.mail.send:approvalBoundary", "outlook.mail.send"),
+            ("trigger.create:approvalBoundary", "trigger.create")
+        ]
+
+        for item in expected {
+            let entry = try #require(entries[item.0])
+            let decision = await IntentClassifierService.shared.route(entry.prompt)
+            #expect(IntentRouter.isToolAllowed(item.1, for: decision), "Prompt \(entry.prompt) did not allow \(item.1)")
+            let action = DeterministicToolPlanner.plan(
+                routing: decision,
+                prompt: entry.prompt,
+                availableToolIDs: decision.allowedToolIDs
+            )
+            #expect(action?.tool == item.1, "Prompt \(entry.prompt) planned \(action?.tool ?? "nil")")
+        }
+    }
+
     @Test func identityRecallPromptsRouteToMemoryRecall() async throws {
         for prompt in ["What is my name?", "Who am I?", "Do you know my name?", "What's my name?", "What did I say my name was?"] {
             let decision = IntentRouter.classify(prompt)

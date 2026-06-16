@@ -316,8 +316,20 @@ nonisolated enum IntentRouter {
     private static func priorityOverride(forNormalizedText text: String) -> IntentRoutingDecision? {
         guard !text.isEmpty else { return nil }
 
-        if matchesAny(text, ["scheduled run", "agent run", "background agent", "cancel trigger", "create trigger", "list triggers"]) {
+        if matchesAny(text, ["scheduled run", "agent run", "background agent", "agent reminder summary", "cancel trigger", "create trigger", "list triggers"]) {
             return IntentRoutingDecision(intent: .trigger, allowedToolIDs: triggerToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if isLikelyOutlookIntent(text) {
+            return IntentRoutingDecision(intent: .outlook, allowedToolIDs: outlookToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if matchesAny(text, ["search my photos", "find receipt pictures", "find photos", "photo library"]) {
+            return IntentRoutingDecision(intent: .photos, allowedToolIDs: photosToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if isMapFollowUpPrompt(text) || matchesAny(text, ["directions to", "navigate to", "route to", "find coffee near me", "find a pharmacy nearby"]) {
+            return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if isExplicitReminderIntent(text) {
@@ -328,18 +340,19 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if isExplicitRAGIndexIntent(text) {
+        if isExplicitRAGIndexIntent(text)
+            || matchesAny(text, ["search my local files", "find lumen architecture notes", "latest lumen diagnostics report", "search personal data"]) {
             return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if isExplicitMemorySaveIntent(text)
             || isPersonalProfileRecallIntent(text)
             || (isPersonalProfileSaveIntent(text) && !isExplicitActionIntentContainingProfilePhrase(text))
-            || matchesAny(text, ["what do you remember", "recall my saved"]) {
+            || matchesAny(text, ["what do you remember", "recall my saved", "keep in mind that", "tell me what style i asked you to use"]) {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["draft a text", "message jordan", "text message to"]) {
+        if matchesAny(text, ["draft a text", "message jordan", "text message to", "text 555", "send a text"]) {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
             let clarification: String?
@@ -378,7 +391,7 @@ nonisolated enum IntentRouter {
         }
 
         if matchesAny(text, [
-            "read this url", "read this web url", "fetch and summarize"
+            "read this url", "read this web url", "fetch and summarize", "fetch the page at"
         ]) || isURLFetchIntent(text) {
             return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
