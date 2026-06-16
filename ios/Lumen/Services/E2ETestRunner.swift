@@ -739,6 +739,28 @@ nonisolated enum E2ETestRunner {
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
                 await Task.yield()
+                let shouldEnableNetworkAccess = shouldTemporarilyEnableNetworkAccess(
+                    scenario: scenario,
+                    routing: routing,
+                    availableToolIDs: req.availableTools.map(\.id)
+                )
+                let previousNetworkAccessGranted: Bool
+                if shouldEnableNetworkAccess {
+                    previousNetworkAccessGranted = await PermissionRegistry.shared.currentStatus(for: .networkAccess) == .granted
+                    await MainActor.run {
+                        PermissionRegistry.shared.setNetworkAccessEnabled(true)
+                    }
+                    await event("permissions", "networkAccess=temporarily-enabled-for-live-e2e")
+                } else {
+                    previousNetworkAccessGranted = false
+                }
+                defer {
+                    if shouldEnableNetworkAccess {
+                        Task { @MainActor in
+                            PermissionRegistry.shared.setNetworkAccessEnabled(previousNetworkAccessGranted)
+                        }
+                    }
+                }
                 let modelEvidenceStartedAt = Date()
                 let runOptions = LegacyAgentRunOptions(
                     modelContext: nil,
@@ -920,6 +942,16 @@ nonisolated enum E2ETestRunner {
         return IntentRouter.intentRequiresTool(routing) || routing.requiresClarification
     }
 
+    private nonisolated static func shouldTemporarilyEnableNetworkAccess(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        availableToolIDs: [String]
+    ) -> Bool {
+        guard scenario.requiresAgentRun, routing.intent == .webSearch else { return false }
+        let canonicalAvailable = Set(availableToolIDs.map(ToolRouteGuard.canonicalToolID))
+        return canonicalAvailable.contains("web.search") || canonicalAvailable.contains("web.fetch")
+    }
+
     private nonisolated static func modelRuntimeEvidence(
         since startedAt: Date,
         prompt: String,
@@ -980,6 +1012,14 @@ nonisolated enum E2ETestRunner {
     }
 
 #if DEBUG
+    nonisolated static func scenarioTemporarilyEnablesNetworkAccessForTests(
+        _ scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        availableToolIDs: [String]
+    ) -> Bool {
+        shouldTemporarilyEnableNetworkAccess(scenario: scenario, routing: routing, availableToolIDs: availableToolIDs)
+    }
+
     nonisolated static func modelRuntimeEvidenceForTests(since startedAt: Date, prompt: String, acceptsPolicyFirstEvidence: Bool = false) -> Bool {
         modelRuntimeEvidence(since: startedAt, prompt: prompt, acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence) != nil
     }

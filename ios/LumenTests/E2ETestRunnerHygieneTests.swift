@@ -101,6 +101,66 @@ struct E2ETestRunnerHygieneTests {
         #expect(failures.isEmpty)
     }
 
+    @Test func liveWebSearchScenarioTemporarilyEnablesNetworkAccess() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-web-research",
+            title: "web",
+            kind: .training,
+            prompt: "Search the web for Swift concurrency best practices.",
+            expectedIntent: .webSearch,
+            requiredAllowedToolIDs: ["web.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["swift"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let routing = IntentRoutingDecision(
+            intent: .webSearch,
+            allowedToolIDs: ["web.search", "web.fetch"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        #expect(E2ETestRunner.scenarioTemporarilyEnablesNetworkAccessForTests(
+            scenario,
+            routing: routing,
+            availableToolIDs: ["web.search"]
+        ))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func routingOnlyWebSearchScenarioDoesNotEnableNetworkAccess() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "tool-web-search",
+            title: "web",
+            kind: .toolGuard,
+            prompt: "Search the web.",
+            expectedIntent: .webSearch,
+            requiredAllowedToolIDs: ["web.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: false
+        )
+        let routing = IntentRoutingDecision(
+            intent: .webSearch,
+            allowedToolIDs: ["web.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        #expect(!E2ETestRunner.scenarioTemporarilyEnablesNetworkAccessForTests(
+            scenario,
+            routing: routing,
+            availableToolIDs: ["web.search"]
+        ))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()
