@@ -88,13 +88,7 @@ enum RAGStore {
             minScore: minScore
         )
 
-        var candidates: [(RAGChunk, Double)] = []
-        candidates.reserveCapacity(vectorHits.count)
-        for hit in vectorHits {
-            if let chunk = context.model(for: hit.id) as? RAGChunk {
-                candidates.append((chunk, Double(hit.score)))
-            }
-        }
+        var candidates = resolvedVectorCandidates(vectorHits: vectorHits, context: context)
 
         if candidates.count < limit {
             // Lexical backfill: keyword overlap as a rescue path when embeddings
@@ -137,6 +131,31 @@ enum RAGStore {
             }
         }
         return scored.sorted { $0.1 > $1.1 }.prefix(limit).map { $0 }
+    }
+
+    static func resolvedVectorCandidates(
+        vectorHits: [(id: PersistentIdentifier, score: Float)],
+        context: ModelContext
+    ) -> [(RAGChunk, Double)] {
+        let chunksByID = fetchedChunksByPersistentID(context: context)
+        var candidates: [(RAGChunk, Double)] = []
+        candidates.reserveCapacity(vectorHits.count)
+        for hit in vectorHits {
+            if let chunk = chunksByID[hit.id] {
+                candidates.append((chunk, Double(hit.score)))
+            }
+        }
+        return candidates
+    }
+
+    private static func fetchedChunksByPersistentID(context: ModelContext) -> [PersistentIdentifier: RAGChunk] {
+        let chunks = (try? context.fetch(FetchDescriptor<RAGChunk>())) ?? []
+        var byID: [PersistentIdentifier: RAGChunk] = [:]
+        byID.reserveCapacity(chunks.count)
+        for chunk in chunks {
+            byID[chunk.persistentModelID] = chunk
+        }
+        return byID
     }
 
     static func counts(context: ModelContext) -> [RAGSourceType: Int] {

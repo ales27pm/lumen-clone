@@ -53,6 +53,36 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testRAGStoreResolvedVectorCandidatesSkipsStaleIdentifiers() throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+
+        let stale = RAGChunk(content: "stale", sourceType: .file, sourceName: "stale", embedding: [1, 0])
+        context.insert(stale)
+        try context.save()
+        let staleID = stale.persistentModelID
+        context.delete(stale)
+        try context.save()
+
+        let live = RAGChunk(content: "live", sourceType: .file, sourceName: "live", embedding: [1, 0])
+        context.insert(live)
+        try context.save()
+
+        let resolved = RAGStore.resolvedVectorCandidates(
+            vectorHits: [
+                (id: staleID, score: 0.99),
+                (id: live.persistentModelID, score: 0.75)
+            ],
+            context: context
+        )
+
+        XCTAssertEqual(resolved.count, 1)
+        let resolvedCandidate = try XCTUnwrap(resolved.first)
+        XCTAssertEqual(resolvedCandidate.0.sourceName, "live")
+        XCTAssertEqual(resolvedCandidate.1, 0.75, accuracy: 0.001)
+    }
+
+    @MainActor
     func testTriggerSchedulerFailedSaveSurfacesFailure() {
         let failed = TriggerScheduler.shared.auditPersistence(operation: "test", scope: "Trigger") {
             throw SaveError()
