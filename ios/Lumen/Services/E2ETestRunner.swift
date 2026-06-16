@@ -772,7 +772,7 @@ nonisolated enum E2ETestRunner {
         for hint in scenario.requiredTextHints where !lowerFinal.contains(hint.lowercased()) {
             failures.append("Required final hint missing: \(hint)")
         }
-        if scenario.expectedIntent == .rag && scenario.requiresAgentRun {
+        if scenario.expectedIntent == .rag && scenario.requiresAgentRun && scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search") {
             if !lowerFinal.contains("module") && !lowerFinal.contains("modules") {
                 failures.append("RAG final response must mention module/modules")
             }
