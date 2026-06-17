@@ -1,29 +1,23 @@
 # Lumen Codebase Text Snapshot
-generated_utc: 2026-06-16T23:50:37Z
-tracked_files: 1003
+generated_utc: 2026-06-17T11:28:47Z
+tracked_files_considered: 1003
+included_text_files: 965
+excluded_binary_files: 38
 max_chunk_bytes: 5000000
+binary_policy: excluded; binary file content omitted
 
 ## Chunks
-- codebase_snapshot_part_001.txt: 3193154 bytes
-- codebase_snapshot_part_002.txt: 3877935 bytes
-- codebase_snapshot_part_003.txt: 4466379 bytes
-- codebase_snapshot_part_004.txt: 4828612 bytes
-- codebase_snapshot_part_005.txt: 4707806 bytes
-- codebase_snapshot_part_006.txt: 4920655 bytes
-- codebase_snapshot_part_007.txt: 4958752 bytes
-- codebase_snapshot_part_008.txt: 4879269 bytes
-- codebase_snapshot_part_009.txt: 4937170 bytes
-- codebase_snapshot_part_010.txt: 4594926 bytes
-- codebase_snapshot_part_011.txt: 3621814 bytes
-- codebase_snapshot_part_012.txt: 1780227 bytes
-- codebase_snapshot_part_013.txt: 4142487 bytes
-- codebase_snapshot_part_014.txt: 4520985 bytes
-- codebase_snapshot_part_015.txt: 3762841 bytes
-- codebase_snapshot_part_016.txt: 4999583 bytes
-- codebase_snapshot_part_017.txt: 4973038 bytes
-- codebase_snapshot_part_018.txt: 2484059 bytes
+- codebase_snapshot_part_001.txt: 4089027 bytes
+- codebase_snapshot_part_002.txt: 4843856 bytes
+- codebase_snapshot_part_003.txt: 4716676 bytes
+- codebase_snapshot_part_004.txt: 3971688 bytes
+- codebase_snapshot_part_005.txt: 4867788 bytes
+- codebase_snapshot_part_006.txt: 4591701 bytes
+- codebase_snapshot_part_007.txt: 4980265 bytes
+- codebase_snapshot_part_008.txt: 4999547 bytes
+- codebase_snapshot_part_009.txt: 265899 bytes
 
-## Files
+## Included Text Files
 path	bytes	sha256	encoding
 .gitattributes	589	ba984e7747795f3385fd47a620fd2ac408fa9149687522844c1852b119b13d52	utf-8
 .github/workflows/msal-link-validation.yml	1238	a734f312615be1d386eb80d6cd2e14e10db856a48fb548d841c22a58ee280e8f	utf-8
@@ -33,11 +27,6 @@ path	bytes	sha256	encoding
 =2.11.0	3297	bf134696601086a01eb8f8528b8334c23939233a00cb5804a0e1e7c92518bbab	utf-8
 CLAUDE.md	0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855	utf-8
 PLAN.md	2830	29e79ae2e4686a813b6387598fd6f031fc6ef879ff10def4a4567c7d7e64c476	utf-8
-assets/lumen-app-icon-base.png	1110117	a0b4fbc1cf10c4ea3cfb7419df8573586d31999d9b625cbe7663dfc8aa2d9004	base64
-assets/lumen-app-icon-source.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	base64
-assets/lumen-mark-source.png	1557592	6f4ea26a8279de5cf3b0d9f447e85f62ae7e1097d763b481e6c95a9d8a763997	base64
-assets/lumen-vertical-logo-source.png	1321603	dcd25527ccd0c135e2f6b1b3f14d73707ec9f0460dad0fb720aaa45f87924c97	base64
-assets/lumen-wordmark-lockup-source.png	1141459	b8b454c8d5d7e1834ae069a2c0e2deb7edba4f28d90bbe4b102f3f65957b39bb	base64
 docs/ADAPTER_FIRST_FINE_TUNING.md	2857	7bfc1d79dcff6cda5e0d03c0af30008130ca24e6de1d05d4f9adab8059ddbcfe	utf-8
 docs/ADAPTER_RUNTIME_IMPROVE_LOOP.md	11394	8976da381cbeeb401a8b7f1c401328deee8bed573839aeab2a90fa846e3446c5	utf-8
 docs/ADAPTER_SPECIALIZED_POLICY_FIRST_PIPELINE.md	1622	35905c44a8cbd8354cb39e0a26d67b69d35da15099eca39b7e17878f8d6760dd	utf-8
@@ -297,13 +286,11 @@ generated/fine_tuning/rem/train_sft.jsonl	1382349	f45c7500aa7777baa21172a548ea4a
 generated/fine_tuning/rem/unsloth_config.json	2030	61778c213334d8f198c2f0b2466b89455dc79852b22ceb8766814e432a522b74	utf-8
 generated/fine_tuning/rem/val_dpo.jsonl	776	442a6166458d1a92ac6ce6c544dca40920e89fab61f3fb2a70a84bace5cfbb46	utf-8
 generated/fine_tuning/rem/val_sft.jsonl	71392	e04c59c3dd3a948360d037181cb9c2be98070271baa16480288ff73fd53c8435	utf-8
-generated/hf_ready/lumen-improve-loop-datasets-20260607T171200Z.tar.gz	589500	205775f0c5a1d5fe550c4c45574e7e905e227fa43dc0b0f748d7ff98fa4d079e	base64
-generated/hf_ready/lumen-improve-loop-datasets-20260607T173000Z.tar.gz	2163449	b08e62f3f5d9d66874e149006bfc9e853180a58c05700609cb55f4e2fcb71b65	base64
 generated/visual_improve_loop/index.html	41674	546e0b30a6a5b50de717c3e172eb7f99c82c47375027c79c45e1d28d9559b0db	utf-8
 generated/visual_improve_loop/pipeline.svg	1734	59a3285c32a58f8fc38c65c216ba9addd5d7bd66ac70f556f111a6fcb21ad410	utf-8
 generated/visual_improve_loop/visual_improve_loop_summary.json	11558	917852b9e27b9df18421bc1404b73cf8bc07a91617576daab515242087a895ff	utf-8
 ios/.gitignore	390	c8ab46831944829d189c4d40169d58a2ee687fae973a3c9bd14748c4925934d9	utf-8
-ios/Lumen.xcodeproj/project.pbxproj	33036	500e352daa24fe52c34e3cdf938a3ed4f15d90ac5728d7081a40df3ac83d7863	utf-8
+ios/Lumen.xcodeproj/project.pbxproj	33036	97ab211e2403282eac4ca8b98d7df3823a631dc3ac0be539477bc266e17fd27a	utf-8
 ios/Lumen.xcodeproj/project.xcworkspace/contents.xcworkspacedata	135	7f3b00b5c3fdb45242d7b87e1e5c4e25d1fa8129a16c94295ecc4e8ea2235c5f	utf-8
 ios/Lumen.xcodeproj/xcshareddata/xcschemes/Lumen.xcscheme	4698	c5e28364a4cde8b488174682b1ad489ed594bffcc0f1f0bc96305990b34919c3	utf-8
 ios/Lumen/AgentBehaviorManifest.json	67793	03662160cd067e1051c46078d1fb39a11edb0b64a7b1c6d5d249b68f1bf40802	utf-8
@@ -316,38 +303,10 @@ ios/Lumen/AppIntents/LumenMemorySearchIntent.swift	1214	ef71978adbe38af2536cef00
 ios/Lumen/AppIntents/LumenRunTriggerIntent.swift	2360	8c70964f87761428b97670580d20a84a0cdd1da6651e4305c1985a7583d5264f	utf-8
 ios/Lumen/Assets.xcassets/AccentColor.colorset/Contents.json	118	ac2e7a5de74177ab4192e9acdd548373c4c9d9f2dee0aa55988f141146c30d74	utf-8
 ios/Lumen/Assets.xcassets/AppIcon.appiconset/Contents.json	2288	34a7666caf23cf5d0b135ba95bef0716789c729e47ebcfa557007eee75ff2225	utf-8
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-1024.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20-ipad@1x.png	1537	7f277952d3aac4518d2a586eab99e5c04349b0572ba8a1cc7e8facee8c37c15e	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20-ipad@2x.png	3651	b08761f9cb3713a195f193d2e32981161094b9e3f017ceb82274628b9e1017e1	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20@2x.png	3651	b08761f9cb3713a195f193d2e32981161094b9e3f017ceb82274628b9e1017e1	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20@3x.png	6852	b59aa1f5143497711b530a695c033eb8e69a31f921504ac437fda7fb4b1f5559	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29-ipad@1x.png	2357	6c6e4b0584af9e280d92ed2b8003a09c5bd8e3065590d95efe07964be3cef1d5	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29-ipad@2x.png	6471	cb2dc0d6c131c7cc86fc5b11a3c44327d792b4bab59b3b60d942eb46a918082a	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29@2x.png	6471	cb2dc0d6c131c7cc86fc5b11a3c44327d792b4bab59b3b60d942eb46a918082a	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29@3x.png	13013	b05e7e9d78c1f268bba44d3ac093ff0e7a13e3d793ce59a0361fb8e430b1f83e	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40-ipad@1x.png	3651	b08761f9cb3713a195f193d2e32981161094b9e3f017ceb82274628b9e1017e1	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40-ipad@2x.png	11169	41be85b9fe1c17ff2a1b8b2138e73b4a6905cd9117a799087882d25a812432e1	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40@2x.png	11169	41be85b9fe1c17ff2a1b8b2138e73b4a6905cd9117a799087882d25a812432e1	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40@3x.png	22904	8a38985dedb8b50637f17792bba6e83b90cfce435fb33b3853a1b1025614c05d	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-60@2x.png	22904	8a38985dedb8b50637f17792bba6e83b90cfce435fb33b3853a1b1025614c05d	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-60@3x.png	47701	19bff96b3e8328ac12e5ebffb405374015f4f764f6d7c2be44e1ee8b55ff9502	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-76@1x.png	10294	c1ed06cc2c15a1acba6f917c9f21271bd86ce7f7d496a06e53a7f02a1c57ccf5	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-76@2x.png	34973	9ea5b4c1ac04ed35a191a7f12f4292d090ff144f26a86676cce684c84371fc37	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-83_5@2x.png	41479	45040c6d434fb87b5c796a92c1d07ee27c899cba7368d07342e01420b5279809	base64
-ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon.png	1678458	26ad9893f3ae7e10ae6b71b4f098dcb6d3f4b186eec5f6dd09da4272e3774b20	base64
 ios/Lumen/Assets.xcassets/Contents.json	60	f5fb0e1f3a8142892ed092efb5955c1c2cc537003a89ad7bbdb9dade7fe8985f	utf-8
 ios/Lumen/Assets.xcassets/LumenAssistantMark.imageset/Contents.json	408	986ae059ab41200bea83295b60aec12a0e87b08072bad4d2dc91dd252508254a	utf-8
-ios/Lumen/Assets.xcassets/LumenAssistantMark.imageset/lumen-assistant-mark@1x.png	344355	74a193e9e8364280f07f053f09ce2eaa7c1ea9e65ade816476b637f8ba276a41	base64
-ios/Lumen/Assets.xcassets/LumenAssistantMark.imageset/lumen-assistant-mark@2x.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	base64
-ios/Lumen/Assets.xcassets/LumenAssistantMark.imageset/lumen-assistant-mark@3x.png	2282696	5ec0ffb90bca916d691717341c8ac08332123bc9639ce7a55b5a7d5f865fec5f	base64
 ios/Lumen/Assets.xcassets/LumenVerticalLogo.imageset/Contents.json	405	2361577376f4e26f9830a66ce53b2a23e1ed71e1fda717e9cff09b92657be1e8	utf-8
-ios/Lumen/Assets.xcassets/LumenVerticalLogo.imageset/lumen-vertical-logo@1x.png	405643	0f4dfe24163eb1d8546517b7b13a64a3471b2597016956a01a96667ad386eea7	base64
-ios/Lumen/Assets.xcassets/LumenVerticalLogo.imageset/lumen-vertical-logo@2x.png	1321603	dcd25527ccd0c135e2f6b1b3f14d73707ec9f0460dad0fb720aaa45f87924c97	base64
-ios/Lumen/Assets.xcassets/LumenVerticalLogo.imageset/lumen-vertical-logo@3x.png	2699296	2742714b59aef84e79ac4853bd50a99419db6cafb3026f941a576704a49b7ebd	base64
 ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/Contents.json	411	5645b17e049d60aa44b4d5d9f67f27887283b6018714e396031797f6727f0f70	utf-8
-ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/lumen-wordmark-lockup@1x.png	375672	0ab5bda2dcd7ebafcf09818c4a1182ecb1d481037770da2ca0bb05d845b4178c	base64
-ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/lumen-wordmark-lockup@2x.png	1141459	b8b454c8d5d7e1834ae069a2c0e2deb7edba4f28d90bbe4b102f3f65957b39bb	base64
-ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/lumen-wordmark-lockup@3x.png	2142620	0ddec76e9b9f4e288279a600d730786661c144da77fa43f24ccaeab32c77d91e	base64
 ios/Lumen/Assistant/AgentKernelContracts.swift	9088	f6f11643fd9b76f36de641c095a4ed3d2b62432ae8c99f15d0ab65acd6a1c9d9	utf-8
 ios/Lumen/Assistant/AgentKernelRunOptions.swift	2504	9ecca823589f2a132bb58bad85edd3220c6eec1320e6d55d5e5c2e07edc1371c	utf-8
 ios/Lumen/Assistant/AssistantGroundingContext.swift	354	1a5178e96f9c872c1f659617ecbfae356da34cdbe379f8465e847caadac172e5	utf-8
@@ -375,9 +334,6 @@ ios/Lumen/Background/BackgroundEntitlementValidator.swift	1658	cae8e2ba7d660e425
 ios/Lumen/Background/BackgroundExecutionLease.swift	956	7cbf5b28bbe2b967c93eed945965e0ee0f9207849b40cb49b0edaa47f4dbd98e	utf-8
 ios/Lumen/Background/BackgroundOrchestrator.swift	4057	c6278a4e3fc48323f82fe8bbfe927e91bad5d5220f2f1db72a6bca56ff979324	utf-8
 ios/Lumen/Background/BackgroundTaskPolicy.swift	2145	2d4712eee95eb725562d6e093b06024fd57535952567bcca956ccc1ccb9c1925	utf-8
-ios/Lumen/Brand/Assets/lumen-assistant-mark.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	base64
-ios/Lumen/Brand/Assets/lumen-vertical-logo.png	1541329	d62a82b5ea9d3fb9c866c1cec4cd97ba597657aa3f3d85a1b0e3a4fbcdeadb4d	base64
-ios/Lumen/Brand/Assets/lumen-wordmark-lockup.png	1372397	aff8d93be3f59d77572bb47413143acfbe75e70ae7dbfe0c3f12b8f286024984	base64
 ios/Lumen/Brand/BRANDING.md	1553	9aaa245daf0df5f52b65b4fe1c21ceca6ed775afd95a268273f9455d277d40c2	utf-8
 ios/Lumen/Brand/LumenBrand.swift	14997	33154764d0d9a5082557e919511ba5975bbf2759a50f4474c6aac5a6ca1f3ef5	utf-8
 ios/Lumen/Developer/DeveloperConsoleView.swift	11284	2604332c14ea8ae4d0cb19f8bbf3b0882d5e37076104dec3392edc33c27be0aa	utf-8
@@ -1028,3 +984,44 @@ tools/run_visual_improve_loop_with_embedding_state.py	1640	f5eabab1fd2b9b4adb84c
 tools/security/check_no_shell_subprocess.py	1819	69cbcba83b242a0aeb83afe5b942f8013f468f410905df89199ff0e8aa9b310d	utf-8
 tools/serve_visual_improve_loop.py	19271	464d1c7ec79a2a200279c96397d9c2f51a3a6ec491bf8d35a2a4472c475352c9	utf-8
 tools/test_tripleboot_aio.py	3496	8437b145da42bbfa49e2051b36dbf9df961bd5df31045dfb379ad582918ae529	utf-8
+
+## Excluded Binary Files
+path	bytes	sha256	reason
+assets/lumen-app-icon-base.png	1110117	a0b4fbc1cf10c4ea3cfb7419df8573586d31999d9b625cbe7663dfc8aa2d9004	binary_null_byte
+assets/lumen-app-icon-source.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	binary_null_byte
+assets/lumen-mark-source.png	1557592	6f4ea26a8279de5cf3b0d9f447e85f62ae7e1097d763b481e6c95a9d8a763997	binary_null_byte
+assets/lumen-vertical-logo-source.png	1321603	dcd25527ccd0c135e2f6b1b3f14d73707ec9f0460dad0fb720aaa45f87924c97	binary_null_byte
+assets/lumen-wordmark-lockup-source.png	1141459	b8b454c8d5d7e1834ae069a2c0e2deb7edba4f28d90bbe4b102f3f65957b39bb	binary_null_byte
+generated/hf_ready/lumen-improve-loop-datasets-20260607T171200Z.tar.gz	589500	205775f0c5a1d5fe550c4c45574e7e905e227fa43dc0b0f748d7ff98fa4d079e	binary_null_byte
+generated/hf_ready/lumen-improve-loop-datasets-20260607T173000Z.tar.gz	2163449	b08e62f3f5d9d66874e149006bfc9e853180a58c05700609cb55f4e2fcb71b65	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-1024.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20-ipad@1x.png	1537	7f277952d3aac4518d2a586eab99e5c04349b0572ba8a1cc7e8facee8c37c15e	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20-ipad@2x.png	3651	b08761f9cb3713a195f193d2e32981161094b9e3f017ceb82274628b9e1017e1	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20@2x.png	3651	b08761f9cb3713a195f193d2e32981161094b9e3f017ceb82274628b9e1017e1	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-20@3x.png	6852	b59aa1f5143497711b530a695c033eb8e69a31f921504ac437fda7fb4b1f5559	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29-ipad@1x.png	2357	6c6e4b0584af9e280d92ed2b8003a09c5bd8e3065590d95efe07964be3cef1d5	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29-ipad@2x.png	6471	cb2dc0d6c131c7cc86fc5b11a3c44327d792b4bab59b3b60d942eb46a918082a	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29@2x.png	6471	cb2dc0d6c131c7cc86fc5b11a3c44327d792b4bab59b3b60d942eb46a918082a	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-29@3x.png	13013	b05e7e9d78c1f268bba44d3ac093ff0e7a13e3d793ce59a0361fb8e430b1f83e	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40-ipad@1x.png	3651	b08761f9cb3713a195f193d2e32981161094b9e3f017ceb82274628b9e1017e1	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40-ipad@2x.png	11169	41be85b9fe1c17ff2a1b8b2138e73b4a6905cd9117a799087882d25a812432e1	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40@2x.png	11169	41be85b9fe1c17ff2a1b8b2138e73b4a6905cd9117a799087882d25a812432e1	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-40@3x.png	22904	8a38985dedb8b50637f17792bba6e83b90cfce435fb33b3853a1b1025614c05d	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-60@2x.png	22904	8a38985dedb8b50637f17792bba6e83b90cfce435fb33b3853a1b1025614c05d	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-60@3x.png	47701	19bff96b3e8328ac12e5ebffb405374015f4f764f6d7c2be44e1ee8b55ff9502	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-76@1x.png	10294	c1ed06cc2c15a1acba6f917c9f21271bd86ce7f7d496a06e53a7f02a1c57ccf5	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-76@2x.png	34973	9ea5b4c1ac04ed35a191a7f12f4292d090ff144f26a86676cce684c84371fc37	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon-83_5@2x.png	41479	45040c6d434fb87b5c796a92c1d07ee27c899cba7368d07342e01420b5279809	binary_null_byte
+ios/Lumen/Assets.xcassets/AppIcon.appiconset/icon.png	1678458	26ad9893f3ae7e10ae6b71b4f098dcb6d3f4b186eec5f6dd09da4272e3774b20	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenAssistantMark.imageset/lumen-assistant-mark@1x.png	344355	74a193e9e8364280f07f053f09ce2eaa7c1ea9e65ade816476b637f8ba276a41	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenAssistantMark.imageset/lumen-assistant-mark@2x.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenAssistantMark.imageset/lumen-assistant-mark@3x.png	2282696	5ec0ffb90bca916d691717341c8ac08332123bc9639ce7a55b5a7d5f865fec5f	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenVerticalLogo.imageset/lumen-vertical-logo@1x.png	405643	0f4dfe24163eb1d8546517b7b13a64a3471b2597016956a01a96667ad386eea7	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenVerticalLogo.imageset/lumen-vertical-logo@2x.png	1321603	dcd25527ccd0c135e2f6b1b3f14d73707ec9f0460dad0fb720aaa45f87924c97	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenVerticalLogo.imageset/lumen-vertical-logo@3x.png	2699296	2742714b59aef84e79ac4853bd50a99419db6cafb3026f941a576704a49b7ebd	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/lumen-wordmark-lockup@1x.png	375672	0ab5bda2dcd7ebafcf09818c4a1182ecb1d481037770da2ca0bb05d845b4178c	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/lumen-wordmark-lockup@2x.png	1141459	b8b454c8d5d7e1834ae069a2c0e2deb7edba4f28d90bbe4b102f3f65957b39bb	binary_null_byte
+ios/Lumen/Assets.xcassets/LumenWordmarkLockup.imageset/lumen-wordmark-lockup@3x.png	2142620	0ddec76e9b9f4e288279a600d730786661c144da77fa43f24ccaeab32c77d91e	binary_null_byte
+ios/Lumen/Brand/Assets/lumen-assistant-mark.png	1252357	4eb2faa8a39ef99884a252ba190cd9cb503faaddae6c7fe554e8b9128b95dfcd	binary_null_byte
+ios/Lumen/Brand/Assets/lumen-vertical-logo.png	1541329	d62a82b5ea9d3fb9c866c1cec4cd97ba597657aa3f3d85a1b0e3a4fbcdeadb4d	binary_null_byte
+ios/Lumen/Brand/Assets/lumen-wordmark-lockup.png	1372397	aff8d93be3f59d77572bb47413143acfbe75e70ae7dbfe0c3f12b8f286024984	binary_null_byte
