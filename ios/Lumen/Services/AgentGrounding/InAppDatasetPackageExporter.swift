@@ -241,12 +241,13 @@ nonisolated enum InAppDatasetPackageExporter {
 
     private static func isActionStructuredStage(_ trace: AgentBehaviorTrace) -> Bool {
         if trace.event == .toolAction { return true }
-        if trace.slot.lowercased() == "executor" { return true }
+        guard trace.event == .modelTurn else { return false }
         let stage = trace.stage.lowercased()
+        if stage == "agent-json" { return true }
         if stage.contains("mouth") || stage.contains("final") || stage.contains("direct") {
             return false
         }
-        return stage.contains("json") || stage.contains("orchestrator") || stage.contains("executor") || trace.slot.lowercased() == "cortex"
+        return stage.contains("executor-json")
     }
 
     private static func writeImproveLoopJSONL(_ dataset: ImproveLoopDataset, directory: URL, timestamp: String) throws {

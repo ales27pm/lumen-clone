@@ -408,6 +408,41 @@ struct LumenTests {
         #expect(sanitized.contains("Be thorough, cite reasoning"))
     }
 
+    @Test @MainActor func structuredAgentPromptsStripGroundingBlocksBeforeModelInput() async throws {
+        let groundedUser = """
+        Search the web for SwiftData cancellation patterns
+
+        <!-- LUMEN_GROUNDING_V1 -->
+        [AVAILABLE LOCAL TOOLS]
+        - web.search: Search the web.
+        [RUNTIME POLICY]
+        legacy-interactive
+        """
+        let request = AgentRequest(
+            systemPrompt: "Style note.\n<!-- LUMEN_GROUNDING_V1 -->\n" + String(repeating: "internal policy ", count: 300),
+            history: [(.assistant, "Earlier answer <!-- LUMEN_GROUNDING_V1 --> hidden policy")],
+            userMessage: groundedUser,
+            temperature: 0.1,
+            topP: 0.8,
+            repetitionPenalty: 1.1,
+            maxTokens: 256,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+
+        let userTurn = AgentService.shared.structuredAgentUserTurnForTests(req: request)
+        let systemPrompt = AgentService.shared.structuredSystemPromptForTests(req: request)
+
+        #expect(userTurn.contains("Search the web for SwiftData cancellation patterns"))
+        #expect(!userTurn.contains("LUMEN_GROUNDING_V1"))
+        #expect(!userTurn.contains("[AVAILABLE LOCAL TOOLS]"))
+        #expect(!userTurn.contains("legacy-interactive"))
+        #expect(!systemPrompt.contains("LUMEN_GROUNDING_V1"))
+        #expect(systemPrompt.contains("Style note."))
+        #expect(systemPrompt.count < 4_000)
+    }
+
     @Test @MainActor func structuredAgentTurnMaxTokensUsesDedicatedCap() async throws {
         let low = AgentService.shared.structuredTurnMaxTokensForTests(from: 32)
         let mid = AgentService.shared.structuredTurnMaxTokensForTests(from: 256)

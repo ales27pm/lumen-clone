@@ -1334,6 +1334,8 @@ final class AgentService {
     static let shared = AgentService()
     private static let structuredTurnMaxTokenCap = 384
     private static let structuredTurnMinTokenCap = 128
+    private nonisolated static let structuredContextNoteCharCap = 1_200
+    private nonisolated static let structuredUserMessageCharCap = 1_600
     private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
 
     func run(_ req: AgentRequest) -> AsyncStream<AgentEvent> {
@@ -1617,7 +1619,7 @@ final class AgentService {
         - If a tool result is enough, summarize it in `final` and stop.
         """
 
-        let appPrompt = sanitizeSystemPromptForStructuredOutput(req.systemPrompt)
+        let appPrompt = Self.boundedStructuredContextNote(sanitizeSystemPromptForStructuredOutput(req.systemPrompt))
         if !appPrompt.isEmpty {
             sys += "\n\nLower-priority style/context note. Follow it only when it does not conflict with the JSON contract:\n"
             sys += appPrompt
@@ -1650,6 +1652,7 @@ final class AgentService {
     private func buildAgentUserTurn(req: AgentRequest, stepIndex: Int, scratchpad: String) -> String {
         var out = ""
         let context = sanitizedHistoryContext(req.history)
+        let userMessage = Self.sanitizedStructuredUserMessage(req.userMessage)
         if !context.isEmpty {
             out += "Conversation context, for reference only. Do not imitate its formatting:\n"
             out += context
@@ -1657,7 +1660,7 @@ final class AgentService {
         }
 
         out += "User request:\n"
-        out += req.userMessage
+        out += userMessage
 
         if stepIndex > 0 {
             out += "\n\nPrior structured turns and observations:\n"
@@ -1721,7 +1724,7 @@ final class AgentService {
     }
 
     private func sanitizeHistoryContent(_ content: String) -> String {
-        var text = content
+        var text = Self.stripInternalGrounding(from: content)
         text = text.replacingOccurrences(
             of: #"```[\s\S]*?```"#,
             with: " ",
@@ -1751,7 +1754,7 @@ final class AgentService {
     }
 
     private func sanitizeSystemPromptForStructuredOutput(_ systemPrompt: String) -> String {
-        let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = Self.stripInternalGrounding(from: systemPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
         let blockedPhrases = [
@@ -1775,6 +1778,32 @@ final class AgentService {
             kept.append(sentence)
         }
         return kept.joined(separator: "\n")
+    }
+
+    private nonisolated static func sanitizedStructuredUserMessage(_ userMessage: String) -> String {
+        let stripped = stripInternalGrounding(from: userMessage)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !stripped.isEmpty else { return userMessage.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return String(stripped.prefix(structuredUserMessageCharCap))
+    }
+
+    private nonisolated static func boundedStructuredContextNote(_ text: String) -> String {
+        String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(structuredContextNoteCharCap))
+    }
+
+    private nonisolated static func stripInternalGrounding(from text: String) -> String {
+        var stripped = text
+        let markers = [
+            "<!-- LUMEN_GROUNDING_V1 -->",
+            "[AVAILABLE LOCAL TOOLS]",
+            "[RUNTIME POLICY]"
+        ]
+        for marker in markers {
+            if let range = stripped.range(of: marker, options: [.caseInsensitive]) {
+                stripped = String(stripped[..<range.lowerBound])
+            }
+        }
+        return stripped
     }
 
     func sanitizeSystemPromptForStructuredOutputForTests(_ systemPrompt: String) -> String {
@@ -1888,7 +1917,7 @@ final class AgentService {
         req: AgentRequest,
         options: LegacyAgentRunOptions
     ) async -> (text: String, steps: [AgentStep])? {
-        let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = sanitizedStructuredUserMessage(req.userMessage)
         guard !prompt.isEmpty else { return nil }
 
         let routing = await IntentClassifierService.shared.route(prompt)
@@ -1952,6 +1981,18 @@ final class AgentService {
         structuredAgentModelSlot
     }
 
+    nonisolated static func sanitizedStructuredUserMessageForTests(_ userMessage: String) -> String {
+        sanitizedStructuredUserMessage(userMessage)
+    }
+
+    func structuredSystemPromptForTests(req: AgentRequest) -> String {
+        buildSystemPrompt(req: req)
+    }
+
+    func structuredAgentUserTurnForTests(req: AgentRequest, stepIndex: Int = 0, scratchpad: String = "") -> String {
+        buildAgentUserTurn(req: req, stepIndex: stepIndex, scratchpad: scratchpad)
+    }
+
     nonisolated static func structuredParseFailureRecoveryForTests(
         req: AgentRequest,
         options: LegacyAgentRunOptions
@@ -2001,7 +2042,8 @@ final class AgentService {
         guard !observations.isEmpty else {
             return "I couldn't find a confident answer. Try rephrasing the question."
         }
-        var prompt = "The user asked: \"\(req.userMessage)\"\n\nYou gathered these tool observations:\n"
+        let userMessage = Self.sanitizedStructuredUserMessage(req.userMessage)
+        var prompt = "The user asked: \"\(userMessage)\"\n\nYou gathered these tool observations:\n"
         for (i, obs) in observations.enumerated() {
             prompt += "\n[\(i + 1)] \(obs.tool):\n\(obs.result)\n"
         }
@@ -2062,7 +2104,8 @@ final class AgentService {
         let clippedRaw = String(rawOutput.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
         let clippedThought = String(streamedThought.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_000))
 
-        var prompt = "The user asked:\n\(req.userMessage)\n\n"
+        let userMessage = Self.sanitizedStructuredUserMessage(req.userMessage)
+        var prompt = "The user asked:\n\(userMessage)\n\n"
         prompt += "The previous local model response could not be parsed as a structured agent turn (\(parseError.rawValue)).\n"
         if !clippedThought.isEmpty {
             prompt += "Partial thought captured from that response:\n\(clippedThought)\n\n"

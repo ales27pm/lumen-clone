@@ -4,13 +4,13 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `8454`
-- Runtime audit reports: `3`
-- Runtime failures: `78`
+- Dataset records: `8442`
+- Runtime audit reports: `4`
+- Runtime failures: `73`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `78`
-- Next action prompts: `78`
+- Gaps: `73`
+- Next action prompts: `73`
 
 ## TestFlight handoff
 

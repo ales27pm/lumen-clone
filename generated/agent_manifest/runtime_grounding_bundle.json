@@ -287,7 +287,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, writePackage, exportDirectory, mergedBehaviorAuditWithRuntimeTraceViolations, runtimeTraceViolations.",
-        "sha256": "77a631c1baa1e7a9cc4d70be7237fab8a36ea03230ebb654817d62a8b38ad98a",
+        "sha256": "19c37e4fdf4ade1293e170fd8a0b24ac2ca3443397b92459b1c96379af79acd5",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetAppInfo",
@@ -299,12 +299,12 @@
           "exportDirectory",
           "mergedBehaviorAuditWithRuntimeTraceViolations",
           "runtimeTraceViolations",
+          "traceHasActionParseError",
+          "actionTraceParseError",
           "isActionStructuredStage",
           "writeImproveLoopJSONL",
           "safeTimestamp",
-          "schemaVersion",
-          "generatedAt",
-          "app"
+          "schemaVersion"
         ]
       },
       {
@@ -1086,12 +1086,14 @@
         "language": "swift",
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
-        "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser, ExtractedJSONObject, StreamingJSONScanner.",
-        "sha256": "1e9e2c278f1ce4504da05df7e1b6205cc56f36e722d5186b1857a5dd1ac14c88",
+        "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser.",
+        "sha256": "f35022d910f2e84f5424fb14e60c30c4a369ec69dab9195f11d096b18facb3a0",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
           "AgentAction",
+          "StructuredOutput",
+          "StructuredAction",
           "AgentTurn",
           "AgentTurnParseError",
           "AgentJSONCandidateSelector",
@@ -1102,9 +1104,7 @@
           "Event",
           "JSONContext",
           "AgentParseFailureTrace",
-          "AgentParseNoiseTrace",
-          "AgentNoiseInspector",
-          "Snapshot"
+          "AgentParseNoiseTrace"
         ]
       },
       {
@@ -2108,7 +2108,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "5a22ea338295aa995a6cff0cd6ae3b86fd10e4b2",
+  "manifestCommit": "60e459e72d215380b6e2c7f089e4cd441821d64f",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",
