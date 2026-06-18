@@ -373,6 +373,74 @@ struct AgentGroundingRegressionTests {
         #expect(package.traceParseErrorCount == 0)
     }
 
+    @Test func agentGroundingPackageReparsesToolActionTracesInsteadOfTrustingParseErrorField() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .toolAction,
+            slot: "executor",
+            stage: "compatibility-tool-action",
+            intent: "weather",
+            promptPrefix: "What is the weather here?",
+            rawOutputPrefix: "weather()",
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 1)
+        #expect(package.behaviorAudit?.passed == false)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) == true)
+    }
+
+    @Test func agentGroundingPackageAcceptsCanonicalToolActionJSONTrace() throws {
+        AgentBehaviorTraceRecorder.clear()
+        let action = AgentAction(tool: "weather", args: [:])
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .toolAction,
+            slot: "executor",
+            stage: "compatibility-tool-action",
+            intent: "weather",
+            promptPrefix: "What is the weather here?",
+            rawOutputPrefix: action.structuredOutputJSON,
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 0)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) != true)
+    }
+
     @Test func agentGroundingPackageFlagsSevereRuntimeModelTurns() throws {
         AgentBehaviorTraceRecorder.clear()
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
@@ -609,6 +677,10 @@ extension AgentGroundingRegressionTests {
         let hasCalendarListActionTrace = traces.contains { trace in
             trace.event == AgentBehaviorTrace.Event.toolAction && trace.selectedToolID == "calendar.list"
         }
+        let actionTrace = traces.first { trace in
+            trace.event == AgentBehaviorTrace.Event.toolAction && trace.selectedToolID == "calendar.list"
+        }
+        let parsedActionTrace = AgentTurnParser.parse(actionTrace?.rawOutputPrefix ?? "")
         let hasCompatibilityFinalTrace = traces.contains { trace in
             trace.event == AgentBehaviorTrace.Event.finalAnswer && trace.runtimePath == "deterministic-compatibility"
         }
@@ -616,6 +688,10 @@ extension AgentGroundingRegressionTests {
         #expect(actionToolIDs == ["calendar.list"])
         #expect(response.text.lowercased().contains("event"))
         #expect(hasCalendarListActionTrace)
+        #expect(actionTrace?.rawOutputPrefix.hasPrefix(#"{"action":"#) == true)
+        #expect(actionTrace?.parseError == nil)
+        #expect(parsedActionTrace.parseError == nil)
+        #expect(parsedActionTrace.action?.tool == "calendar.list")
         #expect(hasCompatibilityFinalTrace)
     }
 
