@@ -7,6 +7,7 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
+    @MainActor
     func testBackgroundHidesSensitive() async {
         let ctx = ToolExecutionContext(isForeground: false, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: RuntimeMetricsStore.shared)
         let defs = await SecureToolRegistry.shared.availableDefinitions(context: ctx, source: .backgroundTrigger)
@@ -54,6 +55,7 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertEqual(definitions.first(where: { $0.id == "camera.capture" })?.category, .sensitiveAction)
     }
 
+    @MainActor
     func testBackgroundAvailabilityExcludesMediaTools() async {
         let ctx = ToolExecutionContext(isForeground: false, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: RuntimeMetricsStore.shared)
         let defs = await SecureToolRegistry.shared.availableDefinitions(context: ctx, source: .backgroundTrigger)

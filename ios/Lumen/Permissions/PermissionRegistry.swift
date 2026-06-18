@@ -54,6 +54,7 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
         case .contacts:
             switch CNContactStore.authorizationStatus(for: .contacts) {
             case .authorized: return .granted
+            case .limited: return .limited
             case .denied: return .denied
             case .restricted: return .restricted
             case .notDetermined: return .notDetermined

@@ -19,9 +19,9 @@ final class LegacyGroundingBridge {
     private let toolRegistry: SecureToolRegistry
     private let metricsStore: RuntimeMetricsStore
 
-    init(toolRegistry: SecureToolRegistry = .shared, metricsStore: RuntimeMetricsStore = .shared) {
-        self.toolRegistry = toolRegistry
-        self.metricsStore = metricsStore
+    init(toolRegistry: SecureToolRegistry? = nil, metricsStore: RuntimeMetricsStore? = nil) {
+        self.toolRegistry = toolRegistry ?? .shared
+        self.metricsStore = metricsStore ?? .shared
     }
 
     func build(userMessage: String, conversationID: UUID?, turnID: UUID?, history: [(role: MessageRole, content: String)], modelContext: ModelContext, turn: AssistantTurnContext, cancellationToken: AgentGroundingCancellationToken? = nil) async throws -> LegacyGroundingBundle {

@@ -433,9 +433,10 @@ nonisolated enum E2ETestRunner {
         var results: [E2ETestResult] = []
         for scenario in scenarios {
             #if DEBUG
-            debugScenarioLoopThreadRecorder?(Thread.isMainThread)
+            let isOnMainThread = await MainActor.run { Thread.isMainThread }
+            debugScenarioLoopThreadRecorder?(isOnMainThread)
             if debugAssertScenarioLoopOffMainThread {
-                assert(!Thread.isMainThread, "E2ETestRunner scenario loop must not run on the main thread")
+                assert(!isOnMainThread, "E2ETestRunner scenario loop must not run on the main thread")
             }
             #endif
             do {
