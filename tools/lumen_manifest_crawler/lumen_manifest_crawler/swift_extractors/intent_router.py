@@ -17,10 +17,11 @@ class IntentRouterExtractor(SwiftExtractor):
                 manifest.intents.append(IntentManifest(id=intent_id, source=file.relpath))
 
         known_tool_ids = {t.id for t in manifest.tools}
+        tool_id_collections = self._tool_id_collections(file.text, known_tool_ids)
         for intent in manifest.intents:
             if intent.id not in intent_ids:
                 continue
-            allowed = self._tools_near_name(file.text, intent.id, known_tool_ids)
+            allowed = self._tools_near_name(file.text, intent.id, known_tool_ids, tool_id_collections)
             if allowed:
                 intent.allowedToolIDs = sorted(set(intent.allowedToolIDs).union(allowed))
 
@@ -35,12 +36,13 @@ class IntentRouterExtractor(SwiftExtractor):
         ]
 
     @staticmethod
-    def _tools_near_name(text: str, name: str, known_tool_ids: set[str]) -> list[str]:
+    def _tools_near_name(text: str, name: str, known_tool_ids: set[str], tool_id_collections: dict[str, set[str]]) -> list[str]:
         allowed: set[str] = set()
         for block in IntentRouterExtractor._switch_case_blocks(text, name):
             for literal in string_literals(block):
                 if literal in known_tool_ids:
                     allowed.add(literal)
+            allowed.update(IntentRouterExtractor._tools_from_collection_refs(block, tool_id_collections))
         if allowed:
             return sorted(allowed)
 
@@ -52,7 +54,26 @@ class IntentRouterExtractor(SwiftExtractor):
             for literal in string_literals(line):
                 if literal in known_tool_ids:
                     allowed.add(literal)
+            allowed.update(IntentRouterExtractor._tools_from_collection_refs(line, tool_id_collections))
         return sorted(allowed)
+
+    @staticmethod
+    def _tool_id_collections(text: str, known_tool_ids: set[str]) -> dict[str, set[str]]:
+        collections: dict[str, set[str]] = {}
+        pattern = re.compile(r"(?m)^\s*(?:private\s+)?(?:static\s+)?(?:let|var)\s+(?P<name>\w*ToolIDs)\s*(?::[^\n=]+)?=\s*\[(?P<body>.*?)\]", flags=re.S)
+        for match in pattern.finditer(text):
+            tools = {literal for literal in string_literals(match.group("body")) if literal in known_tool_ids}
+            if tools:
+                collections[match.group("name")] = tools
+        return collections
+
+    @staticmethod
+    def _tools_from_collection_refs(text: str, tool_id_collections: dict[str, set[str]]) -> set[str]:
+        allowed: set[str] = set()
+        for collection_name, tools in tool_id_collections.items():
+            if re.search(rf"\b{re.escape(collection_name)}\b", text):
+                allowed.update(tools)
+        return allowed
 
     @staticmethod
     def _switch_case_blocks(text: str, name: str) -> list[str]:

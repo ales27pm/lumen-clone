@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "0de483479c85634514dd02749e7cd8ba9a5af6e5",
+    "commit": "5a22ea338295aa995a6cff0cd6ae3b86fd10e4b2",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -35,7 +35,7 @@
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "sha256": "3a1df1b8c26614afd697cdb20413670a92198739acf4f9c84101f32f0a430189"
+        "sha256": "11890433ade0c68303fa4c5e675b74c58481e7102aa30a50715cdc84d0664a37"
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
@@ -556,13 +556,6 @@
       "arguments": [
         {
           "name": "includeHidden",
-          "type": "string",
-          "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional includeHidden true/false",
-          "source": "ios/Lumen/Models/ToolDefinition.swift"
-        },
-        {
-          "name": "false",
           "type": "string",
           "required": false,
           "description": "Inferred from ToolDefinition description Args contract: optional includeHidden true/false",
@@ -1685,22 +1678,23 @@
     },
     {
       "id": "contactSearch",
-      "allowedToolIDs": [],
+      "allowedToolIDs": [
+        "contacts.search"
+      ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
     {
       "id": "emailDraft",
-      "allowedToolIDs": [],
+      "allowedToolIDs": [
+        "contacts.search",
+        "mail.draft"
+      ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
     {
       "id": "files",
       "allowedToolIDs": [
-        "files.read",
-        "photos.search",
-        "rag.index_files",
-        "rag.index_photos",
-        "rag.search"
+        "files.read"
       ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
@@ -1730,7 +1724,10 @@
     },
     {
       "id": "messageDraft",
-      "allowedToolIDs": [],
+      "allowedToolIDs": [
+        "contacts.search",
+        "messages.draft"
+      ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
     {
@@ -1742,12 +1739,16 @@
     },
     {
       "id": "note",
-      "allowedToolIDs": [],
+      "allowedToolIDs": [
+        "memory.recall",
+        "memory.save"
+      ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
     {
       "id": "outlook",
       "allowedToolIDs": [
+        "contacts.search",
         "outlook.attachments.list",
         "outlook.draft.create",
         "outlook.folders.list",
@@ -1769,17 +1770,16 @@
     },
     {
       "id": "phoneCall",
-      "allowedToolIDs": [],
+      "allowedToolIDs": [
+        "contacts.search",
+        "phone.call"
+      ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
     {
       "id": "photos",
       "allowedToolIDs": [
-        "files.read",
-        "photos.search",
-        "rag.index_files",
-        "rag.index_photos",
-        "rag.search"
+        "photos.search"
       ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
@@ -1796,7 +1796,10 @@
     },
     {
       "id": "reminder",
-      "allowedToolIDs": [],
+      "allowedToolIDs": [
+        "reminders.create",
+        "reminders.list"
+      ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     },
     {
@@ -1824,7 +1827,8 @@
     {
       "id": "webSearch",
       "allowedToolIDs": [
-        "location.current"
+        "web.fetch",
+        "web.search"
       ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     }
@@ -1972,7 +1976,9 @@
     },
     {
       "intent": "contactSearch",
-      "allowedTools": [],
+      "allowedTools": [
+        "contacts.search"
+      ],
       "forbiddenTools": [
         "alarm.authorization_status",
         "alarm.cancel",
@@ -1987,7 +1993,6 @@
         "calendar.create",
         "calendar.list",
         "camera.capture",
-        "contacts.search",
         "files.read",
         "health.summary",
         "location.current",
@@ -1998,12 +2003,16 @@
         "memory.save",
         "messages.draft",
         "motion.activity",
-        "outlook.attachments.list"
+        "outlook.attachments.list",
+        "outlook.draft.create"
       ]
     },
     {
       "intent": "emailDraft",
-      "allowedTools": [],
+      "allowedTools": [
+        "contacts.search",
+        "mail.draft"
+      ],
       "forbiddenTools": [
         "alarm.authorization_status",
         "alarm.cancel",
@@ -2018,28 +2027,24 @@
         "calendar.create",
         "calendar.list",
         "camera.capture",
-        "contacts.search",
         "files.read",
         "health.summary",
         "location.current",
-        "mail.draft",
         "maps.directions",
         "maps.search",
         "memory.recall",
         "memory.save",
         "messages.draft",
         "motion.activity",
-        "outlook.attachments.list"
+        "outlook.attachments.list",
+        "outlook.draft.create",
+        "outlook.folders.list"
       ]
     },
     {
       "intent": "files",
       "allowedTools": [
-        "files.read",
-        "photos.search",
-        "rag.index_files",
-        "rag.index_photos",
-        "rag.search"
+        "files.read"
       ],
       "forbiddenTools": [
         "alarm.authorization_status",
@@ -2173,7 +2178,10 @@
     },
     {
       "intent": "messageDraft",
-      "allowedTools": [],
+      "allowedTools": [
+        "contacts.search",
+        "messages.draft"
+      ],
       "forbiddenTools": [
         "alarm.authorization_status",
         "alarm.cancel",
@@ -2188,7 +2196,6 @@
         "calendar.create",
         "calendar.list",
         "camera.capture",
-        "contacts.search",
         "files.read",
         "health.summary",
         "location.current",
@@ -2197,9 +2204,10 @@
         "maps.search",
         "memory.recall",
         "memory.save",
-        "messages.draft",
         "motion.activity",
-        "outlook.attachments.list"
+        "outlook.attachments.list",
+        "outlook.draft.create",
+        "outlook.folders.list"
       ]
     },
     {
@@ -2237,7 +2245,10 @@
     },
     {
       "intent": "note",
-      "allowedTools": [],
+      "allowedTools": [
+        "memory.recall",
+        "memory.save"
+      ],
       "forbiddenTools": [
         "alarm.authorization_status",
         "alarm.cancel",
@@ -2259,16 +2270,17 @@
         "mail.draft",
         "maps.directions",
         "maps.search",
-        "memory.recall",
-        "memory.save",
         "messages.draft",
         "motion.activity",
-        "outlook.attachments.list"
+        "outlook.attachments.list",
+        "outlook.draft.create",
+        "outlook.folders.list"
       ]
     },
     {
       "intent": "outlook",
       "allowedTools": [
+        "contacts.search",
         "outlook.attachments.list",
         "outlook.draft.create",
         "outlook.folders.list",
@@ -2300,7 +2312,6 @@
         "calendar.create",
         "calendar.list",
         "camera.capture",
-        "contacts.search",
         "files.read",
         "health.summary",
         "location.current",
@@ -2311,12 +2322,49 @@
         "memory.save",
         "messages.draft",
         "motion.activity",
-        "phone.call"
+        "phone.call",
+        "photos.search"
       ]
     },
     {
       "intent": "phoneCall",
-      "allowedTools": [],
+      "allowedTools": [
+        "contacts.search",
+        "phone.call"
+      ],
+      "forbiddenTools": [
+        "alarm.authorization_status",
+        "alarm.cancel",
+        "alarm.countdown",
+        "alarm.list",
+        "alarm.pause",
+        "alarm.request_authorization",
+        "alarm.resume",
+        "alarm.schedule",
+        "alarm.snooze",
+        "alarm.stop",
+        "calendar.create",
+        "calendar.list",
+        "camera.capture",
+        "files.read",
+        "health.summary",
+        "location.current",
+        "mail.draft",
+        "maps.directions",
+        "maps.search",
+        "memory.recall",
+        "memory.save",
+        "messages.draft",
+        "motion.activity",
+        "outlook.attachments.list",
+        "outlook.draft.create"
+      ]
+    },
+    {
+      "intent": "photos",
+      "allowedTools": [
+        "photos.search"
+      ],
       "forbiddenTools": [
         "alarm.authorization_status",
         "alarm.cancel",
@@ -2343,43 +2391,6 @@
         "messages.draft",
         "motion.activity",
         "outlook.attachments.list"
-      ]
-    },
-    {
-      "intent": "photos",
-      "allowedTools": [
-        "files.read",
-        "photos.search",
-        "rag.index_files",
-        "rag.index_photos",
-        "rag.search"
-      ],
-      "forbiddenTools": [
-        "alarm.authorization_status",
-        "alarm.cancel",
-        "alarm.countdown",
-        "alarm.list",
-        "alarm.pause",
-        "alarm.request_authorization",
-        "alarm.resume",
-        "alarm.schedule",
-        "alarm.snooze",
-        "alarm.stop",
-        "calendar.create",
-        "calendar.list",
-        "camera.capture",
-        "contacts.search",
-        "health.summary",
-        "location.current",
-        "mail.draft",
-        "maps.directions",
-        "maps.search",
-        "memory.recall",
-        "memory.save",
-        "messages.draft",
-        "motion.activity",
-        "outlook.attachments.list",
-        "outlook.draft.create"
       ]
     },
     {
@@ -2421,7 +2432,10 @@
     },
     {
       "intent": "reminder",
-      "allowedTools": [],
+      "allowedTools": [
+        "reminders.create",
+        "reminders.list"
+      ],
       "forbiddenTools": [
         "alarm.authorization_status",
         "alarm.cancel",
@@ -2553,7 +2567,8 @@
     {
       "intent": "webSearch",
       "allowedTools": [
-        "location.current"
+        "web.fetch",
+        "web.search"
       ],
       "forbiddenTools": [
         "alarm.authorization_status",
@@ -2572,6 +2587,7 @@
         "contacts.search",
         "files.read",
         "health.summary",
+        "location.current",
         "mail.draft",
         "maps.directions",
         "maps.search",
@@ -2579,8 +2595,7 @@
         "memory.save",
         "messages.draft",
         "motion.activity",
-        "outlook.attachments.list",
-        "outlook.draft.create"
+        "outlook.attachments.list"
       ]
     }
   ],

@@ -32,12 +32,30 @@ nonisolated enum ToolObservationFinalizer {
         case "outlook.message.read":
             guard intent == .outlook else { return nil }
             return "Outlook message:\n\(plainObservation)\(payloadMarkers)"
+        case "reminders.list":
+            guard intent == .reminder else { return nil }
+            return "Reminders:\n\(plainObservation)\(payloadMarkers)"
         case "memory.save":
             guard intent == .memory || intent == .note else { return nil }
             return "Saved to memory: \(plainObservation)\(payloadMarkers)"
         case "memory.recall":
             guard intent == .memory || intent == .note else { return nil }
             return "Memory recall:\n\(plainObservation)\(payloadMarkers)"
+        case "maps.search":
+            guard intent == .maps else { return nil }
+            return "Maps search results:\n\(plainObservation)\(payloadMarkers)"
+        case "maps.directions":
+            guard intent == .maps else { return nil }
+            return "Maps directions:\n\(plainObservation)\(payloadMarkers)"
+        case "rag.index_files":
+            guard intent == .rag else { return nil }
+            return "Local file index updated: \(plainObservation)\(payloadMarkers)"
+        case "rag.index_photos":
+            guard intent == .rag else { return nil }
+            return "Photo index updated: \(plainObservation)\(payloadMarkers)"
+        case "rag.search":
+            guard intent == .rag else { return nil }
+            return "RAG search results:\n\(groundedRAGObservation(plainObservation))\(payloadMarkers)"
         case "alarm.authorization_status":
             guard intent == .alarm else { return nil }
             return "Alarm authorization status: \(plainObservation)\(payloadMarkers)"
@@ -62,6 +80,19 @@ nonisolated enum ToolObservationFinalizer {
     private static func looksUnsafe(_ text: String) -> Bool {
         let lower = text.lowercased()
         return lower.contains("<think") || lower.contains("{\"kind\"") || lower.contains("\"mediakind\"")
+    }
+
+    private static func groundedRAGObservation(_ observation: String) -> String {
+        let trimmed = observation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "No matching local snippets were retrieved. Source: local RAG index." }
+        let lower = trimmed.lowercased()
+        if trimmed.contains("[") || lower.contains("snippet") || lower.contains("source") {
+            return trimmed
+        }
+        if lower.contains("no matching") || lower.contains("no relevant") {
+            return "\(trimmed) Source: local RAG index; no matching module snippets were retrieved."
+        }
+        return "[1] \(trimmed)\nSource: local RAG index snippet."
     }
 
     private static func compactWebResults(from text: String, fallback: String) -> String {

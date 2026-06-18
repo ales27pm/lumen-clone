@@ -62,8 +62,9 @@ nonisolated enum FinalIntentValidator {
         case .rag:
             let hasRagTopic = containsAny(lower, ["search", "index", "indexed", "files", "photos", "local"])
             let hasGrounding = containsAny(lower, ["[1]", "[2]", "snippet", "source", "retrieved", "file", "pdf", "note", "module", "modules"])
+            let hasIndexCompletion = containsAny(lower, ["index updated", "indexed", "reindexed"])
             let explicitUnavailable = containsAny(lower, ["unavailable", "couldn’t", "couldn't", "no relevant", "no matching"]) 
-            return (hasRagTopic && hasGrounding) || explicitUnavailable
+            return (hasRagTopic && hasGrounding) || hasIndexCompletion || explicitUnavailable
         case .trigger:
             return containsAny(lower, ["trigger", "scheduled", "agent", "background", "cancel", "unavailable", "couldn’t", "couldn't"])
         case .alarm:
@@ -229,7 +230,7 @@ nonisolated enum FinalIntentValidator {
     }
 
     private static func looksLikeWebSearchLeak(_ lower: String, unless allowed: Bool) -> Bool {
-        !allowed && containsAny(lower, ["web search", "search result", "http://", "https://"])
+        !allowed && containsAny(lower, ["web search", "web result", "web results", "http://", "https://"])
     }
 
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {

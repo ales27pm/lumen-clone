@@ -128,6 +128,8 @@ class ToolDefinitionExtractor(SwiftExtractor):
             if token.lower().startswith("plus "):
                 token = token[5:].strip()
             token = re.sub(r"\s+depending on (?:the )?schedule\b.*$", "", token, flags=re.I).strip()
+            token = re.sub(r"\s+true\s*/\s*false\b.*$", "", token, flags=re.I).strip()
+            token = re.sub(r"\s+true\s+or\s+false\b.*$", "", token, flags=re.I).strip()
             if not token:
                 optional_group = True
                 continue
