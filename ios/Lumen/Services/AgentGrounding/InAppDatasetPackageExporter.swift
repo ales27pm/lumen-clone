@@ -88,7 +88,7 @@ nonisolated enum InAppDatasetPackageExporter {
                 }
             },
             traceParseErrorCount: traces.reduce(into: 0) { count, trace in
-                if isActionStructuredStage(trace), trace.parseError != nil {
+                if traceHasActionParseError(trace) {
                     count += 1
                 }
             },
@@ -185,6 +185,20 @@ nonisolated enum InAppDatasetPackageExporter {
 
     private static func runtimeTraceViolations(from traces: [AgentBehaviorTrace]) -> [AgentBehaviorViolation] {
         traces.compactMap { trace in
+            if let parseError = actionTraceParseError(trace) {
+                return AgentBehaviorViolation(
+                    id: UUID(),
+                    createdAt: Date(),
+                    severity: .error,
+                    code: "structured_action_trace_parse_error",
+                    agent: trace.slot,
+                    expected: "Executor/tool-action traces must be strict structured JSON parsable as an action turn.",
+                    actual: "stage=\(trace.stage); parseError=\(parseError); selectedToolID=\(trace.selectedToolID ?? "nil"); rawOutputPrefix=\(trace.rawOutputPrefix)",
+                    promptPrefix: trace.promptPrefix,
+                    problem: "A tool-action trace did not contain a parseable structured action object."
+                )
+            }
+
             guard trace.event == .modelTurn, let elapsed = trace.generationElapsedMs else { return nil }
             let severity: AgentBehaviorViolation.Severity
             let code: String
@@ -215,7 +229,19 @@ nonisolated enum InAppDatasetPackageExporter {
         }
     }
 
+    private static func traceHasActionParseError(_ trace: AgentBehaviorTrace) -> Bool {
+        actionTraceParseError(trace) != nil
+    }
+
+    private static func actionTraceParseError(_ trace: AgentBehaviorTrace) -> String? {
+        guard isActionStructuredStage(trace) else { return nil }
+        if let parseError = trace.parseError { return parseError }
+        return AgentTurnParser.parse(trace.rawOutputPrefix).parseError?.rawValue
+    }
+
     private static func isActionStructuredStage(_ trace: AgentBehaviorTrace) -> Bool {
+        if trace.event == .toolAction { return true }
+        if trace.slot.lowercased() == "executor" { return true }
         let stage = trace.stage.lowercased()
         if stage.contains("mouth") || stage.contains("final") || stage.contains("direct") {
             return false

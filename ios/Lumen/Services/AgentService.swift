@@ -93,6 +93,15 @@ nonisolated struct AgentAction: Sendable, Hashable {
     let tool: String
     let args: AgentJSONArguments
 
+    private struct StructuredOutput: Encodable {
+        let action: StructuredAction
+    }
+
+    private struct StructuredAction: Encodable {
+        let tool: String
+        let args: AgentJSONArguments
+    }
+
     var dedupeKey: String {
         let argsStr = args.keys.sorted()
             .map { "\($0)=\(args[$0]?.stringValue ?? "")" }
@@ -106,6 +115,17 @@ nonisolated struct AgentAction: Sendable, Hashable {
             .map { "\($0)=\(args[$0]?.stringValue ?? "")" }
             .joined(separator: ", ")
         return "\(tool)(\(argsStr))"
+    }
+
+    var structuredOutputJSON: String {
+        let output = StructuredOutput(action: StructuredAction(tool: tool, args: args))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(output),
+              let json = String(data: data, encoding: .utf8) else {
+            return #"{"action":{"args":{},"tool":"\#(tool)"}}"#
+        }
+        return json
     }
 }
 

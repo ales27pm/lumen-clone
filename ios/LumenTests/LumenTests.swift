@@ -310,6 +310,13 @@ struct LumenTests {
         let action2 = AgentAction(tool: "web.search", args: ["city": .string("Boston"), "q": .string("swift")])
         #expect(action1.dedupeKey == action2.dedupeKey)
         #expect(action1.displayContent == "web.search(city=Boston, q=swift)")
+        #expect(action1.structuredOutputJSON == action2.structuredOutputJSON)
+
+        let parsed = AgentTurnParser.parse(action1.structuredOutputJSON)
+        #expect(parsed.parseError == nil)
+        #expect(parsed.action?.tool == "web.search")
+        #expect(parsed.action?.args["city"]?.stringValue == "Boston")
+        #expect(parsed.action?.args["q"]?.stringValue == "swift")
     }
 
     @Test func placeholderDetectorFlagsSentinelVariantsAndPartialCopies() async throws {

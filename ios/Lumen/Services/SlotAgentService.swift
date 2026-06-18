@@ -521,7 +521,7 @@ final class SlotAgentService {
                 allowedToolIDs: allowedToolIDs.sorted(),
                 requiresApproval: requiresApproval,
                 approvalMode: approvalMode,
-                parseError: nil,
+                parseError: structuredTraceParseError(event: event, rawOutput: rawOutput),
                 emittedFinalInActionTurn: emittedFinalInActionTurn,
                 modelFamily: LumenModelFamily.persistedSelected.rawValue,
                 runtimePath: "deterministic-compatibility",
@@ -529,6 +529,11 @@ final class SlotAgentService {
                 promptCharCount: req.userMessage.count
             )
         )
+    }
+
+    private nonisolated static func structuredTraceParseError(event: AgentBehaviorTrace.Event, rawOutput: String) -> String? {
+        guard event == .toolAction else { return nil }
+        return AgentTurnParser.parse(rawOutput).parseError?.rawValue
     }
 
     private nonisolated static func sha256(_ text: String) -> String {
@@ -710,11 +715,14 @@ final class SlotAgentService {
                 "requiresApproval": String(ToolRouteGuard.requiresUserApproval(canonicalActionTool))
             ])
             if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
+                let structuredActionOutput = action.structuredOutputJSON
                 let approval = approvalBoundaryFinal(for: canonicalActionTool, action: action, routing: routing, prompt: original.userMessage)
                 let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
                 let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
                 Self.emitChatTrace(req: original, phase: "approval_boundary", values: [
                     "toolID": canonicalActionTool,
+                    "structuredOutputChars": String(structuredActionOutput.count),
+                    "structuredOutputSHA256": Self.sha256(structuredActionOutput),
                     "finalChars": String(text.count),
                     "finalSHA256": Self.sha256(text)
                 ])
@@ -724,7 +732,7 @@ final class SlotAgentService {
                     event: .toolAction,
                     slot: "executor",
                     stage: "compatibility-approval-boundary",
-                    rawOutput: approval,
+                    rawOutput: structuredActionOutput,
                     selectedToolID: canonicalActionTool,
                     toolArguments: action.args.stringCoerced,
                     allowedToolIDs: availableToolIDs,
@@ -735,6 +743,7 @@ final class SlotAgentService {
                 return .init(text: text, steps: steps + [step])
             }
 
+            let structuredActionOutput = action.structuredOutputJSON
             let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
             steps.append(actionStep)
             Self.recordCompatibilityBehaviorTrace(
@@ -743,7 +752,7 @@ final class SlotAgentService {
                 event: .toolAction,
                 slot: "executor",
                 stage: "compatibility-tool-action",
-                rawOutput: action.displayContent,
+                rawOutput: structuredActionOutput,
                 selectedToolID: canonicalActionTool,
                 toolArguments: action.args.stringCoerced,
                 allowedToolIDs: availableToolIDs,
