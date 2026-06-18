@@ -1064,6 +1064,19 @@ def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str])
             "failure": actual,
             "alsoAdd": ["rem_repair_sample", "trace_parse_regression_eval"],
         }
+    if failure_type in {"tool_not_allowed_by_static_manifest", "tool_not_allowed_by_runtime_router"} and _is_dynamic_local_public_lookup_failure(failure):
+        return {
+            "action": "add_plan_gather_execute_evaluate_samples",
+            "focusToolID": "web.search",
+            "rejectedToolID": actual,
+            "expectedPlan": [
+                "classify as dynamic local public lookup",
+                "gather current location when available",
+                "run web.search for fresh public schedule/hours/event evidence",
+                "evaluate whether the observation answers the user's time-sensitive question before finalizing",
+            ],
+            "alsoAdd": ["cortex_dynamic_lookup_contrast_eval", "mouth_grounded_answer_eval", "rem_repair_sample"],
+        }
     if "sentinel" in failure_type:
         return {"action": "add_sentinel_suppression_samples", "focus": scenario}
     if "tool" in failure_type:
@@ -1071,6 +1084,58 @@ def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str])
     if "parse" in failure_type:
         return {"action": "add_strict_json_format_samples", "failure": actual}
     return {"action": "add_rem_reflection_sample", "focusToolID": scenario or actual}
+
+
+def _is_dynamic_local_public_lookup_failure(failure: dict[str, Any]) -> bool:
+    text = " ".join(str(failure.get(key) or "") for key in ("scenario", "problem", "expected", "actual")).casefold()
+    if not text.strip():
+        return False
+    time_markers = (
+        "today",
+        "tonight",
+        "tomorrow",
+        "this weekend",
+        "this week",
+        "next week",
+        "open now",
+        "open late",
+        "hours",
+        "schedule",
+        "showtime",
+    )
+    dynamic_subjects = (
+        "meeting",
+        "event",
+        "class",
+        "session",
+        "clinic",
+        "walk-in",
+        "walk in",
+        "showtime",
+        "screening",
+        "bus",
+        "train",
+        "ferry",
+        "price",
+        "ticket",
+        "concert",
+    )
+    local_scope = (
+        "near me",
+        "nearby",
+        "nearest",
+        "closest",
+        "around me",
+        "around here",
+        "in my area",
+        "where is",
+        "where are",
+    )
+    return (
+        any(marker in text for marker in time_markers)
+        and any(subject in text for subject in dynamic_subjects)
+        and any(scope in text for scope in local_scope)
+    )
 
 
 def _build_dataset_manifest(

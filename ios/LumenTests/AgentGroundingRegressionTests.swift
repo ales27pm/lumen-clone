@@ -101,6 +101,46 @@ struct AgentGroundingRegressionTests {
         #expect(!audit.violations.contains(where: { $0.code == "final_sanitizer_recovered_unsafe_output" }))
     }
 
+    @MainActor
+    @Test func behaviorAuditorTeachesPlanGatherExecuteEvaluateForDynamicLookupFailures() async throws {
+        let tools = [
+            RuntimeToolDefinition(id: "location.current"),
+            RuntimeToolDefinition(id: "web.search"),
+            RuntimeToolDefinition(id: "web.fetch"),
+            RuntimeToolDefinition(id: "maps.search")
+        ]
+        let manifest = makeManifest(
+            tools: tools,
+            intent: "webSearch",
+            allowed: ["web.search", "web.fetch", "location.current"],
+            extraIntents: [
+                ManifestRoutingEntry(intent: "maps", allowedTools: ["location.current", "maps.search"], forbiddenTools: ["web.search"])
+            ]
+        )
+        let now = Date()
+        let messages: [ChatMessage] = [
+            ChatMessage(role: .user, content: "Where is the nearest free tax clinic tomorrow?"),
+            ChatMessage(
+                role: .assistant,
+                content: "No nearby places found.",
+                agentSteps: [
+                    AgentStep(kind: .action, content: "maps.search(query=free tax clinic tomorrow)", toolID: "maps.search")
+                ]
+            )
+        ].enumerated().map { idx, msg in
+            msg.createdAt = now.addingTimeInterval(TimeInterval(idx))
+            return msg
+        }
+
+        let audit = AgentModelBehaviorAuditor().audit(manifest: manifest, messages: messages)
+        let sample = try #require(audit.repairSamples.first(where: { $0.violationCode == "tool_not_allowed_by_runtime_router" }))
+        #expect(sample.correctedOutput.contains("dynamic local public lookup"))
+        #expect(sample.correctedOutput.contains("current location"))
+        #expect(sample.correctedOutput.contains("web.search"))
+        #expect(sample.correctedOutput.contains("evaluate"))
+        #expect(sample.curriculum == "plan_gather_execute_evaluate")
+    }
+
     @Test func requiredToolFallbackRoutesCameraMapsAndOutlookPrompts() {
         #expect(SlotAgentService.resolveRequiredToolFallback(intent: .camera, prompt: "Open camera and take a picture", allowedToolIDs: ["camera.capture"]) == "camera.capture")
         #expect(SlotAgentService.resolveRequiredToolFallback(intent: .maps, prompt: "Where are we", allowedToolIDs: ["location.current", "maps.search", "maps.directions"]) == "location.current")

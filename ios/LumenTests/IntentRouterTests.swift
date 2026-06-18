@@ -70,19 +70,54 @@ struct IntentRouterTests {
         }
     }
 
-    @Test func nearbySupportGroupMeetingRoutesToMapsNotCalendar() async throws {
+    @Test func scheduledSupportGroupMeetingRoutesToWebNotCalendarOrMaps() async throws {
         let prompts = [
             "Find the nearest Alcoholics Anonymous meeting tonight",
-            "I have to go to an alcoholic anonymous meeting tonight. Can you help me find the closest one?"
+            "I have to go to an alcoholic anonymous meeting tonight. Can you help me find the closest one?",
+            "Where is the nearest alcoholic anonymous meeting tomorrow?"
+        ]
+
+        for prompt in prompts {
+            let decision = IntentRouter.classify(prompt)
+            #expect(decision.intent == .webSearch, "Prompt \(prompt) routed as \(decision.intent.rawValue)")
+            #expect(IntentRouter.isToolAllowed("web.search", for: decision))
+            #expect(IntentRouter.isToolAllowed("location.current", for: decision))
+            #expect(IntentRouter.isToolAllowed("maps.search", for: decision) == false)
+            #expect(IntentRouter.isToolAllowed("calendar.list", for: decision) == false)
+            #expect(IntentRouter.isToolAllowed("calendar.create", for: decision) == false)
+        }
+    }
+
+    @Test func dynamicLocalPublicLookupsRouteToWebWithLocation() async throws {
+        let prompts = [
+            "Where is the nearest free tax clinic tomorrow?",
+            "Find a yoga class near me tonight",
+            "What movie showtimes are closest to me today?",
+            "Find bus schedules around me this weekend",
+            "Which walk-in clinic near me is open now?"
+        ]
+
+        for prompt in prompts {
+            let decision = IntentRouter.classify(prompt)
+            #expect(decision.intent == .webSearch, "Prompt \(prompt) routed as \(decision.intent.rawValue)")
+            #expect(IntentRouter.isToolAllowed("web.search", for: decision))
+            #expect(IntentRouter.isToolAllowed("location.current", for: decision))
+            #expect(IntentRouter.isToolAllowed("maps.search", for: decision) == false)
+        }
+    }
+
+    @Test func stableNearbyPlacesStillRouteToMaps() async throws {
+        let prompts = [
+            "Find restaurants near me",
+            "Where is the nearest pharmacy?",
+            "Find a gas station around me"
         ]
 
         for prompt in prompts {
             let decision = IntentRouter.classify(prompt)
             #expect(decision.intent == .maps, "Prompt \(prompt) routed as \(decision.intent.rawValue)")
             #expect(IntentRouter.isToolAllowed("maps.search", for: decision))
-            #expect(IntentRouter.isToolAllowed("location.current", for: decision))
-            #expect(IntentRouter.isToolAllowed("calendar.list", for: decision) == false)
-            #expect(IntentRouter.isToolAllowed("calendar.create", for: decision) == false)
+            #expect(IntentRouter.isToolAllowed("web.search", for: decision) == false)
         }
     }
 

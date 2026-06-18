@@ -9,8 +9,9 @@ enum LocationTools {
     }
 
     static func openDirections(destination: String) -> String {
-        let trimmed = destination.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "No destination provided." }
+        guard let trimmed = ToolRouteGuard.sanitizedMapsDestination(destination) else {
+            return "No valid Maps destination provided."
+        }
         guard let url = directionsURL(destination: trimmed) else {
             return "Couldn't build maps URL."
         }
@@ -21,6 +22,9 @@ enum LocationTools {
 
 
     static func directionsURL(destination: String) -> URL? {
+        guard let destination = ToolRouteGuard.sanitizedMapsDestination(destination) else {
+            return nil
+        }
         // Policy: maps.apple.com deep links must use HTTPS. Plain HTTP links are
         // prohibited to avoid mixed-content/security regressions and are covered
         // by tests in LocationToolsTests.

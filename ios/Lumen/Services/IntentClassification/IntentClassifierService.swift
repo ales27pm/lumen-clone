@@ -5,7 +5,17 @@ final class IntentClassifierService: Sendable {
     private init() {}
 
     func route(_ text: String) async -> IntentRoutingDecision {
-        await classify(text).asRoutingDecision()
+        let result = await classify(text)
+        let routing = result.asRoutingDecision()
+        if result.intent == .webSearch, ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(
+                intent: routing.intent,
+                allowedToolIDs: routing.allowedToolIDs.union(["location.current"]),
+                requiresClarification: routing.requiresClarification,
+                clarificationPrompt: routing.clarificationPrompt
+            )
+        }
+        return routing
     }
 
     func classify(_ text: String) async -> IntentClassificationResult {

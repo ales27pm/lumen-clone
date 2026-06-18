@@ -1617,7 +1617,8 @@ final class AgentService {
         }
 
         sys += "Routing guidelines:\n"
-        sys += "- For nearest/near me/closest questions, call `location.current` first, then `maps.search` once, then emit `final`.\n"
+        sys += "- For dynamic public information with local scope and time terms, such as meetings, events, hours, schedules, classes, prices, or showtimes near me today/tomorrow/tonight, call `location.current` if available, then `web.search`; these are not static map POIs.\n"
+        sys += "- For stable physical-place or navigation requests such as restaurants, pharmacies, gas stations, addresses, routes, or directions near me, call `location.current` first, then `maps.search` or `maps.directions` once, then emit `final`.\n"
         sys += "- For follow-up map intents like \"show me on map\"/\"open on map\", if prior observations already include `Current location:` coordinates from `location.current`, do not call `location.current` again.\n"
         sys += "- In those follow-ups, route directly to `maps.search` (or equivalent map-opening behavior) using the preserved current-location observation, then emit `final`.\n"
         sys += "- For web/current-info requests, call `web.search` if available.\n"
