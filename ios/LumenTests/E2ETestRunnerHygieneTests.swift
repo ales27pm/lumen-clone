@@ -204,6 +204,49 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func deterministicCompatibilityDirectChatTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .finalAnswer,
+                slot: "mouth",
+                stage: "compatibility-direct-final",
+                intent: "chat",
+                promptPrefix: "Explain actor isolation in Swift in simple terms.",
+                rawOutputPrefix: "Actor isolation protects actor-owned state.",
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: false,
+                modelFamily: "qwen3",
+                runtimePath: "deterministic-compatibility",
+                activeAdapterSlot: nil
+            )
+        )
+
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "Explain actor isolation in Swift in simple terms.",
+            acceptsPolicyFirstEvidence: true
+        ))
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "Explain actor isolation in Swift in simple terms.",
+            acceptsPolicyFirstEvidence: false
+        ))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func runStandardScenarioLoopRunsOffMainThreadWhenDetached() async {
         #if DEBUG
         let scenario = E2ETestScenario(

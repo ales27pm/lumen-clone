@@ -210,8 +210,10 @@ nonisolated enum DeterministicToolPlanner {
             return nil
         case .memory, .note:
             if isPersonalProfileRecallIntent(text) { return action("memory.recall", ["query": .string("user name")]) }
-            if containsAny(text, ["what do you remember", "recall", "remember about"]) { return action("memory.recall", ["query": .string(extractContactQuery(from: prompt) ?? "")]) }
-            if containsAny(text, ["remember", "save", "note", "keep this in mind", "my name is", "call me"]) {
+            if containsAny(text, ["what do you remember", "recall", "remember about", "tell me what style i asked you to use"]) {
+                return action("memory.recall", ["query": .string(extractMemoryRecallQuery(from: prompt))])
+            }
+            if containsAny(text, ["remember", "save", "note", "keep this in mind", "keep in mind", "my name is", "call me"]) {
                 return action("memory.save", [
                     "content": .string(extractMemoryFact(from: prompt)),
                     "kind": .string("fact")
@@ -221,7 +223,7 @@ nonisolated enum DeterministicToolPlanner {
         case .rag:
             if containsAny(text, ["index photos", "reindex photos", "photo retrieval index"]) { return action("rag.index_photos") }
             if containsAny(text, ["reindex", "index files", "file retrieval index", "refresh retrieval index"]) { return action("rag.index_files") }
-            if containsAny(text, ["search", "summarize", "read", "show"]) {
+            if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
                 let query = expandRAGQueryIfNeeded(originalPrompt: prompt)
                 return action("rag.search", ["query": .string(query)])
             }

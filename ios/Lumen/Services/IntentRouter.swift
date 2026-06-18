@@ -193,16 +193,16 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .motion, allowedToolIDs: motionToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["read file", "open file", "read document", "imported file", "local document"]) {
-            return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
-        }
-
         if isPersonalProfileRecallIntent(text) || isPersonalProfileSaveIntent(text) || matchesAny(text, ["remember that", "remember this", "save memory", "recall memory", "what do you remember", "memory about", "save this fact", "keep this in mind"]) {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if matchesAny(text, ["search personal data", "search my files", "search local files", "search my documents", "search my notes", "reindex files", "index files", "reindex photos", "index photos", "rag search", "architecture notes"]) || isLikelyLocalKnowledgeQuery(text) {
             return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if matchesAny(text, ["read file", "open file", "read document", "imported file", "local document"]) {
+            return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if matchesAny(text, ["note", "save this"]) {
@@ -483,7 +483,8 @@ nonisolated enum IntentRouter {
     private static func isExplicitRAGIndexIntent(_ text: String) -> Bool {
         matchesAny(text, [
             "reindex local files", "reindex files", "refresh the file retrieval index",
-            "refresh file retrieval index", "reindex photos", "refresh the photo retrieval index",
+            "refresh file retrieval index", "reindex my imported files", "reindex imported files",
+            "reindex photos", "reindex photo metadata", "refresh the photo retrieval index",
             "refresh photo retrieval index"
         ])
     }

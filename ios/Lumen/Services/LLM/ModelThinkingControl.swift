@@ -17,12 +17,12 @@ nonisolated enum ModelThinkingControl {
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
         let capture = reasoningCaptureEnabled
-        #else
-        let capture = false
-        #endif
         let rule = capture
             ? reasoningCaptureInstruction
             : (requireFinalAnswerOnly ? noHiddenReasoningInstruction : noHiddenReasoningOnlyInstruction)
+        #else
+        let rule = requireFinalAnswerOnly ? noHiddenReasoningInstruction : noHiddenReasoningOnlyInstruction
+        #endif
         guard !trimmed.lowercased().contains(rule.lowercased()) else { return base }
         guard !trimmed.isEmpty else { return rule }
         return "\(trimmed)\n\n\(rule)"
@@ -32,10 +32,10 @@ nonisolated enum ModelThinkingControl {
         guard useQwenThinkingDirective else { return base }
         #if DEBUG
         let capture = reasoningCaptureEnabled
-        #else
-        let capture = false
-        #endif
         let directive = capture ? "/think" : "/no_think"
+        #else
+        let directive = "/no_think"
+        #endif
         let lower = base.lowercased()
         guard !lower.contains("/think"), !lower.contains("/no_think") else { return base }
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)

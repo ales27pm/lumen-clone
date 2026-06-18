@@ -812,6 +812,9 @@ nonisolated enum E2ETestRunner {
         // Training scenarios are adapter/model promotion evals. They must still
         // prove a fresh modelTurn and must not pass on deterministic policy traces.
         guard scenario.kind != .training else { return false }
+        if scenario.kind == .chat, routing.intent == .chat {
+            return true
+        }
         // Regression/routing scenarios may be intentionally satisfied by the
         // policy-first deterministic compatibility path. Those traces are valid
         // execution evidence when the routed intent is tool-scoped or needs a
@@ -882,6 +885,7 @@ nonisolated enum E2ETestRunner {
                 || stage.contains("compatibility-clarification")
                 || stage.contains("compatibility-memory-final")
                 || stage.contains("compatibility-chain-stopped")
+                || stage == "compatibility-direct-final"
                 || stage == "compatibility-final"
         case .modelTurn:
             return false

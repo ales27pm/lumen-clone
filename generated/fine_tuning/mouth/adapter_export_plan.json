@@ -7,13 +7,13 @@
   "agent": "mouth",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "0de483479c85634514dd02749e7cd8ba9a5af6e5",
+    "manifestCommit": "5a22ea338295aa995a6cff0cd6ae3b86fd10e4b2",
     "recordCounts": {
       "eval": 5,
       "train_dpo": 10,
-      "train_sft": 139,
+      "train_sft": 132,
       "val_dpo": 2,
-      "val_sft": 24
+      "val_sft": 23
     },
     "sourceFamilies": [
       "codebase_home_corpus",
@@ -23,7 +23,6 @@
       "fleet_system_prompts",
       "manifest_grounding_cards",
       "mouth_responses",
-      "runtime_audit_repairs",
       "train_sft"
     ],
     "taskTypes": [
@@ -39,7 +38,6 @@
       "manifest_grounding_cards",
       "mouth_responses",
       "role_directory",
-      "runtime_manifest_drift_repair",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",

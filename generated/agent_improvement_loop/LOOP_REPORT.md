@@ -4,13 +4,13 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `8804`
-- Runtime audit reports: `2`
-- Runtime failures: `125`
+- Dataset records: `8454`
+- Runtime audit reports: `3`
+- Runtime failures: `78`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `125`
-- Next action prompts: `80`
+- Gaps: `78`
+- Next action prompts: `78`
 
 ## TestFlight handoff
 
@@ -18,152 +18,152 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app datase
 
 ## Top gaps
 
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
 
-### ERROR — argument_mismatch
+### ERROR — trace_parse_error
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.
+
+### ERROR — trace_parse_error
+
+- Category: `runtime_drift`
+- Recommendation: Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.

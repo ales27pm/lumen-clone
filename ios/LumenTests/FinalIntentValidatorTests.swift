@@ -20,6 +20,20 @@ struct FinalIntentValidatorTests {
         let text = FinalIntentValidator.validate("No matching memories.", routing: routing, fallback: nil)
         #expect(text == "No matching memories.")
     }
+
+    @Test func preservesMapsSearchResultsObservation() async throws {
+        let routing = IntentRoutingDecision(intent: .maps, allowedToolIDs: ["location.current", "maps.search"], requiresClarification: false, clarificationPrompt: nil)
+        let candidate = "Maps search results:\n• Tim Hortons — Avenue de la Plaza, Sorel-Tracy"
+        let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: "Maps/location tools are unavailable in this build right now.")
+        #expect(text == candidate)
+    }
+
+    @Test func preservesRAGSearchResultsObservation() async throws {
+        let routing = IntentRoutingDecision(intent: .rag, allowedToolIDs: ["rag.search"], requiresClarification: false, clarificationPrompt: nil)
+        let candidate = "RAG search results:\nNo matching files found. Source: local RAG index; no matching module snippets were retrieved."
+        let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: "Local search/indexing tools are unavailable in this build right now.")
+        #expect(text == candidate)
+    }
 }
 
 

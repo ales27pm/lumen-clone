@@ -314,8 +314,8 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, removeDependencyPhrases, argumentAliases, isValidArgumentName, inferredType.",
-        "sha256": "74f5160a290e3cc3cdf41a1051e8f65b795b4657982f661b6db435bf96b7a6eb",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, removeDependencyPhrases, removeValueHintPhrases, argumentAliases, isValidArgumentName.",
+        "sha256": "fd047b7bf46b9977a00f8f93f3a2651794fcccb4a8f2c5ce1535c53a5dc308e5",
         "symbols": [
           "LiveRuntimeToolRegistryProvider",
           "RuntimeToolArgumentInferencer",
@@ -324,6 +324,7 @@
           "argsBody",
           "removeParentheticalText",
           "removeDependencyPhrases",
+          "removeValueHintPhrases",
           "argumentAliases",
           "isValidArgumentName",
           "inferredType",
@@ -331,8 +332,7 @@
           "typeHintWords",
           "trimmed",
           "lowered",
-          "specs",
-          "optionalGroup"
+          "specs"
         ]
       },
       {
@@ -1654,7 +1654,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/IntentRouter.swift",
         "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, unavailableMessage.",
-        "sha256": "3a1df1b8c26614afd697cdb20413670a92198739acf4f9c84101f32f0a430189",
+        "sha256": "11890433ade0c68303fa4c5e675b74c58481e7102aa30a50715cdc84d0664a37",
         "symbols": [
           "UserIntent",
           "IntentRoutingDecision",
@@ -2108,7 +2108,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "0de483479c85634514dd02749e7cd8ba9a5af6e5",
+  "manifestCommit": "5a22ea338295aa995a6cff0cd6ae3b86fd10e4b2",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

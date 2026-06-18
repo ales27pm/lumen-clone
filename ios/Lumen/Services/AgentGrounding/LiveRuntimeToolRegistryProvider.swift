@@ -48,13 +48,13 @@ private enum RuntimeToolArgumentInferencer {
                 token = String(token.dropFirst("plus ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
             token = removeDependencyPhrases(from: token)
+            token = removeValueHintPhrases(from: token)
             guard !token.isEmpty else {
                 optionalGroup = true
                 continue
             }
 
             let aliases = argumentAliases(from: token)
-            let hasRequiredAlternativeAliases = aliases.count > 1
             for alias in aliases {
                 let pieces = alias.split(whereSeparator: { $0.isWhitespace })
                 guard let first = pieces.first else { continue }
@@ -64,9 +64,9 @@ private enum RuntimeToolArgumentInferencer {
                 if typeHintWords.contains(loweredName), pieces.count > 1 { continue }
                 guard isValidArgumentName(name) else { continue }
                 guard !specs.contains(where: { $0.name == name }) else { continue }
-                specs.append((name: name, required: (hasRequiredAlternativeAliases || (name == "id" && specs.contains(where: { $0.name == "messageId" }))) ? true : !tokenOptional))
+                specs.append((name: name, required: !tokenOptional))
             }
-            optionalGroup = tokenOptional && !hasRequiredAlternativeAliases
+            optionalGroup = tokenOptional
         }
 
         return specs.map { spec in
@@ -111,6 +111,16 @@ private enum RuntimeToolArgumentInferencer {
     private static func removeDependencyPhrases(from value: String) -> String {
         var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
         for marker in [" depending on schedule", " depending on the schedule"] {
+            if let range = token.range(of: marker, options: [.caseInsensitive]) {
+                token.removeSubrange(range.lowerBound..<token.endIndex)
+            }
+        }
+        return token.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func removeValueHintPhrases(from value: String) -> String {
+        var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        for marker in [" true/false", " true or false"] {
             if let range = token.range(of: marker, options: [.caseInsensitive]) {
                 token.removeSubrange(range.lowerBound..<token.endIndex)
             }
