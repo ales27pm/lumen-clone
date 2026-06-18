@@ -93,6 +93,11 @@ actor SlotModelRuntimeCoordinator {
         return nil
     }
 
+    /// Loads an embedding model from available candidates, prioritizing a preferred model if specified.
+    /// - Parameters:
+    ///   - appState: Updated with the ID of the successfully loaded embedding model.
+    ///   - preferredID: Optional UUID string to prioritize among candidates.
+    /// - Returns: `true` if an embedding model is successfully loaded, `false` otherwise.
     @discardableResult
     func ensureEmbeddingModel(
         appState: AppState,

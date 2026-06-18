@@ -21,6 +21,11 @@ struct MemorySearchTool: LocalTool {
         return Args(query: query, limit: limit, pinnedOnly: pinnedOnly, topic: topic?.isEmpty == true ? nil : topic)
     }
 
+    /// Executes a memory search query.
+    /// - Parameters:
+    ///   - invocation: The tool invocation containing the search parameters.
+    ///   - context: The execution context providing access to the data store.
+    /// - Returns: A `ToolResult` containing the search results and result count, or an unavailable or failed status if the search cannot be completed.
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         do {
             let args = try parse(invocation.arguments)
@@ -35,6 +40,12 @@ struct MemorySearchTool: LocalTool {
         }
     }
 
+    /// Searches memory items and returns formatted result strings.
+    /// - Parameters:
+    ///   - args: Search criteria including query, limit, pinned filter, and optional topic.
+    ///   - modelContext: The model context for data access.
+    ///   - now: The current date for determining item expiration.
+    /// - Returns: An array of formatted memory item strings containing excerpts and metadata.
     @MainActor
     private static func searchRows(args: Args, modelContext: ModelContext, now: Date) async -> [String] {
         let engine = MemoryEngine()

@@ -492,6 +492,7 @@ final class SlotAgentService {
         ]
     }
 
+    /// Records the agent's behavior trace during deterministic compatibility execution.
     private nonisolated static func recordCompatibilityBehaviorTrace(
         req: AgentRequest,
         routing: IntentRoutingDecision,
@@ -531,11 +532,20 @@ final class SlotAgentService {
         )
     }
 
+    /// Extracts the parser error string from tool-action structured output for tracing.
+    /// - Parameters:
+    ///   - event: The agent behavior trace event type.
+    ///   - rawOutput: The structured output JSON to parse for errors.
+    /// - Returns: The parser error string if the event is a tool action and a parse error exists, `nil` otherwise.
     private nonisolated static func structuredTraceParseError(event: AgentBehaviorTrace.Event, rawOutput: String) -> String? {
         guard event == .toolAction else { return nil }
         return AgentTurnParser.parse(rawOutput).parseError?.rawValue
     }
 
+    /// Computes the SHA256 hash of a string.
+    /// - Parameters:
+    ///   - text: The string to hash.
+    /// - Returns: The SHA256 hash as a hexadecimal string.
     private nonisolated static func sha256(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -617,6 +627,8 @@ final class SlotAgentService {
         let steps: [AgentStep]
     }
 
+    /// Generates a deterministic response to a user request through intent routing, tool planning, and execution.
+    /// - Returns: A response containing the final text and execution steps.
     private nonisolated static func deterministicCompatibilityResponse(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> DeterministicCompatibilityResponse {
         let routing = await IntentClassifierService.shared.route(original.userMessage)
         let scopedTools = routeScopedToolDefinitions(effective.availableTools, routing: routing)

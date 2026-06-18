@@ -23,6 +23,15 @@ nonisolated enum FinalIntentValidator {
         return safe
     }
 
+    /// Determines whether the candidate text is valid for the given intent routing.
+    ///
+    /// The text is considered valid if it is non-empty, passes all leak filters, and contains intent-specific keywords or patterns indicating compatibility with the routed intent.
+    ///
+    /// - Parameters:
+    ///   - text: The candidate text to validate.
+    ///   - lower: The lowercased version of the candidate text.
+    ///   - routing: The intent routing decision that determines which validation rules apply.
+    /// - Returns: `true` if the text meets all validation criteria for the intent, `false` otherwise.
     private static func isValid(_ text: String, lower: String, for routing: IntentRoutingDecision) -> Bool {
         guard !text.isEmpty else { return false }
         guard passesLeakFilters(text: text, lower: lower, routing: routing) else { return false }
@@ -225,14 +234,29 @@ nonisolated enum FinalIntentValidator {
         !allowed && containsAny(lower, ["weather for", "weather at", "temperature", "humidity", "feels like", "wind ", "clear sky"])
     }
 
+    /// Identifies whether the text appears to contain an email draft.
+    /// - Parameters:
+    ///   - lower: The lowercase text to examine.
+    ///   - allowed: If `true`, bypasses the check and returns `false`; used when email content is expected for the current intent.
+    /// - Returns: `true` if the text resembles an email draft and the check is enabled, `false` otherwise.
     private static func looksLikeEmailLeak(_ lower: String, unless allowed: Bool) -> Bool {
         !allowed && containsAny(lower, ["dear ", "subject:", "best regards", "sincerely", "i will be in touch soon"])
     }
 
+    /// Determines whether text appears to contain web search results or URLs.
+    /// - Parameters:
+    ///   - lower: A lowercased string to check.
+    ///   - allowed: When `true`, the function returns `false`.
+    /// - Returns: `true` if the text contains web search leak patterns and is not explicitly allowed, `false` otherwise.
     private static func looksLikeWebSearchLeak(_ lower: String, unless allowed: Bool) -> Bool {
         !allowed && containsAny(lower, ["web search", "web result", "web results", "http://", "https://"])
     }
 
+    /// Determines whether the string contains any of the provided substrings.
+    /// - Parameters:
+    ///   - value: The string to search within.
+    ///   - needles: The substrings to search for.
+    /// - Returns: `true` if the string contains any of the provided substrings, `false` otherwise.
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {
         needles.contains { value.contains($0) }
     }

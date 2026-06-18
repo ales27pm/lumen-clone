@@ -37,6 +37,14 @@ final class ModelDownloader: NSObject {
 
     func isDownloading(_ model: CatalogModel) -> Bool { sessions[model.id] != nil }
 
+    /// Initiates a download for a catalog model, or handles it if already downloaded or downloading.
+    ///
+    /// If the model is already being downloaded, this returns without starting a new download. If the model is already installed locally, the completion handler is invoked immediately with the file URL. Otherwise, a download task is created and started, which will invoke the completion handler with the file URL when finished.
+    ///
+    /// - Parameters:
+    ///   - model: The catalog model to download.
+    ///   - onComplete: A closure invoked with the local file URL.
+    /// - Returns: `success` if the download was initiated, is already in progress, or the file is already available; `failure` if the download URL could not be constructed.
     @discardableResult
     func start(_ model: CatalogModel, onComplete: @escaping (URL) -> Void) -> Result<Void, CatalogModel.DownloadURLError> {
         if sessions[model.id] != nil {
@@ -130,6 +138,7 @@ final class ModelDownloader: NSObject {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Cleans up files and resets download state when a model download fails.
     private func failDownload(taskID: Int, model: CatalogModel, message: String, cleanupURLs: [URL] = []) {
         for url in cleanupURLs { try? FileManager.default.removeItem(at: url) }
         try? FileManager.default.removeItem(at: localURL(for: model))
@@ -157,6 +166,9 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         }
     }
 
+    /// Installs a downloaded file after validating the HTTP response and file integrity.
+    ///
+    /// Verifies that the HTTP status code is in the 2xx range and that the response is not HTML or JSON. Moves the temporary file to a staging location, validates its integrity, then installs it to the final destination with automatic fallback to copying if the direct move fails. Re-validates integrity at the final location before marking the download complete and clearing session tracking. On any validation or file operation failure, invokes failure handling with appropriate cleanup.
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         let taskId = downloadTask.taskIdentifier
         let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode
@@ -227,6 +239,9 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         }
     }
 
+    /// Handles errors from completed download tasks.
+    ///
+    /// Persists resume data for later resumption and updates download tracking. Cancellations clear the task silently; other errors are routed through failure cleanup with notification.
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let taskId = task.taskIdentifier
         guard let error else { return }
