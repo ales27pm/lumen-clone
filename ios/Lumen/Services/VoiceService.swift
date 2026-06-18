@@ -47,7 +47,9 @@ final class VoiceService: NSObject {
         return micOK
     }
 
-    // MARK: - Listening
+    /// Starts listening for speech input with continuous transcript updates.
+    /// - Parameters:
+    ///   - onFinal: Called with the final transcript when speech ends.
 
     func startListening(onFinal: @escaping (String) -> Void) async {
         guard await requestPermissions() else { return }
@@ -191,6 +193,7 @@ final class VoiceService: NSObject {
         synthesizer.speak(utterance)
     }
 
+    /// Registers a handler to stop speaking on TTS cancellation.
     private func registerTTSCancellation() {
         unregisterTTSCancellation()
         ttsCancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in

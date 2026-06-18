@@ -71,6 +71,12 @@ nonisolated enum DeterministicToolPlanner {
         }
     }
 
+    /// Produces a sequence of actions to execute a user request, with optional prerequisite context actions.
+    /// - Parameters:
+    ///   - routing: The routing decision that determines the user's intent.
+    ///   - prompt: The user's input text.
+    ///   - availableToolIDs: Tools currently available for execution.
+    /// - Returns: An array of `AgentAction` objects to execute in order; empty if no plan can be made.
     static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
         let text = normalized(prompt)
 
@@ -129,6 +135,8 @@ nonisolated enum DeterministicToolPlanner {
         return []
     }
 
+    /// Plans a single tool action based on the user's intent and prompt, respecting tool availability.
+    /// - Returns: An `AgentAction` for the matched tool, or `nil` if no valid action can be planned.
     static func plan(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         let text = normalized(prompt)
 
@@ -467,9 +475,21 @@ nonisolated enum DeterministicToolPlanner {
 
     private static func isPersonalProfileRecallIntent(_ text: String) -> Bool { IntentRouter.isPersonalProfileRecallIntent(text) }
     private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"]) }
-    private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
-    private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAny(text, ["nearby", "near me", "closest", "nearest", "around me", "around here", "in my area"]) }
+    /// Determines whether text contains phrases indicating a save-then-recall memory pattern.
+/// - Parameters:
+///   - text: The text to evaluate.
+/// - Returns: `true` if the text contains both save-related and recall-related phrases, `false` otherwise.
+private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
+    /// Determines whether text represents a nearby or proximity-based map search.
+/// - Returns: `true` if the text contains proximity keywords, `false` otherwise.
+private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAny(text, ["nearby", "near me", "closest", "nearest", "around me", "around here", "in my area"]) }
 
+    /// Produces a normalized web query for dynamic public lookup.
+    ///
+    /// Removes leading "where is/are" phrasing, corrects "Alcoholic Anonymous" capitalization, and appends "near me" to locality-based queries. The result is capped at 300 characters.
+    ///
+    /// - Parameter prompt: The original user prompt.
+    /// - Returns: The cleaned web query.
     private static func dynamicPublicLookupWebQuery(from prompt: String) -> String {
         var query = extractWebQuery(from: prompt)
         query = query.replacingOccurrences(
@@ -490,6 +510,8 @@ nonisolated enum DeterministicToolPlanner {
         return String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
     }
 
+    /// Determines whether a prompt contains keywords indicating a request to read or view calendar information.
+    /// - Returns: `true` if the text contains calendar read keywords, `false` otherwise.
     private static func isCalendarReadIntent(_ text: String) -> Bool {
         containsAny(text, ["list", "show", "search", "find", "read", "check", "upcoming", "what's on", "what is on", "calendar", "event", "events", "appointment", "appointments", "meeting", "meetings", "schedule", "today", "tomorrow", "next", "do i have", "any"])
     }

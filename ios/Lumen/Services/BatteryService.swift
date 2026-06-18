@@ -32,6 +32,9 @@ final class BatteryService {
 
     private init() {}
 
+    /// Initializes battery monitoring and registers observers for state changes.
+    ///
+    /// Enables battery level monitoring and immediately refreshes all observed properties with the current system state. Registers observers that update properties when battery level, charging state, or low power mode changes. Subsequent calls are ignored.
     func start() {
         guard !isStarted else { return }
         isStarted = true

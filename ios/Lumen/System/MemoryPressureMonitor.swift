@@ -35,6 +35,9 @@ final class MemoryPressureMonitor {
         }
     }
 
+    /// Counts memory warnings within a time window.
+    /// - Parameter interval: The time window for counting warnings. Defaults to `modelLoadSuppressionInterval`.
+    /// - Returns: The count of recent memory warnings, or `0` if the time window has expired or no warnings have occurred.
     func recentWarningCount(now: Date = Date(), within interval: TimeInterval? = nil) -> Int {
         let interval = interval ?? Self.modelLoadSuppressionInterval
         guard let lastWarningAt else { return 0 }

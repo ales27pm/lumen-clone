@@ -75,6 +75,8 @@ nonisolated enum IntentRouter {
         }
     }
 
+    /// Classifies a user message and routes it to the appropriate intent with tool constraints.
+    /// - Returns: An `IntentRoutingDecision` containing the detected intent, permitted tool IDs, and clarification information.
     static func classify(_ userMessage: String) -> IntentRoutingDecision {
         let text = normalized(userMessage)
         guard !text.isEmpty else {
@@ -322,6 +324,10 @@ nonisolated enum IntentRouter {
         }
     }
 
+    /// Provides early routing decisions for high-priority intent patterns.
+    /// - Parameters:
+    ///   - text: The normalized user message.
+    /// - Returns: An `IntentRoutingDecision` if the text matches a high-priority pattern, `nil` otherwise.
     private static func priorityOverride(forNormalizedText text: String) -> IntentRoutingDecision? {
         guard !text.isEmpty else { return nil }
 
@@ -480,6 +486,10 @@ nonisolated enum IntentRouter {
         return matchesAny(text, reminderPhrases)
     }
 
+    /// Detects explicit requests to reindex or refresh file and photo indices.
+    /// - Parameters:
+    ///   - text: The normalized user message.
+    /// - Returns: `true` if the message contains an explicit reindex or refresh pattern, `false` otherwise.
     private static func isExplicitRAGIndexIntent(_ text: String) -> Bool {
         matchesAny(text, [
             "reindex local files", "reindex files", "refresh the file retrieval index",
@@ -497,6 +507,9 @@ nonisolated enum IntentRouter {
         ) != nil
     }
 
+    /// Determines if a message indicates a nearby or local place discovery intent.
+    /// - Parameter text: The user's message to analyze.
+    /// - Returns: `true` if the text indicates nearby or local place discovery, `false` otherwise.
     private static func isNearbyLocalDiscoveryIntent(_ text: String) -> Bool {
         let hasLocalScope = matchesAny(text, ["near me", "nearby", "closest", "nearest", "around me", "around here", "in my area"])
         guard hasLocalScope else { return false }
@@ -518,6 +531,8 @@ nonisolated enum IntentRouter {
         return hasDiscoveryVerb || hasLocalObject
     }
 
+    /// Determines if the text indicates a calendar, scheduling, or event-related intent.
+    /// - Returns: `true` if the text contains calendar-related keywords or phrases, `false` otherwise.
     private static func isCalendarIntent(_ text: String) -> Bool {
         matchesAny(text, [
             "schedule", "calendar", "create event", "create an event", "add event", "add an event",
@@ -526,6 +541,8 @@ nonisolated enum IntentRouter {
         ])
     }
 
+    /// Determines if the message requests fetching, reading, opening, or summarizing a URL.
+    /// - Returns: `true` if the message contains such a request with an HTTP or HTTPS URL, `false` otherwise.
     private static func isURLFetchIntent(_ text: String) -> Bool {
         text.range(
             of: #"(?i)\b(read|fetch|open|summarize)\b.{0,80}\bhttps?://\S+"#,
@@ -551,6 +568,8 @@ nonisolated enum IntentRouter {
         ])
     }
 
+    /// Determines whether a message likely intends to interact with Outlook or mail services.
+    /// - Returns: `true` if the text indicates an Outlook or mail intent, `false` otherwise.
     private static func isLikelyOutlookIntent(_ text: String) -> Bool {
         let outlookMarkers = ["outlook", "hotmail", "live mail", "msn mail", "microsoft mail", "microsoft graph", "graph mail"]
         let mailActions = [

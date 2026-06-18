@@ -1,6 +1,8 @@
 import Foundation
 
 nonisolated enum ToolObservationFinalizer {
+    /// Converts a raw tool observation into a sanitized, intent-appropriate final string.
+    /// - Returns: A formatted observation string, or `nil` if the observation is empty, unsafe, or does not match the expected intent.
     static func immediateFinalIfSafe(intent: UserIntent, toolID: String, observation: String, originalPrompt: String) -> String? {
         let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
         let cleanObservation = ModelOutputSanitizer.stripHiddenBlocksPreservingPayloadMarkers(observation)
@@ -77,11 +79,17 @@ nonisolated enum ToolObservationFinalizer {
         ["summarize", "compare", "analyze", "analysis", "deep", "explain", "synthesize", "pros and cons"].contains { prompt.contains($0) }
     }
 
+    /// Determines whether text contains unsafe content markers.
+    /// - Returns: `true` if the text contains unsafe markers, `false` otherwise.
     private static func looksUnsafe(_ text: String) -> Bool {
         let lower = text.lowercased()
         return lower.contains("<think") || lower.contains("{\"kind\"") || lower.contains("\"mediakind\"")
     }
 
+    /// Formats and attributes a RAG search observation to the local index.
+    ///
+    /// - Parameter observation: The raw observation from a RAG search.
+    /// - Returns: The observation with local RAG index source attribution and appropriate formatting.
     private static func groundedRAGObservation(_ observation: String) -> String {
         let trimmed = observation.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "No matching local snippets were retrieved. Source: local RAG index." }
@@ -95,6 +103,11 @@ nonisolated enum ToolObservationFinalizer {
         return "[1] \(trimmed)\nSource: local RAG index snippet."
     }
 
+    /// Formats search results into a compact list, or displays fallback text when no results are available.
+    /// - Parameters:
+    ///   - text: A string containing encoded `WebRichContentPayload` items.
+    ///   - fallback: Alternative text to display if no search results are found.
+    /// - Returns: A formatted string containing up to five search results with titles, optional URLs, and snippets, or the first twelve non-empty lines of fallback text.
     private static func compactWebResults(from text: String, fallback: String) -> String {
         let payloads = WebRichContentPayload.decodeAll(from: text)
         if let payload = payloads.first(where: { $0.kind == .searchResults }), !payload.results.isEmpty {

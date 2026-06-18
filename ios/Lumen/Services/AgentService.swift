@@ -1338,6 +1338,10 @@ final class AgentService {
     private nonisolated static let structuredUserMessageCharCap = 1_600
     private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
 
+    /// Executes an agent structured turn and streams progress events.
+    /// - Parameters:
+    ///   - req: The agent request specifying the prompt, conversation context, tools, and generation parameters.
+    /// - Returns: An async stream of events representing the agent's thoughts, actions, observations, and final response.
     func run(_ req: AgentRequest) -> AsyncStream<AgentEvent> {
         run(req, options: .default)
     }
@@ -1588,7 +1592,12 @@ final class AgentService {
         continuation.finish()
     }
 
-    // MARK: - System prompt
+    /// Constructs a system prompt that enforces strict JSON output and provides tool-routing guidance.
+    ///
+    /// The prompt specifies required JSON schemas, defines available tools, and includes routing heuristics for location-based queries, map searches, and web searches. It incorporates sanitized system context and attachment details from the request.
+    ///
+    /// - Parameter req: The agent request providing the base system prompt, available tools, and attachments.
+    /// - Returns: The complete system prompt as a string.
 
     private func buildSystemPrompt(req: AgentRequest) -> String {
         var sys = """
@@ -1649,6 +1658,10 @@ final class AgentService {
         return sys
     }
 
+    /// Constructs the user message for a structured agent turn.
+    ///
+    /// Incorporates conversation history, the current user request, and (for steps after the first) accumulated observations and reusable location context.
+    /// - Returns: The complete user message prompting the agent to emit a JSON object.
     private func buildAgentUserTurn(req: AgentRequest, stepIndex: Int, scratchpad: String) -> String {
         var out = ""
         let context = sanitizedHistoryContext(req.history)
@@ -1705,6 +1718,8 @@ final class AgentService {
         return latest
     }
 
+    /// Formats the last six conversation history entries as role-labeled lines, sanitizing and skipping empty content.
+    /// - Returns: A newline-separated string of "Role: content" lines.
     private func sanitizedHistoryContext(_ history: [(role: MessageRole, content: String)]) -> String {
         let recent = history.suffix(6)
         var lines: [String] = []
@@ -1723,6 +1738,10 @@ final class AgentService {
         return lines.joined(separator: "\n")
     }
 
+    /// Sanitizes conversation history content for use in structured prompts by removing code blocks, XML-like tags, internal grounding markers, and redundant punctuation, while normalizing whitespace and capping the result to 480 characters.
+    ///
+    /// - Parameter content: The raw history message content to sanitize.
+    /// - Returns: The sanitized content, with consecutive spaces collapsed to single spaces and truncated to 480 characters.
     private func sanitizeHistoryContent(_ content: String) -> String {
         var text = Self.stripInternalGrounding(from: content)
         text = text.replacingOccurrences(
@@ -1753,6 +1772,8 @@ final class AgentService {
         sanitizeHistoryContent(content)
     }
 
+    /// Prepares a system prompt for structured JSON output by removing internal grounding markers and lines containing blocked formatting directives.
+    /// - Returns: The sanitized system prompt with internal grounding removed and lines mentioning markdown, code fences, headings, or step-by-step instructions filtered out.
     private func sanitizeSystemPromptForStructuredOutput(_ systemPrompt: String) -> String {
         let trimmed = Self.stripInternalGrounding(from: systemPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
@@ -1780,6 +1801,8 @@ final class AgentService {
         return kept.joined(separator: "\n")
     }
 
+    /// Removes internal grounding markers from the user message, trims whitespace, and caps the result to `structuredUserMessageCharCap`.
+    /// If stripping yields an empty string, returns the trimmed original message instead.
     private nonisolated static func sanitizedStructuredUserMessage(_ userMessage: String) -> String {
         let stripped = stripInternalGrounding(from: userMessage)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1787,10 +1810,14 @@ final class AgentService {
         return String(stripped.prefix(structuredUserMessageCharCap))
     }
 
+    /// Caps the text to the maximum context note length.
+    /// - Returns: The trimmed text, capped to the maximum context note length.
     private nonisolated static func boundedStructuredContextNote(_ text: String) -> String {
         String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(structuredContextNoteCharCap))
     }
 
+    /// Removes all content starting from the first occurrence of any internal grounding marker.
+    /// - Returns: The text before the first internal grounding marker, or the original text if none is found.
     private nonisolated static func stripInternalGrounding(from text: String) -> String {
         var stripped = text
         let markers = [
@@ -1913,6 +1940,8 @@ final class AgentService {
         AgentParseNoiseRecorder.record(trace)
     }
 
+    /// Attempts to recover from a structured parse failure.
+    /// - Returns: A tuple of the recovered text and steps if recovery succeeds, `nil` otherwise.
     private nonisolated static func structuredParseFailureRecovery(
         req: AgentRequest,
         options: LegacyAgentRunOptions
@@ -1985,6 +2014,9 @@ final class AgentService {
         sanitizedStructuredUserMessage(userMessage)
     }
 
+    /// Generates the structured system prompt used for agent routing.
+    /// - Parameter req: The agent request containing system context and available tools.
+    /// - Returns: The system prompt string specifying the JSON-only output contract and routing instructions.
     func structuredSystemPromptForTests(req: AgentRequest) -> String {
         buildSystemPrompt(req: req)
     }
@@ -1993,6 +2025,8 @@ final class AgentService {
         buildAgentUserTurn(req: req, stepIndex: stepIndex, scratchpad: scratchpad)
     }
 
+    /// Exposes the internal structured parse failure recovery function for testing.
+    /// - Returns: A tuple of recovery text and steps if recovery succeeds, otherwise `nil`.
     nonisolated static func structuredParseFailureRecoveryForTests(
         req: AgentRequest,
         options: LegacyAgentRunOptions
@@ -2025,6 +2059,11 @@ final class AgentService {
         }
     }
 
+    /// Synthesizes a final answer from gathered tool observations.
+    ///
+    /// When structured reasoning cannot produce a direct action or explicit final answer, this method composes a fallback response by summarizing tool results into a user-facing answer. If no observations are available, returns a generic retry message.
+    ///
+    /// - Returns: A synthesized final answer text, or a retry message if no observations exist.
     private func synthesizeFallback(req: AgentRequest, observations: [(tool: String, result: String)], reason: FallbackReason) async -> String {
         RuntimeFallbackLogger.record(
             source: "agent-service-structured-turn",
@@ -2077,6 +2116,15 @@ final class AgentService {
         return trimmed
     }
 
+    /// Recovers a plain-text final answer from failed structured-turn output.
+    ///
+    /// When the agent model output cannot be parsed as a structured turn, this function attempts to extract or synthesize a usable plain-text response that can be presented to the user.
+    /// - Parameters:
+    ///   - req: The original agent request.
+    ///   - rawOutput: The model output that failed to parse.
+    ///   - streamedThought: Any partial thought captured during streaming.
+    ///   - parseError: The specific parsing error that triggered recovery.
+    /// - Returns: A plain-text final answer.
     private func synthesizeUnstructuredFallback(
         req: AgentRequest,
         rawOutput: String,

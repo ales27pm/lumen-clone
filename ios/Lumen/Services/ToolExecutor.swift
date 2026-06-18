@@ -240,6 +240,9 @@ nonisolated enum ToolRouteGuard {
         return !suspiciousGreetingTitles.contains(title.lowercased())
     }
 
+    /// Determines whether a query should use web search instead of nearby search.
+    /// - Parameter query: The search query to analyze.
+    /// - Returns: `true` if the query indicates web search intent, `false` otherwise.
     static func shouldUseWebSearchInsteadOfNearbySearch(query: String) -> Bool {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return false }
@@ -272,6 +275,9 @@ nonisolated enum ToolRouteGuard {
         return false
     }
 
+    /// Identifies queries that describe time-sensitive, location-specific events or services.
+    /// - Parameter value: The query string to evaluate.
+    /// - Returns: `true` if the query combines temporal, location-scope, and dynamic-subject references; `false` otherwise.
     static func shouldUseWebSearchForDynamicPublicLookup(_ value: String) -> Bool {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return false }
@@ -304,6 +310,8 @@ nonisolated enum ToolRouteGuard {
         return hasTime && hasDynamicSubject && hasLocalScope
     }
 
+    /// Determines if a string represents a query for a scheduled support group meeting.
+    /// - Returns: `true` if the string contains a recovery program marker, includes "meeting", and specifies a day or time, `false` otherwise.
     static func isScheduledSupportGroupMeetingLookup(_ value: String) -> Bool {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return false }
@@ -323,6 +331,9 @@ nonisolated enum ToolRouteGuard {
         ) != nil
     }
 
+    /// Validates a Maps destination string to prevent prompt injection and description leak.
+    /// - Parameter value: The destination string to validate.
+    /// - Returns: The trimmed destination if valid, `nil` if empty or containing suspicious markers.
     static func sanitizedMapsDestination(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }

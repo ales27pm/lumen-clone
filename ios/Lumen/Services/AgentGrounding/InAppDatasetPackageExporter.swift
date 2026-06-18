@@ -47,6 +47,11 @@ nonisolated enum InAppDatasetPackageExporter {
     static let severeModelTurnThresholdMs = 120_000
     private static let directoryName = "LumenDatasetExports"
 
+    /// Assembles a complete in-app dataset package incorporating audit reports and recent traces.
+    /// - Parameters:
+    ///   - manifestSource: Identifier for the manifest audit source.
+    ///   - includeScenarioResults: If `true`, includes scenario results in the package; otherwise omits them.
+    /// - Returns: A dataset package containing app metadata, audits, trace statistics, scenario results (if included), and export policy.
     static func makePackage(
         manifestSource: String,
         usedRuntimeFallback: Bool,
@@ -183,6 +188,8 @@ nonisolated enum InAppDatasetPackageExporter {
         )
     }
 
+    /// Computes runtime-derived behavior violations from traces.
+    /// - Returns: An array of violations based on action parse errors and model turn latency thresholds.
     private static func runtimeTraceViolations(from traces: [AgentBehaviorTrace]) -> [AgentBehaviorViolation] {
         traces.compactMap { trace in
             if let parseError = actionTraceParseError(trace) {
@@ -229,16 +236,24 @@ nonisolated enum InAppDatasetPackageExporter {
         }
     }
 
+    /// Determines if a trace has an action parse error.
+    /// - Returns: `true` if the trace has an action parse error, `false` otherwise.
     private static func traceHasActionParseError(_ trace: AgentBehaviorTrace) -> Bool {
         actionTraceParseError(trace) != nil
     }
 
+    /// Retrieves the parse error for a structured action trace.
+    /// - Parameters:
+    ///   - trace: The behavior trace to examine.
+    /// - Returns: The parse error string if the trace is in a structured action stage and a parse error exists, `nil` otherwise.
     private static func actionTraceParseError(_ trace: AgentBehaviorTrace) -> String? {
         guard isActionStructuredStage(trace) else { return nil }
         if let parseError = trace.parseError { return parseError }
         return AgentTurnParser.parse(trace.rawOutputPrefix).parseError?.rawValue
     }
 
+    /// Determines whether a trace represents a structured action stage.
+    /// - Returns: `true` if the trace expects structured JSON action output, `false` otherwise.
     private static func isActionStructuredStage(_ trace: AgentBehaviorTrace) -> Bool {
         if trace.event == .toolAction { return true }
         guard trace.event == .modelTurn else { return false }
@@ -250,6 +265,10 @@ nonisolated enum InAppDatasetPackageExporter {
         return stage.contains("executor-json")
     }
 
+    /// Writes improve-loop dataset samples as three timestamped JSONL files.
+    /// - Parameters:
+    ///   - dataset: The improve-loop dataset containing accepted training samples, quarantined samples, and regression tests.
+    /// - Throws: Errors from encoding or file write operations.
     private static func writeImproveLoopJSONL(_ dataset: ImproveLoopDataset, directory: URL, timestamp: String) throws {
         try writeJSONL(dataset.acceptedTraining, to: directory.appendingPathComponent("accepted_training-\(timestamp).jsonl", isDirectory: false))
         try writeJSONL(dataset.quarantinedSamples, to: directory.appendingPathComponent("quarantined_samples-\(timestamp).jsonl", isDirectory: false))
