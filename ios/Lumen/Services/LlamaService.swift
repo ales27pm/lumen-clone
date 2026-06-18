@@ -232,16 +232,16 @@ private enum LlamaRuntimeScheduling {
 }
 
 private final class LlamaRuntimeLogCapture: @unchecked Sendable {
-    nonisolated(unsafe) static let shared = LlamaRuntimeLogCapture()
-    nonisolated(unsafe) private static let callback: ggml_log_callback = { _, text, _ in
+    static let shared = LlamaRuntimeLogCapture()
+    private static let callback: ggml_log_callback = { _, text, _ in
         guard let text else { return }
         let line = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return }
         LlamaRuntimeLogCapture.shared.record(line)
     }
 
-    nonisolated(unsafe) private let lock = NSLock()
-    nonisolated(unsafe) private let logger = Logger(subsystem: "com.lumen.runtime", category: "llama.cpp")
+    private let lock = NSLock()
+    private let logger = Logger(subsystem: "com.lumen.runtime", category: "llama.cpp")
     nonisolated(unsafe) private var installed = false
     nonisolated(unsafe) private var lines: [String] = []
 

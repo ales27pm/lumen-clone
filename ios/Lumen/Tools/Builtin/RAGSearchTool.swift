@@ -23,46 +23,7 @@ struct RAGSearchTool: LocalTool {
             let (q, limitRaw, source, minScore) = try parse(invocation.arguments)
             let limit = context.isForeground ? limitRaw : min(limitRaw, 6)
             guard let mc = context.modelContext else { return .init(invocationID: invocation.id, status: .unavailable, displayText: "RAG storage unavailable.", modelText: "RAG unavailable.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "no_model_context", errorCode: "unavailable") }
-            let engine = await RAGEngine()
-            let semanticResults = await engine.retrieve(query: q, limit: limit, context: mc)
-            let output = await MainActor.run { () -> (rows: [String], mode: String) in
-                var results: [(chunk: RAGChunk, score: Double)] = []
-                var mode = "semantic"
-                if !semanticResults.isEmpty {
-                    let chunks = (try? mc.fetch(FetchDescriptor<RAGChunk>())) ?? []
-                    let map = Dictionary(uniqueKeysWithValues: chunks.map { ($0.id, $0) })
-                    results = semanticResults.compactMap { r in map[r.chunkID].map { (chunk: $0, score: r.score) } }
-                }
-                if results.isEmpty {
-                    mode = "lexical"
-                    let all = (try? mc.fetch(FetchDescriptor<RAGChunk>())) ?? []
-                    let terms = q.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
-                    results = all.compactMap { c in
-                        if let source, !(c.sourceName.localizedCaseInsensitiveContains(source) || (c.sourceRef?.localizedCaseInsensitiveContains(source) ?? false)) { return nil }
-                        let text = c.content.lowercased()
-                        let hits = terms.filter { text.contains($0) }.count
-                        guard hits > 0 else { return nil }
-                        return (chunk: c, score: Double(hits) / Double(max(1, terms.count)))
-                    }.sorted { $0.score > $1.score }.prefix(limit).map { $0 }
-                }
-                if let source { results = results.filter { $0.chunk.sourceName.localizedCaseInsensitiveContains(source) || ($0.chunk.sourceRef?.localizedCaseInsensitiveContains(source) ?? false) } }
-                if let minScore { results = results.filter { $0.score >= minScore } }
-
-                var seen = Set<String>()
-                let dedup = results.filter { item in
-                    let keyData = Data((item.chunk.sourceName + item.chunk.content).utf8)
-                    let key = SHA256.hash(data: keyData).compactMap { String(format: "%02x", $0) }.joined()
-                    let inserted = !seen.contains(key)
-                    if inserted { seen.insert(key) }
-                    return inserted
-                }.prefix(limit)
-
-                let rows = dedup.map { e in
-                    let excerpt = e.chunk.content.count > 140 ? String(e.chunk.content.prefix(140)) + "..." : e.chunk.content
-                    return "- [\(e.chunk.id.uuidString.prefix(8))] \(e.chunk.sourceName) | score=\(String(format:"%.2f", e.score)) | \(excerpt)"
-                }
-                return (rows, mode)
-            }
+            let output = await Self.searchRows(query: q, limit: limit, source: source, minScore: minScore, modelContext: mc)
             let rows = output.rows
             let mode = output.mode
             let txt = rows.isEmpty ? "No matching RAG chunks found." : rows.joined(separator: "\n")
@@ -70,5 +31,49 @@ struct RAGSearchTool: LocalTool {
         } catch {
             return .init(invocationID: invocation.id, status: .failed, displayText: "Invalid RAG query.", modelText: "RAG input invalid.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "invalid_args", errorCode: "invalid")
         }
+    }
+
+    @MainActor
+    private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, modelContext: ModelContext) async -> (rows: [String], mode: String) {
+        let engine = RAGEngine()
+        let semanticResults = await engine.retrieve(query: query, limit: limit, context: modelContext)
+        var results: [(chunk: RAGChunk, score: Double)] = []
+        var mode = "semantic"
+        if !semanticResults.isEmpty {
+            let chunks = (try? modelContext.fetch(FetchDescriptor<RAGChunk>())) ?? []
+            let map = Dictionary(uniqueKeysWithValues: chunks.map { ($0.id, $0) })
+            results = semanticResults.compactMap { r in map[r.chunkID].map { (chunk: $0, score: r.score) } }
+        }
+        if results.isEmpty {
+            mode = "lexical"
+            let all = (try? modelContext.fetch(FetchDescriptor<RAGChunk>())) ?? []
+            let terms = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+            results = all.compactMap { c in
+                if let source, !(c.sourceName.localizedCaseInsensitiveContains(source) || (c.sourceRef?.localizedCaseInsensitiveContains(source) ?? false)) { return nil }
+                let text = c.content.lowercased()
+                let hits = terms.filter { text.contains($0) }.count
+                guard hits > 0 else { return nil }
+                return (chunk: c, score: Double(hits) / Double(max(1, terms.count)))
+            }.sorted { $0.score > $1.score }.prefix(limit).map { $0 }
+        }
+        if let source {
+            results = results.filter { $0.chunk.sourceName.localizedCaseInsensitiveContains(source) || ($0.chunk.sourceRef?.localizedCaseInsensitiveContains(source) ?? false) }
+        }
+        if let minScore { results = results.filter { $0.score >= minScore } }
+
+        var seen = Set<String>()
+        let dedup = results.filter { item in
+            let keyData = Data((item.chunk.sourceName + item.chunk.content).utf8)
+            let key = SHA256.hash(data: keyData).compactMap { String(format: "%02x", $0) }.joined()
+            let inserted = !seen.contains(key)
+            if inserted { seen.insert(key) }
+            return inserted
+        }.prefix(limit)
+
+        let rows = dedup.map { e in
+            let excerpt = e.chunk.content.count > 140 ? String(e.chunk.content.prefix(140)) + "..." : e.chunk.content
+            return "- [\(e.chunk.id.uuidString.prefix(8))] \(e.chunk.sourceName) | score=\(String(format:"%.2f", e.score)) | \(excerpt)"
+        }
+        return (rows, mode)
     }
 }

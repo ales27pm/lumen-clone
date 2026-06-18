@@ -23,7 +23,7 @@ final class MemoryPressureMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 await self?.handleWarning()
             }
         }
@@ -35,7 +35,8 @@ final class MemoryPressureMonitor {
         }
     }
 
-    func recentWarningCount(now: Date = Date(), within interval: TimeInterval = MemoryPressureMonitor.modelLoadSuppressionInterval) -> Int {
+    func recentWarningCount(now: Date = Date(), within interval: TimeInterval? = nil) -> Int {
+        let interval = interval ?? Self.modelLoadSuppressionInterval
         guard let lastWarningAt else { return 0 }
         guard now.timeIntervalSince(lastWarningAt) < interval else {
             warningCount = 0

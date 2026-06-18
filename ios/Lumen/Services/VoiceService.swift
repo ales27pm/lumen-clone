@@ -77,7 +77,7 @@ final class VoiceService: NSObject {
         }
 
         cancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in
-            Task { @MainActor in self?.stopListening() }
+            Task { @MainActor [weak self] in self?.stopListening() }
         }, category: .voiceRecognition)
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -194,7 +194,7 @@ final class VoiceService: NSObject {
     private func registerTTSCancellation() {
         unregisterTTSCancellation()
         ttsCancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in
-            Task { @MainActor in self?.stopSpeaking() }
+            Task { @MainActor [weak self] in self?.stopSpeaking() }
         }, category: .tts)
     }
 

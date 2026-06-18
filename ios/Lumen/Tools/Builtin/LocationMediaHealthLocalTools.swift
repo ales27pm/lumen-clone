@@ -63,7 +63,10 @@ struct LocationMediaHealthLocalTool: LocalTool {
             if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
-            text = LocationTools.openDirections(destination: args["destination"] ?? args["query"] ?? "")
+            let destination = args["destination"] ?? args["query"] ?? ""
+            text = await MainActor.run {
+                LocationTools.openDirections(destination: destination)
+            }
         case "maps.search":
             let query = args["query"] ?? args["location"] ?? args["destination"] ?? ""
             if ToolRouteGuard.shouldUseWebSearchInsteadOfNearbySearch(query: query) {

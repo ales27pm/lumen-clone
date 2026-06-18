@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RuntimeAgentManifestAuditReport: Codable, Hashable {
+public struct RuntimeAgentManifestAuditReport: Codable, Hashable, Sendable {
     public let passed: Bool
     public let score: Double
     public let failures: [RuntimeManifestFailure]
@@ -8,7 +8,7 @@ public struct RuntimeAgentManifestAuditReport: Codable, Hashable {
     public let recommendedDatasetRepairs: [String]
 }
 
-public struct RuntimeManifestFailure: Codable, Hashable, Identifiable {
+public struct RuntimeManifestFailure: Codable, Hashable, Identifiable, Sendable {
     public var id: String { [type, agent ?? "", actual ?? "", problem].joined(separator: "|") }
     public let type: String
     public let agent: String?
@@ -18,7 +18,7 @@ public struct RuntimeManifestFailure: Codable, Hashable, Identifiable {
     public let problem: String
 }
 
-public struct RuntimeManifestLoadResult: Hashable {
+public struct RuntimeManifestLoadResult: Hashable, Sendable {
     public let manifest: AgentBehaviorManifest
     public let source: String
     public let usedRuntimeFallback: Bool
