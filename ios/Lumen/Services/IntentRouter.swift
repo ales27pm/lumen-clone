@@ -156,16 +156,17 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .phoneCall, allowedToolIDs: phoneToolIDs, requiresClarification: !hasTarget, clarificationPrompt: hasTarget ? nil : "Who should I call?")
         }
 
-        if matchesAny(text, ["schedule", "calendar", "create event", "meeting", "appointment", "at 5", "tomorrow at", "list events", "upcoming events"]) {
-            return IntentRoutingDecision(intent: .calendar, allowedToolIDs: calendarToolIDs, requiresClarification: false, clarificationPrompt: nil)
-        }
-
         if isMapFollowUpPrompt(text) {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["directions", "navigate", "route to", "maps", "near me", "nearby", "closest", "search nearby", "find a place", "find places"]) {
+        if isNearbyLocalDiscoveryIntent(text)
+            || matchesAny(text, ["directions", "navigate", "route to", "maps", "near me", "nearby", "closest", "nearest", "search nearby", "find a place", "find places"]) {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if matchesAny(text, ["schedule", "calendar", "create event", "meeting", "appointment", "at 5", "tomorrow at", "list events", "upcoming events"]) {
+            return IntentRoutingDecision(intent: .calendar, allowedToolIDs: calendarToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if matchesAny(text, ["search photos", "find photos", "photo library", "pictures from", "photos from", "images in my library"]) {
@@ -328,7 +329,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .photos, allowedToolIDs: photosToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if isMapFollowUpPrompt(text) || matchesAny(text, ["directions to", "navigate to", "route to", "find coffee near me", "find a pharmacy nearby"]) {
+        if isMapFollowUpPrompt(text) || isNearbyLocalDiscoveryIntent(text) || matchesAny(text, ["directions to", "navigate to", "route to", "find coffee near me", "find a pharmacy nearby"]) {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
@@ -352,7 +353,8 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["draft a text", "message jordan", "text message to", "text 555", "send a text"]) {
+        if matchesAny(text, ["draft a text", "message jordan", "text message to", "text 555", "send a text"])
+            || text.range(of: #"(?i)\b(message|text|sms|imessage)\s+[a-z0-9@._+\-]{2,}\b"#, options: .regularExpression) != nil {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
             let clarification: String?
@@ -367,7 +369,9 @@ nonisolated enum IntentRouter {
             "draft an email", "email:", "subject release prep",
             "draft a quick email", "draft a quick email update to",
             "write a quick email", "compose a quick email", "email update to"
-        ]) || (text.contains("email") && text.contains("ask one question")) {
+        ])
+            || (text.contains("email") && text.contains("ask one question"))
+            || text.range(of: #"(?i)\b(email|mail)\s+(?!address\b)[a-z0-9@._+\-]{2,}\b"#, options: .regularExpression) != nil {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
             let clarification: String?
@@ -480,6 +484,27 @@ nonisolated enum IntentRouter {
         ) != nil
     }
 
+    private static func isNearbyLocalDiscoveryIntent(_ text: String) -> Bool {
+        let hasLocalScope = matchesAny(text, ["near me", "nearby", "closest", "nearest", "around me", "around here", "in my area"])
+        guard hasLocalScope else { return false }
+
+        let explicitCalendarScope = matchesAny(text, [
+            "my calendar", "on my calendar", "in my calendar", "my schedule",
+            "my events", "my appointments", "calendar events", "upcoming events"
+        ])
+        if explicitCalendarScope { return false }
+
+        let hasDiscoveryVerb = matchesAny(text, [
+            "find", "search", "show", "locate", "look for", "help me find",
+            "where is", "where are", "directions", "navigate", "route"
+        ])
+        let hasLocalObject = matchesAny(text, [
+            "meeting", "store", "shop", "restaurant", "coffee", "pharmacy",
+            "hospital", "clinic", "airport", "station", "place"
+        ])
+        return hasDiscoveryVerb || hasLocalObject
+    }
+
     private static func isURLFetchIntent(_ text: String) -> Bool {
         text.range(
             of: #"(?i)\b(read|fetch|open|summarize)\b.{0,80}\bhttps?://\S+"#,
@@ -544,10 +569,14 @@ nonisolated enum IntentRouter {
     }
 
     private static func inferredRecipient(_ text: String) -> Bool {
-        text.contains(" to ") || text.contains("@") || text.contains("recipient") || text.rangeOfCharacter(from: .decimalDigits) != nil
+        text.contains(" to ")
+            || text.contains("@")
+            || text.contains("recipient")
+            || text.rangeOfCharacter(from: .decimalDigits) != nil
+            || text.range(of: #"(?i)\b(email|mail|message|text|sms|imessage)\s+[a-z0-9@._+\-]{2,}\b"#, options: .regularExpression) != nil
     }
 
     private static func inferredContent(_ text: String) -> Bool {
-        text.contains(" about ") || text.contains(" saying ") || text.contains(" body ") || text.contains(" that says ") || text.contains(" message ") || text.split(separator: " ").count >= 8
+        text.contains(" about ") || text.contains(" saying ") || text.contains(" body ") || text.contains(" that says ") || text.split(separator: " ").count >= 8
     }
 }

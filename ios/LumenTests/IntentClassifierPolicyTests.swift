@@ -38,6 +38,26 @@ struct IntentClassifierPolicyTests {
         #expect(result.intent == .calendar)
     }
 
+    @Test func closeModelAlternativesAskClarification() {
+        let fallback = IntentClassificationResult(intent: .maps, confidence: 0.60, alternatives: [], requiresClarification: false, clarificationPrompt: nil, source: .deterministicFallback, diagnostics: nil)
+        let model = IntentClassificationResult(
+            intent: .calendar,
+            confidence: 0.64,
+            alternatives: [
+                IntentAlternative(intent: .calendar, confidence: 0.64),
+                IntentAlternative(intent: .maps, confidence: 0.59)
+            ],
+            requiresClarification: false,
+            clarificationPrompt: nil,
+            source: .bundledModel,
+            diagnostics: nil
+        )
+        let result = IntentClassifierPolicy.resolve(modelResult: model, deterministic: fallback)
+        #expect(result.requiresClarification)
+        #expect(result.clarificationPrompt?.contains("calendar event") == true)
+        #expect(result.clarificationPrompt?.contains("nearby place") == true)
+    }
+
     @Test func chatIntentHasNoAllowedTools() {
         let chat = IntentClassificationResult(intent: .chat, confidence: 0.9, alternatives: [], requiresClarification: false, clarificationPrompt: nil, source: .bundledModel, diagnostics: nil)
         #expect(chat.asRoutingDecision().allowedToolIDs.isEmpty)
@@ -100,6 +120,68 @@ struct IntentClassifierPolicyTests {
         let result = await IntentClassifierService.shared.classify("Help me message Jordan with a complete ETA and apology.")
         #expect(result.intent == .messageDraft)
         #expect(result.diagnostics == "deterministic_priority_override")
+    }
+
+    @Test func semanticRouteKeepsNearbySupportMeetingOutOfCalendar() async {
+        let routing = await IntentClassifierService.shared.route("Find the nearest Alcoholics Anonymous meeting tonight")
+        #expect(routing.intent == .maps)
+        #expect(!routing.requiresClarification)
+        #expect(routing.allowedToolIDs.contains("maps.search"))
+        #expect(routing.allowedToolIDs.contains("location.current"))
+        #expect(routing.allowedToolIDs.contains("calendar.list") == false)
+    }
+
+    @Test func ambiguousPromptAsksClarificationBeforeTools() async {
+        let meeting = await IntentClassifierService.shared.route("Find my meeting tonight")
+        #expect(meeting.requiresClarification)
+        #expect(meeting.clarificationPrompt == "Do you mean a calendar event or a nearby meeting location?")
+
+        let reference = await IntentClassifierService.shared.route("Book that")
+        #expect(reference.requiresClarification)
+        #expect(reference.clarificationPrompt == "What would you like me to act on?")
+        #expect(reference.allowedToolIDs.isEmpty)
+    }
+
+    @Test func selectedIntentWithMissingRequiredSlotAsksClarification() async {
+        let web = await IntentClassifierService.shared.classify("Search the web")
+        #expect(web.intent == .webSearch)
+        #expect(web.requiresClarification)
+        #expect(web.clarificationPrompt == "What should I search for?")
+        #expect(web.diagnostics?.contains("slot_clarification") == true)
+
+        let contact = await IntentClassifierService.shared.classify("Find contact")
+        #expect(contact.intent == .contactSearch)
+        #expect(contact.requiresClarification)
+        #expect(contact.clarificationPrompt == "Which contact should I look up?")
+
+        let alarm = await IntentClassifierService.shared.classify("Set an alarm")
+        #expect(alarm.intent == .alarm)
+        #expect(alarm.requiresClarification)
+        #expect(alarm.clarificationPrompt == "What time or duration should I use?")
+
+        let email = await IntentClassifierService.shared.classify("Email Sarah")
+        #expect(email.intent == .emailDraft)
+        #expect(email.requiresClarification)
+        #expect(email.clarificationPrompt == "What should the email say?")
+
+        let message = await IntentClassifierService.shared.classify("Message Jordan")
+        #expect(message.intent == .messageDraft)
+        #expect(message.requiresClarification)
+        #expect(message.clarificationPrompt == "What should the message say?")
+    }
+
+    @Test func clearDirectCommandsDoNotOverAskClarification() async {
+        let message = await IntentClassifierService.shared.classify("Help me message Jordan with a complete ETA and apology.")
+        #expect(message.intent == .messageDraft)
+        #expect(!message.requiresClarification)
+
+        let web = await IntentClassifierService.shared.classify("Search the web for Qwen3 local inference benchmarks")
+        #expect(web.intent == .webSearch)
+        #expect(!web.requiresClarification)
+
+        let alarm = await IntentClassifierService.shared.classify("Set an alarm for 6")
+        #expect(alarm.intent == .alarm)
+        #expect(!alarm.requiresClarification)
     }
 
     @Test func liveE2ERoutingRegressionsUsePriorityOverrides() async {

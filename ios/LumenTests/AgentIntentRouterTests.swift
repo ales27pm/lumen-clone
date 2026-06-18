@@ -43,4 +43,13 @@ struct AgentIntentRouterTests {
         #expect(decision.compatibilityIntentName == "clarify")
         #expect(decision.confidenceSource == "compatibility:clarification-required")
     }
+
+    @Test func semanticDecisionUsesClassifierClarificationPolicy() async throws {
+        let decision = await AgentIntentRouter.decideSemantic(userMessage: "Search the web")
+        #expect(decision.intent == .webSearch)
+        #expect(decision.shouldAskClarification)
+        #expect(decision.clarificationQuestion == "What should I search for?")
+        #expect(decision.reason.contains("IntentClassifierService"))
+        #expect(decision.allowedToolIDs.contains("web.search"))
+    }
 }

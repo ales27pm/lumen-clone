@@ -62,6 +62,18 @@ struct DeterministicToolPlannerTests {
         #expect(action?.args["query"]?.stringValue == "restaurants")
     }
 
+    @Test func nearbyMeetingSearchPlansLocationThenMapsSearch() async throws {
+        let routing = IntentRouter.classify("Find the nearest Alcoholics Anonymous meeting tonight")
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: "Find the nearest Alcoholics Anonymous meeting tonight",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .maps)
+        #expect(steps.map(\.tool) == ["location.current", "maps.search"])
+        #expect(steps.last?.args["query"]?.stringValue == "Alcoholics Anonymous meeting tonight")
+    }
+
     @Test func moveIntentIncludesDestination() async throws {
         let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.message.move"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "move latest email to inbox", availableToolIDs: ["outlook.message.move"])
