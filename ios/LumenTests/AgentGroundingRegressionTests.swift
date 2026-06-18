@@ -441,6 +441,72 @@ struct AgentGroundingRegressionTests {
         #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) != true)
     }
 
+    @Test func agentGroundingPackageDoesNotTreatCortexDiagnosticChatAsToolActionParseError() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "cortex",
+            stage: "chat",
+            intent: "chat",
+            promptPrefix: "Yo",
+            rawOutputPrefix: #"{"intent":"diagnostic","nextModel":"diagnostic"}"#,
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: "missingActionOrFinal",
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 0)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) != true)
+    }
+
+    @Test func agentGroundingPackageStillCountsMalformedAgentJSONModelTurns() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json",
+            intent: "weather",
+            promptPrefix: "User request:\nWhat is the weather here?",
+            rawOutputPrefix: "Generation error: Failed to initialize context: Prompt exceeds shared chat context window",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: "generation_error",
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 1)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) == true)
+    }
+
     @Test func agentGroundingPackageFlagsSevereRuntimeModelTurns() throws {
         AgentBehaviorTraceRecorder.clear()
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(

@@ -2,7 +2,7 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `5a22ea338295aa995a6cff0cd6ae3b86fd10e4b2`
+- Manifest commit: `60e459e72d215380b6e2c7f089e4cd441821d64f`
 - Tools: `53`
 - Intents: `22`
 - Codebase-home records: `482`
@@ -74,7 +74,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/AgentGroundingInstrumentation.swift` (Services): `ios/Lumen/Services/AgentGroundingInstrumentation.swift` owns AgentGroundingInstrumentation behavior and defines: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancel Symbols: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancellation, mark, elapsedMs, sceneText.
 - `ios/Lumen/Services/AgentIntentRouter.swift` (Services): Compatibility facade for older agent-routing tests/call sites. Symbols: AgentIntentRouter, Decision, decide, decideSemantic, decision, filteredTools, routingSystemNote, allowedToolIDs.
 - `ios/Lumen/Services/AgentRunner.swift` (Services): Compatibility wrapper kept for older callers during the Agent Kernel migration. New entrypoints should call `AssistantKernel.run(...)` or a narrow kernel bridge directly. Symbols: AgentRunner, runHeadless.
-- `ios/Lumen/Services/AgentService.swift` (Services): `ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser, ExtractedJSON Symbols: AgentRequest, AgentEvent, AgentAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser.
+- `ios/Lumen/Services/AgentService.swift` (Services): `ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selec Symbols: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector.
 - `ios/Lumen/Services/Tools/AlarmTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: AlarmTools, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause, resume, stop. Symbols: AlarmTools, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause.
 - `ios/Lumen/Services/Tools/CalendarTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, createEvent, listEvents, createReminder, listReminders, store, granted, event, predicate, events. Symbols: CalendarTools, createEvent, listEvents, createReminder, listReminders, store, granted, event.
 - `ios/Lumen/Services/Tools/ContactsTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/ContactsTools.swift` owns ContactsTools behavior and defines: ContactsTools, searchContacts, call, composeMessage, composeMail, store, granted, predicate, keys, results. Symbols: ContactsTools, searchContacts, call, composeMessage, composeMail, store, granted, predicate.
