@@ -244,6 +244,10 @@ nonisolated enum ToolRouteGuard {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return false }
 
+        if shouldUseWebSearchForDynamicPublicLookup(normalized) {
+            return true
+        }
+
         let localIntentMarkers = [
             "near me", "nearby", "closest", "around me", "around here", "in my area",
             "directions", "route to", "open maps", "address of", "store near",
@@ -266,5 +270,73 @@ nonisolated enum ToolRouteGuard {
         }
 
         return false
+    }
+
+    static func shouldUseWebSearchForDynamicPublicLookup(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+
+        if isScheduledSupportGroupMeetingLookup(normalized) {
+            return true
+        }
+
+        let timeMarkers = [
+            "today", "tonight", "tomorrow", "this morning", "this afternoon", "this evening",
+            "this weekend", "this week", "next week", "monday", "tuesday", "wednesday",
+            "thursday", "friday", "saturday", "sunday", "open now", "open late", "closing time",
+            "hours", "schedule", "timetable"
+        ]
+        let dynamicSubjects = [
+            "meeting", "event", "class", "session", "showtime", "movie time", "screening",
+            "clinic", "clinic hours", "walk-in", "walk in", "appointment availability", "store hours",
+            "opening hours", "hours for", "hours of", "bus schedule", "train schedule",
+            "ferry schedule", "flight status", "price", "ticket", "sale", "concert"
+        ]
+        let localScopeMarkers = [
+            "near me", "nearby", "closest", "nearest", "around me", "around here", "in my area",
+            "near us", "close to me", "where is", "where are"
+        ]
+
+        let hasTime = timeMarkers.contains { normalized.contains($0) }
+        let hasDynamicSubject = dynamicSubjects.contains { normalized.contains($0) }
+        let hasLocalScope = localScopeMarkers.contains { normalized.contains($0) }
+
+        return hasTime && hasDynamicSubject && hasLocalScope
+    }
+
+    static func isScheduledSupportGroupMeetingLookup(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+
+        let recoveryProgramMarkers = [
+            "alcoholics anonymous", "alcoholic anonymous", "aa meeting", "a.a. meeting",
+            "narcotics anonymous", "na meeting", "n.a. meeting", "smart recovery",
+            "recovery meeting", "support group meeting"
+        ]
+        guard recoveryProgramMarkers.contains(where: { normalized.contains($0) }) else {
+            return false
+        }
+
+        return normalized.contains("meeting") && normalized.range(
+            of: #"\b(today|tonight|tomorrow|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    static func sanitizedMapsDestination(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let lowered = trimmed.lowercased()
+        let descriptionLeakMarkers = [
+            "args:", "[runtime policy]", "[available local tools]",
+            "use only for navigation/route requests", "find nearby/local places",
+            "- maps.search", "- maps.directions"
+        ]
+        if descriptionLeakMarkers.contains(where: { lowered.contains($0) }) {
+            return nil
+        }
+
+        return trimmed
     }
 }

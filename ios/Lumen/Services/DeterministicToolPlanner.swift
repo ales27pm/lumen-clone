@@ -101,6 +101,17 @@ nonisolated enum DeterministicToolPlanner {
             return [single]
         }
 
+        if routing.intent == .webSearch,
+           ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text),
+           availableToolIDs.contains("web.search") {
+            var actions: [AgentAction] = []
+            if availableToolIDs.contains("location.current") {
+                actions.append(AgentAction(tool: "location.current", args: [:]))
+            }
+            actions.append(AgentAction(tool: "web.search", args: ["query": .string(dynamicPublicLookupWebQuery(from: prompt))]))
+            return actions
+        }
+
         if routing.intent == .maps,
            availableToolIDs.contains("location.current"),
            isNearbyMapSearchIntent(text),
@@ -131,6 +142,9 @@ nonisolated enum DeterministicToolPlanner {
         case .webSearch:
             if has("web.fetch"), let url = firstURL(in: prompt) { return AgentAction(tool: "web.fetch", args: ["url": .string(url)]) }
             guard has("web.search") else { return nil }
+            if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+                return AgentAction(tool: "web.search", args: ["query": .string(dynamicPublicLookupWebQuery(from: prompt))])
+            }
             let query = extractWebQuery(from: prompt)
             return query.isEmpty ? nil : AgentAction(tool: "web.search", args: ["query": .string(query)])
         case .emailDraft:
@@ -453,6 +467,26 @@ nonisolated enum DeterministicToolPlanner {
     private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"]) }
     private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
     private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAny(text, ["nearby", "near me", "closest", "nearest", "around me", "around here", "in my area"]) }
+
+    private static func dynamicPublicLookupWebQuery(from prompt: String) -> String {
+        var query = extractWebQuery(from: prompt)
+        query = query.replacingOccurrences(
+            of: #"(?i)^\s*where\s+(?:is|are)\s+"#,
+            with: "",
+            options: .regularExpression
+        )
+        query = query.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+        let lower = normalized(query)
+
+        if lower.contains("alcoholic anonymous") && !lower.contains("alcoholics anonymous") {
+            query = query.replacingOccurrences(of: "alcoholic anonymous", with: "Alcoholics Anonymous", options: [.caseInsensitive])
+        }
+        if containsAny(lower, ["nearest", "closest", "around me", "around here", "in my area"])
+            && !containsAny(lower, ["near me", "nearby"]) {
+            query += " near me"
+        }
+        return String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+    }
 
     private static func isCalendarReadIntent(_ text: String) -> Bool {
         containsAny(text, ["list", "show", "search", "find", "read", "check", "upcoming", "what's on", "what is on", "calendar", "event", "events", "appointment", "appointments", "meeting", "meetings", "schedule", "today", "tomorrow", "next", "do i have", "any"])

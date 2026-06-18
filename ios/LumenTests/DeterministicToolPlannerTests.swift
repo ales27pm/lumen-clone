@@ -62,16 +62,29 @@ struct DeterministicToolPlannerTests {
         #expect(action?.args["query"]?.stringValue == "restaurants")
     }
 
-    @Test func nearbyMeetingSearchPlansLocationThenMapsSearch() async throws {
+    @Test func scheduledSupportGroupMeetingSearchPlansLocationThenWebSearch() async throws {
         let routing = IntentRouter.classify("Find the nearest Alcoholics Anonymous meeting tonight")
         let steps = DeterministicToolPlanner.planSteps(
             routing: routing,
             prompt: "Find the nearest Alcoholics Anonymous meeting tonight",
             availableToolIDs: routing.allowedToolIDs
         )
-        #expect(routing.intent == .maps)
-        #expect(steps.map(\.tool) == ["location.current", "maps.search"])
-        #expect(steps.last?.args["query"]?.stringValue == "Alcoholics Anonymous meeting tonight")
+        #expect(routing.intent == .webSearch)
+        #expect(steps.map(\.tool) == ["location.current", "web.search"])
+        #expect(steps.last?.args["query"]?.stringValue == "the nearest Alcoholics Anonymous meeting tonight near me")
+    }
+
+    @Test func dynamicLocalPublicLookupPlansLocationThenWebSearch() async throws {
+        let prompt = "Where is the nearest free tax clinic tomorrow?"
+        let routing = IntentRouter.classify(prompt)
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .webSearch)
+        #expect(steps.map(\.tool) == ["location.current", "web.search"])
+        #expect(steps.last?.args["query"]?.stringValue == "the nearest free tax clinic tomorrow near me")
     }
 
     @Test func moveIntentIncludesDestination() async throws {

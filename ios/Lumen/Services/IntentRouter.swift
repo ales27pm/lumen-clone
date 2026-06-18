@@ -120,6 +120,10 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
+        if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs.union(["location.current"]), requiresClarification: false, clarificationPrompt: nil)
+        }
+
         if matchesAny(text, ["draft an email", "draft a email", "write an email", "compose email", "email to", "mail to", "send email"]) {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
@@ -156,17 +160,21 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .phoneCall, allowedToolIDs: phoneToolIDs, requiresClarification: !hasTarget, clarificationPrompt: hasTarget ? nil : "Who should I call?")
         }
 
+        if isCalendarIntent(text) {
+            return IntentRoutingDecision(intent: .calendar, allowedToolIDs: calendarToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
         if isMapFollowUpPrompt(text) {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs.union(["location.current"]), requiresClarification: false, clarificationPrompt: nil)
         }
 
         if isNearbyLocalDiscoveryIntent(text)
             || matchesAny(text, ["directions", "navigate", "route to", "maps", "near me", "nearby", "closest", "nearest", "search nearby", "find a place", "find places"]) {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
-        }
-
-        if matchesAny(text, ["schedule", "calendar", "create event", "meeting", "appointment", "at 5", "tomorrow at", "list events", "upcoming events"]) {
-            return IntentRoutingDecision(intent: .calendar, allowedToolIDs: calendarToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if matchesAny(text, ["search photos", "find photos", "photo library", "pictures from", "photos from", "images in my library"]) {
@@ -327,6 +335,10 @@ nonisolated enum IntentRouter {
 
         if matchesAny(text, ["search my photos", "find receipt pictures", "find photos", "photo library"]) {
             return IntentRoutingDecision(intent: .photos, allowedToolIDs: photosToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs.union(["location.current"]), requiresClarification: false, clarificationPrompt: nil)
         }
 
         if isMapFollowUpPrompt(text) || isNearbyLocalDiscoveryIntent(text) || matchesAny(text, ["directions to", "navigate to", "route to", "find coffee near me", "find a pharmacy nearby"]) {
@@ -505,6 +517,14 @@ nonisolated enum IntentRouter {
         return hasDiscoveryVerb || hasLocalObject
     }
 
+    private static func isCalendarIntent(_ text: String) -> Bool {
+        matchesAny(text, [
+            "schedule", "calendar", "create event", "create an event", "add event", "add an event",
+            "new event", "calendar event", "meeting", "appointment", "at 5", "tomorrow at",
+            "list events", "upcoming events", "book an appointment", "schedule a meeting", "schedule an event"
+        ])
+    }
+
     private static func isURLFetchIntent(_ text: String) -> Bool {
         text.range(
             of: #"(?i)\b(read|fetch|open|summarize)\b.{0,80}\bhttps?://\S+"#,
@@ -534,7 +554,8 @@ nonisolated enum IntentRouter {
         let outlookMarkers = ["outlook", "hotmail", "live mail", "msn mail", "microsoft mail", "microsoft graph", "graph mail"]
         let mailActions = [
             "inbox", "email", "emails", "mail", "message", "messages", "unread", "new", "latest", "recent", "folders", "attachments",
-            "search", "find", "read", "open", "check", "show", "list", "draft", "send", "reply", "reply all", "forward", "archive", "delete", "trash", "mark read", "mark unread", "move"
+            "search", "find", "read", "open", "check", "show", "list", "draft", "send", "reply", "reply all", "forward", "archive", "delete", "trash", "mark read", "mark unread", "move",
+            "signed in", "sign in", "logged in", "login", "connected", "status", "auth", "authenticated", "reconnect", "account"
         ]
         if matchesAny(text, outlookMarkers) && matchesAny(text, mailActions) { return true }
         let genericReadMailCommands = [

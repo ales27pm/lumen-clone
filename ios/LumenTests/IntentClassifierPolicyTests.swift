@@ -122,13 +122,23 @@ struct IntentClassifierPolicyTests {
         #expect(result.diagnostics == "deterministic_priority_override")
     }
 
-    @Test func semanticRouteKeepsNearbySupportMeetingOutOfCalendar() async {
+    @Test func semanticRouteUsesWebForScheduledSupportMeeting() async {
         let routing = await IntentClassifierService.shared.route("Find the nearest Alcoholics Anonymous meeting tonight")
-        #expect(routing.intent == .maps)
+        #expect(routing.intent == .webSearch)
         #expect(!routing.requiresClarification)
-        #expect(routing.allowedToolIDs.contains("maps.search"))
+        #expect(routing.allowedToolIDs.contains("web.search"))
         #expect(routing.allowedToolIDs.contains("location.current"))
+        #expect(routing.allowedToolIDs.contains("maps.search") == false)
         #expect(routing.allowedToolIDs.contains("calendar.list") == false)
+    }
+
+    @Test func semanticRouteUsesWebForDynamicLocalPublicLookup() async {
+        let routing = await IntentClassifierService.shared.route("Where is the nearest free tax clinic tomorrow?")
+        #expect(routing.intent == .webSearch)
+        #expect(!routing.requiresClarification)
+        #expect(routing.allowedToolIDs.contains("web.search"))
+        #expect(routing.allowedToolIDs.contains("location.current"))
+        #expect(routing.allowedToolIDs.contains("maps.search") == false)
     }
 
     @Test func ambiguousPromptAsksClarificationBeforeTools() async {
