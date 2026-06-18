@@ -101,6 +101,17 @@ nonisolated enum DeterministicToolPlanner {
             return [single]
         }
 
+        if routing.intent == .maps,
+           availableToolIDs.contains("location.current"),
+           isNearbyMapSearchIntent(text),
+           let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs),
+           ToolRouteGuard.canonicalToolID(single.tool) == "maps.search" {
+            return [
+                AgentAction(tool: "location.current", args: [:]),
+                single
+            ]
+        }
+
         if let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
             return [single]
         }
@@ -149,7 +160,7 @@ nonisolated enum DeterministicToolPlanner {
                 guard let destination = extractDestination(from: prompt), !destination.isEmpty else { return nil }
                 return action("maps.directions", ["destination": .string(destination)])
             }
-            if containsAny(text, ["nearby", "near me", "closest"]) {
+            if isNearbyMapSearchIntent(text) {
                 let query = extractNearbySearchQuery(from: prompt) ?? extractDestination(from: prompt) ?? ""
                 return action("maps.search", ["query": .string(query)])
             }
@@ -441,6 +452,7 @@ nonisolated enum DeterministicToolPlanner {
     private static func isPersonalProfileRecallIntent(_ text: String) -> Bool { IntentRouter.isPersonalProfileRecallIntent(text) }
     private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"]) }
     private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
+    private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAny(text, ["nearby", "near me", "closest", "nearest", "around me", "around here", "in my area"]) }
 
     private static func isCalendarReadIntent(_ text: String) -> Bool {
         containsAny(text, ["list", "show", "search", "find", "read", "check", "upcoming", "what's on", "what is on", "calendar", "event", "events", "appointment", "appointments", "meeting", "meetings", "schedule", "today", "tomorrow", "next", "do i have", "any"])
@@ -559,6 +571,10 @@ nonisolated enum DeterministicToolPlanner {
             return query.isEmpty ? nil : query
         }
         if let range = lower.range(of: "closest ") {
+            let query = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return query.isEmpty ? nil : query
+        }
+        if let range = lower.range(of: "nearest ") {
             let query = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
             return query.isEmpty ? nil : query
         }

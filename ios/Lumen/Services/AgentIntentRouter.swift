@@ -35,7 +35,31 @@ nonisolated enum AgentIntentRouter {
     }
 
     static func decide(userMessage: String, attachments: [ChatAttachment] = []) -> Decision {
-        let routing = IntentRouter.classify(userMessage)
+        let classification = IntentClarificationPolicy.apply(DeterministicIntentFallback.classify(userMessage), to: userMessage)
+        return decision(
+            routing: classification.asRoutingDecision(),
+            alternatives: classification.alternatives.map(\.intent),
+            reasonPrefix: "delegated to deterministic semantic routing",
+            attachments: attachments
+        )
+    }
+
+    static func decideSemantic(userMessage: String, attachments: [ChatAttachment] = []) async -> Decision {
+        let classification = await IntentClassifierService.shared.classify(userMessage)
+        return decision(
+            routing: classification.asRoutingDecision(),
+            alternatives: classification.alternatives.map(\.intent),
+            reasonPrefix: "delegated to IntentClassifierService",
+            attachments: attachments
+        )
+    }
+
+    private static func decision(
+        routing: IntentRoutingDecision,
+        alternatives: [Intent],
+        reasonPrefix: String,
+        attachments: [ChatAttachment]
+    ) -> Decision {
         let allowed = routing.allowedToolIDs
         let approvalRequired = allowed.contains { ToolRouteGuard.requiresUserApproval($0) }
         let confidence = compatibilityConfidence(for: routing, attachmentsWerePresent: !attachments.isEmpty)
@@ -44,12 +68,16 @@ nonisolated enum AgentIntentRouter {
             intent: routing.intent,
             confidence: confidence.value,
             confidenceSource: confidence.source,
-            reason: "delegated to IntentRouter.classify\(attachmentReason)",
+            reason: "\(reasonPrefix)\(attachmentReason)",
             allowedToolIDs: allowed,
             requiresUserApproval: approvalRequired,
             shouldAskClarification: routing.requiresClarification,
             clarificationQuestion: routing.clarificationPrompt,
-            alternatives: [],
+            alternatives: Array(alternatives.reduce(into: [Intent]()) { acc, item in
+                if !acc.contains(item) {
+                    acc.append(item)
+                }
+            }.prefix(5)),
             attachmentsWerePresent: !attachments.isEmpty,
             attachmentsAffectRouting: false
         )

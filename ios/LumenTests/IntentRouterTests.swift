@@ -70,6 +70,22 @@ struct IntentRouterTests {
         }
     }
 
+    @Test func nearbySupportGroupMeetingRoutesToMapsNotCalendar() async throws {
+        let prompts = [
+            "Find the nearest Alcoholics Anonymous meeting tonight",
+            "I have to go to an alcoholic anonymous meeting tonight. Can you help me find the closest one?"
+        ]
+
+        for prompt in prompts {
+            let decision = IntentRouter.classify(prompt)
+            #expect(decision.intent == .maps, "Prompt \(prompt) routed as \(decision.intent.rawValue)")
+            #expect(IntentRouter.isToolAllowed("maps.search", for: decision))
+            #expect(IntentRouter.isToolAllowed("location.current", for: decision))
+            #expect(IntentRouter.isToolAllowed("calendar.list", for: decision) == false)
+            #expect(IntentRouter.isToolAllowed("calendar.create", for: decision) == false)
+        }
+    }
+
     @Test func emailDraftAndOutlookSendDifferentiation() async throws {
         #expect(IntentRouter.classify("Draft an email to bob@example.com saying hello").intent == .emailDraft)
         #expect(IntentRouter.classify("Send an Outlook email to bob@example.com saying hello").intent == .outlook)

@@ -558,7 +558,9 @@ final class SlotAgentService {
     nonisolated private static func canCompleteThroughDeterministicCompatibility(_ req: AgentRequest) -> Bool {
         let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return false }
-        let routing = IntentRouter.classify(prompt)
+        let routing = DeterministicIntentFallback.classify(prompt).asRoutingDecision()
+
+        if routing.requiresClarification { return true }
 
         if routing.intent == .chat {
             return deterministicDirectFinalIfSafe(
@@ -570,7 +572,6 @@ final class SlotAgentService {
         }
 
         guard IntentRouter.intentRequiresTool(routing) else { return false }
-        if routing.requiresClarification { return true }
 
         let availableToolIDs = Set(routeScopedToolDefinitions(req.availableTools, routing: routing).map { ToolRouteGuard.canonicalToolID($0.id) })
         return !DeterministicToolPlanner.planSteps(
@@ -612,7 +613,7 @@ final class SlotAgentService {
     }
 
     private nonisolated static func deterministicCompatibilityResponse(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> DeterministicCompatibilityResponse {
-        let routing = IntentRouter.classify(original.userMessage)
+        let routing = await IntentClassifierService.shared.route(original.userMessage)
         let scopedTools = routeScopedToolDefinitions(effective.availableTools, routing: routing)
         let availableToolIDs = Set(scopedTools.map { ToolRouteGuard.canonicalToolID($0.id) })
         Self.emitChatTrace(req: original, phase: "routing", values: [
@@ -641,10 +642,6 @@ final class SlotAgentService {
             return .init(text: text, steps: [])
         }
 
-        guard IntentRouter.intentRequiresTool(routing) else {
-            return directAnswer()
-        }
-
         if routing.requiresClarification {
             let candidate = routing.clarificationPrompt ?? deterministicAnswer(for: effective)
             let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: nil)
@@ -662,6 +659,10 @@ final class SlotAgentService {
                 allowedToolIDs: availableToolIDs
             )
             return .init(text: text, steps: [])
+        }
+
+        guard IntentRouter.intentRequiresTool(routing) else {
+            return directAnswer()
         }
 
         let plannedActions = DeterministicToolPlanner.planSteps(

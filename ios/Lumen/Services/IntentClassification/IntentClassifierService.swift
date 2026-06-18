@@ -9,8 +9,12 @@ final class IntentClassifierService: Sendable {
     }
 
     func classify(_ text: String) async -> IntentClassificationResult {
+        if let ambiguity = DeterministicIntentFallback.ambiguityClarification(text) {
+            return IntentClarificationPolicy.apply(ambiguity, to: text)
+        }
+
         if let override = IntentRouter.priorityOverride(text) {
-            return IntentClassificationResult(
+            let result = IntentClassificationResult(
                 intent: override.intent,
                 confidence: 0.99,
                 alternatives: [IntentAlternative(intent: override.intent, confidence: 0.99)],
@@ -19,9 +23,11 @@ final class IntentClassifierService: Sendable {
                 source: .deterministicFallback,
                 diagnostics: "deterministic_priority_override"
             )
+            return IntentClarificationPolicy.apply(result, to: text)
         }
         let deterministic = DeterministicIntentFallback.classify(text)
         let modelResult = await BundledIntentClassifier.shared.classify(text)
-        return IntentClassifierPolicy.resolve(modelResult: modelResult, deterministic: deterministic)
+        let resolved = IntentClassifierPolicy.resolve(modelResult: modelResult, deterministic: deterministic)
+        return IntentClarificationPolicy.apply(resolved, to: text)
     }
 }

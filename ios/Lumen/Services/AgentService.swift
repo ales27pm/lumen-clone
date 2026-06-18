@@ -1870,7 +1870,7 @@ final class AgentService {
         let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return nil }
 
-        let routing = IntentRouter.classify(prompt)
+        let routing = await IntentClassifierService.shared.route(prompt)
         guard routing.intent != .unknown else { return nil }
 
         let recoveryOptions = LegacyAgentRunOptions(
