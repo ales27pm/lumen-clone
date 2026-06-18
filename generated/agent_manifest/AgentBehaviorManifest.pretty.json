@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "e4cc247bb3c18bb1888b03129ad743288c2f8092",
+    "commit": "0de483479c85634514dd02749e7cd8ba9a5af6e5",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -31,11 +31,11 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "cde3cc460cb639d7baa868387cf4baf9fadea13424f8efd2c21569b0808bb898"
+        "sha256": "1e9e2c278f1ce4504da05df7e1b6205cc56f36e722d5186b1857a5dd1ac14c88"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "sha256": "7153dde2d566b53424844b7ea280ca2f0fa7407f25013f44082944c7f917184b"
+        "sha256": "3a1df1b8c26614afd697cdb20413670a92198739acf4f9c84101f32f0a430189"
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
@@ -1823,7 +1823,9 @@
     },
     {
       "id": "webSearch",
-      "allowedToolIDs": [],
+      "allowedToolIDs": [
+        "location.current"
+      ],
       "source": "ios/Lumen/Services/IntentRouter.swift"
     }
   ],
@@ -2550,7 +2552,9 @@
     },
     {
       "intent": "webSearch",
-      "allowedTools": [],
+      "allowedTools": [
+        "location.current"
+      ],
       "forbiddenTools": [
         "alarm.authorization_status",
         "alarm.cancel",
@@ -2568,7 +2572,6 @@
         "contacts.search",
         "files.read",
         "health.summary",
-        "location.current",
         "mail.draft",
         "maps.directions",
         "maps.search",
@@ -2576,7 +2579,8 @@
         "memory.save",
         "messages.draft",
         "motion.activity",
-        "outlook.attachments.list"
+        "outlook.attachments.list",
+        "outlook.draft.create"
       ]
     }
   ],

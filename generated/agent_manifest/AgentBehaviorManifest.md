@@ -1,7 +1,7 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Commit: `c6534d7f9673d5d57b730cc567064daf8302dc11`
+- Commit: `0de483479c85634514dd02749e7cd8ba9a5af6e5`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol
@@ -752,7 +752,7 @@
 - `trigger` → allowed tools: trigger.cancel, trigger.create, trigger.list; source: `ios/Lumen/Services/IntentRouter.swift`
 - `unknown` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
 - `weather` → allowed tools: location.current, weather; source: `ios/Lumen/Services/IntentRouter.swift`
-- `webSearch` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
+- `webSearch` → allowed tools: location.current; source: `ios/Lumen/Services/IntentRouter.swift`
 
 ## Routing Rules
 - `alarm` → allowed: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule, alarm.snooze, alarm.stop; forbidden examples: calendar.create, calendar.list, camera.capture, contacts.search, files.read, health.summary, location.current, mail.draft
@@ -776,7 +776,7 @@
 - `trigger` → allowed: trigger.cancel, trigger.create, trigger.list; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `unknown` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `weather` → allowed: location.current, weather; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `webSearch` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `webSearch` → allowed: location.current; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 
 ## Memory Scopes
 - Scopes: backgroundOnly, conversation, currentTurn, person, preferenceOnly, project, referenceOnly, remCondensed, sourceOfTruth, task, toolObservation, userPreference
