@@ -3,24 +3,6 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "text:string:required=true",
-        "agent": "runtime",
-        "expected": [
-          "text:string:required=false"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "messages.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "81a6bb32fbb597794bd9ed3a",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
         "actual": "recipient:string:required=true",
         "agent": "runtime",
         "expected": [
@@ -75,17 +57,17 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "recipient:string:required=true",
+        "actual": "text:string:required=true",
         "agent": "runtime",
         "expected": [
-          "recipient:string:required=false"
+          "text:string:required=false"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "mail.draft",
+        "scenario": "messages.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
       },
-      "id": "1970dd07773de4b617ff3193",
+      "id": "81a6bb32fbb597794bd9ed3a",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -111,6 +93,24 @@
     {
       "category": "runtime_drift",
       "evidence": {
+        "actual": "text:string:required=true",
+        "agent": "runtime",
+        "expected": [
+          "text:string:required=false"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "mail.draft",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "e9440f25403427ba36ddaa91",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
         "actual": "message:string:required=true",
         "agent": "runtime",
         "expected": [
@@ -129,17 +129,17 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "text:string:required=true",
+        "actual": "recipient:string:required=true",
         "agent": "runtime",
         "expected": [
-          "text:string:required=false"
+          "recipient:string:required=false"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
         "scenario": "mail.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
       },
-      "id": "e9440f25403427ba36ddaa91",
+      "id": "1970dd07773de4b617ff3193",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -183,42 +183,6 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "unreadOnly:string:required=true",
-        "agent": "runtime",
-        "expected": [
-          "unreadOnly:string:required=false"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "outlook.messages.list",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "1d55bf1c07abaf341c60db2b",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "folder:string:required=true",
-        "agent": "runtime",
-        "expected": [
-          "folder:string:required=false"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "outlook.messages.list",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "9670201d2f451374a208dd6a",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
         "actual": "folderId:string:required=true",
         "agent": "runtime",
         "expected": [
@@ -230,6 +194,24 @@
         "type": "argument_mismatch"
       },
       "id": "74c1f01ceadb8aacc0648340",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "unreadOnly:string:required=true",
+        "agent": "runtime",
+        "expected": [
+          "unreadOnly:string:required=false"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.messages.list",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "1d55bf1c07abaf341c60db2b",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -261,11 +243,11 @@
           "folder:string:required=false"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "outlook.messages.search",
+        "scenario": "outlook.messages.list",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
       },
-      "id": "e946c713109d0fa63e11a27a",
+      "id": "9670201d2f451374a208dd6a",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -302,6 +284,24 @@
         "type": "argument_mismatch"
       },
       "id": "487110887ad621c94c250e7f",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "folder:string:required=true",
+        "agent": "runtime",
+        "expected": [
+          "folder:string:required=false"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.messages.search",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "e946c713109d0fa63e11a27a",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -381,24 +381,6 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "id:string:required=true",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=false"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "outlook.message.move",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "5487f7e572c7dbaa7a99b8ff",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
         "actual": "destinationId:string:required=true",
         "agent": "runtime",
         "expected": [
@@ -410,6 +392,24 @@
         "type": "argument_mismatch"
       },
       "id": "a069f4619fce0894749de0fe",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "id:string:required=true",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=false"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.move",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "5487f7e572c7dbaa7a99b8ff",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -453,24 +453,6 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "id:string:required=true",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=false"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "outlook.message.reply",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "23341a7a6a430acabd854364",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
         "actual": "comment:string:required=true",
         "agent": "runtime",
         "expected": [
@@ -495,11 +477,11 @@
           "id:string:required=false"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "outlook.message.reply_all",
+        "scenario": "outlook.message.reply",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
       },
-      "id": "e8dd1f57321c01488be4a2e9",
+      "id": "23341a7a6a430acabd854364",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -531,11 +513,11 @@
           "id:string:required=false"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "outlook.message.forward",
+        "scenario": "outlook.message.reply_all",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
       },
-      "id": "5ee4cc4159a2101662a84db5",
+      "id": "e8dd1f57321c01488be4a2e9",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -579,6 +561,24 @@
     {
       "category": "runtime_drift",
       "evidence": {
+        "actual": "id:string:required=true",
+        "agent": "runtime",
+        "expected": [
+          "id:string:required=false"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "outlook.message.forward",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "5ee4cc4159a2101662a84db5",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
         "actual": "location:string:required=true",
         "agent": "runtime",
         "expected": [
@@ -615,17 +615,17 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "intervalSeconds:number:required=true",
+        "actual": "inMinutes:number:required=true",
         "agent": "runtime",
         "expected": [
-          "intervalSeconds:number:required=false"
+          "inMinutes:number:required=false"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
         "scenario": "trigger.create",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
       },
-      "id": "0125633f57bc4dbdfedc846c",
+      "id": "ea4f47a50dac272c79a0e3bc",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -669,35 +669,17 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "inMinutes:number:required=true",
+        "actual": "intervalSeconds:number:required=true",
         "agent": "runtime",
         "expected": [
-          "inMinutes:number:required=false"
+          "intervalSeconds:number:required=false"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
         "scenario": "trigger.create",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
       },
-      "id": "ea4f47a50dac272c79a0e3bc",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "timestamp:string:required=true",
-        "agent": "runtime",
-        "expected": [
-          "timestamp:string:required=false"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "scenario": "alarm.schedule",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "8ec4a606e525c18abd0a71a1",
+      "id": "0125633f57bc4dbdfedc846c",
       "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
       "severity": "error",
       "title": "argument_mismatch"
@@ -741,36 +723,54 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "I couldn't produce a confident answer. Try rephrasing the question.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+        "actual": "timestamp:string:required=true",
+        "agent": "runtime",
+        "expected": [
+          "timestamp:string:required=false"
+        ],
+        "problem": "Argument type or required flag differs between manifest and runtime.",
+        "scenario": "alarm.schedule",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "argument_mismatch"
+      },
+      "id": "8ec4a606e525c18abd0a71a1",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "argument_mismatch"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I'm ready. Please ask again or tell me what you'd like to do next.",
         "agent": "mouth",
         "e2eScenario": {
-          "expectedIntent": "chat",
-          "final": "I couldn't produce a confident answer. Try rephrasing the question.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+          "expectedIntent": "rag",
+          "final": "I'm ready. Please ask again or tell me what you'd like to do next.",
           "intent": "chat",
-          "name": "Training eval: pure chat quality",
-          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "name": "Live rag.index_photos direct",
+          "prompt": "Reindex photo metadata for the last 3 months.",
           "requiredHint": null,
-          "skippedLiveModelRun": true
+          "skippedLiveModelRun": false
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "problem": "Intent mismatch: chat != rag; Required tool not allowed: rag.index_photos; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
         "repairSample": {
           "agent": "mouth",
-          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "badOutput": "I'm ready. Please ask again or tell me what you'd like to do next.",
+          "correctedOutput": "I'm ready. Please ask again or tell me what you'd like to do next.",
           "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `chat` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Reindex photo metadata for the last 3 months.",
           "violationCode": "e2e_response_quality_chat"
         },
-        "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "scenario": "Reindex photo metadata for the last 3 months.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_chat"
       },
-      "id": "7848d932b7f79f9b99d3f27b",
+      "id": "91108be0775b3ab6b6e620be",
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
       "title": "e2e_response_quality_chat"
@@ -779,72 +779,109 @@
       "category": "runtime_drift",
       "evidence": {
         "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
-        "agent": "mouth",
+        "agent": "cortex",
         "e2eScenario": {
-          "expectedIntent": "emailDraft",
+          "expectedIntent": "rag",
           "final": "I couldn't produce a confident answer. Try rephrasing the question.",
-          "intent": "emailDraft",
-          "name": "Training eval: communication drafting",
-          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "intent": "files",
+          "name": "Live rag.index_files direct",
+          "prompt": "Reindex my imported files.",
           "requiredHint": null,
-          "skippedLiveModelRun": true
+          "skippedLiveModelRun": false
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "problem": "Intent mismatch: files != rag; Required tool not allowed: rag.index_files; Live agent produced no action step for tool-backed intent",
         "repairSample": {
-          "agent": "mouth",
+          "agent": "cortex",
           "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
-          "violationCode": "e2e_response_quality_emaildraft"
+          "correctedOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `files` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Reindex my imported files.",
+          "violationCode": "e2e_response_quality_files"
         },
-        "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "scenario": "Reindex my imported files.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_emaildraft"
+        "type": "e2e_response_quality_files"
       },
-      "id": "5512d7264aae31795aecf394",
+      "id": "c91a1dd160555a06918ad48e",
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
-      "title": "e2e_response_quality_emaildraft"
+      "title": "e2e_response_quality_files"
     },
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "I couldn't produce a confident answer. Try rephrasing the question.\n\nI remember that you prefer concise bullet points.",
+        "actual": "Maps/location tools are unavailable in this build right now.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "Maps/location tools are unavailable in this build right now.",
+          "intent": "maps",
+          "name": "Live maps.search alternatePhrasing",
+          "prompt": "Find coffee near me.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `maps` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Maps/location tools are unavailable in this build right now.",
+          "correctedOutput": "Maps/location tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `maps` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `maps` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Find coffee near me.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Find coffee near me.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "956d97c9adb5b3de3d1acd49",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
         "agent": "mouth",
         "e2eScenario": {
           "expectedIntent": "memory",
-          "final": "I couldn't produce a confident answer. Try rephrasing the question.\n\nI remember that you prefer concise bullet points.",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
           "intent": "memory",
-          "name": "Training eval: memory save/recall",
-          "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "name": "Live memory.recall alternatePhrasing",
+          "prompt": "Tell me what style I asked you to use.",
           "requiredHint": null,
           "skippedLiveModelRun": true
         },
         "expected": [
           "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
         "repairSample": {
           "agent": "mouth",
-          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.\n\nI remember that you prefer concise bullet points.",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
           "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
           "curriculum": "grounded_response_quality",
           "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
           "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "promptPrefix": "Tell me what style I asked you to use.",
           "violationCode": "e2e_response_quality_memory"
         },
-        "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "scenario": "Tell me what style I asked you to use.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
-      "id": "15506c93d985cfde172dda7d",
+      "id": "51b7fd498868e7ac544292e9",
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
       "title": "e2e_response_quality_memory"
@@ -852,36 +889,73 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "I couldn't produce a confident answer. Try rephrasing the question.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+        "actual": "I couldn't produce a confident answer. Try rephrasing the question.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "intent": "memory",
+          "name": "Live memory.save alternatePhrasing",
+          "prompt": "Keep in mind that I like short answers.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `memory` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "correctedOutput": "I couldn't produce a confident answer. Try rephrasing the question.",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `memory` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `memory` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Keep in mind that I like short answers.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Keep in mind that I like short answers.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "d04c135d524cdcc4f0639363",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Local search/indexing tools are unavailable in this build right now.",
         "agent": "mouth",
         "e2eScenario": {
           "expectedIntent": "rag",
-          "final": "I couldn't produce a confident answer. Try rephrasing the question.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+          "final": "Local search/indexing tools are unavailable in this build right now.",
           "intent": "rag",
-          "name": "Training eval: local knowledge grounding",
-          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "name": "Live rag.index_photos alternatePhrasing",
+          "prompt": "Refresh the photo retrieval index.",
           "requiredHint": null,
-          "skippedLiveModelRun": true
+          "skippedLiveModelRun": false
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
         "repairSample": {
           "agent": "mouth",
-          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "badOutput": "Local search/indexing tools are unavailable in this build right now.",
+          "correctedOutput": "Local search/indexing tools are unavailable in this build right now.",
           "curriculum": "grounded_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `rag` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Refresh the photo retrieval index.",
           "violationCode": "e2e_response_quality_rag"
         },
-        "scenario": "Search my files for architecture notes and summarize key modules.",
+        "scenario": "Refresh the photo retrieval index.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_rag"
       },
-      "id": "3bb3ff6bba830c3d6730e7c4",
+      "id": "c693cc1297627c391769b3ce",
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
       "title": "e2e_response_quality_rag"
@@ -889,164 +963,276 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "I couldn't produce a confident answer. Try rephrasing the question.\n\ntrigger",
+        "actual": "Local search/indexing tools are unavailable in this build right now.",
         "agent": "mouth",
         "e2eScenario": {
-          "expectedIntent": "trigger",
-          "final": "I couldn't produce a confident answer. Try rephrasing the question.\n\ntrigger",
-          "intent": "trigger",
-          "name": "Training eval: trigger scheduling quality",
-          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "expectedIntent": "rag",
+          "final": "Local search/indexing tools are unavailable in this build right now.",
+          "intent": "rag",
+          "name": "Live rag.index_photos missingArgument",
+          "prompt": "Use Reindex Photos, but ask for clarification if required details are missing.",
           "requiredHint": null,
-          "skippedLiveModelRun": true
+          "skippedLiveModelRun": false
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
         "repairSample": {
           "agent": "mouth",
-          "badOutput": "I couldn't produce a confident answer. Try rephrasing the question.\n\ntrigger",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `trigger` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-          "violationCode": "e2e_response_quality_trigger"
+          "badOutput": "Local search/indexing tools are unavailable in this build right now.",
+          "correctedOutput": "Local search/indexing tools are unavailable in this build right now.",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Use Reindex Photos, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_rag"
         },
-        "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "scenario": "Use Reindex Photos, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_trigger"
+        "type": "e2e_response_quality_rag"
       },
-      "id": "af5b531a71f5c76bc1d6525f",
+      "id": "9eb97dda721852b90d53978e",
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
-      "title": "e2e_response_quality_trigger"
+      "title": "e2e_response_quality_rag"
     },
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "Weather tool output could not be validated. Try again or provide a city.",
+        "actual": "I couldn’t safely complete the local search/indexing request.",
         "agent": "mouth",
         "e2eScenario": {
-          "expectedIntent": "weather",
-          "final": "Weather tool output could not be validated. Try again or provide a city.",
-          "intent": "weather",
-          "name": "Training eval: weather stays grounded",
-          "prompt": "What is the weather here and should I carry an umbrella?",
+          "expectedIntent": "rag",
+          "final": "I couldn’t safely complete the local search/indexing request.",
+          "intent": "rag",
+          "name": "Live rag.search alternatePhrasing",
+          "prompt": "Find Lumen architecture notes in my local files.",
           "requiredHint": null,
-          "skippedLiveModelRun": true
+          "skippedLiveModelRun": false
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "problem": "Live agent produced no action step for tool-backed intent; RAG final response must mention module/modules; RAG final response must reference retrieved docs/snippets",
         "repairSample": {
           "agent": "mouth",
-          "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "badOutput": "I couldn’t safely complete the local search/indexing request.",
+          "correctedOutput": "I couldn’t safely complete the local search/indexing request.",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Find Lumen architecture notes in my local files.",
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "scenario": "Find Lumen architecture notes in my local files.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "6ce1bfbb97bc7f0b002d0d54",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "No matching files found for 'Search my local files for the latest Lumen diagnostics report.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "No matching files found for 'Search my local files for the latest Lumen diagnostics report.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+          "intent": "rag",
+          "name": "Live rag.search direct",
+          "prompt": "Search my local files for the latest Lumen diagnostics report.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
+        ],
+        "problem": "RAG final response must reference retrieved docs/snippets",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "No matching files found for 'Search my local files for the latest Lumen diagnostics report.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+          "correctedOutput": "No matching files found for 'Search my local files for the latest Lumen diagnostics report.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Search my local files for the latest Lumen diagnostics report.",
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "scenario": "Search my local files for the latest Lumen diagnostics report.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "c000d013458de1bc873f21e8",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "No matching files found for 'Use Search Personal Data, but ask for clarification if required details are missing.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "No matching files found for 'Use Search Personal Data, but ask for clarification if required details are missing.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+          "intent": "rag",
+          "name": "Live rag.search missingArgument",
+          "prompt": "Use Search Personal Data, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
+        ],
+        "problem": "RAG final response must reference retrieved docs/snippets",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "No matching files found for 'Use Search Personal Data, but ask for clarification if required details are missing.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+          "correctedOutput": "No matching files found for 'Use Search Personal Data, but ask for clarification if required details are missing.'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again.",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Use Search Personal Data, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "scenario": "Use Search Personal Data, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "5aafbbf1b9c309316e7ae08a",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Reminder tools are unavailable in this build right now.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "reminder",
+          "final": "Reminder tools are unavailable in this build right now.",
+          "intent": "reminder",
+          "name": "Live reminders.list alternatePhrasing",
+          "prompt": "List pending reminders.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `reminder` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Reminder tools are unavailable in this build right now.",
+          "correctedOutput": "Reminder tools are unavailable in this build right now.",
           "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "What is the weather here and should I carry an umbrella?",
-          "violationCode": "e2e_response_quality_weather"
+          "expected": "Final answer must satisfy the `reminder` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `reminder` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "List pending reminders.",
+          "violationCode": "e2e_response_quality_reminder"
         },
-        "scenario": "What is the weather here and should I carry an umbrella?",
+        "scenario": "List pending reminders.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_weather"
+        "type": "e2e_response_quality_reminder"
       },
-      "id": "c52c3932ab6cacf716b2aca1",
+      "id": "8f5249aa04d8aae7fcc0f4f2",
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
-      "title": "e2e_response_quality_weather"
+      "title": "e2e_response_quality_reminder"
     },
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.\n\nswift",
-        "agent": "mouth",
+        "actual": "Reminder tools are unavailable in this build right now.",
+        "agent": "cortex",
         "e2eScenario": {
-          "expectedIntent": "webSearch",
-          "final": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.\n\nswift",
-          "intent": "webSearch",
-          "name": "Training eval: web research synthesis",
-          "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+          "expectedIntent": "reminder",
+          "final": "Reminder tools are unavailable in this build right now.",
+          "intent": "reminder",
+          "name": "Live reminders.list direct",
+          "prompt": "Show my reminders.",
           "requiredHint": null,
-          "skippedLiveModelRun": true
+          "skippedLiveModelRun": false
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Final answer must satisfy the `reminder` eval contract without violating tool boundaries."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
         "repairSample": {
-          "agent": "mouth",
-          "badOutput": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.\n\nswift",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Search the web for two recent Swift concurrency best practices and summarize them.",
-          "violationCode": "e2e_response_quality_websearch"
+          "agent": "cortex",
+          "badOutput": "Reminder tools are unavailable in this build right now.",
+          "correctedOutput": "Reminder tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `reminder` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `reminder` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Show my reminders.",
+          "violationCode": "e2e_response_quality_reminder"
         },
-        "scenario": "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "scenario": "Show my reminders.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_websearch"
+        "type": "e2e_response_quality_reminder"
       },
-      "id": "dc66e982e15ded82e0757ba2",
+      "id": "d70a9ffc76e5c3c4e50225e4",
       "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
-      "title": "e2e_response_quality_websearch"
+      "title": "e2e_response_quality_reminder"
     },
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "noJSONObject",
+        "actual": "Reminder tools are unavailable in this build right now.",
         "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "reminder",
+          "final": "Reminder tools are unavailable in this build right now.",
+          "intent": "reminder",
+          "name": "Live reminders.list missingArgument",
+          "prompt": "Use List Reminders, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
         "expected": [
-          "strict manifest-valid structured output"
+          "Final answer must satisfy the `reminder` eval contract without violating tool boundaries."
         ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Reminder tools are unavailable in this build right now.",
+          "correctedOutput": "Reminder tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `reminder` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `reminder` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Use List Reminders, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_reminder"
+        },
+        "scenario": "Use List Reminders, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_reminder"
       },
-      "id": "2193bbc44c46db6fd61e84ef",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "id": "fc2d6a746855642fe966fab3",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
-      "title": "trace_parse_error"
+      "title": "e2e_response_quality_reminder"
     },
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
+        "actual": "generation_error",
+        "agent": "executor",
         "expected": [
           "strict manifest-valid structured output"
         ],
         "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
+        "scenario": "User request:\nForward the last Outlook email to alex@example.com.\n\nEmit the first JSON object now. Choose either action or final.",
         "sourceLayer": "agentBehaviorTraceRecorder",
         "type": "trace_parse_error"
       },
-      "id": "2193bbc44c46db6fd61e84ef",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "2193bbc44c46db6fd61e84ef",
+      "id": "c41dcee1637856c99b82e415",
       "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
       "severity": "error",
       "title": "trace_parse_error"
@@ -1055,34 +1241,16 @@
       "category": "runtime_drift",
       "evidence": {
         "actual": "generation_error",
-        "agent": "cortex",
+        "agent": "executor",
         "expected": [
           "strict manifest-valid structured output"
         ],
         "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nAgent Kernel bridge smoke test: explain in one sentence why a sharp chisel is safer than a dull one.\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- calendar.create: Add an event to your calendar. Args: title, startsInMinutes.\n- calendar.list: Read upcoming calendar events. Args: none.\n- reminders.create: Create a new reminder. Args: title.\n- reminders.list: Read pending reminders. Args: none.\n- contacts.search: Find a contact by name. Args: query. Only use for the user's address book, not web people search.\n- messages.draft: Compose an iMessage/SMS draft. Args: to, body, optional recipient/number/message/text.\n- mail.draft: Compose an email draft using the system mail composer. Args: to, subject, body, optional recipient/email/message/text.\n- outlook.status: Check whether the Microsoft Graph Outlook account is signed in. Args: none.\n-\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
+        "scenario": "User request:\nForward my latest Outlook email to alex@example.com.\n\nEmit the first JSON object now. Choose either action or final.",
         "sourceLayer": "agentBehaviorTraceRecorder",
         "type": "trace_parse_error"
       },
-      "id": "a55f1f0ec21ffb010652ffc2",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nAgent Kernel bridge smoke test: explain in one sentence why a sharp chisel is safer than a dull one.\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- calendar.create: Add an event to your calendar. Args: title, startsInMinutes.\n- calendar.list: Read upcoming calendar events. Args: none.\n- reminders.create: Create a new reminder. Args: title.\n- reminders.list: Read pending reminders. Args: none.\n- contacts.search: Find a contact by name. Args: query. Only use for the user's address book, not web people search.\n- messages.draft: Compose an iMessage/SMS draft. Args: to, body, optional recipient/number/message/text.\n- mail.draft: Compose an email draft using the system mail composer. Args: to, subject, body, optional recipient/email/message/text.\n- outlook.status: Check whether the Microsoft Graph Outlook account is signed in. Args: none.\n-\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "8925c9b82feb5fdd8d170836",
+      "id": "b1bd1e4d002c102e9a0b8d6f",
       "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
       "severity": "error",
       "title": "trace_parse_error"
@@ -1091,16 +1259,646 @@
       "category": "runtime_drift",
       "evidence": {
         "actual": "generation_error",
-        "agent": "cortex",
+        "agent": "executor",
         "expected": [
           "strict manifest-valid structured output"
         ],
         "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nAgent Kernel bridge smoke test: explain in one sentence why a sharp chisel is safer than a dull one.\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- calendar.create: Add an event to your calendar. Args: title, startsInMinutes.\n- calendar.list: Read upcoming calendar events. Args: none.\n- reminders.create: Create a new reminder. Args: title.\n- reminders.list: Read pending reminders. Args: none.\n- contacts.search: Find a contact by name. Args: query. Only use for the user's address book, not web people search.\n- messages.draft: Compose an iMessage/SMS draft. Args: to, body, optional recipient/number/message/text.\n- mail.draft: Compose an email draft using the system mail composer. Args: to, subject, body, optional recipient/email/message/text.\n- outlook.status: Check whether the Microsoft Graph Outlook account is signed in. Args: none.\n-\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
+        "scenario": "User request:\nForward my latest Outlook email to alex@example.com.\n\nEmit the first JSON object now. Choose either action or final.",
         "sourceLayer": "agentBehaviorTraceRecorder",
         "type": "trace_parse_error"
       },
-      "id": "a55f1f0ec21ffb010652ffc2",
+      "id": "b1bd1e4d002c102e9a0b8d6f",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSet the latest Outlook email read.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "1cb98cd477ebb4f819c7c49a",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMark my latest Outlook email as read.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "bffad49fdf3a0d534b77c1e9",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMark my latest Outlook email as read.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "bffad49fdf3a0d534b77c1e9",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSet the latest Outlook email unread.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "d4a231ffaa52e5d4342e4f71",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMark my latest Outlook email as unread.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "9d80482353979c5d25bc5dfa",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMark my latest Outlook email as unread.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "9d80482353979c5d25bc5dfa",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMove latest Outlook email to inbox.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "6a9fbfafcff9f16c0ae44b45",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMove my latest Outlook email to Archive.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "048e4a3284dd2c0de27aba9a",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMove my latest Outlook email to Archive.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "048e4a3284dd2c0de27aba9a",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRead the last email in Outlook.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "6545fc4dd100327e75e2b78d",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRead my latest Outlook email.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "f8283daee720363e03981bbf",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Read Outlook Message, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "65f16c787219b036703a4e8d",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRespond to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "dedaf59fd6e357bc6e4d5515",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply to my latest Outlook email saying approved.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "78a6733d86feaae9fe46dde1",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "2030c879a79a5edf7c470bea",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRespond to all on my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ef01612e10423be304b79dbe",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply all to my latest Outlook email saying approved.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ac38437df41f9d0fa6f29299",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply all to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "74ff2e6c6570f5e63e3355e2",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nShow recent Outlook mail.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "8246e4b4a930d20fc5c54ab1",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nList my latest Outlook emails.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "b4d8a06b360563689a98fecc",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse List Outlook Messages, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "665716dc091116f146e3f48a",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nFind invoice emails in Outlook.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "68a6262bbfb899cd5947cde0",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSearch Outlook for messages about invoices.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "a93fc5a31bc712e9501f9c65",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Search Outlook Messages, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ccdc44354cdb2f73ce820366",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nAm I signed in to Outlook?\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "96724b2adf082c586d7cafad",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nCheck Outlook sign in status.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "1c6d21f3207ac8167e230efd",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Outlook Status, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "d7a435ce1ea428ac401a1618",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nDial 5551234567.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "b2e8399b1e709468a310c051",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nCall 5551234567 now.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "fcc4e91366f2617895a087bb",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nCall 5551234567.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ec501a37469dcf94ad3a2d7c",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nFind receipt pictures in my photo library.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "1ef4c64d9546a06620d9062d",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSearch my photos for receipts.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "af2eb30d1cd97331473ff23b",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Search Photos, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "1955be765e8844ff94cc5be1",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRefresh the file retrieval index.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "268b57e2bb3af6f962b5c8ba",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReindex my imported files.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "aa141f4739967ce4d7f3f513",
       "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
       "severity": "error",
       "title": "trace_parse_error"
@@ -1114,11 +1912,587 @@
           "strict manifest-valid structured output"
         ],
         "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nAgent Kernel bridge smoke test: explain in one sentence why a sharp chisel is safer than a dull one.\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- calendar.create: Add an event to your calendar. Args: title, startsInMinutes.\n- calendar.list: Read upcoming calendar events. Args: none.\n- reminders.create: Create a new reminder. Args: title.\n- reminders.list: Read pending reminders. Args: none.\n- contacts.search: Find a contact by name. Args: query. Only use for the user's address book, not web people search.\n- messages.draft: Compose an iMessage/SMS draft. Args: to, body, optional recipient/number/message/text.\n- mail.draft: Compose an email draft using the system mail composer. Args: to, subject, body, optional recipient/email/message/text.\n- outlook.status: Check whether the Microsoft Graph Outlook account is signed in. Args: none.\n-\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention",
+        "scenario": "The user asked:\nReindex my imported files.\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
         "sourceLayer": "agentBehaviorTraceRecorder",
         "type": "trace_parse_error"
       },
-      "id": "8b60bfdc457b319659da0cd6",
+      "id": "b097cf2494ba5e54fec1d782",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Reindex Files, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "94914af25d06019aa78b3109",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRefresh the photo retrieval index.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "34dcdc3fbab21c9ae6394af1",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "noJSONObject",
+        "agent": "cortex",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "The user asked:\nReindex photo metadata for the last 3 months.\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "5cf73899e916e4bf33c1f68c",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Reindex Photos, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "38964834e43b167c7917c42b",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nFind Lumen architecture notes in my local files.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "7a36672fc6b6bc6d71e8e282",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "noJSONObject",
+        "agent": "cortex",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "The user asked:\nFind Lumen architecture notes in my local files.\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "4a952fc2f53a0296146becde",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSearch my local files for the latest Lumen diagnostics report.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "5fa32f1cd6b586d7e198c4ea",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Search Personal Data, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "82b9c7c0ff71bf082216f5b5",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nCreate a reminder to review logs.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "0c0f32f650d5c3dbd9379e7c",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRemind me to check approval boundary.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "619ea4e26188e0b2dbf81674",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRemind me to check Lumen logs.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "4715b5656e05f8e49218be79",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nList pending reminders.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "f40776f40944d0c976fe680b",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nShow my reminders.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "c00dac7431739d81686fb137",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse List Reminders, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "a14b7fb9b7d1f96b11e210ed",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nCancel trigger named nightly summary.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "559d1222fd95926834e40092",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nCancel trigger named nightly summary.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "559d1222fd95926834e40092",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nCancel the trigger called nightly summary.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "6eb5447f4d69d08281a7045b",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRun an agent reminder summary tonight in the background.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "2e5678e42ceda1254632b952",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSchedule an agent run to summarize reminders tonight.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "14c3d41782ebee4fe6861d44",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSchedule an agent run to summarize reminders tonight.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "14c3d41782ebee4fe6861d44",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nShow scheduled agent runs.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "c33a32a223b36de0fadbd93d",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nList scheduled agent runs.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "367ac073139331a636b2f615",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse List Triggers, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "56a31ec02a61acdb645f7afb",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nWill it rain here today?\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "49ad8833d72c2f24cc5e3ae7",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nWhat is the weather here right now?\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "faa9fbba1754673318886fd5",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Current Weather, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "0a75f2896f8f35fcb34ba50f",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRead this URL: https://example.com.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "d41890717b3b4fe44f1b6836",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nFetch https://example.com and summarize the page.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "4c40eb4a904b66e2f73545ad",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nFetch the page at https://example.com.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "267ae2b5328a898177795e93",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nLook up recent Swift concurrency best practices online.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "4b597124b40b2ab591165f25",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSearch the web for SwiftData cancellation patterns.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "b38b8ec89d5ed9e636ed610c",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Web Search, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "7fc7657cd01f78c9a40f88fd",
       "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
       "severity": "error",
       "title": "trace_parse_error"
