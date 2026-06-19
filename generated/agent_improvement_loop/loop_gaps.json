@@ -9,6 +9,294 @@
           "strict manifest-valid structured output"
         ],
         "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMove latest Outlook email to inbox.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "6a9fbfafcff9f16c0ae44b45",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMove my latest Outlook email to Archive.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "048e4a3284dd2c0de27aba9a",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nMove my latest Outlook email to Archive.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "048e4a3284dd2c0de27aba9a",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRead the last email in Outlook.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "6545fc4dd100327e75e2b78d",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRead my latest Outlook email.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "f8283daee720363e03981bbf",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse Read Outlook Message, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "65f16c787219b036703a4e8d",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRespond to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "dedaf59fd6e357bc6e4d5515",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply to my latest Outlook email saying approved.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "78a6733d86feaae9fe46dde1",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "2030c879a79a5edf7c470bea",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nRespond to all on my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ef01612e10423be304b79dbe",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply all to my latest Outlook email saying approved.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ac38437df41f9d0fa6f29299",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nReply all to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "74ff2e6c6570f5e63e3355e2",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nShow recent Outlook mail.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "8246e4b4a930d20fc5c54ab1",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nList my latest Outlook emails.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "b4d8a06b360563689a98fecc",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nUse List Outlook Messages, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "665716dc091116f146e3f48a",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nFind invoice emails in Outlook.\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "68a6262bbfb899cd5947cde0",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
         "scenario": "User request:\nSearch Outlook for messages about invoices.\n\nEmit the first JSON object now. Choose either action or final.",
         "sourceLayer": "agentBehaviorTraceRecorder",
         "type": "trace_parse_error"
@@ -801,420 +1089,6 @@
           "strict manifest-valid structured output"
         ],
         "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "8e2b608b495d48a9ff729419",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ebe1650743ac568ffe4bc85f",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "8e2b608b495d48a9ff729419",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ebe1650743ac568ffe4bc85f",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ebe1650743ac568ffe4bc85f",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ebe1650743ac568ffe4bc85f",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ebe1650743ac568ffe4bc85f",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch documents and tools for a detailed cancellation analysis\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "294747c75735578767649d8e",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch the web for SwiftData cancellation patterns\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "41261e83b9bb318ea2a06e00",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "missingActionOrFinal",
-        "agent": "cortex",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch the web for SwiftData cancellation patterns\n\n<!-- LUMEN_GROUNDING_V1 -->\n[AVAILABLE LOCAL TOOLS]\n- web.search: Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.\n- web.fetch: Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.\n[RUNTIME POLICY]\nlegacy-interactive\n\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "89a7ad6a930d75c2b668c8c2",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
         "scenario": "User request:\nWhat is the weather here and should I carry an umbrella?\n\nEmit the first JSON object now. Choose either action or final.",
         "sourceLayer": "agentBehaviorTraceRecorder",
         "type": "trace_parse_error"
@@ -1310,6 +1184,78 @@
         "type": "trace_parse_error"
       },
       "id": "3aca8c83078c8011ed1cfc69",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSearch the web for SwiftData cancellation patterns\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ad12df6f9adaf64d564bfcfb",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "noJSONObject",
+        "agent": "cortex",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "The user asked:\nSearch the web for SwiftData cancellation patterns\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "3a30d80d3bd33b7be0818150",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "generation_error",
+        "agent": "executor",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "User request:\nSearch the web for SwiftData cancellation patterns\n\nEmit the first JSON object now. Choose either action or final.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "ad12df6f9adaf64d564bfcfb",
+      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "severity": "error",
+      "title": "trace_parse_error"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "noJSONObject",
+        "agent": "cortex",
+        "expected": [
+          "strict manifest-valid structured output"
+        ],
+        "problem": "A recorded in-app model trace contained a parse error.",
+        "scenario": "The user asked:\nSearch the web for SwiftData cancellation patterns\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
+        "sourceLayer": "agentBehaviorTraceRecorder",
+        "type": "trace_parse_error"
+      },
+      "id": "3a30d80d3bd33b7be0818150",
       "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
       "severity": "error",
       "title": "trace_parse_error"

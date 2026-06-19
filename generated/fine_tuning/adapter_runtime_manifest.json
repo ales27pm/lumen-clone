@@ -12,7 +12,7 @@
       "recordCounts": {
         "eval": 555,
         "train_dpo": 8,
-        "train_sft": 326,
+        "train_sft": 324,
         "val_dpo": 1,
         "val_sft": 57
       },
@@ -29,9 +29,9 @@
       "recordCounts": {
         "eval": 111,
         "train_dpo": 11,
-        "train_sft": 728,
+        "train_sft": 740,
         "val_dpo": 2,
-        "val_sft": 129
+        "val_sft": 131
       },
       "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments."
     },
@@ -46,9 +46,9 @@
       "recordCounts": {
         "eval": 84,
         "train_dpo": 14,
-        "train_sft": 1211,
+        "train_sft": 1221,
         "val_dpo": 2,
-        "val_sft": 214
+        "val_sft": 216
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -97,9 +97,9 @@
       "recordCounts": {
         "eval": 4,
         "train_dpo": 7,
-        "train_sft": 532,
+        "train_sft": 542,
         "val_dpo": 1,
-        "val_sft": 94
+        "val_sft": 96
       },
       "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
     }

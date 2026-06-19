@@ -635,6 +635,79 @@ extension AgentGroundingRegressionTests {
         #expect(AgentService.structuredAgentModelSlotForTests == .executor)
     }
 
+    @Test func deterministicCompatibilityEligibilityCoversToolAndDirectChatPrompts() {
+        let webRequest = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for SwiftData cancellation patterns",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { $0.id == "web.search" },
+            relevantMemories: []
+        )
+        let chatRequest = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain actor isolation in Swift in simple terms.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+        let attachmentRequest = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain this document.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: [],
+            attachments: [ChatAttachment(name: "notes.txt", kind: .text, path: "/tmp/notes.txt", byteSize: 5)]
+        )
+
+        #expect(SlotAgentService.canCompleteThroughDeterministicCompatibility(webRequest))
+        #expect(SlotAgentService.canCompleteThroughDeterministicCompatibility(chatRequest))
+        #expect(!SlotAgentService.canCompleteThroughDeterministicCompatibility(attachmentRequest))
+    }
+
+    @MainActor
+    @Test func agentServiceRoutesDeterministicCompatibleRequestsBeforeStructuredModel() async {
+        AgentBehaviorTraceRecorder.clear()
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain actor isolation in Swift in simple terms.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+
+        var finalText = ""
+        for await event in AgentService.shared.run(req, options: .default) {
+            if case .done(let text, _) = event {
+                finalText = text
+            }
+        }
+
+        let traces = AgentBehaviorTraceRecorder.recent(limit: 20)
+        #expect(finalText.lowercased().contains("actor isolation"))
+        #expect(traces.contains { $0.runtimePath == "deterministic-compatibility" && $0.stage == "compatibility-direct-final" })
+        #expect(!traces.contains { $0.stage == "agent-json" || $0.event == .modelTurn })
+    }
+
     @Test func secureToolAliasesBridgeToCanonicalLegacyDefinitions() {
         let secure = [
             SecureToolDefinition(id: "rag.search.secure", displayName: "Secure RAG", description: "Secure RAG", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "{}", resultPrivacyLevel: .moderate, maxOutputCharacters: 100),

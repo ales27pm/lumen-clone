@@ -1,17 +1,17 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 1611,
+  "availableSFTRecords": 1609,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
     "sentinelSafe": true
   },
   "deterministic": true,
-  "manifestCommit": "60e459e72d215380b6e2c7f089e4cd441821d64f",
+  "manifestCommit": "4b79470a26464aa380aa6afe34eb1478399648d5",
   "recordCounts": {
     "eval": 555,
     "train_dpo": 8,
-    "train_sft": 326,
+    "train_sft": 324,
     "val_dpo": 1,
     "val_sft": 57
   },
