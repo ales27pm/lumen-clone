@@ -1,19 +1,24 @@
 {
-  "adapterArtifact": "models/lora/mouth",
-  "adapterDirectory": "models/lora/mouth",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/mouth",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/mouth",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-mouth-lora.gguf",
   "adapterID": "lumen-mouth-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "mouth",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
+    "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
     "recordCounts": {
-      "eval": 5,
-      "train_dpo": 10,
-      "train_sft": 132,
+      "eval": 8,
+      "train_dpo": 12,
+      "train_sft": 278,
       "val_dpo": 2,
-      "val_sft": 23
+      "val_sft": 49
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cross_model_training",
@@ -21,10 +26,13 @@
       "fleet_system_prompts",
       "manifest_grounding_cards",
       "mouth_responses",
+      "runtime_audit_repairs",
       "train_sft"
     ],
     "taskTypes": [
       "codebase_home_grounding",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "embedding_corpus",
       "fleet_delegation",
       "fleet_delegation_preference",
@@ -36,14 +44,21 @@
       "manifest_grounding_cards",
       "mouth_responses",
       "role_directory",
+      "runtime_manifest_drift_repair",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",
+      "ultra_specific_approval_request_response",
+      "ultra_specific_empty_after_sanitization_recovery",
+      "ultra_specific_permission_failure_response",
+      "ultra_specific_post_tool_summary",
+      "ultra_specific_reference_resolution_failure",
       "user_response_generation"
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/mouth",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/mouth",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-mouth-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -69,6 +84,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels."
 }

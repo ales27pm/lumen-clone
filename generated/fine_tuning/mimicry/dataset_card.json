@@ -1,21 +1,35 @@
 {
   "agent": "mimicry",
-  "availableSFTRecords": 90,
+  "availableSFTRecords": 300,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
-    "sentinelSafe": true
+    "sentinelSafe": true,
+    "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
+  "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
+  "quality": {
+    "cortexCodebaseChunkRecordCount": 0,
+    "cortexCodebaseFileRecordCount": 0,
+    "cortexCodebaseSelfAwarenessCoverage": null,
+    "cortexCodebaseSelfAwarenessRecordCount": 0,
+    "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
+    "ultraSpecificRecordCount": 6,
+    "ultraSpecificSourceFamily": "adapter_ultra_specific"
+  },
   "recordCounts": {
-    "eval": 3,
-    "train_dpo": 9,
-    "train_sft": 54,
+    "eval": 5,
+    "train_dpo": 10,
+    "train_sft": 122,
     "val_dpo": 2,
-    "val_sft": 10
+    "val_sft": 22
   },
   "sourceFamilies": [
+    "adapter_ultra_specific",
+    "codebase_home_chunk_sft",
+    "codebase_home_chunks",
     "codebase_home_corpus",
     "codebase_home_sft",
     "cross_model_training",
@@ -28,6 +42,8 @@
   "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries.",
   "taskTypes": [
     "codebase_home_grounding",
+    "codebase_source_chunk",
+    "codebase_source_chunk_grounding",
     "embedding_corpus",
     "fleet_delegation",
     "fleet_delegation_preference",
@@ -42,6 +58,7 @@
     "source_code_self_knowledge",
     "source_routing_knowledge",
     "source_tool_registry_knowledge",
-    "style_profile_detection"
+    "style_profile_detection",
+    "ultra_specific_style_profile_detection"
   ]
 }

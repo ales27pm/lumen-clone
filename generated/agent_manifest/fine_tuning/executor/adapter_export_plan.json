@@ -1,20 +1,25 @@
 {
-  "adapterArtifact": "models/lora/executor",
-  "adapterDirectory": "models/lora/executor",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/executor",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/executor",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-executor-lora.gguf",
   "adapterID": "lumen-executor-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "executor",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
+    "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
     "recordCounts": {
-      "eval": 111,
-      "train_dpo": 11,
-      "train_sft": 686,
+      "eval": 114,
+      "train_dpo": 14,
+      "train_sft": 858,
       "val_dpo": 2,
-      "val_sft": 121
+      "val_sft": 152
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
       "approval_boundary_samples",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cross_model_training",
@@ -41,6 +46,8 @@
       "approval_rejected",
       "approval_required_tool",
       "codebase_home_grounding",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "embedding_corpus",
       "embedding_dataset_card",
       "embedding_eval_retrieval",
@@ -66,11 +73,15 @@
       "source_tool_registry_knowledge",
       "tool_call_generation",
       "tool_id_repair",
-      "tool_schema_cards"
+      "tool_schema_cards",
+      "ultra_specific_missing_argument_boundary",
+      "ultra_specific_permission_boundary",
+      "ultra_specific_tool_call_generation"
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/executor",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/executor",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-executor-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -96,6 +107,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments."
 }
