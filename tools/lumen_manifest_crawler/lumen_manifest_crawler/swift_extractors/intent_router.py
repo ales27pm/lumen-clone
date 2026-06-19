@@ -10,6 +10,17 @@ class IntentRouterExtractor(SwiftExtractor):
     target_names = ("IntentRouter.swift",)
 
     def extract(self, file: SwiftFile, manifest) -> None:
+        """
+        Extract intent IDs and tool routing information from the Swift file and update the manifest.
+        
+        Collects intent IDs from the UserIntent enum, ensures all intents exist in the manifest, derives 
+        allowed tool IDs for each intent based on proximity to intent names in the file, and constructs 
+        a routing matrix mapping intents to their allowed and forbidden tools.
+        
+        Parameters:
+        	file (SwiftFile): The Swift source file to extract from.
+        	manifest: The manifest object to update.
+        """
         intent_ids = set(enum_cases(file.text, "UserIntent"))
         existing = {i.id for i in manifest.intents}
         for intent_id in sorted(intent_ids):
@@ -37,6 +48,15 @@ class IntentRouterExtractor(SwiftExtractor):
 
     @staticmethod
     def _tools_near_name(text: str, name: str, known_tool_ids: set[str], tool_id_collections: dict[str, set[str]]) -> list[str]:
+        """
+        Determines tool IDs allowed for a given intent.
+        
+        Parameters:
+        	name (str): The intent name to search for
+        
+        Returns:
+        	list[str]: Sorted list of tool IDs allowed for the intent
+        """
         allowed: set[str] = set()
         for block in IntentRouterExtractor._switch_case_blocks(text, name):
             for literal in string_literals(block):
@@ -59,6 +79,20 @@ class IntentRouterExtractor(SwiftExtractor):
 
     @staticmethod
     def _tool_id_collections(text: str, known_tool_ids: set[str]) -> dict[str, set[str]]:
+        """
+        Build a mapping of tool ID collection variables to their known tool IDs.
+        
+        Parses Swift source code to find array declarations with variable names ending in `ToolIDs`, 
+        and builds a mapping to the subset of their contained tool IDs that are in `known_tool_ids`. 
+        Collections containing no known tool IDs are excluded from the result.
+        
+        Parameters:
+            text (str): Swift source code to parse.
+            known_tool_ids (set[str]): Set of valid tool IDs to filter against.
+        
+        Returns:
+            dict[str, set[str]]: Mapping of collection variable names to sets of known tool IDs.
+        """
         collections: dict[str, set[str]] = {}
         pattern = re.compile(r"(?m)^\s*(?:private\s+)?(?:static\s+)?(?:let|var)\s+(?P<name>\w*ToolIDs)\s*(?::[^\n=]+)?=\s*\[(?P<body>.*?)\]", flags=re.S)
         for match in pattern.finditer(text):
@@ -69,6 +103,15 @@ class IntentRouterExtractor(SwiftExtractor):
 
     @staticmethod
     def _tools_from_collection_refs(text: str, tool_id_collections: dict[str, set[str]]) -> set[str]:
+        """
+        Resolves tool IDs from tool ID collection references found in the text.
+        
+        Parameters:
+        	tool_id_collections (dict[str, set[str]]): A mapping of collection names to their contained tool IDs.
+        
+        Returns:
+        	set[str]: Tool IDs from all collections referenced in the text.
+        """
         allowed: set[str] = set()
         for collection_name, tools in tool_id_collections.items():
             if re.search(rf"\b{re.escape(collection_name)}\b", text):
@@ -77,6 +120,12 @@ class IntentRouterExtractor(SwiftExtractor):
 
     @staticmethod
     def _switch_case_blocks(text: str, name: str) -> list[str]:
+        """
+        Extracts the contents of Swift case blocks matching a specific intent name.
+        
+        Returns:
+            A list of strings, each containing the text of a matching case block.
+        """
         blocks: list[str] = []
         case_pattern = re.compile(rf"\bcase\s+\.{re.escape(name)}\b\s*:")
         next_case_pattern = re.compile(r"\n\s*case\s+\.")

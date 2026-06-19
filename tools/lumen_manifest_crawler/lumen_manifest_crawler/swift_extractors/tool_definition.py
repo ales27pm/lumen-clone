@@ -106,6 +106,16 @@ class ToolDefinitionExtractor(SwiftExtractor):
 
     @staticmethod
     def _extract_args_from_description(description: str | None, source: str) -> list[ToolArgumentManifest]:
+        """
+        Extract argument specifications from an Args contract in the description.
+        
+        Parameters:
+        	description: The description text to search for an Args contract.
+        	source: The source file path for the generated argument manifests.
+        
+        Returns:
+        	Tool argument manifests for each extracted argument.
+        """
         if not description:
             return []
         match = re.search(r"\bArgs?\s*:\s*(?P<body>.*?)(?:\.|$)", description, flags=re.I)

@@ -40,6 +40,14 @@ struct LocationMediaHealthLocalTool: LocalTool {
 
     func validateArguments(_ arguments: [String: String]) throws {}
 
+    /// Executes the invoked location, media, or health tool.
+    ///
+    /// Validates approval and permission requirements, then routes to the appropriate tool implementation. Returns a result indicating success, permission denial, missing approval, or unsupported tool.
+    ///
+    /// - Parameters:
+    ///   - invocation: The tool invocation request, including arguments and invocation source.
+    ///   - context: The execution context providing access to the permission registry.
+    /// - Returns: A tool result containing the execution outcome and related metadata.
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         let approval: ToolExecutionApproval = invocation.source == .userInitiated ? .userApproved : .autonomous
         let args = ToolRouteGuard.normalizedArguments(for: toolID, rawToolID: toolID, arguments: invocation.arguments)

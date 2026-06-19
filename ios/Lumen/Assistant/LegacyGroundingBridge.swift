@@ -24,6 +24,9 @@ final class LegacyGroundingBridge {
         self.metricsStore = metricsStore ?? .shared
     }
 
+    /// Constructs a legacy grounding bundle with rendered prompt context for an assistant turn.
+    /// - Returns: A bundle containing selected memory items, RAG results, available tools, and the final rendered prompt context.
+    /// - Throws: An error if the operation is cancelled or if an underlying operation fails.
     func build(userMessage: String, conversationID: UUID?, turnID: UUID?, history: [(role: MessageRole, content: String)], modelContext: ModelContext, turn: AssistantTurnContext, cancellationToken: AgentGroundingCancellationToken? = nil) async throws -> LegacyGroundingBundle {
         try cancellationToken?.checkCancellation()
         let budget = ContextBudgetAllocator.allocate(maxChars: 3200)

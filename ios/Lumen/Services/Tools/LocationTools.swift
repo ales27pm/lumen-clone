@@ -4,10 +4,16 @@ import UIKit
 
 @MainActor
 enum LocationTools {
+    /// Retrieves a textual description of the current location.
+    /// - Returns: A string describing the current location.
     static func currentLocation() async -> String {
         await LocationProbe.currentDescription()
     }
 
+    /// Opens the Maps app with directions to the specified destination.
+    /// - Parameters:
+    ///   - destination: The location or address to route to.
+    /// - Returns: A message indicating success or the reason the operation could not be completed.
     static func openDirections(destination: String) -> String {
         guard let trimmed = ToolRouteGuard.sanitizedMapsDestination(destination) else {
             return "No valid Maps destination provided."
@@ -21,6 +27,8 @@ enum LocationTools {
 
 
 
+    /// Constructs an Apple Maps URL for directions to a destination.
+    /// - Returns: A URL for Apple Maps directions, or `nil` if the destination is invalid.
     static func directionsURL(destination: String) -> URL? {
         guard let destination = ToolRouteGuard.sanitizedMapsDestination(destination) else {
             return nil
