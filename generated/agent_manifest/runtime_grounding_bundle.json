@@ -1087,7 +1087,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser.",
-        "sha256": "f35022d910f2e84f5424fb14e60c30c4a369ec69dab9195f11d096b18facb3a0",
+        "sha256": "0002a6d9df2eb7ef1f6da7bfbeb6efe50fc2d3efaa2ec4f13aea60d19cecb848",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -2108,7 +2108,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "60e459e72d215380b6e2c7f089e4cd441821d64f",
+  "manifestCommit": "4b79470a26464aa380aa6afe34eb1478399648d5",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

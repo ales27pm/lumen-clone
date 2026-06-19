@@ -1346,6 +1346,13 @@ final class AgentService {
         if options.diagnosticsEnabled {
             return SlotAgentService.shared.run(req, options: options)
         }
+        if SlotAgentService.canCompleteThroughDeterministicCompatibility(req) {
+            var compatibilityOptions = options
+            compatibilityOptions.groundingMode = .slotAgent
+            compatibilityOptions.allowDegradedGrounding = false
+            compatibilityOptions.preventDoubleGrounding = true
+            return SlotAgentService.shared.run(req, options: compatibilityOptions)
+        }
 
         return AsyncStream { continuation in
             let task = Task { @MainActor in

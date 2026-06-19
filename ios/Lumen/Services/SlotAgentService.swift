@@ -118,6 +118,23 @@ final class SlotAgentService {
                         break
                     }
 
+                    if Self.canCompleteThroughDeterministicCompatibility(req) {
+                        Self.emitChatTrace(req: req, phase: "path", values: ["path": "deterministic-compatibility"])
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "deterministic-compatibility"]))
+                        let response = await Self.deterministicCompatibilityResponse(original: req, effective: req, options: options)
+                        Self.emitDeterministicAnswerBuilt(path: "deterministic-compatibility")
+                        for step in response.steps {
+                            continuation.yield(.step(step))
+                        }
+                        continuation.yield(.finalDelta(response.text))
+                        continuation.yield(.done(finalText: response.text, steps: response.steps))
+                        Self.emitDoneYielded(path: "deterministic-compatibility")
+                        Self.emitSlotAgentEnd(path: "deterministic-compatibility")
+                        continuation.finish()
+                        Self.emitContinuationFinished(path: "deterministic-compatibility")
+                        return
+                    }
+
                     if Self.shouldUseFastAgentPath(req) {
                         Self.emitChatTrace(req: req, phase: "path", values: ["path": "fast-agent"])
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "fast-agent"]))
@@ -560,7 +577,7 @@ final class SlotAgentService {
         return .allow
     }
 
-    nonisolated private static func canCompleteThroughDeterministicCompatibility(_ req: AgentRequest) -> Bool {
+    nonisolated static func canCompleteThroughDeterministicCompatibility(_ req: AgentRequest) -> Bool {
         let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return false }
         let routing = DeterministicIntentFallback.classify(prompt).asRoutingDecision()
