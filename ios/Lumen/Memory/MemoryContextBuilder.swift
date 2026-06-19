@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-struct MemoryContextResult: Sendable {
+struct MemoryContextResult {
     let selected: [MemoryItem]
     let totalChars: Int
     let reasons: [UUID: String]

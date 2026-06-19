@@ -28,3 +28,25 @@ def test_approval_sensitive_tool_selected_expands_coverage() -> None:
     )
     assert repair["action"] == "regenerate_approval_boundary_samples"
     assert repair["alsoAdd"] == ["approval_boundary_dpo_pairs", "approval_confirmation_ui_regression_eval"]
+
+
+def test_dynamic_local_lookup_tool_violation_teaches_plan_execute_evaluate() -> None:
+    repair = _repair_for_runtime_failure(
+        {
+            "type": "tool_not_allowed_by_runtime_router",
+            "actual": "maps.search",
+            "scenario": "Where is the nearest free tax clinic tomorrow?",
+            "problem": "Cortex selected a map-only tool for a time-sensitive local public lookup.",
+        },
+        known_tools=["location.current", "maps.search", "web.search"],
+    )
+    assert repair["action"] == "add_plan_gather_execute_evaluate_samples"
+    assert repair["focusToolID"] == "web.search"
+    assert repair["rejectedToolID"] == "maps.search"
+    assert "mouth_grounded_answer_eval" in repair["alsoAdd"]
+    assert repair["expectedPlan"] == [
+        "classify as dynamic local public lookup",
+        "gather current location when available",
+        "run web.search for fresh public schedule/hours/event evidence",
+        "evaluate whether the observation answers the user's time-sensitive question before finalizing",
+    ]

@@ -124,3 +124,25 @@ def test_args_contract_handles_optional_group_and_type_hints():
     assert [(arg.name, arg.type) for arg in alarm_cancel.arguments] == [
         ("id", "string"),
     ]
+
+
+def test_args_contract_ignores_boolean_value_hint_alias():
+    text = '''
+    enum ToolRegistry {
+      static let all: [ToolDefinition] = [
+        ToolDefinition(
+          id: "outlook.folders.list",
+          name: "List Outlook Folders",
+          description: "List folders. Args: optional includeHidden true/false.",
+          requiresApproval: false,
+          permissionKey: nil
+        )
+      ]
+    }
+    '''
+    manifest = AgentBehaviorManifest()
+    ToolDefinitionExtractor().extract(SwiftFile(Path("ToolDefinition.swift"), "ToolDefinition.swift", text), manifest)
+    tool = manifest.tools[0]
+    assert [(arg.name, arg.type, arg.required) for arg in tool.arguments] == [
+        ("includeHidden", "string", False),
+    ]

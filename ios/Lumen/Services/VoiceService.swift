@@ -47,7 +47,9 @@ final class VoiceService: NSObject {
         return micOK
     }
 
-    // MARK: - Listening
+    /// Starts listening for speech input with continuous transcript updates.
+    /// - Parameters:
+    ///   - onFinal: Called with the final transcript when speech ends.
 
     func startListening(onFinal: @escaping (String) -> Void) async {
         guard await requestPermissions() else { return }
@@ -77,7 +79,7 @@ final class VoiceService: NSObject {
         }
 
         cancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in
-            Task { @MainActor in self?.stopListening() }
+            Task { @MainActor [weak self] in self?.stopListening() }
         }, category: .voiceRecognition)
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -191,10 +193,11 @@ final class VoiceService: NSObject {
         synthesizer.speak(utterance)
     }
 
+    /// Registers a handler to stop speaking on TTS cancellation.
     private func registerTTSCancellation() {
         unregisterTTSCancellation()
         ttsCancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in
-            Task { @MainActor in self?.stopSpeaking() }
+            Task { @MainActor [weak self] in self?.stopSpeaking() }
         }, category: .tts)
     }
 

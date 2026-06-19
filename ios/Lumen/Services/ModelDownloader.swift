@@ -13,8 +13,6 @@ final class ModelDownloader: NSObject {
     @ObservationIgnored private var targets: [Int: (model: CatalogModel, destination: URL, onComplete: (URL) -> Void)] = [:]
     @ObservationIgnored private var resumeData: [String: Data] = [:]
     @ObservationIgnored private var completionHandlers: [String: (URL) -> Void] = [:]
-    @ObservationIgnored private var responseStatusCodes: [Int: Int] = [:]
-    @ObservationIgnored private var responseMimeTypes: [Int: String] = [:]
 
     @ObservationIgnored
     private lazy var session: URLSession = {
@@ -39,6 +37,14 @@ final class ModelDownloader: NSObject {
 
     func isDownloading(_ model: CatalogModel) -> Bool { sessions[model.id] != nil }
 
+    /// Initiates a download for a catalog model, or handles it if already downloaded or downloading.
+    ///
+    /// If the model is already being downloaded, this returns without starting a new download. If the model is already installed locally, the completion handler is invoked immediately with the file URL. Otherwise, a download task is created and started, which will invoke the completion handler with the file URL when finished.
+    ///
+    /// - Parameters:
+    ///   - model: The catalog model to download.
+    ///   - onComplete: A closure invoked with the local file URL.
+    /// - Returns: `success` if the download was initiated, is already in progress, or the file is already available; `failure` if the download URL could not be constructed.
     @discardableResult
     func start(_ model: CatalogModel, onComplete: @escaping (URL) -> Void) -> Result<Void, CatalogModel.DownloadURLError> {
         if sessions[model.id] != nil {
@@ -73,8 +79,6 @@ final class ModelDownloader: NSObject {
         sessions[model.id] = task
         targets[task.taskIdentifier] = (model, localURL(for: model), onComplete)
         resumeData[model.id] = nil
-        responseStatusCodes[task.taskIdentifier] = nil
-        responseMimeTypes[task.taskIdentifier] = nil
         task.resume()
         return .success(())
     }
@@ -134,6 +138,7 @@ final class ModelDownloader: NSObject {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Cleans up files and resets download state when a model download fails.
     private func failDownload(taskID: Int, model: CatalogModel, message: String, cleanupURLs: [URL] = []) {
         for url in cleanupURLs { try? FileManager.default.removeItem(at: url) }
         try? FileManager.default.removeItem(at: localURL(for: model))
@@ -142,8 +147,6 @@ final class ModelDownloader: NSObject {
         sessions[model.id] = nil
         completionHandlers[model.id] = nil
         targets[taskID] = nil
-        responseStatusCodes[taskID] = nil
-        responseMimeTypes[taskID] = nil
         NotificationCenter.default.post(name: .modelDownloaderInfo, object: nil, userInfo: ["message": "Download failed for \(model.name): \(message)"])
     }
 }
@@ -163,8 +166,13 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         }
     }
 
+    /// Installs a downloaded file after validating the HTTP response and file integrity.
+    ///
+    /// Verifies that the HTTP status code is in the 2xx range and that the response is not HTML or JSON. Moves the temporary file to a staging location, validates its integrity, then installs it to the final destination with automatic fallback to copying if the direct move fails. Re-validates integrity at the final location before marking the download complete and clearing session tracking. On any validation or file operation failure, invokes failure handling with appropriate cleanup.
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         let taskId = downloadTask.taskIdentifier
+        let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode
+        let mimeType = downloadTask.response?.mimeType
         let fm = FileManager.default
         let modelsDir = ModelStorage.modelsDirectoryURL(fileManager: fm)
         let staging = modelsDir.appendingPathComponent(".staging-\(UUID().uuidString)")
@@ -178,8 +186,9 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         }
 
         Task { @MainActor in
+            let fileManager = FileManager.default
             guard let entry = targets[taskId] else {
-                if let moved = movedURL { try? fm.removeItem(at: moved) }
+                if let moved = movedURL { try? fileManager.removeItem(at: moved) }
                 return
             }
 
@@ -188,25 +197,25 @@ extension ModelDownloader: URLSessionDownloadDelegate {
                 return
             }
 
-            if let status = responseStatusCodes[taskId], !(200...299).contains(status) {
+            if let status = statusCode, !(200...299).contains(status) {
                 failDownload(taskID: taskId, model: entry.model, message: "HTTP status \(status)", cleanupURLs: [moved])
                 return
             }
 
-            if let mime = responseMimeTypes[taskId]?.lowercased(), mime.contains("text/html") || mime.contains("application/json") {
+            if let mime = mimeType?.lowercased(), mime.contains("text/html") || mime.contains("application/json") {
                 failDownload(taskID: taskId, model: entry.model, message: "Unexpected response type \(mime)", cleanupURLs: [moved])
                 return
             }
 
             switch ModelFileIntegrity.validateDownloadedCatalogFile(entry.model, at: moved) {
             case .success(let actualSize):
-                try? fm.removeItem(at: entry.destination)
+                try? fileManager.removeItem(at: entry.destination)
                 do {
-                    try fm.moveItem(at: moved, to: entry.destination)
+                    try fileManager.moveItem(at: moved, to: entry.destination)
                 } catch {
                     do {
-                        try fm.copyItem(at: moved, to: entry.destination)
-                        try? fm.removeItem(at: moved)
+                        try fileManager.copyItem(at: moved, to: entry.destination)
+                        try? fileManager.removeItem(at: moved)
                     } catch {
                         failDownload(taskID: taskId, model: entry.model, message: "Could not install downloaded file: \(error.localizedDescription)", cleanupURLs: [moved])
                         return
@@ -221,8 +230,6 @@ extension ModelDownloader: URLSessionDownloadDelegate {
                     sessions[entry.model.id] = nil
                     completionHandlers[entry.model.id] = nil
                     targets[taskId] = nil
-                    responseStatusCodes[taskId] = nil
-                    responseMimeTypes[taskId] = nil
                 case .failure(let failure):
                     failDownload(taskID: taskId, model: entry.model, message: failure.localizedDescription)
                 }
@@ -232,17 +239,9 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         }
     }
 
-    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        let taskID = downloadTask.taskIdentifier
-        Task { @MainActor in
-            if let http = response as? HTTPURLResponse {
-                responseStatusCodes[taskID] = http.statusCode
-            }
-            responseMimeTypes[taskID] = response.mimeType
-        }
-        completionHandler(.allow)
-    }
-
+    /// Handles errors from completed download tasks.
+    ///
+    /// Persists resume data for later resumption and updates download tracking. Cancellations clear the task silently; other errors are routed through failure cleanup with notification.
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let taskId = task.taskIdentifier
         guard let error else { return }
@@ -257,8 +256,6 @@ extension ModelDownloader: URLSessionDownloadDelegate {
             if nsError.code == NSURLErrorCancelled {
                 sessions[entry.model.id] = nil
                 targets[taskId] = nil
-                responseStatusCodes[taskId] = nil
-                responseMimeTypes[taskId] = nil
                 return
             }
             failDownload(taskID: taskId, model: entry.model, message: error.localizedDescription)

@@ -3,11 +3,11 @@
   "codebaseHome": {
     "languageCounts": {
       "json": 21,
-      "markdown": 55,
+      "markdown": 58,
       "mixed": 1,
       "plist": 3,
       "python": 85,
-      "swift": 313
+      "swift": 314
     },
     "moduleCounts": {
       "AppIntents": 7,
@@ -39,12 +39,12 @@
       "Services/Tools": 14,
       "State": 3,
       "System": 14,
-      "Tools": 15,
-      "Tools/Builtin": 10,
+      "Tools": 14,
+      "Tools/Builtin": 12,
       "Views": 30,
       "Voice": 6,
       "app": 6,
-      "docs": 48,
+      "docs": 51,
       "docs/stabilization": 1,
       "repo": 1,
       "tools": 12,
@@ -58,7 +58,7 @@
       "tools/pipeline/tests": 1,
       "tools/security": 1
     },
-    "recordCount": 478,
+    "recordCount": 482,
     "selectedFiles": [
       {
         "imports": [
@@ -68,7 +68,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` owns AgentBehaviorManifest behavior and defines: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent, ManifestRoutingEntry, ManifestMemory, ManifestFreshnessClass.",
-        "sha256": "d0117c4aa3c571d89931d2d3225e518396af1f70dce4b79280c418a677dc69a7",
+        "sha256": "b39604b1e1403b33bb44c999a0daf1362c99d56c74dfc78f35155e5f6e3837d2",
         "symbols": [
           "AgentBehaviorManifest",
           "ManifestAppInfo",
@@ -203,7 +203,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentModelBehaviorAuditor.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentModelBehaviorAuditor.swift` owns AgentModelBehaviorAuditor behavior and defines: AgentModelBehaviorAuditor, audit, previousUserPrompt, allowedToolsByIntent, containsSentinel, isResourceBudgetFallbackFinal, hasTrustedUIApproval, isApprovalBoundaryStep, violation, recommendations.",
-        "sha256": "88e83229bbb6adddccdf4d2b2c5f65cc5ba17efa8607f3cfa96aedcbd3dab6bc",
+        "sha256": "434bb33eaefefc4dbb563e62cd3a6b357466bc7af4d2fe98b2ff7537d3c504a5",
         "symbols": [
           "AgentModelBehaviorAuditor",
           "audit",
@@ -287,7 +287,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, writePackage, exportDirectory, mergedBehaviorAuditWithRuntimeTraceViolations, runtimeTraceViolations.",
-        "sha256": "77a631c1baa1e7a9cc4d70be7237fab8a36ea03230ebb654817d62a8b38ad98a",
+        "sha256": "19c37e4fdf4ade1293e170fd8a0b24ac2ca3443397b92459b1c96379af79acd5",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetAppInfo",
@@ -299,12 +299,12 @@
           "exportDirectory",
           "mergedBehaviorAuditWithRuntimeTraceViolations",
           "runtimeTraceViolations",
+          "traceHasActionParseError",
+          "actionTraceParseError",
           "isActionStructuredStage",
           "writeImproveLoopJSONL",
           "safeTimestamp",
-          "schemaVersion",
-          "generatedAt",
-          "app"
+          "schemaVersion"
         ]
       },
       {
@@ -314,8 +314,8 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, removeDependencyPhrases, argumentAliases, isValidArgumentName, inferredType.",
-        "sha256": "74f5160a290e3cc3cdf41a1051e8f65b795b4657982f661b6db435bf96b7a6eb",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, RuntimeToolArgumentInferencer, currentToolDefinitions, arguments, argsBody, removeParentheticalText, removeDependencyPhrases, removeValueHintPhrases, argumentAliases, isValidArgumentName.",
+        "sha256": "fd047b7bf46b9977a00f8f93f3a2651794fcccb4a8f2c5ce1535c53a5dc308e5",
         "symbols": [
           "LiveRuntimeToolRegistryProvider",
           "RuntimeToolArgumentInferencer",
@@ -324,6 +324,7 @@
           "argsBody",
           "removeParentheticalText",
           "removeDependencyPhrases",
+          "removeValueHintPhrases",
           "argumentAliases",
           "isValidArgumentName",
           "inferredType",
@@ -331,8 +332,7 @@
           "typeHintWords",
           "trimmed",
           "lowered",
-          "specs",
-          "optionalGroup"
+          "specs"
         ]
       },
       {
@@ -343,7 +343,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` owns RuntimeManifestAuditor behavior and defines: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAuditor, RuntimeManifestAuditError, loadBundledManifest, loadManifestFromStoreBundleOrRuntimeFallback, loadBundledManifestOrRuntimeFallback, syntheticManifestFromRuntimeRegistry, audit.",
-        "sha256": "c116ec3e67482de5836437c7d425acb7a834aff3fe27cea0da79a2910bd9586a",
+        "sha256": "40765b584f80b167040498212081f462188a68ef5467e4cc16617508cdd61089",
         "symbols": [
           "RuntimeAgentManifestAuditReport",
           "RuntimeManifestFailure",
@@ -371,7 +371,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` owns RuntimeScenarioRunner behavior and defines: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt, id, intent, expectedToolID, requiresApproval.",
-        "sha256": "e8cb095c55c27eb1ec9f0670c49c8de82d1ae697d2820bb7a25e5e2fcb905084",
+        "sha256": "3cfd7f46523b4336c08d0195beb0f5fbc0f67bb042434ec04ce98073cc09b6e6",
         "symbols": [
           "RuntimeScenario",
           "RuntimeScenarioResult",
@@ -487,8 +487,8 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel+Streaming.swift",
-        "responsibility": "`ios/Lumen/Assistant/AssistantKernel+Streaming.swift` owns AssistantKernel+Streaming behavior and defines: AssistantKernel, AgentEvent, run, emitStep, runLegacyAgentBridge, task, start, emittedSteps, step, thermalState.",
-        "sha256": "5879f7bb71dd067c83fd4ef6d27faa0b1ef55b0f452ecd9a0a3f95684e81a1d6",
+        "responsibility": "`ios/Lumen/Assistant/AssistantKernel+Streaming.swift` owns AssistantKernel+Streaming behavior and defines: AssistantKernel, AgentEvent, run, emitStep, runLegacyAgentBridge, task, start, emittedSteps, step, routing.",
+        "sha256": "a19cb36de9c37f8f11c2c0416ce2a0125cd90b89e0e8a5df61e3118467d57cc4",
         "symbols": [
           "AssistantKernel",
           "AgentEvent",
@@ -499,13 +499,13 @@
           "start",
           "emittedSteps",
           "step",
+          "routing",
+          "availableTools",
+          "legacyRequest",
+          "groundingMode",
+          "legacyOptions",
           "thermalState",
-          "lowPowerMode",
-          "turn",
-          "selectedRuntime",
-          "grounding",
-          "output",
-          "finalText"
+          "lowPowerMode"
         ]
       },
       {
@@ -703,8 +703,8 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyAgentRunOptions.swift",
-        "responsibility": "`ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding, preventDoubleGrounding, diagnosticsEnabled.",
-        "sha256": "a1693eae61d3e09a3dc4038c4884a5ee74619476cb74b7702e674ec270f7f284",
+        "responsibility": "`ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding, preventDoubleGrounding, diagnosticsEnabled, allowDeterministicCompatibility.",
+        "sha256": "6cb509c4a6a66e2e5c7b3f09e4a6cea5b82d11575a4507120bb0acd0ee5670b9",
         "symbols": [
           "LegacyAgentRunOptions",
           "GroundingMode",
@@ -714,7 +714,8 @@
           "groundingMode",
           "allowDegradedGrounding",
           "preventDoubleGrounding",
-          "diagnosticsEnabled"
+          "diagnosticsEnabled",
+          "allowDeterministicCompatibility"
         ]
       },
       {
@@ -726,7 +727,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyGroundingBridge.swift",
         "responsibility": "Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and degraded behavior stay centralized.",
-        "sha256": "9d0717e363fc9d71bf8d2022fc7057e401dba68d5b95aa51d86b0d092d96251b",
+        "sha256": "7b5218bc572c8212675a763ff3b360895ae23f608be93c914440a3e655e22db2",
         "symbols": [
           "LegacyGroundingBundle",
           "LegacyGroundingBridge",
@@ -902,7 +903,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift",
         "responsibility": "`ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, cancelledResult, grounding, sections.",
-        "sha256": "7cc993127bac86c5e99de118bd3e88050e5849ecc35ebc9bd5722e0f8258eff9",
+        "sha256": "cc9765d8b4621d28fbcd1304d23e633a1b2b0e092c57cd558c199f49ed5f2c4e",
         "symbols": [
           "LegacyTurnGroundingOutput",
           "LegacyTurnGroundingCoordinator",
@@ -1043,11 +1044,13 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentIntentRouter.swift",
         "responsibility": "Compatibility facade for older agent-routing tests/call sites.",
-        "sha256": "c37a068abb309182b3aaa6fdf2aacb2b51a11302639ae5a52d7456bce462a765",
+        "sha256": "89acb5bf18e7f5c4b11e6f39045e9739df595f9c73beb0b62ecddcb16ab9f5a3",
         "symbols": [
           "AgentIntentRouter",
           "Decision",
           "decide",
+          "decideSemantic",
+          "decision",
           "filteredTools",
           "routingSystemNote",
           "allowedToolIDs",
@@ -1058,9 +1061,7 @@
           "reason",
           "requiresUserApproval",
           "shouldAskClarification",
-          "clarificationQuestion",
-          "alternatives",
-          "attachmentsWerePresent"
+          "clarificationQuestion"
         ]
       },
       {
@@ -1086,12 +1087,14 @@
         "language": "swift",
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
-        "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser, ExtractedJSONObject, StreamingJSONScanner.",
-        "sha256": "cde3cc460cb639d7baa868387cf4baf9fadea13424f8efd2c21569b0808bb898",
+        "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser.",
+        "sha256": "5da86e39807e715650c062a49bb4d94eda33ca2bd845a80e4130b158b67303c3",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
           "AgentAction",
+          "StructuredOutput",
+          "StructuredAction",
           "AgentTurn",
           "AgentTurnParseError",
           "AgentJSONCandidateSelector",
@@ -1102,9 +1105,7 @@
           "Event",
           "JSONContext",
           "AgentParseFailureTrace",
-          "AgentParseNoiseTrace",
-          "AgentNoiseInspector",
-          "Snapshot"
+          "AgentParseNoiseTrace"
         ]
       },
       {
@@ -1284,7 +1285,7 @@
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/LocationTools.swift",
         "responsibility": "Policy: maps.apple.com deep links must use HTTPS. Plain HTTP links are prohibited to avoid mixed-content/security regressions and are covered by tests in LocationToolsTests.",
-        "sha256": "5bbd8f81f4936aa2c1f18de869ab431164dacba3878fbc8b7bfa9a127ca7e107",
+        "sha256": "3abcbb1cb58de8dff62164b4acb186cbc25f2483f0e85597e40137a71988e65c",
         "symbols": [
           "LocationTools",
           "currentLocation",
@@ -1294,14 +1295,14 @@
           "localSearchFailureMessage",
           "trimmed",
           "url",
+          "destination",
           "components",
           "coord",
           "request",
           "response",
           "items",
           "name",
-          "addr",
-          "nsError"
+          "addr"
         ]
       },
       {
@@ -1546,13 +1547,25 @@
         "language": "swift",
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift",
-        "responsibility": "`ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift` owns DeterministicIntentFallback behavior and defines: DeterministicIntentFallback, classify, decision, confidence.",
-        "sha256": "2471bb35cc79b94977c095928685cd06ca346ac7e1bdbbdf4bd16c68c74c43d1",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift` owns DeterministicIntentFallback behavior and defines: DeterministicIntentFallback, classify, ambiguityClarification, clarification, isAmbiguousMeetingLookup, isAmbiguousReferenceAction, normalized, containsAny, decision, confidence.",
+        "sha256": "c182773b94b9418e427e6dc9f70dda557c0a6e29e95bf8a093c2e115bd62ddf3",
         "symbols": [
           "DeterministicIntentFallback",
           "classify",
+          "ambiguityClarification",
+          "clarification",
+          "isAmbiguousMeetingLookup",
+          "isAmbiguousReferenceAction",
+          "normalized",
+          "containsAny",
           "decision",
-          "confidence"
+          "confidence",
+          "value",
+          "primary",
+          "hasLookupVerb",
+          "hasPersonalMeeting",
+          "lacksCalendarScope",
+          "lacksLocalScope"
         ]
       },
       {
@@ -1590,19 +1603,25 @@
         "language": "swift",
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift",
-        "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, resolve, resolveMediumConfidence, sanitized, isApprovalSensitive, isSemanticNonDestructive, boundedConfidence, primary, candidates, alternatives.",
-        "sha256": "a38d5b1a7da0f2e657a63a95da29f0a5147e216cbcbde741cc59ab69410cd1a5",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, IntentClarificationPolicy, resolve, resolveMediumConfidence, clarificationForAmbiguousModelResult, rankedAlternatives, shouldClarifyBetween, clarificationPrompt, clarificationLabel, sanitized.",
+        "sha256": "a1cf5d4913e9612c07bf78153029709058ba28e04330b9e6e3e1c0bdafc1f972",
         "symbols": [
           "IntentClassifierPolicy",
+          "IntentClarificationPolicy",
           "resolve",
           "resolveMediumConfidence",
+          "clarificationForAmbiguousModelResult",
+          "rankedAlternatives",
+          "shouldClarifyBetween",
+          "clarificationPrompt",
+          "clarificationLabel",
           "sanitized",
           "isApprovalSensitive",
           "isSemanticNonDestructive",
-          "boundedConfidence",
-          "primary",
-          "candidates",
-          "alternatives"
+          "apply",
+          "isBareReferenceAction",
+          "isCalendarCreateIntent",
+          "hasCalendarSubject"
         ]
       },
       {
@@ -1612,16 +1631,20 @@
         "language": "swift",
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/IntentClassifierService.swift",
-        "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierService.swift` owns IntentClassifierService behavior and defines: IntentClassifierService, route, classify, shared, override, deterministic, modelResult.",
-        "sha256": "24f5af233ecc9423cc7f8051e42732e112340eae92b3f2ed648cb97e417b032c",
+        "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierService.swift` owns IntentClassifierService behavior and defines: IntentClassifierService, route, classify, shared, result, routing, ambiguity, override, deterministic, modelResult.",
+        "sha256": "ca42a4a7ce07a63647a91174c1e9fb0e7e263bfbd044c7e68db8992f7c32ddf4",
         "symbols": [
           "IntentClassifierService",
           "route",
           "classify",
           "shared",
+          "result",
+          "routing",
+          "ambiguity",
           "override",
           "deterministic",
-          "modelResult"
+          "modelResult",
+          "resolved"
         ]
       },
       {
@@ -1632,7 +1655,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/IntentRouter.swift",
         "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, unavailableMessage.",
-        "sha256": "7153dde2d566b53424844b7ea280ca2f0fa7407f25013f44082944c7f917184b",
+        "sha256": "978ebd65d92f9c3633956bd3c2dc3abfc1311ae8c9cb466391128189433c6db1",
         "symbols": [
           "UserIntent",
           "IntentRoutingDecision",
@@ -1705,7 +1728,7 @@
         "module": "Memory",
         "path": "ios/Lumen/Memory/MemoryContextBuilder.swift",
         "responsibility": "`ios/Lumen/Memory/MemoryContextBuilder.swift` owns MemoryContextBuilder behavior and defines: MemoryContextResult, MemoryContextBuilder, build, score, selected, totalChars, reasons, sourceIDs, all, q.",
-        "sha256": "b6f78f5ac9fc9277619c9e8e48203d755f9ff8811ebc191fb8c8686a9ca69fba",
+        "sha256": "66faec9448e37777bb68f848540db2f519516a4f061106c9779fb61f056c8491",
         "symbols": [
           "MemoryContextResult",
           "MemoryContextBuilder",
@@ -2029,7 +2052,7 @@
         "module": "Tools/Builtin",
         "path": "ios/Lumen/Tools/Builtin/CommunicationLocalTools.swift",
         "responsibility": "`ios/Lumen/Tools/Builtin/CommunicationLocalTools.swift` owns CommunicationLocalTools behavior and defines: CommunicationLocalTool, validateArguments, execute, result, secureCategory, maxOutputCharacters, argumentSchemaDescription, nativeToolIDs, all, definition.",
-        "sha256": "3f27d332ba846f5f1f9b12c1b961574cb4efb162eaf2d941b5b1f17174d4d938",
+        "sha256": "3505eded75cfcd8561226f63163313ba6a264c235b98acd310ebdb2a8635cbee",
         "symbols": [
           "CommunicationLocalTool",
           "validateArguments",
@@ -2041,7 +2064,7 @@
           "nativeToolIDs",
           "all",
           "definition",
-          "legacyToolID",
+          "toolID",
           "canonical",
           "approval",
           "args",
@@ -2086,7 +2109,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "c6534d7f9673d5d57b730cc567064daf8302dc11",
+  "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

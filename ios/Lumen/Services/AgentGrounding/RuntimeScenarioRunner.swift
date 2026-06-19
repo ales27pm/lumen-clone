@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RuntimeScenario: Codable, Hashable, Identifiable {
+public struct RuntimeScenario: Codable, Hashable, Identifiable, Sendable {
     public let id: String
     public let intent: String
     public let expectedToolID: String
@@ -8,7 +8,7 @@ public struct RuntimeScenario: Codable, Hashable, Identifiable {
     public let prompt: String
 }
 
-public struct RuntimeScenarioResult: Codable, Hashable, Identifiable {
+public struct RuntimeScenarioResult: Codable, Hashable, Identifiable, Sendable {
     public let id: String
     public let scenario: RuntimeScenario
     public let passed: Bool

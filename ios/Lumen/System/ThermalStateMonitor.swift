@@ -21,10 +21,12 @@ final class ThermalStateMonitor: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            let state = DeviceThermalState.from(processThermalState: ProcessInfo.processInfo.thermalState)
-            self.currentState = state
-            self.continuation?.yield(state)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let state = DeviceThermalState.from(processThermalState: ProcessInfo.processInfo.thermalState)
+                self.currentState = state
+                self.continuation?.yield(state)
+            }
         }
     }
 
