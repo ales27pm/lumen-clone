@@ -66,11 +66,25 @@ nonisolated enum DeterministicToolPlanner {
             var args: AgentJSONArguments = ["subject": .string(extractOutlookSubject(from: prompt)), "body": .string(extractOutlookBody(from: prompt) ?? "")]
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
             return AgentAction(tool: canonical, args: args)
+        case "messages.draft":
+            var args: AgentJSONArguments = ["body": .string(extractCommunicationBody(from: prompt))]
+            if let phone = firstPhoneNumber(in: prompt) {
+                args["to"] = .string(phone)
+            } else if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty {
+                args["to"] = .string(recipient)
+            }
+            return AgentAction(tool: canonical, args: args)
         default:
             return AgentAction(tool: canonical, args: [:])
         }
     }
 
+    /// Produces a sequence of actions to execute a user request, with optional prerequisite context actions.
+    /// - Parameters:
+    ///   - routing: The routing decision that determines the user's intent.
+    ///   - prompt: The user's input text.
+    ///   - availableToolIDs: Tools currently available for execution.
+    /// - Returns: An array of `AgentAction` objects to execute in order; empty if no plan can be made.
     static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
         let text = normalized(prompt)
 
@@ -101,6 +115,20 @@ nonisolated enum DeterministicToolPlanner {
             return [single]
         }
 
+        if routing.intent == .webSearch {
+            if let url = firstURL(in: prompt), availableToolIDs.contains("web.fetch") {
+                return [AgentAction(tool: "web.fetch", args: ["url": .string(url)])]
+            }
+            if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text), availableToolIDs.contains("web.search") {
+                var actions: [AgentAction] = []
+                if availableToolIDs.contains("location.current") {
+                    actions.append(AgentAction(tool: "location.current", args: [:]))
+                }
+                actions.append(AgentAction(tool: "web.search", args: ["query": .string(dynamicPublicLookupWebQuery(from: prompt))]))
+                return actions
+            }
+        }
+
         if routing.intent == .maps,
            availableToolIDs.contains("location.current"),
            isNearbyMapSearchIntent(text),
@@ -118,6 +146,8 @@ nonisolated enum DeterministicToolPlanner {
         return []
     }
 
+    /// Plans a single tool action based on the user's intent and prompt, respecting tool availability.
+    /// - Returns: An `AgentAction` for the matched tool, or `nil` if no valid action can be planned.
     static func plan(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> AgentAction? {
         let text = normalized(prompt)
 
@@ -131,6 +161,9 @@ nonisolated enum DeterministicToolPlanner {
         case .webSearch:
             if has("web.fetch"), let url = firstURL(in: prompt) { return AgentAction(tool: "web.fetch", args: ["url": .string(url)]) }
             guard has("web.search") else { return nil }
+            if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+                return AgentAction(tool: "web.search", args: ["query": .string(dynamicPublicLookupWebQuery(from: prompt))])
+            }
             let query = extractWebQuery(from: prompt)
             return query.isEmpty ? nil : AgentAction(tool: "web.search", args: ["query": .string(query)])
         case .emailDraft:
@@ -140,7 +173,11 @@ nonisolated enum DeterministicToolPlanner {
             return action("mail.draft", args)
         case .messageDraft:
             var args: AgentJSONArguments = ["body": .string(extractCommunicationBody(from: prompt))]
-            if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty { args["to"] = .string(recipient) }
+            if let phone = firstPhoneNumber(in: prompt) {
+                args["to"] = .string(phone)
+            } else if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty {
+                args["to"] = .string(recipient)
+            }
             return action("messages.draft", args)
         case .phoneCall:
             if let phone = firstPhoneNumber(in: prompt) { return action("phone.call", ["number": .string(phone)]) }
@@ -196,8 +233,10 @@ nonisolated enum DeterministicToolPlanner {
             return nil
         case .memory, .note:
             if isPersonalProfileRecallIntent(text) { return action("memory.recall", ["query": .string("user name")]) }
-            if containsAny(text, ["what do you remember", "recall", "remember about"]) { return action("memory.recall", ["query": .string(extractContactQuery(from: prompt) ?? "")]) }
-            if containsAny(text, ["remember", "save", "note", "keep this in mind", "my name is", "call me"]) {
+            if containsAny(text, ["what do you remember", "recall", "remember about", "tell me what style i asked you to use"]) {
+                return action("memory.recall", ["query": .string(extractMemoryRecallQuery(from: prompt))])
+            }
+            if containsAny(text, ["remember", "save", "note", "keep this in mind", "keep in mind", "my name is", "call me"]) {
                 return action("memory.save", [
                     "content": .string(extractMemoryFact(from: prompt)),
                     "kind": .string("fact")
@@ -207,7 +246,7 @@ nonisolated enum DeterministicToolPlanner {
         case .rag:
             if containsAny(text, ["index photos", "reindex photos", "photo retrieval index"]) { return action("rag.index_photos") }
             if containsAny(text, ["reindex", "index files", "file retrieval index", "refresh retrieval index"]) { return action("rag.index_files") }
-            if containsAny(text, ["search", "summarize", "read", "show"]) {
+            if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
                 let query = expandRAGQueryIfNeeded(originalPrompt: prompt)
                 return action("rag.search", ["query": .string(query)])
             }
@@ -451,9 +490,43 @@ nonisolated enum DeterministicToolPlanner {
 
     private static func isPersonalProfileRecallIntent(_ text: String) -> Bool { IntentRouter.isPersonalProfileRecallIntent(text) }
     private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"]) }
-    private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
-    private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAny(text, ["nearby", "near me", "closest", "nearest", "around me", "around here", "in my area"]) }
+    /// Determines whether text contains phrases indicating a save-then-recall memory pattern.
+/// - Parameters:
+///   - text: The text to evaluate.
+/// - Returns: `true` if the text contains both save-related and recall-related phrases, `false` otherwise.
+private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
+    /// Determines whether text represents a nearby or proximity-based map search.
+/// - Returns: `true` if the text contains proximity keywords, `false` otherwise.
+private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAny(text, ["nearby", "near me", "closest", "nearest", "around me", "around here", "in my area"]) }
 
+    /// Produces a normalized web query for dynamic public lookup.
+    ///
+    /// Removes leading "where is/are" phrasing, corrects "Alcoholic Anonymous" capitalization, and appends "near me" to locality-based queries. The result is capped at 300 characters.
+    ///
+    /// - Parameter prompt: The original user prompt.
+    /// - Returns: The cleaned web query.
+    private static func dynamicPublicLookupWebQuery(from prompt: String) -> String {
+        var query = extractWebQuery(from: prompt)
+        query = query.replacingOccurrences(
+            of: #"(?i)^\s*where\s+(?:is|are)\s+"#,
+            with: "",
+            options: .regularExpression
+        )
+        query = query.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+        let lower = normalized(query)
+
+        if lower.contains("alcoholic anonymous") && !lower.contains("alcoholics anonymous") {
+            query = query.replacingOccurrences(of: "alcoholic anonymous", with: "Alcoholics Anonymous", options: [.caseInsensitive])
+        }
+        if containsAny(lower, ["nearest", "closest", "around me", "around here", "in my area"])
+            && !containsAny(lower, ["near me", "nearby"]) {
+            query += " near me"
+        }
+        return String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+    }
+
+    /// Determines whether a prompt contains keywords indicating a request to read or view calendar information.
+    /// - Returns: `true` if the text contains calendar read keywords, `false` otherwise.
     private static func isCalendarReadIntent(_ text: String) -> Bool {
         containsAny(text, ["list", "show", "search", "find", "read", "check", "upcoming", "what's on", "what is on", "calendar", "event", "events", "appointment", "appointments", "meeting", "meetings", "schedule", "today", "tomorrow", "next", "do i have", "any"])
     }
@@ -658,6 +731,12 @@ nonisolated enum DeterministicToolPlanner {
         let lower = text.lowercased()
         for marker in [" saying ", " that says ", " body ", " body:", " message ", " about "] {
             if let range = lower.range(of: marker) { return String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?")) }
+        }
+        if lower.hasPrefix("text ") || lower.hasPrefix("message ") || lower.hasPrefix("sms ") || lower.hasPrefix("imessage ") {
+            if let range = lower.range(of: " that ") {
+                let body = String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?"))
+                if !body.isEmpty { return body }
+            }
         }
         return ""
     }

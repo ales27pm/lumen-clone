@@ -20,14 +20,20 @@ MIN_EVAL_SCENARIOS_PER_TOOL = 5
 FANOUT_INTENTS = {
     "alarm",
     "calendar",
+    "emailDraft",
     "files",
     "maps",
     "memory",
+    "messageDraft",
+    "note",
     "outlook",
+    "phoneCall",
     "photos",
     "rag",
+    "reminder",
     "trigger",
     "weather",
+    "webSearch",
 }
 
 

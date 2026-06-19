@@ -310,6 +310,13 @@ struct LumenTests {
         let action2 = AgentAction(tool: "web.search", args: ["city": .string("Boston"), "q": .string("swift")])
         #expect(action1.dedupeKey == action2.dedupeKey)
         #expect(action1.displayContent == "web.search(city=Boston, q=swift)")
+        #expect(action1.structuredOutputJSON == action2.structuredOutputJSON)
+
+        let parsed = AgentTurnParser.parse(action1.structuredOutputJSON)
+        #expect(parsed.parseError == nil)
+        #expect(parsed.action?.tool == "web.search")
+        #expect(parsed.action?.args["city"]?.stringValue == "Boston")
+        #expect(parsed.action?.args["q"]?.stringValue == "swift")
     }
 
     @Test func placeholderDetectorFlagsSentinelVariantsAndPartialCopies() async throws {
@@ -399,6 +406,41 @@ struct LumenTests {
         #expect(!sanitized.lowercased().contains("step by step"))
         #expect(sanitized.contains("You are Lumen in researcher mode."))
         #expect(sanitized.contains("Be thorough, cite reasoning"))
+    }
+
+    @Test @MainActor func structuredAgentPromptsStripGroundingBlocksBeforeModelInput() async throws {
+        let groundedUser = """
+        Search the web for SwiftData cancellation patterns
+
+        <!-- LUMEN_GROUNDING_V1 -->
+        [AVAILABLE LOCAL TOOLS]
+        - web.search: Search the web.
+        [RUNTIME POLICY]
+        legacy-interactive
+        """
+        let request = AgentRequest(
+            systemPrompt: "Style note.\n<!-- LUMEN_GROUNDING_V1 -->\n" + String(repeating: "internal policy ", count: 300),
+            history: [(.assistant, "Earlier answer <!-- LUMEN_GROUNDING_V1 --> hidden policy")],
+            userMessage: groundedUser,
+            temperature: 0.1,
+            topP: 0.8,
+            repetitionPenalty: 1.1,
+            maxTokens: 256,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+
+        let userTurn = AgentService.shared.structuredAgentUserTurnForTests(req: request)
+        let systemPrompt = AgentService.shared.structuredSystemPromptForTests(req: request)
+
+        #expect(userTurn.contains("Search the web for SwiftData cancellation patterns"))
+        #expect(!userTurn.contains("LUMEN_GROUNDING_V1"))
+        #expect(!userTurn.contains("[AVAILABLE LOCAL TOOLS]"))
+        #expect(!userTurn.contains("legacy-interactive"))
+        #expect(!systemPrompt.contains("LUMEN_GROUNDING_V1"))
+        #expect(systemPrompt.contains("Style note."))
+        #expect(systemPrompt.count < 4_000)
     }
 
     @Test @MainActor func structuredAgentTurnMaxTokensUsesDedicatedCap() async throws {

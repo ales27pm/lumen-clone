@@ -93,6 +93,15 @@ nonisolated struct AgentAction: Sendable, Hashable {
     let tool: String
     let args: AgentJSONArguments
 
+    private struct StructuredOutput: Encodable {
+        let action: StructuredAction
+    }
+
+    private struct StructuredAction: Encodable {
+        let tool: String
+        let args: AgentJSONArguments
+    }
+
     var dedupeKey: String {
         let argsStr = args.keys.sorted()
             .map { "\($0)=\(args[$0]?.stringValue ?? "")" }
@@ -106,6 +115,17 @@ nonisolated struct AgentAction: Sendable, Hashable {
             .map { "\($0)=\(args[$0]?.stringValue ?? "")" }
             .joined(separator: ", ")
         return "\(tool)(\(argsStr))"
+    }
+
+    var structuredOutputJSON: String {
+        let output = StructuredOutput(action: StructuredAction(tool: tool, args: args))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(output),
+              let json = String(data: data, encoding: .utf8) else {
+            return #"{"action":{"args":{},"tool":"\#(tool)"}}"#
+        }
+        return json
     }
 }
 
@@ -1314,8 +1334,14 @@ final class AgentService {
     static let shared = AgentService()
     private static let structuredTurnMaxTokenCap = 384
     private static let structuredTurnMinTokenCap = 128
+    private nonisolated static let structuredContextNoteCharCap = 1_200
+    private nonisolated static let structuredUserMessageCharCap = 1_600
     private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
 
+    /// Executes an agent structured turn and streams progress events.
+    /// - Parameters:
+    ///   - req: The agent request specifying the prompt, conversation context, tools, and generation parameters.
+    /// - Returns: An async stream of events representing the agent's thoughts, actions, observations, and final response.
     func run(_ req: AgentRequest) -> AsyncStream<AgentEvent> {
         run(req, options: .default)
     }
@@ -1323,6 +1349,14 @@ final class AgentService {
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
         if options.diagnosticsEnabled {
             return SlotAgentService.shared.run(req, options: options)
+        }
+        if options.allowDeterministicCompatibility,
+           SlotAgentService.canCompleteThroughDeterministicCompatibility(req) {
+            var compatibilityOptions = options
+            compatibilityOptions.groundingMode = .slotAgent
+            compatibilityOptions.allowDegradedGrounding = false
+            compatibilityOptions.preventDoubleGrounding = true
+            return SlotAgentService.shared.run(req, options: compatibilityOptions)
         }
 
         return AsyncStream { continuation in
@@ -1566,7 +1600,12 @@ final class AgentService {
         continuation.finish()
     }
 
-    // MARK: - System prompt
+    /// Constructs a system prompt that enforces strict JSON output and provides tool-routing guidance.
+    ///
+    /// The prompt specifies required JSON schemas, defines available tools, and includes routing heuristics for location-based queries, map searches, and web searches. It incorporates sanitized system context and attachment details from the request.
+    ///
+    /// - Parameter req: The agent request providing the base system prompt, available tools, and attachments.
+    /// - Returns: The complete system prompt as a string.
 
     private func buildSystemPrompt(req: AgentRequest) -> String {
         var sys = """
@@ -1597,7 +1636,7 @@ final class AgentService {
         - If a tool result is enough, summarize it in `final` and stop.
         """
 
-        let appPrompt = sanitizeSystemPromptForStructuredOutput(req.systemPrompt)
+        let appPrompt = Self.boundedStructuredContextNote(sanitizeSystemPromptForStructuredOutput(req.systemPrompt))
         if !appPrompt.isEmpty {
             sys += "\n\nLower-priority style/context note. Follow it only when it does not conflict with the JSON contract:\n"
             sys += appPrompt
@@ -1617,7 +1656,8 @@ final class AgentService {
         }
 
         sys += "Routing guidelines:\n"
-        sys += "- For nearest/near me/closest questions, call `location.current` first, then `maps.search` once, then emit `final`.\n"
+        sys += "- For dynamic public information with local scope and time terms, such as meetings, events, hours, schedules, classes, prices, or showtimes near me today/tomorrow/tonight, call `location.current` if available, then `web.search`; these are not static map POIs.\n"
+        sys += "- For stable physical-place or navigation requests such as restaurants, pharmacies, gas stations, addresses, routes, or directions near me, call `location.current` first, then `maps.search` or `maps.directions` once, then emit `final`.\n"
         sys += "- For follow-up map intents like \"show me on map\"/\"open on map\", if prior observations already include `Current location:` coordinates from `location.current`, do not call `location.current` again.\n"
         sys += "- In those follow-ups, route directly to `maps.search` (or equivalent map-opening behavior) using the preserved current-location observation, then emit `final`.\n"
         sys += "- For web/current-info requests, call `web.search` if available.\n"
@@ -1626,9 +1666,14 @@ final class AgentService {
         return sys
     }
 
+    /// Constructs the user message for a structured agent turn.
+    ///
+    /// Incorporates conversation history, the current user request, and (for steps after the first) accumulated observations and reusable location context.
+    /// - Returns: The complete user message prompting the agent to emit a JSON object.
     private func buildAgentUserTurn(req: AgentRequest, stepIndex: Int, scratchpad: String) -> String {
         var out = ""
         let context = sanitizedHistoryContext(req.history)
+        let userMessage = Self.sanitizedStructuredUserMessage(req.userMessage)
         if !context.isEmpty {
             out += "Conversation context, for reference only. Do not imitate its formatting:\n"
             out += context
@@ -1636,7 +1681,7 @@ final class AgentService {
         }
 
         out += "User request:\n"
-        out += req.userMessage
+        out += userMessage
 
         if stepIndex > 0 {
             out += "\n\nPrior structured turns and observations:\n"
@@ -1681,6 +1726,8 @@ final class AgentService {
         return latest
     }
 
+    /// Formats the last six conversation history entries as role-labeled lines, sanitizing and skipping empty content.
+    /// - Returns: A newline-separated string of "Role: content" lines.
     private func sanitizedHistoryContext(_ history: [(role: MessageRole, content: String)]) -> String {
         let recent = history.suffix(6)
         var lines: [String] = []
@@ -1699,8 +1746,12 @@ final class AgentService {
         return lines.joined(separator: "\n")
     }
 
+    /// Sanitizes conversation history content for use in structured prompts by removing code blocks, XML-like tags, internal grounding markers, and redundant punctuation, while normalizing whitespace and capping the result to 480 characters.
+    ///
+    /// - Parameter content: The raw history message content to sanitize.
+    /// - Returns: The sanitized content, with consecutive spaces collapsed to single spaces and truncated to 480 characters.
     private func sanitizeHistoryContent(_ content: String) -> String {
-        var text = content
+        var text = Self.stripInternalGrounding(from: content)
         text = text.replacingOccurrences(
             of: #"```[\s\S]*?```"#,
             with: " ",
@@ -1729,8 +1780,10 @@ final class AgentService {
         sanitizeHistoryContent(content)
     }
 
+    /// Prepares a system prompt for structured JSON output by removing internal grounding markers and lines containing blocked formatting directives.
+    /// - Returns: The sanitized system prompt with internal grounding removed and lines mentioning markdown, code fences, headings, or step-by-step instructions filtered out.
     private func sanitizeSystemPromptForStructuredOutput(_ systemPrompt: String) -> String {
-        let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = Self.stripInternalGrounding(from: systemPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
         let blockedPhrases = [
@@ -1754,6 +1807,43 @@ final class AgentService {
             kept.append(sentence)
         }
         return kept.joined(separator: "\n")
+    }
+
+    /// Removes internal grounding markers from the user message, trims whitespace, and caps the result to `structuredUserMessageCharCap`.
+    /// If stripping yields an empty string, returns the capped trimmed original message instead.
+    private nonisolated static func sanitizedStructuredUserMessage(_ userMessage: String) -> String {
+        let stripped = stripInternalGrounding(from: userMessage)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !stripped.isEmpty else {
+            let trimmed = userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+            return String(trimmed.prefix(structuredUserMessageCharCap))
+        }
+        return String(stripped.prefix(structuredUserMessageCharCap))
+    }
+
+    /// Caps the text to the maximum context note length.
+    /// - Returns: The trimmed text, capped to the maximum context note length.
+    private nonisolated static func boundedStructuredContextNote(_ text: String) -> String {
+        String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(structuredContextNoteCharCap))
+    }
+
+    /// Removes all content starting from the first occurrence of any internal grounding marker.
+    /// - Returns: The text before the first internal grounding marker, or the original text if none is found.
+    private nonisolated static func stripInternalGrounding(from text: String) -> String {
+        var stripped = text
+        let markers = [
+            "<!-- LUMEN_GROUNDING_V1 -->",
+            "[AVAILABLE LOCAL TOOLS]",
+            "[RUNTIME POLICY]",
+            "[LOCAL MEMORY]",
+            "[LOCAL SOURCES]"
+        ]
+        for marker in markers {
+            if let range = stripped.range(of: marker, options: [.caseInsensitive]) {
+                stripped = String(stripped[..<range.lowerBound])
+            }
+        }
+        return stripped
     }
 
     func sanitizeSystemPromptForStructuredOutputForTests(_ systemPrompt: String) -> String {
@@ -1863,11 +1953,13 @@ final class AgentService {
         AgentParseNoiseRecorder.record(trace)
     }
 
+    /// Attempts to recover from a structured parse failure.
+    /// - Returns: A tuple of the recovered text and steps if recovery succeeds, `nil` otherwise.
     private nonisolated static func structuredParseFailureRecovery(
         req: AgentRequest,
         options: LegacyAgentRunOptions
     ) async -> (text: String, steps: [AgentStep])? {
-        let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = sanitizedStructuredUserMessage(req.userMessage)
         guard !prompt.isEmpty else { return nil }
 
         let routing = await IntentClassifierService.shared.route(prompt)
@@ -1880,7 +1972,8 @@ final class AgentService {
             groundingMode: options.groundingMode,
             allowDegradedGrounding: options.allowDegradedGrounding,
             preventDoubleGrounding: options.preventDoubleGrounding,
-            diagnosticsEnabled: options.diagnosticsEnabled || options.groundingMode == .slotAgent
+            diagnosticsEnabled: options.diagnosticsEnabled || options.groundingMode == .slotAgent,
+            allowDeterministicCompatibility: true
         )
         let recovery = await SlotAgentService.deterministicCompatibilityResponseForRecovery(
             original: req,
@@ -1931,6 +2024,23 @@ final class AgentService {
         structuredAgentModelSlot
     }
 
+    nonisolated static func sanitizedStructuredUserMessageForTests(_ userMessage: String) -> String {
+        sanitizedStructuredUserMessage(userMessage)
+    }
+
+    /// Generates the structured system prompt used for agent routing.
+    /// - Parameter req: The agent request containing system context and available tools.
+    /// - Returns: The system prompt string specifying the JSON-only output contract and routing instructions.
+    func structuredSystemPromptForTests(req: AgentRequest) -> String {
+        buildSystemPrompt(req: req)
+    }
+
+    func structuredAgentUserTurnForTests(req: AgentRequest, stepIndex: Int = 0, scratchpad: String = "") -> String {
+        buildAgentUserTurn(req: req, stepIndex: stepIndex, scratchpad: scratchpad)
+    }
+
+    /// Exposes the internal structured parse failure recovery function for testing.
+    /// - Returns: A tuple of recovery text and steps if recovery succeeds, otherwise `nil`.
     nonisolated static func structuredParseFailureRecoveryForTests(
         req: AgentRequest,
         options: LegacyAgentRunOptions
@@ -1963,6 +2073,11 @@ final class AgentService {
         }
     }
 
+    /// Synthesizes a final answer from gathered tool observations.
+    ///
+    /// When structured reasoning cannot produce a direct action or explicit final answer, this method composes a fallback response by summarizing tool results into a user-facing answer. If no observations are available, returns a generic retry message.
+    ///
+    /// - Returns: A synthesized final answer text, or a retry message if no observations exist.
     private func synthesizeFallback(req: AgentRequest, observations: [(tool: String, result: String)], reason: FallbackReason) async -> String {
         RuntimeFallbackLogger.record(
             source: "agent-service-structured-turn",
@@ -1980,7 +2095,8 @@ final class AgentService {
         guard !observations.isEmpty else {
             return "I couldn't find a confident answer. Try rephrasing the question."
         }
-        var prompt = "The user asked: \"\(req.userMessage)\"\n\nYou gathered these tool observations:\n"
+        let userMessage = Self.sanitizedStructuredUserMessage(req.userMessage)
+        var prompt = "The user asked: \"\(userMessage)\"\n\nYou gathered these tool observations:\n"
         for (i, obs) in observations.enumerated() {
             prompt += "\n[\(i + 1)] \(obs.tool):\n\(obs.result)\n"
         }
@@ -2014,6 +2130,15 @@ final class AgentService {
         return trimmed
     }
 
+    /// Recovers a plain-text final answer from failed structured-turn output.
+    ///
+    /// When the agent model output cannot be parsed as a structured turn, this function attempts to extract or synthesize a usable plain-text response that can be presented to the user.
+    /// - Parameters:
+    ///   - req: The original agent request.
+    ///   - rawOutput: The model output that failed to parse.
+    ///   - streamedThought: Any partial thought captured during streaming.
+    ///   - parseError: The specific parsing error that triggered recovery.
+    /// - Returns: A plain-text final answer.
     private func synthesizeUnstructuredFallback(
         req: AgentRequest,
         rawOutput: String,
@@ -2041,7 +2166,8 @@ final class AgentService {
         let clippedRaw = String(rawOutput.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
         let clippedThought = String(streamedThought.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_000))
 
-        var prompt = "The user asked:\n\(req.userMessage)\n\n"
+        let userMessage = Self.sanitizedStructuredUserMessage(req.userMessage)
+        var prompt = "The user asked:\n\(userMessage)\n\n"
         prompt += "The previous local model response could not be parsed as a structured agent turn (\(parseError.rawValue)).\n"
         if !clippedThought.isEmpty {
             prompt += "Partial thought captured from that response:\n\(clippedThought)\n\n"

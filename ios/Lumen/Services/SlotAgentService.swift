@@ -42,6 +42,18 @@ final class SlotAgentService {
     static let shared = SlotAgentService()
 
     nonisolated static let mouthPromptHygieneRule = "Output only the final user-visible answer. Never output hidden reasoning, <think> blocks, JSON, debug text, tool payloads, or internal analysis. If prior context contains hidden reasoning, ignore it and do not imitate it."
+    private nonisolated static let outlookMessageReferenceToolIDs: Set<String> = [
+        "outlook.message.read",
+        "outlook.attachments.list",
+        "outlook.message.mark_read",
+        "outlook.message.mark_unread",
+        "outlook.message.move",
+        "outlook.message.archive",
+        "outlook.message.delete",
+        "outlook.message.reply",
+        "outlook.message.reply_all",
+        "outlook.message.forward"
+    ]
 
     private init() {}
 
@@ -116,6 +128,24 @@ final class SlotAgentService {
                         return
                     case .allow:
                         break
+                    }
+
+                    if options.allowDeterministicCompatibility,
+                       Self.canCompleteThroughDeterministicCompatibility(req) {
+                        Self.emitChatTrace(req: req, phase: "path", values: ["path": "deterministic-compatibility"])
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "deterministic-compatibility"]))
+                        let response = await Self.deterministicCompatibilityResponse(original: req, effective: req, options: options)
+                        Self.emitDeterministicAnswerBuilt(path: "deterministic-compatibility")
+                        for step in response.steps {
+                            continuation.yield(.step(step))
+                        }
+                        continuation.yield(.finalDelta(response.text))
+                        continuation.yield(.done(finalText: response.text, steps: response.steps))
+                        Self.emitDoneYielded(path: "deterministic-compatibility")
+                        Self.emitSlotAgentEnd(path: "deterministic-compatibility")
+                        continuation.finish()
+                        Self.emitContinuationFinished(path: "deterministic-compatibility")
+                        return
                     }
 
                     if Self.shouldUseFastAgentPath(req) {
@@ -492,6 +522,7 @@ final class SlotAgentService {
         ]
     }
 
+    /// Records the agent's behavior trace during deterministic compatibility execution.
     private nonisolated static func recordCompatibilityBehaviorTrace(
         req: AgentRequest,
         routing: IntentRoutingDecision,
@@ -521,7 +552,7 @@ final class SlotAgentService {
                 allowedToolIDs: allowedToolIDs.sorted(),
                 requiresApproval: requiresApproval,
                 approvalMode: approvalMode,
-                parseError: nil,
+                parseError: structuredTraceParseError(event: event, rawOutput: rawOutput),
                 emittedFinalInActionTurn: emittedFinalInActionTurn,
                 modelFamily: LumenModelFamily.persistedSelected.rawValue,
                 runtimePath: "deterministic-compatibility",
@@ -531,6 +562,20 @@ final class SlotAgentService {
         )
     }
 
+    /// Extracts the parser error string from tool-action structured output for tracing.
+    /// - Parameters:
+    ///   - event: The agent behavior trace event type.
+    ///   - rawOutput: The structured output JSON to parse for errors.
+    /// - Returns: The parser error string if the event is a tool action and a parse error exists, `nil` otherwise.
+    private nonisolated static func structuredTraceParseError(event: AgentBehaviorTrace.Event, rawOutput: String) -> String? {
+        guard event == .toolAction else { return nil }
+        return AgentTurnParser.parse(rawOutput).parseError?.rawValue
+    }
+
+    /// Computes the SHA256 hash of a string.
+    /// - Parameters:
+    ///   - text: The string to hash.
+    /// - Returns: The SHA256 hash as a hexadecimal string.
     private nonisolated static func sha256(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -545,7 +590,8 @@ final class SlotAgentService {
         // the heavy-model budget gate turn live E2E/tool-backed turns into empty fallback
         // finals. Those empty finals are exactly what the grounding audit reports as
         // `missing_required_tool_action`.
-        if options.diagnosticsEnabled || canCompleteThroughDeterministicCompatibility(req) {
+        if options.diagnosticsEnabled
+            || (options.allowDeterministicCompatibility && canCompleteThroughDeterministicCompatibility(req)) {
             return .allow
         }
 
@@ -555,7 +601,7 @@ final class SlotAgentService {
         return .allow
     }
 
-    nonisolated private static func canCompleteThroughDeterministicCompatibility(_ req: AgentRequest) -> Bool {
+    nonisolated static func canCompleteThroughDeterministicCompatibility(_ req: AgentRequest) -> Bool {
         let prompt = req.userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return false }
         let routing = DeterministicIntentFallback.classify(prompt).asRoutingDecision()
@@ -612,6 +658,8 @@ final class SlotAgentService {
         let steps: [AgentStep]
     }
 
+    /// Generates a deterministic response to a user request through intent routing, tool planning, and execution.
+    /// - Returns: A response containing the final text and execution steps.
     private nonisolated static func deterministicCompatibilityResponse(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> DeterministicCompatibilityResponse {
         let routing = await IntentClassifierService.shared.route(original.userMessage)
         let scopedTools = routeScopedToolDefinitions(effective.availableTools, routing: routing)
@@ -699,8 +747,8 @@ final class SlotAgentService {
 
         for (index, plannedAction) in plannedActions.enumerated() {
             var action = plannedAction
-            if ToolRouteGuard.canonicalToolID(action.tool) == "outlook.message.read" {
-                action = resolvedOutlookMessageReadAction(action, latestMessageID: latestOutlookMessageID)
+            if Self.outlookMessageReferenceToolIDs.contains(ToolRouteGuard.canonicalToolID(action.tool)) {
+                action = resolvedOutlookMessageReferenceAction(action, latestMessageID: latestOutlookMessageID)
             }
             let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
             Self.emitChatTrace(req: original, phase: "action_selected", values: [
@@ -710,11 +758,14 @@ final class SlotAgentService {
                 "requiresApproval": String(ToolRouteGuard.requiresUserApproval(canonicalActionTool))
             ])
             if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
+                let structuredActionOutput = action.structuredOutputJSON
                 let approval = approvalBoundaryFinal(for: canonicalActionTool, action: action, routing: routing, prompt: original.userMessage)
                 let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
                 let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
                 Self.emitChatTrace(req: original, phase: "approval_boundary", values: [
                     "toolID": canonicalActionTool,
+                    "structuredOutputChars": String(structuredActionOutput.count),
+                    "structuredOutputSHA256": Self.sha256(structuredActionOutput),
                     "finalChars": String(text.count),
                     "finalSHA256": Self.sha256(text)
                 ])
@@ -724,7 +775,7 @@ final class SlotAgentService {
                     event: .toolAction,
                     slot: "executor",
                     stage: "compatibility-approval-boundary",
-                    rawOutput: approval,
+                    rawOutput: structuredActionOutput,
                     selectedToolID: canonicalActionTool,
                     toolArguments: action.args.stringCoerced,
                     allowedToolIDs: availableToolIDs,
@@ -735,6 +786,7 @@ final class SlotAgentService {
                 return .init(text: text, steps: steps + [step])
             }
 
+            let structuredActionOutput = action.structuredOutputJSON
             let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
             steps.append(actionStep)
             Self.recordCompatibilityBehaviorTrace(
@@ -743,7 +795,7 @@ final class SlotAgentService {
                 event: .toolAction,
                 slot: "executor",
                 stage: "compatibility-tool-action",
-                rawOutput: action.displayContent,
+                rawOutput: structuredActionOutput,
                 selectedToolID: canonicalActionTool,
                 toolArguments: action.args.stringCoerced,
                 allowedToolIDs: availableToolIDs,
@@ -857,7 +909,7 @@ final class SlotAgentService {
         return .init(text: text, steps: steps)
     }
 
-    private nonisolated static func resolvedOutlookMessageReadAction(_ action: AgentAction, latestMessageID: String?) -> AgentAction {
+    private nonisolated static func resolvedOutlookMessageReferenceAction(_ action: AgentAction, latestMessageID: String?) -> AgentAction {
         var args = action.args
         let current = args["messageId"]?.stringValue
             ?? args["id"]?.stringValue
@@ -1094,6 +1146,12 @@ final class SlotAgentService {
         case .alarm:
             return "Approval required for \(toolID). I did not change alarms yet."
         case .outlook:
+            if toolID == "outlook.draft.create" {
+                return "Approval required for outlook.draft.create. I can prepare the Outlook draft after you approve it."
+            }
+            if toolID == "outlook.mail.send" {
+                return "Approval required for outlook.mail.send. I did not send Outlook mail yet."
+            }
             return "Approval required for \(toolID). I did not modify Outlook mail yet."
         default:
             return "Approval required for \(action.displayContent). I did not run it yet."

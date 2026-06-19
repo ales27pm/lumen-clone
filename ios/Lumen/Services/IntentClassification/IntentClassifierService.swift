@@ -4,10 +4,27 @@ final class IntentClassifierService: Sendable {
     static let shared = IntentClassifierService()
     private init() {}
 
+    /// Determines the routing decision for the given text.
+    /// 
+    /// If the classified intent is a web search and is appropriate for dynamic public lookup, the location access tool is automatically enabled.
+    ///
+    /// - Returns: The routing decision with the classified intent and allowed tools.
     func route(_ text: String) async -> IntentRoutingDecision {
-        await classify(text).asRoutingDecision()
+        let result = await classify(text)
+        let routing = result.asRoutingDecision()
+        if result.intent == .webSearch, ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(
+                intent: routing.intent,
+                allowedToolIDs: routing.allowedToolIDs.union(["location.current"]),
+                requiresClarification: routing.requiresClarification,
+                clarificationPrompt: routing.clarificationPrompt
+            )
+        }
+        return routing
     }
 
+    /// Classifies the intent of the provided text.
+    /// - Returns: An IntentClassificationResult with the determined intent and classification details.
     func classify(_ text: String) async -> IntentClassificationResult {
         if let ambiguity = DeterministicIntentFallback.ambiguityClarification(text) {
             return IntentClarificationPolicy.apply(ambiguity, to: text)

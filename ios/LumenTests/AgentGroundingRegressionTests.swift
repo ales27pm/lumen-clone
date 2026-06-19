@@ -22,14 +22,14 @@ struct AgentGroundingRegressionTests {
     }
 
     @MainActor
-    @Test func liveRuntimeSchemaTreatsOutlookAliasesAsRequiredAlternatives() async throws {
+    @Test func liveRuntimeSchemaTreatsOutlookOptionalAliasesAsOptional() async throws {
         let tools = LiveRuntimeToolRegistryProvider().currentToolDefinitions()
         let read = try #require(tools.first(where: { $0.id == "outlook.message.read" }))
         let argsByName = Dictionary(uniqueKeysWithValues: read.arguments.map { ($0.name, $0) })
 
         #expect(argsByName["messageId"]?.required == true)
-        #expect(argsByName["id"]?.required == true)
-        #expect(Set(read.arguments.filter(\.required).map(\.name)) == Set(["messageId", "id"]))
+        #expect(argsByName["id"]?.required == false)
+        #expect(Set(read.arguments.filter(\.required).map(\.name)) == Set(["messageId"]))
     }
 
     @MainActor
@@ -38,25 +38,35 @@ struct AgentGroundingRegressionTests {
 
         let messagesDraft = try #require(tools.first(where: { $0.id == "messages.draft" }))
         let messageArgs = Dictionary(uniqueKeysWithValues: messagesDraft.arguments.map { ($0.name, $0) })
-        #expect(messageArgs["recipient"]?.required == true)
-        #expect(messageArgs["number"]?.required == true)
-        #expect(messageArgs["message"]?.required == true)
-        #expect(messageArgs["text"]?.required == true)
+        #expect(messageArgs["to"]?.required == true)
+        #expect(messageArgs["body"]?.required == true)
+        #expect(messageArgs["recipient"]?.required == false)
+        #expect(messageArgs["number"]?.required == false)
+        #expect(messageArgs["message"]?.required == false)
+        #expect(messageArgs["text"]?.required == false)
 
         let mailDraft = try #require(tools.first(where: { $0.id == "mail.draft" }))
         let mailArgs = Dictionary(uniqueKeysWithValues: mailDraft.arguments.map { ($0.name, $0) })
-        #expect(mailArgs["recipient"]?.required == true)
-        #expect(mailArgs["email"]?.required == true)
-        #expect(mailArgs["message"]?.required == true)
-        #expect(mailArgs["text"]?.required == true)
+        #expect(mailArgs["to"]?.required == true)
+        #expect(mailArgs["subject"]?.required == true)
+        #expect(mailArgs["body"]?.required == true)
+        #expect(mailArgs["recipient"]?.required == false)
+        #expect(mailArgs["email"]?.required == false)
+        #expect(mailArgs["message"]?.required == false)
+        #expect(mailArgs["text"]?.required == false)
+
+        let outlookFolders = try #require(tools.first(where: { $0.id == "outlook.folders.list" }))
+        let folderArgs = Dictionary(uniqueKeysWithValues: outlookFolders.arguments.map { ($0.name, $0) })
+        #expect(folderArgs["includeHidden"]?.required == false)
+        #expect(folderArgs["false"] == nil)
 
         let triggerCreate = try #require(tools.first(where: { $0.id == "trigger.create" }))
         let triggerArgs = Dictionary(uniqueKeysWithValues: triggerCreate.arguments.map { ($0.name, $0) })
         #expect(triggerArgs["plus"] == nil)
-        #expect(triggerArgs["inMinutes"]?.required == true)
-        #expect(triggerArgs["atTime"]?.required == true)
-        #expect(triggerArgs["intervalSeconds"]?.required == true)
-        #expect(triggerArgs["beforeMinutes"]?.required == true)
+        #expect(triggerArgs["inMinutes"]?.required == false)
+        #expect(triggerArgs["atTime"]?.required == false)
+        #expect(triggerArgs["intervalSeconds"]?.required == false)
+        #expect(triggerArgs["beforeMinutes"]?.required == false)
     }
 
     @MainActor
@@ -99,6 +109,46 @@ struct AgentGroundingRegressionTests {
         #expect(audit.violations.contains(where: { $0.code == "hidden_reasoning_leak" }))
         #expect(!audit.violations.contains(where: { $0.code == "hiddenReasoningLeak" }))
         #expect(!audit.violations.contains(where: { $0.code == "final_sanitizer_recovered_unsafe_output" }))
+    }
+
+    @MainActor
+    @Test func behaviorAuditorTeachesPlanGatherExecuteEvaluateForDynamicLookupFailures() async throws {
+        let tools = [
+            RuntimeToolDefinition(id: "location.current"),
+            RuntimeToolDefinition(id: "web.search"),
+            RuntimeToolDefinition(id: "web.fetch"),
+            RuntimeToolDefinition(id: "maps.search")
+        ]
+        let manifest = makeManifest(
+            tools: tools,
+            intent: "webSearch",
+            allowed: ["web.search", "web.fetch", "location.current"],
+            extraIntents: [
+                ManifestRoutingEntry(intent: "maps", allowedTools: ["location.current", "maps.search"], forbiddenTools: ["web.search"])
+            ]
+        )
+        let now = Date()
+        let messages: [ChatMessage] = [
+            ChatMessage(role: .user, content: "Where is the nearest free tax clinic tomorrow?"),
+            ChatMessage(
+                role: .assistant,
+                content: "No nearby places found.",
+                agentSteps: [
+                    AgentStep(kind: .action, content: "maps.search(query=free tax clinic tomorrow)", toolID: "maps.search")
+                ]
+            )
+        ].enumerated().map { idx, msg in
+            msg.createdAt = now.addingTimeInterval(TimeInterval(idx))
+            return msg
+        }
+
+        let audit = AgentModelBehaviorAuditor().audit(manifest: manifest, messages: messages)
+        let sample = try #require(audit.repairSamples.first(where: { $0.violationCode == "tool_not_allowed_by_runtime_router" }))
+        #expect(sample.correctedOutput.contains("dynamic local public lookup"))
+        #expect(sample.correctedOutput.contains("current location"))
+        #expect(sample.correctedOutput.contains("web.search"))
+        #expect(sample.correctedOutput.contains("evaluate"))
+        #expect(sample.curriculum == "plan_gather_execute_evaluate")
     }
 
     @Test func requiredToolFallbackRoutesCameraMapsAndOutlookPrompts() {
@@ -152,7 +202,7 @@ struct AgentGroundingRegressionTests {
         #expect(outlookAction?.tool == "outlook.message.read" || outlookAction?.tool == "outlook.messages.list")
     }
 
-    @Test func deterministicImmediateFinalizerSupportsWeatherWebAndOutlook() {
+    @Test func deterministicImmediateFinalizerSupportsWeatherWebMapsRAGAndOutlook() {
         let weather = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .weather,
             toolID: "weather",
@@ -170,6 +220,32 @@ struct AgentGroundingRegressionTests {
         )
         #expect(web?.contains("<lumen_web_payload>") == true)
 
+        let maps = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .maps,
+            toolID: "maps.search",
+            observation: "Tim Hortons — Avenue de la Plaza",
+            originalPrompt: "Find coffee near me."
+        )
+        #expect(maps?.lowercased().contains("maps search results") == true)
+        #expect(maps?.lowercased().contains("tim hortons") == true)
+
+        let ragMiss = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.search",
+            observation: "No matching files found for 'latest Lumen diagnostics report'.",
+            originalPrompt: "Search my local files for the latest Lumen diagnostics report."
+        )
+        #expect(ragMiss?.lowercased().contains("source") == true)
+        #expect(ragMiss?.lowercased().contains("snippet") == true)
+
+        let photoIndex = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_photos",
+            observation: "Indexed 7 monthly photo summaries.",
+            originalPrompt: "Refresh the photo retrieval index."
+        )
+        #expect(photoIndex?.lowercased().contains("photo index updated") == true)
+
         let outlook = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .outlook,
             toolID: "outlook.message.read",
@@ -177,6 +253,47 @@ struct AgentGroundingRegressionTests {
             originalPrompt: "Read last outlook email"
         )
         #expect(outlook?.lowercased().contains("outlook message") == true)
+
+        let outlookAttachments = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.attachments.list",
+            observation: "No attachments on the latest message.",
+            originalPrompt: "Show attachments on the latest Outlook email."
+        )
+        #expect(outlookAttachments?.lowercased().contains("outlook attachments") == true)
+
+        let outlookFolders = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.folders.list",
+            observation: "Inbox\nArchive",
+            originalPrompt: "Show Outlook mail folders."
+        )
+        #expect(outlookFolders?.lowercased().contains("outlook folders") == true)
+
+        let calendar = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .calendar,
+            toolID: "calendar.list",
+            observation: "• Journée nationale des Autochtones — Jun 21, 2026 at 12:00 AM",
+            originalPrompt: "What's on my schedule today?"
+        )
+        #expect(calendar?.lowercased().contains("calendar events") == true)
+
+        let motion = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .motion,
+            toolID: "motion.activity",
+            observation: "Today's motion — stationary 15 min",
+            originalPrompt: "Am I walking or stationary right now?"
+        )
+        #expect(motion?.lowercased().contains("motion activity") == true)
+
+        let reminders = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .reminder,
+            toolID: "reminders.list",
+            observation: "• Buy foil\n• Clean the car",
+            originalPrompt: "List pending reminders."
+        )
+        #expect(reminders?.lowercased().contains("reminders") == true)
+        #expect(reminders?.lowercased().contains("buy foil") == true)
     }
 
     @Test func agentGroundingPackageDoesNotExportStaticScenarioResultsByDefault() throws {
@@ -286,6 +403,140 @@ struct AgentGroundingRegressionTests {
         #expect(package.behaviorAudit?.passed == false)
         #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "model_turn_too_slow" }) == true)
         #expect(package.traceParseErrorCount == 0)
+    }
+
+    @Test func agentGroundingPackageReparsesToolActionTracesInsteadOfTrustingParseErrorField() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .toolAction,
+            slot: "executor",
+            stage: "compatibility-tool-action",
+            intent: "weather",
+            promptPrefix: "What is the weather here?",
+            rawOutputPrefix: "weather()",
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 1)
+        #expect(package.behaviorAudit?.passed == false)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) == true)
+    }
+
+    @Test func agentGroundingPackageAcceptsCanonicalToolActionJSONTrace() throws {
+        AgentBehaviorTraceRecorder.clear()
+        let action = AgentAction(tool: "weather", args: [:])
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .toolAction,
+            slot: "executor",
+            stage: "compatibility-tool-action",
+            intent: "weather",
+            promptPrefix: "What is the weather here?",
+            rawOutputPrefix: action.structuredOutputJSON,
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 0)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) != true)
+    }
+
+    @Test func agentGroundingPackageDoesNotTreatCortexDiagnosticChatAsToolActionParseError() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "cortex",
+            stage: "chat",
+            intent: "chat",
+            promptPrefix: "Yo",
+            rawOutputPrefix: #"{"intent":"diagnostic","nextModel":"diagnostic"}"#,
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: "missingActionOrFinal",
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 0)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) != true)
+    }
+
+    @Test func agentGroundingPackageStillCountsMalformedAgentJSONModelTurns() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json",
+            intent: "weather",
+            promptPrefix: "User request:\nWhat is the weather here?",
+            rawOutputPrefix: "Generation error: Failed to initialize context: Prompt exceeds shared chat context window",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: "generation_error",
+            emittedFinalInActionTurn: false
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.traceParseErrorCount == 1)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) == true)
     }
 
     @Test func agentGroundingPackageFlagsSevereRuntimeModelTurns() throws {
@@ -416,6 +667,79 @@ extension AgentGroundingRegressionTests {
         #expect(AgentService.structuredAgentModelSlotForTests == .executor)
     }
 
+    @Test func deterministicCompatibilityEligibilityCoversToolAndDirectChatPrompts() {
+        let webRequest = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for SwiftData cancellation patterns",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { $0.id == "web.search" },
+            relevantMemories: []
+        )
+        let chatRequest = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain actor isolation in Swift in simple terms.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+        let attachmentRequest = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain this document.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: [],
+            attachments: [ChatAttachment(name: "notes.txt", kind: .text, path: "/tmp/notes.txt", byteSize: 5)]
+        )
+
+        #expect(SlotAgentService.canCompleteThroughDeterministicCompatibility(webRequest))
+        #expect(SlotAgentService.canCompleteThroughDeterministicCompatibility(chatRequest))
+        #expect(!SlotAgentService.canCompleteThroughDeterministicCompatibility(attachmentRequest))
+    }
+
+    @MainActor
+    @Test func agentServiceRoutesDeterministicCompatibleRequestsBeforeStructuredModel() async {
+        AgentBehaviorTraceRecorder.clear()
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain actor isolation in Swift in simple terms.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: []
+        )
+
+        var finalText = ""
+        for await event in AgentService.shared.run(req, options: .default) {
+            if case .done(let text, _) = event {
+                finalText = text
+            }
+        }
+
+        let traces = AgentBehaviorTraceRecorder.recent(limit: 20)
+        #expect(finalText.lowercased().contains("actor isolation"))
+        #expect(traces.contains { $0.runtimePath == "deterministic-compatibility" && $0.stage == "compatibility-direct-final" })
+        #expect(!traces.contains { $0.stage == "agent-json" || $0.event == .modelTurn })
+    }
+
     @Test func secureToolAliasesBridgeToCanonicalLegacyDefinitions() {
         let secure = [
             SecureToolDefinition(id: "rag.search.secure", displayName: "Secure RAG", description: "Secure RAG", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "{}", resultPrivacyLevel: .moderate, maxOutputCharacters: 100),
@@ -524,6 +848,10 @@ extension AgentGroundingRegressionTests {
         let hasCalendarListActionTrace = traces.contains { trace in
             trace.event == AgentBehaviorTrace.Event.toolAction && trace.selectedToolID == "calendar.list"
         }
+        let actionTrace = traces.first { trace in
+            trace.event == AgentBehaviorTrace.Event.toolAction && trace.selectedToolID == "calendar.list"
+        }
+        let parsedActionTrace = AgentTurnParser.parse(actionTrace?.rawOutputPrefix ?? "")
         let hasCompatibilityFinalTrace = traces.contains { trace in
             trace.event == AgentBehaviorTrace.Event.finalAnswer && trace.runtimePath == "deterministic-compatibility"
         }
@@ -531,6 +859,10 @@ extension AgentGroundingRegressionTests {
         #expect(actionToolIDs == ["calendar.list"])
         #expect(response.text.lowercased().contains("event"))
         #expect(hasCalendarListActionTrace)
+        #expect(actionTrace?.rawOutputPrefix.hasPrefix(#"{"action":{"#) == true)
+        #expect(actionTrace?.parseError == nil)
+        #expect(parsedActionTrace.parseError == nil)
+        #expect(parsedActionTrace.action?.tool == "calendar.list")
         #expect(hasCompatibilityFinalTrace)
     }
 
@@ -641,6 +973,43 @@ extension AgentGroundingRegressionTests {
 
         #expect(actionToolIDs.contains("web.search"))
         #expect(recovery?.text.lowercased().contains("please ask again") == false)
+    }
+
+    @Test func agentServiceParseFailureRecoveryPlansReportAlternatePhrases() async {
+        let cases: [(String, [String])] = [
+            ("Tell me what style I asked you to use.", ["memory.recall"]),
+            ("Keep in mind that I like short answers.", ["memory.save"]),
+            ("Find Lumen architecture notes in my local files.", ["rag.search"]),
+            ("Reindex my imported files.", ["rag.index_files"]),
+            ("Reindex photo metadata for the last 3 months.", ["rag.index_photos"])
+        ]
+
+        for (prompt, expectedTools) in cases {
+            let routing = IntentRouter.classify(prompt)
+            let tools = ToolRegistry.all.filter { IntentRouter.isToolAllowed($0.id, for: routing) }
+            let req = AgentRequest(
+                systemPrompt: "sys",
+                history: [],
+                userMessage: prompt,
+                temperature: 0,
+                topP: 1,
+                repetitionPenalty: 1,
+                maxTokens: 128,
+                maxSteps: 2,
+                availableTools: tools,
+                relevantMemories: []
+            )
+            let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: false)
+
+            let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+            let actionToolIDs = recovery?.steps
+                .filter { $0.kind == .action }
+                .compactMap(\.toolID)
+                .map(ToolRouteGuard.canonicalToolID) ?? []
+
+            #expect(actionToolIDs == expectedTools)
+            #expect(recovery?.text.lowercased().contains("unavailable") == false)
+        }
     }
 
     @Test func agentServiceParseFailureRecoveryAnswersChatDirectly() async {

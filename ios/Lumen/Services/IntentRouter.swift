@@ -75,6 +75,8 @@ nonisolated enum IntentRouter {
         }
     }
 
+    /// Classifies a user message and routes it to the appropriate intent with tool constraints.
+    /// - Returns: An `IntentRoutingDecision` containing the detected intent, permitted tool IDs, and clarification information.
     static func classify(_ userMessage: String) -> IntentRoutingDecision {
         let text = normalized(userMessage)
         guard !text.isEmpty else {
@@ -120,6 +122,10 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
+        if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs.union(["location.current"]), requiresClarification: false, clarificationPrompt: nil)
+        }
+
         if matchesAny(text, ["draft an email", "draft a email", "write an email", "compose email", "email to", "mail to", "send email"]) {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
@@ -136,7 +142,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .emailDraft, allowedToolIDs: emailToolIDs, requiresClarification: clarification != nil, clarificationPrompt: clarification)
         }
 
-        if matchesAny(text, ["draft message", "write a message", "compose message", "text message", "sms", "imessage", "message to", "send a text"]) {
+        if matchesAny(text, ["draft message", "draft a message", "write a message", "compose message", "text message", "sms", "imessage", "message to", "send a text"]) {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
             let clarification: String?
@@ -156,17 +162,21 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .phoneCall, allowedToolIDs: phoneToolIDs, requiresClarification: !hasTarget, clarificationPrompt: hasTarget ? nil : "Who should I call?")
         }
 
+        if isCalendarIntent(text) {
+            return IntentRoutingDecision(intent: .calendar, allowedToolIDs: calendarToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
         if isMapFollowUpPrompt(text) {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs.union(["location.current"]), requiresClarification: false, clarificationPrompt: nil)
         }
 
         if isNearbyLocalDiscoveryIntent(text)
             || matchesAny(text, ["directions", "navigate", "route to", "maps", "near me", "nearby", "closest", "nearest", "search nearby", "find a place", "find places"]) {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
-        }
-
-        if matchesAny(text, ["schedule", "calendar", "create event", "meeting", "appointment", "at 5", "tomorrow at", "list events", "upcoming events"]) {
-            return IntentRoutingDecision(intent: .calendar, allowedToolIDs: calendarToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if matchesAny(text, ["search photos", "find photos", "photo library", "pictures from", "photos from", "images in my library"]) {
@@ -185,16 +195,16 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .motion, allowedToolIDs: motionToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["read file", "open file", "read document", "imported file", "local document"]) {
-            return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
-        }
-
         if isPersonalProfileRecallIntent(text) || isPersonalProfileSaveIntent(text) || matchesAny(text, ["remember that", "remember this", "save memory", "recall memory", "what do you remember", "memory about", "save this fact", "keep this in mind"]) {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if matchesAny(text, ["search personal data", "search my files", "search local files", "search my documents", "search my notes", "reindex files", "index files", "reindex photos", "index photos", "rag search", "architecture notes"]) || isLikelyLocalKnowledgeQuery(text) {
             return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if matchesAny(text, ["read file", "open file", "read document", "imported file", "local document"]) {
+            return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if matchesAny(text, ["note", "save this"]) {
@@ -314,6 +324,10 @@ nonisolated enum IntentRouter {
         }
     }
 
+    /// Provides early routing decisions for high-priority intent patterns.
+    /// - Parameters:
+    ///   - text: The normalized user message.
+    /// - Returns: An `IntentRoutingDecision` if the text matches a high-priority pattern, `nil` otherwise.
     private static func priorityOverride(forNormalizedText text: String) -> IntentRoutingDecision? {
         guard !text.isEmpty else { return nil }
 
@@ -327,6 +341,10 @@ nonisolated enum IntentRouter {
 
         if matchesAny(text, ["search my photos", "find receipt pictures", "find photos", "photo library"]) {
             return IntentRoutingDecision(intent: .photos, allowedToolIDs: photosToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
+            return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs.union(["location.current"]), requiresClarification: false, clarificationPrompt: nil)
         }
 
         if isMapFollowUpPrompt(text) || isNearbyLocalDiscoveryIntent(text) || matchesAny(text, ["directions to", "navigate to", "route to", "find coffee near me", "find a pharmacy nearby"]) {
@@ -353,7 +371,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["draft a text", "message jordan", "text message to", "text 555", "send a text"])
+        if matchesAny(text, ["draft a text", "draft a message", "message jordan", "text message to", "text 555", "send a text"])
             || text.range(of: #"(?i)\b(message|text|sms|imessage)\s+[a-z0-9@._+\-]{2,}\b"#, options: .regularExpression) != nil {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
@@ -468,10 +486,15 @@ nonisolated enum IntentRouter {
         return matchesAny(text, reminderPhrases)
     }
 
+    /// Detects explicit requests to reindex or refresh file and photo indices.
+    /// - Parameters:
+    ///   - text: The normalized user message.
+    /// - Returns: `true` if the message contains an explicit reindex or refresh pattern, `false` otherwise.
     private static func isExplicitRAGIndexIntent(_ text: String) -> Bool {
         matchesAny(text, [
             "reindex local files", "reindex files", "refresh the file retrieval index",
-            "refresh file retrieval index", "reindex photos", "refresh the photo retrieval index",
+            "refresh file retrieval index", "reindex my imported files", "reindex imported files",
+            "reindex photos", "reindex photo metadata", "refresh the photo retrieval index",
             "refresh photo retrieval index"
         ])
     }
@@ -484,6 +507,9 @@ nonisolated enum IntentRouter {
         ) != nil
     }
 
+    /// Determines if a message indicates a nearby or local place discovery intent.
+    /// - Parameter text: The user's message to analyze.
+    /// - Returns: `true` if the text indicates nearby or local place discovery, `false` otherwise.
     private static func isNearbyLocalDiscoveryIntent(_ text: String) -> Bool {
         let hasLocalScope = matchesAny(text, ["near me", "nearby", "closest", "nearest", "around me", "around here", "in my area"])
         guard hasLocalScope else { return false }
@@ -505,6 +531,32 @@ nonisolated enum IntentRouter {
         return hasDiscoveryVerb || hasLocalObject
     }
 
+    /// Determines if the text indicates a calendar, scheduling, or event-related intent.
+    /// - Returns: `true` if the text contains calendar-related keywords or phrases with explicit scope or action verbs, `false` otherwise.
+    private static func isCalendarIntent(_ text: String) -> Bool {
+        if matchesAny(text, [
+            "calendar", "create event", "create an event", "add event", "add an event",
+            "new event", "calendar event", "at 5", "tomorrow at",
+            "list events", "upcoming events", "book an appointment", "schedule a meeting", "schedule an event"
+        ]) {
+            return true
+        }
+
+        let hasCalendarScope = matchesAny(text, ["my calendar", "my meetings", "my appointments", "my schedule", "on my calendar", "in my calendar"])
+        if hasCalendarScope {
+            return true
+        }
+
+        let hasScheduleAction = matchesAny(text, ["schedule a meeting", "schedule an event", "schedule a", "schedule an"])
+        if hasScheduleAction {
+            return true
+        }
+
+        return false
+    }
+
+    /// Determines if the message requests fetching, reading, opening, or summarizing a URL.
+    /// - Returns: `true` if the message contains such a request with an HTTP or HTTPS URL, `false` otherwise.
     private static func isURLFetchIntent(_ text: String) -> Bool {
         text.range(
             of: #"(?i)\b(read|fetch|open|summarize)\b.{0,80}\bhttps?://\S+"#,
@@ -530,11 +582,14 @@ nonisolated enum IntentRouter {
         ])
     }
 
+    /// Determines whether a message likely intends to interact with Outlook or mail services.
+    /// - Returns: `true` if the text indicates an Outlook or mail intent, `false` otherwise.
     private static func isLikelyOutlookIntent(_ text: String) -> Bool {
         let outlookMarkers = ["outlook", "hotmail", "live mail", "msn mail", "microsoft mail", "microsoft graph", "graph mail"]
         let mailActions = [
             "inbox", "email", "emails", "mail", "message", "messages", "unread", "new", "latest", "recent", "folders", "attachments",
-            "search", "find", "read", "open", "check", "show", "list", "draft", "send", "reply", "reply all", "forward", "archive", "delete", "trash", "mark read", "mark unread", "move"
+            "search", "find", "read", "open", "check", "show", "list", "draft", "send", "reply", "reply all", "forward", "archive", "delete", "trash", "mark read", "mark unread", "move",
+            "signed in", "sign in", "logged in", "login", "connected", "status", "auth", "authenticated", "reconnect", "account"
         ]
         if matchesAny(text, outlookMarkers) && matchesAny(text, mailActions) { return true }
         let genericReadMailCommands = [
@@ -577,6 +632,11 @@ nonisolated enum IntentRouter {
     }
 
     private static func inferredContent(_ text: String) -> Bool {
-        text.contains(" about ") || text.contains(" saying ") || text.contains(" body ") || text.contains(" that says ") || text.split(separator: " ").count >= 8
+        text.contains(" about ")
+            || text.contains(" saying ")
+            || text.contains(" body ")
+            || text.contains(" that says ")
+            || text.contains(" that ")
+            || text.split(separator: " ").count >= 8
     }
 }
