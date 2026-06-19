@@ -532,13 +532,27 @@ nonisolated enum IntentRouter {
     }
 
     /// Determines if the text indicates a calendar, scheduling, or event-related intent.
-    /// - Returns: `true` if the text contains calendar-related keywords or phrases, `false` otherwise.
+    /// - Returns: `true` if the text contains calendar-related keywords or phrases with explicit scope or action verbs, `false` otherwise.
     private static func isCalendarIntent(_ text: String) -> Bool {
-        matchesAny(text, [
-            "schedule", "calendar", "create event", "create an event", "add event", "add an event",
-            "new event", "calendar event", "meeting", "appointment", "at 5", "tomorrow at",
+        if matchesAny(text, [
+            "calendar", "create event", "create an event", "add event", "add an event",
+            "new event", "calendar event", "at 5", "tomorrow at",
             "list events", "upcoming events", "book an appointment", "schedule a meeting", "schedule an event"
-        ])
+        ]) {
+            return true
+        }
+
+        let hasCalendarScope = matchesAny(text, ["my calendar", "my meetings", "my appointments", "my schedule", "on my calendar", "in my calendar"])
+        if hasCalendarScope {
+            return true
+        }
+
+        let hasScheduleAction = matchesAny(text, ["schedule a meeting", "schedule an event", "schedule a", "schedule an"])
+        if hasScheduleAction {
+            return true
+        }
+
+        return false
     }
 
     /// Determines if the message requests fetching, reading, opening, or summarizing a URL.

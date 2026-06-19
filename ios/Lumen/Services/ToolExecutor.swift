@@ -303,7 +303,8 @@ nonisolated enum ToolRouteGuard {
             "near us", "close to me", "where is", "where are"
         ]
 
-        let hasTime = timeMarkers.contains { normalized.contains($0) }
+        let hasClockTime = normalized.range(of: #"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"#, options: .regularExpression) != nil
+        let hasTime = timeMarkers.contains { normalized.contains($0) } || hasClockTime
         let hasDynamicSubject = dynamicSubjects.contains { normalized.contains($0) }
         let hasLocalScope = localScopeMarkers.contains { normalized.contains($0) }
 
@@ -342,7 +343,7 @@ nonisolated enum ToolRouteGuard {
         let descriptionLeakMarkers = [
             "args:", "[runtime policy]", "[available local tools]",
             "use only for navigation/route requests", "find nearby/local places",
-            "- maps.search", "- maps.directions"
+            "- maps.search", "- maps.directions", "<!-- lumen_grounding_v1 -->"
         ]
         if descriptionLeakMarkers.contains(where: { lowered.contains($0) }) {
             return nil

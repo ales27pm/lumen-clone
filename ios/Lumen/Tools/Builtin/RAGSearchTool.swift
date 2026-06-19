@@ -47,6 +47,9 @@ struct RAGSearchTool: LocalTool {
             let chunks = (try? modelContext.fetch(FetchDescriptor<RAGChunk>())) ?? []
             let map = Dictionary(uniqueKeysWithValues: chunks.map { ($0.id, $0) })
             results = semanticResults.compactMap { r in map[r.chunkID].map { (chunk: $0, score: r.score) } }
+            if let source {
+                results = results.filter { $0.chunk.sourceName.localizedCaseInsensitiveContains(source) || ($0.chunk.sourceRef?.localizedCaseInsensitiveContains(source) ?? false) }
+            }
         }
         if results.isEmpty {
             mode = "lexical"
@@ -59,9 +62,6 @@ struct RAGSearchTool: LocalTool {
                 guard hits > 0 else { return nil }
                 return (chunk: c, score: Double(hits) / Double(max(1, terms.count)))
             }.sorted { $0.score > $1.score }.prefix(limit).map { $0 }
-        }
-        if let source {
-            results = results.filter { $0.chunk.sourceName.localizedCaseInsensitiveContains(source) || ($0.chunk.sourceRef?.localizedCaseInsensitiveContains(source) ?? false) }
         }
         if let minScore { results = results.filter { $0.score >= minScore } }
 

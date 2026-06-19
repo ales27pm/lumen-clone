@@ -859,7 +859,7 @@ extension AgentGroundingRegressionTests {
         #expect(actionToolIDs == ["calendar.list"])
         #expect(response.text.lowercased().contains("event"))
         #expect(hasCalendarListActionTrace)
-        #expect(actionTrace?.rawOutputPrefix.hasPrefix(#"{"action":"#) == true)
+        #expect(actionTrace?.rawOutputPrefix.hasPrefix(#"{"action":{"#) == true)
         #expect(actionTrace?.parseError == nil)
         #expect(parsedActionTrace.parseError == nil)
         #expect(parsedActionTrace.action?.tool == "calendar.list")

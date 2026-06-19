@@ -1810,11 +1810,14 @@ final class AgentService {
     }
 
     /// Removes internal grounding markers from the user message, trims whitespace, and caps the result to `structuredUserMessageCharCap`.
-    /// If stripping yields an empty string, returns the trimmed original message instead.
+    /// If stripping yields an empty string, returns the capped trimmed original message instead.
     private nonisolated static func sanitizedStructuredUserMessage(_ userMessage: String) -> String {
         let stripped = stripInternalGrounding(from: userMessage)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stripped.isEmpty else { return userMessage.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard !stripped.isEmpty else {
+            let trimmed = userMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+            return String(trimmed.prefix(structuredUserMessageCharCap))
+        }
         return String(stripped.prefix(structuredUserMessageCharCap))
     }
 
@@ -1831,7 +1834,9 @@ final class AgentService {
         let markers = [
             "<!-- LUMEN_GROUNDING_V1 -->",
             "[AVAILABLE LOCAL TOOLS]",
-            "[RUNTIME POLICY]"
+            "[RUNTIME POLICY]",
+            "[LOCAL MEMORY]",
+            "[LOCAL SOURCES]"
         ]
         for marker in markers {
             if let range = stripped.range(of: marker, options: [.caseInsensitive]) {
