@@ -1028,6 +1028,13 @@ def _runtime_failure_signature(failure: dict[str, Any]) -> str:
 
 
 def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str]) -> dict[str, Any]:
+    """
+    Generates a repair directive for a runtime failure based on its type and context.
+    
+    Returns a dictionary specifying the repair action to apply and relevant parameters
+    (such as focusToolID, rejectedToolID, expectedPlan, and alsoAdd lists for additional
+    samples to generate).
+    """
     repair_sample = failure.get("repairSample")
     if isinstance(repair_sample, dict):
         return {
@@ -1087,6 +1094,17 @@ def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str])
 
 
 def _is_dynamic_local_public_lookup_failure(failure: dict[str, Any]) -> bool:
+    """
+    Determines whether a failure represents a dynamic local public lookup scenario.
+    
+    A dynamic local public lookup is characterized by temporal language (e.g., "today", "hours"),
+    references to dynamic subjects (e.g., "event", "meeting", "ticket"), and geographic scope
+    indicators (e.g., "near me", "closest"). Returns true only when failure metadata contains
+    keywords from all three categories.
+    
+    Returns:
+        True if the failure contains temporal markers, dynamic subject keywords, and local scope indicators; False otherwise.
+    """
     text = " ".join(str(failure.get(key) or "") for key in ("scenario", "problem", "expected", "actual")).casefold()
     if not text.strip():
         return False
@@ -1147,6 +1165,12 @@ def _build_dataset_manifest(
 ) -> dict[str, Any]:
     # Deterministic mode is used by CI drift checks, so avoid embedding HEAD-derived
     # values that change every commit even when extracted behavior stays identical.
+    """
+    Build an auditable dataset manifest describing lineage, record counts, hashes, and training policies.
+    
+    Returns:
+    	A manifest dictionary containing schema version, generation timestamp, source metadata, record counts, content hashes, and training policies. In deterministic mode, the manifest commit is omitted to avoid drift in CI validation when source behavior remains unchanged.
+    """
     lineage_commit = None if config.deterministic else manifest.sourceIntegrity.commit
     counts = {name: len(records) for name, records in {**raw_role_records, **compiled_records}.items()}
     compiled_hashes = {name: _records_hash(records) for name, records in compiled_records.items()}

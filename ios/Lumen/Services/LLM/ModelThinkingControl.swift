@@ -15,6 +15,12 @@ nonisolated enum ModelThinkingControl {
     }
     #endif
 
+    /// Constructs a system prompt by appending reasoning control instructions to a base prompt.
+    /// - Parameters:
+    ///   - base: The base prompt text.
+    ///   - reasoningCaptureEnabled: When `true` in DEBUG builds, enables reasoning capture; ignored in non-DEBUG builds.
+    ///   - requireFinalAnswerOnly: Determines the instruction set: when `true`, requires only the final answer; when `false`, allows hidden reasoning without requiring a final answer. Defaults to `true`.
+    /// - Returns: The base prompt with reasoning control instructions appended, or the base unchanged if it already contains the selected instructions.
     static func systemPrompt(_ base: String, reasoningCaptureEnabled: Bool, requireFinalAnswerOnly: Bool = true) -> String {
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
         let rule = thinkingRule(
@@ -26,6 +32,11 @@ nonisolated enum ModelThinkingControl {
         return "\(trimmed)\n\n\(rule)"
     }
 
+    /// Appends a Qwen thinking directive to a user message if requested and not already present.
+    /// - Parameters:
+    ///   - reasoningCaptureEnabled: Determines the directive type in DEBUG builds.
+    ///   - useQwenThinkingDirective: Whether to append the directive.
+    /// - Returns: The user message with a directive appended, or unchanged if the directive already exists or appending is disabled.
     static func userMessage(_ base: String, reasoningCaptureEnabled: Bool, useQwenThinkingDirective: Bool) -> String {
         guard useQwenThinkingDirective else { return base }
         let directive = thinkingDirective(reasoningCaptureEnabled: reasoningCaptureEnabled)

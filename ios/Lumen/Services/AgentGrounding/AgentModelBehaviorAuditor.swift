@@ -341,6 +341,8 @@ final class AgentModelBehaviorAuditor {
         }
     }
 
+    /// Generates corrected output guidance for a behavior violation.
+    /// - Returns: Guidance text for correcting or repairing the violation.
     private func correctedOutput(for violation: AgentBehaviorViolation) -> String {
         switch violation.code {
         case "unknown_tool_id":
@@ -363,6 +365,12 @@ final class AgentModelBehaviorAuditor {
         }
     }
 
+    /// Generates a lesson string that explains the violation and prescribes corrected behavior.
+    ///
+    /// For tool routing violations where dynamic public lookup is appropriate, returns guidance specific to that scenario. Otherwise returns a violation-code-specific rule.
+    ///
+    /// - Parameter violation: The violation for which to generate a lesson.
+    /// - Returns: A "must/never" style guidance string specific to the violation type.
     private func lesson(for violation: AgentBehaviorViolation) -> String {
         switch violation.code {
         case "unknown_tool_id":
@@ -389,6 +397,10 @@ final class AgentModelBehaviorAuditor {
         }
     }
 
+    /// Determines the curriculum tag for a violation.
+    /// - Parameters:
+    ///   - violation: The violation whose curriculum category should be identified.
+    /// - Returns: A curriculum tag identifying the violation's category.
     private func curriculum(for violation: AgentBehaviorViolation) -> String {
         if violation.code.contains("sentinel") { return "sentinel_safety" }
         if violation.code.contains("approval") { return "approval_boundary" }

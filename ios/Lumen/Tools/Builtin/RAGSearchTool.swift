@@ -18,6 +18,8 @@ struct RAGSearchTool: LocalTool {
         return (q,limit,source?.isEmpty==true ? nil:source,min)
     }
 
+    /// Executes a RAG search query and returns the results.
+    /// - Returns: A tool result with the formatted search results, or status indicating unavailability or invalid arguments.
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         do {
             let (q, limitRaw, source, minScore) = try parse(invocation.arguments)
@@ -33,6 +35,8 @@ struct RAGSearchTool: LocalTool {
         }
     }
 
+    /// Searches local RAG chunks and returns ranked, deduplicated results.
+    /// - Returns: A tuple containing formatted chunk rows and the search mode ("semantic" or "lexical").
     @MainActor
     private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, modelContext: ModelContext) async -> (rows: [String], mode: String) {
         let engine = RAGEngine()
