@@ -1,19 +1,24 @@
 {
-  "adapterArtifact": "models/lora/mimicry",
-  "adapterDirectory": "models/lora/mimicry",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/mimicry",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/mimicry",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-mimicry-lora.gguf",
   "adapterID": "lumen-mimicry-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "mimicry",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
+    "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
     "recordCounts": {
-      "eval": 3,
-      "train_dpo": 9,
-      "train_sft": 54,
+      "eval": 5,
+      "train_dpo": 10,
+      "train_sft": 122,
       "val_dpo": 2,
-      "val_sft": 10
+      "val_sft": 22
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cross_model_training",
@@ -25,6 +30,8 @@
     ],
     "taskTypes": [
       "codebase_home_grounding",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "embedding_corpus",
       "fleet_delegation",
       "fleet_delegation_preference",
@@ -39,11 +46,13 @@
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",
-      "style_profile_detection"
+      "style_profile_detection",
+      "ultra_specific_style_profile_detection"
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/mimicry",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/mimicry",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-mimicry-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -69,6 +78,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."
 }

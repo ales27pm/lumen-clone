@@ -2,14 +2,22 @@
   "artifactKind": "agent_grounding_runtime_bundle",
   "codebaseHome": {
     "languageCounts": {
-      "json": 21,
-      "markdown": 58,
+      "csv": 8,
+      "json": 59,
+      "markdown": 63,
       "mixed": 1,
       "plist": 3,
-      "python": 85,
-      "swift": 314
+      "python": 91,
+      "shell": 9,
+      "swift": 459,
+      "text": 6,
+      "toml": 1,
+      "xcode_project": 1,
+      "xml": 1,
+      "yaml": 1
     },
     "moduleCounts": {
+      ".github/workflows": 1,
       "AppIntents": 7,
       "Assets.xcassets": 1,
       "Assets.xcassets/AccentColor.colorset": 1,
@@ -27,6 +35,7 @@
       "Permissions": 6,
       "RAG": 9,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
+      "Scripts": 1,
       "Services": 55,
       "Services/AgentGrounding": 13,
       "Services/Diagnostics": 1,
@@ -44,21 +53,34 @@
       "Views": 30,
       "Voice": 6,
       "app": 6,
+      "codebase_txt_chunks": 2,
       "docs": 51,
       "docs/stabilization": 1,
-      "repo": 1,
+      "generated/agent_manifest": 10,
+      "ios": 1,
+      "ios/Lumen.xcodeproj": 1,
+      "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
+      "ios/LumenTests": 143,
+      "ios/LumenUITests": 2,
+      "repo": 6,
+      "runtime-audits": 1,
+      "runtime-audits/2026-06-08-first-improve-loop": 5,
+      "runtime-audits/2026-06-08-second-improve-loop": 5,
+      "runtime-audits/2026-06-09-third-improve-loop": 5,
+      "scripts": 14,
       "tools": 12,
       "tools/fine_tuning/unsloth": 19,
       "tools/hf_artifacts": 2,
       "tools/intent_classifier": 4,
-      "tools/lumen_manifest_crawler": 1,
+      "tools/lumen_manifest_crawler": 2,
+      "tools/lumen_manifest_crawler/generated": 23,
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 36,
       "tools/lumen_manifest_crawler/tests": 19,
       "tools/pipeline": 7,
       "tools/pipeline/tests": 1,
       "tools/security": 1
     },
-    "recordCount": 482,
+    "recordCount": 703,
     "selectedFiles": [
       {
         "imports": [
@@ -2109,12 +2131,14 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
+  "manifestCommit": "5b582bfb3948536b1fdf880a4694669945e877a7",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",
   "sourceFamilies": [
     "codebase_home_corpus",
-    "codebase_home_sft"
+    "codebase_home_sft",
+    "codebase_home_chunks",
+    "codebase_home_chunk_sft"
   ]
 }

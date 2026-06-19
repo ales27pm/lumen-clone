@@ -1,20 +1,25 @@
 {
-  "adapterArtifact": "models/lora/fleet",
-  "adapterDirectory": "models/lora/fleet",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/fleet",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/fleet",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-fleet-lora.gguf",
   "adapterID": "lumen-fleet-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "fleet",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
+    "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
     "recordCounts": {
-      "eval": 93,
-      "train_dpo": 14,
-      "train_sft": 1113,
+      "eval": 86,
+      "train_dpo": 15,
+      "train_sft": 4368,
       "val_dpo": 3,
-      "val_sft": 196
+      "val_sft": 771
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
       "approval_boundary_samples",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cortex_routing",
@@ -48,6 +53,8 @@
       "approval_required_tool",
       "codebase_home_grounding",
       "codebase_home_overview",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "cortex_routing",
       "dpo_preference_pairs",
       "embedding_corpus",
@@ -83,11 +90,15 @@
       "tool_call_generation",
       "tool_id_repair",
       "tool_schema_cards",
+      "ultra_specific_fleet_delegation",
+      "ultra_specific_fleet_slot_directory",
+      "ultra_specific_tool_boundary_awareness",
       "user_response_generation"
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/fleet",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/fleet",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-fleet-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -113,6 +124,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
 }

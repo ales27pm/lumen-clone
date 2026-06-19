@@ -164,17 +164,23 @@ def compile_embedding_datasets(
         add_pair(f"Where is `{file_hash.path}` represented in the source map?", doc_id, "code_domain_query_to_source_map", {"path": file_hash.path})
         add_pair(f"Find the code file related to {file_hash.path.split('/')[-1]}", doc_id, "source_file_name_query", {"path": file_hash.path})
 
-    for family in ("tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs", "eval_scenarios", "codebase_home_corpus"):
-        limit = 700 if family == "codebase_home_corpus" else 300
-        for index, record in enumerate(datasets.get(family, [])[:limit]):
+    for family in ("tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs", "eval_scenarios", "codebase_home_corpus", "codebase_home_chunks"):
+        limit = None if family in {"codebase_home_corpus", "codebase_home_chunks"} else 300
+        records = datasets.get(family, [])
+        selected_records = records if limit is None else records[:limit]
+        for index, record in enumerate(selected_records):
             doc_id = _record_to_corpus(add_doc, family, index, record)
             query = _query_for_dataset_record(family, record)
             if query:
                 add_pair(query, doc_id, f"{family}_retrieval", {"sourceFamily": family})
 
     doc_by_id = {doc["id"]: doc for doc in corpus}
+    doc_tokens_by_id = {
+        doc_id: _tokens(str(doc.get("text") or "") + " " + str(doc.get("title") or ""))
+        for doc_id, doc in doc_by_id.items()
+    }
     for pair in pairs:
-        negative_id = _select_hard_negative(pair, doc_by_id)
+        negative_id = _select_hard_negative(pair, doc_by_id, doc_tokens_by_id)
         if not negative_id:
             continue
         hard_negatives.append({
@@ -263,6 +269,7 @@ def _record_to_corpus(add_doc: Any, family: str, index: int, record: dict[str, A
         "runtime_audit_repairs": "repair_sample",
         "eval_scenarios": "eval_scenario",
         "codebase_home_corpus": "codebase_home_module",
+        "codebase_home_chunks": "codebase_home_source_chunk",
     }.get(family, family)
     title = str(record.get("title") or record.get("path") or record.get("taskType") or record.get("type") or f"{family}:{record_id}")
     if family == "codebase_home_corpus":
@@ -275,6 +282,18 @@ def _record_to_corpus(add_doc: Any, family: str, index: int, record: dict[str, A
                 f"Symbols: {', '.join(record.get('symbols') or [])}",
                 f"Imports: {', '.join(record.get('imports') or [])}",
                 f"Evidence:\n{record.get('evidenceSnippet') or ''}",
+            ]
+        )
+    elif family == "codebase_home_chunks":
+        text = "\n".join(
+            [
+                f"Path: {record.get('path')}",
+                f"Module: {record.get('module')}",
+                f"Language: {record.get('language')}",
+                f"Source hash: {record.get('sha256')}",
+                f"Chunk hash: {record.get('chunkSHA256')}",
+                f"Lines: {record.get('lineStart')}-{record.get('lineEnd')}",
+                f"Source:\n{record.get('text') or ''}",
             ]
         )
     else:
@@ -304,10 +323,19 @@ def _query_for_dataset_record(family: str, record: dict[str, Any]) -> str:
         if symbols:
             return f"Where is `{symbols[0]}` implemented in the Lumen codebase?"
         return f"Which file owns `{module}` behavior in Lumen?"
+    if family == "codebase_home_chunks":
+        path = str(record.get("path") or "")
+        line_start = record.get("lineStart")
+        line_end = record.get("lineEnd")
+        return f"What source text does `{path}` contain on lines {line_start}-{line_end}?"
     return ""
 
 
-def _select_hard_negative(pair: dict[str, Any], docs: dict[str, dict[str, Any]]) -> str | None:
+def _select_hard_negative(
+    pair: dict[str, Any],
+    docs: dict[str, dict[str, Any]],
+    doc_tokens_by_id: dict[str, set[str]],
+) -> str | None:
     positive = docs.get(str(pair.get("documentID")))
     if not positive:
         return None
@@ -321,7 +349,7 @@ def _select_hard_negative(pair: dict[str, Any], docs: dict[str, dict[str, Any]])
     ranked = sorted(
         pool,
         key=lambda doc: (
-            -len(query_tokens.intersection(_tokens(str(doc.get("text") or "") + " " + str(doc.get("title") or "")))),
+            -len(query_tokens.intersection(doc_tokens_by_id.get(str(doc.get("id")), set()))),
             str(doc.get("id")),
         ),
     )

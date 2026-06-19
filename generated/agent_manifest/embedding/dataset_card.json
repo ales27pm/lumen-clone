@@ -1,16 +1,17 @@
 {
   "counts": {
-    "corpus": 1045,
-    "evalRetrieval": 1214,
-    "hardNegatives": 1214,
-    "trainPairs": 1092,
-    "trainTriplets": 1098,
-    "valPairs": 122,
-    "valTriplets": 116
+    "corpus": 4754,
+    "evalRetrieval": 4923,
+    "hardNegatives": 4923,
+    "trainPairs": 4434,
+    "trainTriplets": 4384,
+    "valPairs": 489,
+    "valTriplets": 539
   },
   "families": [
     "agent_role_question_to_fleet_slot",
     "code_domain_query_to_source_map",
+    "codebase_home_chunks_retrieval",
     "codebase_home_corpus_retrieval",
     "eval_scenarios_retrieval",
     "manifest_grounding_cards_retrieval",

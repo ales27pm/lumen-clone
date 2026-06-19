@@ -2,17 +2,19 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `e9366d437c2a87578ca29a0d9891b2e7d0bd2167`
+- Manifest commit: `5b582bfb3948536b1fdf880a4694669945e877a7`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `482`
+- Codebase-home records: `703`
 
 ## Top Modules
+- `ios/LumenTests`: 143 files
 - `Services`: 55 files
 - `docs`: 51 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 36 files
 - `Views`: 30 files
 - `Assistant`: 23 files
+- `tools/lumen_manifest_crawler/generated`: 23 files
 - `Services/LLM`: 21 files
 - `Diagnostics`: 19 files
 - `tools/fine_tuning/unsloth`: 19 files
@@ -21,17 +23,15 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `Services/Tools`: 14 files
 - `System`: 14 files
 - `Tools`: 14 files
+- `scripts`: 14 files
 - `Services/AgentGrounding`: 13 files
 - `Tools/Builtin`: 12 files
 - `tools`: 12 files
+- `generated/agent_manifest`: 10 files
 - `RAG`: 9 files
 - `Services/LLM/Models`: 9 files
 - `Services/LLM/Policy`: 9 files
 - `AppIntents`: 7 files
-- `Memory`: 7 files
-- `Services/LLM/GGUF`: 7 files
-- `tools/pipeline`: 7 files
-- `Permissions`: 6 files
 
 ## Key Files
 - `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` owns AgentBehaviorManifest behavior and defines: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, Man Symbols: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent, ManifestRoutingEntry.
