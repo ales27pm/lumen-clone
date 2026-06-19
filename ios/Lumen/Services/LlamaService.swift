@@ -1776,14 +1776,16 @@ final actor AppLlamaService {
             latencyClass: latencySelection.latencyClass
         )
         let useQwenDirective = currentChatModelLooksLikeQwen3(slot: slot)
+        let requireFinalAnswerOnly = !req.modelName.lowercased().contains("json")
+        let allowReasoningCapture = req.reasoningCaptureEnabled && requireFinalAnswerOnly
         let systemPrompt = ModelThinkingControl.systemPrompt(
             assembly.systemPrompt,
-            reasoningCaptureEnabled: req.reasoningCaptureEnabled,
-            requireFinalAnswerOnly: !req.modelName.lowercased().contains("json")
+            reasoningCaptureEnabled: allowReasoningCapture,
+            requireFinalAnswerOnly: requireFinalAnswerOnly
         )
         let userMessage = ModelThinkingControl.userMessage(
             assembly.userMessage,
-            reasoningCaptureEnabled: req.reasoningCaptureEnabled,
+            reasoningCaptureEnabled: allowReasoningCapture,
             useQwenThinkingDirective: useQwenDirective
         )
 

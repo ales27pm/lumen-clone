@@ -32,6 +32,21 @@ nonisolated enum ToolObservationFinalizer {
         case "outlook.message.read":
             guard intent == .outlook else { return nil }
             return "Outlook message:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.messages.search":
+            guard intent == .outlook else { return nil }
+            return "Outlook search results:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.attachments.list":
+            guard intent == .outlook else { return nil }
+            return "Outlook attachments:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.folders.list":
+            guard intent == .outlook else { return nil }
+            return "Outlook folders:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.status":
+            guard intent == .outlook else { return nil }
+            return "Outlook status: \(plainObservation)\(payloadMarkers)"
+        case "calendar.list":
+            guard intent == .calendar else { return nil }
+            return "Calendar events:\n\(plainObservation)\(payloadMarkers)"
         case "reminders.list":
             guard intent == .reminder else { return nil }
             return "Reminders:\n\(plainObservation)\(payloadMarkers)"
@@ -47,6 +62,12 @@ nonisolated enum ToolObservationFinalizer {
         case "maps.directions":
             guard intent == .maps else { return nil }
             return "Maps directions:\n\(plainObservation)\(payloadMarkers)"
+        case "motion.activity":
+            guard intent == .motion else { return nil }
+            return "Motion activity:\n\(plainObservation)\(payloadMarkers)"
+        case "health.summary":
+            guard intent == .health else { return nil }
+            return "Health summary:\n\(plainObservation)\(payloadMarkers)"
         case "rag.index_files":
             guard intent == .rag else { return nil }
             return "Local file index updated: \(plainObservation)\(payloadMarkers)"

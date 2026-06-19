@@ -66,6 +66,14 @@ nonisolated enum DeterministicToolPlanner {
             var args: AgentJSONArguments = ["subject": .string(extractOutlookSubject(from: prompt)), "body": .string(extractOutlookBody(from: prompt) ?? "")]
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
             return AgentAction(tool: canonical, args: args)
+        case "messages.draft":
+            var args: AgentJSONArguments = ["body": .string(extractCommunicationBody(from: prompt))]
+            if let phone = firstPhoneNumber(in: prompt) {
+                args["to"] = .string(phone)
+            } else if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty {
+                args["to"] = .string(recipient)
+            }
+            return AgentAction(tool: canonical, args: args)
         default:
             return AgentAction(tool: canonical, args: [:])
         }
@@ -154,7 +162,11 @@ nonisolated enum DeterministicToolPlanner {
             return action("mail.draft", args)
         case .messageDraft:
             var args: AgentJSONArguments = ["body": .string(extractCommunicationBody(from: prompt))]
-            if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty { args["to"] = .string(recipient) }
+            if let phone = firstPhoneNumber(in: prompt) {
+                args["to"] = .string(phone)
+            } else if let recipient = extractRecipientName(from: prompt), !recipient.isEmpty {
+                args["to"] = .string(recipient)
+            }
             return action("messages.draft", args)
         case .phoneCall:
             if let phone = firstPhoneNumber(in: prompt) { return action("phone.call", ["number": .string(phone)]) }
@@ -694,6 +706,12 @@ nonisolated enum DeterministicToolPlanner {
         let lower = text.lowercased()
         for marker in [" saying ", " that says ", " body ", " body:", " message ", " about "] {
             if let range = lower.range(of: marker) { return String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?")) }
+        }
+        if lower.hasPrefix("text ") || lower.hasPrefix("message ") || lower.hasPrefix("sms ") || lower.hasPrefix("imessage ") {
+            if let range = lower.range(of: " that ") {
+                let body = String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\"' :.,!?"))
+                if !body.isEmpty { return body }
+            }
         }
         return ""
     }

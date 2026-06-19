@@ -4,8 +4,8 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 
 ## Build identity
 
-- Manifest fingerprint: `c59cae4fe9f687264d4bef8dd4b7f550156b1164cd2bc59cc8e9a1b25b3fa0be`
-- Manifest commit: `4b79470a26464aa380aa6afe34eb1478399648d5`
+- Manifest fingerprint: `880a039f54ab3ed527ca5138cb59ceb24d3896cc719a3fc93031c228a381709f`
+- Manifest commit: `e9366d437c2a87578ca29a0d9891b2e7d0bd2167`
 - Build label: `None`
 - Expected export: `lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package`
 

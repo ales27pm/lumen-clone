@@ -42,6 +42,18 @@ final class SlotAgentService {
     static let shared = SlotAgentService()
 
     nonisolated static let mouthPromptHygieneRule = "Output only the final user-visible answer. Never output hidden reasoning, <think> blocks, JSON, debug text, tool payloads, or internal analysis. If prior context contains hidden reasoning, ignore it and do not imitate it."
+    private nonisolated static let outlookMessageReferenceToolIDs: Set<String> = [
+        "outlook.message.read",
+        "outlook.attachments.list",
+        "outlook.message.mark_read",
+        "outlook.message.mark_unread",
+        "outlook.message.move",
+        "outlook.message.archive",
+        "outlook.message.delete",
+        "outlook.message.reply",
+        "outlook.message.reply_all",
+        "outlook.message.forward"
+    ]
 
     private init() {}
 
@@ -118,7 +130,8 @@ final class SlotAgentService {
                         break
                     }
 
-                    if Self.canCompleteThroughDeterministicCompatibility(req) {
+                    if options.allowDeterministicCompatibility,
+                       Self.canCompleteThroughDeterministicCompatibility(req) {
                         Self.emitChatTrace(req: req, phase: "path", values: ["path": "deterministic-compatibility"])
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "deterministic-compatibility"]))
                         let response = await Self.deterministicCompatibilityResponse(original: req, effective: req, options: options)
@@ -567,7 +580,8 @@ final class SlotAgentService {
         // the heavy-model budget gate turn live E2E/tool-backed turns into empty fallback
         // finals. Those empty finals are exactly what the grounding audit reports as
         // `missing_required_tool_action`.
-        if options.diagnosticsEnabled || canCompleteThroughDeterministicCompatibility(req) {
+        if options.diagnosticsEnabled
+            || (options.allowDeterministicCompatibility && canCompleteThroughDeterministicCompatibility(req)) {
             return .allow
         }
 
@@ -721,8 +735,8 @@ final class SlotAgentService {
 
         for (index, plannedAction) in plannedActions.enumerated() {
             var action = plannedAction
-            if ToolRouteGuard.canonicalToolID(action.tool) == "outlook.message.read" {
-                action = resolvedOutlookMessageReadAction(action, latestMessageID: latestOutlookMessageID)
+            if Self.outlookMessageReferenceToolIDs.contains(ToolRouteGuard.canonicalToolID(action.tool)) {
+                action = resolvedOutlookMessageReferenceAction(action, latestMessageID: latestOutlookMessageID)
             }
             let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
             Self.emitChatTrace(req: original, phase: "action_selected", values: [
@@ -883,7 +897,7 @@ final class SlotAgentService {
         return .init(text: text, steps: steps)
     }
 
-    private nonisolated static func resolvedOutlookMessageReadAction(_ action: AgentAction, latestMessageID: String?) -> AgentAction {
+    private nonisolated static func resolvedOutlookMessageReferenceAction(_ action: AgentAction, latestMessageID: String?) -> AgentAction {
         var args = action.args
         let current = args["messageId"]?.stringValue
             ?? args["id"]?.stringValue
@@ -1120,6 +1134,12 @@ final class SlotAgentService {
         case .alarm:
             return "Approval required for \(toolID). I did not change alarms yet."
         case .outlook:
+            if toolID == "outlook.draft.create" {
+                return "Approval required for outlook.draft.create. I can prepare the Outlook draft after you approve it."
+            }
+            if toolID == "outlook.mail.send" {
+                return "Approval required for outlook.mail.send. I did not send Outlook mail yet."
+            }
             return "Approval required for \(toolID). I did not modify Outlook mail yet."
         default:
             return "Approval required for \(action.displayContent). I did not run it yet."

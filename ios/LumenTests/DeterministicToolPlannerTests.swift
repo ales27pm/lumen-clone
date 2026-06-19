@@ -62,6 +62,52 @@ struct DeterministicToolPlannerTests {
         #expect(action?.args["query"]?.stringValue == "restaurants")
     }
 
+    @Test func liveCoverageFailedPromptsPlanDeterministicActions() async throws {
+        let cases: [(String, UserIntent, [String])] = [
+            ("Give me directions to the nearest hardware store.", .maps, ["maps.directions"]),
+            ("Find coffee near me.", .maps, ["location.current", "maps.search"]),
+            ("Tell me what style I asked you to use.", .memory, ["memory.recall"]),
+            ("Keep in mind that I like short answers.", .memory, ["memory.save"]),
+            ("Am I walking or stationary right now?", .motion, ["motion.activity"]),
+            ("Show attachments on the latest Outlook email.", .outlook, ["outlook.messages.list", "outlook.attachments.list"]),
+            ("Show Outlook mail folders.", .outlook, ["outlook.folders.list"]),
+            ("Compose an Outlook draft to alex@example.com subject Update body Done.", .outlook, ["outlook.draft.create"])
+        ]
+
+        for (prompt, expectedIntent, expectedTools) in cases {
+            let routing = IntentRouter.classify(prompt)
+            let steps = DeterministicToolPlanner.planSteps(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(routing.intent == expectedIntent, "Prompt \(prompt) routed as \(routing.intent.rawValue)")
+            #expect(steps.map(\.tool) == expectedTools, "Prompt \(prompt) planned \(steps.map(\.tool))")
+        }
+    }
+
+    @Test func messageDraftPhonePromptsExtractRecipientAndBody() async throws {
+        let cases: [(String, String)] = [
+            ("Text 5551234567 that I am late.", "I am late"),
+            ("Text 5551234567 that approval boundary works.", "approval boundary works"),
+            ("Draft a message to 5551234567 saying I am running late.", "I am running late")
+        ]
+
+        for (prompt, expectedBody) in cases {
+            let routing = IntentRouter.classify(prompt)
+            let action = DeterministicToolPlanner.plan(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(routing.intent == .messageDraft)
+            #expect(!routing.requiresClarification)
+            #expect(action?.tool == "messages.draft")
+            #expect(action?.args["to"]?.stringValue == "5551234567")
+            #expect(action?.args["body"]?.stringValue == expectedBody)
+        }
+    }
+
     @Test func scheduledSupportGroupMeetingSearchPlansLocationThenWebSearch() async throws {
         let routing = IntentRouter.classify("Find the nearest Alcoholics Anonymous meeting tonight")
         let steps = DeterministicToolPlanner.planSteps(

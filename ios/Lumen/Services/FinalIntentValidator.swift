@@ -136,13 +136,20 @@ nonisolated enum FinalIntentValidator {
         switch routing.intent {
         case .weather:
             return containsAny(lower, ["gps signal timeout", "location access was denied", "location permission", "network unreachable", "weather service unavailable", "open-meteo", "geocod", "couldn't get your current location", "couldn’t get your current location"])
+        case .calendar:
+            return containsAny(lower, ["calendar events:", "calendar event:", "no upcoming events", "no calendar events"])
+                || (text.contains("•") && containsAny(lower, [" at ", "am", "pm", "202"]))
+        case .maps:
+            return containsAny(lower, ["maps search results:", "maps directions:", "current location:"])
+        case .motion:
+            return containsAny(lower, ["motion activity:", "no motion data", "motion permission", "motion activity is unavailable"])
         case .memory:
             return containsAny(lower, ["saved:", "no matching memories", "memory unavailable", "user's name", "remembered"])
         case .outlook:
             return containsAny(lower, [
                 "outlook is not signed in", "missing outlook message context", "outlook tool failed",
                 "authentication expired", "authorization expired", "oauth expired", "oauth sign in",
-                "not connected", "no messages"
+                "not connected", "no messages", "outlook attachments:", "outlook folders:", "outlook search results:", "outlook status:"
             ])
         default:
             return false

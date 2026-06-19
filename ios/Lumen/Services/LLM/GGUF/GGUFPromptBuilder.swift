@@ -18,6 +18,7 @@ nonisolated enum GGUFPromptBuilder {
             if case .constrainedJSON = request.responseFormat { return false }
             return true
         }()
+        let allowReasoningCapture = reasoningCaptureEnabled && requireFinalAnswerOnly
         let hasPromptContent = nonEmpty(request.systemPrompt) != nil
             || !request.messages.isEmpty
             || !request.context.isEmpty
@@ -28,7 +29,7 @@ nonisolated enum GGUFPromptBuilder {
                 marker: "<|system|>",
                 body: ModelThinkingControl.systemPrompt(
                     request.systemPrompt ?? "",
-                    reasoningCaptureEnabled: reasoningCaptureEnabled,
+                    reasoningCaptureEnabled: allowReasoningCapture,
                     requireFinalAnswerOnly: requireFinalAnswerOnly
                 )
             ))
@@ -54,7 +55,7 @@ nonisolated enum GGUFPromptBuilder {
             let controlledContent = message.role == .user && index == lastUserMessageIndex
                 ? ModelThinkingControl.userMessage(
                     content,
-                    reasoningCaptureEnabled: reasoningCaptureEnabled,
+                    reasoningCaptureEnabled: allowReasoningCapture,
                     useQwenThinkingDirective: shouldUseQwenThinkingDirective
                 )
                 : content

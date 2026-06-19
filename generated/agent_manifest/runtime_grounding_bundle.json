@@ -703,8 +703,8 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyAgentRunOptions.swift",
-        "responsibility": "`ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding, preventDoubleGrounding, diagnosticsEnabled.",
-        "sha256": "a1693eae61d3e09a3dc4038c4884a5ee74619476cb74b7702e674ec270f7f284",
+        "responsibility": "`ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding, preventDoubleGrounding, diagnosticsEnabled, allowDeterministicCompatibility.",
+        "sha256": "6cb509c4a6a66e2e5c7b3f09e4a6cea5b82d11575a4507120bb0acd0ee5670b9",
         "symbols": [
           "LegacyAgentRunOptions",
           "GroundingMode",
@@ -714,7 +714,8 @@
           "groundingMode",
           "allowDegradedGrounding",
           "preventDoubleGrounding",
-          "diagnosticsEnabled"
+          "diagnosticsEnabled",
+          "allowDeterministicCompatibility"
         ]
       },
       {
@@ -1087,7 +1088,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selection, AgentTurnParser.",
-        "sha256": "0002a6d9df2eb7ef1f6da7bfbeb6efe50fc2d3efaa2ec4f13aea60d19cecb848",
+        "sha256": "5da86e39807e715650c062a49bb4d94eda33ca2bd845a80e4130b158b67303c3",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -1654,7 +1655,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/IntentRouter.swift",
         "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, unavailableMessage.",
-        "sha256": "11890433ade0c68303fa4c5e675b74c58481e7102aa30a50715cdc84d0664a37",
+        "sha256": "978ebd65d92f9c3633956bd3c2dc3abfc1311ae8c9cb466391128189433c6db1",
         "symbols": [
           "UserIntent",
           "IntentRoutingDecision",
@@ -2108,7 +2109,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "4b79470a26464aa380aa6afe34eb1478399648d5",
+  "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

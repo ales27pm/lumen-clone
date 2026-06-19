@@ -254,6 +254,38 @@ struct AgentGroundingRegressionTests {
         )
         #expect(outlook?.lowercased().contains("outlook message") == true)
 
+        let outlookAttachments = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.attachments.list",
+            observation: "No attachments on the latest message.",
+            originalPrompt: "Show attachments on the latest Outlook email."
+        )
+        #expect(outlookAttachments?.lowercased().contains("outlook attachments") == true)
+
+        let outlookFolders = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.folders.list",
+            observation: "Inbox\nArchive",
+            originalPrompt: "Show Outlook mail folders."
+        )
+        #expect(outlookFolders?.lowercased().contains("outlook folders") == true)
+
+        let calendar = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .calendar,
+            toolID: "calendar.list",
+            observation: "• Journée nationale des Autochtones — Jun 21, 2026 at 12:00 AM",
+            originalPrompt: "What's on my schedule today?"
+        )
+        #expect(calendar?.lowercased().contains("calendar events") == true)
+
+        let motion = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .motion,
+            toolID: "motion.activity",
+            observation: "Today's motion — stationary 15 min",
+            originalPrompt: "Am I walking or stationary right now?"
+        )
+        #expect(motion?.lowercased().contains("motion activity") == true)
+
         let reminders = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .reminder,
             toolID: "reminders.list",

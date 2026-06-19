@@ -7,13 +7,13 @@
   "agent": "fleet",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "4b79470a26464aa380aa6afe34eb1478399648d5",
+    "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
     "recordCounts": {
       "eval": 84,
       "train_dpo": 14,
-      "train_sft": 1221,
+      "train_sft": 1195,
       "val_dpo": 2,
-      "val_sft": 216
+      "val_sft": 211
     },
     "sourceFamilies": [
       "approval_boundary_samples",

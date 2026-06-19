@@ -646,7 +646,8 @@ nonisolated enum E2ETestRunner {
                     groundingMode: .slotAgent,
                     allowDegradedGrounding: false,
                     preventDoubleGrounding: true,
-                    diagnosticsEnabled: false
+                    diagnosticsEnabled: false,
+                    allowDeterministicCompatibility: scenario.kind != .training
                 )
                 let agentEvents = await MainActor.run {
                     AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
