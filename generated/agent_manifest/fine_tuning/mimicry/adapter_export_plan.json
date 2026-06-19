@@ -7,7 +7,7 @@
   "agent": "mimicry",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "5b582bfb3948536b1fdf880a4694669945e877a7",
+    "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
     "recordCounts": {
       "eval": 5,
       "train_dpo": 10,

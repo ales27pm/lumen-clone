@@ -208,10 +208,11 @@ def compile_agent_fine_tuning_datasets(
     ultra_specific_sft["cortex"].extend(cortex_codebase_sft)
     for agent, records in ultra_specific_sft.items():
         routed_sft[agent].extend(records)
-        routing_stats[agent]["sourceFamilies"].add(ULTRA_SPECIFIC_SOURCE_FAMILY)
         for record in records:
             metadata = record.get("metadata") or {}
-            task_type = str(metadata.get("taskType") or ULTRA_SPECIFIC_SOURCE_FAMILY)
+            record_source_family = str(metadata.get("sourceFamily") or ULTRA_SPECIFIC_SOURCE_FAMILY)
+            task_type = str(metadata.get("taskType") or record_source_family)
+            routing_stats[agent]["sourceFamilies"].add(record_source_family)
             routing_stats[agent]["taskTypes"].add(task_type)
             routing_stats[agent]["availableSFTRecords"] += 1
 
@@ -252,7 +253,11 @@ def compile_agent_fine_tuning_datasets(
             },
             "quality": {
                 "ultraSpecificSourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
-                "ultraSpecificRecordCount": len(ultra_specific_sft.get(agent, [])),
+                "ultraSpecificRecordCount": sum(
+                    1
+                    for record in ultra_specific_sft.get(agent, [])
+                    if (record.get("metadata") or {}).get("sourceFamily") == ULTRA_SPECIFIC_SOURCE_FAMILY
+                ),
                 "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
                 "cortexCodebaseSelfAwarenessSourceFamily": CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY if agent == "cortex" else None,
                 "cortexCodebaseSelfAwarenessRecordCount": len(cortex_codebase_sft) if agent == "cortex" else 0,
@@ -947,24 +952,25 @@ def _ultra_specific_executor_records(
         )
 
         if tool.arguments:
-            missing_arg = next((arg.name for arg in tool.arguments if arg.required), tool.arguments[0].name)
-            records.append(
-                _adapter_sft_record(
-                    "executor",
-                    f"Build executor JSON for `{tool.id}`, but the user did not provide `{missing_arg}`. Do not guess the missing value.",
-                    {
-                        "status": "needs_clarification",
-                        "tool": tool.id,
-                        "missingArguments": [missing_arg],
-                        "arguments": {key: value for key, value in args.items() if key != missing_arg},
-                    },
-                    "ultra_specific_missing_argument_boundary",
-                    [tool.id],
-                    "boundary",
-                    {"specificityVector": ["missing_argument_detection", "no_guessing"]},
-                    manifest,
+            missing_arg = next((arg.name for arg in tool.arguments if arg.required), None)
+            if missing_arg is not None:
+                records.append(
+                    _adapter_sft_record(
+                        "executor",
+                        f"Build executor JSON for `{tool.id}`, but the user did not provide `{missing_arg}`. Do not guess the missing value.",
+                        {
+                            "status": "needs_clarification",
+                            "tool": tool.id,
+                            "missingArguments": [missing_arg],
+                            "arguments": {key: value for key, value in args.items() if key != missing_arg},
+                        },
+                        "ultra_specific_missing_argument_boundary",
+                        [tool.id],
+                        "boundary",
+                        {"specificityVector": ["missing_argument_detection", "no_guessing"]},
+                        manifest,
+                    )
                 )
-            )
 
         if tool.permissionKey:
             records.append(

@@ -167,7 +167,7 @@ def test_each_adapter_has_ultra_specific_dataset_records(compiled_fine_tuning: t
         assert len(ultra_specific) >= minimum_records[agent], f"{agent} lacks ultra-specific records"
         assert fine_tuning[agent].dataset_card["constraints"]["ultraSpecificAdapterCorpus"] is True
         assert card_quality["ultraSpecificSourceFamily"] == ULTRA_SPECIFIC_SOURCE_FAMILY
-        assert card_quality["ultraSpecificRecordCount"] >= minimum_records[agent]
+        assert card_quality["ultraSpecificRecordCount"] == len(ultra_specific)
         assert all((record.get("metadata") or {}).get("specificity") == "ultra_specific" for record in ultra_specific)
 
 
@@ -189,6 +189,7 @@ def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: t
     assert source_chunk_count >= len(datasets.get("codebase_home_corpus", []))
     assert len(cortex_codebase) >= 2000
     assert len(cortex_chunks) == source_chunk_count
+    assert CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY in fine_tuning["cortex"].dataset_card["sourceFamilies"]
     assert card_quality["cortexCodebaseSelfAwarenessSourceFamily"] == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
     assert card_quality["cortexCodebaseSelfAwarenessRecordCount"] == len(cortex_codebase)
     assert card_quality["cortexCodebaseSelfAwarenessCoverage"] == "git_tracked_text_files_plus_selected_manifest_artifacts"
@@ -197,6 +198,22 @@ def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: t
     assert any((record.get("metadata") or {}).get("taskType") == "module_ownership_grounding" for record in cortex_codebase)
     assert any((record.get("metadata") or {}).get("taskType") == "source_symbol_grounding" for record in cortex_codebase)
     assert any((record.get("metadata") or {}).get("taskType") == "total_codebase_source_chunk" for record in cortex_codebase)
+
+
+def test_executor_missing_argument_samples_require_required_arguments(compiled_fine_tuning: tuple) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    optional_only_tools = {
+        tool.id
+        for tool in manifest.tools
+        if tool.arguments and not any(argument.required for argument in tool.arguments)
+    }
+    assert optional_only_tools
+
+    for record in fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft:
+        metadata = record.get("metadata") or {}
+        if metadata.get("taskType") != "ultra_specific_missing_argument_boundary":
+            continue
+        assert optional_only_tools.isdisjoint(metadata.get("toolIDs") or [])
 
 
 def test_dpo_records_have_prompt_chosen_rejected(compiled_fine_tuning: tuple) -> None:
