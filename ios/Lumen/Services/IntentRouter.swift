@@ -140,7 +140,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .emailDraft, allowedToolIDs: emailToolIDs, requiresClarification: clarification != nil, clarificationPrompt: clarification)
         }
 
-        if matchesAny(text, ["draft message", "write a message", "compose message", "text message", "sms", "imessage", "message to", "send a text"]) {
+        if matchesAny(text, ["draft message", "draft a message", "write a message", "compose message", "text message", "sms", "imessage", "message to", "send a text"]) {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
             let clarification: String?
@@ -365,7 +365,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["draft a text", "message jordan", "text message to", "text 555", "send a text"])
+        if matchesAny(text, ["draft a text", "draft a message", "message jordan", "text message to", "text 555", "send a text"])
             || text.range(of: #"(?i)\b(message|text|sms|imessage)\s+[a-z0-9@._+\-]{2,}\b"#, options: .regularExpression) != nil {
             let recipient = inferredRecipient(text)
             let content = inferredContent(text)
@@ -599,6 +599,11 @@ nonisolated enum IntentRouter {
     }
 
     private static func inferredContent(_ text: String) -> Bool {
-        text.contains(" about ") || text.contains(" saying ") || text.contains(" body ") || text.contains(" that says ") || text.split(separator: " ").count >= 8
+        text.contains(" about ")
+            || text.contains(" saying ")
+            || text.contains(" body ")
+            || text.contains(" that says ")
+            || text.contains(" that ")
+            || text.split(separator: " ").count >= 8
     }
 }

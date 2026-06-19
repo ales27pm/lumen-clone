@@ -1346,7 +1346,8 @@ final class AgentService {
         if options.diagnosticsEnabled {
             return SlotAgentService.shared.run(req, options: options)
         }
-        if SlotAgentService.canCompleteThroughDeterministicCompatibility(req) {
+        if options.allowDeterministicCompatibility,
+           SlotAgentService.canCompleteThroughDeterministicCompatibility(req) {
             var compatibilityOptions = options
             compatibilityOptions.groundingMode = .slotAgent
             compatibilityOptions.allowDegradedGrounding = false
@@ -1937,7 +1938,8 @@ final class AgentService {
             groundingMode: options.groundingMode,
             allowDegradedGrounding: options.allowDegradedGrounding,
             preventDoubleGrounding: options.preventDoubleGrounding,
-            diagnosticsEnabled: options.diagnosticsEnabled || options.groundingMode == .slotAgent
+            diagnosticsEnabled: options.diagnosticsEnabled || options.groundingMode == .slotAgent,
+            allowDeterministicCompatibility: true
         )
         let recovery = await SlotAgentService.deterministicCompatibilityResponseForRecovery(
             original: req,

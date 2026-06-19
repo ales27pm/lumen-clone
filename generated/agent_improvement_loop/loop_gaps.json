@@ -3,1262 +3,2222 @@
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nMove latest Outlook email to inbox.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "6a9fbfafcff9f16c0ae44b45",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nMove my latest Outlook email to Archive.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "048e4a3284dd2c0de27aba9a",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nMove my latest Outlook email to Archive.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "048e4a3284dd2c0de27aba9a",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRead the last email in Outlook.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "6545fc4dd100327e75e2b78d",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRead my latest Outlook email.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "f8283daee720363e03981bbf",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Read Outlook Message, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "65f16c787219b036703a4e8d",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRespond to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "dedaf59fd6e357bc6e4d5515",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nReply to my latest Outlook email saying approved.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "78a6733d86feaae9fe46dde1",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nReply to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "2030c879a79a5edf7c470bea",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRespond to all on my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ef01612e10423be304b79dbe",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nReply all to my latest Outlook email saying approved.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ac38437df41f9d0fa6f29299",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nReply all to my latest Outlook email saying thanks.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "74ff2e6c6570f5e63e3355e2",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nShow recent Outlook mail.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "8246e4b4a930d20fc5c54ab1",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nList my latest Outlook emails.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "b4d8a06b360563689a98fecc",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse List Outlook Messages, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "665716dc091116f146e3f48a",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nFind invoice emails in Outlook.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "68a6262bbfb899cd5947cde0",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch Outlook for messages about invoices.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "a93fc5a31bc712e9501f9c65",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Search Outlook Messages, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ccdc44354cdb2f73ce820366",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nAm I signed in to Outlook?\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "96724b2adf082c586d7cafad",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nCheck Outlook sign in status.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "1c6d21f3207ac8167e230efd",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Outlook Status, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "d7a435ce1ea428ac401a1618",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nDial 5551234567.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "b2e8399b1e709468a310c051",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nCall 5551234567 now.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "fcc4e91366f2617895a087bb",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nCall 5551234567.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ec501a37469dcf94ad3a2d7c",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nFind receipt pictures in my photo library.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "1ef4c64d9546a06620d9062d",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch my photos for receipts.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "af2eb30d1cd97331473ff23b",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Search Photos, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "1955be765e8844ff94cc5be1",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRefresh the file retrieval index.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "268b57e2bb3af6f962b5c8ba",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nReindex my imported files.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "aa141f4739967ce4d7f3f513",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Reindex Files, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "94914af25d06019aa78b3109",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRefresh the photo retrieval index.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "34dcdc3fbab21c9ae6394af1",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nReindex photo metadata for the last 3 months.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "8ec8f2f79dbc7b7d9c656ebb",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Reindex Photos, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "38964834e43b167c7917c42b",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nFind Lumen architecture notes in my local files.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "7a36672fc6b6bc6d71e8e282",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch my local files for the latest Lumen diagnostics report.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "5fa32f1cd6b586d7e198c4ea",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Search Personal Data, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "82b9c7c0ff71bf082216f5b5",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nCreate a reminder to review logs.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "0c0f32f650d5c3dbd9379e7c",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRemind me to check approval boundary.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "619ea4e26188e0b2dbf81674",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRemind me to check Lumen logs.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "4715b5656e05f8e49218be79",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nList pending reminders.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "f40776f40944d0c976fe680b",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nShow my reminders.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "c00dac7431739d81686fb137",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse List Reminders, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "a14b7fb9b7d1f96b11e210ed",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nCancel trigger named nightly summary.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "559d1222fd95926834e40092",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nCancel trigger named nightly summary.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "559d1222fd95926834e40092",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nCancel the trigger called nightly summary.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "6eb5447f4d69d08281a7045b",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRun an agent reminder summary tonight in the background.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "2e5678e42ceda1254632b952",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSchedule an agent run to summarize reminders tonight.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "14c3d41782ebee4fe6861d44",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSchedule an agent run to summarize reminders tonight.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "14c3d41782ebee4fe6861d44",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nShow scheduled agent runs.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "c33a32a223b36de0fadbd93d",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nList scheduled agent runs.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "367ac073139331a636b2f615",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse List Triggers, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "56a31ec02a61acdb645f7afb",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nWill it rain here today?\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "49ad8833d72c2f24cc5e3ae7",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nWhat is the weather here right now?\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "faa9fbba1754673318886fd5",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Current Weather, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "0a75f2896f8f35fcb34ba50f",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRead this URL: https://example.com.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "d41890717b3b4fe44f1b6836",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nFetch https://example.com and summarize the page.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "4c40eb4a904b66e2f73545ad",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nFetch the page at https://example.com.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "267ae2b5328a898177795e93",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nLook up recent Swift concurrency best practices online.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "4b597124b40b2ab591165f25",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch the web for SwiftData cancellation patterns.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "b38b8ec89d5ed9e636ed610c",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nUse Web Search, but ask for clarification if required details are missing.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "7fc7657cd01f78c9a40f88fd",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nWhat is the weather here and should I carry an umbrella?\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "7757336a11a7fe46c910a695",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch the web for two recent Swift concurrency best practices and summarize them.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "49a0337f69b667f788f278c3",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nRemember that I prefer concise bullet points, then tell me what you remembered.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "aface48a530f14d32e2aaf53",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch my files for architecture notes and summarize key modules.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "5eb09d3fa44f8c3acc64ccad",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSchedule a trigger to summarize reminders tonight and confirm what will run.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "bc0c6d225d8b53917746173b",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nDraft an email to Alex with a professional update and ask one clarifying question.\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "3aca8c83078c8011ed1cfc69",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch the web for SwiftData cancellation patterns\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ad12df6f9adaf64d564bfcfb",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
+        "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "calendar",
+          "final": "Calendar event tools are unavailable in this build right now.",
+          "intent": "calendar",
+          "name": "Live calendar.list alternatePhrasing",
+          "prompt": "What's on my schedule today?",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
         "expected": [
-          "strict manifest-valid structured output"
+          "Final answer must satisfy the `calendar` eval contract without violating tool boundaries."
         ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch the web for SwiftData cancellation patterns\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Calendar event tools are unavailable in this build right now.",
+          "correctedOutput": "Calendar event tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `calendar` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `calendar` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "What's on my schedule today?",
+          "violationCode": "e2e_response_quality_calendar"
+        },
+        "scenario": "What's on my schedule today?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_calendar"
       },
-      "id": "3a30d80d3bd33b7be0818150",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "id": "111ec67de459dcd42457d942",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
-      "title": "trace_parse_error"
+      "title": "e2e_response_quality_calendar"
     },
     {
       "category": "runtime_drift",
       "evidence": {
-        "actual": "generation_error",
-        "agent": "executor",
-        "expected": [
-          "strict manifest-valid structured output"
-        ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "User request:\nSearch the web for SwiftData cancellation patterns\n\nEmit the first JSON object now. Choose either action or final.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
-      },
-      "id": "ad12df6f9adaf64d564bfcfb",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
-      "severity": "error",
-      "title": "trace_parse_error"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "noJSONObject",
+        "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "calendar",
+          "final": "Calendar event tools are unavailable in this build right now.",
+          "intent": "calendar",
+          "name": "Live calendar.list direct",
+          "prompt": "Show my next calendar events.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
         "expected": [
-          "strict manifest-valid structured output"
+          "Final answer must satisfy the `calendar` eval contract without violating tool boundaries."
         ],
-        "problem": "A recorded in-app model trace contained a parse error.",
-        "scenario": "The user asked:\nSearch the web for SwiftData cancellation patterns\n\nThe previous local model response could not be parsed as a structured agent turn (noJSONObject).\nRaw failed response:\nGeneration error: Failed to initialize context: Prompt exceeds shared chat context window\n\nWrite the final answer the user should see. Output plain text only. Do not mention JSON, parsing, schemas, tools, or internal errors. Do not include code fences.",
-        "sourceLayer": "agentBehaviorTraceRecorder",
-        "type": "trace_parse_error"
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Calendar event tools are unavailable in this build right now.",
+          "correctedOutput": "Calendar event tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `calendar` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `calendar` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Show my next calendar events.",
+          "violationCode": "e2e_response_quality_calendar"
+        },
+        "scenario": "Show my next calendar events.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_calendar"
       },
-      "id": "3a30d80d3bd33b7be0818150",
-      "recommendedAction": "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope.",
+      "id": "93b6c94f5e750c730420abad",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "severity": "error",
-      "title": "trace_parse_error"
+      "title": "e2e_response_quality_calendar"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Calendar event tools are unavailable in this build right now.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "calendar",
+          "final": "Calendar event tools are unavailable in this build right now.",
+          "intent": "calendar",
+          "name": "Live calendar.list missingArgument",
+          "prompt": "Use List Events, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `calendar` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Calendar event tools are unavailable in this build right now.",
+          "correctedOutput": "Calendar event tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `calendar` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `calendar` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Use List Events, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_calendar"
+        },
+        "scenario": "Use List Events, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_calendar"
+      },
+      "id": "2b9da12ab2159f7344eacc5d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_calendar"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Calendar event tools are unavailable in this build right now.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "calendar",
+          "final": "Calendar event tools are unavailable in this build right now.",
+          "intent": "calendar",
+          "name": "Live calendar.list alternatePhrasing",
+          "prompt": "What's on my schedule today?",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `calendar` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Calendar event tools are unavailable in this build right now.",
+          "correctedOutput": "Calendar event tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `calendar` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `calendar` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "What's on my schedule today?",
+          "violationCode": "e2e_response_quality_calendar"
+        },
+        "scenario": "What's on my schedule today?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_calendar"
+      },
+      "id": "111ec67de459dcd42457d942",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_calendar"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Calendar event tools are unavailable in this build right now.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "calendar",
+          "final": "Calendar event tools are unavailable in this build right now.",
+          "intent": "calendar",
+          "name": "Live calendar.list direct",
+          "prompt": "Show my next calendar events.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `calendar` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Calendar event tools are unavailable in this build right now.",
+          "correctedOutput": "Calendar event tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `calendar` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `calendar` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Show my next calendar events.",
+          "violationCode": "e2e_response_quality_calendar"
+        },
+        "scenario": "Show my next calendar events.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_calendar"
+      },
+      "id": "93b6c94f5e750c730420abad",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_calendar"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Calendar event tools are unavailable in this build right now.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "calendar",
+          "final": "Calendar event tools are unavailable in this build right now.",
+          "intent": "calendar",
+          "name": "Live calendar.list missingArgument",
+          "prompt": "Use List Events, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `calendar` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Calendar event tools are unavailable in this build right now.",
+          "correctedOutput": "Calendar event tools are unavailable in this build right now.",
+          "curriculum": "response_quality",
+          "expected": "Final answer must satisfy the `calendar` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `calendar` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Use List Events, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_calendar"
+        },
+        "scenario": "Use List Events, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_calendar"
+      },
+      "id": "2b9da12ab2159f7344eacc5d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_calendar"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+          "intent": "chat",
+          "name": "Training eval: pure chat quality",
+          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "violationCode": "e2e_response_quality_chat"
+        },
+        "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_chat"
+      },
+      "id": "e857b86a30a77410851456c9",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_chat"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "emailDraft",
+          "final": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+          "intent": "emailDraft",
+          "name": "Training eval: communication drafting",
+          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "violationCode": "e2e_response_quality_emaildraft"
+        },
+        "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_emaildraft"
+      },
+      "id": "1a3ab3c98bdba96679a2c2ef",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_emaildraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.directions direct",
+          "prompt": "Give me directions to the nearest hardware store.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Give me directions to the nearest hardware store.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Give me directions to the nearest hardware store.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "4830bbd0c5d4625d0f1cbcd4",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.directions missingArgument",
+          "prompt": "Give me directions to the nearest hardware store.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Give me directions to the nearest hardware store.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Give me directions to the nearest hardware store.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "df93343f42501e4af714300a",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.search alternatePhrasing",
+          "prompt": "Find coffee near me.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Find coffee near me.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Find coffee near me.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "f4ec2f85ec8acd42c13ac815",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.search direct",
+          "prompt": "Find a pharmacy nearby.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Find a pharmacy nearby.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Find a pharmacy nearby.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "3449e2cab57c96cbdb30ed12",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.search missingArgument",
+          "prompt": "Use Search Nearby, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Search Nearby, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Use Search Nearby, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "03e36494e69e854d406d84b1",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.directions direct",
+          "prompt": "Give me directions to the nearest hardware store.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Give me directions to the nearest hardware store.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Give me directions to the nearest hardware store.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "4830bbd0c5d4625d0f1cbcd4",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.directions missingArgument",
+          "prompt": "Give me directions to the nearest hardware store.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Give me directions to the nearest hardware store.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Give me directions to the nearest hardware store.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "df93343f42501e4af714300a",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.search alternatePhrasing",
+          "prompt": "Find coffee near me.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Find coffee near me.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Find coffee near me.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "f4ec2f85ec8acd42c13ac815",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.search direct",
+          "prompt": "Find a pharmacy nearby.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Find a pharmacy nearby.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Find a pharmacy nearby.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "3449e2cab57c96cbdb30ed12",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the maps/location request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "maps",
+          "final": "I couldn’t safely complete the maps/location request.",
+          "intent": "maps",
+          "name": "Live maps.search missingArgument",
+          "prompt": "Use Search Nearby, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the maps/location request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `maps` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Search Nearby, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_maps"
+        },
+        "scenario": "Use Search Nearby, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_maps"
+      },
+      "id": "03e36494e69e854d406d84b1",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_maps"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.recall alternatePhrasing",
+          "prompt": "Tell me what style I asked you to use.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Tell me what style I asked you to use.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Tell me what style I asked you to use.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "08115dc6a9c304a8bd3c105a",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.recall direct",
+          "prompt": "What do you remember about my response style preference?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What do you remember about my response style preference?",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "What do you remember about my response style preference?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "6ac383d42bab6fccf3efb462",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.recall missingArgument",
+          "prompt": "Use Recall Memory, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Recall Memory, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Use Recall Memory, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "39c7b9a1e03d57c1b899ffcf",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.save alternatePhrasing",
+          "prompt": "Keep in mind that I like short answers.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Keep in mind that I like short answers.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Keep in mind that I like short answers.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "4eb6361cb7cefb54106e1efa",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.save direct",
+          "prompt": "Remember that I prefer concise bullet points.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Remember that I prefer concise bullet points.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Remember that I prefer concise bullet points.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "9be6e44d79d5f414562798e3",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.save missingArgument",
+          "prompt": "Use Save Memory, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Save Memory, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Use Save Memory, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "e302dae804beb411dfcc404d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I remember that you prefer concise bullet points.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "I remember that you prefer concise bullet points.",
+          "intent": "memory",
+          "name": "Training eval: memory save/recall",
+          "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I remember that you prefer concise bullet points.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "cf61a79cb979423e1302ae9b",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.recall alternatePhrasing",
+          "prompt": "Tell me what style I asked you to use.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Tell me what style I asked you to use.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Tell me what style I asked you to use.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "08115dc6a9c304a8bd3c105a",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.recall direct",
+          "prompt": "What do you remember about my response style preference?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What do you remember about my response style preference?",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "What do you remember about my response style preference?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "6ac383d42bab6fccf3efb462",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.recall missingArgument",
+          "prompt": "Use Recall Memory, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Recall Memory, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Use Recall Memory, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "39c7b9a1e03d57c1b899ffcf",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.save alternatePhrasing",
+          "prompt": "Keep in mind that I like short answers.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Keep in mind that I like short answers.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Keep in mind that I like short answers.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "4eb6361cb7cefb54106e1efa",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.save direct",
+          "prompt": "Remember that I prefer concise bullet points.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Remember that I prefer concise bullet points.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Remember that I prefer concise bullet points.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "9be6e44d79d5f414562798e3",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "name": "Live memory.save missingArgument",
+          "prompt": "Use Save Memory, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Save Memory, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_memory"
+        },
+        "scenario": "Use Save Memory, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_memory"
+      },
+      "id": "e302dae804beb411dfcc404d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_memory"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "What should the message say?",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "messageDraft",
+          "final": "What should the message say?",
+          "intent": "messageDraft",
+          "name": "Live messages.draft alternatePhrasing",
+          "prompt": "Text 5551234567 that I am late.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "What should the message say?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `messageDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Text 5551234567 that I am late.",
+          "violationCode": "e2e_response_quality_messagedraft"
+        },
+        "scenario": "Text 5551234567 that I am late.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_messagedraft"
+      },
+      "id": "5c09f189b1373d1fdb701dd0",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_messagedraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "What should the message say?",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "messageDraft",
+          "final": "What should the message say?",
+          "intent": "messageDraft",
+          "name": "Live messages.draft approvalBoundary",
+          "prompt": "Text 5551234567 that approval boundary works.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "What should the message say?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `messageDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Text 5551234567 that approval boundary works.",
+          "violationCode": "e2e_response_quality_messagedraft"
+        },
+        "scenario": "Text 5551234567 that approval boundary works.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_messagedraft"
+      },
+      "id": "783a65be719b0992888bd07e",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_messagedraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Who should I message, and what should it say?",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "messageDraft",
+          "final": "Who should I message, and what should it say?",
+          "intent": "messageDraft",
+          "name": "Live messages.draft direct",
+          "prompt": "Draft a message to 5551234567 saying I am running late.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Who should I message, and what should it say?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `messageDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Draft a message to 5551234567 saying I am running late.",
+          "violationCode": "e2e_response_quality_messagedraft"
+        },
+        "scenario": "Draft a message to 5551234567 saying I am running late.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_messagedraft"
+      },
+      "id": "06e3f84422638ec5ba6ac5a7",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_messagedraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "What should the message say?",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "messageDraft",
+          "final": "What should the message say?",
+          "intent": "messageDraft",
+          "name": "Live messages.draft alternatePhrasing",
+          "prompt": "Text 5551234567 that I am late.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "What should the message say?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `messageDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Text 5551234567 that I am late.",
+          "violationCode": "e2e_response_quality_messagedraft"
+        },
+        "scenario": "Text 5551234567 that I am late.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_messagedraft"
+      },
+      "id": "5c09f189b1373d1fdb701dd0",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_messagedraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "What should the message say?",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "messageDraft",
+          "final": "What should the message say?",
+          "intent": "messageDraft",
+          "name": "Live messages.draft approvalBoundary",
+          "prompt": "Text 5551234567 that approval boundary works.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "What should the message say?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `messageDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Text 5551234567 that approval boundary works.",
+          "violationCode": "e2e_response_quality_messagedraft"
+        },
+        "scenario": "Text 5551234567 that approval boundary works.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_messagedraft"
+      },
+      "id": "783a65be719b0992888bd07e",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_messagedraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Who should I message, and what should it say?",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "messageDraft",
+          "final": "Who should I message, and what should it say?",
+          "intent": "messageDraft",
+          "name": "Live messages.draft direct",
+          "prompt": "Draft a message to 5551234567 saying I am running late.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Who should I message, and what should it say?",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `messageDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Draft a message to 5551234567 saying I am running late.",
+          "violationCode": "e2e_response_quality_messagedraft"
+        },
+        "scenario": "Draft a message to 5551234567 saying I am running late.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_messagedraft"
+      },
+      "id": "06e3f84422638ec5ba6ac5a7",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_messagedraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the motion/activity request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "motion",
+          "final": "I couldn’t safely complete the motion/activity request.",
+          "intent": "motion",
+          "name": "Live motion.activity alternatePhrasing",
+          "prompt": "Am I walking or stationary right now?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the motion/activity request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `motion` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Am I walking or stationary right now?",
+          "violationCode": "e2e_response_quality_motion"
+        },
+        "scenario": "Am I walking or stationary right now?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_motion"
+      },
+      "id": "86b04433a3bbbea050e60cb2",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_motion"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the motion/activity request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "motion",
+          "final": "I couldn’t safely complete the motion/activity request.",
+          "intent": "motion",
+          "name": "Live motion.activity direct",
+          "prompt": "What motion activity is detected right now?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the motion/activity request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `motion` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What motion activity is detected right now?",
+          "violationCode": "e2e_response_quality_motion"
+        },
+        "scenario": "What motion activity is detected right now?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_motion"
+      },
+      "id": "371656c5cf725ff05816effa",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_motion"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the motion/activity request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "motion",
+          "final": "I couldn’t safely complete the motion/activity request.",
+          "intent": "motion",
+          "name": "Live motion.activity missingArgument",
+          "prompt": "Use Motion Activity, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the motion/activity request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `motion` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Motion Activity, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_motion"
+        },
+        "scenario": "Use Motion Activity, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_motion"
+      },
+      "id": "86c25e29f38f52f077695701",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_motion"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the motion/activity request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "motion",
+          "final": "I couldn’t safely complete the motion/activity request.",
+          "intent": "motion",
+          "name": "Live motion.activity alternatePhrasing",
+          "prompt": "Am I walking or stationary right now?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the motion/activity request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `motion` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Am I walking or stationary right now?",
+          "violationCode": "e2e_response_quality_motion"
+        },
+        "scenario": "Am I walking or stationary right now?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_motion"
+      },
+      "id": "86b04433a3bbbea050e60cb2",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_motion"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the motion/activity request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "motion",
+          "final": "I couldn’t safely complete the motion/activity request.",
+          "intent": "motion",
+          "name": "Live motion.activity direct",
+          "prompt": "What motion activity is detected right now?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the motion/activity request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `motion` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What motion activity is detected right now?",
+          "violationCode": "e2e_response_quality_motion"
+        },
+        "scenario": "What motion activity is detected right now?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_motion"
+      },
+      "id": "371656c5cf725ff05816effa",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_motion"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the motion/activity request.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "motion",
+          "final": "I couldn’t safely complete the motion/activity request.",
+          "intent": "motion",
+          "name": "Live motion.activity missingArgument",
+          "prompt": "Use Motion Activity, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "I couldn’t safely complete the motion/activity request.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `motion` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use Motion Activity, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_motion"
+        },
+        "scenario": "Use Motion Activity, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_motion"
+      },
+      "id": "86c25e29f38f52f077695701",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_motion"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.attachments.list alternatePhrasing",
+          "prompt": "Show attachments on the latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Show attachments on the latest Outlook email.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Show attachments on the latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "aafae61b682e317664843d1c",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.attachments.list direct",
+          "prompt": "List attachments for my latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "List attachments for my latest Outlook email.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "List attachments for my latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "3023505d795f2961e7a187c3",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.attachments.list missingArgument",
+          "prompt": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "69c78eb2cf15702abe35358d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.draft.create alternatePhrasing",
+          "prompt": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "90c017775d17df470e006893",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.draft.create approvalBoundary",
+          "prompt": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "4590307bed2d7acfbd774d2a",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.attachments.list alternatePhrasing",
+          "prompt": "Show attachments on the latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Show attachments on the latest Outlook email.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Show attachments on the latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "aafae61b682e317664843d1c",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.attachments.list direct",
+          "prompt": "List attachments for my latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "List attachments for my latest Outlook email.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "List attachments for my latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "3023505d795f2961e7a187c3",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.attachments.list missingArgument",
+          "prompt": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "69c78eb2cf15702abe35358d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.draft.create alternatePhrasing",
+          "prompt": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "90c017775d17df470e006893",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.draft.create approvalBoundary",
+          "prompt": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "4590307bed2d7acfbd774d2a",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.draft.create direct",
+          "prompt": "Create an Outlook draft to alex@example.com with subject Update and body All good.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Create an Outlook draft to alex@example.com with subject Update and body All good.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Create an Outlook draft to alex@example.com with subject Update and body All good.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "41ae8b03ac26d3ff667e8071",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.folders.list alternatePhrasing",
+          "prompt": "Show Outlook mail folders.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Show Outlook mail folders.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "Show Outlook mail folders.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "843c640738de542449c8b778",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook tool output could not be validated.",
+        "agent": "cortex",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook tool output could not be validated.",
+          "intent": "outlook",
+          "name": "Live outlook.folders.list direct",
+          "prompt": "List my Outlook folders.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "cortex",
+          "badOutput": "Outlook tool output could not be validated.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `outlook` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "List my Outlook folders.",
+          "violationCode": "e2e_response_quality_outlook"
+        },
+        "scenario": "List my Outlook folders.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_outlook"
+      },
+      "id": "f37ef698337a57c1280d5dfa",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_outlook"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "{\"intent\":\"rag\",\"module\":\"photos\",\"module(s)\":[\"Photos\"],\"nextModel\":\"rag\",\"reasoningSummary\":\"RAG search results: [1] Photos · Photos 2026-06 Photos (2026-06): 98 items between Jun 3, 2026 and Jun 18, 2026. 0 favorites, 0 videos, 80 screenshots, 0 selfies, 0 live photos, 3 portraits, 6 with location. [2] Photos · Photos 2025-12 Photos (2025-12): 55 items between Dec 20, 2025 and Dec 29, 2025. 0 favorites, 1 videos, 41 screenshots, 0 selfies, 3 live photos, 5 portraits, 8 with location.\"} Source: retrieved file snippet [1].",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "{\"intent\":\"rag\",\"module\":\"photos\",\"module(s)\":[\"Photos\"],\"nextModel\":\"rag\",\"reasoningSummary\":\"RAG search results: [1] Photos · Photos 2026-06 Photos (2026-06): 98 items between Jun 3, 2026 and Jun 18, 2026. 0 favorites, 0 videos, 80 screenshots, 0 selfies, 0 live photos, 3 portraits, 6 with location. [2] Photos · Photos 2025-12 Photos (2025-12): 55 items between Dec 20, 2025 and Dec 29, 2025. 0 favorites, 1 videos, 41 screenshots, 0 selfies, 3 live photos, 5 portraits, 8 with location.\"} Source: retrieved file snippet [1].",
+          "intent": "rag",
+          "name": "Training eval: local knowledge grounding",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "{\"intent\":\"rag\",\"module\":\"photos\",\"module(s)\":[\"Photos\"],\"nextModel\":\"rag\",\"reasoningSummary\":\"RAG search results: [1] Photos · Photos 2026-06 Photos (2026-06): 98 items between Jun 3, 2026 and Jun 18, 2026. 0 favorites, 0 videos, 80 screenshots, 0 selfies, 0 live photos, 3 portraits, 6 with location. [2] Photos · Photos 2025-12 Photos (2025-12): 55 items between Dec 20, 2025 and Dec 29, 2025. 0 favorites, 1 videos, 41 screenshots, 0 selfies, 3 live photos, 5 portraits, 8 with location.\"} Source: retrieved file snippet [1].",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "grounded_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `rag` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "scenario": "Search my files for architecture notes and summarize key modules.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "fa456f28f18bd623d03d8280",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "trigger",
+          "final": "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+          "intent": "trigger",
+          "name": "Training eval: trigger scheduling quality",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `trigger` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "violationCode": "e2e_response_quality_trigger"
+        },
+        "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_trigger"
+      },
+      "id": "b741153d794e569516164478",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_trigger"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Weather update: Weather at your location: · overcast · 18°C · feels like 18°C · humidity 90% · wind 19 km/h · gusts 40 km/h · cloud cover 100% · updated 2026-06-18T20:45",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "weather",
+          "final": "Weather update: Weather at your location: · overcast · 18°C · feels like 18°C · humidity 90% · wind 19 km/h · gusts 40 km/h · cloud cover 100% · updated 2026-06-18T20:45",
+          "intent": "weather",
+          "name": "Training eval: weather stays grounded",
+          "prompt": "What is the weather here and should I carry an umbrella?",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Weather update: Weather at your location: · overcast · 18°C · feels like 18°C · humidity 90% · wind 19 km/h · gusts 40 km/h · cloud cover 100% · updated 2026-06-18T20:45",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "What is the weather here and should I carry an umbrella?",
+          "violationCode": "e2e_response_quality_weather"
+        },
+        "scenario": "What is the weather here and should I carry an umbrella?",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_weather"
+      },
+      "id": "32e6230adf20e6d793d09b6f",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_weather"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n5. The Essential Guide to Concurrency in Swift: Avoiding Common ... - Medium\nhttps://medium.com/@rashadsh/the-essential-guide-to-concurrency-in-swift-avoiding-common-pitfalls-9ac58ada1367\n\n6. Mastering Swift Concurrency for Modern Developers | MoldStud\nhttps://moldstud.com/articles/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "webSearch",
+          "final": "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n5. The Essential Guide to Concurrency in Swift: Avoiding Common ... - Medium\nhttps://medium.com/@rashadsh/the-essential-guide-to-concurrency-in-swift-avoiding-common-pitfalls-9ac58ada1367\n\n6. Mastering Swift Concurrency for Modern Developers | MoldStud\nhttps://moldstud.com/articles/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers",
+          "intent": "webSearch",
+          "name": "Training eval: web research synthesis",
+          "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+        ],
+        "problem": "Live E2E scenario did not record model-backed generation evidence",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n5. The Essential Guide to Concurrency in Swift: Avoiding Common ... - Medium\nhttps://medium.com/@rashadsh/the-essential-guide-to-concurrency-in-swift-avoiding-common-pitfalls-9ac58ada1367\n\n6. Mastering Swift Concurrency for Modern Developers | MoldStud\nhttps://moldstud.com/articles/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers",
+          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "promptPrefix": "Search the web for two recent Swift concurrency best practices and summarize them.",
+          "violationCode": "e2e_response_quality_websearch"
+        },
+        "scenario": "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_websearch"
+      },
+      "id": "a780612d34145def0b56278d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_websearch"
     }
   ]
 }
