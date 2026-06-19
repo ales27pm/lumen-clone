@@ -36,6 +36,23 @@ FANOUT_INTENTS = {
     "webSearch",
 }
 
+AGENT_SYSTEM_MARKERS = {
+    "cortex": "You are Cortex",
+    "executor": "You are Executor",
+    "mouth": "You are Mouth",
+    "mimicry": "You are Mimicry",
+    "rem": "You are REM",
+    "fleet": "You are part of the Lumen model fleet",
+}
+EMBEDDING_SOURCE_FAMILY_PREFIX = "embedding_"
+ROLE_PRIMARY_SOURCE_THRESHOLDS = {
+    "executor": (0.80, {"adapter_ultra_specific", "executor_tool_calls", "tool_schema_cards", "approval_boundary_samples", "negative_samples"}),
+    "mimicry": (0.90, {"adapter_ultra_specific", "mimicry_style"}),
+    "mouth": (0.70, {"adapter_ultra_specific", "mouth_responses", "runtime_audit_repairs"}),
+    "rem": (0.70, {"adapter_ultra_specific", "rem_reflection", "runtime_audit_repairs"}),
+    "fleet": (0.70, {"adapter_ultra_specific", "fleet_system_prompts", "cross_model_training", "manifest_grounding_cards"}),
+}
+
 
 def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str, list[dict]] | None = None, *, strict: bool = False) -> ValidationReport:  # NOSONAR
     failures: list[ValidationFailure] = []
@@ -420,6 +437,7 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
             forbidden=forbidden,
             failures=failures,
         )
+        _validate_agent_sft_mix(agent=agent, records=ds.train_sft + ds.val_sft, failures=failures)
         _validate_agent_dpo_records(agent=agent, records=ds.train_dpo + ds.val_dpo, failures=failures)
         _validate_agent_eval_records(agent=agent, records=ds.eval, failures=failures, known_tools=known_tools)
         _validate_unsloth_config(agent=agent, config=ds.unsloth_config, failures=failures)
@@ -461,18 +479,32 @@ def _validate_agent_sft_records(  # NOSONAR
     forbidden: set[str],
     failures: list[ValidationFailure],
 ) -> None:
+    seen_messages: dict[str, int] = {}
     for index, rec in enumerate(records):
         messages = rec.get("messages")
         if not isinstance(messages, list) or len(messages) < 3:
             failures.append(ValidationFailure(code="invalid_chat_format", message=f"{agent} SFT record must use system/user/assistant chat format", path=f"fine_tuning.{agent}.sft.{index}"))
             continue
+        message_key = json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if message_key in seen_messages:
+            failures.append(ValidationFailure(code="duplicate_sft_messages", message=f"{agent} duplicates exact SFT messages from index {seen_messages[message_key]}", path=f"fine_tuning.{agent}.sft.{index}"))
+        else:
+            seen_messages[message_key] = index
 
         assistant = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "assistant"), "")
-        if not isinstance(assistant, str) or not assistant.strip():
+        if not isinstance(assistant, str) or not assistant.strip() or assistant.strip().lower() == "null":
             failures.append(ValidationFailure(code="empty_assistant_output", message=f"{agent} has empty assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
         for sentinel in forbidden:
             if sentinel in assistant:
                 failures.append(ValidationFailure(code="sentinel_leak", message=f"{agent} leaked sentinel `{sentinel}`", path=f"fine_tuning.{agent}.sft.{index}"))
+
+        system = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "system"), "")
+        expected_marker = AGENT_SYSTEM_MARKERS.get(agent)
+        if expected_marker and (not isinstance(system, str) or expected_marker not in system):
+            failures.append(ValidationFailure(code="system_role_mismatch", message=f"{agent} SFT system prompt does not match metadata.agent", path=f"fine_tuning.{agent}.sft.{index}.messages.system"))
+        user = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "user"), "")
+        if agent != "cortex" and isinstance(user, str) and "Ground Cortex" in user:
+            failures.append(ValidationFailure(code="wrong_role_cortex_grounding", message=f"{agent} SFT record contains Cortex grounding prompt", path=f"fine_tuning.{agent}.sft.{index}.messages.user"))
 
         metadata = rec.get("metadata")
         if not isinstance(metadata, dict):
@@ -480,6 +512,9 @@ def _validate_agent_sft_records(  # NOSONAR
             continue
         if metadata.get("agent") != agent:
             failures.append(ValidationFailure(code="unknown_agent_role", message=f"SFT record metadata.agent mismatch for {agent}", path=f"fine_tuning.{agent}.sft.{index}.metadata.agent"))
+        source_family = str(metadata.get("sourceFamily") or "")
+        if source_family.startswith(EMBEDDING_SOURCE_FAMILY_PREFIX):
+            failures.append(ValidationFailure(code="embedding_source_family_in_chat_sft", message=f"{agent} SFT contains embedding source family {source_family}", path=f"fine_tuning.{agent}.sft.{index}.metadata.sourceFamily"))
 
         tool_ids = metadata.get("toolIDs")
         if isinstance(tool_ids, list):
@@ -488,9 +523,10 @@ def _validate_agent_sft_records(  # NOSONAR
                     continue
                 if tool_id not in known_tools:
                     failures.append(ValidationFailure(code="unknown_tool_id", message=f"{agent} references unknown tool {tool_id}", path=f"fine_tuning.{agent}.sft.{index}.metadata.toolIDs"))
+        if agent == "executor":
+            _validate_executor_assistant_json(assistant, index, failures)
         if agent == "executor" and isinstance(tool_ids, list):
             task_type = str(metadata.get("taskType") or "")
-            source_family = str(metadata.get("sourceFamily") or "")
             if task_type not in {"tool_call_generation", "argument_completion", "required_args"} and source_family not in {"executor_tool_calls", "approval_boundary_samples"}:
                 continue
             if not _should_enforce_required_args(assistant):
@@ -501,6 +537,41 @@ def _validate_agent_sft_records(  # NOSONAR
                     continue
                 if not _assistant_mentions_required_args(assistant, required_args):
                     failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor sample for {tool_id} missing required args in assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
+
+
+def _validate_executor_assistant_json(assistant: Any, index: int, failures: list[ValidationFailure]) -> None:
+    if not isinstance(assistant, str):
+        failures.append(ValidationFailure(code="executor_invalid_json", message="Executor assistant output must be JSON text", path=f"fine_tuning.executor.sft.{index}.messages.assistant"))
+        return
+    try:
+        parsed = json.loads(assistant)
+    except json.JSONDecodeError:
+        failures.append(ValidationFailure(code="executor_invalid_json", message="Executor assistant output is not valid JSON", path=f"fine_tuning.executor.sft.{index}.messages.assistant"))
+        return
+    if not isinstance(parsed, dict):
+        failures.append(ValidationFailure(code="executor_invalid_json", message="Executor assistant JSON must be an object", path=f"fine_tuning.executor.sft.{index}.messages.assistant"))
+
+
+def _validate_agent_sft_mix(*, agent: str, records: list[dict[str, Any]], failures: list[ValidationFailure]) -> None:
+    threshold = ROLE_PRIMARY_SOURCE_THRESHOLDS.get(agent)
+    if threshold is None or not records:
+        return
+    minimum_ratio, primary_families = threshold
+    primary_count = 0
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record, dict) else None
+        source_family = str((metadata or {}).get("sourceFamily") or "") if isinstance(metadata, dict) else ""
+        if source_family in primary_families:
+            primary_count += 1
+    ratio = primary_count / len(records)
+    if ratio < minimum_ratio:
+        failures.append(
+            ValidationFailure(
+                code="role_native_sft_ratio_below_threshold",
+                message=f"{agent} role-native SFT ratio {ratio:.2f} below required {minimum_ratio:.2f}",
+                path=f"fine_tuning.{agent}.sft",
+            )
+        )
 
 
 def _assistant_mentions_required_args(assistant: str, required_args: set[str]) -> bool:
