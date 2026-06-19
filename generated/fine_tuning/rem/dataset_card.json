@@ -1,21 +1,35 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 1342,
+  "availableSFTRecords": 5871,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
-    "sentinelSafe": true
+    "sentinelSafe": true,
+    "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
+  "manifestCommit": "5b582bfb3948536b1fdf880a4694669945e877a7",
+  "quality": {
+    "cortexCodebaseChunkRecordCount": 0,
+    "cortexCodebaseFileRecordCount": 0,
+    "cortexCodebaseSelfAwarenessCoverage": null,
+    "cortexCodebaseSelfAwarenessRecordCount": 0,
+    "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
+    "ultraSpecificRecordCount": 10,
+    "ultraSpecificSourceFamily": "adapter_ultra_specific"
+  },
   "recordCounts": {
-    "eval": 4,
-    "train_dpo": 7,
-    "train_sft": 516,
-    "val_dpo": 1,
-    "val_sft": 91
+    "eval": 6,
+    "train_dpo": 8,
+    "train_sft": 3680,
+    "val_dpo": 2,
+    "val_sft": 650
   },
   "sourceFamilies": [
+    "adapter_ultra_specific",
+    "codebase_home_chunk_sft",
+    "codebase_home_chunks",
     "codebase_home_corpus",
     "codebase_home_sft",
     "cross_model_training",
@@ -36,6 +50,8 @@
   "taskTypes": [
     "codebase_home_grounding",
     "codebase_home_overview",
+    "codebase_source_chunk",
+    "codebase_source_chunk_grounding",
     "embedding_corpus",
     "embedding_dataset_card",
     "embedding_eval_retrieval",
@@ -52,6 +68,13 @@
     "reflection_and_memory_policy",
     "rem_reflection",
     "runtime_manifest_drift_repair",
-    "tool_id_repair"
+    "tool_id_repair",
+    "ultra_specific_argument_extraction_repair",
+    "ultra_specific_manifest_tool_repair",
+    "ultra_specific_memory_ttl_policy",
+    "ultra_specific_prompt_control_repair",
+    "ultra_specific_reference_resolution_repair",
+    "ultra_specific_runtime_repair",
+    "ultra_specific_training_evidence_repair"
   ]
 }

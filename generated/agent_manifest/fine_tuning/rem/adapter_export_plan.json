@@ -1,19 +1,24 @@
 {
-  "adapterArtifact": "models/lora/rem",
-  "adapterDirectory": "models/lora/rem",
+  "adapterArtifact": "models/lora_qwen3_bootstrap/rem",
+  "adapterDirectory": "models/lora_qwen3_bootstrap/rem",
+  "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
   "adapterID": "lumen-rem-adapter",
+  "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "rem",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
+    "manifestCommit": "5b582bfb3948536b1fdf880a4694669945e877a7",
     "recordCounts": {
-      "eval": 4,
-      "train_dpo": 7,
-      "train_sft": 453,
-      "val_dpo": 1,
-      "val_sft": 80
+      "eval": 6,
+      "train_dpo": 8,
+      "train_sft": 3680,
+      "val_dpo": 2,
+      "val_sft": 650
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cross_model_training",
@@ -23,6 +28,8 @@
       "embedding_hard_negatives",
       "embedding_train_pairs",
       "embedding_train_triplets",
+      "embedding_val_pairs",
+      "embedding_val_triplets",
       "manifest_grounding_cards",
       "rem_reflection",
       "runtime_audit_repairs",
@@ -31,12 +38,16 @@
     "taskTypes": [
       "codebase_home_grounding",
       "codebase_home_overview",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "embedding_corpus",
       "embedding_dataset_card",
       "embedding_eval_retrieval",
       "embedding_hard_negatives",
       "embedding_train_pairs",
       "embedding_train_triplets",
+      "embedding_val_pairs",
+      "embedding_val_triplets",
       "fleet_delegation",
       "fleet_delegation_preference",
       "fleet_peer_knowledge",
@@ -45,11 +56,19 @@
       "reflection_and_memory_policy",
       "rem_reflection",
       "runtime_manifest_drift_repair",
-      "tool_id_repair"
+      "tool_id_repair",
+      "ultra_specific_argument_extraction_repair",
+      "ultra_specific_manifest_tool_repair",
+      "ultra_specific_memory_ttl_policy",
+      "ultra_specific_prompt_control_repair",
+      "ultra_specific_reference_resolution_repair",
+      "ultra_specific_runtime_repair",
+      "ultra_specific_training_evidence_repair"
     ]
   },
   "expectedArtifacts": {
-    "adapterDirectory": "models/lora/rem",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/rem",
+    "adapterGGUF": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
     "trainDPO": "train_dpo.jsonl",
@@ -75,6 +94,8 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
+  "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
 }
