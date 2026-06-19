@@ -7,16 +7,19 @@
   "agent": "fleet",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
+    "manifestCommit": "5b582bfb3948536b1fdf880a4694669945e877a7",
     "recordCounts": {
-      "eval": 84,
-      "train_dpo": 14,
-      "train_sft": 1195,
-      "val_dpo": 2,
-      "val_sft": 211
+      "eval": 86,
+      "train_dpo": 15,
+      "train_sft": 4367,
+      "val_dpo": 3,
+      "val_sft": 771
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
       "approval_boundary_samples",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cortex_routing",
@@ -50,6 +53,8 @@
       "approval_required_tool",
       "codebase_home_grounding",
       "codebase_home_overview",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "cortex_routing",
       "dpo_preference_pairs",
       "embedding_corpus",
@@ -85,6 +90,9 @@
       "tool_call_generation",
       "tool_id_repair",
       "tool_schema_cards",
+      "ultra_specific_fleet_delegation",
+      "ultra_specific_fleet_slot_directory",
+      "ultra_specific_tool_boundary_awareness",
       "user_response_generation"
     ]
   },

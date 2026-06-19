@@ -1,22 +1,36 @@
 {
   "agent": "executor",
-  "availableSFTRecords": 1486,
+  "availableSFTRecords": 1861,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
-    "sentinelSafe": true
+    "sentinelSafe": true,
+    "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
+  "manifestCommit": "5b582bfb3948536b1fdf880a4694669945e877a7",
+  "quality": {
+    "cortexCodebaseChunkRecordCount": 0,
+    "cortexCodebaseFileRecordCount": 0,
+    "cortexCodebaseSelfAwarenessCoverage": null,
+    "cortexCodebaseSelfAwarenessRecordCount": 0,
+    "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
+    "ultraSpecificRecordCount": 117,
+    "ultraSpecificSourceFamily": "adapter_ultra_specific"
+  },
   "recordCounts": {
-    "eval": 111,
-    "train_dpo": 11,
-    "train_sft": 686,
+    "eval": 114,
+    "train_dpo": 14,
+    "train_sft": 862,
     "val_dpo": 2,
-    "val_sft": 121
+    "val_sft": 152
   },
   "sourceFamilies": [
+    "adapter_ultra_specific",
     "approval_boundary_samples",
+    "codebase_home_chunk_sft",
+    "codebase_home_chunks",
     "codebase_home_corpus",
     "codebase_home_sft",
     "cross_model_training",
@@ -44,6 +58,8 @@
     "approval_rejected",
     "approval_required_tool",
     "codebase_home_grounding",
+    "codebase_source_chunk",
+    "codebase_source_chunk_grounding",
     "embedding_corpus",
     "embedding_dataset_card",
     "embedding_eval_retrieval",
@@ -69,6 +85,9 @@
     "source_tool_registry_knowledge",
     "tool_call_generation",
     "tool_id_repair",
-    "tool_schema_cards"
+    "tool_schema_cards",
+    "ultra_specific_missing_argument_boundary",
+    "ultra_specific_permission_boundary",
+    "ultra_specific_tool_call_generation"
   ]
 }

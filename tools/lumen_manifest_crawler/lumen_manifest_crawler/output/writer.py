@@ -138,7 +138,7 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
 
 def _write_cross_model_index(path: Path, records: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["recordType", "agentRole", "taskType", "recordCount"])
         counts: dict[tuple[str, str, str], int] = {}
         for record in records:
@@ -154,7 +154,7 @@ def _write_cross_model_index(path: Path, records: list[dict[str, Any]]) -> None:
 
 def _write_dataset_index(path: Path, datasets: dict[str, list[dict[str, Any]]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["family", "recordCount", "splits", "roles", "taskTypes"])
         for name, records in sorted(datasets.items()):
             if name == "dataset_manifest":
@@ -167,7 +167,7 @@ def _write_dataset_index(path: Path, datasets: dict[str, list[dict[str, Any]]]) 
 
 def _write_tool_registry_csv(path: Path, manifest: AgentBehaviorManifest) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["id", "displayName", "requiresApproval", "permissionKey", "argumentCount", "source"])
         for tool in manifest.tools:
             writer.writerow([tool.id, tool.displayName or "", tool.requiresApproval, tool.permissionKey or "", len(tool.arguments), tool.source or ""])
@@ -175,7 +175,7 @@ def _write_tool_registry_csv(path: Path, manifest: AgentBehaviorManifest) -> Non
 
 def _write_routing_matrix_csv(path: Path, manifest: AgentBehaviorManifest) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["intent", "allowedTools", "forbiddenTools"])
         for entry in manifest.routingMatrix:
             writer.writerow([entry.intent, ";".join(entry.allowedTools), ";".join(entry.forbiddenTools)])
@@ -232,7 +232,7 @@ def _write_runtime_grounding_outputs(
     bundle = {
         "schemaVersion": "1.0.0",
         "artifactKind": "agent_grounding_runtime_bundle",
-        "sourceFamilies": ["codebase_home_corpus", "codebase_home_sft"],
+        "sourceFamilies": ["codebase_home_corpus", "codebase_home_sft", "codebase_home_chunks", "codebase_home_chunk_sft"],
         "manifestCommit": manifest.sourceIntegrity.commit,
         "manifestToolCount": len(manifest.tools),
         "manifestIntentCount": len(manifest.intents),
