@@ -10,6 +10,7 @@ from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
     CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
+    ROLE_ALLOWED_SOURCE_FAMILIES,
     ULTRA_SPECIFIC_SOURCE_FAMILY,
     compile_agent_fine_tuning_datasets,
 )
@@ -174,10 +175,8 @@ def test_each_adapter_has_ultra_specific_dataset_records(compiled_fine_tuning: t
 def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: tuple) -> None:
     _, datasets, fine_tuning = compiled_fine_tuning
     records = fine_tuning["cortex"].train_sft + fine_tuning["cortex"].val_sft
-    cortex_codebase = [
-        record for record in records
-        if (record.get("metadata") or {}).get("sourceFamily") == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
-    ]
+    cortex_codebase = fine_tuning["cortex"].supplemental_sft["cortex_codebase_grounding"]
+    cortex_router = fine_tuning["cortex"].supplemental_sft["cortex_router_sft"]
     cortex_chunks = [
         record for record in cortex_codebase
         if (record.get("metadata") or {}).get("recordKind") == "source_chunk"
@@ -189,7 +188,11 @@ def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: t
     assert source_chunk_count >= len(datasets.get("codebase_home_corpus", []))
     assert len(cortex_codebase) >= 2000
     assert len(cortex_chunks) == source_chunk_count
-    assert CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY in fine_tuning["cortex"].dataset_card["sourceFamilies"]
+    assert len(cortex_router) == len(records)
+    assert all((record.get("metadata") or {}).get("sourceFamily") != CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY for record in records)
+    assert CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY not in fine_tuning["cortex"].dataset_card["sourceFamilies"]
+    assert CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY in fine_tuning["cortex"].dataset_card["optionalSourceFamilies"]
+    assert fine_tuning["cortex"].dataset_card["recordCounts"]["supplemental_sft"]["cortex_codebase_grounding"] == len(cortex_codebase)
     assert card_quality["cortexCodebaseSelfAwarenessSourceFamily"] == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
     assert card_quality["cortexCodebaseSelfAwarenessRecordCount"] == len(cortex_codebase)
     assert card_quality["cortexCodebaseSelfAwarenessCoverage"] == "git_tracked_text_files_plus_selected_manifest_artifacts"
@@ -232,6 +235,13 @@ def test_no_unknown_agent_roles_unknown_tools_or_sentinel_leaks(compiled_fine_tu
     manifest, _, fine_tuning = compiled_fine_tuning
     failures = validate_agent_fine_tuning_datasets(manifest, fine_tuning)
     blocked = {
+        "duplicate_sft_messages",
+        "embedding_source_family_in_chat_sft",
+        "empty_assistant_output",
+        "executor_invalid_json",
+        "role_native_sft_ratio_below_threshold",
+        "system_role_mismatch",
+        "wrong_role_cortex_grounding",
         "unknown_agent_role",
         "unknown_tool_id",
         "sentinel_leak",
@@ -241,6 +251,43 @@ def test_no_unknown_agent_roles_unknown_tools_or_sentinel_leaks(compiled_fine_tu
     }
     failing_codes = {failure.code for failure in failures}
     assert blocked.isdisjoint(failing_codes), failures
+
+
+def test_chat_adapter_sft_uses_role_allowed_source_families(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+
+    for agent in AGENTS:
+        records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+        allowed = ROLE_ALLOWED_SOURCE_FAMILIES[agent]
+        for record in records:
+            metadata = record.get("metadata") or {}
+            source_family = metadata.get("sourceFamily")
+            assert isinstance(source_family, str)
+            assert not source_family.startswith("embedding_")
+            assert source_family in allowed
+
+
+def test_executor_sft_has_no_null_or_non_json_assistant_rows(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+
+    for record in fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft:
+        assistant = record["messages"][2]["content"]
+        assert assistant.strip().lower() != "null"
+        assert isinstance(json.loads(assistant), dict)
+
+
+def test_mimicry_sft_is_style_only(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    records = fine_tuning["mimicry"].train_sft + fine_tuning["mimicry"].val_sft
+    allowed = {"mimicry_style", ULTRA_SPECIFIC_SOURCE_FAMILY}
+
+    assert records
+    for record in records:
+        metadata = record.get("metadata") or {}
+        source_family = metadata.get("sourceFamily")
+        user = record["messages"][1]["content"]
+        assert source_family in allowed
+        assert "Ground Cortex" not in user
 
 
 def test_executor_has_tool_coverage(compiled_fine_tuning: tuple) -> None:
@@ -259,7 +306,7 @@ def test_fleet_has_model_slot_coverage(compiled_fine_tuning: tuple) -> None:
         assert slot.id in blob
 
 
-def test_codebase_home_records_route_to_fleet_and_rem() -> None:
+def test_codebase_home_records_do_not_route_to_chat_adapter_sft() -> None:
     repo_root = _repo_root()
     manifest = generate_manifest(repo_root)
     datasets = generate_all_datasets(manifest, root=repo_root)
@@ -269,10 +316,10 @@ def test_codebase_home_records_route_to_fleet_and_rem() -> None:
     assert datasets["codebase_home_sft"]
     assert datasets["codebase_home_chunks"]
     assert datasets["codebase_home_chunk_sft"]
-    for agent in ("fleet", "rem"):
+    for agent in AGENTS:
         records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
-        assert any(record["metadata"]["sourceFamily"] == "codebase_home_sft" for record in records)
-        assert any(record["metadata"]["sourceFamily"] == "codebase_home_chunk_sft" for record in records)
+        assert all(record["metadata"]["sourceFamily"] != "codebase_home_sft" for record in records)
+        assert all(record["metadata"]["sourceFamily"] != "codebase_home_chunk_sft" for record in records)
 
 
 def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> None:
