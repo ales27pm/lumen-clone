@@ -115,15 +115,18 @@ nonisolated enum DeterministicToolPlanner {
             return [single]
         }
 
-        if routing.intent == .webSearch,
-           ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text),
-           availableToolIDs.contains("web.search") {
-            var actions: [AgentAction] = []
-            if availableToolIDs.contains("location.current") {
-                actions.append(AgentAction(tool: "location.current", args: [:]))
+        if routing.intent == .webSearch {
+            if let url = firstURL(in: prompt), availableToolIDs.contains("web.fetch") {
+                return [AgentAction(tool: "web.fetch", args: ["url": .string(url)])]
             }
-            actions.append(AgentAction(tool: "web.search", args: ["query": .string(dynamicPublicLookupWebQuery(from: prompt))]))
-            return actions
+            if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text), availableToolIDs.contains("web.search") {
+                var actions: [AgentAction] = []
+                if availableToolIDs.contains("location.current") {
+                    actions.append(AgentAction(tool: "location.current", args: [:]))
+                }
+                actions.append(AgentAction(tool: "web.search", args: ["query": .string(dynamicPublicLookupWebQuery(from: prompt))]))
+                return actions
+            }
         }
 
         if routing.intent == .maps,
