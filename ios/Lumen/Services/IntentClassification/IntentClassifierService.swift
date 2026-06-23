@@ -5,7 +5,7 @@ final class IntentClassifierService: Sendable {
     private init() {}
 
     /// Determines the routing decision for the given text.
-    /// 
+    ///
     /// If the classified intent is a web search and is appropriate for dynamic public lookup, the location access tool is automatically enabled.
     ///
     /// - Returns: The routing decision with the classified intent and allowed tools.

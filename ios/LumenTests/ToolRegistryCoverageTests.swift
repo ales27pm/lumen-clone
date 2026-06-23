@@ -48,4 +48,11 @@ struct ToolRegistryCoverageTests {
             #expect(ToolRegistry.find(id: alias)?.id == expected)
         }
     }
+
+    @Test func calendarPermissionKeysResolveForModernAndLegacyUsageDescriptions() {
+        #expect(PermissionKind(usageDescriptionKey: "NSCalendarsFullAccessUsageDescription") == .calendar)
+        #expect(PermissionKind(usageDescriptionKey: "NSCalendarsUsageDescription") == .calendar)
+        #expect(PermissionKind(usageDescriptionKey: "NSRemindersFullAccessUsageDescription") == .reminders)
+        #expect(PermissionKind(usageDescriptionKey: "NSRemindersUsageDescription") == .reminders)
+    }
 }
