@@ -1322,7 +1322,7 @@ final class AgentService {
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
         if options.diagnosticsEnabled {
-            return SlotAgentService.shared.run(req, options: options)
+            return SlotAgentService.shared.runKernelDiagnostics(req, options: options)
         }
 
         return AsyncStream { continuation in
@@ -1334,6 +1334,10 @@ final class AgentService {
             }
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
+    }
+
+    func runKernelBridge(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        run(req, options: options)
     }
 
     private func runLoop(_ req: AgentRequest, options: LegacyAgentRunOptions, continuation: AsyncStream<AgentEvent>.Continuation) async {

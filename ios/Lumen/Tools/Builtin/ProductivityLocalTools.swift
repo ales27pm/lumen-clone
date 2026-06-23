@@ -66,7 +66,8 @@ struct ProductivityLocalTool: LocalTool {
             )
         }
 
-        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+        if !toolID.hasPrefix("calendar."),
+           let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
             return result(
                 invocation: invocation,
                 text: permissionFailure,
@@ -78,12 +79,14 @@ struct ProductivityLocalTool: LocalTool {
         let text: String
         switch toolID {
         case "calendar.create":
-            text = await CalendarTools.createEvent(
+            let response = await CalendarTools.createEventResult(
                 title: args["title"] ?? "New Event",
                 startsInMinutes: Int(args["startsInMinutes"] ?? "60") ?? 60
             )
+            return result(invocation: invocation, response: response)
         case "calendar.list":
-            text = await CalendarTools.listEvents()
+            let response = await CalendarTools.listEventsResult(arguments: args)
+            return result(invocation: invocation, response: response)
         case "reminders.create":
             text = await CalendarTools.createReminder(title: args["title"] ?? "Reminder")
         case "reminders.list":
@@ -130,17 +133,32 @@ struct ProductivityLocalTool: LocalTool {
         invocation: ToolInvocation,
         text: String,
         status: ToolResultStatus,
-        metricsSummary: String
+        metricsSummary: String,
+        structuredPayload: [String: String]? = nil,
+        modelText: String? = nil,
+        errorCode: String? = nil
     ) -> ToolResult {
         ToolResult(
             invocationID: invocation.id,
             status: status,
             displayText: text,
-            modelText: text,
-            structuredPayload: ["toolID": toolID, "implementation": "ProductivityLocalTool"],
+            modelText: modelText ?? text,
+            structuredPayload: (structuredPayload ?? [:]).merging(["toolID": toolID, "implementation": "ProductivityLocalTool"]) { current, _ in current },
             privacyLevel: definition.resultPrivacyLevel,
             metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)",
-            errorCode: status == .success ? nil : status.rawValue
+            errorCode: status == .success ? nil : (errorCode ?? status.rawValue)
+        )
+    }
+
+    private func result(invocation: ToolInvocation, response: CalendarTools.CalendarToolResponse) -> ToolResult {
+        result(
+            invocation: invocation,
+            text: response.displayText,
+            status: response.status,
+            metricsSummary: response.metricsSummary,
+            structuredPayload: response.structuredPayload,
+            modelText: response.modelText,
+            errorCode: response.errorCode
         )
     }
 

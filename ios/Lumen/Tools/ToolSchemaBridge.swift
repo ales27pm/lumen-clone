@@ -52,7 +52,7 @@ enum ToolSchemaBridge {
 
     private nonisolated static func mapPermission(_ p: PermissionDomain?) -> String? {
         switch p {
-        case .calendars: return "NSCalendarsUsageDescription"
+        case .calendars: return "NSCalendarsFullAccessUsageDescription"
         case .contacts: return "NSContactsUsageDescription"
         case .locationWhenInUse: return "NSLocationWhenInUseUsageDescription"
         case .notifications: return "NSUserNotificationUsageDescription"
