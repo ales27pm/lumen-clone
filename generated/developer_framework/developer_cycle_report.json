@@ -7,7 +7,7 @@
     "insideGitWorktree": true,
     "platformMachine": "x86_64",
     "platformSystem": "Darwin",
-    "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python",
+    "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python3",
     "xcodebuildPath": "/usr/bin/xcodebuild"
   },
   "improvementLoopOutputContractPassed": true,
@@ -23,8 +23,8 @@
     "requireRuntimeAudit": false,
     "runTraining": false,
     "runtimeAuditPaths": [],
-    "skipGeneration": true,
-    "skipImprovementLoop": true,
+    "skipGeneration": false,
+    "skipImprovementLoop": false,
     "withTrainingPlan": false,
     "withXcode": false
   },
@@ -61,7 +61,7 @@
         "insideGitWorktree": true,
         "platformMachine": "x86_64",
         "platformSystem": "Darwin",
-        "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python",
+        "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python3",
         "xcodebuildPath": "/usr/bin/xcodebuild"
       },
       "id": "phase0_environment_detection",
@@ -239,7 +239,7 @@
           "durationSeconds": 0.0,
           "name": "improve_loop_generation",
           "returncode": null,
-          "skipReason": "generation skipped by --skip-generation",
+          "skipReason": "dry-run",
           "status": "skipped",
           "stderrTail": "",
           "stdoutTail": ""
@@ -247,7 +247,7 @@
       ],
       "id": "phase2_manifest_dataset_generation",
       "manifestValidationPassed": true,
-      "reason": "generation skipped by --skip-generation",
+      "reason": "dry-run",
       "status": "skipped",
       "title": "Phase 2 - Manifest and Dataset Generation"
     },
@@ -320,13 +320,14 @@
           "cwd": "/Users/ales27pm/lumen-clone",
           "durationSeconds": 0.0,
           "name": "improve_loop",
-          "returncode": null,
-          "skipReason": "skipped by --skip-improvement-loop",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "called run_agent_improvement_loop()"
         }
       ],
+      "criticalGapCount": 0,
+      "errorGapCount": 38,
       "gapCount": 51,
       "id": "phase4_improvement_loop_preparation",
       "improvementLoopOutputContract": {
@@ -367,10 +368,11 @@
         "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
         "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl"
       ],
-      "rawRuntimeFailureCount": 0,
-      "reason": "skipped by --skip-improvement-loop",
-      "skippedLiveModelGenerationCount": 0,
-      "status": "skipped",
+      "rawRuntimeFailureCount": 51,
+      "runtimeEvidencePresent": true,
+      "runtimeFailureCount": 38,
+      "skippedLiveModelGenerationCount": 13,
+      "status": "failed",
       "title": "Phase 4 - Improvement-Loop Preparation"
     },
     {
@@ -410,9 +412,9 @@
   "root": "/Users/ales27pm/lumen-clone",
   "runtimeEvidencePresent": false,
   "runtimeFailures": {
-    "rawRuntimeFailureCount": 0,
+    "rawRuntimeFailureCount": 51,
     "runtimeFailureCount": 0,
-    "skippedLiveModelGenerationCount": 0
+    "skippedLiveModelGenerationCount": 13
   },
   "schemaVersion": "lumen.developer_cycle/1.0.0",
   "staticValidationPassed": true,

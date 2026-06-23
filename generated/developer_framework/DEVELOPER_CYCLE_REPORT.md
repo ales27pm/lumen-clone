@@ -43,9 +43,9 @@
 ### Phase 2 - Manifest and Dataset Generation
 
 - Status: `skipped`
-- Reason: generation skipped by --skip-generation
+- Reason: dry-run
 - `python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits` -> `skipped`
-  - skipped: generation skipped by --skip-generation
+  - skipped: dry-run
 
 ### Phase 3 - Runtime-Audit/Report Ingestion
 
@@ -58,10 +58,8 @@
 
 ### Phase 4 - Improvement-Loop Preparation
 
-- Status: `skipped`
-- Reason: skipped by --skip-improvement-loop
-- `python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits` -> `skipped`
-  - skipped: skipped by --skip-improvement-loop
+- Status: `failed`
+- `python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits` -> `passed`
 - Outputs:
   - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md`
   - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json`
@@ -87,8 +85,8 @@
 ## Runtime Evidence
 
 - Runtime failures: `0`
-- Raw runtime failures: `0`
-- Skipped live model generations: `0`
+- Raw runtime failures: `51`
+- Skipped live model generations: `13`
 
 ## Next Command
 

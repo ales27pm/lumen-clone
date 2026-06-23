@@ -511,6 +511,12 @@ nonisolated enum E2ETestRunner {
         let generationElapsedMs: Int?
         let outputTokenCount: Int?
         let adapterSlot: String?
+        let parseError: String?
+    }
+
+    private struct ModelRuntimeEvidenceDiagnosis: Sendable {
+        let evidence: ModelRuntimeEvidence?
+        let failureMessage: String
     }
 
     private static func runScenario(_ scenario: E2ETestScenario, config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onEvent: EventCallback? = nil) async throws -> E2ETestResult {
@@ -657,7 +663,8 @@ nonisolated enum E2ETestRunner {
                     allowDegradedGrounding: false,
                     preventDoubleGrounding: true,
                     diagnosticsEnabled: false,
-                    allowDeterministicCompatibility: scenario.kind != .training
+                    allowDeterministicCompatibility: scenario.kind != .training,
+                    allowParseFailureDeterministicRecovery: scenario.kind != .training
                 )
                 let agentEvents = await MainActor.run {
                     AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
@@ -692,19 +699,20 @@ nonisolated enum E2ETestRunner {
                     }
                 }
                 let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
-                if let evidence = modelRuntimeEvidence(
+                let evidenceDiagnosis = modelRuntimeEvidenceDiagnosis(
                     since: modelEvidenceStartedAt,
                     prompt: scenario.prompt,
                     acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
-                ) {
+                )
+                if let evidence = evidenceDiagnosis.evidence {
                     let elapsed = evidence.generationElapsedMs.map(String.init) ?? "unknown"
                     let tokens = evidence.outputTokenCount.map(String.init) ?? "unknown"
                     let adapter = evidence.adapterSlot ?? "none"
-                    await event("model-evidence", "runtime=\(evidence.runtimePath), kind=\(evidence.evidenceKind), stage=\(evidence.stage), elapsedMs=\(elapsed), outputTokens=\(tokens), adapter=\(adapter)")
+                    await event("model-evidence", "runtime=\(evidence.runtimePath), kind=\(evidence.evidenceKind), stage=\(evidence.stage), parseError=\(evidence.parseError ?? "none"), elapsedMs=\(elapsed), outputTokens=\(tokens), adapter=\(adapter)")
                 } else {
                     let requiredEvidence = acceptsPolicyFirstEvidence ? "model-backed or policy-first execution evidence" : "model-backed generation evidence"
                     failures.append("Live E2E scenario did not record \(requiredEvidence)")
-                    await event("model-evidence", acceptsPolicyFirstEvidence ? "missing fresh AgentBehaviorTrace modelTurn or deterministic-compatibility execution trace" : "missing fresh AgentBehaviorTrace modelTurn")
+                    await event("model-evidence", evidenceDiagnosis.failureMessage)
                 }
                 try Task.checkCancellation()
                 await Task.yield()
@@ -850,6 +858,18 @@ nonisolated enum E2ETestRunner {
         prompt: String,
         acceptsPolicyFirstEvidence: Bool
     ) -> ModelRuntimeEvidence? {
+        modelRuntimeEvidenceDiagnosis(
+            since: startedAt,
+            prompt: prompt,
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+        ).evidence
+    }
+
+    private nonisolated static func modelRuntimeEvidenceDiagnosis(
+        since startedAt: Date,
+        prompt: String,
+        acceptsPolicyFirstEvidence: Bool
+    ) -> ModelRuntimeEvidenceDiagnosis {
         let promptNeedle = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let matchingTraces = AgentBehaviorTraceRecorder.recent(limit: 64).reversed().filter { trace in
             guard trace.createdAt >= startedAt else { return false }
@@ -866,28 +886,77 @@ nonisolated enum E2ETestRunner {
                 && trace.parseError == nil
                 && !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }) {
-            return ModelRuntimeEvidence(
+            let evidence = ModelRuntimeEvidence(
                 runtimePath: modelTrace.runtimePath ?? "unknown",
                 stage: modelTrace.stage,
                 evidenceKind: "model-backed",
                 generationElapsedMs: modelTrace.generationElapsedMs,
                 outputTokenCount: modelTrace.outputTokenCount,
-                adapterSlot: modelTrace.activeAdapterSlot ?? modelTrace.adapterSlot
+                adapterSlot: modelTrace.activeAdapterSlot ?? modelTrace.adapterSlot,
+                parseError: modelTrace.parseError
             )
+            return ModelRuntimeEvidenceDiagnosis(evidence: evidence, failureMessage: "")
         }
 
-        guard acceptsPolicyFirstEvidence,
-              let policyTrace = matchingTraces.first(where: isPolicyFirstExecutionTrace) else {
-            return nil
+        if acceptsPolicyFirstEvidence,
+           let policyTrace = matchingTraces.first(where: isPolicyFirstExecutionTrace) {
+            let evidence = ModelRuntimeEvidence(
+                runtimePath: policyTrace.runtimePath ?? "deterministic-compatibility",
+                stage: policyTrace.stage,
+                evidenceKind: "policy-first-deterministic",
+                generationElapsedMs: policyTrace.generationElapsedMs,
+                outputTokenCount: policyTrace.outputTokenCount,
+                adapterSlot: policyTrace.activeAdapterSlot ?? policyTrace.adapterSlot,
+                parseError: policyTrace.parseError
+            )
+            return ModelRuntimeEvidenceDiagnosis(evidence: evidence, failureMessage: "")
         }
-        return ModelRuntimeEvidence(
-            runtimePath: policyTrace.runtimePath ?? "deterministic-compatibility",
-            stage: policyTrace.stage,
-            evidenceKind: "policy-first-deterministic",
-            generationElapsedMs: policyTrace.generationElapsedMs,
-            outputTokenCount: policyTrace.outputTokenCount,
-            adapterSlot: policyTrace.activeAdapterSlot ?? policyTrace.adapterSlot
+
+        return ModelRuntimeEvidenceDiagnosis(
+            evidence: nil,
+            failureMessage: modelRuntimeEvidenceFailureMessage(
+                matchingTraces: Array(matchingTraces),
+                acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+            )
         )
+    }
+
+    private nonisolated static func modelRuntimeEvidenceFailureMessage(
+        matchingTraces: [AgentBehaviorTrace],
+        acceptsPolicyFirstEvidence: Bool
+    ) -> String {
+        if let rejectedModelTrace = matchingTraces.first(where: { $0.event == .modelTurn }) {
+            let rawIsEmpty = rejectedModelTrace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let runtimePath = rejectedModelTrace.runtimePath ?? "unknown"
+            let parseError = rejectedModelTrace.parseError ?? "none"
+            var reasons: [String] = []
+            if runtimePath == "deterministic-compatibility" {
+                reasons.append("runtimePath was deterministic-compatibility")
+            }
+            if rawIsEmpty {
+                if let emptyOutputReason = rejectedModelTrace.emptyOutputReason, !emptyOutputReason.isEmpty {
+                    reasons.append("agent-json emitted empty output (\(emptyOutputReason))")
+                } else {
+                    reasons.append("raw output was empty")
+                }
+            }
+            if rejectedModelTrace.parseError != nil {
+                reasons.append("parseError=\(parseError)")
+            }
+            if reasons.isEmpty {
+                reasons.append("trace did not satisfy model-backed evidence policy")
+            }
+            return "found AgentBehaviorTrace modelTurn but \(reasons.joined(separator: "; ")); stage=\(rejectedModelTrace.stage); runtimePath=\(runtimePath); parseError=\(parseError); outputTokens=\(rejectedModelTrace.outputTokenCount.map(String.init) ?? "unknown")"
+        }
+
+        if let policyTrace = matchingTraces.first(where: { $0.runtimePath == "deterministic-compatibility" }) {
+            let policy = acceptsPolicyFirstEvidence ? "not accepted by policy" : "policy-first evidence disabled for this scenario"
+            return "found deterministic-compatibility execution trace but \(policy); stage=\(policyTrace.stage); runtimePath=\(policyTrace.runtimePath ?? "deterministic-compatibility"); parseError=\(policyTrace.parseError ?? "none")"
+        }
+
+        return acceptsPolicyFirstEvidence
+            ? "missing fresh AgentBehaviorTrace modelTurn or deterministic-compatibility execution trace"
+            : "missing fresh AgentBehaviorTrace modelTurn"
     }
 
     /// Determines if an agent behavior trace qualifies as a policy-first execution trace.
@@ -921,6 +990,10 @@ nonisolated enum E2ETestRunner {
 
     nonisolated static func modelRuntimeEvidenceForTests(since startedAt: Date, prompt: String, acceptsPolicyFirstEvidence: Bool = false) -> Bool {
         modelRuntimeEvidence(since: startedAt, prompt: prompt, acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence) != nil
+    }
+
+    nonisolated static func modelRuntimeEvidenceFailureMessageForTests(since startedAt: Date, prompt: String, acceptsPolicyFirstEvidence: Bool = false) -> String {
+        modelRuntimeEvidenceDiagnosis(since: startedAt, prompt: prompt, acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence).failureMessage
     }
 #endif
 

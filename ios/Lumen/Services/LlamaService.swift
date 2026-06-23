@@ -1284,7 +1284,15 @@ final actor AppLlamaService {
                     let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
                     let decodeMs = firstTokenMs.map { max(0, elapsedMs - $0) }
                     let preFirstTokenMs = firstTokenMs
-                    let outputTokenEstimate = max(0, streamedSanitized.split(whereSeparator: \.isWhitespace).count)
+                    let outputTokenEstimate = max(0, sanitized.split(whereSeparator: \.isWhitespace).count)
+                    let emptyOutputReason: String?
+                    if sanitized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        emptyOutputReason = outputChunks == 0
+                            ? "stream-completed-without-text-chunks"
+                            : "stream-produced-empty-sanitized-output"
+                    } else {
+                        emptyOutputReason = nil
+                    }
                     let reasoningTokenEstimate = parserResult.reasoningText.map { max(0, $0.split(whereSeparator: \.isWhitespace).count) }
                     let tokenUsage = TraceTokenUsage(
                         promptTokens: estimatedPromptTokenCount,
@@ -1304,6 +1312,27 @@ final actor AppLlamaService {
                     logger.info(
                         "event=llama.chat.generation_perf slot=\(slot.rawValue, privacy: .public) prompt_eval_tps=\(promptEvalTps ?? -1, privacy: .public) decode_tps=\(tps ?? -1, privacy: .public) prompt_tokens_est=\(estimatedPromptTokenCount, privacy: .public) output_words=\(outputTokenEstimate, privacy: .public)"
                     )
+                    if let emptyOutputReason {
+                        let slotLoadedPath = await self.loadedChatPath(for: slot)
+                        let fallbackLoadedPath = await self.loadedChatPath
+                        let loadedPath = slotLoadedPath ?? fallbackLoadedPath ?? "none"
+                        let adapterPath = await self.roleAdapterPath(for: slot) ?? "none"
+                        logger.error(
+                            "event=llama.chat.empty_output slot=\(slot.rawValue, privacy: .public) model_name=\(groundedRequest.modelName, privacy: .public) reason=\(emptyOutputReason, privacy: .public) requested_tokens=\(req.maxTokens, privacy: .public) effective_tokens=\(groundedRequest.maxTokens, privacy: .public) runtime_path=\(readyMetrics.runtimePath, privacy: .public) active_adapter_slot=\(readyMetrics.activeAdapterSlot ?? "none", privacy: .public) loaded_path=\(loadedPath, privacy: .public) adapter_path=\(adapterPath, privacy: .public) cancelled=\(Task.isCancelled ? "true" : "false", privacy: .public)"
+                        )
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaEmptyOutput, values: [
+                            "slot": slot.rawValue,
+                            "modelName": groundedRequest.modelName,
+                            "reason": emptyOutputReason,
+                            "maxTokensRequested": String(req.maxTokens),
+                            "maxTokensEffective": String(groundedRequest.maxTokens),
+                            "runtimePath": readyMetrics.runtimePath,
+                            "activeAdapterSlot": readyMetrics.activeAdapterSlot ?? "none",
+                            "loadedModelPath": loadedPath,
+                            "adapterPath": adapterPath,
+                            "cancelled": Task.isCancelled ? "true" : "false"
+                        ]))
+                    }
                     await self.storeCompletedTracePayloadIfNeeded(
                         request: groundedRequest,
                         payload: CompletedGenerationTracePayload(
@@ -1323,11 +1352,12 @@ final actor AppLlamaService {
                         "estimatedPromptTokens": String(estimatedPromptTokenCount),
                         "finalPromptChars": String(promptChars)
                     ]))
+                    let parsedOutput = AgentTurnParser.parse(sanitized)
                     await self.recordModelTrace(
                         slot: slot,
                         request: groundedRequest,
                         output: sanitized,
-                        parseError: AgentTurnParser.parse(sanitized).parseError?.rawValue,
+                        parseError: parsedOutput.parseError?.rawValue,
                         generationElapsedMs: elapsedMs,
                         outputTokenCount: nil,
                         firstTokenLatencyMs: firstTokenMs,
@@ -1344,7 +1374,8 @@ final actor AppLlamaService {
                         maxTokensEffective: groundedRequest.maxTokens,
                         promptCharCount: promptChars,
                         accelerationDiagnostic: readyMetrics.accelerationDiagnostic,
-                        accelerationDiagnostics: accelerationDiagnostics
+                        accelerationDiagnostics: accelerationDiagnostics,
+                        emptyOutputReason: emptyOutputReason
                     )
                 } catch is CancellationError {
                     let cancelReason = cancellationToken.reason ?? AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"
@@ -1564,7 +1595,8 @@ final actor AppLlamaService {
         maxTokensEffective: Int? = nil,
         promptCharCount: Int? = nil,
         accelerationDiagnostic: String? = nil,
-        accelerationDiagnostics: RuntimeAccelerationDiagnostics? = nil
+        accelerationDiagnostics: RuntimeAccelerationDiagnostics? = nil,
+        emptyOutputReason: String? = nil
     ) async {
         let adapterMetadata = currentAdapterTraceMetadata(slot: slot)
         AgentBehaviorTraceRecorder.record(
@@ -1608,7 +1640,8 @@ final actor AppLlamaService {
                 maxTokensEffective: maxTokensEffective,
                 promptCharCount: promptCharCount,
                 accelerationDiagnostic: accelerationDiagnostic,
-                accelerationDiagnostics: accelerationDiagnostics
+                accelerationDiagnostics: accelerationDiagnostics,
+                emptyOutputReason: emptyOutputReason
             )
         )
     }
@@ -1683,6 +1716,10 @@ final actor AppLlamaService {
             adapterScale: loaded?.scale,
             adapterFailureReason: lastAdapterFailureReason
         )
+    }
+
+    private func roleAdapterPath(for slot: LumenModelSlot) -> String? {
+        roleAdapters[slot]?.path
     }
 
     private func normalize(_ vector: [Double]) -> [Double] {
