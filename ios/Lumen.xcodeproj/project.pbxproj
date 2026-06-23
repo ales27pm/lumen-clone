@@ -489,6 +489,7 @@
 				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Lumen uses your calendar to create events when you ask.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Lumen uses the camera to capture images when you ask.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Lumen searches your contacts when you ask about people.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Lumen reads basic Health data to answer questions about your activity.";
@@ -551,6 +552,7 @@
 				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Lumen uses your calendar to create events when you ask.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Lumen uses the camera to capture images when you ask.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Lumen searches your contacts when you ask about people.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Lumen reads basic Health data to answer questions about your activity.";
