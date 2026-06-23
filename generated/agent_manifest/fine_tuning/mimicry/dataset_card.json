@@ -1,6 +1,6 @@
 {
   "agent": "mimicry",
-  "availableSFTRecords": 300,
+  "availableSFTRecords": 510,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -8,7 +8,7 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
+  "manifestCommit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,

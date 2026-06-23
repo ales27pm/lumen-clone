@@ -56,6 +56,20 @@ struct ProductivityLocalTool: LocalTool {
             rawToolID: toolID,
             arguments: invocation.arguments
         )
+        let calendarCreateArguments: CalendarCreateArguments?
+        if toolID == "calendar.create" {
+            guard let parsedArguments = Self.calendarCreateArguments(from: args) else {
+                return result(
+                    invocation: invocation,
+                    response: CalendarTools.invalidArgumentsResponse(
+                        displayText: "The calendar create request is missing a non-empty title or valid startsInMinutes argument."
+                    )
+                )
+            }
+            calendarCreateArguments = parsedArguments
+        } else {
+            calendarCreateArguments = nil
+        }
 
         guard ToolRouteGuard.canExecuteTool(toolID, arguments: args, approval: approval) else {
             return result(
@@ -66,24 +80,40 @@ struct ProductivityLocalTool: LocalTool {
             )
         }
 
-        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
-            return result(
-                invocation: invocation,
-                text: permissionFailure,
-                status: .denied,
-                metricsSummary: "permission_denied"
-            )
+        if toolID.hasPrefix("calendar.") {
+            if Self.shouldRequestCalendarPermission(toolID: toolID, isForeground: context.isForeground) {
+                await requestCalendarPermissionIfNeeded()
+            }
+        } else {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(
+                    invocation: invocation,
+                    text: permissionFailure,
+                    status: .denied,
+                    metricsSummary: "permission_denied"
+                )
+            }
         }
 
         let text: String
         switch toolID {
         case "calendar.create":
-            text = await CalendarTools.createEvent(
-                title: args["title"] ?? "New Event",
-                startsInMinutes: Int(args["startsInMinutes"] ?? "60") ?? 60
+            guard let calendarCreateArguments else {
+                return result(
+                    invocation: invocation,
+                    response: CalendarTools.invalidArgumentsResponse(
+                        displayText: "The calendar create request is missing a non-empty title or valid startsInMinutes argument."
+                    )
+                )
+            }
+            let response = await CalendarTools.createEventResult(
+                title: calendarCreateArguments.title,
+                startsInMinutes: calendarCreateArguments.startsInMinutes
             )
+            return result(invocation: invocation, response: response)
         case "calendar.list":
-            text = await CalendarTools.listEvents()
+            let response = await CalendarTools.listEventsResult(arguments: args)
+            return result(invocation: invocation, response: response)
         case "reminders.create":
             text = await CalendarTools.createReminder(title: args["title"] ?? "Reminder")
         case "reminders.list":
@@ -130,17 +160,68 @@ struct ProductivityLocalTool: LocalTool {
         invocation: ToolInvocation,
         text: String,
         status: ToolResultStatus,
-        metricsSummary: String
+        metricsSummary: String,
+        structuredPayload: [String: String]? = nil,
+        modelText: String? = nil,
+        errorCode: String? = nil
     ) -> ToolResult {
         ToolResult(
             invocationID: invocation.id,
             status: status,
             displayText: text,
-            modelText: text,
-            structuredPayload: ["toolID": toolID, "implementation": "ProductivityLocalTool"],
+            modelText: modelText ?? text,
+            structuredPayload: Self.resultPayload(toolID: toolID, structuredPayload: structuredPayload),
             privacyLevel: definition.resultPrivacyLevel,
             metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)",
-            errorCode: status == .success ? nil : status.rawValue
+            errorCode: status == .success ? nil : (errorCode ?? status.rawValue)
+        )
+    }
+
+    @MainActor
+    private func requestCalendarPermissionIfNeeded() async {
+        let permissions = PermissionsCenter.shared
+        guard permissions.state(.calendar) == .notDetermined else { return }
+        await permissions.request(.calendar)
+    }
+
+    static func resultPayload(toolID: String, structuredPayload: [String: String]?) -> [String: String] {
+        [
+            "toolID": toolID,
+            "implementation": "ProductivityLocalTool"
+        ].merging(structuredPayload ?? [:]) { canonicalValue, _ in canonicalValue }
+    }
+
+    static func shouldRequestCalendarPermission(toolID: String, isForeground: Bool) -> Bool {
+        isForeground && toolID.hasPrefix("calendar.")
+    }
+
+    struct CalendarCreateArguments: Equatable {
+        let title: String
+        let startsInMinutes: Int
+    }
+
+    static func calendarCreateArguments(from args: [String: String]) -> CalendarCreateArguments? {
+        guard let rawTitle = args["title"] else { return nil }
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        guard let rawStartsInMinutes = args["startsInMinutes"],
+              let startsInMinutes = Int(rawStartsInMinutes),
+              startsInMinutes >= 0,
+              startsInMinutes <= CalendarTools.maximumSafeStartsInMinutes else {
+            return nil
+        }
+        return CalendarCreateArguments(title: title, startsInMinutes: startsInMinutes)
+    }
+
+    private func result(invocation: ToolInvocation, response: CalendarTools.CalendarToolResponse) -> ToolResult {
+        result(
+            invocation: invocation,
+            text: response.displayText,
+            status: response.status,
+            metricsSummary: response.metricsSummary,
+            structuredPayload: response.structuredPayload,
+            modelText: response.modelText,
+            errorCode: response.errorCode
         )
     }
 

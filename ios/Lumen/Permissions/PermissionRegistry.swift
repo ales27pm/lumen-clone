@@ -140,7 +140,7 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
         case .camera: return ["NSCameraUsageDescription"]
         case .photoLibrary: return ["NSPhotoLibraryUsageDescription"]
         case .locationWhenInUse: return ["NSLocationWhenInUseUsageDescription"]
-        case .calendars: return ["NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription"]
+        case .calendars: return ["NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription", "NSCalendarsWriteOnlyAccessUsageDescription"]
         case .reminders: return ["NSRemindersUsageDescription", "NSRemindersFullAccessUsageDescription"]
         case .contacts: return ["NSContactsUsageDescription"]
         case .localNetwork: return ["NSLocalNetworkUsageDescription"]

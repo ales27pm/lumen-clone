@@ -2,14 +2,14 @@
   "artifactKind": "agent_grounding_runtime_bundle",
   "codebaseHome": {
     "languageCounts": {
-      "csv": 8,
-      "json": 59,
-      "markdown": 63,
+      "csv": 10,
+      "json": 69,
+      "markdown": 67,
       "mixed": 1,
       "plist": 3,
       "python": 92,
-      "shell": 9,
-      "swift": 460,
+      "shell": 10,
+      "swift": 470,
       "text": 6,
       "toml": 1,
       "xcode_project": 1,
@@ -25,7 +25,7 @@
       "Assets.xcassets/LumenAssistantMark.imageset": 1,
       "Assets.xcassets/LumenVerticalLogo.imageset": 1,
       "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
-      "Assistant": 23,
+      "Assistant": 26,
       "Background": 4,
       "Brand": 2,
       "Developer": 3,
@@ -37,7 +37,7 @@
       "RAG": 9,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
       "Scripts": 1,
-      "Services": 55,
+      "Services": 57,
       "Services/AgentGrounding": 13,
       "Services/Diagnostics": 1,
       "Services/IntentClassification": 5,
@@ -51,25 +51,25 @@
       "System": 14,
       "Tools": 14,
       "Tools/Builtin": 12,
-      "Views": 30,
+      "Views": 31,
       "Voice": 6,
       "app": 6,
       "codebase_txt_chunks": 2,
       "docs": 51,
       "docs/stabilization": 1,
-      "generated/agent_manifest": 10,
+      "generated/agent_manifest": 26,
       "ios": 1,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 143,
+      "ios/LumenTests": 147,
       "ios/LumenUITests": 2,
       "repo": 6,
       "runtime-audits": 1,
       "runtime-audits/2026-06-08-first-improve-loop": 5,
       "runtime-audits/2026-06-08-second-improve-loop": 5,
       "runtime-audits/2026-06-09-third-improve-loop": 5,
-      "scripts": 14,
-      "tools": 13,
+      "scripts": 15,
+      "tools": 12,
       "tools/fine_tuning/unsloth": 19,
       "tools/hf_artifacts": 2,
       "tools/intent_classifier": 4,
@@ -78,10 +78,10 @@
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 36,
       "tools/lumen_manifest_crawler/tests": 19,
       "tools/pipeline": 7,
-      "tools/pipeline/tests": 1,
+      "tools/pipeline/tests": 2,
       "tools/security": 1
     },
-    "recordCount": 705,
+    "recordCount": 732,
     "selectedFiles": [
       {
         "imports": [
@@ -569,7 +569,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` owns AssistantRuntimeAdapters behavior and defines: LocalRuntimeError, LlamaRuntimeStreamingService, AppLlamaService, CoreMLRuntimeError, DeterministicFallbackRuntime, LlamaRuntimeAdapter, LiveGenerationDefaults, FoundationModelsRuntimeAdapter, CoreMLRuntimeAdapter, stream.",
-        "sha256": "64a13827e0272cd7adb5e954e432cd8bacc70273d56221666c1d1ada32850a71",
+        "sha256": "36670dcf2211fef0dadd1ec8c99ca9de1c441d3d1566ce4b80fa219c3924c068",
         "symbols": [
           "LocalRuntimeError",
           "LlamaRuntimeStreamingService",
@@ -625,7 +625,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeRouter.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeRouter.swift` owns AssistantRuntimeRouter behavior and defines: AssistantRuntimeRouter, Selection, selection, runtime, foundation, llama, fallback, coreML, reason, decision.",
-        "sha256": "c5d6d4c5a78fc373f9c95e15b03d11d10ec9603e368392990581f5b42cbdb07c",
+        "sha256": "97e1a20524b93ac7d482e5a5d17762573db251c94dc07e0c0d00dddb3e752c2a",
         "symbols": [
           "AssistantRuntimeRouter",
           "Selection",
@@ -716,6 +716,24 @@
           "options",
           "request",
           "final"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift",
+        "responsibility": "Explicit Agent Kernel compatibility boundary for legacy agent services.",
+        "sha256": "9539b0ebbd029955cce8964ff05dae7cf36289011a60878cb81ddc72afb2543a",
+        "symbols": [
+          "LegacyAgentCompatibilityBridge",
+          "AgentEvent",
+          "runLegacyAgentService",
+          "runSlotAgentCompatibility",
+          "task",
+          "agentKernelEvent"
         ]
       },
       {
@@ -1168,21 +1186,25 @@
         "language": "swift",
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/CalendarTools.swift",
-        "responsibility": "`ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, createEvent, listEvents, createReminder, listReminders, store, granted, event, predicate, events.",
-        "sha256": "7235aac6cd44100aae344eb0619c20870a6151167615485cb47626b20873541d",
+        "responsibility": "`ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, CalendarOperation, CalendarEventRecord, CalendarListQuery, CalendarToolResponse, EventProvider, EventKitProvider, CalendarProviderError, authorizationState, events.",
+        "sha256": "ec038cd083208e3a44eb9711c4698f2707affa98c5e94924a09ad707d35b19cb",
         "symbols": [
           "CalendarTools",
-          "createEvent",
-          "listEvents",
-          "createReminder",
-          "listReminders",
-          "store",
-          "granted",
-          "event",
-          "predicate",
+          "CalendarOperation",
+          "CalendarEventRecord",
+          "CalendarListQuery",
+          "CalendarToolResponse",
+          "EventProvider",
+          "EventKitProvider",
+          "CalendarProviderError",
+          "authorizationState",
           "events",
-          "reminder",
-          "items"
+          "createEvent",
+          "createEventResult",
+          "listEvents",
+          "listEventsResult",
+          "parseListArguments",
+          "unavailableResponse"
         ]
       },
       {
@@ -2040,31 +2062,21 @@
       },
       {
         "imports": [
-          "Foundation",
-          "EventKit"
+          "Foundation"
         ],
         "language": "swift",
         "module": "Tools/Builtin",
         "path": "ios/Lumen/Tools/Builtin/CalendarReadTool.swift",
-        "responsibility": "`ios/Lumen/Tools/Builtin/CalendarReadTool.swift` owns CalendarReadTool behavior and defines: CalendarReadTool, Provider, EventKitProvider, events, validateArguments, parse, execute, store, pred, definition.",
-        "sha256": "ebcfcc759a9a65779497978d6bf5f031d130de8638e17973a36a550d8679b577",
+        "responsibility": "`ios/Lumen/Tools/Builtin/CalendarReadTool.swift` owns CalendarReadTool behavior and defines: CalendarReadTool, validateArguments, parse, execute, definition, provider, response.",
+        "sha256": "f5987712b54a26dc1542f1273f90c15433546dcb5357a72dc2ae730ae2b81ced",
         "symbols": [
           "CalendarReadTool",
-          "Provider",
-          "EventKitProvider",
-          "events",
           "validateArguments",
           "parse",
           "execute",
-          "store",
-          "pred",
           "definition",
           "provider",
-          "limit",
-          "f",
-          "start",
-          "rawStart",
-          "parsed"
+          "response"
         ]
       },
       {
@@ -2075,7 +2087,7 @@
         "module": "Tools/Builtin",
         "path": "ios/Lumen/Tools/Builtin/CommunicationLocalTools.swift",
         "responsibility": "`ios/Lumen/Tools/Builtin/CommunicationLocalTools.swift` owns CommunicationLocalTools behavior and defines: CommunicationLocalTool, validateArguments, execute, result, secureCategory, maxOutputCharacters, argumentSchemaDescription, nativeToolIDs, all, definition.",
-        "sha256": "3505eded75cfcd8561226f63163313ba6a264c235b98acd310ebdb2a8635cbee",
+        "sha256": "f2200e9558397fedfd3ad6ec3e756b650fe521ad79f036c2712d2f72c994b62a",
         "symbols": [
           "CommunicationLocalTool",
           "validateArguments",
@@ -2094,35 +2106,6 @@
           "permissionFailure",
           "text"
         ]
-      },
-      {
-        "imports": [
-          "Foundation",
-          "Contacts"
-        ],
-        "language": "swift",
-        "module": "Tools/Builtin",
-        "path": "ios/Lumen/Tools/Builtin/ContactsLookupTool.swift",
-        "responsibility": "`ios/Lumen/Tools/Builtin/ContactsLookupTool.swift` owns ContactsLookupTool behavior and defines: ContactsLookupTool, Provider, CNProvider, search, validateArguments, parse, execute, executeAfterPermissionGranted, keys, req.",
-        "sha256": "0dfcdacfabaa3e962e09eec4829e252024e404387865a328ed21d8e97d4bfeba",
-        "symbols": [
-          "ContactsLookupTool",
-          "Provider",
-          "CNProvider",
-          "search",
-          "validateArguments",
-          "parse",
-          "execute",
-          "executeAfterPermissionGranted",
-          "keys",
-          "req",
-          "out",
-          "name",
-          "row",
-          "definition",
-          "provider",
-          "q"
-        ]
       }
     ]
   },
@@ -2132,7 +2115,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "0a3977dd04253a9ea274a45c2e659d3e67557c9e",
+  "manifestCommit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

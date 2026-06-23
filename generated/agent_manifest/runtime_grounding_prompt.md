@@ -2,32 +2,32 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `0a3977dd04253a9ea274a45c2e659d3e67557c9e`
+- Manifest commit: `50dc56691bf538cf816b2847e0b97005e185f4d0`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `705`
+- Codebase-home records: `732`
 
 ## Top Modules
-- `ios/LumenTests`: 143 files
-- `Services`: 55 files
+- `ios/LumenTests`: 147 files
+- `Services`: 57 files
 - `docs`: 51 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 36 files
-- `Views`: 30 files
-- `Assistant`: 23 files
+- `Views`: 31 files
+- `Assistant`: 26 files
+- `generated/agent_manifest`: 26 files
 - `tools/lumen_manifest_crawler/generated`: 23 files
 - `Services/LLM`: 21 files
 - `Diagnostics`: 19 files
 - `tools/fine_tuning/unsloth`: 19 files
 - `tools/lumen_manifest_crawler/tests`: 19 files
 - `Models`: 15 files
+- `scripts`: 15 files
 - `Services/Tools`: 14 files
 - `System`: 14 files
 - `Tools`: 14 files
-- `scripts`: 14 files
 - `Services/AgentGrounding`: 13 files
-- `tools`: 13 files
 - `Tools/Builtin`: 12 files
-- `generated/agent_manifest`: 10 files
+- `tools`: 12 files
 - `RAG`: 9 files
 - `Services/LLM/Models`: 9 files
 - `Services/LLM/Policy`: 9 files
@@ -58,6 +58,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/AssistantTurnContext.swift` (Assistant): `ios/Lumen/Assistant/AssistantTurnContext.swift` owns AssistantTurnContext behavior and defines: AssistantTaskKind, AssistantTurnContext, task, input, systemPrompt, history, relevantMemories, attachments, isForeground, l Symbols: AssistantTaskKind, AssistantTurnContext, task, input, systemPrompt, history, relevantMemories, attachments.
 - `ios/Lumen/Assistant/ContextBudgetAllocator.swift` (Assistant): `ios/Lumen/Assistant/ContextBudgetAllocator.swift` owns ContextBudgetAllocator behavior and defines: ContextBudgetSections, ContextBudgetAllocator, allocate, system, history, memories, rag, tools, runtime, bounded. Symbols: ContextBudgetSections, ContextBudgetAllocator, allocate, system, history, memories, rag, tools.
 - `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` (Assistant): Headless compatibility runner for AppIntent and scheduled trigger entrypoints. Symbols: HeadlessAgentKernelRunner, run, composedSystemPrompt, stored, fleet, trimmed, cascade, resolution.
+- `ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift` (Assistant): Explicit Agent Kernel compatibility boundary for legacy agent services. Symbols: LegacyAgentCompatibilityBridge, AgentEvent, runLegacyAgentService, runSlotAgentCompatibility, task, agentKernelEvent.
 - `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` (Assistant): `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding, preven Symbols: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding, preventDoubleGrounding.
 - `ios/Lumen/Assistant/LegacyGroundingBridge.swift` (Assistant): Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and d Symbols: LegacyGroundingBundle, LegacyGroundingBridge, build, grounding, sections, renderedPromptContext, secureTools, metricsSummary.
 - `ios/Lumen/Assistant/LegacyGroundingCache.swift` (Assistant): `ios/Lumen/Assistant/LegacyGroundingCache.swift` owns LegacyGroundingCache behavior and defines: LegacyGroundingCache, Key, Entry, digest, get, put, invalidate, pruneExpired, conversationID, turnID. Symbols: LegacyGroundingCache, Key, Entry, digest, get, put, invalidate, pruneExpired.
@@ -76,7 +77,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/AgentRunner.swift` (Services): Compatibility wrapper kept for older callers during the Agent Kernel migration. New entrypoints should call `AssistantKernel.run(...)` or a narrow kernel bridge directly. Symbols: AgentRunner, runHeadless.
 - `ios/Lumen/Services/AgentService.swift` (Services): `ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector, Selec Symbols: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentJSONCandidateSelector.
 - `ios/Lumen/Services/Tools/AlarmTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: AlarmTools, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause, resume, stop. Symbols: AlarmTools, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause.
-- `ios/Lumen/Services/Tools/CalendarTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, createEvent, listEvents, createReminder, listReminders, store, granted, event, predicate, events. Symbols: CalendarTools, createEvent, listEvents, createReminder, listReminders, store, granted, event.
+- `ios/Lumen/Services/Tools/CalendarTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, CalendarOperation, CalendarEventRecord, CalendarListQuery, CalendarToolResponse, EventProvider, EventKitProvider, Cal Symbols: CalendarTools, CalendarOperation, CalendarEventRecord, CalendarListQuery, CalendarToolResponse, EventProvider, EventKitProvider, CalendarProviderError.
 - `ios/Lumen/Services/Tools/ContactsTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/ContactsTools.swift` owns ContactsTools behavior and defines: ContactsTools, searchContacts, call, composeMessage, composeMail, store, granted, predicate, keys, results. Symbols: ContactsTools, searchContacts, call, composeMessage, composeMail, store, granted, predicate.
 - `ios/Lumen/Services/Tools/FilesTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/FilesTools.swift` owns FilesTools behavior and defines: FilesTools, readImportedFile, dir, trimmed, fm, files, match, url, pdf, text. Symbols: FilesTools, readImportedFile, dir, trimmed, fm, files, match, url.
 - `ios/Lumen/Services/Tools/HealthTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/HealthTools.swift` owns HealthTools behavior and defines: HealthTools, healthSummary, sumQuantity, averageQuantity, sleepHours, healthStore, stepType, hrType, sleepType, energyType. Symbols: HealthTools, healthSummary, sumQuantity, averageQuantity, sleepHours, healthStore, stepType, hrType.
@@ -93,4 +94,3 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift` (Services/IntentClassification): `ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift` owns DeterministicIntentFallback behavior and defines: DeterministicIntentFallback, classify, ambiguityClarification, clarification, isAmbiguous Symbols: DeterministicIntentFallback, classify, ambiguityClarification, clarification, isAmbiguousMeetingLookup, isAmbiguousReferenceAction, normalized, containsAny.
 - `ios/Lumen/Services/IntentClassification/IntentClassificationResult.swift` (Services/IntentClassification): `ios/Lumen/Services/IntentClassification/IntentClassificationResult.swift` owns IntentClassificationResult behavior and defines: IntentAlternative, IntentClassificationResult, Source, IntentToolMapping, withAllowedAltern Symbols: IntentAlternative, IntentClassificationResult, Source, IntentToolMapping, withAllowedAlternatives, asRoutingDecision, allowedToolIDs, intent.
 - `ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` (Services/IntentClassification): `ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, IntentClarificationPolicy, resolve, resolveMediumConfidence, clarificationF Symbols: IntentClassifierPolicy, IntentClarificationPolicy, resolve, resolveMediumConfidence, clarificationForAmbiguousModelResult, rankedAlternatives, shouldClarifyBetween, clarificationPrompt.
-- `ios/Lumen/Services/IntentClassification/IntentClassifierService.swift` (Services/IntentClassification): Determines the routing decision for the given text. Symbols: IntentClassifierService, route, classify, shared, result, routing, ambiguity, override.

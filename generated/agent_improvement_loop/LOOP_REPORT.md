@@ -4,15 +4,15 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `34452`
-- Runtime audit reports: `5`
-- Runtime failures: `6`
-- Raw runtime failures: `60`
-- Skipped live model generation: `54`
+- Dataset records: `39983`
+- Runtime audit reports: `4`
+- Runtime failures: `33`
+- Raw runtime failures: `46`
+- Skipped live model generation: `13`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `60`
-- Next action prompts: `60`
+- Gaps: `46`
+- Next action prompts: `46`
 
 ## TestFlight handoff
 
@@ -20,152 +20,152 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app datase
 
 ## Top gaps
 
-### ERROR — e2e_response_quality_calendar
+### ERROR — argument_mismatch
 
-- Category: `runtime_permission_config`
-- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### ERROR — e2e_response_quality_calendar
+### ERROR — argument_mismatch
 
-- Category: `runtime_permission_config`
-- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### ERROR — e2e_response_quality_calendar
+### ERROR — argument_mismatch
 
-- Category: `runtime_permission_config`
-- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### ERROR — e2e_response_quality_calendar
+### ERROR — argument_mismatch
 
-- Category: `runtime_permission_config`
-- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### ERROR — e2e_response_quality_calendar
+### ERROR — argument_mismatch
 
-- Category: `runtime_permission_config`
-- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### ERROR — e2e_response_quality_calendar
+### ERROR — argument_mismatch
 
-- Category: `runtime_permission_config`
-- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_chat
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_emaildraft
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_maps
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — argument_mismatch
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — missing_live_argument
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — unmanifested_live_argument
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `manifest_mismatch`
+- Recommendation: Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.
 
-### WARNING — e2e_response_quality_memory
+### ERROR — persistent_diagnostics_scenario_not_passed
 
-- Category: `skipped_live_model_generation`
-- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
+- Category: `runtime_drift`
+- Recommendation: Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.

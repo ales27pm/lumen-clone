@@ -1,6 +1,6 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 17401,
+  "availableSFTRecords": 20213,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -8,12 +8,12 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "caf137062c234bfaaabcd86b5f2a31dea3e08e71",
+  "manifestCommit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
   "quality": {
-    "cortexCodebaseChunkRecordCount": 3489,
-    "cortexCodebaseFileRecordCount": 2009,
+    "cortexCodebaseChunkRecordCount": 4267,
+    "cortexCodebaseFileRecordCount": 2083,
     "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_plus_selected_manifest_artifacts",
-    "cortexCodebaseSelfAwarenessRecordCount": 5562,
+    "cortexCodebaseSelfAwarenessRecordCount": 6415,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 25,
@@ -22,9 +22,9 @@
   "recordCounts": {
     "eval": 558,
     "train_dpo": 15,
-    "train_sft": 8615,
+    "train_sft": 8719,
     "val_dpo": 3,
-    "val_sft": 1520
+    "val_sft": 1539
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
