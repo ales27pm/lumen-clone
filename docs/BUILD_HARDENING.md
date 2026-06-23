@@ -17,7 +17,9 @@ xcodebuild -project Lumen.xcodeproj -scheme Lumen -destination 'generic/platform
 xcodebuild -project Lumen.xcodeproj -scheme Lumen -destination 'generic/platform=iOS Simulator' test
 ```
 
-`scripts/check-lumen-integration-gate.sh` is the local pre-PR gate for this repo. It runs the Agent Kernel boundary guards, adapter runtime invariants, LoRA hardening invariants, MSAL release validation, shell-subprocess security scan, iOS build-readiness checks, and `git diff --check` in a deterministic fail-fast order.
+`scripts/check-lumen-integration-gate.sh` is the local pre-PR gate for this repo. It runs the Agent Kernel boundary guards, adapter runtime invariants, LoRA hardening invariants, MSAL release validation, signing capability validation, shell-subprocess security scan, iOS build-readiness checks, and `git diff --check` in a deterministic fail-fast order.
+
+Run full pre-PR validation from a real git checkout so the `git diff --check` whitespace guard runs against the worktree. In exported ZIP archives or other non-git directories, the integration gate prints `Skipping git diff --check: not a git worktree` and continues with the non-git static checks.
 
 If a named simulator is required locally, run `xcodebuild -showdestinations -project Lumen.xcodeproj -scheme Lumen` and choose an installed simulator.
 
