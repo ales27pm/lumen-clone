@@ -56,6 +56,20 @@ struct ProductivityLocalTool: LocalTool {
             rawToolID: toolID,
             arguments: invocation.arguments
         )
+        let calendarCreateArguments: CalendarCreateArguments?
+        if toolID == "calendar.create" {
+            guard let parsedArguments = Self.calendarCreateArguments(from: args) else {
+                return result(
+                    invocation: invocation,
+                    response: CalendarTools.invalidArgumentsResponse(
+                        displayText: "The calendar create request is missing a non-empty title or valid startsInMinutes argument."
+                    )
+                )
+            }
+            calendarCreateArguments = parsedArguments
+        } else {
+            calendarCreateArguments = nil
+        }
 
         guard ToolRouteGuard.canExecuteTool(toolID, arguments: args, approval: approval) else {
             return result(
@@ -84,9 +98,17 @@ struct ProductivityLocalTool: LocalTool {
         let text: String
         switch toolID {
         case "calendar.create":
+            guard let calendarCreateArguments else {
+                return result(
+                    invocation: invocation,
+                    response: CalendarTools.invalidArgumentsResponse(
+                        displayText: "The calendar create request is missing a non-empty title or valid startsInMinutes argument."
+                    )
+                )
+            }
             let response = await CalendarTools.createEventResult(
-                title: args["title"] ?? "New Event",
-                startsInMinutes: Int(args["startsInMinutes"] ?? "60") ?? 60
+                title: calendarCreateArguments.title,
+                startsInMinutes: calendarCreateArguments.startsInMinutes
             )
             return result(invocation: invocation, response: response)
         case "calendar.list":
@@ -171,6 +193,24 @@ struct ProductivityLocalTool: LocalTool {
 
     static func shouldRequestCalendarPermission(toolID: String, isForeground: Bool) -> Bool {
         isForeground && toolID.hasPrefix("calendar.")
+    }
+
+    struct CalendarCreateArguments: Equatable {
+        let title: String
+        let startsInMinutes: Int
+    }
+
+    static func calendarCreateArguments(from args: [String: String]) -> CalendarCreateArguments? {
+        guard let rawTitle = args["title"] else { return nil }
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        guard let rawStartsInMinutes = args["startsInMinutes"],
+              let startsInMinutes = Int(rawStartsInMinutes),
+              startsInMinutes >= 0,
+              startsInMinutes <= CalendarTools.maximumSafeStartsInMinutes else {
+            return nil
+        }
+        return CalendarCreateArguments(title: title, startsInMinutes: startsInMinutes)
     }
 
     private func result(invocation: ToolInvocation, response: CalendarTools.CalendarToolResponse) -> ToolResult {

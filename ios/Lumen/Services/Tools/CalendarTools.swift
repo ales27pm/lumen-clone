@@ -3,6 +3,8 @@ import EventKit
 
 @MainActor
 enum CalendarTools {
+    nonisolated static let maximumSafeStartsInMinutes = Int.max / 60
+
     private enum CalendarOperation {
         case read
         case write
@@ -77,6 +79,9 @@ enum CalendarTools {
             guard let calendar = store.defaultCalendarForNewEvents else {
                 throw CalendarProviderError.providerUnavailable
             }
+            guard startsInMinutes >= 0, startsInMinutes <= CalendarTools.maximumSafeStartsInMinutes else {
+                throw ToolExecutionError.invalidArguments("startsInMinutes")
+            }
             let event = EKEvent(eventStore: store)
             event.title = title
             event.startDate = now.addingTimeInterval(TimeInterval(startsInMinutes * 60))
@@ -134,8 +139,8 @@ enum CalendarTools {
         now: Date = Date()
     ) async -> CalendarToolResponse {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty, startsInMinutes >= 0 else {
-            return invalidArgumentsResponse()
+        guard !trimmedTitle.isEmpty, startsInMinutes >= 0, startsInMinutes <= maximumSafeStartsInMinutes else {
+            return invalidArgumentsResponse(displayText: "The calendar create request is missing a non-empty title or valid startsInMinutes argument.")
         }
         let authorizationState = provider.authorizationState()
         guard let unavailable = unavailableResponse(for: authorizationState, operation: .write) else {
@@ -168,7 +173,7 @@ enum CalendarTools {
         do {
             query = try parseListArguments(arguments, now: now)
         } catch {
-            return invalidArgumentsResponse()
+            return invalidArgumentsResponse(displayText: "The calendar list request is missing valid date or limit arguments.")
         }
 
         guard let unavailable = unavailableResponse(for: provider.authorizationState(), operation: .read) else {
@@ -204,7 +209,13 @@ enum CalendarTools {
 
     nonisolated static func parseListArguments(_ arguments: [String: String], now: Date = Date()) throws -> CalendarListQuery {
         let argumentDateFormatter = ISO8601DateFormatter()
-        let limit = Int(arguments["limit"] ?? "10") ?? 10
+        let limit: Int
+        if let rawLimit = arguments["limit"] {
+            guard let parsedLimit = Int(rawLimit) else { throw ToolExecutionError.invalidArguments("limit") }
+            limit = parsedLimit
+        } else {
+            limit = 10
+        }
         guard (1...20).contains(limit) else { throw ToolExecutionError.invalidArguments("limit") }
 
         let start: Date
@@ -290,10 +301,10 @@ enum CalendarTools {
         }
     }
 
-    private static func invalidArgumentsResponse() -> CalendarToolResponse {
+    nonisolated static func invalidArgumentsResponse(displayText: String) -> CalendarToolResponse {
         CalendarToolResponse(
             status: .failed,
-            displayText: "The calendar request is missing valid date or limit arguments.",
+            displayText: displayText,
             modelText: "Calendar arguments are invalid.",
             structuredPayload: ["availability": "unknown", "failure": "invalidArguments"],
             metricsSummary: "calendar_invalid_arguments",

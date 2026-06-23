@@ -87,6 +87,46 @@ final class CalendarReadToolPolicyTests: XCTestCase {
         XCTAssertEqual(provider.eventReadCount, 0)
     }
 
+    func testNonNumericLimitFailsBeforeProviderRead() async {
+        let provider = FakeCalendarEventProvider(state: .granted, records: [])
+        let result = await CalendarTools.listEventsResult(arguments: ["limit": "abc"], provider: provider)
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.errorCode, "calendar_invalid_arguments")
+        XCTAssertEqual(result.structuredPayload?["failure"], "invalidArguments")
+        XCTAssertEqual(provider.eventReadCount, 0)
+        XCTAssertTrue(result.displayText.localizedCaseInsensitiveContains("calendar list"))
+    }
+
+    func testInvalidArgumentMessagesAreOperationSpecific() async {
+        let provider = FakeCalendarEventProvider(state: .granted, records: [])
+
+        let list = await CalendarTools.listEventsResult(arguments: ["limit": "abc"], provider: provider)
+        XCTAssertTrue(list.displayText.localizedCaseInsensitiveContains("calendar list"))
+        XCTAssertFalse(list.displayText.localizedCaseInsensitiveContains("create"))
+
+        let create = await CalendarTools.createEventResult(
+            title: "",
+            startsInMinutes: 30,
+            provider: provider,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertTrue(create.displayText.localizedCaseInsensitiveContains("calendar create"))
+        XCTAssertFalse(create.displayText.localizedCaseInsensitiveContains("date or limit"))
+    }
+
+    func testCreateRejectsOverflowingStartsInMinutesBeforeProviderWrite() async {
+        let provider = FakeCalendarEventProvider(state: .granted, records: [])
+        let result = await CalendarTools.createEventResult(
+            title: "Planning",
+            startsInMinutes: CalendarTools.maximumSafeStartsInMinutes + 1,
+            provider: provider,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.errorCode, "calendar_invalid_arguments")
+        XCTAssertEqual(provider.eventCreateCount, 0)
+    }
+
     func testProductivityCalendarListPreservesAvailabilityPayload() async {
         let tool = ProductivityLocalTool(ToolRegistry.find(id: "calendar.list")!)
         XCTAssertEqual(tool.definition.id, "calendar.list")
@@ -113,6 +153,21 @@ final class CalendarReadToolPolicyTests: XCTestCase {
         XCTAssertFalse(ProductivityLocalTool.shouldRequestCalendarPermission(toolID: "reminders.list", isForeground: true))
     }
 
+    func testProductivityCalendarCreateArgumentsRequireExplicitValidValues() {
+        XCTAssertNil(ProductivityLocalTool.calendarCreateArguments(from: ["startsInMinutes": "60"]))
+        XCTAssertNil(ProductivityLocalTool.calendarCreateArguments(from: ["title": "Planning"]))
+        XCTAssertNil(ProductivityLocalTool.calendarCreateArguments(from: ["title": "Planning", "startsInMinutes": "abc"]))
+        XCTAssertNil(ProductivityLocalTool.calendarCreateArguments(from: ["title": "Planning", "startsInMinutes": "-1"]))
+        XCTAssertNil(ProductivityLocalTool.calendarCreateArguments(from: [
+            "title": "Planning",
+            "startsInMinutes": String(CalendarTools.maximumSafeStartsInMinutes + 1)
+        ]))
+
+        let parsed = ProductivityLocalTool.calendarCreateArguments(from: ["title": " Planning ", "startsInMinutes": "60"])
+        XCTAssertEqual(parsed?.title, "Planning")
+        XCTAssertEqual(parsed?.startsInMinutes, 60)
+    }
+
     func testWriteOnlyCalendarUsageDescriptionIsAccepted() {
         XCTAssertEqual(PermissionKind(usageDescriptionKey: "NSCalendarsWriteOnlyAccessUsageDescription"), .calendar)
         XCTAssertTrue(CalendarTools.EventKitProvider.hasCalendarUsageDescription(infoDictionary: [
@@ -123,6 +178,7 @@ final class CalendarReadToolPolicyTests: XCTestCase {
 
 private final class FakeCalendarEventProvider: CalendarTools.EventProvider {
     var eventReadCount = 0
+    var eventCreateCount = 0
     private let state: AssistantPermissionState
     private let records: [CalendarTools.CalendarEventRecord]
     private let throwsOnEvents: Bool
@@ -150,6 +206,7 @@ private final class FakeCalendarEventProvider: CalendarTools.EventProvider {
     }
 
     func createEvent(title: String, startsInMinutes: Int, now: Date) async throws -> CalendarTools.CalendarEventRecord {
+        eventCreateCount += 1
         if throwsOnEvents {
             throw FakeCalendarError.rawProviderBoom
         }
