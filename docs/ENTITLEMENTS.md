@@ -1,8 +1,8 @@
 # Entitlements and Usage Descriptions
 
 Required background task identifiers:
-- `com.27pm.lumen.agent.refresh`
-- `com.27pm.lumen.agent.process`
+- `com.27pm.lumenclone.agent.refresh`
+- `com.27pm.lumenclone.agent.process`
 
 Generated Info.plist usage descriptions are configured in `ios/Lumen.xcodeproj/project.pbxproj` for microphone, speech recognition, contacts, location, photos, AlarmKit, calendar full access, reminders full access, motion, and background modes.
 

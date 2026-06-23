@@ -44,6 +44,8 @@ def test_improvement_loop_writes_state_gaps_prompts_and_testflight_artifacts(tmp
     assert (loop_output / "testflight_scenarios.jsonl").exists()
     assert (loop_output / "TESTFLIGHT_RUNBOOK.md").exists()
     assert (loop_output / "LOOP_REPORT.md").exists()
+    assert (loop_output / "gap_triage.json").exists()
+    assert (loop_output / "GAP_TRIAGE.md").exists()
 
     runtime_manifest = json.loads((output / "fine_tuning" / "adapter_runtime_manifest.json").read_text(encoding="utf-8"))
     cortex_plan = json.loads((output / "fine_tuning" / "cortex" / "adapter_export_plan.json").read_text(encoding="utf-8"))
@@ -73,6 +75,7 @@ def test_improvement_loop_writes_state_gaps_prompts_and_testflight_artifacts(tmp
     assert any(scenario.get("sourceFamily") == "trace_export_coverage" for scenario in result.testflight_scenarios)
     assert any(scenario.get("sourceFamily") == "trace_integrity" for scenario in result.testflight_scenarios)
     assert result.next_prompts
+    assert result.state["triage"]["totalGaps"] == len(result.gaps)
 
 
 def test_improvement_loop_can_require_testflight_runtime_audit(tmp_path: Path):
@@ -113,3 +116,52 @@ def test_improvement_loop_records_failed_command_as_critical_gap(tmp_path: Path)
     assert any(gap["category"] == "command_failure" for gap in result.gaps)
     assert any(gap["severity"] == "critical" for gap in result.gaps)
     assert result.passed is False
+
+
+def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Path):
+    report = tmp_path / "live-e2e.json"
+    report.write_text(
+        json.dumps({
+            "kind": "lumen_e2e_test_report",
+            "passed": False,
+            "failed": 1,
+            "scenarios": [
+                {
+                    "name": "Live outlook.folders.list direct",
+                    "passed": False,
+                    "prompt": "List my Outlook folders.",
+                    "intent": "outlook",
+                    "expectedIntent": "outlook",
+                    "requiresAgentRun": True,
+                    "failures": ["Live E2E scenario did not run: no chat model loaded"],
+                    "final": "Outlook tool output could not be validated.",
+                    "events": [{"phase": "models", "message": "no chat model loaded"}],
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(report,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+        )
+    )
+
+    runtime_gaps = [gap for gap in result.gaps if gap["title"] == "e2e_response_quality_outlook"]
+    assert len(runtime_gaps) == 1
+    assert runtime_gaps[0]["severity"] == "warning"
+    assert runtime_gaps[0]["category"] == "skipped_live_model_generation"
+    assert runtime_gaps[0]["evidence"]["rootCauseCategory"] == "skipped_live_model_generation"
+    assert result.state["runtime"]["rawFailureCount"] == 1
+    assert result.state["runtime"]["failureCount"] == 0
+    assert result.state["runtime"]["skippedLiveModelGenerationCount"] == 1
+    assert result.state["triage"]["rootCauseCounts"]["skipped_live_model_generation"] == 1

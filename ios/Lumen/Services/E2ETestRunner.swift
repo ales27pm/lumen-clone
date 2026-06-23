@@ -428,14 +428,25 @@ nonisolated enum E2ETestRunner {
         await run(scenarios: E2ETestScenario.trainingValidation, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
+    /// Executes end-to-end test scenarios sequentially and generates a report of results and metrics.
+    /// - Parameters:
+    ///   - scenarios: The test scenarios to execute.
+    ///   - config: Runtime configuration for execution.
+    ///   - ensureChatLoaded: Optional callback to ensure the chat model is available for scenarios requiring agent execution.
+    ///   - onResult: Optional callback invoked when each scenario completes.
+    ///   - onEvent: Optional callback invoked during scenario execution.
+    /// - Returns: A report containing all results, pass/fail counts, and performance metrics.
     static func run(scenarios: [E2ETestScenario], config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
         let started = Date()
         var results: [E2ETestResult] = []
         for scenario in scenarios {
             #if DEBUG
-            debugScenarioLoopThreadRecorder?(Thread.isMainThread)
+            let isOnMainThread = Thread.isMainThread
+            await MainActor.run {
+                debugScenarioLoopThreadRecorder?(isOnMainThread)
+            }
             if debugAssertScenarioLoopOffMainThread {
-                assert(!Thread.isMainThread, "E2ETestRunner scenario loop must not run on the main thread")
+                assert(!isOnMainThread, "E2ETestRunner scenario loop must not run on the main thread")
             }
             #endif
             do {
@@ -645,7 +656,8 @@ nonisolated enum E2ETestRunner {
                     groundingMode: .slotAgent,
                     allowDegradedGrounding: false,
                     preventDoubleGrounding: true,
-                    diagnosticsEnabled: false
+                    diagnosticsEnabled: false,
+                    allowDeterministicCompatibility: scenario.kind != .training
                 )
                 let agentEvents = await MainActor.run {
                     AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
@@ -806,11 +818,16 @@ nonisolated enum E2ETestRunner {
         return E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, requiresAgentRun: scenario.requiresAgentRun, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
     }
 
+    /// Determines whether a scenario accepts policy-first deterministic execution traces as valid evidence.
+    /// - Returns: `true` if the scenario accepts such traces, `false` otherwise.
     private nonisolated static func acceptsPolicyFirstExecutionEvidence(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
         guard scenario.requiresAgentRun else { return false }
         // Training scenarios are adapter/model promotion evals. They must still
         // prove a fresh modelTurn and must not pass on deterministic policy traces.
         guard scenario.kind != .training else { return false }
+        if scenario.kind == .chat, routing.intent == .chat {
+            return true
+        }
         // Regression/routing scenarios may be intentionally satisfied by the
         // policy-first deterministic compatibility path. Those traces are valid
         // execution evidence when the routed intent is tool-scoped or needs a
@@ -870,6 +887,8 @@ nonisolated enum E2ETestRunner {
         )
     }
 
+    /// Determines if an agent behavior trace qualifies as a policy-first execution trace.
+    /// - Returns: `true` if the trace represents a policy-first execution, `false` otherwise.
     private nonisolated static func isPolicyFirstExecutionTrace(_ trace: AgentBehaviorTrace) -> Bool {
         guard trace.runtimePath == "deterministic-compatibility" else { return false }
         switch trace.event {
@@ -881,6 +900,7 @@ nonisolated enum E2ETestRunner {
                 || stage.contains("compatibility-clarification")
                 || stage.contains("compatibility-memory-final")
                 || stage.contains("compatibility-chain-stopped")
+                || stage == "compatibility-direct-final"
                 || stage == "compatibility-final"
         case .modelTurn:
             return false

@@ -7,7 +7,12 @@ import pytest
 
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
-from lumen_manifest_crawler.dataset.fine_tuning import AGENTS, compile_agent_fine_tuning_datasets
+from lumen_manifest_crawler.dataset.fine_tuning import (
+    AGENTS,
+    CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
+    ULTRA_SPECIFIC_SOURCE_FAMILY,
+    compile_agent_fine_tuning_datasets,
+)
 from lumen_manifest_crawler.output.writer import write_outputs
 from lumen_manifest_crawler.validators import validate_agent_fine_tuning_datasets, validate_manifest
 
@@ -25,7 +30,7 @@ def _repo_root() -> Path:
 def compiled_fine_tuning() -> tuple:
     repo_root = _repo_root()
     manifest = generate_manifest(repo_root)
-    datasets = generate_all_datasets(manifest)
+    datasets = generate_all_datasets(manifest, root=repo_root)
     fine_tuning = compile_agent_fine_tuning_datasets(manifest, datasets)
     return manifest, datasets, fine_tuning
 
@@ -140,6 +145,77 @@ def test_sft_records_use_chat_format(compiled_fine_tuning: tuple) -> None:
             assert messages[2]["content"].strip()
 
 
+def test_each_adapter_has_ultra_specific_dataset_records(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    minimum_records = {
+        "cortex": 10,
+        "executor": 10,
+        "mouth": 10,
+        "mimicry": 5,
+        "rem": 5,
+        "fleet": 5,
+    }
+
+    for agent in AGENTS:
+        records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+        ultra_specific = [
+            record for record in records
+            if (record.get("metadata") or {}).get("sourceFamily") == ULTRA_SPECIFIC_SOURCE_FAMILY
+        ]
+        card_quality = fine_tuning[agent].dataset_card.get("quality") or {}
+
+        assert len(ultra_specific) >= minimum_records[agent], f"{agent} lacks ultra-specific records"
+        assert fine_tuning[agent].dataset_card["constraints"]["ultraSpecificAdapterCorpus"] is True
+        assert card_quality["ultraSpecificSourceFamily"] == ULTRA_SPECIFIC_SOURCE_FAMILY
+        assert card_quality["ultraSpecificRecordCount"] == len(ultra_specific)
+        assert all((record.get("metadata") or {}).get("specificity") == "ultra_specific" for record in ultra_specific)
+
+
+def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: tuple) -> None:
+    _, datasets, fine_tuning = compiled_fine_tuning
+    records = fine_tuning["cortex"].train_sft + fine_tuning["cortex"].val_sft
+    cortex_codebase = [
+        record for record in records
+        if (record.get("metadata") or {}).get("sourceFamily") == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
+    ]
+    cortex_chunks = [
+        record for record in cortex_codebase
+        if (record.get("metadata") or {}).get("recordKind") == "source_chunk"
+    ]
+    source_chunk_count = len(datasets.get("codebase_home_chunks", []))
+    card_quality = fine_tuning["cortex"].dataset_card.get("quality") or {}
+
+    assert len(datasets.get("codebase_home_corpus", [])) >= 700
+    assert source_chunk_count >= len(datasets.get("codebase_home_corpus", []))
+    assert len(cortex_codebase) >= 2000
+    assert len(cortex_chunks) == source_chunk_count
+    assert CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY in fine_tuning["cortex"].dataset_card["sourceFamilies"]
+    assert card_quality["cortexCodebaseSelfAwarenessSourceFamily"] == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
+    assert card_quality["cortexCodebaseSelfAwarenessRecordCount"] == len(cortex_codebase)
+    assert card_quality["cortexCodebaseSelfAwarenessCoverage"] == "git_tracked_text_files_plus_selected_manifest_artifacts"
+    assert card_quality["cortexCodebaseChunkRecordCount"] == source_chunk_count
+    assert any("sourceHash" in (record.get("metadata") or {}) for record in cortex_codebase)
+    assert any((record.get("metadata") or {}).get("taskType") == "module_ownership_grounding" for record in cortex_codebase)
+    assert any((record.get("metadata") or {}).get("taskType") == "source_symbol_grounding" for record in cortex_codebase)
+    assert any((record.get("metadata") or {}).get("taskType") == "total_codebase_source_chunk" for record in cortex_codebase)
+
+
+def test_executor_missing_argument_samples_require_required_arguments(compiled_fine_tuning: tuple) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    optional_only_tools = {
+        tool.id
+        for tool in manifest.tools
+        if tool.arguments and not any(argument.required for argument in tool.arguments)
+    }
+    assert optional_only_tools
+
+    for record in fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft:
+        metadata = record.get("metadata") or {}
+        if metadata.get("taskType") != "ultra_specific_missing_argument_boundary":
+            continue
+        assert optional_only_tools.isdisjoint(metadata.get("toolIDs") or [])
+
+
 def test_dpo_records_have_prompt_chosen_rejected(compiled_fine_tuning: tuple) -> None:
     _, _, fine_tuning = compiled_fine_tuning
     for agent in AGENTS:
@@ -191,9 +267,12 @@ def test_codebase_home_records_route_to_fleet_and_rem() -> None:
 
     assert datasets["codebase_home_corpus"]
     assert datasets["codebase_home_sft"]
+    assert datasets["codebase_home_chunks"]
+    assert datasets["codebase_home_chunk_sft"]
     for agent in ("fleet", "rem"):
         records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
         assert any(record["metadata"]["sourceFamily"] == "codebase_home_sft" for record in records)
+        assert any(record["metadata"]["sourceFamily"] == "codebase_home_chunk_sft" for record in records)
 
 
 def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> None:

@@ -4,13 +4,20 @@ import UIKit
 
 @MainActor
 enum LocationTools {
+    /// Retrieves a textual description of the current location.
+    /// - Returns: A string describing the current location.
     static func currentLocation() async -> String {
         await LocationProbe.currentDescription()
     }
 
+    /// Opens the Maps app with directions to the specified destination.
+    /// - Parameters:
+    ///   - destination: The location or address to route to.
+    /// - Returns: A message indicating success or the reason the operation could not be completed.
     static func openDirections(destination: String) -> String {
-        let trimmed = destination.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "No destination provided." }
+        guard let trimmed = ToolRouteGuard.sanitizedMapsDestination(destination) else {
+            return "No valid Maps destination provided."
+        }
         guard let url = directionsURL(destination: trimmed) else {
             return "Couldn't build maps URL."
         }
@@ -20,7 +27,12 @@ enum LocationTools {
 
 
 
+    /// Constructs an Apple Maps URL for directions to a destination.
+    /// - Returns: A URL for Apple Maps directions, or `nil` if the destination is invalid.
     static func directionsURL(destination: String) -> URL? {
+        guard let destination = ToolRouteGuard.sanitizedMapsDestination(destination) else {
+            return nil
+        }
         // Policy: maps.apple.com deep links must use HTTPS. Plain HTTP links are
         // prohibited to avoid mixed-content/security regressions and are covered
         // by tests in LocationToolsTests.

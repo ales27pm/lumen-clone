@@ -7,13 +7,9 @@ struct RuntimeFallbackLoggerTests {
     @Test func runtimeFallbackLoggerSuppressesImmediateDuplicateSignals() async throws {
         let source = "test-source-\(UUID().uuidString)"
         let reason = "test-reason-\(UUID().uuidString)"
-        var received: [PersistentRuntimeDiagnosticSignal] = []
+        let received = RuntimeFallbackSignalCollector(source: source, reason: reason)
         let observerID = PersistentRuntimeDiagnosticsObserver.shared.addObserver { signal in
-            if signal.kind == .fallbackUsed,
-               signal.values["source"] == source,
-               signal.values["reason"] == reason {
-                received.append(signal)
-            }
+            received.recordIfMatching(signal)
         }
         defer { PersistentRuntimeDiagnosticsObserver.shared.removeObserver(observerID) }
 
@@ -40,13 +36,9 @@ struct RuntimeFallbackLoggerTests {
     @Test func runtimeFallbackLoggerAllowsDistinctSignals() async throws {
         let source = "test-source-\(UUID().uuidString)"
         let reason = "test-reason-\(UUID().uuidString)"
-        var received: [PersistentRuntimeDiagnosticSignal] = []
+        let received = RuntimeFallbackSignalCollector(source: source, reason: reason)
         let observerID = PersistentRuntimeDiagnosticsObserver.shared.addObserver { signal in
-            if signal.kind == .fallbackUsed,
-               signal.values["source"] == source,
-               signal.values["reason"] == reason {
-                received.append(signal)
-            }
+            received.recordIfMatching(signal)
         }
         defer { PersistentRuntimeDiagnosticsObserver.shared.removeObserver(observerID) }
 
@@ -68,5 +60,32 @@ struct RuntimeFallbackLoggerTests {
         )
 
         #expect(received.count == 2)
+    }
+}
+
+private final class RuntimeFallbackSignalCollector: @unchecked Sendable {
+    private let source: String
+    private let reason: String
+    private let lock = NSLock()
+    private var received: [PersistentRuntimeDiagnosticSignal] = []
+
+    init(source: String, reason: String) {
+        self.source = source
+        self.reason = reason
+    }
+
+    func recordIfMatching(_ signal: PersistentRuntimeDiagnosticSignal) {
+        guard signal.kind == .fallbackUsed,
+              signal.values["source"] == source,
+              signal.values["reason"] == reason else { return }
+        lock.lock()
+        received.append(signal)
+        lock.unlock()
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return received.count
     }
 }

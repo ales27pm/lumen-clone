@@ -39,6 +39,26 @@ struct GGUFEngineScaffoldTests {
         #expect(prompt.contains("<|tool|>\n{\"result\":\"note\"}"))
     }
 
+    @Test func constrainedJSONPromptForcesNoThinkingDirective() throws {
+        let request = LLMRequest(
+            messages: [
+                LLMChatMessage(role: .user, content: "Emit the first JSON object now.")
+            ],
+            systemPrompt: "Choose either action or final.",
+            responseFormat: .constrainedJSON(schema: #"{"type":"object"}"#),
+            metadata: [
+                "reasoningCaptureEnabled": "true",
+                "modelFamily": "qwen3"
+            ]
+        )
+
+        let prompt = try GGUFPromptBuilder.buildPrompt(from: request)
+
+        #expect(prompt.contains("/no_think"))
+        #expect(!prompt.contains("/think"))
+        #expect(!prompt.contains("If reasoning capture is enabled"))
+    }
+
     @Test func promptBuilderThrowsInvalidRequestForEmptyPrompt() {
         let request = LLMRequest(messages: [])
 

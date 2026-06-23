@@ -39,6 +39,184 @@ nonisolated struct OutlookMessageReference: Codable, Hashable, Sendable {
     }
 }
 
+nonisolated enum OutlookToolAvailabilityState: String, Codable, Equatable, Sendable {
+    case configured
+    case notConfigured = "not_configured"
+    case permissionDenied = "permission_denied"
+    case authUnavailable = "auth_unavailable"
+    case networkUnavailable = "network_unavailable"
+    case providerError = "provider_error"
+    case validEmptyResult = "valid_empty_result"
+}
+
+nonisolated struct OutlookToolOutcome: Equatable, Sendable {
+    let text: String
+    let status: ToolResultStatus
+    let availability: OutlookToolAvailabilityState
+    let errorCode: String?
+    let diagnostics: [String: String]
+
+    var structuredPayload: [String: String] {
+        var payload = diagnostics
+        payload["availability"] = availability.rawValue
+        if let errorCode { payload["errorCode"] = errorCode }
+        return payload
+    }
+
+    func metricsSummary(base: String) -> String {
+        status == .success ? "\(base)_\(availability.rawValue)" : "\(base)_\(availability.rawValue)_\(status.rawValue)"
+    }
+
+    static func success(_ text: String, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
+        OutlookToolOutcome(text: text, status: .success, availability: .configured, errorCode: nil, diagnostics: diagnostics)
+    }
+
+    static func validEmpty(_ text: String, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
+        OutlookToolOutcome(text: text, status: .success, availability: .validEmptyResult, errorCode: nil, diagnostics: diagnostics)
+    }
+
+    static func invalidArguments(_ text: String, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
+        OutlookToolOutcome(text: text, status: .failed, availability: .configured, errorCode: "outlook_invalid_arguments", diagnostics: diagnostics)
+    }
+
+    static func authUnavailable(_ text: String, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
+        OutlookToolOutcome(text: text, status: .unavailable, availability: .authUnavailable, errorCode: "outlook_auth_unavailable", diagnostics: diagnostics)
+    }
+
+    static func failure(from error: Error, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
+        switch error {
+        case MicrosoftGraphAuthError.missingClientID:
+            return OutlookToolOutcome(
+                text: "Outlook is not configured for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+                status: .unavailable,
+                availability: .notConfigured,
+                errorCode: "outlook_not_configured",
+                diagnostics: diagnostics
+            )
+        case MicrosoftGraphAuthError.invalidConfiguration:
+            return OutlookToolOutcome(
+                text: "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+                status: .unavailable,
+                availability: .notConfigured,
+                errorCode: "outlook_not_configured",
+                diagnostics: diagnostics
+            )
+        case MicrosoftGraphAuthError.noAccount,
+             MicrosoftGraphAuthError.interactionRequired,
+             MicrosoftGraphAuthError.signInCancelled:
+            return authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
+        case MicrosoftGraphAuthError.msalNotLinked,
+             MicrosoftGraphAuthError.presentationAnchorUnavailable:
+            return authUnavailable("Outlook authentication is unavailable in this build.", diagnostics: diagnostics)
+        case let error as URLError:
+            return networkFailure(error, diagnostics: diagnostics)
+        case let error as GraphHTTPError:
+            return graphHTTPFailure(error, diagnostics: diagnostics)
+        case let error as GraphAPIErrorEnvelope:
+            return graphAPIFailure(error, diagnostics: diagnostics)
+        default:
+            return OutlookToolOutcome(
+                text: "Outlook provider request failed. Try again later or reconnect Outlook.",
+                status: .failed,
+                availability: .providerError,
+                errorCode: "outlook_provider_error",
+                diagnostics: diagnostics
+            )
+        }
+    }
+
+    private static func networkFailure(_ error: URLError, diagnostics: [String: String]) -> OutlookToolOutcome {
+        let networkCodes: Set<URLError.Code> = [
+            .notConnectedToInternet,
+            .networkConnectionLost,
+            .timedOut,
+            .cannotFindHost,
+            .cannotConnectToHost,
+            .dnsLookupFailed,
+            .internationalRoamingOff,
+            .dataNotAllowed,
+            .secureConnectionFailed
+        ]
+        let state: OutlookToolAvailabilityState = networkCodes.contains(error.code) ? .networkUnavailable : .providerError
+        return OutlookToolOutcome(
+            text: state == .networkUnavailable
+                ? "Network access is unavailable for Outlook. Check your connection and try again."
+                : "Outlook provider request failed. Try again later or reconnect Outlook.",
+            status: state == .networkUnavailable ? .unavailable : .failed,
+            availability: state,
+            errorCode: state == .networkUnavailable ? "outlook_network_unavailable" : "outlook_provider_error",
+            diagnostics: diagnostics.merging(["urlErrorCode": String(error.errorCode)]) { current, _ in current }
+        )
+    }
+
+    private static func graphHTTPFailure(_ error: GraphHTTPError, diagnostics: [String: String]) -> OutlookToolOutcome {
+        switch error {
+        case .unexpectedStatus(401):
+            return authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics.merging(["httpStatus": "401"]) { current, _ in current })
+        case .unexpectedStatus(403):
+            return OutlookToolOutcome(
+                text: "Outlook permission is denied for this action. Reconnect Outlook and grant the required Mail permissions.",
+                status: .denied,
+                availability: .permissionDenied,
+                errorCode: "outlook_permission_denied",
+                diagnostics: diagnostics.merging(["httpStatus": "403"]) { current, _ in current }
+            )
+        case .unexpectedStatus(let status):
+            return OutlookToolOutcome(
+                text: "Outlook provider request failed. Try again later or reconnect Outlook.",
+                status: .failed,
+                availability: .providerError,
+                errorCode: "outlook_provider_error",
+                diagnostics: diagnostics.merging(["httpStatus": String(status)]) { current, _ in current }
+            )
+        case .missingURL:
+            return OutlookToolOutcome(
+                text: "Outlook is not configured correctly for this build. Verify Microsoft Graph URL configuration.",
+                status: .unavailable,
+                availability: .notConfigured,
+                errorCode: "outlook_not_configured",
+                diagnostics: diagnostics
+            )
+        case .throttled:
+            return OutlookToolOutcome(
+                text: "Outlook provider is throttling requests. Try again later.",
+                status: .failed,
+                availability: .providerError,
+                errorCode: "outlook_provider_throttled",
+                diagnostics: diagnostics.merging(["providerCode": "TooManyRequests"]) { current, _ in current }
+            )
+        }
+    }
+
+    private static func graphAPIFailure(_ error: GraphAPIErrorEnvelope, diagnostics: [String: String]) -> OutlookToolOutcome {
+        let code = error.error.code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = code.lowercased()
+        var safeDiagnostics = diagnostics
+        if !code.isEmpty {
+            safeDiagnostics["providerCode"] = code
+        }
+        if lower.contains("accessdenied") || lower.contains("authorization_requestdenied") || lower.contains("forbidden") || lower.contains("insufficient") {
+            return OutlookToolOutcome(
+                text: "Outlook permission is denied for this action. Reconnect Outlook and grant the required Mail permissions.",
+                status: .denied,
+                availability: .permissionDenied,
+                errorCode: "outlook_permission_denied",
+                diagnostics: safeDiagnostics
+            )
+        }
+        if lower.contains("invalidauthenticationtoken") || lower.contains("auth") || lower.contains("token") {
+            return authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: safeDiagnostics)
+        }
+        return OutlookToolOutcome(
+            text: "Outlook provider request failed. Try again later or reconnect Outlook.",
+            status: .failed,
+            availability: .providerError,
+            errorCode: "outlook_provider_error",
+            diagnostics: safeDiagnostics
+        )
+    }
+}
+
 actor OutlookGraphToolClient {
     private let baseURL = URL(string: "https://graph.microsoft.com/v1.0")!
     private let session: URLSession
@@ -206,29 +384,35 @@ enum OutlookTools {
     private static let recentMessageReferencesKey = "OutlookTools.recentMessageReferences.v1"
     private static let recentMessageTTL: TimeInterval = 30 * 60
 
-    static func status() async -> String {
+    static func status() async -> OutlookToolOutcome {
+        do {
+            _ = try MicrosoftGraphConfiguration.load()
+        } catch {
+            return OutlookToolOutcome.failure(from: error, diagnostics: buildDiagnostics())
+        }
         let auth = MicrosoftGraphAuthManager()
         await auth.bootstrap()
+        let diagnostics = buildDiagnostics(auth: auth)
         guard auth.isSignedIn else {
-            return "Outlook is not signed in. Open Outlook in Lumen and sign in first."
+            return .authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
         }
         let username = auth.account?.username ?? auth.account?.name ?? "Microsoft account"
         let cached = loadRecentReferences()
         let contextLine = cached.isEmpty ? "No cached message context." : "Cached message context: \(cached.count) recent message(s)."
-        return "Outlook signed in as \(username). Auth provider: \(auth.authProviderDescription). \(contextLine)"
+        return .success("Outlook signed in as \(username). Auth provider: \(auth.authProviderDescription). \(contextLine)", diagnostics: diagnostics)
     }
 
-    static func listFolders(args: [String: String]) async -> String {
+    static func listFolders(args: [String: String]) async -> OutlookToolOutcome {
         await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
             let folders = try await client.listFolders(accessToken: token, includeHidden: bool(args["includeHidden"]))
-            if folders.isEmpty { return "No Outlook mail folders found." }
-            return folders.map { folder in
+            if folders.isEmpty { return .validEmpty("No Outlook mail folders found.") }
+            return .success(folders.map { folder in
                 "- \(folder.displayName) — id: \(folder.id), unread: \(folder.unreadItemCount ?? 0), total: \(folder.totalItemCount ?? 0)"
-            }.joined(separator: "\n")
+            }.joined(separator: "\n"))
         }
     }
 
-    static func listMessages(args: [String: String]) async -> String {
+    static func listMessages(args: [String: String]) async -> OutlookToolOutcome {
         await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
             let messages = try await client.listMessages(
                 folderID: folderID(from: args),
@@ -237,13 +421,15 @@ enum OutlookTools {
                 accessToken: token
             )
             remember(messages: messages, source: "list")
-            return formatMessages(messages, includeBody: false)
+            return messages.isEmpty
+                ? .validEmpty(formatMessages(messages, includeBody: false))
+                : .success(formatMessages(messages, includeBody: false))
         }
     }
 
-    static func searchMessages(args: [String: String]) async -> String {
+    static func searchMessages(args: [String: String]) async -> OutlookToolOutcome {
         let query = args["query"] ?? args["q"] ?? args["search"] ?? ""
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "Missing Outlook search query." }
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .invalidArguments("Missing Outlook search query.") }
         return await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
             let messages = try await client.searchMessages(
                 query: query,
@@ -252,103 +438,105 @@ enum OutlookTools {
                 accessToken: token
             )
             remember(messages: messages, source: "search: \(query)")
-            return formatMessages(messages, includeBody: false)
+            return messages.isEmpty
+                ? .validEmpty(formatMessages(messages, includeBody: false))
+                : .success(formatMessages(messages, includeBody: false))
         }
     }
 
-    static func readMessage(args: [String: String]) async -> String {
-        guard let id = messageID(from: args) else { return missingMessageContextMessage(action: "read") }
+    static func readMessage(args: [String: String]) async -> OutlookToolOutcome {
+        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "read")) }
         return await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
             let message = try await client.readMessage(messageID: id, accessToken: token)
             remember(message: message, source: "read")
-            return formatMessage(message, includeBody: true)
+            return .success(formatMessage(message, includeBody: true))
         }
     }
 
-    static func listAttachments(args: [String: String]) async -> String {
-        guard let id = messageID(from: args) else { return missingMessageContextMessage(action: "list attachments for") }
+    static func listAttachments(args: [String: String]) async -> OutlookToolOutcome {
+        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "list attachments for")) }
         return await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
             let attachments = try await client.listAttachments(messageID: id, accessToken: token)
-            if attachments.isEmpty { return "No attachments found for message \(id)." }
-            return attachments.map { attachment in
+            if attachments.isEmpty { return .validEmpty("No attachments found for message \(id).") }
+            return .success(attachments.map { attachment in
                 "- \(attachment.name ?? "Unnamed attachment") — id: \(attachment.id), type: \(attachment.contentType ?? "unknown"), size: \(attachment.size ?? 0) bytes, inline: \(attachment.isInline ?? false)"
-            }.joined(separator: "\n")
+            }.joined(separator: "\n"))
         }
     }
 
-    static func createDraft(args: [String: String]) async -> String {
+    static func createDraft(args: [String: String]) async -> OutlookToolOutcome {
         let recipients = recipients(from: args)
-        guard !recipients.isEmpty else { return "Missing Outlook draft recipient. Args: to, subject, body." }
+        guard !recipients.isEmpty else { return .invalidArguments("Missing Outlook draft recipient. Args: to, subject, body.") }
         let subject = args["subject"] ?? ""
         let body = args["body"] ?? args["message"] ?? args["text"] ?? ""
-        guard !subject.isEmpty || !body.isEmpty else { return "Missing Outlook draft subject/body." }
+        guard !subject.isEmpty || !body.isEmpty else { return .invalidArguments("Missing Outlook draft subject/body.") }
         return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
             let draft = try await client.createDraft(subject: subject, body: body, recipients: recipients, accessToken: token)
             remember(message: draft, source: "draft")
-            return "Created Outlook draft: \(draft.subject ?? "(No subject)")\nMessage id: \(draft.id)"
+            return .success("Created Outlook draft: \(draft.subject ?? "(No subject)")\nMessage id: \(draft.id)")
         }
     }
 
-    static func sendMail(args: [String: String]) async -> String {
+    static func sendMail(args: [String: String]) async -> OutlookToolOutcome {
         let recipients = recipients(from: args)
-        guard !recipients.isEmpty else { return "Missing Outlook send recipient. Args: to, subject, body." }
+        guard !recipients.isEmpty else { return .invalidArguments("Missing Outlook send recipient. Args: to, subject, body.") }
         let subject = args["subject"] ?? ""
         let body = args["body"] ?? args["message"] ?? args["text"] ?? ""
-        guard !subject.isEmpty || !body.isEmpty else { return "Missing Outlook send subject/body." }
+        guard !subject.isEmpty || !body.isEmpty else { return .invalidArguments("Missing Outlook send subject/body.") }
         return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
             try await client.sendMail(subject: subject, body: body, recipients: recipients, accessToken: token)
-            return "Sent Outlook email to \(recipients.joined(separator: ", "))."
+            return .success("Sent Outlook email to \(recipients.joined(separator: ", ")).")
         }
     }
 
-    static func markRead(args: [String: String], isRead: Bool) async -> String {
-        guard let id = messageID(from: args) else { return missingMessageContextMessage(action: isRead ? "mark read" : "mark unread") }
+    static func markRead(args: [String: String], isRead: Bool) async -> OutlookToolOutcome {
+        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: isRead ? "mark read" : "mark unread")) }
         return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
             let message = try await client.markRead(messageID: id, isRead: isRead, accessToken: token)
             remember(message: message, source: isRead ? "mark_read" : "mark_unread")
-            return "Marked Outlook message as \(isRead ? "read" : "unread"): \(message.subject ?? id)"
+            return .success("Marked Outlook message as \(isRead ? "read" : "unread"): \(message.subject ?? id)")
         }
     }
 
-    static func moveMessage(args: [String: String]) async -> String {
-        guard let id = messageID(from: args) else { return missingMessageContextMessage(action: "move") }
+    static func moveMessage(args: [String: String]) async -> OutlookToolOutcome {
+        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "move")) }
         let destination = args["destinationId"] ?? args["destination"] ?? args["folderId"] ?? args["folder"] ?? ""
-        guard !destination.isEmpty else { return "Missing destination folder id/name. Use archive, deleteditems, junkemail, inbox, or a folder id." }
+        guard !destination.isEmpty else { return .invalidArguments("Missing destination folder id/name. Use archive, deleteditems, junkemail, inbox, or a folder id.") }
         return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
             let moved = try await client.moveMessage(messageID: id, destinationID: canonicalFolderID(destination), accessToken: token)
             remember(message: moved, source: "move: \(destination)")
-            return "Moved Outlook message to \(destination). New message id: \(moved.id)"
+            return .success("Moved Outlook message to \(destination). New message id: \(moved.id)")
         }
     }
 
-    static func deleteMessage(args: [String: String]) async -> String {
-        guard let id = messageID(from: args) else { return missingMessageContextMessage(action: "delete") }
+    static func deleteMessage(args: [String: String]) async -> OutlookToolOutcome {
+        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "delete")) }
         return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
             try await client.deleteMessage(messageID: id, accessToken: token)
             removeFromRecentReferences(messageID: id)
-            return "Deleted Outlook message: \(id)"
+            return .success("Deleted Outlook message: \(id)")
         }
     }
 
-    static func reply(args: [String: String], replyAll: Bool) async -> String {
-        guard let id = messageID(from: args) else { return missingMessageContextMessage(action: replyAll ? "reply-all to" : "reply to") }
+    static func reply(args: [String: String], replyAll: Bool) async -> OutlookToolOutcome {
+        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: replyAll ? "reply-all to" : "reply to")) }
         let comment = args["body"] ?? args["comment"] ?? args["message"] ?? args["text"] ?? ""
-        guard !comment.isEmpty else { return "Missing reply body/comment." }
+        guard !comment.isEmpty else { return .invalidArguments("Missing reply body/comment.") }
         return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
             if replyAll { try await client.replyAll(messageID: id, comment: comment, accessToken: token) }
             else { try await client.reply(messageID: id, comment: comment, accessToken: token) }
-            return replyAll ? "Sent Outlook reply-all to cached message \(id)." : "Sent Outlook reply to cached message \(id)."
+            return .success(replyAll ? "Sent Outlook reply-all to cached message \(id)." : "Sent Outlook reply to cached message \(id).")
         }
     }
 
-    static func forward(args: [String: String]) async -> String {
-        guard let id = messageID(from: args) else { return missingMessageContextMessage(action: "forward") }
+    static func forward(args: [String: String]) async -> OutlookToolOutcome {
+        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "forward")) }
         let to = recipients(from: args)
-        guard !to.isEmpty else { return "Missing forward recipient." }
+        guard !to.isEmpty else { return .invalidArguments("Missing forward recipient.") }
         let comment = args["body"] ?? args["comment"] ?? args["message"] ?? args["text"] ?? ""
         return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
             try await client.forward(messageID: id, comment: comment, recipients: to, accessToken: token)
-            return "Forwarded Outlook message \(id) to \(to.joined(separator: ", "))."
+            return .success("Forwarded Outlook message \(id) to \(to.joined(separator: ", ")).")
         }
     }
 
@@ -358,18 +546,51 @@ enum OutlookTools {
         return refs.map(\.displayLine).joined(separator: "\n")
     }
 
-    private static func perform(scopes: [String], operation: @escaping (String) async throws -> String) async -> String {
+    private static func perform(scopes: [String], operation: @escaping (String) async throws -> OutlookToolOutcome) async -> OutlookToolOutcome {
         do {
+            _ = try MicrosoftGraphConfiguration.load()
             let auth = MicrosoftGraphAuthManager()
             await auth.bootstrap()
+            let diagnostics = buildDiagnostics(auth: auth)
             guard auth.isSignedIn else {
-                return "Outlook is not signed in. Open Outlook in Lumen and sign in first."
+                return .authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
             }
             let token = try await auth.acquireToken(scopes: scopes, preferredAccountID: auth.account?.id)
-            return try await operation(token)
+            var outcome = try await operation(token)
+            if outcome.diagnostics.isEmpty {
+                outcome = OutlookToolOutcome(
+                    text: outcome.text,
+                    status: outcome.status,
+                    availability: outcome.availability,
+                    errorCode: outcome.errorCode,
+                    diagnostics: diagnostics
+                )
+            }
+            return outcome
         } catch {
-            return "Outlook tool failed: \(error.localizedDescription)"
+            return OutlookToolOutcome.failure(from: error, diagnostics: buildDiagnostics())
         }
+    }
+
+    private static func buildDiagnostics(auth: MicrosoftGraphAuthManager? = nil) -> [String: String] {
+        let config = try? MicrosoftGraphConfiguration.load()
+        let bundleID = Bundle.main.bundleIdentifier ?? "Unavailable"
+        var diagnostics: [String: String] = [
+            "bundleID": bundleID,
+            "redirectURI": config?.redirectURI ?? "msauth.\(bundleID)://auth",
+            "authProvider": auth?.authProviderDescription ?? ((config?.forceNativeOAuth == true) ? "Native OAuth PKCE" : "MSAL")
+        ]
+        if let config {
+            diagnostics["clientID"] = config.clientID
+            diagnostics["authorityHost"] = config.authorityURL.host ?? "unknown"
+        }
+        if let account = auth?.account {
+            diagnostics["accountPresent"] = "true"
+            if let environment = account.environment { diagnostics["accountEnvironment"] = environment }
+        } else {
+            diagnostics["accountPresent"] = "false"
+        }
+        return diagnostics
     }
 
     private static func formatMessages(_ messages: [GraphMailMessage], includeBody: Bool) -> String {

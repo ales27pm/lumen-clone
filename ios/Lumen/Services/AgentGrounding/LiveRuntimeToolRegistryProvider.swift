@@ -21,6 +21,9 @@ private enum RuntimeToolArgumentInferencer {
     private static let numericMarkers = ["minutes", "seconds", "duration", "interval", "limit", "count", "months"]
     private static let typeHintWords: Set<String> = ["uuid", "fallback"]
 
+    /// Extracts argument definitions from a tool description, inferring their types and required status.
+    /// - Parameter description: The tool description to parse for arguments.
+    /// - Returns: An array of parsed arguments. Returns an empty array if no valid arguments are found.
     static func arguments(from description: String) -> [RuntimeToolArgument] {
         guard let argsBody = argsBody(from: description) else { return [] }
         let trimmed = argsBody.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,13 +51,13 @@ private enum RuntimeToolArgumentInferencer {
                 token = String(token.dropFirst("plus ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
             token = removeDependencyPhrases(from: token)
+            token = removeValueHintPhrases(from: token)
             guard !token.isEmpty else {
                 optionalGroup = true
                 continue
             }
 
             let aliases = argumentAliases(from: token)
-            let hasRequiredAlternativeAliases = aliases.count > 1
             for alias in aliases {
                 let pieces = alias.split(whereSeparator: { $0.isWhitespace })
                 guard let first = pieces.first else { continue }
@@ -64,9 +67,9 @@ private enum RuntimeToolArgumentInferencer {
                 if typeHintWords.contains(loweredName), pieces.count > 1 { continue }
                 guard isValidArgumentName(name) else { continue }
                 guard !specs.contains(where: { $0.name == name }) else { continue }
-                specs.append((name: name, required: (hasRequiredAlternativeAliases || (name == "id" && specs.contains(where: { $0.name == "messageId" }))) ? true : !tokenOptional))
+                specs.append((name: name, required: !tokenOptional))
             }
-            optionalGroup = tokenOptional && !hasRequiredAlternativeAliases
+            optionalGroup = tokenOptional
         }
 
         return specs.map { spec in
@@ -108,6 +111,8 @@ private enum RuntimeToolArgumentInferencer {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Removes trailing phrases indicating conditional dependency.
+    /// - Returns: The trimmed string with dependency phrases removed.
     private static func removeDependencyPhrases(from value: String) -> String {
         var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
         for marker in [" depending on schedule", " depending on the schedule"] {
@@ -118,6 +123,23 @@ private enum RuntimeToolArgumentInferencer {
         return token.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Removes boolean value-hint suffixes from a string.
+    /// - Parameters:
+    ///   - value: The string to process.
+    /// - Returns: The string with boolean value-hint suffixes removed.
+    private static func removeValueHintPhrases(from value: String) -> String {
+        var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        for marker in [" true/false", " true or false"] {
+            if let range = token.range(of: marker, options: [.caseInsensitive]) {
+                token.removeSubrange(range.lowerBound..<token.endIndex)
+            }
+        }
+        return token.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Produces alternate names for the same argument.
+    /// - Parameter value: A string containing alternate argument names separated by " or " or "/".
+    /// - Returns: An array of alternate names for the argument.
     private static func argumentAliases(from value: String) -> [String] {
         value
             .components(separatedBy: " or ")

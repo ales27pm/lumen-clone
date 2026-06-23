@@ -9,8 +9,8 @@ ios/Lumen.xcodeproj/project.pbxproj
 ## Required values
 
 ```text
-Bundle ID: com.27pm.lumen
-Redirect URI: msauth.com.27pm.lumen://auth
+Bundle ID: com.27pm.lumenclone
+Redirect URI: msauth.com.27pm.lumenclone://auth
 Client ID: 51aa8fd9-16b2-4f8e-8b97-b8618ceb6c40
 Authority: https://login.microsoftonline.com/common
 Keychain group: $(AppIdentifierPrefix)com.microsoft.adalcache
@@ -29,9 +29,9 @@ This idempotently inserts these build settings into both Lumen Debug and Release
 ```pbxproj
 INFOPLIST_KEY_CFBundleURLTypes = (
 	{
-		CFBundleURLName = "com.27pm.lumen";
+		CFBundleURLName = "com.27pm.lumenclone";
 		CFBundleURLSchemes = (
-			"msauth.com.27pm.lumen",
+			"msauth.com.27pm.lumenclone",
 		);
 	},
 );
@@ -102,10 +102,10 @@ After running the patch script, clean build and inspect the generated app plist.
 <array>
 	<dict>
 		<key>CFBundleURLName</key>
-		<string>com.27pm.lumen</string>
+		<string>com.27pm.lumenclone</string>
 		<key>CFBundleURLSchemes</key>
 		<array>
-			<string>msauth.com.27pm.lumen</string>
+			<string>msauth.com.27pm.lumenclone</string>
 		</array>
 	</dict>
 </array>
@@ -124,6 +124,6 @@ Then test Microsoft sign-in on device or simulator.
 
 - [ ] Run `python3 scripts/validate-msal-ios-release-config.py` and confirm pass output.
 - [ ] Confirm `ios/Lumen/MicrosoftGraphConfig.plist` has expected `MSALClientID` and `MSALRedirectURI`.
-- [ ] Confirm Lumen target bundle identifier is `com.27pm.lumen` in `ios/Lumen.xcodeproj/project.pbxproj`.
-- [ ] Confirm Entra app registration redirect URI is `msauth.com.27pm.lumen://auth`.
+- [ ] Confirm Lumen target bundle identifier is `com.27pm.lumenclone` in `ios/Lumen.xcodeproj/project.pbxproj`.
+- [ ] Confirm Entra app registration redirect URI is `msauth.com.27pm.lumenclone://auth`.
 - [ ] Perform sign-in smoke test on a TestFlight candidate build before handoff.

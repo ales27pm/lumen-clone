@@ -5,62 +5,64 @@
   "dataset": {
     "agentFineTuning": {
       "cortex": {
-        "eval": 555,
-        "trainDPO": 8,
-        "trainSFT": 312,
-        "valDPO": 1,
-        "valSFT": 55
+        "eval": 558,
+        "trainDPO": 15,
+        "trainSFT": 8719,
+        "valDPO": 3,
+        "valSFT": 1539
       },
       "executor": {
-        "eval": 111,
-        "trainDPO": 11,
-        "trainSFT": 686,
+        "eval": 114,
+        "trainDPO": 14,
+        "trainSFT": 858,
         "valDPO": 2,
-        "valSFT": 121
+        "valSFT": 152
       },
       "fleet": {
-        "eval": 84,
-        "trainDPO": 14,
-        "trainSFT": 1178,
-        "valDPO": 2,
-        "valSFT": 208
+        "eval": 86,
+        "trainDPO": 15,
+        "trainSFT": 4427,
+        "valDPO": 3,
+        "valSFT": 781
       },
       "mimicry": {
-        "eval": 3,
-        "trainDPO": 9,
-        "trainSFT": 54,
-        "valDPO": 2,
-        "valSFT": 10
-      },
-      "mouth": {
         "eval": 5,
         "trainDPO": 10,
-        "trainSFT": 143,
+        "trainSFT": 122,
         "valDPO": 2,
-        "valSFT": 25
+        "valSFT": 22
+      },
+      "mouth": {
+        "eval": 8,
+        "trainDPO": 12,
+        "trainSFT": 278,
+        "valDPO": 2,
+        "valSFT": 49
       },
       "rem": {
-        "eval": 4,
-        "trainDPO": 7,
-        "trainSFT": 521,
-        "valDPO": 1,
-        "valSFT": 92
+        "eval": 6,
+        "trainDPO": 8,
+        "trainSFT": 3740,
+        "valDPO": 2,
+        "valSFT": 660
       }
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_corpus": 482,
-      "codebase_home_sft": 482,
-      "cortex_routing": 69,
+      "codebase_home_chunk_sft": 4267,
+      "codebase_home_chunks": 4267,
+      "codebase_home_corpus": 732,
+      "codebase_home_sft": 732,
+      "cortex_routing": 82,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 1051,
+      "embedding_corpus": 5568,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 1220,
-      "embedding_hard_negatives": 1220,
-      "embedding_train_pairs": 1098,
-      "embedding_train_triplets": 1102,
-      "embedding_val_pairs": 122,
-      "embedding_val_triplets": 118,
+      "embedding_eval_retrieval": 5737,
+      "embedding_hard_negatives": 5737,
+      "embedding_train_pairs": 5152,
+      "embedding_train_triplets": 5127,
+      "embedding_val_pairs": 585,
+      "embedding_val_triplets": 610,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -70,17 +72,17 @@
       "rem_reflection": 5,
       "runtime_audit_repairs": 42,
       "tool_schema_cards": 91,
-      "train_sft": 298,
-      "validation_sft": 53
+      "train_sft": 309,
+      "validation_sft": 55
     },
-    "familyCount": 24,
-    "recordCount": 8338
+    "familyCount": 26,
+    "recordCount": 39983
   },
-  "errorGapCount": 46,
+  "errorGapCount": 33,
   "gapCount": 46,
   "manifest": {
-    "commit": "ac9fdc25fcbb6730d0ef70f426a13cbc505e25ba",
-    "fingerprint": "fe743eee83b090f8625247033d114d8c01d2d0aa9cb4d1385dbda9ee976f1771",
+    "commit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
+    "fingerprint": "551baab270ad11680e650222dc74590cd68e9997abf269498d12a912ea925083",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
@@ -91,8 +93,7 @@
   "passed": false,
   "root": "/Users/ales27pm/lumen-clone",
   "runtime": {
-    "failureCount": 46,
-    "failureTypes": {
+    "allFailureTypes": {
       "argument_mismatch": 27,
       "e2e_response_quality_chat": 4,
       "e2e_response_quality_emaildraft": 2,
@@ -105,7 +106,16 @@
       "persistent_diagnostics_scenario_not_passed": 4,
       "unmanifested_live_argument": 1
     },
+    "failureCount": 33,
+    "failureTypes": {
+      "argument_mismatch": 27,
+      "missing_live_argument": 1,
+      "persistent_diagnostics_scenario_not_passed": 4,
+      "unmanifested_live_argument": 1
+    },
+    "rawFailureCount": 46,
     "reportCount": 4,
+    "skippedLiveModelGenerationCount": 13,
     "sourceLayers": {
       "e2eTestReport.evidenceLayer": 13,
       "persistentRuntimeDiagnostics.records": 4,
@@ -120,7 +130,7 @@
   "testFlight": {
     "buildLabel": null,
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "fe743eee83b090f8625247033d114d8c01d2d0aa9cb4d1385dbda9ee976f1771",
+    "manifestFingerprint": "551baab270ad11680e650222dc74590cd68e9997abf269498d12a912ea925083",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
@@ -130,6 +140,41 @@
     "scenarioCount": 120,
     "scenarioQueuePath": "testflight_scenarios.jsonl",
     "status": "runtime-audit-ingested"
+  },
+  "triage": {
+    "categoryCounts": {
+      "manifest_mismatch": 29,
+      "runtime_drift": 4,
+      "skipped_live_model_generation": 13
+    },
+    "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
+    "freshRuntimeFailureCount": 33,
+    "groupCounts": {
+      "argument_mismatch": 27,
+      "chat": 4,
+      "emaildraft": 2,
+      "memory": 1,
+      "missing_live_argument": 1,
+      "persistent_diagnostics_scenario_not_passed": 4,
+      "rag": 1,
+      "trigger": 1,
+      "unmanifested_live_argument": 1,
+      "weather": 2,
+      "websearch": 2
+    },
+    "rawRuntimeFailureCount": 46,
+    "rootCauseCounts": {
+      "manifest_mismatch": 29,
+      "skipped_live_model_generation": 13,
+      "stale_or_unclassified_runtime_evidence": 4
+    },
+    "runtimeAuditReports": 4,
+    "severityCounts": {
+      "error": 33,
+      "warning": 13
+    },
+    "skippedLiveModelGenerationCount": 13,
+    "totalGaps": 46
   },
   "validation": {
     "failureCount": 0,

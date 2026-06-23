@@ -18,14 +18,35 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         let runtime = CoreMLRuntimeAdapter(modelURL: url)
         XCTAssertFalse(runtime.isAvailable)
-        XCTAssertEqual(runtime.unavailableReason, "Configured Core ML model file is missing")
+        XCTAssertEqual(runtime.unavailableReason, "CoreML embedding runtime staged: implementation missing")
+        XCTAssertEqual(runtime.availabilityStatus, "staged: implementation missing")
     }
 
 
     func testCoreMLNilModelUnavailableReason() {
         let runtime = CoreMLRuntimeAdapter(modelURL: nil)
         XCTAssertFalse(runtime.isAvailable)
-        XCTAssertEqual(runtime.unavailableReason, "No Core ML embedding model configured")
+        XCTAssertEqual(runtime.unavailableReason, "CoreML embedding runtime staged: implementation missing")
+        XCTAssertEqual(runtime.availabilityStatus, "staged: implementation missing")
+    }
+
+    func testCoreMLStagedEmbeddingDoesNotLookLikeEmptyEmbeddingSuccess() async {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("fake-\(UUID().uuidString).mlmodelc")
+        FileManager.default.createFile(atPath: url.path, contents: Data(), attributes: nil)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let runtime = CoreMLRuntimeAdapter(modelURL: url)
+
+        XCTAssertFalse(runtime.isAvailable)
+        XCTAssertFalse(runtime.supportsEmbeddings)
+
+        do {
+            let vector = try await runtime.embed(request: EmbeddingRequest(text: "hello", dimensions: nil))
+            XCTFail("CoreML embed should not return empty success vector: \(vector)")
+        } catch CoreMLRuntimeError.embeddingExtractionNotImplemented {
+            // Expected while the adapter is staged.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testCoreMLEmbedThrowsWhenModelMissing() async {
@@ -34,8 +55,8 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         do {
             _ = try await runtime.embed(request: EmbeddingRequest(text: "hello", dimensions: nil))
             XCTFail("CoreML embed should not return an empty success vector for missing model")
-        } catch CoreMLRuntimeError.modelNotFound {
-            // Expected.
+        } catch CoreMLRuntimeError.embeddingExtractionNotImplemented {
+            // Expected while the adapter is staged.
         } catch {
             XCTFail("Unexpected error: \(error)")
         }

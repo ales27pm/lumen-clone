@@ -1,0 +1,466 @@
+{
+  "generatedAt": "1970-01-01T00:00:00+00:00",
+  "groups": [
+    {
+      "categories": {
+        "manifest_mismatch": 27
+      },
+      "count": 27,
+      "examples": [
+        {
+          "actual": "recipient:string:required=false",
+          "category": "manifest_mismatch",
+          "prompt": "messages.draft",
+          "rootCauseCategory": "manifest_mismatch",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "argument_mismatch"
+        },
+        {
+          "actual": "message:string:required=false",
+          "category": "manifest_mismatch",
+          "prompt": "messages.draft",
+          "rootCauseCategory": "manifest_mismatch",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "argument_mismatch"
+        },
+        {
+          "actual": "text:string:required=false",
+          "category": "manifest_mismatch",
+          "prompt": "messages.draft",
+          "rootCauseCategory": "manifest_mismatch",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "argument_mismatch"
+        },
+        {
+          "actual": "number:string:required=false",
+          "category": "manifest_mismatch",
+          "prompt": "messages.draft",
+          "rootCauseCategory": "manifest_mismatch",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "argument_mismatch"
+        },
+        {
+          "actual": "text:string:required=false",
+          "category": "manifest_mismatch",
+          "prompt": "mail.draft",
+          "rootCauseCategory": "manifest_mismatch",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "argument_mismatch"
+        }
+      ],
+      "freshRuntimeFailureCount": 27,
+      "group": "argument_mismatch",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "rootCauseCategories": {
+        "manifest_mismatch": 27
+      },
+      "severities": {
+        "error": 27
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "manifest_reconciliation_required"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 4
+      },
+      "count": 4,
+      "examples": [
+        {
+          "actual": "I hit an internal response-format issue. Please try again.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Explain why a sharp chisel is safer than a dull one.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_chat"
+        },
+        {
+          "actual": "I hit an internal response-format issue. Please try again.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Give me three tips for fitting a door hinge cleanly.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_chat"
+        },
+        {
+          "actual": "I hit an internal response-format issue. Please try again.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Explain actor isolation in Swift in simple terms.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_chat"
+        },
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_chat"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "chat",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 4
+      },
+      "severities": {
+        "warning": 4
+      },
+      "skippedLiveModelGenerationCount": 4,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "runtime_drift": 4
+      },
+      "count": 4,
+      "examples": [
+        {
+          "actual": "interrupted",
+          "category": "runtime_drift",
+          "prompt": "liveAgentStream",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "persistent_diagnostics_scenario_not_passed"
+        },
+        {
+          "actual": "interrupted",
+          "category": "runtime_drift",
+          "prompt": "liveAgentStream",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "persistent_diagnostics_scenario_not_passed"
+        },
+        {
+          "actual": "skipped",
+          "category": "runtime_drift",
+          "prompt": "agentToolPrompt",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "persistent_diagnostics_scenario_not_passed"
+        },
+        {
+          "actual": "skipped",
+          "category": "runtime_drift",
+          "prompt": "liveAgentStream",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "persistent_diagnostics_scenario_not_passed"
+        }
+      ],
+      "freshRuntimeFailureCount": 4,
+      "group": "persistent_diagnostics_scenario_not_passed",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "rootCauseCategories": {
+        "stale_or_unclassified_runtime_evidence": 4
+      },
+      "severities": {
+        "error": 4
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 2
+      },
+      "count": 2,
+      "examples": [
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
+          "category": "skipped_live_model_generation",
+          "prompt": "Draft a email",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_emaildraft"
+        },
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+          "category": "skipped_live_model_generation",
+          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_emaildraft"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "emaildraft",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 2
+      },
+      "severities": {
+        "warning": 2
+      },
+      "skippedLiveModelGenerationCount": 2,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 2
+      },
+      "count": 2,
+      "examples": [
+        {
+          "actual": "Weather tool output could not be validated. Try again or provide a city.",
+          "category": "skipped_live_model_generation",
+          "prompt": "What is the weather here?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_weather"
+        },
+        {
+          "actual": "Weather tool output could not be validated. Try again or provide a city.",
+          "category": "skipped_live_model_generation",
+          "prompt": "What is the weather here and should I carry an umbrella?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_weather"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "weather",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 2
+      },
+      "severities": {
+        "warning": 2
+      },
+      "skippedLiveModelGenerationCount": 2,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 2
+      },
+      "count": 2,
+      "examples": [
+        {
+          "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Search web for diy underground shelter",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_websearch"
+        },
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\n\nswift",
+          "category": "skipped_live_model_generation",
+          "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_websearch"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "websearch",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 2
+      },
+      "severities": {
+        "warning": 2
+      },
+      "skippedLiveModelGenerationCount": 2,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_memory"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "memory",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "manifest_mismatch": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": null,
+          "category": "manifest_mismatch",
+          "prompt": "trigger.create",
+          "rootCauseCategory": "manifest_mismatch",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "missing_live_argument"
+        }
+      ],
+      "freshRuntimeFailureCount": 1,
+      "group": "missing_live_argument",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "rootCauseCategories": {
+        "manifest_mismatch": 1
+      },
+      "severities": {
+        "error": 1
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "manifest_reconciliation_required"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+          "category": "skipped_live_model_generation",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_rag"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "rag",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+          "category": "skipped_live_model_generation",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_trigger"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "trigger",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "manifest_mismatch": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "plus",
+          "category": "manifest_mismatch",
+          "prompt": "trigger.create",
+          "rootCauseCategory": "manifest_mismatch",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "unmanifested_live_argument"
+        }
+      ],
+      "freshRuntimeFailureCount": 1,
+      "group": "unmanifested_live_argument",
+      "recommendedAction": "Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.",
+      "rootCauseCategories": {
+        "manifest_mismatch": 1
+      },
+      "severities": {
+        "error": 1
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "manifest_reconciliation_required"
+    }
+  ],
+  "schemaVersion": "1.0.0",
+  "summary": {
+    "categoryCounts": {
+      "manifest_mismatch": 29,
+      "runtime_drift": 4,
+      "skipped_live_model_generation": 13
+    },
+    "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
+    "freshRuntimeFailureCount": 33,
+    "groupCounts": {
+      "argument_mismatch": 27,
+      "chat": 4,
+      "emaildraft": 2,
+      "memory": 1,
+      "missing_live_argument": 1,
+      "persistent_diagnostics_scenario_not_passed": 4,
+      "rag": 1,
+      "trigger": 1,
+      "unmanifested_live_argument": 1,
+      "weather": 2,
+      "websearch": 2
+    },
+    "rawRuntimeFailureCount": 46,
+    "rootCauseCounts": {
+      "manifest_mismatch": 29,
+      "skipped_live_model_generation": 13,
+      "stale_or_unclassified_runtime_evidence": 4
+    },
+    "runtimeAuditReports": 4,
+    "severityCounts": {
+      "error": 33,
+      "warning": 13
+    },
+    "skippedLiveModelGenerationCount": 13,
+    "totalGaps": 46
+  }
+}

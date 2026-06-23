@@ -1,7 +1,7 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Commit: `ac9fdc25fcbb6730d0ef70f426a13cbc505e25ba`
+- Commit: `50dc56691bf538cf816b2847e0b97005e185f4d0`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol
@@ -410,7 +410,6 @@
 - Permission key: none
 - Arguments:
   - `includeHidden`: string, optional. Inferred from ToolDefinition description Args contract: optional includeHidden true/false Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `false`: string, optional. Inferred from ToolDefinition description Args contract: optional includeHidden true/false Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.folders.list` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.mail.send`
@@ -735,48 +734,48 @@
 - `calendar` → allowed tools: calendar.create, calendar.list; source: `ios/Lumen/Services/IntentRouter.swift`
 - `camera` → allowed tools: camera.capture; source: `ios/Lumen/Services/IntentRouter.swift`
 - `chat` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
-- `contactSearch` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
-- `emailDraft` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
-- `files` → allowed tools: files.read, photos.search, rag.index_files, rag.index_photos, rag.search; source: `ios/Lumen/Services/IntentRouter.swift`
+- `contactSearch` → allowed tools: contacts.search; source: `ios/Lumen/Services/IntentRouter.swift`
+- `emailDraft` → allowed tools: contacts.search, mail.draft; source: `ios/Lumen/Services/IntentRouter.swift`
+- `files` → allowed tools: files.read; source: `ios/Lumen/Services/IntentRouter.swift`
 - `health` → allowed tools: health.summary; source: `ios/Lumen/Services/IntentRouter.swift`
 - `maps` → allowed tools: location.current, maps.directions, maps.search; source: `ios/Lumen/Services/IntentRouter.swift`
 - `memory` → allowed tools: memory.recall, memory.save; source: `ios/Lumen/Services/IntentRouter.swift`
-- `messageDraft` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
+- `messageDraft` → allowed tools: contacts.search, messages.draft; source: `ios/Lumen/Services/IntentRouter.swift`
 - `motion` → allowed tools: motion.activity; source: `ios/Lumen/Services/IntentRouter.swift`
-- `note` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
-- `outlook` → allowed tools: outlook.attachments.list, outlook.draft.create, outlook.folders.list, outlook.mail.send, outlook.message.archive, outlook.message.delete, outlook.message.forward, outlook.message.mark_read, outlook.message.mark_unread, outlook.message.move, outlook.message.read, outlook.message.reply, outlook.message.reply_all, outlook.messages.list, outlook.messages.search, outlook.status; source: `ios/Lumen/Services/IntentRouter.swift`
-- `phoneCall` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
-- `photos` → allowed tools: files.read, photos.search, rag.index_files, rag.index_photos, rag.search; source: `ios/Lumen/Services/IntentRouter.swift`
+- `note` → allowed tools: memory.recall, memory.save; source: `ios/Lumen/Services/IntentRouter.swift`
+- `outlook` → allowed tools: contacts.search, outlook.attachments.list, outlook.draft.create, outlook.folders.list, outlook.mail.send, outlook.message.archive, outlook.message.delete, outlook.message.forward, outlook.message.mark_read, outlook.message.mark_unread, outlook.message.move, outlook.message.read, outlook.message.reply, outlook.message.reply_all, outlook.messages.list, outlook.messages.search, outlook.status; source: `ios/Lumen/Services/IntentRouter.swift`
+- `phoneCall` → allowed tools: contacts.search, phone.call; source: `ios/Lumen/Services/IntentRouter.swift`
+- `photos` → allowed tools: photos.search; source: `ios/Lumen/Services/IntentRouter.swift`
 - `rag` → allowed tools: files.read, photos.search, rag.index_files, rag.index_photos, rag.search; source: `ios/Lumen/Services/IntentRouter.swift`
-- `reminder` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
+- `reminder` → allowed tools: reminders.create, reminders.list; source: `ios/Lumen/Services/IntentRouter.swift`
 - `trigger` → allowed tools: trigger.cancel, trigger.create, trigger.list; source: `ios/Lumen/Services/IntentRouter.swift`
 - `unknown` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
 - `weather` → allowed tools: location.current, weather; source: `ios/Lumen/Services/IntentRouter.swift`
-- `webSearch` → allowed tools: none; source: `ios/Lumen/Services/IntentRouter.swift`
+- `webSearch` → allowed tools: web.fetch, web.search; source: `ios/Lumen/Services/IntentRouter.swift`
 
 ## Routing Rules
 - `alarm` → allowed: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule, alarm.snooze, alarm.stop; forbidden examples: calendar.create, calendar.list, camera.capture, contacts.search, files.read, health.summary, location.current, mail.draft
 - `calendar` → allowed: calendar.create, calendar.list; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `camera` → allowed: camera.capture; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `chat` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `contactSearch` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `emailDraft` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `files` → allowed: files.read, photos.search, rag.index_files, rag.index_photos, rag.search; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `contactSearch` → allowed: contacts.search; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `emailDraft` → allowed: contacts.search, mail.draft; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `files` → allowed: files.read; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `health` → allowed: health.summary; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `maps` → allowed: location.current, maps.directions, maps.search; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `memory` → allowed: memory.recall, memory.save; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `messageDraft` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `messageDraft` → allowed: contacts.search, messages.draft; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `motion` → allowed: motion.activity; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `note` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `outlook` → allowed: outlook.attachments.list, outlook.draft.create, outlook.folders.list, outlook.mail.send, outlook.message.archive, outlook.message.delete, outlook.message.forward, outlook.message.mark_read, outlook.message.mark_unread, outlook.message.move, outlook.message.read, outlook.message.reply, outlook.message.reply_all, outlook.messages.list, outlook.messages.search, outlook.status; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `phoneCall` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `photos` → allowed: files.read, photos.search, rag.index_files, rag.index_photos, rag.search; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `note` → allowed: memory.recall, memory.save; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `outlook` → allowed: contacts.search, outlook.attachments.list, outlook.draft.create, outlook.folders.list, outlook.mail.send, outlook.message.archive, outlook.message.delete, outlook.message.forward, outlook.message.mark_read, outlook.message.mark_unread, outlook.message.move, outlook.message.read, outlook.message.reply, outlook.message.reply_all, outlook.messages.list, outlook.messages.search, outlook.status; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `phoneCall` → allowed: contacts.search, phone.call; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `photos` → allowed: photos.search; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `rag` → allowed: files.read, photos.search, rag.index_files, rag.index_photos, rag.search; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `reminder` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `reminder` → allowed: reminders.create, reminders.list; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `trigger` → allowed: trigger.cancel, trigger.create, trigger.list; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `unknown` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 - `weather` → allowed: location.current, weather; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
-- `webSearch` → allowed: none; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
+- `webSearch` → allowed: web.fetch, web.search; forbidden examples: alarm.authorization_status, alarm.cancel, alarm.countdown, alarm.list, alarm.pause, alarm.request_authorization, alarm.resume, alarm.schedule
 
 ## Memory Scopes
 - Scopes: backgroundOnly, conversation, currentTurn, person, preferenceOnly, project, referenceOnly, remCondensed, sourceOfTruth, task, toolObservation, userPreference

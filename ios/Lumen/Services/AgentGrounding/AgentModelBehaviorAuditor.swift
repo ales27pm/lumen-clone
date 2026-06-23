@@ -341,11 +341,16 @@ final class AgentModelBehaviorAuditor {
         }
     }
 
+    /// Generates corrected output guidance for a behavior violation.
+    /// - Returns: Guidance text for correcting or repairing the violation.
     private func correctedOutput(for violation: AgentBehaviorViolation) -> String {
         switch violation.code {
         case "unknown_tool_id":
             return "Reject the unknown tool ID and select only a tool present in AgentBehaviorManifest.json."
         case "tool_not_allowed_by_static_manifest", "tool_not_allowed_by_runtime_router", "tool_used_for_chat_intent":
+            if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(violation.promptPrefix) {
+                return "Plan this as a dynamic local public lookup: gather current location if available, run web.search with the user's time-sensitive local query, evaluate whether the result answers the schedule/hours/event question, and only then produce a grounded final answer. Do not use maps.search for dynamic schedules, meetings, hours, classes, events, prices, or showtimes."
+            }
             return violation.expected
         case "missing_required_tool_argument":
             return "Emit a tool call with every required manifest argument populated, or ask for clarification before tool execution."
@@ -360,11 +365,20 @@ final class AgentModelBehaviorAuditor {
         }
     }
 
+    /// Generates a lesson string that explains the violation and prescribes corrected behavior.
+    ///
+    /// For tool routing violations where dynamic public lookup is appropriate, returns guidance specific to that scenario. Otherwise returns a violation-code-specific rule.
+    ///
+    /// - Parameter violation: The violation for which to generate a lesson.
+    /// - Returns: A "must/never" style guidance string specific to the violation type.
     private func lesson(for violation: AgentBehaviorViolation) -> String {
         switch violation.code {
         case "unknown_tool_id":
             return "Executor must never invent, rename, alias, or infer tool IDs outside the runtime manifest."
         case "tool_not_allowed_by_static_manifest", "tool_not_allowed_by_runtime_router":
+            if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(violation.promptPrefix) {
+                return "For local time-sensitive public information, Cortex should form a plan, gather current-location evidence, use web.search for fresh schedule or availability data, evaluate the observation, and avoid map-only dead ends."
+            }
             return "Cortex must obey both the static routing matrix and live IntentRouter constraints."
         case "tool_used_for_chat_intent":
             return "Normal chat intents should not trigger tool execution."
@@ -383,10 +397,15 @@ final class AgentModelBehaviorAuditor {
         }
     }
 
+    /// Determines the curriculum tag for a violation.
+    /// - Parameters:
+    ///   - violation: The violation whose curriculum category should be identified.
+    /// - Returns: A curriculum tag identifying the violation's category.
     private func curriculum(for violation: AgentBehaviorViolation) -> String {
         if violation.code.contains("sentinel") { return "sentinel_safety" }
         if violation.code.contains("approval") { return "approval_boundary" }
         if violation.code == "hidden_reasoning_leak" || violation.code == "final_sanitizer_recovered_unsafe_output" { return "output_hygiene" }
+        if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(violation.promptPrefix) { return "plan_gather_execute_evaluate" }
         if violation.code.contains("tool") { return "tool_routing" }
         if violation.code.contains("argument") { return "schema_adherence" }
         return "runtime_repair"

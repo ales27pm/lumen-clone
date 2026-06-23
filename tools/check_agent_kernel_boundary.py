@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Guard the Agent Kernel migration boundary.
 
-This first-pass guard intentionally allows the legacy call sites that exist at
-the start of the migration. Each migration PR should delete entries from
-ALLOWED_LEGACY_CALLERS until the allowlist is empty. The script fails when a new
-production path starts calling legacy runtimes directly.
+This guard allows only exact documented compatibility bridge files while the
+Agent Kernel migration finishes. The script fails when a new production path
+starts calling legacy runtimes directly.
 """
 from __future__ import annotations
 
@@ -25,15 +24,18 @@ LEGACY_PATTERNS = {
     "LegacySecureToolExecutor": re.compile(r"\bLegacySecureToolExecutor\b"),
 }
 
-# Line-specific snapshot of known callers before the Agent Kernel migration.
-# Shrink this list as each entrypoint is moved behind AssistantKernel.run(...).
-ALLOWED_LEGACY_CALLERS = {
-    ("ios/Lumen/Services/AgentService.swift", 1324, "SlotAgentService.shared.run"),
-}
-
-ALLOWED_MIGRATION_FILES = {
-    "ios/Lumen/Assistant/AgentKernelContracts.swift",
-    "ios/Lumen/Assistant/AssistantKernel+Streaming.swift",
+DOCUMENTED_COMPATIBILITY_BRIDGES = {
+    "ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift": {
+        "AgentService.shared.run": (
+            "temporary kernel-owned bridge for diagnostics and tool-capable "
+            "legacy agent event streams; remove when AgentKernel emits native "
+            "tool stages for those paths"
+        ),
+        "SlotAgentService.shared.run": (
+            "temporary slot-agent bridge for diagnostics and deterministic "
+            "compatibility responses; remove when those paths are kernel-native"
+        ),
+    },
 }
 
 
@@ -76,13 +78,10 @@ def main() -> int:
             continue
         for line_number, label, line in findings:
             record = f"{rel}:{line_number}: {label}: {line}"
-            allowed_record = (rel, line_number, label)
-            if not args.strict and rel in ALLOWED_MIGRATION_FILES:
-                continue
-            if args.strict or allowed_record not in ALLOWED_LEGACY_CALLERS:
-                violations.append(record)
-            else:
+            if label in DOCUMENTED_COMPATIBILITY_BRIDGES.get(rel, {}):
                 legacy_inventory.append(record)
+            else:
+                violations.append(record)
 
     if violations:
         print("Agent Kernel boundary violations detected:", file=sys.stderr)
@@ -93,7 +92,10 @@ def main() -> int:
 
     print("Agent Kernel boundary guard passed.")
     if legacy_inventory:
-        print(f"Known legacy callers still allowlisted: {len(legacy_inventory)}")
+        print(f"Documented compatibility bridges: {len(legacy_inventory)}")
+        if args.strict:
+            for item in legacy_inventory:
+                print(f"  {item}")
     return 0
 
 

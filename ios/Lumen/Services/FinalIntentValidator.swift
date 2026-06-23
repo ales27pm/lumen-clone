@@ -23,6 +23,15 @@ nonisolated enum FinalIntentValidator {
         return safe
     }
 
+    /// Determines whether the candidate text is valid for the given intent routing.
+    ///
+    /// The text is considered valid if it is non-empty, passes all leak filters, and contains intent-specific keywords or patterns indicating compatibility with the routed intent.
+    ///
+    /// - Parameters:
+    ///   - text: The candidate text to validate.
+    ///   - lower: The lowercased version of the candidate text.
+    ///   - routing: The intent routing decision that determines which validation rules apply.
+    /// - Returns: `true` if the text meets all validation criteria for the intent, `false` otherwise.
     private static func isValid(_ text: String, lower: String, for routing: IntentRoutingDecision) -> Bool {
         guard !text.isEmpty else { return false }
         guard passesLeakFilters(text: text, lower: lower, routing: routing) else { return false }
@@ -62,8 +71,9 @@ nonisolated enum FinalIntentValidator {
         case .rag:
             let hasRagTopic = containsAny(lower, ["search", "index", "indexed", "files", "photos", "local"])
             let hasGrounding = containsAny(lower, ["[1]", "[2]", "snippet", "source", "retrieved", "file", "pdf", "note", "module", "modules"])
+            let hasIndexCompletion = containsAny(lower, ["index updated", "indexed", "reindexed"])
             let explicitUnavailable = containsAny(lower, ["unavailable", "couldn’t", "couldn't", "no relevant", "no matching"]) 
-            return (hasRagTopic && hasGrounding) || explicitUnavailable
+            return (hasRagTopic && hasGrounding) || hasIndexCompletion || explicitUnavailable
         case .trigger:
             return containsAny(lower, ["trigger", "scheduled", "agent", "background", "cancel", "unavailable", "couldn’t", "couldn't"])
         case .alarm:
@@ -135,13 +145,20 @@ nonisolated enum FinalIntentValidator {
         switch routing.intent {
         case .weather:
             return containsAny(lower, ["gps signal timeout", "location access was denied", "location permission", "network unreachable", "weather service unavailable", "open-meteo", "geocod", "couldn't get your current location", "couldn’t get your current location"])
+        case .calendar:
+            return containsAny(lower, ["calendar events:", "calendar event:", "no upcoming events", "no calendar events"])
+                || (text.contains("•") && containsAny(lower, [" at ", "am", "pm", "202"]))
+        case .maps:
+            return containsAny(lower, ["maps search results:", "maps directions:", "current location:"])
+        case .motion:
+            return containsAny(lower, ["motion activity:", "no motion data", "motion permission", "motion activity is unavailable"])
         case .memory:
             return containsAny(lower, ["saved:", "no matching memories", "memory unavailable", "user's name", "remembered"])
         case .outlook:
             return containsAny(lower, [
                 "outlook is not signed in", "missing outlook message context", "outlook tool failed",
                 "authentication expired", "authorization expired", "oauth expired", "oauth sign in",
-                "not connected", "no messages"
+                "not connected", "no messages", "outlook attachments:", "outlook folders:", "outlook search results:", "outlook status:"
             ])
         default:
             return false
@@ -224,14 +241,29 @@ nonisolated enum FinalIntentValidator {
         !allowed && containsAny(lower, ["weather for", "weather at", "temperature", "humidity", "feels like", "wind ", "clear sky"])
     }
 
+    /// Identifies whether the text appears to contain an email draft.
+    /// - Parameters:
+    ///   - lower: The lowercase text to examine.
+    ///   - allowed: If `true`, bypasses the check and returns `false`; used when email content is expected for the current intent.
+    /// - Returns: `true` if the text resembles an email draft and the check is enabled, `false` otherwise.
     private static func looksLikeEmailLeak(_ lower: String, unless allowed: Bool) -> Bool {
         !allowed && containsAny(lower, ["dear ", "subject:", "best regards", "sincerely", "i will be in touch soon"])
     }
 
+    /// Determines whether text appears to contain web search results or URLs.
+    /// - Parameters:
+    ///   - lower: A lowercased string to check.
+    ///   - allowed: When `true`, the function returns `false`.
+    /// - Returns: `true` if the text contains web search leak patterns and is not explicitly allowed, `false` otherwise.
     private static func looksLikeWebSearchLeak(_ lower: String, unless allowed: Bool) -> Bool {
-        !allowed && containsAny(lower, ["web search", "search result", "http://", "https://"])
+        !allowed && containsAny(lower, ["web search", "web result", "web results", "http://", "https://"])
     }
 
+    /// Determines whether the string contains any of the provided substrings.
+    /// - Parameters:
+    ///   - value: The string to search within.
+    ///   - needles: The substrings to search for.
+    /// - Returns: `true` if the string contains any of the provided substrings, `false` otherwise.
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {
         needles.contains { value.contains($0) }
     }

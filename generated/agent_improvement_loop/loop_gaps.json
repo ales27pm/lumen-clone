@@ -1,7 +1,7 @@
 {
   "gaps": [
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "recipient:string:required=false",
         "agent": "runtime",
@@ -9,6 +9,7 @@
           "recipient:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "messages.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -19,7 +20,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "message:string:required=false",
         "agent": "runtime",
@@ -27,6 +28,7 @@
           "message:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "messages.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -37,7 +39,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "text:string:required=false",
         "agent": "runtime",
@@ -45,6 +47,7 @@
           "text:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "messages.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -55,7 +58,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "number:string:required=false",
         "agent": "runtime",
@@ -63,6 +66,7 @@
           "number:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "messages.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -73,7 +77,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "text:string:required=false",
         "agent": "runtime",
@@ -81,6 +85,7 @@
           "text:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "mail.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -91,7 +96,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "message:string:required=false",
         "agent": "runtime",
@@ -99,6 +104,7 @@
           "message:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "mail.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -109,7 +115,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "email:string:required=false",
         "agent": "runtime",
@@ -117,6 +123,7 @@
           "email:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "mail.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -127,7 +134,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "recipient:string:required=false",
         "agent": "runtime",
@@ -135,6 +142,7 @@
           "recipient:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "mail.draft",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -145,7 +153,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -153,6 +161,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.read",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -163,7 +172,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -171,6 +180,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.attachments.list",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -181,7 +191,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -189,6 +199,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.mark_read",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -199,7 +210,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -207,6 +218,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.mark_unread",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -217,7 +229,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -225,6 +237,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.move",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -235,7 +248,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "destinationId:string:required=false",
         "agent": "runtime",
@@ -243,6 +256,7 @@
           "destinationId:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.move",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -253,7 +267,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -261,6 +275,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.archive",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -271,7 +286,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -279,6 +294,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.delete",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -289,7 +305,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -297,6 +313,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.reply",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -307,7 +324,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "comment:string:required=false",
         "agent": "runtime",
@@ -315,6 +332,7 @@
           "comment:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.reply",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -325,7 +343,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -333,6 +351,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.reply_all",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -343,7 +362,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "comment:string:required=false",
         "agent": "runtime",
@@ -351,6 +370,7 @@
           "comment:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.reply_all",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -361,7 +381,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -369,6 +389,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "outlook.message.forward",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -379,7 +400,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "beforeMinutes:number:required=false",
         "agent": "runtime",
@@ -387,6 +408,7 @@
           "beforeMinutes:number:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "trigger.create",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -397,7 +419,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "atTime:string:required=false",
         "agent": "runtime",
@@ -405,6 +427,7 @@
           "atTime:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "trigger.create",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -415,7 +438,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "intervalSeconds:number:required=false",
         "agent": "runtime",
@@ -423,6 +446,7 @@
           "intervalSeconds:number:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "trigger.create",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -433,7 +457,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "id:string:required=false",
         "agent": "runtime",
@@ -441,6 +465,7 @@
           "id:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "trigger.cancel",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -451,7 +476,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "timestamp:string:required=false",
         "agent": "runtime",
@@ -459,6 +484,7 @@
           "timestamp:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "alarm.schedule",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -469,7 +495,7 @@
       "title": "argument_mismatch"
     },
     {
-      "category": "runtime_drift",
+      "category": "manifest_mismatch",
       "evidence": {
         "actual": "title:string:required=false",
         "agent": "runtime",
@@ -477,6 +503,7 @@
           "title:string:required=true"
         ],
         "problem": "Argument type or required flag differs between manifest and runtime.",
+        "rootCauseCategory": "manifest_mismatch",
         "scenario": "alarm.cancel",
         "sourceLayer": "runtimeManifestAudit",
         "type": "argument_mismatch"
@@ -487,7 +514,130 @@
       "title": "argument_mismatch"
     },
     {
+      "category": "manifest_mismatch",
+      "evidence": {
+        "agent": "runtime",
+        "expected": [
+          "inMinutes"
+        ],
+        "problem": "Manifest argument is absent from runtime tool definition.",
+        "rootCauseCategory": "manifest_mismatch",
+        "scenario": "trigger.create",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "missing_live_argument"
+      },
+      "id": "a620579042cf6ff3ee040ac1",
+      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
+      "severity": "error",
+      "title": "missing_live_argument"
+    },
+    {
+      "category": "manifest_mismatch",
+      "evidence": {
+        "actual": "plus",
+        "agent": "runtime",
+        "expected": [
+          "atTime",
+          "beforeMinutes",
+          "inMinutes",
+          "intervalSeconds",
+          "prompt",
+          "schedule",
+          "title"
+        ],
+        "problem": "Runtime exposes an argument absent from the manifest.",
+        "rootCauseCategory": "manifest_mismatch",
+        "scenario": "trigger.create",
+        "sourceLayer": "runtimeManifestAudit",
+        "type": "unmanifested_live_argument"
+      },
+      "id": "b300559fb36aabfc77ede14d",
+      "recommendedAction": "Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.",
+      "severity": "error",
+      "title": "unmanifested_live_argument"
+    },
+    {
       "category": "runtime_drift",
+      "evidence": {
+        "actual": "interrupted",
+        "agent": "runtime",
+        "diagnosticRecordID": "39E500A8-E65A-4BFA-A3DD-1D770D14153E",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "e16eb071049f0c4f887ade82",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "interrupted",
+        "agent": "runtime",
+        "diagnosticRecordID": "664EFBE3-58C6-4EB8-90B4-CE4FA7562EE5",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "5ed59c9a97bf06ee3ed2cba3",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "8335577E-0921-483A-8EC3-67CEFD02693D",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "agentToolPrompt",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "e325ab3d138facf2c3b0f211",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "skipped",
+        "agent": "runtime",
+        "diagnosticRecordID": "5CCEB691-E3DE-4811-A129-5270BB62B219",
+        "expected": [
+          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+        ],
+        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "liveAgentStream",
+        "sourceLayer": "persistentRuntimeDiagnostics.records",
+        "type": "persistent_diagnostics_scenario_not_passed"
+      },
+      "id": "86d56c2b0a631c53a8cc9db8",
+      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
+      "severity": "error",
+      "title": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.",
         "agent": "mouth",
@@ -514,17 +664,18 @@
           "promptPrefix": "Explain why a sharp chisel is safer than a dull one.",
           "violationCode": "e2e_response_quality_chat"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Explain why a sharp chisel is safer than a dull one.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_chat"
       },
       "id": "e4ecf009693ef78994923043",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_chat"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.",
         "agent": "mouth",
@@ -551,17 +702,18 @@
           "promptPrefix": "Give me three tips for fitting a door hinge cleanly.",
           "violationCode": "e2e_response_quality_chat"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Give me three tips for fitting a door hinge cleanly.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_chat"
       },
       "id": "b0c97b0bbc6d69a39823d017",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_chat"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.",
         "agent": "mouth",
@@ -588,17 +740,18 @@
           "promptPrefix": "Explain actor isolation in Swift in simple terms.",
           "violationCode": "e2e_response_quality_chat"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Explain actor isolation in Swift in simple terms.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_chat"
       },
       "id": "b99363599b0c49d0671d32c6",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_chat"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
         "agent": "mouth",
@@ -625,17 +778,18 @@
           "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
           "violationCode": "e2e_response_quality_chat"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_chat"
       },
       "id": "38ac5984776bcade54acd6cf",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_chat"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
         "agent": "mouth",
@@ -662,17 +816,18 @@
           "promptPrefix": "Draft a email",
           "violationCode": "e2e_response_quality_emaildraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Draft a email",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_emaildraft"
       },
       "id": "2410ebc1f59b4286b17afa65",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_emaildraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
         "agent": "mouth",
@@ -699,17 +854,18 @@
           "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
           "violationCode": "e2e_response_quality_emaildraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_emaildraft"
       },
       "id": "34cf3db25ca063c4df5bd801",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_emaildraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
         "agent": "mouth",
@@ -736,17 +892,18 @@
           "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "881aefbfda1bcc42f7d374d1",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
         "agent": "mouth",
@@ -773,17 +930,18 @@
           "promptPrefix": "Search my files for architecture notes and summarize key modules.",
           "violationCode": "e2e_response_quality_rag"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Search my files for architecture notes and summarize key modules.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_rag"
       },
       "id": "ab6af3a8a60401b19a7637ec",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_rag"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.\n\ntrigger",
         "agent": "mouth",
@@ -810,17 +968,18 @@
           "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
           "violationCode": "e2e_response_quality_trigger"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_trigger"
       },
       "id": "79a0ab0ac229965c59772df6",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_trigger"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Weather tool output could not be validated. Try again or provide a city.",
         "agent": "mouth",
@@ -847,17 +1006,18 @@
           "promptPrefix": "What is the weather here?",
           "violationCode": "e2e_response_quality_weather"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "What is the weather here?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_weather"
       },
       "id": "d31377ff0811359a0b50b694",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_weather"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Weather tool output could not be validated. Try again or provide a city.",
         "agent": "mouth",
@@ -884,17 +1044,18 @@
           "promptPrefix": "What is the weather here and should I carry an umbrella?",
           "violationCode": "e2e_response_quality_weather"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "What is the weather here and should I carry an umbrella?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_weather"
       },
       "id": "c52c3932ab6cacf716b2aca1",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_weather"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
         "agent": "mouth",
@@ -921,17 +1082,18 @@
           "promptPrefix": "Search web for diy underground shelter",
           "violationCode": "e2e_response_quality_websearch"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Search web for diy underground shelter",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_websearch"
       },
       "id": "a9bdebd31071510eb05bedad",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_websearch"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I hit an internal response-format issue. Please try again.\n\nswift",
         "agent": "mouth",
@@ -958,131 +1120,15 @@
           "promptPrefix": "Search the web for two recent Swift concurrency best practices and summarize them.",
           "violationCode": "e2e_response_quality_websearch"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Search the web for two recent Swift concurrency best practices and summarize them.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_websearch"
       },
       "id": "7408efb7326fb457841d5f07",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_websearch"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "agent": "runtime",
-        "expected": [
-          "inMinutes"
-        ],
-        "problem": "Manifest argument is absent from runtime tool definition.",
-        "scenario": "trigger.create",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "missing_live_argument"
-      },
-      "id": "a620579042cf6ff3ee040ac1",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "missing_live_argument"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "interrupted",
-        "agent": "runtime",
-        "diagnosticRecordID": "39E500A8-E65A-4BFA-A3DD-1D770D14153E",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "scenario": "liveAgentStream",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "e16eb071049f0c4f887ade82",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "interrupted",
-        "agent": "runtime",
-        "diagnosticRecordID": "664EFBE3-58C6-4EB8-90B4-CE4FA7562EE5",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "scenario": "liveAgentStream",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "5ed59c9a97bf06ee3ed2cba3",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "skipped",
-        "agent": "runtime",
-        "diagnosticRecordID": "8335577E-0921-483A-8EC3-67CEFD02693D",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "scenario": "agentToolPrompt",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "e325ab3d138facf2c3b0f211",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "skipped",
-        "agent": "runtime",
-        "diagnosticRecordID": "5CCEB691-E3DE-4811-A129-5270BB62B219",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "scenario": "liveAgentStream",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "86d56c2b0a631c53a8cc9db8",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "plus",
-        "agent": "runtime",
-        "expected": [
-          "atTime",
-          "beforeMinutes",
-          "inMinutes",
-          "intervalSeconds",
-          "prompt",
-          "schedule",
-          "title"
-        ],
-        "problem": "Runtime exposes an argument absent from the manifest.",
-        "scenario": "trigger.create",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "unmanifested_live_argument"
-      },
-      "id": "b300559fb36aabfc77ede14d",
-      "recommendedAction": "Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.",
-      "severity": "error",
-      "title": "unmanifested_live_argument"
     }
   ]
 }

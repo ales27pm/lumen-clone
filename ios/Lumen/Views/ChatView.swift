@@ -298,45 +298,28 @@ struct ChatView: View {
             )
         )
 
-        var steps: [AgentStep] = []
-        var finalText = ""
+        var kernelEventState = ChatKernelEventState()
 
         var lastUIUpdate = Date.distantPast
         let kernel = AssistantKernel.shared
         for await kernelEvent in kernel.run(kernelRequest, modelContext: modelContext) {
-            guard let event = kernelEvent.legacyAgentEvent else { continue }
             if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
             let workStartedAt = ProcessInfo.processInfo.systemUptime
             defer { CPUWatchdogGuard.shared.recordWork(category: .chatGeneration, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
-            switch event {
-            case .step(let step):
-                if let idx = steps.firstIndex(where: { $0.id == step.id }) { steps[idx] = step } else { steps.append(step) }
-                if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
-                    streamingSteps = AgentStepContentBudget.boundedSanitizedSteps(steps)
-                    lastUIUpdate = Date()
+            let mutation = ChatKernelEventReducer.reduce(kernelEvent, state: &kernelEventState, lastUserMessage: text)
+            if mutation.stepsChanged, Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                streamingSteps = AgentStepContentBudget.boundedSanitizedSteps(kernelEventState.steps)
+                lastUIUpdate = Date()
+                if mutation.shouldEmitStepFeedback {
                     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 }
-            case .stepDelta(let id, let text):
-                if let idx = steps.firstIndex(where: { $0.id == id }) {
-                    steps[idx].content = text
-                    if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
-                        streamingSteps = AgentStepContentBudget.boundedSanitizedSteps(steps)
-                        lastUIUpdate = Date()
-                    }
-                }
-            case .finalDelta(let chunk):
-                finalText += chunk
-                let sanitized = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
-                if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
-                    streamingText = SchemaPlaceholderDetector.isPlaceholderPrefix(sanitized) ? "" : sanitized
+            }
+            if mutation.textChanged, Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                streamingText = kernelEventState.streamingText
+                if mutation.shouldEmitUIUpdateDiagnostic {
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .uiUpdate, values: ["surface": "chat", "targetHz": "10"]))
-                    lastUIUpdate = Date()
                 }
-            case .done(let final, let allSteps):
-                finalText = final.isEmpty ? finalText : final
-                steps = allSteps
-            case .error(let msg):
-                finalText = msg
+                lastUIUpdate = Date()
             }
         }
 
@@ -344,6 +327,8 @@ struct ChatView: View {
             emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-agent", "reason": chatCancellationReason(turnID: turnID, requestID: requestID)])
             return
         }
+        var finalText = kernelEventState.finalText
+        let steps = kernelEventState.steps
         finalText = await repairSchemaPlaceholderFinalIfNeeded(finalText, userText: text, routing: routing, memories: memories, attachments: attachments)
         finalText = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
         finalText = FinalIntentValidator.validate(finalText, routing: routing, fallback: nil)

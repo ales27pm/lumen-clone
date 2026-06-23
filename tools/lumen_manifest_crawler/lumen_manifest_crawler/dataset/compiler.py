@@ -1028,6 +1028,13 @@ def _runtime_failure_signature(failure: dict[str, Any]) -> str:
 
 
 def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str]) -> dict[str, Any]:
+    """
+    Generates a repair directive for a runtime failure based on its type and context.
+
+    Returns a dictionary specifying the repair action to apply and relevant parameters
+    (such as focusToolID, rejectedToolID, expectedPlan, and alsoAdd lists for additional
+    samples to generate).
+    """
     repair_sample = failure.get("repairSample")
     if isinstance(repair_sample, dict):
         return {
@@ -1064,6 +1071,19 @@ def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str])
             "failure": actual,
             "alsoAdd": ["rem_repair_sample", "trace_parse_regression_eval"],
         }
+    if failure_type in {"tool_not_allowed_by_static_manifest", "tool_not_allowed_by_runtime_router"} and _is_dynamic_local_public_lookup_failure(failure):
+        return {
+            "action": "add_plan_gather_execute_evaluate_samples",
+            "focusToolID": "web.search",
+            "rejectedToolID": actual,
+            "expectedPlan": [
+                "classify as dynamic local public lookup",
+                "gather current location when available",
+                "run web.search for fresh public schedule/hours/event evidence",
+                "evaluate whether the observation answers the user's time-sensitive question before finalizing",
+            ],
+            "alsoAdd": ["cortex_dynamic_lookup_contrast_eval", "mouth_grounded_answer_eval", "rem_repair_sample"],
+        }
     if "sentinel" in failure_type:
         return {"action": "add_sentinel_suppression_samples", "focus": scenario}
     if "tool" in failure_type:
@@ -1071,6 +1091,69 @@ def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str])
     if "parse" in failure_type:
         return {"action": "add_strict_json_format_samples", "failure": actual}
     return {"action": "add_rem_reflection_sample", "focusToolID": scenario or actual}
+
+
+def _is_dynamic_local_public_lookup_failure(failure: dict[str, Any]) -> bool:
+    """
+    Determines whether a failure represents a dynamic local public lookup scenario.
+
+    A dynamic local public lookup is characterized by temporal language (e.g., "today", "hours"),
+    references to dynamic subjects (e.g., "event", "meeting", "ticket"), and geographic scope
+    indicators (e.g., "near me", "closest"). Returns true only when failure metadata contains
+    keywords from all three categories.
+
+    Returns:
+        True if the failure contains temporal markers, dynamic subject keywords, and local scope indicators; False otherwise.
+    """
+    text = " ".join(str(failure.get(key) or "") for key in ("scenario", "problem", "expected", "actual")).casefold()
+    if not text.strip():
+        return False
+    time_markers = (
+        "today",
+        "tonight",
+        "tomorrow",
+        "this weekend",
+        "this week",
+        "next week",
+        "open now",
+        "open late",
+        "hours",
+        "schedule",
+        "showtime",
+    )
+    dynamic_subjects = (
+        "meeting",
+        "event",
+        "class",
+        "session",
+        "clinic",
+        "walk-in",
+        "walk in",
+        "showtime",
+        "screening",
+        "bus",
+        "train",
+        "ferry",
+        "price",
+        "ticket",
+        "concert",
+    )
+    local_scope = (
+        "near me",
+        "nearby",
+        "nearest",
+        "closest",
+        "around me",
+        "around here",
+        "in my area",
+        "where is",
+        "where are",
+    )
+    return (
+        any(marker in text for marker in time_markers)
+        and any(subject in text for subject in dynamic_subjects)
+        and any(scope in text for scope in local_scope)
+    )
 
 
 def _build_dataset_manifest(
@@ -1082,6 +1165,12 @@ def _build_dataset_manifest(
 ) -> dict[str, Any]:
     # Deterministic mode is used by CI drift checks, so avoid embedding HEAD-derived
     # values that change every commit even when extracted behavior stays identical.
+    """
+    Build an auditable dataset manifest describing lineage, record counts, hashes, and training policies.
+
+    Returns:
+        A manifest dictionary containing schema version, generation timestamp, source metadata, record counts, content hashes, and training policies. In deterministic mode, the manifest commit is omitted to avoid drift in CI validation when source behavior remains unchanged.
+    """
     lineage_commit = None if config.deterministic else manifest.sourceIntegrity.commit
     counts = {name: len(records) for name, records in {**raw_role_records, **compiled_records}.items()}
     compiled_hashes = {name: _records_hash(records) for name, records in compiled_records.items()}
