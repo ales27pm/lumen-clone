@@ -1,0 +1,592 @@
+{
+  "generatedAt": "1970-01-01T00:00:00+00:00",
+  "groups": [
+    {
+      "categories": {
+        "skipped_live_model_generation": 13
+      },
+      "count": 13,
+      "examples": [
+        {
+          "actual": "Memory tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Tell me what style I asked you to use.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Memory tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "What do you remember about my response style preference?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Memory tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Use Recall Memory, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Memory tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Keep in mind that I like short answers.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Memory tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Remember that I prefer concise bullet points.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_memory"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "memory",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 13
+      },
+      "severities": {
+        "warning": 13
+      },
+      "skippedLiveModelGenerationCount": 13,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 13
+      },
+      "count": 13,
+      "examples": [
+        {
+          "actual": "Outlook tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Show attachments on the latest Outlook email.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Outlook tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "List attachments for my latest Outlook email.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Outlook tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Outlook tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Outlook tool output could not be validated.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_outlook"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "outlook",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 13
+      },
+      "severities": {
+        "warning": 13
+      },
+      "skippedLiveModelGenerationCount": 13,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 10
+      },
+      "count": 10,
+      "examples": [
+        {
+          "actual": "I couldn’t safely complete the maps/location request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Give me directions to the nearest hardware store.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "I couldn’t safely complete the maps/location request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Give me directions to the nearest hardware store.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "I couldn’t safely complete the maps/location request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Find coffee near me.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "I couldn’t safely complete the maps/location request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Find a pharmacy nearby.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "I couldn’t safely complete the maps/location request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Use Search Nearby, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_maps"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "maps",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 10
+      },
+      "severities": {
+        "warning": 10
+      },
+      "skippedLiveModelGenerationCount": 10,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "runtime_permission_config": 6
+      },
+      "count": 6,
+      "examples": [
+        {
+          "actual": "Calendar event tools are unavailable in this build right now.",
+          "category": "runtime_permission_config",
+          "prompt": "What's on my schedule today?",
+          "rootCauseCategory": "permission_config_issue",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Calendar event tools are unavailable in this build right now.",
+          "category": "runtime_permission_config",
+          "prompt": "Show my next calendar events.",
+          "rootCauseCategory": "permission_config_issue",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Calendar event tools are unavailable in this build right now.",
+          "category": "runtime_permission_config",
+          "prompt": "Use List Events, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "permission_config_issue",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Calendar event tools are unavailable in this build right now.",
+          "category": "runtime_permission_config",
+          "prompt": "What's on my schedule today?",
+          "rootCauseCategory": "permission_config_issue",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Calendar event tools are unavailable in this build right now.",
+          "category": "runtime_permission_config",
+          "prompt": "Show my next calendar events.",
+          "rootCauseCategory": "permission_config_issue",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        }
+      ],
+      "freshRuntimeFailureCount": 6,
+      "group": "calendar",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "permission_config_issue": 6
+      },
+      "severities": {
+        "error": 6
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "code_or_configuration_fix_required"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 6
+      },
+      "count": 6,
+      "examples": [
+        {
+          "actual": "What should the message say?",
+          "category": "skipped_live_model_generation",
+          "prompt": "Text 5551234567 that I am late.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_messagedraft"
+        },
+        {
+          "actual": "What should the message say?",
+          "category": "skipped_live_model_generation",
+          "prompt": "Text 5551234567 that approval boundary works.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_messagedraft"
+        },
+        {
+          "actual": "Who should I message, and what should it say?",
+          "category": "skipped_live_model_generation",
+          "prompt": "Draft a message to 5551234567 saying I am running late.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_messagedraft"
+        },
+        {
+          "actual": "What should the message say?",
+          "category": "skipped_live_model_generation",
+          "prompt": "Text 5551234567 that I am late.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_messagedraft"
+        },
+        {
+          "actual": "What should the message say?",
+          "category": "skipped_live_model_generation",
+          "prompt": "Text 5551234567 that approval boundary works.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_messagedraft"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "messagedraft",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 6
+      },
+      "severities": {
+        "warning": 6
+      },
+      "skippedLiveModelGenerationCount": 6,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 6
+      },
+      "count": 6,
+      "examples": [
+        {
+          "actual": "I couldn’t safely complete the motion/activity request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Am I walking or stationary right now?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_motion"
+        },
+        {
+          "actual": "I couldn’t safely complete the motion/activity request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "What motion activity is detected right now?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_motion"
+        },
+        {
+          "actual": "I couldn’t safely complete the motion/activity request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Use Motion Activity, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_motion"
+        },
+        {
+          "actual": "I couldn’t safely complete the motion/activity request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Am I walking or stationary right now?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_motion"
+        },
+        {
+          "actual": "I couldn’t safely complete the motion/activity request.",
+          "category": "skipped_live_model_generation",
+          "prompt": "What motion activity is detected right now?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_motion"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "motion",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 6
+      },
+      "severities": {
+        "warning": 6
+      },
+      "skippedLiveModelGenerationCount": 6,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_chat"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "chat",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+          "category": "skipped_live_model_generation",
+          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_emaildraft"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "emaildraft",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "{\"intent\":\"rag\",\"module\":\"photos\",\"module(s)\":[\"Photos\"],\"nextModel\":\"rag\",\"reasoningSummary\":\"RAG search results: [1] Photos · Photos 2026-06 Photos (2026-06): 98 items between Jun 3, 2026 and Jun 18, 2026. 0 favorites, 0 videos, 80 screenshots, 0 selfies, 0 live photos, 3 portraits, 6 with location. [2] Photos · Photos 2025-12 Photos (2025-12): 55 items between Dec 20, 2025 and Dec 29, 2025. 0 favorites, 1 videos, 41 screenshots, 0 selfies, 3 live photos, 5 portraits, 8 with location.\"} Source: retrieved file snippet [1].",
+          "category": "skipped_live_model_generation",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_rag"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "rag",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
+          "category": "skipped_live_model_generation",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_trigger"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "trigger",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "Weather update: Weather at your location: · overcast · 18°C · feels like 18°C · humidity 90% · wind 19 km/h · gusts 40 km/h · cloud cover 100% · updated 2026-06-18T20:45",
+          "category": "skipped_live_model_generation",
+          "prompt": "What is the weather here and should I carry an umbrella?",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_weather"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "weather",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "skipped_live_model_generation": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n5. The Essential Guide to Concurrency in Swift: Avoiding Common ... - Medium\nhttps://medium.com/@rashadsh/the-essential-guide-to-concurrency-in-swift-avoiding-common-pitfalls-9ac58ada1367\n\n6. Mastering Swift Concurrency for Modern Developers | MoldStud\nhttps://moldstud.com/articles/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers",
+          "category": "skipped_live_model_generation",
+          "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_websearch"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "websearch",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    }
+  ],
+  "schemaVersion": "1.0.0",
+  "summary": {
+    "categoryCounts": {
+      "runtime_permission_config": 6,
+      "skipped_live_model_generation": 54
+    },
+    "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
+    "freshRuntimeFailureCount": 6,
+    "groupCounts": {
+      "calendar": 6,
+      "chat": 1,
+      "emaildraft": 1,
+      "maps": 10,
+      "memory": 13,
+      "messagedraft": 6,
+      "motion": 6,
+      "outlook": 13,
+      "rag": 1,
+      "trigger": 1,
+      "weather": 1,
+      "websearch": 1
+    },
+    "rawRuntimeFailureCount": 60,
+    "rootCauseCounts": {
+      "permission_config_issue": 6,
+      "skipped_live_model_generation": 54
+    },
+    "runtimeAuditReports": 5,
+    "severityCounts": {
+      "error": 6,
+      "warning": 54
+    },
+    "skippedLiveModelGenerationCount": 54,
+    "totalGaps": 60
+  }
+}

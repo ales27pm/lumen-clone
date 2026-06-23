@@ -9,7 +9,7 @@
 	<key>MSALKeychainGroup</key>
 	<string>com.microsoft.adalcache</string>
 	<key>MSALRedirectURI</key>
-	<string>msauth.com.27pm.lumen://auth</string>
+	<string>msauth.com.27pm.lumenclone://auth</string>
 	<key>MSALForceNativeOAuth</key>
 	<true/>
 </dict>
