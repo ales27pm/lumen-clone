@@ -663,6 +663,19 @@ extension AgentGroundingRegressionTests {
         #expect(!chat.preservesRawStructuredAgentOutput)
     }
 
+    @Test func agentJSONEmptyOutputRetryPromptRequiresNonEmptyJSONOnly() {
+        let firstTurn = "User request:\nFind coffee near me.\n\nEmit the first JSON object now. Choose either action or final."
+
+        let retryTurn = AgentService.agentJSONEmptyOutputRetryUserTurnForTests(from: firstTurn)
+
+        #expect(retryTurn.contains(firstTurn))
+        #expect(retryTurn.contains("Previous live agent-json attempt emitted no tokens"))
+        #expect(retryTurn.contains("Emit exactly one non-empty JSON object now"))
+        #expect(retryTurn.contains(#"{"action":{"tool":"<allowed tool id>","args":{...}}}"#))
+        #expect(retryTurn.contains(#"{"final":"<concise user-facing answer>"}"#))
+        #expect(retryTurn.contains("Start the response with {"))
+    }
+
     @Test func structuredAgentJSONUsesExecutorModelSlot() {
         #expect(AgentService.structuredAgentModelSlotForTests == .executor)
     }
@@ -1029,6 +1042,37 @@ extension AgentGroundingRegressionTests {
 
         #expect(actionToolIDs.contains("web.search"))
         #expect(recovery?.text.lowercased().contains("please ask again") == false)
+    }
+
+    @Test func agentServiceParseFailureRecoveryHonorsDisabledDeterministicCompatibility() async {
+        let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(
+            modelContext: nil,
+            conversationID: req.conversationID,
+            turnID: req.turnID,
+            groundingMode: .slotAgent,
+            allowDegradedGrounding: false,
+            preventDoubleGrounding: true,
+            diagnosticsEnabled: false,
+            allowDeterministicCompatibility: false,
+            allowParseFailureDeterministicRecovery: false
+        )
+
+        let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+
+        #expect(recovery == nil)
     }
 
     @Test func agentServiceParseFailureRecoveryPlansReportAlternatePhrases() async {

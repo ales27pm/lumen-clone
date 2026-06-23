@@ -1,18 +1,29 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from lumen_manifest_crawler.dataset.e2e_policy import e2e_failure_policy
 
 
-def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json") -> dict[str, Any]:
-    scenarios = value.get("scenarios") if isinstance(value.get("scenarios"), list) else []
-    failures = [
-        e2e_failure_from_scenario(scenario, source_layer=source_layer)
-        for scenario in scenarios
-        if isinstance(scenario, dict) and (scenario.get("passed") is not True or _scenario_skipped_live_model_run(scenario))
-    ]
+def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+    scenarios = _coerce_e2e_scenarios(value)
+    sidecars = sidecars or {}
+    failures = []
+    for scenario in scenarios:
+        diagnosis = _sidecar_diagnosis_for_scenario(scenario, sidecars)
+        if scenario.get("passed") is not True or _scenario_skipped_live_model_run(
+            scenario,
+            sidecar_diagnosis=diagnosis,
+        ):
+            failures.append(
+                e2e_failure_from_scenario(
+                    scenario,
+                    source_layer=source_layer,
+                    sidecar_diagnosis=diagnosis,
+                )
+            )
     return {
         "_source": source,
         "_sourceFormat": source_format,
@@ -25,17 +36,52 @@ def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format
     }
 
 
-def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str) -> dict[str, Any]:
+def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
+    scenarios = value.get("scenarios")
+    if isinstance(scenarios, list):
+        return [scenario for scenario in scenarios if isinstance(scenario, dict)]
+    results = value.get("results")
+    if not isinstance(results, list):
+        return []
+    coerced: list[dict[str, Any]] = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        failures = result.get("failures")
+        if isinstance(failures, list):
+            failure_text: Any = "; ".join(str(item) for item in failures if item)
+        else:
+            failure_text = failures
+        coerced.append({
+            "id": result.get("scenarioID") or result.get("id"),
+            "name": result.get("title") or result.get("scenarioID"),
+            "passed": result.get("passed") is True,
+            "requiresAgentRun": result.get("requiresAgentRun") is True,
+            "prompt": result.get("prompt"),
+            "intent": result.get("actualIntent") or result.get("expectedIntent"),
+            "expectedIntent": result.get("expectedIntent"),
+            "failures": failure_text,
+            "final": result.get("finalText"),
+            "events": result.get("events") or [],
+            "startedAt": result.get("startedAt"),
+            "finishedAt": result.get("finishedAt"),
+        })
+    return coerced
+
+
+def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, sidecar_diagnosis: dict[str, Any] | None = None) -> dict[str, Any]:
     failure_text = str(scenario.get("failures") or "E2E scenario failed.").strip()
-    if _scenario_skipped_live_model_run(scenario) and failure_text == "E2E scenario failed.":
+    if sidecar_diagnosis and _is_generic_missing_model_evidence(failure_text):
+        failure_text = str(sidecar_diagnosis.get("message") or failure_text)
+    if _scenario_skipped_live_model_run(scenario, sidecar_diagnosis=sidecar_diagnosis) and failure_text == "E2E scenario failed.":
         failure_text = "Agent model did not execute: scenario fell back to routing-only checks because no chat model was loaded."
     prompt = str(scenario.get("prompt") or "").strip()
     final = str(scenario.get("final") or "").strip()
     intent = _scenario_intent(scenario)
     required_hint = _extract_required_hint(failure_text)
     policy = e2e_failure_policy(intent, required_hint)
-    expected = _expected_for_e2e_failure(scenario, required_hint)
-    corrected = _corrected_output_for_e2e_failure(scenario, required_hint)
+    expected = _expected_for_e2e_failure(scenario, required_hint, sidecar_diagnosis=sidecar_diagnosis)
+    corrected = _corrected_output_for_e2e_failure(scenario, required_hint, sidecar_diagnosis=sidecar_diagnosis)
     return {
         "type": policy.failure_type,
         "agent": policy.agent,
@@ -43,6 +89,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str) ->
         "actual": final,
         "scenario": prompt,
         "problem": failure_text,
+        "rootCauseCategory": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None,
         "sourceLayer": source_layer,
         "e2eScenario": {
             "name": scenario.get("name"),
@@ -51,7 +98,9 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str) ->
             "prompt": prompt,
             "final": final,
             "requiredHint": required_hint,
-            "skippedLiveModelRun": _scenario_skipped_live_model_run(scenario),
+            "skippedLiveModelRun": _scenario_skipped_live_model_run(scenario, sidecar_diagnosis=sidecar_diagnosis),
+            "modelEvidenceRootCause": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None,
+            "modelEvidenceTrace": sidecar_diagnosis.get("trace") if sidecar_diagnosis else None,
         },
         "repairSample": {
             "agent": policy.agent,
@@ -60,7 +109,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str) ->
             "expected": expected,
             "badOutput": final[:1000],
             "correctedOutput": corrected,
-            "lesson": _lesson_for_e2e_failure(scenario, required_hint),
+            "lesson": _lesson_for_e2e_failure(scenario, required_hint, sidecar_diagnosis=sidecar_diagnosis),
             "curriculum": policy.curriculum,
         },
     }
@@ -74,7 +123,9 @@ def _scenario_intent(scenario: dict[str, Any]) -> str:
     return expected_intent or "unknown"
 
 
-def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None) -> str:
+def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
+    if sidecar_diagnosis:
+        return "Agent-json turns must produce non-empty model output that parses as structured JSON before deterministic recovery or final-answer validation can count."
     if _scenario_skipped_live_model_run(scenario):
         return "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
     if required_hint:
@@ -83,11 +134,13 @@ def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | Non
     return f"Final answer must satisfy the `{expected_intent}` eval contract without violating tool boundaries."
 
 
-def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None) -> str:
+def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     prompt = str(scenario.get("prompt") or "").strip()
     final = str(scenario.get("final") or "").strip()
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
+    if sidecar_diagnosis:
+        return "Fix the executor-slot agent-json generation path so it emits non-empty structured JSON, or keep this scenario failed with the precise agent-json empty-output parse diagnostic."
     if _scenario_skipped_live_model_run(scenario):
         return "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence."
     if required_hint and normalized_intent == "memory":
@@ -215,7 +268,9 @@ def _is_useful_final(final: str, *, intent: str) -> bool:
     return len(stripped.split()) >= 3
 
 
-def _scenario_skipped_live_model_run(scenario: dict[str, Any]) -> bool:
+def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis: dict[str, Any] | None = None) -> bool:
+    if sidecar_diagnosis and sidecar_diagnosis.get("rootCauseCategory") in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+        return False
     final = str(scenario.get("final") or scenario.get("finalText") or "").casefold()
     failures = str(scenario.get("failures") or "").casefold()
     events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
@@ -231,6 +286,119 @@ def _scenario_skipped_live_model_run(scenario: dict[str, Any]) -> bool:
     if scenario.get("requiresAgentRun") is True and not _scenario_has_model_evidence_event(events):
         return True
     return False
+
+
+def _sidecar_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+    prompt = str(scenario.get("prompt") or "").strip()
+    if not prompt:
+        return None
+    prompt_key = prompt.casefold()
+
+    matching_trace = next(
+        (
+            trace
+            for trace in sidecars.get("agent_behavior_traces", [])
+            if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
+            and _sidecar_record_matches_scenario_time(trace, scenario)
+            and str(trace.get("event") or "") == "modelTurn"
+            and str(trace.get("stage") or "").startswith("agent-json")
+        ),
+        None,
+    )
+    if matching_trace is not None:
+        raw = str(matching_trace.get("rawOutputPrefix") or "")
+        parse_error = matching_trace.get("parseError")
+        runtime_path = str(matching_trace.get("runtimePath") or "unknown")
+        if not raw.strip() and parse_error:
+            stage = str(matching_trace.get("stage") or "unknown")
+            return {
+                "rootCauseCategory": "agent_json_empty_generation",
+                "message": f"agent-json emitted empty output; parseError={parse_error}; stage={stage}; runtimePath={runtime_path}",
+                "trace": {
+                    "stage": stage,
+                    "runtimePath": runtime_path,
+                    "parseError": parse_error,
+                    "rawOutputEmpty": True,
+                },
+            }
+        if parse_error:
+            stage = str(matching_trace.get("stage") or "unknown")
+            return {
+                "rootCauseCategory": "agent_json_parse_error",
+                "message": f"agent-json output failed to parse; parseError={parse_error}; stage={stage}; runtimePath={runtime_path}",
+                "trace": {
+                    "stage": stage,
+                    "runtimePath": runtime_path,
+                    "parseError": parse_error,
+                    "rawOutputEmpty": False,
+                },
+            }
+
+    matching_parse_failure = next(
+        (
+            failure
+            for failure in sidecars.get("agent_parse_failures", [])
+            if str(failure.get("modelName") or "") == "agent-json"
+            and _sidecar_text_matches_prompt(str(failure.get("userTurnPrefix") or ""), prompt_key)
+            and _sidecar_record_matches_scenario_time(failure, scenario)
+        ),
+        None,
+    )
+    if matching_parse_failure is not None:
+        raw = str(matching_parse_failure.get("rawOutputPrefix") or "")
+        parse_error = str(matching_parse_failure.get("parseError") or "unknown")
+        if parse_error == "empty" or not raw.strip():
+            return {
+                "rootCauseCategory": "agent_json_parse_empty",
+                "message": f"agent-json parse failed with empty output; parseError={parse_error}",
+                "trace": {
+                    "stage": "agent-json",
+                    "runtimePath": "unknown",
+                    "parseError": parse_error,
+                    "rawOutputEmpty": not raw.strip(),
+                },
+            }
+    return None
+
+
+def _sidecar_text_matches_prompt(value: str, prompt_key: str) -> bool:
+    normalized = " ".join(value.casefold().split())
+    needle = " ".join(prompt_key.split())
+    return bool(needle and normalized and (needle in normalized or normalized in needle))
+
+
+def _sidecar_record_matches_scenario_time(record: dict[str, Any], scenario: dict[str, Any]) -> bool:
+    started_at = _parse_iso_datetime(scenario.get("startedAt"))
+    finished_at = _parse_iso_datetime(scenario.get("finishedAt"))
+    if started_at is None and finished_at is None:
+        return True
+    created_at = _parse_iso_datetime(record.get("createdAt"))
+    if created_at is None:
+        return False
+    lower_bound = (started_at or finished_at) - timedelta(minutes=5)
+    upper_bound = (finished_at or started_at) + timedelta(minutes=5)
+    return lower_bound <= created_at <= upper_bound
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _is_generic_missing_model_evidence(text: str) -> bool:
+    lowered = text.casefold()
+    return (
+        "did not record model-backed generation evidence" in lowered
+        or "missing fresh agentbehaviortrace modelturn" in lowered
+    )
 
 
 def _scenario_has_model_evidence_event(events: list[Any]) -> bool:
@@ -254,8 +422,10 @@ def _clean_derived_fragment(value: str) -> str:
     return cleaned
 
 
-def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None) -> str:
+def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     intent = _scenario_intent(scenario)
+    if sidecar_diagnosis:
+        return f"For `{intent}` E2E evals, empty agent-json output is a model-generation failure, not a skipped live run or a response-quality failure."
     if _scenario_skipped_live_model_run(scenario):
         return f"For `{intent}` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded."
     if required_hint:

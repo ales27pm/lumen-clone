@@ -325,6 +325,7 @@ nonisolated enum PersistentRuntimeDiagnosticsAvailability {
 nonisolated enum PersistentRuntimeDiagnosticSignalKind: String, Codable, Sendable {
     case llamaPromptBudget
     case llamaFirstToken
+    case llamaEmptyOutput
     case llamaComplete
     case llamaCancel
     case llamaFailure
