@@ -25,6 +25,7 @@ from lumen_manifest_crawler.developer_framework import (
     run_framework_job,
     serve_framework,
 )
+from lumen_manifest_crawler.developer_cycle import DeveloperCycleConfig, run_developer_cycle
 from lumen_manifest_crawler.fleet_artifacts import generate_fleet_artifacts, generate_manifest_markdown
 from lumen_manifest_crawler.improvement_loop import AgentImprovementLoopConfig, run_agent_improvement_loop
 from lumen_manifest_crawler.output.writer import write_outputs
@@ -222,6 +223,60 @@ def improve_loop(
         raise typer.Exit(code=1)
 
 
+@app.command("developer-cycle")
+def developer_cycle(
+    root: Path = typer.Option(Path("."), "--root", help="Repository root."),
+    runtime_audit: Annotated[Optional[list[Path]], typer.Option("--runtime-audit", help="Runtime audit export file or directory. Can be passed multiple times.")] = None,
+    portable: bool = typer.Option(False, "--portable", help="Run the static/Linux/Codex-safe profile and skip Xcode validation."),
+    with_xcode: bool = typer.Option(False, "--with-xcode", help="Require macOS/Xcode validation."),
+    with_training_plan: bool = typer.Option(False, "--with-training-plan", help="Print the opt-in training/HF job plan without running it."),
+    run_training: bool = typer.Option(False, "--run-training", help="Run the opt-in training/HF job profile."),
+    fail_on_gaps: bool = typer.Option(False, "--fail-on-gaps", help="Exit non-zero when improvement-loop gaps remain or runtime evidence is missing."),
+    fail_on_static: bool = typer.Option(False, "--fail-on-static", help="Exit non-zero when static source validation fails."),
+    fail_on_validation: bool = typer.Option(False, "--fail-on-validation", help="Exit non-zero when manifest, loop, Xcode, or training validation fails."),
+    require_runtime_audit: bool = typer.Option(False, "--require-runtime-audit", help="Treat missing runtime audit evidence as a failure."),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Plan phases and write reports without executing validation/generation commands."),
+    skip_generation: bool = typer.Option(False, "--skip-generation", help="Skip manifest/dataset generation and report current artifacts."),
+    skip_improvement_loop: bool = typer.Option(False, "--skip-improvement-loop", help="Skip improvement-loop preparation and report current artifacts."),
+) -> None:
+    """Run the unified Lumen developer workflow."""
+    report, exit_code = run_developer_cycle(
+        DeveloperCycleConfig(
+            root=root,
+            runtime_audit_paths=tuple(runtime_audit or ()),
+            portable=portable,
+            with_xcode=with_xcode,
+            with_training_plan=with_training_plan,
+            run_training=run_training,
+            fail_on_gaps=fail_on_gaps,
+            fail_on_static=fail_on_static,
+            fail_on_validation=fail_on_validation,
+            require_runtime_audit=require_runtime_audit,
+            json_output=json_output,
+            dry_run=dry_run,
+            skip_generation=skip_generation,
+            skip_improvement_loop=skip_improvement_loop,
+        )
+    )
+    if json_output:
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        console.print(f"[bold]Static validation passed:[/bold] {report['staticValidationPassed']}")
+        console.print(f"[bold]Manifest validation passed:[/bold] {report['manifestValidationPassed']}")
+        console.print(f"[bold]Runtime evidence present:[/bold] {report['runtimeEvidencePresent']}")
+        console.print(f"[bold]Improvement loop passed:[/bold] {report['improvementLoopPassed']}")
+        console.print(f"[bold]Improvement-loop output contract passed:[/bold] {report['improvementLoopOutputContractPassed']}")
+        console.print(f"[bold]Xcode validation:[/bold] {report['xcodeValidationStatus']}")
+        console.print(f"[bold]Training status:[/bold] {report['trainingStatus']}")
+        console.print(f"[bold]Portable pass:[/bold] {report['overallPortablePassed']}")
+        console.print(f"[bold]Release-candidate pass:[/bold] {report['overallReleaseCandidatePassed']}")
+        console.print("[green]Wrote developer cycle reports to generated/developer_framework[/green]")
+        console.print(f"[bold]Next:[/bold] {report['nextRecommendedCommand']}")
+    if exit_code:
+        raise typer.Exit(code=exit_code)
+
+
 def _framework_environment(value: str) -> FrameworkEnvironment:
     try:
         return FrameworkEnvironment(value)
@@ -305,7 +360,7 @@ def framework_diagnose(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
 ) -> None:
     """Analyze local logs, reports, and runtime exports."""
-    paths = path or [Path("exports"), Path("runtime-audits"), Path("generated/agent_improvement_loop")]
+    paths = path or [Path("exports"), Path("runtime-audits")]
     report = analyze_reports(root, paths)
     if output:
         out = output if output.is_absolute() else root.resolve() / output

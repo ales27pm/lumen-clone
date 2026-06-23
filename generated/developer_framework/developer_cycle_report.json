@@ -1,0 +1,421 @@
+{
+  "environment": {
+    "checkoutKind": "git_checkout",
+    "executionKind": "macos_with_xcode",
+    "gitTopLevel": "/Users/ales27pm/lumen-clone",
+    "hasXcodebuild": true,
+    "insideGitWorktree": true,
+    "platformMachine": "x86_64",
+    "platformSystem": "Darwin",
+    "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python",
+    "xcodebuildPath": "/usr/bin/xcodebuild"
+  },
+  "improvementLoopOutputContractPassed": true,
+  "improvementLoopPassed": false,
+  "manifestValidationPassed": true,
+  "nextRecommendedCommand": "python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop",
+  "options": {
+    "dryRun": true,
+    "failOnGaps": false,
+    "failOnStatic": false,
+    "failOnValidation": false,
+    "portable": true,
+    "requireRuntimeAudit": false,
+    "runTraining": false,
+    "runtimeAuditPaths": [],
+    "skipGeneration": true,
+    "skipImprovementLoop": true,
+    "withTrainingPlan": false,
+    "withXcode": false
+  },
+  "outputArtifacts": [
+    "/Users/ales27pm/lumen-clone/generated/developer_framework/developer_cycle_report.json",
+    "/Users/ales27pm/lumen-clone/generated/developer_framework/DEVELOPER_CYCLE_REPORT.md",
+    "/Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json",
+    "/Users/ales27pm/lumen-clone/generated/developer_framework/runtime_report_index.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_manifest/AgentBehaviorManifest.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_manifest/AgentBehaviorManifest.md",
+    "/Users/ales27pm/lumen-clone/generated/agent_manifest/manifest_validation_report.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_manifest/dataset_manifest.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_manifest/dataset_index.csv",
+    "/Users/ales27pm/lumen-clone/generated/agent_manifest/fleet_system_prompts.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_manifest/fine_tuning",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_gaps.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/GAP_TRIAGE.md",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/gap_triage.json",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl"
+  ],
+  "overallPortablePassed": false,
+  "overallReleaseCandidatePassed": false,
+  "phases": [
+    {
+      "commands": [],
+      "environment": {
+        "checkoutKind": "git_checkout",
+        "executionKind": "macos_with_xcode",
+        "gitTopLevel": "/Users/ales27pm/lumen-clone",
+        "hasXcodebuild": true,
+        "insideGitWorktree": true,
+        "platformMachine": "x86_64",
+        "platformSystem": "Darwin",
+        "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python",
+        "xcodebuildPath": "/usr/bin/xcodebuild"
+      },
+      "id": "phase0_environment_detection",
+      "status": "passed",
+      "title": "Phase 0 - Environment Detection"
+    },
+    {
+      "commands": [
+        {
+          "command": [
+            "python3",
+            "tools/check_agent_kernel_boundary.py"
+          ],
+          "commandText": "python3 tools/check_agent_kernel_boundary.py",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "agent_kernel_boundary",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "python3",
+            "tools/check_agent_kernel_boundary.py",
+            "--strict"
+          ],
+          "commandText": "python3 tools/check_agent_kernel_boundary.py --strict",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "agent_kernel_boundary_strict",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "python3",
+            "tools/check_adapter_runtime_invariants.py"
+          ],
+          "commandText": "python3 tools/check_adapter_runtime_invariants.py",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "adapter_runtime_invariants",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "python3",
+            "tools/check_ios_lora_hardening_invariants.py"
+          ],
+          "commandText": "python3 tools/check_ios_lora_hardening_invariants.py",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "ios_lora_hardening_invariants",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "python3",
+            "scripts/validate-msal-ios-release-config.py"
+          ],
+          "commandText": "python3 scripts/validate-msal-ios-release-config.py",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "msal_release_config",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "python3",
+            "scripts/validate_ios_signing_capabilities.py"
+          ],
+          "commandText": "python3 scripts/validate_ios_signing_capabilities.py",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "ios_signing_capabilities",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "python3",
+            "tools/security/check_no_shell_subprocess.py"
+          ],
+          "commandText": "python3 tools/security/check_no_shell_subprocess.py",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "no_shell_subprocess",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "bash",
+            "scripts/check-ios-build-readiness.sh"
+          ],
+          "commandText": "bash scripts/check-ios-build-readiness.sh",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "ios_build_readiness",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        },
+        {
+          "command": [
+            "git",
+            "diff",
+            "--check"
+          ],
+          "commandText": "git diff --check",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "git_diff_check",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        }
+      ],
+      "id": "phase1_static_source_validation",
+      "staticValidationPassed": true,
+      "status": "passed",
+      "title": "Phase 1 - Static Source Validation"
+    },
+    {
+      "commands": [
+        {
+          "command": [
+            "python3",
+            "-m",
+            "lumen_manifest_crawler",
+            "improve-loop",
+            "--root",
+            "/Users/ales27pm/lumen-clone",
+            "--output",
+            "/Users/ales27pm/lumen-clone/generated/agent_manifest",
+            "--loop-output",
+            "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop",
+            "--generate-system-prompts",
+            "--generate-agent-fine-tuning",
+            "--runtime-audit",
+            "/Users/ales27pm/lumen-clone/exports",
+            "--runtime-audit",
+            "/Users/ales27pm/lumen-clone/runtime-audits"
+          ],
+          "commandText": "python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "improve_loop_generation",
+          "returncode": null,
+          "skipReason": "generation skipped by --skip-generation",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        }
+      ],
+      "id": "phase2_manifest_dataset_generation",
+      "manifestValidationPassed": true,
+      "reason": "generation skipped by --skip-generation",
+      "status": "skipped",
+      "title": "Phase 2 - Manifest and Dataset Generation"
+    },
+    {
+      "commands": [
+        {
+          "command": [
+            "python3",
+            "-m",
+            "lumen_manifest_crawler",
+            "framework",
+            "diagnose",
+            "--root",
+            "/Users/ales27pm/lumen-clone",
+            "--output",
+            "/Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json",
+            "--path",
+            "/Users/ales27pm/lumen-clone/exports",
+            "--path",
+            "/Users/ales27pm/lumen-clone/runtime-audits"
+          ],
+          "commandText": "python3 -m lumen_manifest_crawler framework diagnose --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json --path /Users/ales27pm/lumen-clone/exports --path /Users/ales27pm/lumen-clone/runtime-audits",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "framework_diagnose",
+          "returncode": null,
+          "skipReason": "dry-run",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        }
+      ],
+      "id": "phase3_runtime_audit_ingestion",
+      "inputPaths": [
+        "/Users/ales27pm/lumen-clone/exports",
+        "/Users/ales27pm/lumen-clone/runtime-audits"
+      ],
+      "outputArtifacts": [
+        "/Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json",
+        "/Users/ales27pm/lumen-clone/generated/developer_framework/runtime_report_index.json"
+      ],
+      "plainFindingCount": 0,
+      "runtimeEvidencePresent": false,
+      "runtimeFailureCount": 0,
+      "status": "skipped",
+      "title": "Phase 3 - Runtime-Audit/Report Ingestion"
+    },
+    {
+      "commands": [
+        {
+          "command": [
+            "python3",
+            "-m",
+            "lumen_manifest_crawler",
+            "improve-loop",
+            "--root",
+            "/Users/ales27pm/lumen-clone",
+            "--output",
+            "/Users/ales27pm/lumen-clone/generated/agent_manifest",
+            "--loop-output",
+            "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop",
+            "--generate-system-prompts",
+            "--generate-agent-fine-tuning",
+            "--runtime-audit",
+            "/Users/ales27pm/lumen-clone/exports",
+            "--runtime-audit",
+            "/Users/ales27pm/lumen-clone/runtime-audits"
+          ],
+          "commandText": "python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "improve_loop",
+          "returncode": null,
+          "skipReason": "skipped by --skip-improvement-loop",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        }
+      ],
+      "gapCount": 51,
+      "id": "phase4_improvement_loop_preparation",
+      "improvementLoopOutputContract": {
+        "failures": [],
+        "missingFiles": [],
+        "missingLoopStateKeys": [],
+        "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
+        "passed": true,
+        "requiredFiles": [
+          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md",
+          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json",
+          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_gaps.json",
+          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/GAP_TRIAGE.md",
+          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/gap_triage.json",
+          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl"
+        ],
+        "requiredLoopStateKeys": [
+          "gapCount",
+          "passed",
+          "runtime",
+          "runtimeAuditInputs",
+          "schemaVersion",
+          "testFlight",
+          "validation"
+        ],
+        "scenarioQueuePath": "testflight_scenarios.jsonl",
+        "schemaVersion": "lumen.developer_cycle.improvement_loop_output_contract/1.0.0"
+      },
+      "improvementLoopOutputContractPassed": true,
+      "improvementLoopPassed": false,
+      "outputArtifacts": [
+        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md",
+        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json",
+        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_gaps.json",
+        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/GAP_TRIAGE.md",
+        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/gap_triage.json",
+        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl"
+      ],
+      "rawRuntimeFailureCount": 0,
+      "reason": "skipped by --skip-improvement-loop",
+      "skippedLiveModelGenerationCount": 0,
+      "status": "skipped",
+      "title": "Phase 4 - Improvement-Loop Preparation"
+    },
+    {
+      "commands": [
+        {
+          "command": [
+            "bash",
+            "scripts/validate_lumen_ios.sh"
+          ],
+          "commandText": "bash scripts/validate_lumen_ios.sh",
+          "cwd": "/Users/ales27pm/lumen-clone",
+          "durationSeconds": 0.0,
+          "name": "xcode_validation",
+          "returncode": null,
+          "skipReason": "portable mode",
+          "status": "skipped",
+          "stderrTail": "",
+          "stdoutTail": ""
+        }
+      ],
+      "id": "phase5_xcode_validation",
+      "reason": "portable mode",
+      "status": "skipped",
+      "title": "Phase 5 - Optional macOS/Xcode Validation",
+      "xcodeValidationStatus": "skipped"
+    },
+    {
+      "commands": [],
+      "id": "phase6_training_hf_profile",
+      "jobs": [],
+      "reason": "training profile is opt-in",
+      "status": "skipped",
+      "title": "Phase 6 - Optional Training/HF Artifact Profile",
+      "trainingStatus": "not_requested"
+    }
+  ],
+  "root": "/Users/ales27pm/lumen-clone",
+  "runtimeEvidencePresent": false,
+  "runtimeFailures": {
+    "rawRuntimeFailureCount": 0,
+    "runtimeFailureCount": 0,
+    "skippedLiveModelGenerationCount": 0
+  },
+  "schemaVersion": "lumen.developer_cycle/1.0.0",
+  "staticValidationPassed": true,
+  "trainingStatus": "not_requested",
+  "xcodeValidationStatus": "skipped"
+}

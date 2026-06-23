@@ -861,7 +861,10 @@ nonisolated enum E2ETestRunner {
         }
 
         if let modelTrace = matchingTraces.first(where: { trace in
-            trace.event == AgentBehaviorTrace.Event.modelTurn && trace.runtimePath != "deterministic-compatibility"
+            trace.event == AgentBehaviorTrace.Event.modelTurn
+                && trace.runtimePath != "deterministic-compatibility"
+                && trace.parseError == nil
+                && !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }) {
             return ModelRuntimeEvidence(
                 runtimePath: modelTrace.runtimePath ?? "unknown",

@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+nonisolated enum UserSettingsStorageKeys {
+    static let networkToolsEnabled = "networkToolsEnabled"
+}
+
 fileprivate nonisolated enum UserSettingsKeys {
     static let activeChatModelID = "activeChatModelID"
     static let activeEmbeddingModelID = "activeEmbeddingModelID"
@@ -24,6 +28,7 @@ fileprivate nonisolated enum UserSettingsKeys {
     static let developerReasoningCaptureEnabled = "developerReasoningCaptureEnabled"
     static let autoDownloadFleetModels = "autoDownloadFleetModels"
     static let confirmFleetDownloads = "confirmFleetDownloads"
+    static let networkToolsEnabled = UserSettingsStorageKeys.networkToolsEnabled
 }
 
 fileprivate nonisolated enum ToolSettingsRegistrySnapshot {
@@ -89,6 +94,7 @@ final class UserSettings {
     var agentModeEnabled: Bool { didSet { save() } }
     var developerTraceModeEnabled: Bool { didSet { save() } }
     var developerReasoningCaptureEnabled: Bool { didSet { save() } }
+    var networkToolsEnabled: Bool { didSet { save() } }
 
     // Fleet bootstrap
     var autoDownloadFleetModels: Bool { didSet { save() } }
@@ -128,6 +134,7 @@ final class UserSettings {
         developerTraceModeEnabled = false
         developerReasoningCaptureEnabled = false
         #endif
+        networkToolsEnabled = defaults.object(forKey: UserSettingsKeys.networkToolsEnabled) as? Bool ?? false
         autoDownloadFleetModels = defaults.object(forKey: UserSettingsKeys.autoDownloadFleetModels) as? Bool ?? true
         confirmFleetDownloads = defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? false
     }
@@ -158,6 +165,7 @@ final class UserSettings {
         defaults.set(false, forKey: UserSettingsKeys.developerTraceModeEnabled)
         defaults.set(false, forKey: UserSettingsKeys.developerReasoningCaptureEnabled)
         #endif
+        defaults.set(networkToolsEnabled, forKey: UserSettingsKeys.networkToolsEnabled)
         defaults.set(autoDownloadFleetModels, forKey: UserSettingsKeys.autoDownloadFleetModels)
         defaults.set(confirmFleetDownloads, forKey: UserSettingsKeys.confirmFleetDownloads)
     }
@@ -197,6 +205,7 @@ final class UserSettings {
             agentModeEnabled: agentModeEnabled,
             developerTraceModeEnabled: developerTraceModeEnabled,
             developerReasoningCaptureEnabled: developerReasoningCaptureEnabled,
+            networkToolsEnabled: networkToolsEnabled,
             autoDownloadFleetModels: autoDownloadFleetModels,
             confirmFleetDownloads: confirmFleetDownloads
         )
@@ -223,6 +232,7 @@ nonisolated struct SettingsSnapshot: Sendable {
     let agentModeEnabled: Bool
     let developerTraceModeEnabled: Bool
     let developerReasoningCaptureEnabled: Bool
+    let networkToolsEnabled: Bool
     let autoDownloadFleetModels: Bool
     let confirmFleetDownloads: Bool
 
@@ -267,6 +277,7 @@ nonisolated struct SettingsSnapshot: Sendable {
             agentModeEnabled: defaults.object(forKey: UserSettingsKeys.agentModeEnabled) as? Bool ?? true,
             developerTraceModeEnabled: Self.debugDeveloperTraceEnabled(defaults: defaults),
             developerReasoningCaptureEnabled: Self.debugDeveloperReasoningCaptureEnabled(defaults: defaults),
+            networkToolsEnabled: defaults.object(forKey: UserSettingsKeys.networkToolsEnabled) as? Bool ?? false,
             autoDownloadFleetModels: defaults.object(forKey: UserSettingsKeys.autoDownloadFleetModels) as? Bool ?? true,
             confirmFleetDownloads: defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? false
         )

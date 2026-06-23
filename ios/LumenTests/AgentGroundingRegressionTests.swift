@@ -711,6 +711,40 @@ extension AgentGroundingRegressionTests {
         #expect(!SlotAgentService.canCompleteThroughDeterministicCompatibility(attachmentRequest))
     }
 
+    @Test func deterministicCompatibilityEligibilityCoversAttachedLiveE2EFailurePrompts() {
+        let prompts = [
+            "Give me directions to the nearest hardware store.",
+            "Find coffee near me.",
+            "Find a pharmacy nearby.",
+            "Use Search Nearby, but ask for clarification if required details are missing.",
+            "Tell me what style I asked you to use.",
+            "What do you remember about my response style preference?",
+            "Use Recall Memory, but ask for clarification if required details are missing.",
+            "Keep in mind that I like short answers.",
+            "Remember that I prefer concise bullet points.",
+            "Use Save Memory, but ask for clarification if required details are missing.",
+            "Text 5551234567 that I am late."
+        ]
+
+        for prompt in prompts {
+            let routing = IntentRouter.classify(prompt)
+            let tools = ToolRegistry.all.filter { routing.allowedToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
+            let request = AgentRequest(
+                systemPrompt: "sys",
+                history: [],
+                userMessage: prompt,
+                temperature: 0,
+                topP: 1,
+                repetitionPenalty: 1,
+                maxTokens: 128,
+                maxSteps: 3,
+                availableTools: tools,
+                relevantMemories: []
+            )
+            #expect(SlotAgentService.canCompleteThroughDeterministicCompatibility(request), "Prompt did not enter compatibility path: \(prompt)")
+        }
+    }
+
     @MainActor
     @Test func agentServiceRoutesDeterministicCompatibleRequestsBeforeStructuredModel() async {
         AgentBehaviorTraceRecorder.clear()
@@ -870,6 +904,28 @@ extension AgentGroundingRegressionTests {
         AgentBehaviorTraceRecorder.clear()
         let startedAt = Date()
         let prompt = "Explain actor isolation in Swift."
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "agent",
+            stage: "agent-json-step-0",
+            intent: "chat",
+            promptPrefix: prompt,
+            rawOutputPrefix: "",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: AgentTurnParseError.empty.rawValue,
+            emittedFinalInActionTurn: false,
+            modelFamily: "qwen3",
+            runtimePath: "agent-model",
+            promptCharCount: prompt.count
+        ))
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt) == false)
+
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
             id: UUID(),
             createdAt: Date(),

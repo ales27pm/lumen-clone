@@ -989,7 +989,7 @@ def _write_markdown_report(path: Path, state: dict[str, Any], gaps: list[dict[st
         ])
     if not gaps:
         lines.append("No blocking gaps detected. The next loop should expand TestFlight runtime coverage.")
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    _write_markdown_lines(path, lines)
 
 
 def _write_gap_triage_markdown(path: Path, triage: dict[str, Any]) -> None:
@@ -1036,7 +1036,7 @@ def _write_gap_triage_markdown(path: Path, triage: dict[str, Any]) -> None:
             lines.append(f"  - `{example.get('rootCauseCategory')}` | skipped=`{example.get('skippedLiveModelRun')}` | prompt: {prompt} | actual: {actual[:240]}")
         lines.append("")
 
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    _write_markdown_lines(path, lines)
 
 
 def _write_testflight_runbook(path: Path, state: dict[str, Any], scenarios: list[dict[str, Any]]) -> None:
@@ -1084,4 +1084,8 @@ def _write_testflight_runbook(path: Path, state: dict[str, Any], scenarios: list
         ])
     if len(scenarios) > 30:
         lines.append(f"Additional scenarios omitted from this Markdown view: `{len(scenarios) - 30}`. Use `testflight_scenarios.jsonl` for the full queue.")
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    _write_markdown_lines(path, lines)
+
+
+def _write_markdown_lines(path: Path, lines: list[str]) -> None:
+    path.write_text("\n".join(line.rstrip() for line in lines).rstrip() + "\n", encoding="utf-8")

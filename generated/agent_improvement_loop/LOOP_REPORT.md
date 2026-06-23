@@ -4,15 +4,15 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `39983`
-- Runtime audit reports: `4`
-- Runtime failures: `33`
-- Raw runtime failures: `46`
+- Dataset records: `34936`
+- Runtime audit reports: `20`
+- Runtime failures: `38`
+- Raw runtime failures: `51`
 - Skipped live model generation: `13`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `46`
-- Next action prompts: `46`
+- Gaps: `51`
+- Next action prompts: `51`
 
 ## TestFlight handoff
 
@@ -165,7 +165,7 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app datase
 - Category: `manifest_mismatch`
 - Recommendation: Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.
 
-### ERROR — persistent_diagnostics_scenario_not_passed
+### ERROR — agent_grounding_no_recent_model_traces
 
 - Category: `runtime_drift`
-- Recommendation: Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.
+- Recommendation: Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence.

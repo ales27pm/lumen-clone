@@ -13,7 +13,7 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
     static let shared = PermissionRegistry()
     private let locationManager = CLLocationManager()
     private var locationContinuation: CheckedContinuation<PermissionRequestResult, Never>?
-    private var networkAccessEnabled = false
+    private var networkAccessEnabled = UserDefaults.standard.object(forKey: UserSettingsStorageKeys.networkToolsEnabled) as? Bool ?? false
 
     override init() {
         super.init()

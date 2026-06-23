@@ -1,0 +1,898 @@
+{
+  "plainFindings": [
+    {
+      "severity": "error",
+      "source": "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/e2e_logs/10-train-adapters.log",
+      "type": "python_traceback"
+    },
+    {
+      "severity": "error",
+      "source": "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/e2e_logs/17-train-adapters.log",
+      "type": "python_traceback"
+    },
+    {
+      "severity": "error",
+      "source": "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/e2e_logs/26-convert-adapters.log",
+      "type": "python_traceback"
+    }
+  ],
+  "reportCount": 20,
+  "runtimeFailureCount": 51,
+  "runtimeFailures": [
+    {
+      "actual": "recipient:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "recipient:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "messages.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "message:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "message:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "messages.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "text:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "text:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "messages.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "number:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "number:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "messages.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "text:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "text:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "mail.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "message:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "message:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "mail.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "email:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "email:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "mail.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "recipient:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "recipient:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "mail.draft",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.read",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.attachments.list",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.mark_read",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.mark_unread",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.move",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "destinationId:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "destinationId:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.move",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.archive",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.delete",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.reply",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "comment:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "comment:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.reply",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.reply_all",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "comment:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "comment:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.reply_all",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "outlook.message.forward",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "beforeMinutes:number:required=false",
+      "agent": "runtime",
+      "expected": [
+        "beforeMinutes:number:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "trigger.create",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "atTime:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "atTime:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "trigger.create",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "intervalSeconds:number:required=false",
+      "agent": "runtime",
+      "expected": [
+        "intervalSeconds:number:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "trigger.create",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "agent": "runtime",
+      "expected": [
+        "inMinutes"
+      ],
+      "problem": "Manifest argument is absent from runtime tool definition.",
+      "scenario": "trigger.create",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "missing_live_argument"
+    },
+    {
+      "actual": "plus",
+      "agent": "runtime",
+      "expected": [
+        "atTime",
+        "beforeMinutes",
+        "inMinutes",
+        "intervalSeconds",
+        "prompt",
+        "schedule",
+        "title"
+      ],
+      "problem": "Runtime exposes an argument absent from the manifest.",
+      "scenario": "trigger.create",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "unmanifested_live_argument"
+    },
+    {
+      "actual": "id:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "id:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "trigger.cancel",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "timestamp:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "timestamp:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "alarm.schedule",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "title:string:required=false",
+      "agent": "runtime",
+      "expected": [
+        "title:string:required=true"
+      ],
+      "problem": "Argument type or required flag differs between manifest and runtime.",
+      "scenario": "alarm.cancel",
+      "sourceLayer": "runtimeManifestAudit",
+      "type": "argument_mismatch"
+    },
+    {
+      "actual": "Weather tool output could not be validated. Try again or provide a city.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "weather",
+        "final": "Weather tool output could not be validated. Try again or provide a city.",
+        "intent": "weather",
+        "name": "Weather here must not create events",
+        "prompt": "What is the weather here?",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "What is the weather here?",
+        "violationCode": "e2e_response_quality_weather"
+      },
+      "scenario": "What is the weather here?",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_weather"
+    },
+    {
+      "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "webSearch",
+        "final": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "intent": "webSearch",
+        "name": "Web search must not create calendar event",
+        "prompt": "Search web for diy underground shelter",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "tool_boundary_response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Search web for diy underground shelter",
+        "violationCode": "e2e_response_quality_websearch"
+      },
+      "scenario": "Search web for diy underground shelter",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_websearch"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "emailDraft",
+        "final": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
+        "intent": "emailDraft",
+        "name": "Vague email draft asks clarification",
+        "prompt": "Draft a email",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "tool_boundary_response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Draft a email",
+        "violationCode": "e2e_response_quality_emaildraft"
+      },
+      "scenario": "Draft a email",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_emaildraft"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "chat",
+        "final": "I hit an internal response-format issue. Please try again.",
+        "intent": "chat",
+        "name": "Normal chat does not force tools",
+        "prompt": "Explain why a sharp chisel is safer than a dull one.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Explain why a sharp chisel is safer than a dull one.",
+        "violationCode": "e2e_response_quality_chat"
+      },
+      "scenario": "Explain why a sharp chisel is safer than a dull one.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_chat"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "chat",
+        "final": "I hit an internal response-format issue. Please try again.",
+        "intent": "chat",
+        "name": "Carpentry chat stays direct",
+        "prompt": "Give me three tips for fitting a door hinge cleanly.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Give me three tips for fitting a door hinge cleanly.",
+        "violationCode": "e2e_response_quality_chat"
+      },
+      "scenario": "Give me three tips for fitting a door hinge cleanly.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_chat"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "chat",
+        "final": "I hit an internal response-format issue. Please try again.",
+        "intent": "chat",
+        "name": "Code explanation stays chat",
+        "prompt": "Explain actor isolation in Swift in simple terms.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Explain actor isolation in Swift in simple terms.",
+        "violationCode": "e2e_response_quality_chat"
+      },
+      "scenario": "Explain actor isolation in Swift in simple terms.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_chat"
+    },
+    {
+      "actual": "Weather tool output could not be validated. Try again or provide a city.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "weather",
+        "final": "Weather tool output could not be validated. Try again or provide a city.",
+        "intent": "weather",
+        "name": "Training eval: weather stays grounded",
+        "prompt": "What is the weather here and should I carry an umbrella?",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "What is the weather here and should I carry an umbrella?",
+        "violationCode": "e2e_response_quality_weather"
+      },
+      "scenario": "What is the weather here and should I carry an umbrella?",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_weather"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\n\nswift",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "webSearch",
+        "final": "I hit an internal response-format issue. Please try again.\n\nswift",
+        "intent": "webSearch",
+        "name": "Training eval: web research synthesis",
+        "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\n\nswift",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "tool_boundary_response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "violationCode": "e2e_response_quality_websearch"
+      },
+      "scenario": "Search the web for two recent Swift concurrency best practices and summarize them.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_websearch"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "memory",
+        "final": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
+        "intent": "memory",
+        "name": "Training eval: memory save/recall",
+        "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "grounded_response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "violationCode": "e2e_response_quality_memory"
+      },
+      "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_memory"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "rag",
+        "final": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+        "intent": "rag",
+        "name": "Training eval: local knowledge grounding",
+        "prompt": "Search my files for architecture notes and summarize key modules.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "grounded_response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `rag` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+        "violationCode": "e2e_response_quality_rag"
+      },
+      "scenario": "Search my files for architecture notes and summarize key modules.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_rag"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "trigger",
+        "final": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+        "intent": "trigger",
+        "name": "Training eval: trigger scheduling quality",
+        "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "tool_boundary_response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `trigger` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "violationCode": "e2e_response_quality_trigger"
+      },
+      "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_trigger"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "emailDraft",
+        "final": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+        "intent": "emailDraft",
+        "name": "Training eval: communication drafting",
+        "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "tool_boundary_response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "violationCode": "e2e_response_quality_emaildraft"
+      },
+      "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_emaildraft"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "chat",
+        "final": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+        "intent": "chat",
+        "name": "Training eval: pure chat quality",
+        "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "requiredHint": null,
+        "skippedLiveModelRun": true
+      },
+      "expected": [
+        "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+      ],
+      "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
+        "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
+        "curriculum": "response_quality",
+        "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
+        "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+        "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "violationCode": "e2e_response_quality_chat"
+      },
+      "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_chat"
+    },
+    {
+      "actual": "interrupted",
+      "agent": "runtime",
+      "diagnosticRecordID": "39E500A8-E65A-4BFA-A3DD-1D770D14153E",
+      "expected": [
+        "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+      ],
+      "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+      "scenario": "liveAgentStream",
+      "sourceLayer": "persistentRuntimeDiagnostics.records",
+      "type": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "actual": "interrupted",
+      "agent": "runtime",
+      "diagnosticRecordID": "664EFBE3-58C6-4EB8-90B4-CE4FA7562EE5",
+      "expected": [
+        "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+      ],
+      "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+      "scenario": "liveAgentStream",
+      "sourceLayer": "persistentRuntimeDiagnostics.records",
+      "type": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "actual": "skipped",
+      "agent": "runtime",
+      "diagnosticRecordID": "8335577E-0921-483A-8EC3-67CEFD02693D",
+      "expected": [
+        "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+      ],
+      "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+      "scenario": "agentToolPrompt",
+      "sourceLayer": "persistentRuntimeDiagnostics.records",
+      "type": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "actual": "skipped",
+      "agent": "runtime",
+      "diagnosticRecordID": "5CCEB691-E3DE-4811-A129-5270BB62B219",
+      "expected": [
+        "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
+      ],
+      "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
+      "scenario": "liveAgentStream",
+      "sourceLayer": "persistentRuntimeDiagnostics.records",
+      "type": "persistent_diagnostics_scenario_not_passed"
+    },
+    {
+      "actual": "recentTraces is empty",
+      "agent": "runtime",
+      "expected": [
+        "Agent Grounding export should include recent model/tool traces captured from real in-app execution."
+      ],
+      "problem": "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
+      "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+      "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+      "type": "agent_grounding_no_recent_model_traces"
+    },
+    {
+      "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "rag",
+        "final": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+        "intent": "rag",
+        "name": "Training eval: local knowledge grounding",
+        "prompt": "Search my files for architecture notes and summarize key modules.",
+        "requiredHint": null,
+        "skippedLiveModelRun": false
+      },
+      "expected": [
+        "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
+      ],
+      "problem": "Live agent returned fallback/error text instead of completing the scenario",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+        "correctedOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+        "curriculum": "grounded_response_quality",
+        "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+        "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+        "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+        "violationCode": "e2e_response_quality_rag"
+      },
+      "scenario": "Search my files for architecture notes and summarize key modules.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_rag"
+    },
+    {
+      "actual": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "trigger",
+        "final": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+        "intent": "trigger",
+        "name": "Training eval: trigger scheduling quality",
+        "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "requiredHint": null,
+        "skippedLiveModelRun": false
+      },
+      "expected": [
+        "Final answer must satisfy the `trigger` eval contract without violating tool boundaries."
+      ],
+      "problem": "Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+        "correctedOutput": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+        "curriculum": "tool_boundary_response_quality",
+        "expected": "Final answer must satisfy the `trigger` eval contract without violating tool boundaries.",
+        "lesson": "Use failed `trigger` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+        "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "violationCode": "e2e_response_quality_trigger"
+      },
+      "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_trigger"
+    },
+    {
+      "actual": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+      "agent": "mouth",
+      "e2eScenario": {
+        "expectedIntent": "emailDraft",
+        "final": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+        "intent": "emailDraft",
+        "name": "Training eval: communication drafting",
+        "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "requiredHint": null,
+        "skippedLiveModelRun": false
+      },
+      "expected": [
+        "Final answer must satisfy the `emailDraft` eval contract without violating tool boundaries."
+      ],
+      "problem": "Live agent produced no action step for tool-backed intent",
+      "repairSample": {
+        "agent": "mouth",
+        "badOutput": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+        "correctedOutput": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+        "curriculum": "tool_boundary_response_quality",
+        "expected": "Final answer must satisfy the `emailDraft` eval contract without violating tool boundaries.",
+        "lesson": "Use failed `emailDraft` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+        "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "violationCode": "e2e_response_quality_emaildraft"
+      },
+      "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
+      "sourceLayer": "e2eTestReport.evidenceLayer",
+      "type": "e2e_response_quality_emaildraft"
+    },
+    {
+      "actual": "recentTraces is empty",
+      "agent": "runtime",
+      "expected": [
+        "Agent Grounding export should include recent model/tool traces captured from real in-app execution."
+      ],
+      "problem": "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
+      "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+      "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+      "type": "agent_grounding_no_recent_model_traces"
+    }
+  ],
+  "schemaVersion": "lumen.developer_framework.report_analysis/1.0.0"
+}

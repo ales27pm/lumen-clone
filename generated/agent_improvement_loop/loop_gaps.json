@@ -559,6 +559,158 @@
     {
       "category": "runtime_drift",
       "evidence": {
+        "actual": "recentTraces is empty",
+        "agent": "runtime",
+        "expected": [
+          "Agent Grounding export should include recent model/tool traces captured from real in-app execution."
+        ],
+        "problem": "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+        "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+        "type": "agent_grounding_no_recent_model_traces"
+      },
+      "id": "4cdc765b745b87c8a53655f1",
+      "recommendedAction": "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence.",
+      "severity": "error",
+      "title": "agent_grounding_no_recent_model_traces"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "recentTraces is empty",
+        "agent": "runtime",
+        "expected": [
+          "Agent Grounding export should include recent model/tool traces captured from real in-app execution."
+        ],
+        "problem": "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+        "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+        "type": "agent_grounding_no_recent_model_traces"
+      },
+      "id": "4cdc765b745b87c8a53655f1",
+      "recommendedAction": "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence.",
+      "severity": "error",
+      "title": "agent_grounding_no_recent_model_traces"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "emailDraft",
+          "final": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+          "intent": "emailDraft",
+          "name": "Training eval: communication drafting",
+          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `emailDraft` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+          "correctedOutput": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "Final answer must satisfy the `emailDraft` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `emailDraft` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "violationCode": "e2e_response_quality_emaildraft"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_emaildraft"
+      },
+      "id": "874f3fd7eae0396fb7e60e21",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_emaildraft"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+          "intent": "rag",
+          "name": "Training eval: local knowledge grounding",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent returned fallback/error text instead of completing the scenario",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+          "correctedOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Search my files for architecture notes and summarize key modules.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "e858e730bc64fae527769e4c",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "trigger",
+          "final": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+          "intent": "trigger",
+          "name": "Training eval: trigger scheduling quality",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `trigger` eval contract without violating tool boundaries."
+        ],
+        "problem": "Live agent produced no action step for tool-backed intent",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+          "correctedOutput": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+          "curriculum": "tool_boundary_response_quality",
+          "expected": "Final answer must satisfy the `trigger` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `trigger` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "violationCode": "e2e_response_quality_trigger"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "type": "e2e_response_quality_trigger"
+      },
+      "id": "645a9e2793e12778a7a6794d",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_trigger"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
         "actual": "interrupted",
         "agent": "runtime",
         "diagnosticRecordID": "39E500A8-E65A-4BFA-A3DD-1D770D14153E",

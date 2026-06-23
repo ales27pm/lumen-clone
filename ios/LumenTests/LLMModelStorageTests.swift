@@ -71,6 +71,70 @@ struct LLMModelStorageTests {
         #expect(try await storage.record(for: record.id) == record)
     }
 
+    @Test func modelStorageResolverUsesDocumentsVisibleRootAndMigratesPreviousModels() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LumenModelStorageResolverTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let documents = base.appendingPathComponent("Documents", isDirectory: true)
+        let appSupport = base.appendingPathComponent("ApplicationSupport", isDirectory: true)
+        let previousModels = appSupport
+            .appendingPathComponent("Lumen", isDirectory: true)
+            .appendingPathComponent("Models", isDirectory: true)
+        try FileManager.default.createDirectory(at: previousModels, withIntermediateDirectories: true)
+        let previousModel = previousModels.appendingPathComponent("previous.gguf")
+        try Data("previous".utf8).write(to: previousModel)
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+
+        let location = try ModelStorageDirectoryResolver.resolve(
+            documentDirectories: [documents],
+            applicationSupportDirectories: [appSupport]
+        )
+
+        #expect(location.rootDirectory == documents.appendingPathComponent("Lumen", isDirectory: true))
+        #expect(location.modelsDirectory == documents.appendingPathComponent("Lumen", isDirectory: true).appendingPathComponent("Models", isDirectory: true))
+        #expect(FileManager.default.fileExists(atPath: location.modelsDirectory.appendingPathComponent("previous.gguf").path))
+        #expect(FileManager.default.fileExists(atPath: previousModel.path) == false)
+    }
+
+    @Test func modelStorageRepairsMigratedMetadataFileURLs() async throws {
+        let temp = try makeTemporaryStorage()
+        defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
+        let storage = LLMModelStorage(location: temp.location)
+        let migratedModelURL = temp.location.modelsDirectory.appendingPathComponent("migrated.gguf")
+        let staleModelURL = temp.baseDirectory
+            .appendingPathComponent("ApplicationSupport", isDirectory: true)
+            .appendingPathComponent("Lumen", isDirectory: true)
+            .appendingPathComponent("Models", isDirectory: true)
+            .appendingPathComponent("migrated.gguf")
+        try Data("migrated".utf8).write(to: migratedModelURL)
+        let record = installedGGUFRecord(id: "migrated.model", fileURL: staleModelURL)
+        let staleRecord = InstalledModelRecord(
+            id: record.id,
+            catalogID: record.catalogID,
+            model: LocalLLMModel(
+                id: record.model.id,
+                displayName: record.model.displayName,
+                backend: record.model.backend,
+                localURL: staleModelURL,
+                contextLength: record.model.contextLength
+            ),
+            fileURL: staleModelURL,
+            relativePath: "Models/migrated.gguf",
+            sha256: nil,
+            sizeBytes: nil,
+            installedAt: record.installedAt,
+            lastVerifiedAt: nil,
+            verificationStatus: .unverified
+        )
+        try await storage.saveRecord(staleRecord)
+
+        let repaired = try await storage.record(for: staleRecord.id)
+
+        #expect(repaired?.fileURL == migratedModelURL)
+        #expect(repaired?.model.localURL == migratedModelURL)
+        #expect(repaired?.isUsable == true)
+    }
+
     @Test func modelStorageWritesAndReadsMetadataRecord() async throws {
         let temp = try makeTemporaryStorage()
         defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }

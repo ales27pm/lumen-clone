@@ -27,7 +27,7 @@ actor LLMModelStorage {
 
         let records = try files
             .filter { $0.pathExtension.lowercased() == "json" }
-            .map { try readRecord(from: $0) }
+            .map { try readRecord(from: $0, location: location) }
 
         return records.sorted { lhs, rhs in
             if lhs.installedAt == rhs.installedAt {
@@ -43,7 +43,7 @@ actor LLMModelStorage {
         guard fileManager.fileExists(atPath: fileURL.path) else {
             return nil
         }
-        return try readRecord(from: fileURL)
+        return try readRecord(from: fileURL, location: location)
     }
 
     func saveRecord(_ record: InstalledModelRecord) async throws {
@@ -204,7 +204,7 @@ actor LLMModelStorage {
         return resolved
     }
 
-    private func readRecord(from fileURL: URL) throws -> InstalledModelRecord {
+    private func readRecord(from fileURL: URL, location: ModelStorageLocation) throws -> InstalledModelRecord {
         let data: Data
         do {
             data = try Data(contentsOf: fileURL)
@@ -212,11 +212,65 @@ actor LLMModelStorage {
             throw ModelStorageError.metadataReadFailed(error.localizedDescription)
         }
 
+        let record: InstalledModelRecord
         do {
-            return try JSONDecoder().decode(InstalledModelRecord.self, from: data)
+            record = try JSONDecoder().decode(InstalledModelRecord.self, from: data)
         } catch {
             throw ModelStorageError.metadataDecodingFailed(error.localizedDescription)
         }
+        return try repairedRecordIfNeeded(record, metadataURL: fileURL, location: location)
+    }
+
+    private func repairedRecordIfNeeded(
+        _ record: InstalledModelRecord,
+        metadataURL: URL,
+        location: ModelStorageLocation
+    ) throws -> InstalledModelRecord {
+        guard let relativePath = record.relativePath,
+              let storedFileURL = record.fileURL,
+              fileManager.fileExists(atPath: storedFileURL.path) == false else {
+            return record
+        }
+
+        let repairedFileURL = location.rootDirectory.appendingPathComponent(relativePath)
+        guard fileManager.fileExists(atPath: repairedFileURL.path) else {
+            return record
+        }
+
+        let repairedModel = LocalLLMModel(
+            id: record.model.id,
+            displayName: record.model.displayName,
+            backend: record.model.backend,
+            localURL: repairedFileURL,
+            expectedSHA256: record.model.expectedSHA256,
+            parameterCountBillion: record.model.parameterCountBillion,
+            quantization: record.model.quantization,
+            contextLength: record.model.contextLength,
+            fileSizeBytes: record.model.fileSizeBytes,
+            createdAt: record.model.createdAt,
+            lastUsedAt: record.model.lastUsedAt
+        )
+        let repairedRecord = InstalledModelRecord(
+            id: record.id,
+            catalogID: record.catalogID,
+            model: repairedModel,
+            fileURL: repairedFileURL,
+            relativePath: relativePath,
+            sha256: record.sha256,
+            sizeBytes: record.sizeBytes,
+            installedAt: record.installedAt,
+            lastVerifiedAt: record.lastVerifiedAt,
+            verificationStatus: record.verificationStatus
+        )
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(repairedRecord).write(to: metadataURL, options: [.atomic])
+        } catch {
+            throw ModelStorageError.metadataWriteFailed(error.localizedDescription)
+        }
+        return repairedRecord
     }
 
     private func metadataFileURL(for id: String, location: ModelStorageLocation) -> URL {
