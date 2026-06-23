@@ -334,8 +334,12 @@ nonisolated final class AgentWorkflowMonitor: @unchecked Sendable {
     private static func status(kind: PersistentRuntimeDiagnosticSignalKind, phase: String, values: [String: String]) -> AgentWorkflowEventStatus {
         let normalizedPhase = phase.lowercased()
         if kind == .fallbackUsed || normalizedPhase.contains("fallback") { return .fallback }
-        if normalizedPhase.contains("error") || kind == .llamaFailure || kind == .llamaEmptyOutput { return .failed }
         if normalizedPhase.contains("cancel") || kind == .llamaCancel || kind == .slotAgentCancel { return .cancelled }
+        if kind == .llamaEmptyOutput,
+           value("cancelled", in: values)?.lowercased() == "true" {
+            return .cancelled
+        }
+        if normalizedPhase.contains("error") || kind == .llamaFailure || kind == .llamaEmptyOutput { return .failed }
         if normalizedPhase.contains("end") || normalizedPhase.contains("done") || normalizedPhase.contains("final") || kind == .llamaComplete || kind == .slotAgentEnd || kind == .slotAgentDoneYielded {
             return .done
         }

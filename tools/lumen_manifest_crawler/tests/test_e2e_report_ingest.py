@@ -406,6 +406,110 @@ def test_ingestion_uses_sidecar_empty_agent_json_trace_as_precise_root_cause(tmp
     assert "agent-json emitted empty output" in failure["problem"]
 
 
+def test_ingestion_does_not_match_empty_sidecar_prompt_to_scenario(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "name": "Training eval: pure chat quality",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Precision is exactness; recall is coverage.",
+                "events": [],
+            }
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": "empty",
+        "rawOutputPrefix": "",
+        "promptPrefix": "",
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] is None
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is True
+
+
+def test_ingestion_rejects_sidecar_outside_scenario_time_window(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "training-general-chat",
+                "title": "Training eval: pure chat quality",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+                "actualIntent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "finalText": "Precision is exactness; recall is coverage.",
+                "events": [],
+                "startedAt": "2026-06-23T10:34:00Z",
+                "finishedAt": "2026-06-23T10:34:10Z",
+            }
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": "empty",
+        "rawOutputPrefix": "",
+        "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "createdAt": "2026-06-23T11:34:00Z",
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] is None
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is True
+
+
+def test_text_e2e_report_uses_sidecar_diagnostics(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.txt"
+    report_path.write_text("""E2E Test Report
+Passed: 0
+Failed: 1
+
+❌ Training eval: pure chat quality
+Prompt: Explain tradeoffs between precision and recall in retrieval systems in plain English.
+Intent: chat / expected chat
+Failures: Live E2E scenario did not record model-backed generation evidence
+Final: Precision is exactness; recall is coverage.
+""", encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": "empty",
+        "rawOutputPrefix": "",
+        "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "agent_json_empty_generation"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
+
+
 def test_ingestion_distinguishes_missing_empty_parse_valid_and_policy_first_evidence(tmp_path: Path):
     report_path = tmp_path / "e2e-cases.json"
     report_path.write_text(json.dumps({

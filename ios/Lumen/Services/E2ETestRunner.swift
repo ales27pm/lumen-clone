@@ -886,7 +886,7 @@ nonisolated enum E2ETestRunner {
                 && trace.parseError == nil
                 && !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }) {
-            return ModelRuntimeEvidence(
+            let evidence = ModelRuntimeEvidence(
                 runtimePath: modelTrace.runtimePath ?? "unknown",
                 stage: modelTrace.stage,
                 evidenceKind: "model-backed",
