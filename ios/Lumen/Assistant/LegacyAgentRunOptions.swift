@@ -12,6 +12,7 @@ nonisolated struct LegacyAgentRunOptions: @unchecked Sendable {
     var preventDoubleGrounding: Bool
     var diagnosticsEnabled: Bool
     var allowDeterministicCompatibility: Bool = true
+    var allowParseFailureDeterministicRecovery: Bool = true
 
     static var `default`: LegacyAgentRunOptions {
         .init(modelContext: nil, conversationID: nil, turnID: nil, groundingMode: .foregroundChat, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)

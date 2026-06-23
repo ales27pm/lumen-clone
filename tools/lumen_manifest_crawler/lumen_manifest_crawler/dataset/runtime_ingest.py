@@ -23,7 +23,7 @@ def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]
                 text = candidate.read_text(encoding="utf-8")
             except OSError:
                 continue
-            reports.extend(_load_report_text(text, source=str(candidate)))
+            reports.extend(_load_report_text(text, source=str(candidate), sidecars=_load_e2e_sidecars(candidate.parent)))
     return reports
 
 
@@ -41,7 +41,7 @@ def _is_supported_report_file(path: Path) -> bool:
     return path.is_file() and path.suffix.casefold() in SUPPORTED_RUNTIME_AUDIT_SUFFIXES
 
 
-def _load_report_text(text: str, *, source: str) -> list[dict[str, Any]]:
+def _load_report_text(text: str, *, source: str, sidecars: dict[str, list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
     try:
         value = json.loads(text)
     except json.JSONDecodeError:
@@ -56,14 +56,14 @@ def _load_report_text(text: str, *, source: str) -> list[dict[str, Any]]:
                 source_layer="e2eTextReport",
             )
         ]
-    return _normalize_payload(value, source=source)
+    return _normalize_payload(value, source=source, sidecars=sidecars)
 
 
-def _normalize_payload(value: Any, *, source: str) -> list[dict[str, Any]]:
+def _normalize_payload(value: Any, *, source: str, sidecars: dict[str, list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
     if isinstance(value, list):
         out: list[dict[str, Any]] = []
         for index, item in enumerate(value):
-            out.extend(_normalize_payload(item, source=f"{source}#{index}"))
+            out.extend(_normalize_payload(item, source=f"{source}#{index}", sidecars=sidecars))
         return out
     if not isinstance(value, dict):
         return []
@@ -74,12 +74,51 @@ def _normalize_payload(value: Any, *, source: str) -> list[dict[str, Any]]:
     if _is_persistent_runtime_diagnostics_export(value):
         return [_flatten_persistent_runtime_diagnostics(value, source=source)]
     if _is_e2e_json_report(value):
-        return [flatten_e2e_json_report(value, source=source)]
+        return [flatten_e2e_json_report(value, source=source, sidecars=sidecars)]
     if isinstance(value.get("failures"), list):
         return [{**value, "_source": source, "_sourceFormat": "runtime_manifest_audit"}]
     if isinstance(value.get("violations"), list) or isinstance(value.get("repairSamples"), list):
         return [_flatten_behavior_audit(value, source=source)]
     return []
+
+
+def _load_e2e_sidecars(directory: Path) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "agent_behavior_traces": _load_first_matching_jsonl(directory, "agent-behavior-traces.jsonl"),
+        "agent_parse_failures": _load_first_matching_jsonl(directory, "agent-parse-failures.jsonl"),
+        "e2e_results": _load_first_matching_jsonl(directory, "e2e-results.jsonl"),
+    }
+
+
+def _load_first_matching_jsonl(directory: Path, suffix: str) -> list[dict[str, Any]]:
+    candidates = [directory / suffix]
+    try:
+        candidates.extend(sorted(path for path in directory.glob(f"*{suffix}") if path.name != suffix))
+    except OSError:
+        pass
+    for candidate in candidates:
+        records = _load_jsonl_records(candidate)
+        if records:
+            return records
+    return []
+
+
+def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    records: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            records.append(value)
+    return records
 
 
 def _is_evidence_layer_envelope(value: dict[str, Any]) -> bool:
@@ -238,6 +277,10 @@ def _is_e2e_json_report(value: dict[str, Any]) -> bool:
         or isinstance(value.get("trainingSignals"), list)
         or (
             isinstance(value.get("scenarios"), list)
+            and {"passed", "failed"}.intersection(value.keys())
+        )
+        or (
+            isinstance(value.get("results"), list)
             and {"passed", "failed"}.intersection(value.keys())
         )
     )

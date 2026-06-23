@@ -1031,6 +1031,37 @@ extension AgentGroundingRegressionTests {
         #expect(recovery?.text.lowercased().contains("please ask again") == false)
     }
 
+    @Test func agentServiceParseFailureRecoveryHonorsDisabledDeterministicCompatibility() async {
+        let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(
+            modelContext: nil,
+            conversationID: req.conversationID,
+            turnID: req.turnID,
+            groundingMode: .slotAgent,
+            allowDegradedGrounding: false,
+            preventDoubleGrounding: true,
+            diagnosticsEnabled: false,
+            allowDeterministicCompatibility: false,
+            allowParseFailureDeterministicRecovery: false
+        )
+
+        let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+
+        #expect(recovery == nil)
+    }
+
     @Test func agentServiceParseFailureRecoveryPlansReportAlternatePhrases() async {
         let cases: [(String, [String])] = [
             ("Tell me what style I asked you to use.", ["memory.recall"]),

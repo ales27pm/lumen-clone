@@ -350,16 +350,23 @@ def _runtime_summary(runtime_reports: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
+    root_cause = str(failure.get("rootCauseCategory") or "")
+    if root_cause in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+        return False
     scenario = failure.get("e2eScenario")
+    if isinstance(scenario, dict) and scenario.get("modelEvidenceRootCause") in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+        return False
     if isinstance(scenario, dict) and scenario.get("skippedLiveModelRun") is True:
         return True
     return failure.get("skippedLiveModelRun") is True
 
 
 def _runtime_gap_category(failure: dict[str, Any]) -> str:
+    root_cause = _runtime_root_cause_category(failure)
+    if root_cause in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+        return root_cause
     if _is_skipped_live_model_generation(failure):
         return "skipped_live_model_generation"
-    root_cause = _runtime_root_cause_category(failure)
     if root_cause == "manifest_mismatch":
         return "manifest_mismatch"
     if root_cause == "permission_config_issue":
@@ -368,6 +375,14 @@ def _runtime_gap_category(failure: dict[str, Any]) -> str:
 
 
 def _runtime_root_cause_category(failure: dict[str, Any]) -> str:
+    explicit = str(failure.get("rootCauseCategory") or "")
+    if explicit in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+        return explicit
+    scenario = failure.get("e2eScenario")
+    if isinstance(scenario, dict):
+        scenario_root = str(scenario.get("modelEvidenceRootCause") or "")
+        if scenario_root in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+            return scenario_root
     failure_type = str(failure.get("type") or "").lower()
     actual = str(failure.get("actual") or failure.get("final") or "").lower()
     problem = str(failure.get("problem") or "").lower()

@@ -204,6 +204,54 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func emptyAgentJsonModelTurnReportsPreciseEvidenceFailure() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let prompt = "Explain precision and recall in plain English."
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "executor",
+                stage: "agent-json-step-0",
+                intent: "chat",
+                promptPrefix: prompt,
+                rawOutputPrefix: "",
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: AgentTurnParseError.empty.rawValue,
+                emittedFinalInActionTurn: false,
+                modelFamily: "qwen3",
+                adapterSlot: "executor",
+                generationElapsedMs: 14,
+                firstTokenLatencyMs: nil,
+                outputTokenCount: 0,
+                runtimePath: "agent-model",
+                activeAdapterSlot: "executor",
+                maxTokensRequested: 512,
+                maxTokensEffective: 384,
+                emptyOutputReason: "agent-json-stream-completed-without-text"
+            )
+        )
+
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt))
+        let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(since: startedAt, prompt: prompt)
+        #expect(message.contains("agent-json emitted empty output"))
+        #expect(message.contains("parseError=empty"))
+        #expect(message.contains("stage=agent-json-step-0"))
+        #expect(message.contains("runtimePath=agent-model"))
+        #expect(message.contains("outputTokens=0"))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func deterministicCompatibilityDirectChatTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()
