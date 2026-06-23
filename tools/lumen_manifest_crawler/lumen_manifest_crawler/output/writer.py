@@ -342,6 +342,8 @@ def _write_fine_tuning_outputs(root: Path, datasets: dict[str, AgentFineTuningDa
         d.mkdir(parents=True, exist_ok=True)
         _write_jsonl(d / "train_sft.jsonl", dataset.train_sft)
         _write_jsonl(d / "val_sft.jsonl", dataset.val_sft)
+        for name, records in sorted(dataset.supplemental_sft.items()):
+            _write_jsonl(d / f"{name}.jsonl", records)
         _write_jsonl(d / "train_dpo.jsonl", dataset.train_dpo)
         _write_jsonl(d / "val_dpo.jsonl", dataset.val_dpo)
         _write_jsonl(d / "eval.jsonl", dataset.eval)

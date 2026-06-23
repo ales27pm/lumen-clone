@@ -10,6 +10,7 @@ from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 ULTRA_SPECIFIC_SOURCE_FAMILY = "adapter_ultra_specific"
 CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY = "cortex_codebase_self_awareness"
+EMBEDDING_SOURCE_FAMILY_PREFIX = "embedding_"
 SYSTEM_PROMPTS = {
     "cortex": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
     "executor": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
@@ -17,6 +18,44 @@ SYSTEM_PROMPTS = {
     "mimicry": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries.",
     "rem": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
     "fleet": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
+}
+
+ROLE_ALLOWED_SOURCE_FAMILIES: dict[str, set[str]] = {
+    "cortex": {
+        "cortex_routing",
+        "routing_matrix_adherence",
+        "eval_scenarios",
+        "runtime_audit_repairs",
+        ULTRA_SPECIFIC_SOURCE_FAMILY,
+        CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
+    },
+    "executor": {
+        "executor_tool_calls",
+        "tool_schema_cards",
+        "approval_boundary_samples",
+        "negative_samples",
+        ULTRA_SPECIFIC_SOURCE_FAMILY,
+    },
+    "mouth": {
+        "mouth_responses",
+        "runtime_audit_repairs",
+        ULTRA_SPECIFIC_SOURCE_FAMILY,
+    },
+    "mimicry": {
+        "mimicry_style",
+        ULTRA_SPECIFIC_SOURCE_FAMILY,
+    },
+    "rem": {
+        "rem_reflection",
+        "runtime_audit_repairs",
+        ULTRA_SPECIFIC_SOURCE_FAMILY,
+    },
+    "fleet": {
+        "fleet_system_prompts",
+        "cross_model_training",
+        "manifest_grounding_cards",
+        ULTRA_SPECIFIC_SOURCE_FAMILY,
+    },
 }
 
 AGENT_SOURCE_FAMILIES: dict[str, set[str]] = {
@@ -151,6 +190,7 @@ class AgentFineTuningDataset:
     eval: list[dict]
     dataset_card: dict
     unsloth_config: dict
+    supplemental_sft: dict[str, list[dict]]
 
 
 def compile_agent_fine_tuning_datasets(
@@ -185,11 +225,13 @@ def compile_agent_fine_tuning_datasets(
                 slot_roles=slot_roles,
             )
             for agent in routed_agents:
+                if not _is_role_allowed_sft_record(agent, normalized):
+                    continue
                 sft_record = _to_sft_record(manifest, normalized, agent, known_tools)
                 if sft_record is None:
                     continue
                 routed_sft[agent].append(sft_record)
-                routing_stats[agent]["sourceFamilies"].add(source_family)
+                routing_stats[agent]["sourceFamilies"].add(normalized["sourceFamily"])
                 routing_stats[agent]["taskTypes"].add(normalized["taskType"])
                 routing_stats[agent]["availableSFTRecords"] += 1
 
@@ -205,7 +247,6 @@ def compile_agent_fine_tuning_datasets(
         for record in cortex_codebase_sft
         if (record.get("metadata") or {}).get("recordKind") == "source_chunk"
     )
-    ultra_specific_sft["cortex"].extend(cortex_codebase_sft)
     for agent, records in ultra_specific_sft.items():
         routed_sft[agent].extend(records)
         for record in records:
@@ -221,8 +262,14 @@ def compile_agent_fine_tuning_datasets(
     output: dict[str, AgentFineTuningDataset] = {}
 
     for agent in AGENTS:
-        deduped_sft = _unique_sorted_records(routed_sft[agent])
+        deduped_sft = _unique_sorted_sft_records(routed_sft[agent])
         train_sft, val_sft = _stable_split(deduped_sft, config)
+        supplemental_sft: dict[str, list[dict]] = {}
+        if agent == "cortex":
+            supplemental_sft = {
+                "cortex_router_sft": deduped_sft,
+                "cortex_codebase_grounding": _unique_sorted_sft_records(cortex_codebase_sft),
+            }
 
         dpo_records = _unique_sorted_records(routed_dpo[agent]) if config.include_dpo else []
         train_dpo, val_dpo = _stable_split(dpo_records, config)
@@ -241,8 +288,10 @@ def compile_agent_fine_tuning_datasets(
                 "train_dpo": len(train_dpo),
                 "val_dpo": len(val_dpo),
                 "eval": len(eval_records),
+                "supplemental_sft": {name: len(records) for name, records in sorted(supplemental_sft.items())},
             },
             "sourceFamilies": sorted(routing_stats[agent]["sourceFamilies"]),
+            "optionalSourceFamilies": [CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY] if agent == "cortex" else [],
             "taskTypes": sorted(routing_stats[agent]["taskTypes"]),
             "availableSFTRecords": int(routing_stats[agent]["availableSFTRecords"]),
             "constraints": {
@@ -264,6 +313,7 @@ def compile_agent_fine_tuning_datasets(
                 "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_plus_selected_manifest_artifacts" if agent == "cortex" else None,
                 "cortexCodebaseFileRecordCount": cortex_codebase_file_record_count if agent == "cortex" else 0,
                 "cortexCodebaseChunkRecordCount": cortex_codebase_chunk_record_count if agent == "cortex" else 0,
+                "cortexDefaultTrainingPolicy": "router_sft_high_weight; codebase_grounding_optional_second_pass" if agent == "cortex" else None,
             },
         }
 
@@ -276,6 +326,7 @@ def compile_agent_fine_tuning_datasets(
             eval=eval_records,
             dataset_card=dataset_card,
             unsloth_config=unsloth_config,
+            supplemental_sft=supplemental_sft,
         )
 
     _backfill_rem_runtime_repairs(output, manifest, runtime_audit_reports)
@@ -337,7 +388,7 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
     messages = _normalize_messages(record)
     user = _first_role_content(messages, "user")
     assistant = _first_role_content(messages, "assistant")
-    if not assistant.strip():
+    if not assistant.strip() or _is_null_assistant(assistant):
         return None
     return {
         "messages": messages,
@@ -406,7 +457,7 @@ def _to_sft_record(
     user = normalized["user"].strip() or "Follow the manifest and return the correct response."
     assistant = normalized["assistant"].strip()
     assistant = _scrub_forbidden_sentinels(assistant, manifest.sentinels.forbiddenInUserOutput)
-    if not assistant:
+    if not assistant or _is_null_assistant(assistant):
         return None
     tool_ids = [tool_id for tool_id in normalized["toolIDs"] if tool_id in known_tools]
     return {
@@ -424,6 +475,21 @@ def _to_sft_record(
             "manifestCommit": manifest.sourceIntegrity.commit,
         },
     }
+
+
+def _is_role_allowed_sft_record(agent: str, normalized: dict[str, Any]) -> bool:
+    source_family = str(normalized.get("sourceFamily") or "")
+    if source_family.startswith(EMBEDDING_SOURCE_FAMILY_PREFIX):
+        return False
+    return source_family in ROLE_ALLOWED_SOURCE_FAMILIES.get(agent, set())
+
+
+def _is_null_assistant(value: Any) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower() == "null"
 
 
 def _scrub_forbidden_sentinels(text: str, sentinels: list[str]) -> str:
@@ -2217,7 +2283,7 @@ def _backfill_rem_runtime_repairs(
     patched_train = list(rem.train_sft) + [sample]
     datasets["rem"] = AgentFineTuningDataset(
         agent=rem.agent,
-        train_sft=_unique_sorted_records(patched_train),
+        train_sft=_unique_sorted_sft_records(patched_train),
         val_sft=list(rem.val_sft),
         train_dpo=list(rem.train_dpo),
         val_dpo=list(rem.val_dpo),
@@ -2230,6 +2296,7 @@ def _backfill_rem_runtime_repairs(
             },
         },
         unsloth_config=dict(rem.unsloth_config),
+        supplemental_sft=dict(rem.supplemental_sft),
     )
 
 
@@ -2264,6 +2331,16 @@ def _unique_sorted_records(records: list[dict[str, Any]]) -> list[dict[str, Any]
     deduped: dict[str, dict[str, Any]] = {}
     for record in records:
         key = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        deduped[key] = record
+    return [deduped[key] for key in sorted(deduped)]
+
+
+def _unique_sorted_sft_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for record in records:
+        messages = record.get("messages")
+        key_source = messages if isinstance(messages, list) else record
+        key = json.dumps(key_source, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         deduped[key] = record
     return [deduped[key] for key in sorted(deduped)]
 
