@@ -28,6 +28,16 @@ final class VoiceKernelEventReducerTests: XCTestCase {
         XCTAssertEqual(state.responseText, "Final answer.")
     }
 
+    func testStreamingResponseDoesNotIntentValidatePartialText() {
+        var state = VoiceKernelEventState()
+
+        _ = VoiceKernelEventReducer.reduce(.token("The temp"), state: &state, lastUserMessage: "Weather?", routing: Self.weatherRouting)
+        let streaming = VoiceKernelEventReducer.streamingResponseText(from: state.finalText, lastUserMessage: "Weather?")
+
+        XCTAssertEqual(state.responseText, "The temp")
+        XCTAssertEqual(streaming, "The temp")
+    }
+
     func testToolInvocationAndResultBecomeVoiceStatusSteps() {
         let invocationID = UUID()
         let invocation = ToolInvocation(
@@ -129,5 +139,9 @@ final class VoiceKernelEventReducerTests: XCTestCase {
 
     private static var chatRouting: IntentRoutingDecision {
         IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+    }
+
+    private static var weatherRouting: IntentRoutingDecision {
+        IntentRoutingDecision(intent: .weather, allowedToolIDs: ["weather"], requiresClarification: false, clarificationPrompt: nil)
     }
 }
