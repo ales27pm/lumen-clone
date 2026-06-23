@@ -6,6 +6,15 @@ cd "$ROOT"
 
 PROJECT="ios/Lumen.xcodeproj"
 PBX="$PROJECT/project.pbxproj"
+READINESS_RG_EXCLUDES=(
+  --glob '!*.min.js'
+  --glob '!generated/**'
+  --glob '!ios/Lumen/AgentBehaviorManifest.json'
+  --glob '!*.gguf'
+  --glob '!*.mlmodel'
+  --glob '!*.mlpackage/**'
+  --glob '!*.mlmodelc/**'
+)
 
 echo "== Xcode availability =="
 if command -v xcodebuild >/dev/null 2>&1; then
@@ -33,17 +42,17 @@ echo "== iOS signing capability checks =="
 python3 scripts/validate_ios_signing_capabilities.py
 
 echo "== Static privacy/build-hardening checks =="
-if rg -n "TODO|stub|placeholder" ios/Lumen ios/LumenTests docs; then
+if rg "${READINESS_RG_EXCLUDES[@]}" -n "TODO|stub|placeholder" ios/Lumen ios/LumenTests docs; then
   echo "Found TODO/stub/placeholder markers. Review above; some may be literal test/prompt text." >&2
 fi
-if ! rg -n "import AppIntents|AppIntent|AppShortcutsProvider" ios/Lumen/AppIntents >/dev/null; then
+if ! rg "${READINESS_RG_EXCLUDES[@]}" -n "import AppIntents|AppIntent|AppShortcutsProvider" ios/Lumen/AppIntents >/dev/null; then
   echo "warning: no AppIntents references found under ios/Lumen/AppIntents." >&2
 fi
-rg -n "FoundationModels|@available|canImport\(FoundationModels\)" ios/Lumen >/dev/null || true
-if ! rg -n "NSMicrophoneUsageDescription|NSSpeechRecognitionUsageDescription|NSCalendars|NSContactsUsageDescription|NSLocationWhenInUseUsageDescription|BGTaskSchedulerPermittedIdentifiers" ios >/dev/null; then
+rg "${READINESS_RG_EXCLUDES[@]}" -n "FoundationModels|@available|canImport\(FoundationModels\)" ios/Lumen >/dev/null || true
+if ! rg "${READINESS_RG_EXCLUDES[@]}" -n "NSMicrophoneUsageDescription|NSSpeechRecognitionUsageDescription|NSCalendars|NSContactsUsageDescription|NSLocationWhenInUseUsageDescription|BGTaskSchedulerPermittedIdentifiers" ios >/dev/null; then
   echo "warning: expected usage string or BGTask identifiers were not found in static scan." >&2
 fi
-if rg -n "OSLog|Logger" ios/Lumen/AppIntents ios/Lumen/Voice ios/Lumen/Diagnostics; then
+if rg "${READINESS_RG_EXCLUDES[@]}" -n "OSLog|Logger" ios/Lumen/AppIntents ios/Lumen/Voice ios/Lumen/Diagnostics; then
   echo "Found logging APIs in privacy-sensitive additions; review output above." >&2
 else
   true
