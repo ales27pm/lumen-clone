@@ -4,7 +4,7 @@
 
 | File / function | Has `@Environment(\.modelContext)` | Explicitly passed to service | SharedContainer fallback used | Degraded fallback possible | Status |
 |---|---:|---:|---:|---:|---|
-| `ChatView.runAgent(...)` | yes | yes (`LegacyAgentRunOptions.modelContext`) | yes (provider fallback if nil) | yes | migrated |
+| `ChatView.runAgent(...)` | yes | yes (`AssistantKernel.run(..., modelContext:)`) | kernel path may degrade according to request options; legacy fallback is not used at the view boundary | yes | migrated |
 | `VoiceModeView.runAgent(...)` | yes | yes (`LegacyAgentRunOptions.modelContext`) | yes | yes | migrated |
 | `TriggersView.runNow(...)` manual trigger | yes | yes (direct `context:` to scheduler/runner path) | n/a | no (context is explicit) | migrated |
 | `AgentRunner.runHeadless(...)` | caller-provided | yes (`context` param) | no SharedContainer fallback; caller must provide a live context | no (context is required) | migrated |

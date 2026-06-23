@@ -10,6 +10,7 @@ For a per-surface view of which entrypoints are live, partial, bridged, or plann
 ## Still legacy
 - `AgentService`, `SlotAgentService`, and `RolePipelineAgentService` still execute through legacy planning/execution loops and legacy `ToolExecutor`.
 - Migration is additive; behavior is preserved.
+- `LegacyAgentCompatibilityBridge` remains the documented boundary for compatibility paths that still need legacy event streams: kernel-internal tool-required chat routing, tool-capable voice routing, live diagnostics/E2E probes, grounding audit smoke tests, and slot-agent deterministic compatibility responses.
 
 ## Tool schema bridge
 - `LegacyToolSchemaBridge` maps secure tool definitions into legacy `ToolDefinition` shape.
@@ -32,5 +33,6 @@ For a per-surface view of which entrypoints are live, partial, bridged, or plann
 ## Interactive services update
 `AgentService`, `SlotAgentService`, and `RolePipelineAgentService` now enforce one bounded grounding assembly pass at run-entry using `LegacyPromptAssembler`, reducing duplicate/unbounded prompt injection. Full coordinator-in-service integration remains dependent on model-context plumbing.
 
-- Added explicit UI ModelContext injection via `LegacyAgentRunOptions` in ChatView and VoiceModeView.
+- `LegacyAgentRunOptions` and `legacyAgentEvent` are no longer used at the ChatView boundary; native `AgentKernelEvent` values are reduced through `ChatKernelEventReducer`.
+- Voice remains mixed: `VoiceCommandRouter` still uses `LegacyAgentRunOptions` and legacy event adaptation for tool-capable compatibility paths while text-only turns route through `AssistantKernel.run(...)`.
 - Added idempotency guard marker/strip logic to prevent duplicate grounding sections.
