@@ -3,7 +3,7 @@ import SwiftData
 
 @MainActor
 struct VoiceCommandRouter {
-    static func routeFinalTranscript(_ text: String, appState: AppState, conversation: Conversation, modelContext: ModelContext) async -> AsyncStream<AgentEvent> {
+    static func routeFinalTranscript(_ text: String, appState: AppState, conversation: Conversation, modelContext: ModelContext) async -> AsyncStream<AgentKernelEvent> {
         let routing = await IntentClassifierService.shared.route(text)
         let memories = await MemoryRecall.recallAndNormalize(query: text, routing: routing, context: modelContext, limit: 8)
         let turnID = UUID()
@@ -34,7 +34,7 @@ enum VoiceAgentRuntimeBridge {
         turnID: UUID,
         modelContext: ModelContext,
         maxTokens: Int? = nil
-    ) -> AsyncStream<AgentEvent> {
+    ) -> AsyncStream<AgentKernelEvent> {
         let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
         let effectiveMaxTokens = maxTokens ?? appState.maxTokens
         let availableTools = enabledTools(for: routing, appState: appState)
@@ -59,7 +59,7 @@ enum VoiceAgentRuntimeBridge {
                 preventDoubleGrounding: true,
                 diagnosticsEnabled: false
             )
-            return legacyEventStream(from: AssistantKernel.shared.runLegacyAgentBridge(request, options: options))
+            return AssistantKernel.shared.runLegacyAgentBridge(request, options: options)
         }
 
         let request = makeKernelRequest(
@@ -71,7 +71,7 @@ enum VoiceAgentRuntimeBridge {
             turnID: turnID,
             maxTokens: effectiveMaxTokens
         )
-        return legacyEventStream(from: AssistantKernel.shared.run(request, modelContext: modelContext))
+        return AssistantKernel.shared.run(request, modelContext: modelContext)
     }
 
     private static func makeKernelRequest(
@@ -143,18 +143,5 @@ enum VoiceAgentRuntimeBridge {
 
     private static func shouldUseLegacyToolPath(routing: IntentRoutingDecision, availableTools: [ToolDefinition]) -> Bool {
         IntentRouter.intentRequiresTool(routing) && !availableTools.isEmpty
-    }
-
-    nonisolated private static func legacyEventStream(from kernelStream: AsyncStream<AgentKernelEvent>) -> AsyncStream<AgentEvent> {
-        AsyncStream { continuation in
-            let task = Task {
-                for await kernelEvent in kernelStream {
-                    guard let event = kernelEvent.legacyAgentEvent else { continue }
-                    continuation.yield(event)
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { @Sendable _ in task.cancel() }
-        }
     }
 }
