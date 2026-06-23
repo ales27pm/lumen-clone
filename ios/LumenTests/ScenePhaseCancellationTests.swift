@@ -10,7 +10,11 @@ final class ScenePhaseCancellationTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testBackgroundScenePhaseCancelsRuntimeWork() async {
+    func testBackgroundScenePhaseDoesNotCancelRuntimeWork() async {
+        XCTAssertFalse(ResourceBudgetGate.shouldCancelForScenePhase(.background))
+    }
+
+    func testExplicitLifecycleCancellationStillCancelsRuntimeWork() async {
         ResourceBudgetGate.testSnapshotOverride = .init(
             scenePhase: .active,
             lowPowerModeEnabled: false,
@@ -42,7 +46,6 @@ final class ScenePhaseCancellationTests: XCTestCase {
         ModelLoader.installChatLoadTaskForTesting(task)
         await fulfillment(of: [started], timeout: 1.0)
 
-        XCTAssertTrue(ResourceBudgetGate.shouldCancelForScenePhase(.background))
         RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "test")
         XCTAssertTrue(ModelLoader.hasActiveChatLoadTaskForTesting)
 

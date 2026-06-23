@@ -50,30 +50,25 @@ enum ResourceBudgetGate {
     }
 
     static func allowsHeavyModelWork(snapshot: Snapshot, reason: String) -> Bool {
-        guard snapshot.scenePhase == .active else { return false }
         guard !hasRecentMemoryWarning(snapshot) else { return false }
         guard let thermal = snapshot.thermalState else { return false }
         guard thermal != .serious, thermal != .critical, thermal != .unknown else { return false }
-        guard let lowPower = snapshot.lowPowerModeEnabled else { return false }
-        if lowPower && !isExplicitUserTurn(reason) { return false }
+        guard snapshot.lowPowerModeEnabled != nil else { return false }
         return true
     }
 
     static func allowsForegroundModelLoad(reason: String) -> Bool {
-        guard isExplicitUserTurn(reason) else { return false }
         return allowsHeavyModelWork(reason: reason)
     }
 
     static func shouldCancelForScenePhase(_ phase: ScenePhase) -> Bool {
-        phase == .inactive || phase == .background
+        false
     }
 
     static func allowsMaintenance(reason: String) -> Bool {
         let snapshot = currentSnapshot()
-        guard snapshot.scenePhase == .active else { return false }
         guard !hasRecentMemoryWarning(snapshot) else { return false }
         if let thermal = snapshot.thermalState, thermal == .serious || thermal == .critical || thermal == .unknown { return false }
-        if snapshot.lowPowerModeEnabled == true { return false }
         return true
     }
 
@@ -99,11 +94,6 @@ enum ResourceBudgetGate {
         guard warnings > 0 else { return false }
         guard let lastWarningAt = snapshot.lastMemoryWarningAt else { return true }
         return Date().timeIntervalSince(lastWarningAt) < MemoryPressureMonitor.modelLoadSuppressionInterval
-    }
-
-    private static func isExplicitUserTurn(_ reason: String) -> Bool {
-        let normalized = reason.lowercased()
-        return normalized.contains(ModelLoadIntent.userChat.rawValue.lowercased()) || normalized.contains(ModelLoadIntent.userVoice.rawValue.lowercased())
     }
 
     private static func inferredScenePhase() -> ScenePhase? {

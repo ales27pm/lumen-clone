@@ -58,8 +58,11 @@ enum HeadlessAgentKernelRunner {
         guard !trimmed.isEmpty else { return ("", []) }
 
         if source == .trigger, !ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue) {
-            return ("Background trigger skipped: local model work requires a foreground user action.", [])
+            return ("Background trigger skipped: local model work is temporarily unavailable.", [])
         }
+
+        let backgroundTask = BackgroundRuntimeContinuation.begin(name: "Lumen Headless Agent")
+        defer { backgroundTask?.end() }
 
         let cascade = await MemoryCascade.recall(query: trimmed, history: [], context: context)
         let resolution = ReferenceResolver.resolve(prompt: trimmed, history: [], relevantMemories: cascade.promptFragments)

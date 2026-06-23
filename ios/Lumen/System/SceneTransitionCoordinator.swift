@@ -35,8 +35,7 @@ final class SceneTransitionCoordinator {
             currentPhase = .inactive
             ResourceBudgetGate.recordScenePhase(.inactive)
             DeferredMaintenanceQueue.shared.updateScenePhase(.inactive)
-            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": "inactive", "cancellationRequested": "true"]))
-            cancelSceneSensitive(reason: "will-resign-active")
+            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": "inactive", "cancellationRequested": "false"]))
         }
     }
 
@@ -46,8 +45,7 @@ final class SceneTransitionCoordinator {
             currentPhase = .background
             ResourceBudgetGate.recordScenePhase(.background)
             DeferredMaintenanceQueue.shared.updateScenePhase(.background)
-            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": "background", "cancellationRequested": "true"]))
-            cancelSceneSensitive(reason: "did-enter-background")
+            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .sceneTransition, values: ["phase": "background", "cancellationRequested": "false"]))
         }
     }
 

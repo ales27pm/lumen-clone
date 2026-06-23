@@ -81,7 +81,9 @@ enum ModelLoader {
         switch intent {
         case .userChat, .userVoice:
             return ResourceBudgetGate.allowsForegroundModelLoad(reason: intent.rawValue)
-        case .appStartup, .diagnostics, .background:
+        case .diagnostics, .background:
+            return ResourceBudgetGate.allowsHeavyModelWork(reason: intent.rawValue)
+        case .appStartup:
             return false
         }
     }
@@ -166,7 +168,7 @@ enum ModelLoader {
 
     @discardableResult
     nonisolated private static func performEnsureFleetChatLoaded(snapshot loadSnapshot: ModelLoadSnapshot, intent: ModelLoadIntent) async -> ChatLoadResult {
-        guard !Task.isCancelled, await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: intent.rawValue) }) else { return ChatLoadResult(loaded: false, selectedChatModelID: nil) }
+        guard !Task.isCancelled, await MainActor.run(body: { canStartModelLoad(intent: intent) }) else { return ChatLoadResult(loaded: false, selectedChatModelID: nil) }
         await Task.yield()
         let snapshot = LumenModelFleetResolver.resolveV1(snapshot: loadSnapshot)
         await SlotModelRuntimeCoordinator.shared.configure(
@@ -268,7 +270,7 @@ enum ModelLoader {
     }
 
     private static func performEnsureEmbedLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent) async -> Bool {
-        guard !Task.isCancelled, ResourceBudgetGate.allowsForegroundModelLoad(reason: intent.rawValue) else { return false }
+        guard !Task.isCancelled, canStartModelLoad(intent: intent) else { return false }
         let preferredID = appState.activeEmbeddingModelID
         if let preferredID,
            let preferred = stored.first(where: { $0.id.uuidString == preferredID && $0.modelRole == .embedding }) {

@@ -162,7 +162,6 @@ struct ChatView: View {
         .onChange(of: draft) { _, _ in recomputeAttachmentPreview() }
         .onChange(of: scenePhase) { _, phase in
             SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
-            if ResourceBudgetGate.shouldCancelForScenePhase(phase) { stopForSceneTransition() }
         }
         .onDisappear { stopForSceneTransition() }
     }

@@ -105,7 +105,7 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
             }
             return await withCheckedContinuation { continuation in
                 self.locationContinuation = continuation
-                locationManager.requestWhenInUseAuthorization()
+                locationManager.requestAlwaysAuthorization()
             }
         case .calendars:
             let store = EKEventStore()

@@ -9,15 +9,15 @@ final class ResourceBudgetGateTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testInactiveAndBackgroundCancel() {
-        XCTAssertTrue(ResourceBudgetGate.shouldCancelForScenePhase(.inactive))
-        XCTAssertTrue(ResourceBudgetGate.shouldCancelForScenePhase(.background))
+    func testInactiveAndBackgroundDoNotCancelRuntimeWork() {
+        XCTAssertFalse(ResourceBudgetGate.shouldCancelForScenePhase(.inactive))
+        XCTAssertFalse(ResourceBudgetGate.shouldCancelForScenePhase(.background))
         XCTAssertFalse(ResourceBudgetGate.shouldCancelForScenePhase(.active))
     }
 
-    func testLowPowerDeniesNonExplicitHeavyWork() {
+    func testLowPowerDoesNotDenyHeavyWork() {
         ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: true, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
-        XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.diagnostics.rawValue))
+        XCTAssertTrue(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.diagnostics.rawValue))
         XCTAssertTrue(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
     }
 
