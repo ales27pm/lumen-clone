@@ -16,6 +16,7 @@ SUPPORTED_RUNTIME_AUDIT_SUFFIXES = {".json", *SUPPORTED_TEXT_REPORT_SUFFIXES}
 def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]:
     """Load runtime audit records from JSON and supported plain-text report files."""
     reports: list[dict[str, Any]] = []
+    sidecar_cache: dict[Path, dict[str, list[dict[str, Any]]]] = {}
     for path in paths or []:
         candidates = _candidate_report_files(path)
         for candidate in candidates:
@@ -23,7 +24,10 @@ def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]
                 text = candidate.read_text(encoding="utf-8")
             except OSError:
                 continue
-            reports.extend(_load_report_text(text, source=str(candidate), sidecars=_load_e2e_sidecars(candidate.parent)))
+            parent = candidate.parent
+            if parent not in sidecar_cache:
+                sidecar_cache[parent] = _load_e2e_sidecars(parent)
+            reports.extend(_load_report_text(text, source=str(candidate), sidecars=sidecar_cache[parent]))
     return reports
 
 
@@ -54,6 +58,7 @@ def _load_report_text(text: str, *, source: str, sidecars: dict[str, list[dict[s
                 source=source,
                 source_format="lumen_e2e_text_report",
                 source_layer="e2eTextReport",
+                sidecars=sidecars,
             )
         ]
     return _normalize_payload(value, source=source, sidecars=sidecars)

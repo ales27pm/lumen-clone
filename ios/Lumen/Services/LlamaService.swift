@@ -1284,9 +1284,9 @@ final actor AppLlamaService {
                     let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
                     let decodeMs = firstTokenMs.map { max(0, elapsedMs - $0) }
                     let preFirstTokenMs = firstTokenMs
-                    let outputTokenEstimate = max(0, streamedSanitized.split(whereSeparator: \.isWhitespace).count)
+                    let outputTokenEstimate = max(0, sanitized.split(whereSeparator: \.isWhitespace).count)
                     let emptyOutputReason: String?
-                    if streamedSanitized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if sanitized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         emptyOutputReason = outputChunks == 0
                             ? "stream-completed-without-text-chunks"
                             : "stream-produced-empty-sanitized-output"
@@ -1313,8 +1313,10 @@ final actor AppLlamaService {
                         "event=llama.chat.generation_perf slot=\(slot.rawValue, privacy: .public) prompt_eval_tps=\(promptEvalTps ?? -1, privacy: .public) decode_tps=\(tps ?? -1, privacy: .public) prompt_tokens_est=\(estimatedPromptTokenCount, privacy: .public) output_words=\(outputTokenEstimate, privacy: .public)"
                     )
                     if let emptyOutputReason {
-                        let loadedPath = self.loadedChatPath(for: slot) ?? self.loadedChatPath ?? "none"
-                        let adapterPath = self.roleAdapters[slot]?.path ?? "none"
+                        let slotLoadedPath = await self.loadedChatPath(for: slot)
+                        let fallbackLoadedPath = await self.loadedChatPath
+                        let loadedPath = slotLoadedPath ?? fallbackLoadedPath ?? "none"
+                        let adapterPath = await self.roleAdapterPath(for: slot) ?? "none"
                         logger.error(
                             "event=llama.chat.empty_output slot=\(slot.rawValue, privacy: .public) model_name=\(groundedRequest.modelName, privacy: .public) reason=\(emptyOutputReason, privacy: .public) requested_tokens=\(req.maxTokens, privacy: .public) effective_tokens=\(groundedRequest.maxTokens, privacy: .public) runtime_path=\(readyMetrics.runtimePath, privacy: .public) active_adapter_slot=\(readyMetrics.activeAdapterSlot ?? "none", privacy: .public) loaded_path=\(loadedPath, privacy: .public) adapter_path=\(adapterPath, privacy: .public) cancelled=\(Task.isCancelled ? "true" : "false", privacy: .public)"
                         )
@@ -1714,6 +1716,10 @@ final actor AppLlamaService {
             adapterScale: loaded?.scale,
             adapterFailureReason: lastAdapterFailureReason
         )
+    }
+
+    private func roleAdapterPath(for slot: LumenModelSlot) -> String? {
+        roleAdapters[slot]?.path
     }
 
     private func normalize(_ vector: [Double]) -> [Double] {

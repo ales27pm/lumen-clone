@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from lumen_manifest_crawler.dataset.e2e_policy import e2e_failure_policy
@@ -8,21 +9,21 @@ from lumen_manifest_crawler.dataset.e2e_policy import e2e_failure_policy
 
 def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     scenarios = _coerce_e2e_scenarios(value)
-    failures = [
-        e2e_failure_from_scenario(
+    sidecars = sidecars or {}
+    failures = []
+    for scenario in scenarios:
+        diagnosis = _sidecar_diagnosis_for_scenario(scenario, sidecars)
+        if scenario.get("passed") is not True or _scenario_skipped_live_model_run(
             scenario,
-            source_layer=source_layer,
-            sidecar_diagnosis=_sidecar_diagnosis_for_scenario(scenario, sidecars or {}),
-        )
-        for scenario in scenarios
-        if isinstance(scenario, dict) and (
-            scenario.get("passed") is not True
-            or _scenario_skipped_live_model_run(
-                scenario,
-                sidecar_diagnosis=_sidecar_diagnosis_for_scenario(scenario, sidecars or {}),
+            sidecar_diagnosis=diagnosis,
+        ):
+            failures.append(
+                e2e_failure_from_scenario(
+                    scenario,
+                    source_layer=source_layer,
+                    sidecar_diagnosis=diagnosis,
+                )
             )
-        )
-    ]
     return {
         "_source": source,
         "_sourceFormat": source_format,
@@ -62,6 +63,8 @@ def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
             "failures": failure_text,
             "final": result.get("finalText"),
             "events": result.get("events") or [],
+            "startedAt": result.get("startedAt"),
+            "finishedAt": result.get("finishedAt"),
         })
     return coerced
 
@@ -296,6 +299,7 @@ def _sidecar_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str
             trace
             for trace in sidecars.get("agent_behavior_traces", [])
             if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
+            and _sidecar_record_matches_scenario_time(trace, scenario)
             and str(trace.get("event") or "") == "modelTurn"
             and str(trace.get("stage") or "").startswith("agent-json")
         ),
@@ -336,6 +340,7 @@ def _sidecar_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str
             for failure in sidecars.get("agent_parse_failures", [])
             if str(failure.get("modelName") or "") == "agent-json"
             and _sidecar_text_matches_prompt(str(failure.get("userTurnPrefix") or ""), prompt_key)
+            and _sidecar_record_matches_scenario_time(failure, scenario)
         ),
         None,
     )
@@ -359,7 +364,33 @@ def _sidecar_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str
 def _sidecar_text_matches_prompt(value: str, prompt_key: str) -> bool:
     normalized = " ".join(value.casefold().split())
     needle = " ".join(prompt_key.split())
-    return bool(needle and (needle in normalized or normalized in needle))
+    return bool(needle and normalized and (needle in normalized or normalized in needle))
+
+
+def _sidecar_record_matches_scenario_time(record: dict[str, Any], scenario: dict[str, Any]) -> bool:
+    started_at = _parse_iso_datetime(scenario.get("startedAt"))
+    finished_at = _parse_iso_datetime(scenario.get("finishedAt"))
+    if started_at is None and finished_at is None:
+        return True
+    created_at = _parse_iso_datetime(record.get("createdAt"))
+    if created_at is None:
+        return False
+    lower_bound = (started_at or finished_at) - timedelta(minutes=5)
+    upper_bound = (finished_at or started_at) + timedelta(minutes=5)
+    return lower_bound <= created_at <= upper_bound
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _is_generic_missing_model_evidence(text: str) -> bool:
