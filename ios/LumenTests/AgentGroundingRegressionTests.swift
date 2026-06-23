@@ -663,6 +663,19 @@ extension AgentGroundingRegressionTests {
         #expect(!chat.preservesRawStructuredAgentOutput)
     }
 
+    @Test func agentJSONEmptyOutputRetryPromptRequiresNonEmptyJSONOnly() {
+        let firstTurn = "User request:\nFind coffee near me.\n\nEmit the first JSON object now. Choose either action or final."
+
+        let retryTurn = AgentService.agentJSONEmptyOutputRetryUserTurnForTests(from: firstTurn)
+
+        #expect(retryTurn.contains(firstTurn))
+        #expect(retryTurn.contains("Previous live agent-json attempt emitted no tokens"))
+        #expect(retryTurn.contains("Emit exactly one non-empty JSON object now"))
+        #expect(retryTurn.contains(#"{"action":{"tool":"<allowed tool id>","args":{...}}}"#))
+        #expect(retryTurn.contains(#"{"final":"<concise user-facing answer>"}"#))
+        #expect(retryTurn.contains("Start the response with {"))
+    }
+
     @Test func structuredAgentJSONUsesExecutorModelSlot() {
         #expect(AgentService.structuredAgentModelSlotForTests == .executor)
     }
