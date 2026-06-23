@@ -20,6 +20,7 @@ nonisolated struct VoiceKernelEventMutation: Equatable {
     var shouldEmitStepFeedback: Bool = false
     var shouldStartSpeaking: Bool = false
     var shouldSpeakPending: Bool = false
+    var shouldUseFinalResponseText: Bool = false
 }
 
 nonisolated enum VoiceKernelEventReducer {
@@ -42,7 +43,7 @@ nonisolated enum VoiceKernelEventReducer {
             return VoiceKernelEventMutation(stepsChanged: true)
 
         case .token(let chunk), .finalDelta(let chunk):
-            appendVisibleText(chunk, state: &state, lastUserMessage: lastUserMessage, routing: routing)
+            appendVisibleText(chunk, state: &state)
             return VoiceKernelEventMutation(
                 textChanged: true,
                 shouldEmitUIUpdateDiagnostic: true,
@@ -56,7 +57,8 @@ nonisolated enum VoiceKernelEventReducer {
                 textChanged: !text.isEmpty,
                 shouldEmitUIUpdateDiagnostic: !text.isEmpty,
                 shouldStartSpeaking: !text.isEmpty,
-                shouldSpeakPending: !text.isEmpty
+                shouldSpeakPending: !text.isEmpty,
+                shouldUseFinalResponseText: !text.isEmpty
             )
 
         case .toolInvocation(let invocation):
@@ -97,7 +99,8 @@ nonisolated enum VoiceKernelEventReducer {
                 textChanged: true,
                 shouldEmitUIUpdateDiagnostic: true,
                 shouldStartSpeaking: true,
-                shouldSpeakPending: true
+                shouldSpeakPending: true,
+                shouldUseFinalResponseText: true
             )
 
         case .done(let finalText, let steps):
@@ -110,7 +113,8 @@ nonisolated enum VoiceKernelEventReducer {
                 textChanged: !finalText.isEmpty,
                 stepsChanged: !steps.isEmpty,
                 shouldStartSpeaking: !finalText.isEmpty,
-                shouldSpeakPending: !finalText.isEmpty
+                shouldSpeakPending: !finalText.isEmpty,
+                shouldUseFinalResponseText: !finalText.isEmpty
             )
         }
     }
@@ -121,14 +125,29 @@ nonisolated enum VoiceKernelEventReducer {
         return VoiceKernelEventMutation()
     }
 
-    private static func appendVisibleText(
-        _ chunk: String,
-        state: inout VoiceKernelEventState,
+    static func streamingResponseText(
+        from text: String,
+        lastUserMessage: String
+    ) -> String {
+        let sanitized = AssistantOutputSanitizer.sanitize(text, lastUserMessage: lastUserMessage)
+        return SchemaPlaceholderDetector.isPlaceholderPrefix(sanitized) ? "" : sanitized
+    }
+
+    static func finalResponseText(
+        from text: String,
         lastUserMessage: String,
         routing: IntentRoutingDecision
+    ) -> String {
+        let sanitized = streamingResponseText(from: text, lastUserMessage: lastUserMessage)
+        return FinalIntentValidator.validate(sanitized, routing: routing, fallback: nil)
+    }
+
+    private static func appendVisibleText(
+        _ chunk: String,
+        state: inout VoiceKernelEventState
     ) {
         state.finalText += chunk
-        state.responseText = sanitizedVoiceText(state.finalText, lastUserMessage: lastUserMessage, routing: routing)
+        state.responseText = state.finalText
     }
 
     private static func replaceVisibleTextIfPresent(
@@ -139,17 +158,7 @@ nonisolated enum VoiceKernelEventReducer {
     ) {
         guard !text.isEmpty else { return }
         state.finalText = text
-        state.responseText = sanitizedVoiceText(text, lastUserMessage: lastUserMessage, routing: routing)
-    }
-
-    private static func sanitizedVoiceText(
-        _ text: String,
-        lastUserMessage: String,
-        routing: IntentRoutingDecision
-    ) -> String {
-        let sanitized = AssistantOutputSanitizer.sanitize(text, lastUserMessage: lastUserMessage)
-        if SchemaPlaceholderDetector.isPlaceholderPrefix(sanitized) { return "" }
-        return FinalIntentValidator.validate(sanitized, routing: routing, fallback: nil)
+        state.responseText = finalResponseText(from: text, lastUserMessage: lastUserMessage, routing: routing)
     }
 
     private static func upsert(_ step: AgentStep, in steps: inout [AgentStep]) {
