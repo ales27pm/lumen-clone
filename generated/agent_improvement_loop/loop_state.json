@@ -5,62 +5,64 @@
   "dataset": {
     "agentFineTuning": {
       "cortex": {
-        "eval": 555,
-        "trainDPO": 8,
-        "trainSFT": 352,
-        "valDPO": 1,
-        "valSFT": 62
+        "eval": 558,
+        "trainDPO": 15,
+        "trainSFT": 8656,
+        "valDPO": 3,
+        "valSFT": 1528
       },
       "executor": {
-        "eval": 111,
-        "trainDPO": 11,
-        "trainSFT": 686,
+        "eval": 114,
+        "trainDPO": 14,
+        "trainSFT": 858,
         "valDPO": 2,
-        "valSFT": 121
+        "valSFT": 152
       },
       "fleet": {
-        "eval": 84,
-        "trainDPO": 14,
-        "trainSFT": 1195,
-        "valDPO": 2,
-        "valSFT": 211
+        "eval": 86,
+        "trainDPO": 15,
+        "trainSFT": 4387,
+        "valDPO": 3,
+        "valSFT": 774
       },
       "mimicry": {
-        "eval": 3,
-        "trainDPO": 9,
-        "trainSFT": 54,
-        "valDPO": 2,
-        "valSFT": 10
-      },
-      "mouth": {
         "eval": 5,
         "trainDPO": 10,
-        "trainSFT": 143,
+        "trainSFT": 122,
         "valDPO": 2,
-        "valSFT": 25
+        "valSFT": 22
+      },
+      "mouth": {
+        "eval": 8,
+        "trainDPO": 12,
+        "trainSFT": 278,
+        "valDPO": 2,
+        "valSFT": 49
       },
       "rem": {
-        "eval": 4,
-        "trainDPO": 7,
-        "trainSFT": 516,
-        "valDPO": 1,
-        "valSFT": 91
+        "eval": 6,
+        "trainDPO": 8,
+        "trainSFT": 3700,
+        "valDPO": 2,
+        "valSFT": 653
       }
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_corpus": 482,
-      "codebase_home_sft": 482,
+      "codebase_home_chunk_sft": 3509,
+      "codebase_home_chunks": 3509,
+      "codebase_home_corpus": 705,
+      "codebase_home_sft": 705,
       "cortex_routing": 82,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 1045,
+      "embedding_corpus": 4777,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 1214,
-      "embedding_hard_negatives": 1214,
-      "embedding_train_pairs": 1092,
-      "embedding_train_triplets": 1098,
-      "embedding_val_pairs": 122,
-      "embedding_val_triplets": 116,
+      "embedding_eval_retrieval": 4946,
+      "embedding_hard_negatives": 4946,
+      "embedding_train_pairs": 4456,
+      "embedding_train_triplets": 4413,
+      "embedding_val_pairs": 490,
+      "embedding_val_triplets": 533,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -73,14 +75,14 @@
       "train_sft": 309,
       "validation_sft": 55
     },
-    "familyCount": 24,
-    "recordCount": 8328
+    "familyCount": 26,
+    "recordCount": 34452
   },
-  "errorGapCount": 60,
+  "errorGapCount": 6,
   "gapCount": 60,
   "manifest": {
-    "commit": "e9366d437c2a87578ca29a0d9891b2e7d0bd2167",
-    "fingerprint": "880a039f54ab3ed527ca5138cb59ceb24d3896cc719a3fc93031c228a381709f",
+    "commit": "0a3977dd04253a9ea274a45c2e659d3e67557c9e",
+    "fingerprint": "ed2e750f43d14c13625991d0c71d1ea47ae01d9b1ab54d24237051b3d0bb6dda",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
@@ -91,8 +93,7 @@
   "passed": false,
   "root": "/Users/ales27pm/lumen-clone",
   "runtime": {
-    "failureCount": 60,
-    "failureTypes": {
+    "allFailureTypes": {
       "e2e_response_quality_calendar": 6,
       "e2e_response_quality_chat": 1,
       "e2e_response_quality_emaildraft": 1,
@@ -106,7 +107,13 @@
       "e2e_response_quality_weather": 1,
       "e2e_response_quality_websearch": 1
     },
+    "failureCount": 6,
+    "failureTypes": {
+      "e2e_response_quality_calendar": 6
+    },
+    "rawFailureCount": 60,
     "reportCount": 5,
+    "skippedLiveModelGenerationCount": 54,
     "sourceLayers": {
       "e2eTestReport.evidenceLayer": 60
     }
@@ -124,7 +131,7 @@
   "testFlight": {
     "buildLabel": null,
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "880a039f54ab3ed527ca5138cb59ceb24d3896cc719a3fc93031c228a381709f",
+    "manifestFingerprint": "ed2e750f43d14c13625991d0c71d1ea47ae01d9b1ab54d24237051b3d0bb6dda",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
@@ -134,6 +141,40 @@
     "scenarioCount": 120,
     "scenarioQueuePath": "testflight_scenarios.jsonl",
     "status": "runtime-audit-ingested"
+  },
+  "triage": {
+    "categoryCounts": {
+      "runtime_permission_config": 6,
+      "skipped_live_model_generation": 54
+    },
+    "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
+    "freshRuntimeFailureCount": 6,
+    "groupCounts": {
+      "calendar": 6,
+      "chat": 1,
+      "emaildraft": 1,
+      "maps": 10,
+      "memory": 13,
+      "messagedraft": 6,
+      "motion": 6,
+      "outlook": 13,
+      "rag": 1,
+      "trigger": 1,
+      "weather": 1,
+      "websearch": 1
+    },
+    "rawRuntimeFailureCount": 60,
+    "rootCauseCounts": {
+      "permission_config_issue": 6,
+      "skipped_live_model_generation": 54
+    },
+    "runtimeAuditReports": 5,
+    "severityCounts": {
+      "error": 6,
+      "warning": 54
+    },
+    "skippedLiveModelGenerationCount": 54,
+    "totalGaps": 60
   },
   "validation": {
     "failureCount": 0,

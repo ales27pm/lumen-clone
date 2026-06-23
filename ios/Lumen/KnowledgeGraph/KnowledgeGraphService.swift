@@ -26,7 +26,7 @@ actor KnowledgeGraphService {
     func buildFromManifestAndAudits() async {
         nodes["lumen-core"] = KGNode(id: "lumen-core", type: "agent", content: "Core overlay assistant")
         edges.append(KGEdge(from: "lumen-core", to: "rag-service", relation: "uses", weight: 0.95))
-        logger.info("✅ KG built with \(nodes.count) nodes and \(edges.count) edges")
+        logger.info("KG built with \(self.nodes.count) nodes and \(self.edges.count) edges")
     }
     
     func multiHopTraverse(startId: String, maxHops: Int = 3) async -> [TraversalPath] {

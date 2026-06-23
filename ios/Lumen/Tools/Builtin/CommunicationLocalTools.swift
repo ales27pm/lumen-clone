@@ -79,50 +79,80 @@ struct CommunicationLocalTool: LocalTool {
         }
 
         let text: String
+        let outlookOutcome: OutlookToolOutcome?
         switch toolID {
         case "contacts.search":
             text = await ContactsTools.searchContacts(query: args["query"] ?? "")
+            outlookOutcome = nil
         case "messages.draft":
             text = await ContactsTools.composeMessage(arguments: args)
+            outlookOutcome = nil
         case "mail.draft":
             text = await ContactsTools.composeMail(arguments: args)
+            outlookOutcome = nil
         case "phone.call":
             text = await ContactsTools.call(number: args["number"] ?? "")
+            outlookOutcome = nil
         case "outlook.status":
-            text = await OutlookTools.status()
+            outlookOutcome = await OutlookTools.status()
+            text = outlookOutcome?.text ?? ""
         case "outlook.folders.list":
-            text = await OutlookTools.listFolders(args: args)
+            outlookOutcome = await OutlookTools.listFolders(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.messages.list":
-            text = await OutlookTools.listMessages(args: args)
+            outlookOutcome = await OutlookTools.listMessages(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.messages.search":
-            text = await OutlookTools.searchMessages(args: args)
+            outlookOutcome = await OutlookTools.searchMessages(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.read":
-            text = await OutlookTools.readMessage(args: args)
+            outlookOutcome = await OutlookTools.readMessage(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.attachments.list":
-            text = await OutlookTools.listAttachments(args: args)
+            outlookOutcome = await OutlookTools.listAttachments(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.draft.create":
-            text = await OutlookTools.createDraft(args: args)
+            outlookOutcome = await OutlookTools.createDraft(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.mail.send":
-            text = await OutlookTools.sendMail(args: args)
+            outlookOutcome = await OutlookTools.sendMail(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.mark_read":
-            text = await OutlookTools.markRead(args: args, isRead: true)
+            outlookOutcome = await OutlookTools.markRead(args: args, isRead: true)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.mark_unread":
-            text = await OutlookTools.markRead(args: args, isRead: false)
+            outlookOutcome = await OutlookTools.markRead(args: args, isRead: false)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.move":
-            text = await OutlookTools.moveMessage(args: args)
+            outlookOutcome = await OutlookTools.moveMessage(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.archive":
             args["destination"] = "archive"
-            text = await OutlookTools.moveMessage(args: args)
+            outlookOutcome = await OutlookTools.moveMessage(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.delete":
-            text = await OutlookTools.deleteMessage(args: args)
+            outlookOutcome = await OutlookTools.deleteMessage(args: args)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.reply":
-            text = await OutlookTools.reply(args: args, replyAll: false)
+            outlookOutcome = await OutlookTools.reply(args: args, replyAll: false)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.reply_all":
-            text = await OutlookTools.reply(args: args, replyAll: true)
+            outlookOutcome = await OutlookTools.reply(args: args, replyAll: true)
+            text = outlookOutcome?.text ?? ""
         case "outlook.message.forward":
-            text = await OutlookTools.forward(args: args)
+            outlookOutcome = await OutlookTools.forward(args: args)
+            text = outlookOutcome?.text ?? ""
         default:
             text = "Unsupported native communication tool: \(toolID)."
+            outlookOutcome = nil
+        }
+
+        if let outlookOutcome {
+            return result(
+                invocation: invocation,
+                outcome: outlookOutcome,
+                metricsSummary: "native_communication_tool"
+            )
         }
 
         return result(
@@ -148,6 +178,26 @@ struct CommunicationLocalTool: LocalTool {
             privacyLevel: definition.resultPrivacyLevel,
             metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)",
             errorCode: status == .success ? nil : status.rawValue
+        )
+    }
+
+    private func result(
+        invocation: ToolInvocation,
+        outcome: OutlookToolOutcome,
+        metricsSummary: String
+    ) -> ToolResult {
+        var payload = outcome.structuredPayload
+        payload["toolID"] = toolID
+        payload["implementation"] = "CommunicationLocalTool"
+        return ToolResult(
+            invocationID: invocation.id,
+            status: outcome.status,
+            displayText: outcome.text,
+            modelText: outcome.text,
+            structuredPayload: payload,
+            privacyLevel: definition.resultPrivacyLevel,
+            metricsSummary: outcome.metricsSummary(base: metricsSummary),
+            errorCode: outcome.errorCode
         )
     }
 
