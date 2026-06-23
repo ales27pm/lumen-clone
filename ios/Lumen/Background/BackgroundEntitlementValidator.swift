@@ -28,11 +28,24 @@ enum BackgroundEntitlementValidator {
         let keyChecks: [[String]] = [
             ["NSMicrophoneUsageDescription"],
             ["NSSpeechRecognitionUsageDescription"],
+            ["NSLocationAlwaysAndWhenInUseUsageDescription", "NSLocationAlwaysUsageDescription"],
             ["NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription", "NSCalendarsWriteOnlyAccessUsageDescription"],
             ["NSContactsUsageDescription"]
         ]
         for alternatives in keyChecks where !alternatives.contains(where: { (infoDictionary[$0] as? String)?.isEmpty == false }) {
             warnings.append(.init(code: "missing_usage_description", message: "Missing usage description: \(alternatives.joined(separator: " or "))"))
+        }
+
+        let backgroundModes: Set<String>
+        if let values = infoDictionary["UIBackgroundModes"] as? [String] {
+            backgroundModes = Set(values)
+        } else if let value = infoDictionary["UIBackgroundModes"] as? String {
+            backgroundModes = Set(value.split { $0 == " " || $0 == ";" || $0 == "," }.map(String.init))
+        } else {
+            backgroundModes = []
+        }
+        for required in ["audio", "fetch", "location", "processing"] where !backgroundModes.contains(required) {
+            warnings.append(.init(code: "missing_background_mode", message: "Missing background mode: \(required)"))
         }
         return warnings
     }

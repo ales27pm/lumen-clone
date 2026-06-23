@@ -522,22 +522,21 @@ actor PersistentRuntimeDiagnosticsRunner {
 
         let seriousDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedSerious, reason: "userChat.agentGrounding") }
         let criticalDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedCritical, reason: "userChat.agentGrounding") }
-        let backgroundDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedBackground, reason: "userChat.agentGrounding") }
-        let lowPowerDeniedOrDegraded = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedLowPower, reason: ModelLoadIntent.diagnostics.rawValue) }
+        let backgroundAllowed = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedBackground, reason: "userChat.agentGrounding") }
+        let lowPowerAllowed = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedLowPower, reason: ModelLoadIntent.diagnostics.rawValue) }
 
         #if DEBUG
-        let overrideDenied = await MainActor.run {
+        let overrideAllowed = await MainActor.run {
             ResourceBudgetGate.setDiagnosticSnapshotOverride(simulatedBackground)
             defer { ResourceBudgetGate.clearDiagnosticSnapshotOverride() }
-            return !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding")
+            return ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding")
         }
         #else
-        let overrideDenied = backgroundDenied
+        let overrideAllowed = backgroundAllowed
         #endif
 
         let realExpectedAllowed: Bool
-        if realSnapshot.scenePhase == .active,
-           realSnapshot.lowPowerModeEnabled == false,
+        if realSnapshot.lowPowerModeEnabled == false,
            realSnapshot.recentMemoryWarningCount == 0 || realSnapshot.recentMemoryWarningCount == nil,
            realSnapshot.thermalState == .nominal || realSnapshot.thermalState == .fair {
             realExpectedAllowed = true
@@ -545,7 +544,7 @@ actor PersistentRuntimeDiagnosticsRunner {
             realExpectedAllowed = false
         }
         let realPass = realExpectedAllowed ? !realDenied : true
-        let simulatedPass = seriousDenied && criticalDenied && backgroundDenied && lowPowerDeniedOrDegraded && overrideDenied
+        let simulatedPass = seriousDenied && criticalDenied && backgroundAllowed && lowPowerAllowed && overrideAllowed
 
         record.metrics.didFallback = simulatedPass
         record.metrics.fallbackReason = "resource_gate_probe"
@@ -558,8 +557,8 @@ actor PersistentRuntimeDiagnosticsRunner {
         record.events.append(PersistentDiagnosticEvent(code: "resource_gate_matrix", message: "Resource gate matrix evaluated", values: [
             "seriousDenied": String(seriousDenied),
             "criticalDenied": String(criticalDenied),
-            "backgroundDenied": String(backgroundDenied),
-            "lowPowerDeniedOrDegraded": String(lowPowerDeniedOrDegraded),
+            "backgroundAllowed": String(backgroundAllowed),
+            "lowPowerAllowed": String(lowPowerAllowed),
             "realExpectedAllowed": String(realExpectedAllowed),
             "realDenied": String(realDenied)
         ]))
@@ -600,7 +599,6 @@ actor PersistentRuntimeDiagnosticsRunner {
     private func environmentAllowsDiagnostics() async -> Bool {
         await MainActor.run {
             let snapshot = ResourceBudgetGate.diagnosticSnapshot()
-            guard snapshot.scenePhase == nil || snapshot.scenePhase == .active else { return false }
             guard snapshot.thermalState != .serious && snapshot.thermalState != .critical else { return false }
             return true
         }

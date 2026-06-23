@@ -109,7 +109,6 @@ struct VoiceModeView: View {
         .onAppear { generationController.startupIfNeeded(for: "voice") { } }
         .onChange(of: scenePhase) { _, phase in
             SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
-            if ResourceBudgetGate.shouldCancelForScenePhase(phase) { cancelForSceneTransition() }
         }
         .onDisappear { cleanup() }
     }

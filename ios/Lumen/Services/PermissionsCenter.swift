@@ -275,7 +275,7 @@ final class PermissionsCenter {
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                 holder.onChange = { cont.resume() }
                 mgr.delegate = holder
-                mgr.requestWhenInUseAuthorization()
+                mgr.requestAlwaysAuthorization()
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(10))
                     holder.finishOnce()

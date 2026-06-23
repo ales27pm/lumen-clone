@@ -1172,6 +1172,14 @@ final actor AppLlamaService {
                     }
 
                     let startedAt = Date()
+                    let backgroundTask = await MainActor.run {
+                        BackgroundRuntimeContinuation.begin(name: "Lumen Chat Generation")
+                    }
+                    defer {
+                        Task { @MainActor in
+                            backgroundTask?.end()
+                        }
+                    }
                     let allowsWork = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue) }
                     guard allowsWork else {
                         cancellationToken.cancel(reason: "resource-budget-denied-before-prompt-eval")

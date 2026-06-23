@@ -583,7 +583,6 @@ final class SlotAgentService {
     @MainActor
     static func agentBudgetDecision(for req: AgentRequest, options: LegacyAgentRunOptions) -> AgentBudgetDecision {
         let snapshot = ResourceBudgetGate.diagnosticSnapshot()
-        if snapshot.scenePhase == .inactive || snapshot.scenePhase == .background { return .cancel }
 
         // The slot-agent path below is deterministic compatibility work: it scopes tools,
         // emits action/approval steps, and runs lightweight tool observations. Do not let
