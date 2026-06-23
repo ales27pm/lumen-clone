@@ -66,14 +66,19 @@ struct ProductivityLocalTool: LocalTool {
             )
         }
 
-        if !toolID.hasPrefix("calendar."),
-           let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
-            return result(
-                invocation: invocation,
-                text: permissionFailure,
-                status: .denied,
-                metricsSummary: "permission_denied"
-            )
+        if toolID.hasPrefix("calendar.") {
+            if Self.shouldRequestCalendarPermission(toolID: toolID, isForeground: context.isForeground) {
+                await requestCalendarPermissionIfNeeded()
+            }
+        } else {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                return result(
+                    invocation: invocation,
+                    text: permissionFailure,
+                    status: .denied,
+                    metricsSummary: "permission_denied"
+                )
+            }
         }
 
         let text: String
@@ -143,11 +148,29 @@ struct ProductivityLocalTool: LocalTool {
             status: status,
             displayText: text,
             modelText: modelText ?? text,
-            structuredPayload: (structuredPayload ?? [:]).merging(["toolID": toolID, "implementation": "ProductivityLocalTool"]) { current, _ in current },
+            structuredPayload: Self.resultPayload(toolID: toolID, structuredPayload: structuredPayload),
             privacyLevel: definition.resultPrivacyLevel,
             metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)",
             errorCode: status == .success ? nil : (errorCode ?? status.rawValue)
         )
+    }
+
+    @MainActor
+    private func requestCalendarPermissionIfNeeded() async {
+        let permissions = PermissionsCenter.shared
+        guard permissions.state(.calendar) == .notDetermined else { return }
+        await permissions.request(.calendar)
+    }
+
+    static func resultPayload(toolID: String, structuredPayload: [String: String]?) -> [String: String] {
+        [
+            "toolID": toolID,
+            "implementation": "ProductivityLocalTool"
+        ].merging(structuredPayload ?? [:]) { canonicalValue, _ in canonicalValue }
+    }
+
+    static func shouldRequestCalendarPermission(toolID: String, isForeground: Bool) -> Bool {
+        isForeground && toolID.hasPrefix("calendar.")
     }
 
     private func result(invocation: ToolInvocation, response: CalendarTools.CalendarToolResponse) -> ToolResult {

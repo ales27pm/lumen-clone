@@ -115,7 +115,7 @@ nonisolated enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
 
     init?(usageDescriptionKey: String) {
         switch usageDescriptionKey {
-        case "NSCalendarsFullAccessUsageDescription", "NSCalendarsUsageDescription": self = .calendar
+        case "NSCalendarsFullAccessUsageDescription", "NSCalendarsWriteOnlyAccessUsageDescription", "NSCalendarsUsageDescription": self = .calendar
         case "NSRemindersFullAccessUsageDescription", "NSRemindersUsageDescription": self = .reminders
         case "NSContactsUsageDescription": self = .contacts
         case "NSLocationWhenInUseUsageDescription": self = .location

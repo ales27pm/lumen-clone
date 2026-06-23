@@ -91,6 +91,34 @@ final class CalendarReadToolPolicyTests: XCTestCase {
         let tool = ProductivityLocalTool(ToolRegistry.find(id: "calendar.list")!)
         XCTAssertEqual(tool.definition.id, "calendar.list")
     }
+
+    func testProductivityPayloadDoesNotAllowCanonicalMetadataSpoofing() {
+        let payload = ProductivityLocalTool.resultPayload(
+            toolID: "calendar.list",
+            structuredPayload: [
+                "availability": "granted",
+                "toolID": "spoofed.tool",
+                "implementation": "SpoofedImplementation"
+            ]
+        )
+        XCTAssertEqual(payload["toolID"], "calendar.list")
+        XCTAssertEqual(payload["implementation"], "ProductivityLocalTool")
+        XCTAssertEqual(payload["availability"], "granted")
+    }
+
+    func testProductivityCalendarPermissionPromptIsForegroundOnly() {
+        XCTAssertTrue(ProductivityLocalTool.shouldRequestCalendarPermission(toolID: "calendar.list", isForeground: true))
+        XCTAssertTrue(ProductivityLocalTool.shouldRequestCalendarPermission(toolID: "calendar.create", isForeground: true))
+        XCTAssertFalse(ProductivityLocalTool.shouldRequestCalendarPermission(toolID: "calendar.list", isForeground: false))
+        XCTAssertFalse(ProductivityLocalTool.shouldRequestCalendarPermission(toolID: "reminders.list", isForeground: true))
+    }
+
+    func testWriteOnlyCalendarUsageDescriptionIsAccepted() {
+        XCTAssertEqual(PermissionKind(usageDescriptionKey: "NSCalendarsWriteOnlyAccessUsageDescription"), .calendar)
+        XCTAssertTrue(CalendarTools.EventKitProvider.hasCalendarUsageDescription(infoDictionary: [
+            "NSCalendarsWriteOnlyAccessUsageDescription": "Create events."
+        ]))
+    }
 }
 
 private final class FakeCalendarEventProvider: CalendarTools.EventProvider {

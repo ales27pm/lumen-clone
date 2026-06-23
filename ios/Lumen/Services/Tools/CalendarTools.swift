@@ -92,9 +92,14 @@ enum CalendarTools {
             )
         }
 
+        nonisolated static func hasCalendarUsageDescription(infoDictionary: [String: Any]) -> Bool {
+            infoDictionary["NSCalendarsFullAccessUsageDescription"] != nil
+                || infoDictionary["NSCalendarsWriteOnlyAccessUsageDescription"] != nil
+                || infoDictionary["NSCalendarsUsageDescription"] != nil
+        }
+
         private static var hasCalendarUsageDescription: Bool {
-            Bundle.main.object(forInfoDictionaryKey: "NSCalendarsFullAccessUsageDescription") != nil
-                || Bundle.main.object(forInfoDictionaryKey: "NSCalendarsUsageDescription") != nil
+            Self.hasCalendarUsageDescription(infoDictionary: Bundle.main.infoDictionary ?? [:])
         }
     }
 

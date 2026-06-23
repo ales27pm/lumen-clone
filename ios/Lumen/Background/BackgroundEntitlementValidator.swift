@@ -28,7 +28,7 @@ enum BackgroundEntitlementValidator {
         let keyChecks: [[String]] = [
             ["NSMicrophoneUsageDescription"],
             ["NSSpeechRecognitionUsageDescription"],
-            ["NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription"],
+            ["NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription", "NSCalendarsWriteOnlyAccessUsageDescription"],
             ["NSContactsUsageDescription"]
         ]
         for alternatives in keyChecks where !alternatives.contains(where: { (infoDictionary[$0] as? String)?.isEmpty == false }) {
