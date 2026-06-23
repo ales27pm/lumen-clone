@@ -10,9 +10,9 @@ import OSLog
 final class TriggerScheduler {
     static let shared = TriggerScheduler()
 
-    static let refreshIdentifier = "com.27pm.lumen.agent.refresh"
-    static let processIdentifier = "com.27pm.lumen.agent.process"
-    static let notificationCategory = "LumenAgent"
+    nonisolated static let refreshIdentifier = "com.27pm.lumenclone.agent.refresh"
+    nonisolated static let processIdentifier = "com.27pm.lumenclone.agent.process"
+    nonisolated static let notificationCategory = "LumenAgent"
 
     private var registered = false
     private var isRunning = false

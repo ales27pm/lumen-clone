@@ -232,16 +232,16 @@ private enum LlamaRuntimeScheduling {
 }
 
 private final class LlamaRuntimeLogCapture: @unchecked Sendable {
-    nonisolated(unsafe) static let shared = LlamaRuntimeLogCapture()
-    nonisolated(unsafe) private static let callback: ggml_log_callback = { _, text, _ in
+    static let shared = LlamaRuntimeLogCapture()
+    private static let callback: ggml_log_callback = { _, text, _ in
         guard let text else { return }
         let line = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return }
         LlamaRuntimeLogCapture.shared.record(line)
     }
 
-    nonisolated(unsafe) private let lock = NSLock()
-    nonisolated(unsafe) private let logger = Logger(subsystem: "com.lumen.runtime", category: "llama.cpp")
+    private let lock = NSLock()
+    private let logger = Logger(subsystem: "com.lumen.runtime", category: "llama.cpp")
     nonisolated(unsafe) private var installed = false
     nonisolated(unsafe) private var lines: [String] = []
 
@@ -1776,14 +1776,16 @@ final actor AppLlamaService {
             latencyClass: latencySelection.latencyClass
         )
         let useQwenDirective = currentChatModelLooksLikeQwen3(slot: slot)
+        let requireFinalAnswerOnly = !req.modelName.lowercased().contains("json")
+        let allowReasoningCapture = req.reasoningCaptureEnabled && requireFinalAnswerOnly
         let systemPrompt = ModelThinkingControl.systemPrompt(
             assembly.systemPrompt,
-            reasoningCaptureEnabled: req.reasoningCaptureEnabled,
-            requireFinalAnswerOnly: !req.modelName.lowercased().contains("json")
+            reasoningCaptureEnabled: allowReasoningCapture,
+            requireFinalAnswerOnly: requireFinalAnswerOnly
         )
         let userMessage = ModelThinkingControl.userMessage(
             assembly.userMessage,
-            reasoningCaptureEnabled: req.reasoningCaptureEnabled,
+            reasoningCaptureEnabled: allowReasoningCapture,
             useQwenThinkingDirective: useQwenDirective
         )
 

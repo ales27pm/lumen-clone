@@ -20,7 +20,9 @@ final class PowerModeMonitor: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.snapshot = PowerModeSnapshot(lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled)
+            Task { @MainActor [weak self] in
+                self?.snapshot = PowerModeSnapshot(lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled)
+            }
         }
     }
 

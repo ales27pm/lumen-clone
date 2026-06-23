@@ -32,7 +32,7 @@ Use the latest stable MSAL 2.x release (for example, 2.10.0) and link the `MSAL`
 
 - Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**.
 - Platform: **iOS/macOS**.
-- Redirect URI: `msauth.com.27pm.lumen://auth`.
+- Redirect URI: `msauth.com.27pm.lumenclone://auth`.
 - Public client: enabled.
 
 3. Add delegated Graph permissions:
@@ -89,10 +89,10 @@ The validator enforces:
 
 - Expected `MSAL_CLIENT_ID` / `MSALClientID` value presence.
 - `MSALRedirectURI` format: `msauth.<bundle-id>://auth`.
-- Bundle identifier alignment between redirect URI and `PRODUCT_BUNDLE_IDENTIFIER` (`com.27pm.lumen`).
+- Bundle identifier alignment between redirect URI and `PRODUCT_BUNDLE_IDENTIFIER` (`com.27pm.lumenclone`).
 
 ### TestFlight release handoff checklist
 
 - [ ] Validation script passes from repo root.
-- [ ] Entra registration still includes `msauth.com.27pm.lumen://auth` under iOS/macOS platform.
+- [ ] Entra registration still includes `msauth.com.27pm.lumenclone://auth` under iOS/macOS platform.
 - [ ] Outlook sign-in + inbox fetch smoke-tested on TestFlight candidate.

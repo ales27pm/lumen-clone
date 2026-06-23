@@ -40,7 +40,7 @@ final class MicrosoftGraphAuthManager {
         if let configured = try? MicrosoftGraphConfiguration.load().redirectURI {
             return configured
         }
-        return "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumen")://auth"
+        return "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumenclone")://auth"
     }
     var bundleIdentifier: String {
         Bundle.main.bundleIdentifier ?? "Unavailable"

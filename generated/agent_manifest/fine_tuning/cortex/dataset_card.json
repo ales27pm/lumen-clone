@@ -1,23 +1,38 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 1608,
+  "availableSFTRecords": 20213,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
-    "sentinelSafe": true
+    "sentinelSafe": true,
+    "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "ac9fdc25fcbb6730d0ef70f426a13cbc505e25ba",
+  "manifestCommit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
+  "quality": {
+    "cortexCodebaseChunkRecordCount": 4267,
+    "cortexCodebaseFileRecordCount": 2083,
+    "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_plus_selected_manifest_artifacts",
+    "cortexCodebaseSelfAwarenessRecordCount": 6415,
+    "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
+    "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
+    "ultraSpecificRecordCount": 25,
+    "ultraSpecificSourceFamily": "adapter_ultra_specific"
+  },
   "recordCounts": {
-    "eval": 555,
-    "train_dpo": 8,
-    "train_sft": 312,
-    "val_dpo": 1,
-    "val_sft": 55
+    "eval": 558,
+    "train_dpo": 15,
+    "train_sft": 8719,
+    "val_dpo": 3,
+    "val_sft": 1539
   },
   "sourceFamilies": [
+    "adapter_ultra_specific",
+    "codebase_home_chunk_sft",
+    "codebase_home_chunks",
     "codebase_home_corpus",
     "codebase_home_sft",
+    "cortex_codebase_self_awareness",
     "cortex_routing",
     "cross_model_training",
     "embedding_corpus",
@@ -33,10 +48,13 @@
     "runtime_audit_repairs",
     "train_sft"
   ],
-  "systemPrompt": "You are Cortex, Lumen’s routing and planning agent. Select manifest-approved tools, persist required action steps, and delegate execution to Executor.",
+  "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
   "taskTypes": [
     "codebase_home_grounding",
     "codebase_home_overview",
+    "codebase_self_awareness",
+    "codebase_source_chunk",
+    "codebase_source_chunk_grounding",
     "cortex_routing",
     "embedding_corpus",
     "embedding_dataset_card",
@@ -50,14 +68,22 @@
     "fleet_delegation_preference",
     "fleet_peer_knowledge",
     "fleet_peer_source_knowledge",
+    "fleet_private_state_boundary",
     "fleet_self_knowledge",
     "fleet_whole_system_identity",
     "intent_routing",
     "manifest_grounding_cards",
+    "module_ownership_grounding",
     "role_directory",
     "runtime_manifest_drift_repair",
     "source_code_self_knowledge",
     "source_routing_knowledge",
-    "tool_id_repair"
+    "source_symbol_grounding",
+    "source_tool_registry_knowledge",
+    "tool_id_repair",
+    "total_codebase_self_awareness",
+    "total_codebase_source_chunk",
+    "ultra_specific_intent_routing",
+    "ultra_specific_regression_routing"
   ]
 }

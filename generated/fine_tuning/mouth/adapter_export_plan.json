@@ -7,15 +7,18 @@
   "agent": "mouth",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "c6534d7f9673d5d57b730cc567064daf8302dc11",
+    "manifestCommit": "0a3977dd04253a9ea274a45c2e659d3e67557c9e",
     "recordCounts": {
-      "eval": 5,
-      "train_dpo": 10,
-      "train_sft": 138,
+      "eval": 8,
+      "train_dpo": 12,
+      "train_sft": 278,
       "val_dpo": 2,
-      "val_sft": 24
+      "val_sft": 49
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cross_model_training",
@@ -28,6 +31,8 @@
     ],
     "taskTypes": [
       "codebase_home_grounding",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "embedding_corpus",
       "fleet_delegation",
       "fleet_delegation_preference",
@@ -43,6 +48,11 @@
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",
+      "ultra_specific_approval_request_response",
+      "ultra_specific_empty_after_sanitization_recovery",
+      "ultra_specific_permission_failure_response",
+      "ultra_specific_post_tool_summary",
+      "ultra_specific_reference_resolution_failure",
       "user_response_generation"
     ]
   },

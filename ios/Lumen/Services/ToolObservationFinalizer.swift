@@ -1,6 +1,8 @@
 import Foundation
 
 nonisolated enum ToolObservationFinalizer {
+    /// Converts a raw tool observation into a sanitized, intent-appropriate final string.
+    /// - Returns: A formatted observation string, or `nil` if the observation is empty, unsafe, or does not match the expected intent.
     static func immediateFinalIfSafe(intent: UserIntent, toolID: String, observation: String, originalPrompt: String) -> String? {
         let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
         let cleanObservation = ModelOutputSanitizer.stripHiddenBlocksPreservingPayloadMarkers(observation)
@@ -32,12 +34,51 @@ nonisolated enum ToolObservationFinalizer {
         case "outlook.message.read":
             guard intent == .outlook else { return nil }
             return "Outlook message:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.messages.search":
+            guard intent == .outlook else { return nil }
+            return "Outlook search results:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.attachments.list":
+            guard intent == .outlook else { return nil }
+            return "Outlook attachments:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.folders.list":
+            guard intent == .outlook else { return nil }
+            return "Outlook folders:\n\(plainObservation)\(payloadMarkers)"
+        case "outlook.status":
+            guard intent == .outlook else { return nil }
+            return "Outlook status: \(plainObservation)\(payloadMarkers)"
+        case "calendar.list":
+            guard intent == .calendar else { return nil }
+            return "Calendar events:\n\(plainObservation)\(payloadMarkers)"
+        case "reminders.list":
+            guard intent == .reminder else { return nil }
+            return "Reminders:\n\(plainObservation)\(payloadMarkers)"
         case "memory.save":
             guard intent == .memory || intent == .note else { return nil }
             return "Saved to memory: \(plainObservation)\(payloadMarkers)"
         case "memory.recall":
             guard intent == .memory || intent == .note else { return nil }
             return "Memory recall:\n\(plainObservation)\(payloadMarkers)"
+        case "maps.search":
+            guard intent == .maps else { return nil }
+            return "Maps search results:\n\(plainObservation)\(payloadMarkers)"
+        case "maps.directions":
+            guard intent == .maps else { return nil }
+            return "Maps directions:\n\(plainObservation)\(payloadMarkers)"
+        case "motion.activity":
+            guard intent == .motion else { return nil }
+            return "Motion activity:\n\(plainObservation)\(payloadMarkers)"
+        case "health.summary":
+            guard intent == .health else { return nil }
+            return "Health summary:\n\(plainObservation)\(payloadMarkers)"
+        case "rag.index_files":
+            guard intent == .rag else { return nil }
+            return "Local file index updated: \(plainObservation)\(payloadMarkers)"
+        case "rag.index_photos":
+            guard intent == .rag else { return nil }
+            return "Photo index updated: \(plainObservation)\(payloadMarkers)"
+        case "rag.search":
+            guard intent == .rag else { return nil }
+            return "RAG search results:\n\(groundedRAGObservation(plainObservation))\(payloadMarkers)"
         case "alarm.authorization_status":
             guard intent == .alarm else { return nil }
             return "Alarm authorization status: \(plainObservation)\(payloadMarkers)"
@@ -59,11 +100,35 @@ nonisolated enum ToolObservationFinalizer {
         ["summarize", "compare", "analyze", "analysis", "deep", "explain", "synthesize", "pros and cons"].contains { prompt.contains($0) }
     }
 
+    /// Determines whether text contains unsafe content markers.
+    /// - Returns: `true` if the text contains unsafe markers, `false` otherwise.
     private static func looksUnsafe(_ text: String) -> Bool {
         let lower = text.lowercased()
         return lower.contains("<think") || lower.contains("{\"kind\"") || lower.contains("\"mediakind\"")
     }
 
+    /// Formats and attributes a RAG search observation to the local index.
+    ///
+    /// - Parameter observation: The raw observation from a RAG search.
+    /// - Returns: The observation with local RAG index source attribution and appropriate formatting.
+    private static func groundedRAGObservation(_ observation: String) -> String {
+        let trimmed = observation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "No matching local snippets were retrieved. Source: local RAG index." }
+        let lower = trimmed.lowercased()
+        if trimmed.contains("[") || lower.contains("snippet") || lower.contains("source") {
+            return trimmed
+        }
+        if lower.contains("no matching") || lower.contains("no relevant") {
+            return "\(trimmed) Source: local RAG index; no matching module snippets were retrieved."
+        }
+        return "[1] \(trimmed)\nSource: local RAG index snippet."
+    }
+
+    /// Formats search results into a compact list, or displays fallback text when no results are available.
+    /// - Parameters:
+    ///   - text: A string containing encoded `WebRichContentPayload` items.
+    ///   - fallback: Alternative text to display if no search results are found.
+    /// - Returns: A formatted string containing up to five search results with titles, optional URLs, and snippets, or the first twelve non-empty lines of fallback text.
     private static func compactWebResults(from text: String, fallback: String) -> String {
         let payloads = WebRichContentPayload.decodeAll(from: text)
         if let payload = payloads.first(where: { $0.kind == .searchResults }), !payload.results.isEmpty {

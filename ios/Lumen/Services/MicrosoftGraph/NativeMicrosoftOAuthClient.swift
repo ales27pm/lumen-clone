@@ -37,7 +37,7 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
     private weak var presentationAnchor: UIWindow?
 
     override init() {
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.27pm.lumen"
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.27pm.lumenclone"
         self.callbackScheme = "msauth.\(bundleID)"
         super.init()
     }
@@ -56,7 +56,7 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         let verifier = try Self.makeCodeVerifier()
         let challenge = Self.makeCodeChallenge(verifier: verifier)
         let state = UUID().uuidString
-        let redirectURI = config.redirectURI ?? "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumen")://auth"
+        let redirectURI = config.redirectURI ?? "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumenclone")://auth"
         let authURL = try authorizationURL(config: config, scopes: scopes, redirectURI: redirectURI, state: state, codeChallenge: challenge)
         let callbackURL = try await authenticate(
             url: authURL,

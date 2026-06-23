@@ -7,7 +7,7 @@ contacts.search,Search Contacts,False,NSContactsUsageDescription,1,ios/Lumen/Mod
 messages.draft,Draft Message,True,,6,ios/Lumen/Models/ToolDefinition.swift
 mail.draft,Draft Email,True,,7,ios/Lumen/Models/ToolDefinition.swift
 outlook.status,Outlook Status,False,,0,ios/Lumen/Models/ToolDefinition.swift
-outlook.folders.list,List Outlook Folders,False,,2,ios/Lumen/Models/ToolDefinition.swift
+outlook.folders.list,List Outlook Folders,False,,1,ios/Lumen/Models/ToolDefinition.swift
 outlook.messages.list,List Outlook Messages,False,,4,ios/Lumen/Models/ToolDefinition.swift
 outlook.messages.search,Search Outlook Messages,False,,4,ios/Lumen/Models/ToolDefinition.swift
 outlook.message.read,Read Outlook Message,False,,2,ios/Lumen/Models/ToolDefinition.swift

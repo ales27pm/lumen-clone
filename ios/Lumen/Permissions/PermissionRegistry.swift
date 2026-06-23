@@ -24,6 +24,8 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
         networkAccessEnabled = enabled
     }
 
+    /// Retrieves the current authorization status for a permission domain.
+    /// - Returns: The authorization status as an `AssistantPermissionState`.
     func currentStatus(for domain: PermissionDomain) async -> AssistantPermissionState {
         switch domain {
         case .microphone:
@@ -54,6 +56,7 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
         case .contacts:
             switch CNContactStore.authorizationStatus(for: .contacts) {
             case .authorized: return .granted
+            case .limited: return .limited
             case .denied: return .denied
             case .restricted: return .restricted
             case .notDetermined: return .notDetermined

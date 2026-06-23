@@ -7,15 +7,18 @@
   "agent": "rem",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "c6534d7f9673d5d57b730cc567064daf8302dc11",
+    "manifestCommit": "0a3977dd04253a9ea274a45c2e659d3e67557c9e",
     "recordCounts": {
-      "eval": 4,
-      "train_dpo": 7,
-      "train_sft": 527,
-      "val_dpo": 1,
-      "val_sft": 93
+      "eval": 6,
+      "train_dpo": 8,
+      "train_sft": 3700,
+      "val_dpo": 2,
+      "val_sft": 653
     },
     "sourceFamilies": [
+      "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_chunks",
       "codebase_home_corpus",
       "codebase_home_sft",
       "cross_model_training",
@@ -35,6 +38,8 @@
     "taskTypes": [
       "codebase_home_grounding",
       "codebase_home_overview",
+      "codebase_source_chunk",
+      "codebase_source_chunk_grounding",
       "embedding_corpus",
       "embedding_dataset_card",
       "embedding_eval_retrieval",
@@ -51,7 +56,14 @@
       "reflection_and_memory_policy",
       "rem_reflection",
       "runtime_manifest_drift_repair",
-      "tool_id_repair"
+      "tool_id_repair",
+      "ultra_specific_argument_extraction_repair",
+      "ultra_specific_manifest_tool_repair",
+      "ultra_specific_memory_ttl_policy",
+      "ultra_specific_prompt_control_repair",
+      "ultra_specific_reference_resolution_repair",
+      "ultra_specific_runtime_repair",
+      "ultra_specific_training_evidence_repair"
     ]
   },
   "expectedArtifacts": {

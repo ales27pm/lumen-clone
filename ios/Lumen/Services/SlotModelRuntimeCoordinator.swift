@@ -93,6 +93,11 @@ actor SlotModelRuntimeCoordinator {
         return nil
     }
 
+    /// Loads an embedding model from available candidates, prioritizing a preferred model if specified.
+    /// - Parameters:
+    ///   - appState: Updated with the ID of the successfully loaded embedding model.
+    ///   - preferredID: Optional UUID string to prioritize among candidates.
+    /// - Returns: `true` if an embedding model is successfully loaded, `false` otherwise.
     @discardableResult
     func ensureEmbeddingModel(
         appState: AppState,
@@ -112,8 +117,9 @@ actor SlotModelRuntimeCoordinator {
 
             do {
                 try await AppLlamaService.shared.loadEmbeddingModel(path: path)
-                await MainActor.run { appState.activeEmbeddingModelID = candidate.id.uuidString }
-                logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=embedding model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
+                let candidateID = candidate.id.uuidString
+                await MainActor.run { appState.activeEmbeddingModelID = candidateID }
+                logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidateID, preferredID: preferredID), privacy: .public) role=embedding model_id=\(candidateID, privacy: .public) path=\(path, privacy: .public)")
                 return true
             } catch {
                 logger.error("transition event=failed_candidate role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) error=\(String(describing: error), privacy: .public)")

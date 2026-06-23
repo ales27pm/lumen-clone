@@ -265,3 +265,19 @@ private struct AgentWorkflowEventRow: View {
         }
     }
 }
+
+private struct DeveloperConsoleTextView: View {
+    let title: String
+    let bodyText: String
+
+    var body: some View {
+        ScrollView {
+            Text(bodyText)
+                .font(.footnote.monospaced())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

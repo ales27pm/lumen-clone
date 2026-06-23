@@ -1,21 +1,35 @@
 {
   "agent": "mouth",
-  "availableSFTRecords": 182,
+  "availableSFTRecords": 622,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
-    "sentinelSafe": true
+    "sentinelSafe": true,
+    "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "ac9fdc25fcbb6730d0ef70f426a13cbc505e25ba",
+  "manifestCommit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
+  "quality": {
+    "cortexCodebaseChunkRecordCount": 0,
+    "cortexCodebaseFileRecordCount": 0,
+    "cortexCodebaseSelfAwarenessCoverage": null,
+    "cortexCodebaseSelfAwarenessRecordCount": 0,
+    "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
+    "ultraSpecificRecordCount": 104,
+    "ultraSpecificSourceFamily": "adapter_ultra_specific"
+  },
   "recordCounts": {
-    "eval": 5,
-    "train_dpo": 10,
-    "train_sft": 143,
+    "eval": 8,
+    "train_dpo": 12,
+    "train_sft": 278,
     "val_dpo": 2,
-    "val_sft": 25
+    "val_sft": 49
   },
   "sourceFamilies": [
+    "adapter_ultra_specific",
+    "codebase_home_chunk_sft",
+    "codebase_home_chunks",
     "codebase_home_corpus",
     "codebase_home_sft",
     "cross_model_training",
@@ -29,6 +43,8 @@
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
   "taskTypes": [
     "codebase_home_grounding",
+    "codebase_source_chunk",
+    "codebase_source_chunk_grounding",
     "embedding_corpus",
     "fleet_delegation",
     "fleet_delegation_preference",
@@ -44,6 +60,11 @@
     "source_code_self_knowledge",
     "source_routing_knowledge",
     "source_tool_registry_knowledge",
+    "ultra_specific_approval_request_response",
+    "ultra_specific_empty_after_sanitization_recovery",
+    "ultra_specific_permission_failure_response",
+    "ultra_specific_post_tool_summary",
+    "ultra_specific_reference_resolution_failure",
     "user_response_generation"
   ]
 }

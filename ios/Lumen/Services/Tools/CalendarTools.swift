@@ -197,13 +197,14 @@ enum CalendarTools {
         return unavailable
     }
 
-    static func parseListArguments(_ arguments: [String: String], now: Date = Date()) throws -> CalendarListQuery {
+    nonisolated static func parseListArguments(_ arguments: [String: String], now: Date = Date()) throws -> CalendarListQuery {
+        let argumentDateFormatter = ISO8601DateFormatter()
         let limit = Int(arguments["limit"] ?? "10") ?? 10
         guard (1...20).contains(limit) else { throw ToolExecutionError.invalidArguments("limit") }
 
         let start: Date
         if let rawStart = arguments["startDate"] {
-            guard let parsed = isoFormatter.date(from: rawStart) else { throw ToolExecutionError.invalidArguments("startDate") }
+            guard let parsed = argumentDateFormatter.date(from: rawStart) else { throw ToolExecutionError.invalidArguments("startDate") }
             start = parsed
         } else {
             start = now
@@ -211,7 +212,7 @@ enum CalendarTools {
 
         let end: Date
         if let rawEnd = arguments["endDate"] {
-            guard let parsed = isoFormatter.date(from: rawEnd) else { throw ToolExecutionError.invalidArguments("endDate") }
+            guard let parsed = argumentDateFormatter.date(from: rawEnd) else { throw ToolExecutionError.invalidArguments("endDate") }
             end = parsed
         } else {
             end = now.addingTimeInterval(7 * 24 * 3600)
