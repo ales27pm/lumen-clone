@@ -1348,7 +1348,7 @@ final class AgentService {
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
         if options.diagnosticsEnabled {
-            return SlotAgentService.shared.run(req, options: options)
+            return LegacyAgentCompatibilityBridge.runSlotAgentCompatibility(req, options: options)
         }
         if options.allowDeterministicCompatibility,
            SlotAgentService.canCompleteThroughDeterministicCompatibility(req) {
@@ -1356,7 +1356,7 @@ final class AgentService {
             compatibilityOptions.groundingMode = .slotAgent
             compatibilityOptions.allowDegradedGrounding = false
             compatibilityOptions.preventDoubleGrounding = true
-            return SlotAgentService.shared.run(req, options: compatibilityOptions)
+            return LegacyAgentCompatibilityBridge.runSlotAgentCompatibility(req, options: compatibilityOptions)
         }
 
         return AsyncStream { continuation in

@@ -138,7 +138,7 @@ struct OutlookMailView: View {
     }
 
     private var defaultRedirectURI: String {
-        "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumen")://auth"
+        "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumenclone")://auth"
     }
 
     private var shouldShowDebugConfiguration: Bool {

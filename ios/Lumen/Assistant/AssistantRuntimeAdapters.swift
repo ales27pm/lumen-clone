@@ -57,13 +57,12 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
 
     let kind: AssistantRuntimeKind = .llama
     let unavailableReason: String?
-    private let explicitlyAvailable: Bool
     private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
     private let liveService: (any LlamaRuntimeStreamingService)?
     private let liveSlot: LumenModelSlot
 
     var isAvailable: Bool {
-        explicitlyAvailable || generateHandler != nil || liveService != nil
+        generateHandler != nil || liveService != nil
     }
 
     init(
@@ -71,21 +70,19 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         unavailableReason: String? = "llama text runtime is not directly wired to AssistantKernel",
         generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil
     ) {
-        self.explicitlyAvailable = isAvailable
         self.generateHandler = generateHandler
         self.liveService = nil
         self.liveSlot = .mouth
         if generateHandler != nil {
             self.unavailableReason = nil
         } else if isAvailable {
-            self.unavailableReason = unavailableReason ?? "llama text runtime was marked available without a generation adapter"
+            self.unavailableReason = unavailableReason ?? "llama text runtime staged: generation adapter missing"
         } else {
             self.unavailableReason = unavailableReason
         }
     }
 
     private init(liveService: any LlamaRuntimeStreamingService, liveSlot: LumenModelSlot) {
-        self.explicitlyAvailable = false
         self.generateHandler = nil
         self.liveService = liveService
         self.liveSlot = liveSlot
@@ -149,14 +146,18 @@ struct FoundationModelsRuntimeAdapter: LocalTextGenerationRuntime {
     let kind: AssistantRuntimeKind = .foundationModels
     let isAvailable: Bool
     let unavailableReason: String?
+    let availabilityStatus: String
+    let supportsGeneration: Bool = false
 
     init(unavailableReason: String? = nil) {
         if #available(iOS 26.0, *) {
             self.isAvailable = false
-            self.unavailableReason = unavailableReason ?? "FoundationModels generation is not wired"
+            self.availabilityStatus = "staged: implementation missing"
+            self.unavailableReason = unavailableReason ?? "FoundationModels generation is staged: implementation missing"
         } else {
             self.isAvailable = false
-            self.unavailableReason = "FoundationModels requires iOS 26 or later"
+            self.availabilityStatus = "framework unavailable: requires iOS 26 or later"
+            self.unavailableReason = "FoundationModels framework unavailable: requires iOS 26 or later"
         }
     }
 
@@ -170,8 +171,10 @@ struct FoundationModelsRuntimeAdapter: LocalTextGenerationRuntime {
 struct CoreMLRuntimeAdapter: LocalEmbeddingRuntime {
     let kind: AssistantRuntimeKind = .coreML
     let modelURL: URL?
+    let supportsEmbeddings: Bool = false
 
     var isAvailable: Bool {
+        guard supportsEmbeddings else { return false }
         #if canImport(CoreML)
         guard let modelURL else { return false }
         return FileManager.default.fileExists(atPath: modelURL.path)
@@ -181,6 +184,7 @@ struct CoreMLRuntimeAdapter: LocalEmbeddingRuntime {
     }
 
     var unavailableReason: String? {
+        guard supportsEmbeddings else { return "CoreML embedding runtime staged: implementation missing" }
         #if canImport(CoreML)
         guard let modelURL else { return "No Core ML embedding model configured" }
         return FileManager.default.fileExists(atPath: modelURL.path) ? nil : "Configured Core ML model file is missing"
@@ -189,7 +193,18 @@ struct CoreMLRuntimeAdapter: LocalEmbeddingRuntime {
         #endif
     }
 
+    var availabilityStatus: String {
+        #if canImport(CoreML)
+        guard supportsEmbeddings else { return "staged: implementation missing" }
+        guard let modelURL else { return "model missing: not configured" }
+        return FileManager.default.fileExists(atPath: modelURL.path) ? "available" : "model missing: configured file missing"
+        #else
+        return "framework unavailable"
+        #endif
+    }
+
     func embed(request: EmbeddingRequest) async throws -> [Float] {
+        guard supportsEmbeddings else { throw CoreMLRuntimeError.embeddingExtractionNotImplemented }
         #if canImport(CoreML)
         guard let modelURL else { throw CoreMLRuntimeError.modelNotConfigured }
         guard FileManager.default.fileExists(atPath: modelURL.path) else { throw CoreMLRuntimeError.modelNotFound }

@@ -9,12 +9,15 @@
 Run on macOS with Xcode installed:
 
 ```sh
+./scripts/check-lumen-integration-gate.sh
 ./scripts/check-ios-build-readiness.sh
 cd ios
 xcodebuild -list -project Lumen.xcodeproj
 xcodebuild -project Lumen.xcodeproj -scheme Lumen -destination 'generic/platform=iOS Simulator' build
 xcodebuild -project Lumen.xcodeproj -scheme Lumen -destination 'generic/platform=iOS Simulator' test
 ```
+
+`scripts/check-lumen-integration-gate.sh` is the local pre-PR gate for this repo. It runs the Agent Kernel boundary guards, adapter runtime invariants, LoRA hardening invariants, MSAL release validation, shell-subprocess security scan, iOS build-readiness checks, and `git diff --check` in a deterministic fail-fast order.
 
 If a named simulator is required locally, run `xcodebuild -showdestinations -project Lumen.xcodeproj -scheme Lumen` and choose an installed simulator.
 
@@ -35,7 +38,7 @@ Static checks are not compile validation.
 - AppIntents availability must remain guarded for supported deployment targets.
 - SwiftData `ModelContext` usage must remain on main actor or explicit contexts.
 - Generated Info.plist keys must match microphone, speech, calendar, contacts, location, photo, notification, and background task usage.
-- Background task identifiers must include `com.27pm.lumen.agent.refresh` and `com.27pm.lumen.agent.process`.
+- Background task identifiers must include `com.27pm.lumenclone.agent.refresh` and `com.27pm.lumenclone.agent.process`.
 - Secure tool registry and legacy tool catalog intentionally use distinct type names (`SecureToolRegistry` and `ToolRegistry`) to avoid duplicate symbols.
 
 ## Symbol collision hardening

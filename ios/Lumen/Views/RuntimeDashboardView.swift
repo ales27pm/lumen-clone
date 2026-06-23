@@ -5,8 +5,8 @@ struct RuntimeDashboardView: View {
     var body: some View {
         List {
             Section("Availability") {
-                Text("FoundationModels: \(runtime.foundationModelsAvailable ? "Available" : "Unavailable")")
-                Text("CoreML: \(runtime.coreMLAvailable ? "Available" : "Unavailable")")
+                Text("FoundationModels: \(runtime.foundationModelsAvailable ? "Available" : "Unavailable") - \(runtime.foundationModelsStatus)")
+                Text("CoreML embeddings: \(runtime.coreMLAvailable ? "Available" : "Unavailable") - \(runtime.coreMLStatus)")
                 Text("Metal: \(runtime.metalAvailable ? "Available" : "Unavailable")")
             }
             Section("Policy") {

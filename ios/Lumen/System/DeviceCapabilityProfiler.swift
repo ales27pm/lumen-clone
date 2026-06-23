@@ -23,6 +23,9 @@ struct DeviceCapabilityProfiler {
         @unknown default: bgStatus = "unknown"
         }
 
+        let foundationRuntime = FoundationModelsRuntimeAdapter()
+        let coreMLRuntime = CoreMLRuntimeAdapter(modelURL: nil)
+
         return AssistantDeviceCapabilitySnapshot(
             osVersion: processInfo.operatingSystemVersionString,
             deviceIdiom: idiom,
@@ -31,8 +34,10 @@ struct DeviceCapabilityProfiler {
             lowPowerModeEnabled: processInfo.isLowPowerModeEnabled,
             thermalState: .from(processThermalState: processInfo.thermalState),
             metalAvailable: MTLCreateSystemDefaultDevice() != nil,
-            coreMLAvailable: NSClassFromString("MLModel") != nil,
-            foundationModelsAvailable: FoundationModelsRuntimeAdapter().isAvailable,
+            coreMLAvailable: coreMLRuntime.isAvailable,
+            coreMLStatus: coreMLRuntime.availabilityStatus,
+            foundationModelsAvailable: foundationRuntime.isAvailable,
+            foundationModelsStatus: foundationRuntime.availabilityStatus,
             backgroundRefreshStatus: bgStatus
         )
     }
