@@ -11,13 +11,24 @@ run_check() {
   "$@"
 }
 
+run_git_diff_check() {
+  printf '\n== Git diff whitespace check ==\n'
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'Running git diff --check in git worktree.\n'
+    git diff --check
+  else
+    printf 'Skipping git diff --check: not a git worktree\n'
+  fi
+}
+
 run_check "Agent kernel boundary" python3 tools/check_agent_kernel_boundary.py
 run_check "Agent kernel boundary strict" python3 tools/check_agent_kernel_boundary.py --strict
 run_check "Adapter runtime invariants" python3 tools/check_adapter_runtime_invariants.py
 run_check "iOS LoRA hardening invariants" python3 tools/check_ios_lora_hardening_invariants.py
 run_check "MSAL iOS release config" python3 scripts/validate-msal-ios-release-config.py
+run_check "iOS signing capabilities" python3 scripts/validate_ios_signing_capabilities.py
 run_check "No shell subprocess security check" python3 tools/security/check_no_shell_subprocess.py
 run_check "iOS build readiness" bash scripts/check-ios-build-readiness.sh
-run_check "Git diff whitespace check" git diff --check
+run_git_diff_check
 
 printf '\nLumen integration gate passed.\n'
