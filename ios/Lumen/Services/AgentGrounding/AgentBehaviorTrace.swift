@@ -47,11 +47,12 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
     let promptCharCount: Int?
     let accelerationDiagnostic: String?
     let accelerationDiagnostics: RuntimeAccelerationDiagnostics?
+    let emptyOutputReason: String?
 
 
 
     enum CodingKeys: String, CodingKey {
-        case id, createdAt, event, slot, stage, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics
+        case id, createdAt, event, slot, stage, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason
         case promptTokenCount
         case promptEvalMs
     }
@@ -98,6 +99,7 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         promptCharCount = try container.decodeIfPresent(Int.self, forKey: .promptCharCount)
         accelerationDiagnostic = try container.decodeIfPresent(String.self, forKey: .accelerationDiagnostic)
         accelerationDiagnostics = try container.decodeIfPresent(RuntimeAccelerationDiagnostics.self, forKey: .accelerationDiagnostics)
+        emptyOutputReason = try container.decodeIfPresent(String.self, forKey: .emptyOutputReason)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -142,6 +144,7 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         try container.encodeIfPresent(promptCharCount, forKey: .promptCharCount)
         try container.encodeIfPresent(accelerationDiagnostic, forKey: .accelerationDiagnostic)
         try container.encodeIfPresent(accelerationDiagnostics, forKey: .accelerationDiagnostics)
+        try container.encodeIfPresent(emptyOutputReason, forKey: .emptyOutputReason)
     }
 
     init(
@@ -184,7 +187,8 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         maxTokensEffective: Int? = nil,
         promptCharCount: Int? = nil,
         accelerationDiagnostic: String? = nil,
-        accelerationDiagnostics: RuntimeAccelerationDiagnostics? = nil
+        accelerationDiagnostics: RuntimeAccelerationDiagnostics? = nil,
+        emptyOutputReason: String? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -226,6 +230,7 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         self.promptCharCount = promptCharCount
         self.accelerationDiagnostic = accelerationDiagnostic
         self.accelerationDiagnostics = accelerationDiagnostics
+        self.emptyOutputReason = emptyOutputReason
     }
 }
 

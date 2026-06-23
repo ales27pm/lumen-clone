@@ -36,7 +36,7 @@ nonisolated enum AgentWorkflowSlot: String, Codable, Sendable, CaseIterable, Ide
         switch kind {
         case .fallbackUsed:
             return .mouth
-        case .llamaPromptBudget, .llamaFirstToken, .llamaComplete, .llamaCancel, .llamaFailure:
+        case .llamaPromptBudget, .llamaFirstToken, .llamaEmptyOutput, .llamaComplete, .llamaCancel, .llamaFailure:
             return .fleet
         case .groundingCost:
             return .rem
@@ -334,7 +334,7 @@ nonisolated final class AgentWorkflowMonitor: @unchecked Sendable {
     private static func status(kind: PersistentRuntimeDiagnosticSignalKind, phase: String, values: [String: String]) -> AgentWorkflowEventStatus {
         let normalizedPhase = phase.lowercased()
         if kind == .fallbackUsed || normalizedPhase.contains("fallback") { return .fallback }
-        if normalizedPhase.contains("error") || kind == .llamaFailure { return .failed }
+        if normalizedPhase.contains("error") || kind == .llamaFailure || kind == .llamaEmptyOutput { return .failed }
         if normalizedPhase.contains("cancel") || kind == .llamaCancel || kind == .slotAgentCancel { return .cancelled }
         if normalizedPhase.contains("end") || normalizedPhase.contains("done") || normalizedPhase.contains("final") || kind == .llamaComplete || kind == .slotAgentEnd || kind == .slotAgentDoneYielded {
             return .done

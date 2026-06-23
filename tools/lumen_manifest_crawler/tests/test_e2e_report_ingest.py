@@ -2,6 +2,7 @@
 
 # pylint: disable=missing-function-docstring,line-too-long
 
+import json
 from pathlib import Path
 
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
@@ -359,6 +360,143 @@ def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
     normalized = load_runtime_audit_reports([report_path])[0]
 
     assert normalized["failures"] == []
+
+
+def test_ingestion_uses_sidecar_empty_agent_json_trace_as_precise_root_cause(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "name": "Training eval: pure chat quality",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Precision is exactness; recall is coverage.",
+                "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+            }
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": "empty",
+        "rawOutputPrefix": "",
+        "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+    }) + "\n", encoding="utf-8")
+    (tmp_path / "agent-parse-failures.jsonl").write_text(json.dumps({
+        "modelName": "agent-json",
+        "parseError": "empty",
+        "rawOutputPrefix": "",
+        "userTurnPrefix": "User request:\nExplain tradeoffs between precision and recall in retrieval systems in plain English.",
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "agent_json_empty_generation"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
+    assert failure["e2eScenario"]["modelEvidenceTrace"]["stage"] == "agent-json-step-0"
+    assert "agent-json emitted empty output" in failure["problem"]
+
+
+def test_ingestion_distinguishes_missing_empty_parse_valid_and_policy_first_evidence(tmp_path: Path):
+    report_path = tmp_path / "e2e-cases.json"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 2,
+        "failed": 3,
+        "scenarios": [
+            {
+                "name": "missing",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Missing evidence prompt.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "final",
+                "events": [],
+            },
+            {
+                "name": "empty",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Empty output prompt.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "final",
+                "events": [],
+            },
+            {
+                "name": "parse",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Parse error prompt.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "final",
+                "events": [],
+            },
+            {
+                "name": "valid",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "Valid model prompt.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": [],
+                "final": "final",
+                "events": [{"phase": "model-evidence", "message": "runtime=sharedAdapter, kind=model-backed, stage=agent-json, parseError=none"}],
+            },
+            {
+                "name": "policy",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "Policy first prompt.",
+                "intent": "weather",
+                "expectedIntent": "weather",
+                "failures": [],
+                "final": "final",
+                "events": [{"phase": "model-evidence", "message": "runtime=deterministic-compatibility, kind=policy-first-deterministic, stage=compatibility-tool-action"}],
+            },
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text("\n".join([
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": "empty",
+            "rawOutputPrefix": "",
+            "promptPrefix": "Empty output prompt.",
+        }),
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": "noJSONObject",
+            "rawOutputPrefix": "plain text",
+            "promptPrefix": "Parse error prompt.",
+        }),
+    ]) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failures_by_prompt = {failure["scenario"]: failure for failure in normalized["failures"]}
+    assert failures_by_prompt["Missing evidence prompt."]["e2eScenario"]["skippedLiveModelRun"] is True
+    assert failures_by_prompt["Empty output prompt."]["rootCauseCategory"] == "agent_json_empty_generation"
+    assert failures_by_prompt["Parse error prompt."]["rootCauseCategory"] == "agent_json_parse_error"
+    assert "Valid model prompt." not in failures_by_prompt
+    assert "Policy first prompt." not in failures_by_prompt
 
 
 def test_in_app_package_preserves_trace_selected_tool_allowed_count(tmp_path: Path):
