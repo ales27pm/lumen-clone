@@ -24,6 +24,9 @@ MODEL_FLEET = ROOT / "ios/Lumen/Services/ModelFleet.swift"
 LLAMA_SERVICE = ROOT / "ios/Lumen/Services/LlamaService.swift"
 SLOT_COORDINATOR = ROOT / "ios/Lumen/Services/SlotModelRuntimeCoordinator.swift"
 MODELS_VIEW = ROOT / "ios/Lumen/Views/ModelsView.swift"
+ASSISTANT_RUNTIME_ADAPTERS = ROOT / "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift"
+ASSISTANT_RUNTIME_ROUTER = ROOT / "ios/Lumen/Assistant/AssistantRuntimeRouter.swift"
+RUNTIME_DASHBOARD_VIEW = ROOT / "ios/Lumen/Views/RuntimeDashboardView.swift"
 EXPORT_GGUF = ROOT / "tools/fine_tuning/unsloth/export_gguf.py"
 DOC = ROOT / "docs/ADAPTER_RUNTIME_IMPROVE_LOOP.md"
 TERMINAL_LOOP = ROOT / "tools/lumen_terminal_improve_loop.py"
@@ -158,6 +161,35 @@ def check_runtime() -> None:
     require(
         "adapterApplied" in text and "adapterSlot" in text and "adapterFailureReason" in text,
         "Runtime trace metadata must include adapterApplied, adapterSlot, and adapterFailureReason.",
+    )
+
+
+def check_staged_system_adapters() -> None:
+    adapters = read(ASSISTANT_RUNTIME_ADAPTERS)
+    router = read(ASSISTANT_RUNTIME_ROUTER)
+    dashboard = read(RUNTIME_DASHBOARD_VIEW)
+    require(
+        "let supportsGeneration: Bool = false" in adapters
+        and "FoundationModels generation is staged: implementation missing" in adapters,
+        "FoundationModels adapter must remain explicitly staged until generation is implemented.",
+    )
+    require(
+        "let supportsEmbeddings: Bool = false" in adapters
+        and "CoreML embedding runtime staged: implementation missing" in adapters
+        and "throw CoreMLRuntimeError.embeddingExtractionNotImplemented" in adapters,
+        "CoreML embedding adapter must remain explicitly staged and must throw instead of returning fake embeddings.",
+    )
+    require(
+        "foundation.supportsGeneration, foundation.isAvailable" in router,
+        "Runtime router must not select FoundationModels unless generation support is implemented.",
+    )
+    require(
+        "coreML.supportsEmbeddings, coreML.isAvailable" in router,
+        "Runtime router must not select CoreML embeddings unless embedding extraction is implemented.",
+    )
+    require(
+        "foundationModelsStatus" in dashboard and "coreMLStatus" in dashboard and "Unavailable" in dashboard,
+        "Runtime diagnostics UI must expose staged/unavailable adapter status.",
     )
 
 
@@ -315,6 +347,7 @@ def main() -> int:
         check_catalog,
         check_fleet_resolver,
         check_runtime,
+        check_staged_system_adapters,
         check_swift_llama_pin,
         check_slot_coordinator,
         check_models_view,

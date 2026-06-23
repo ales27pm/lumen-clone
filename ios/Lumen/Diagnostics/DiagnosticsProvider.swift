@@ -8,7 +8,9 @@ final class DiagnosticsProvider {
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
+            foundationModelsStatus: profiler.foundationModelsStatus,
             coreMLAvailable: profiler.coreMLAvailable,
+            coreMLStatus: profiler.coreMLStatus,
             metalAvailable: profiler.metalAvailable,
             lowPowerModeEnabled: profiler.lowPowerModeEnabled,
             thermalState: profiler.thermalState.rawValue,
@@ -36,7 +38,9 @@ final class DiagnosticsProvider {
         let metrics = (try? await RuntimeMetricsStore.shared.recentMetrics(limit: 10)) ?? []
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
+            foundationModelsStatus: profiler.foundationModelsStatus,
             coreMLAvailable: profiler.coreMLAvailable,
+            coreMLStatus: profiler.coreMLStatus,
             metalAvailable: profiler.metalAvailable,
             lowPowerModeEnabled: profiler.lowPowerModeEnabled,
             thermalState: profiler.thermalState.rawValue,

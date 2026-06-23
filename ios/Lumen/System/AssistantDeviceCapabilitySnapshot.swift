@@ -28,6 +28,8 @@ struct AssistantDeviceCapabilitySnapshot: Codable, Sendable, Equatable {
     let thermalState: DeviceThermalState
     let metalAvailable: Bool
     let coreMLAvailable: Bool
+    let coreMLStatus: String
     let foundationModelsAvailable: Bool
+    let foundationModelsStatus: String
     let backgroundRefreshStatus: String
 }

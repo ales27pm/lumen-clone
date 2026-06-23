@@ -1,7 +1,7 @@
 {
   "gaps": [
     {
-      "category": "runtime_drift",
+      "category": "runtime_permission_config",
       "evidence": {
         "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
@@ -28,6 +28,7 @@
           "promptPrefix": "What's on my schedule today?",
           "violationCode": "e2e_response_quality_calendar"
         },
+        "rootCauseCategory": "permission_config_issue",
         "scenario": "What's on my schedule today?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_calendar"
@@ -38,7 +39,7 @@
       "title": "e2e_response_quality_calendar"
     },
     {
-      "category": "runtime_drift",
+      "category": "runtime_permission_config",
       "evidence": {
         "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
@@ -65,6 +66,7 @@
           "promptPrefix": "Show my next calendar events.",
           "violationCode": "e2e_response_quality_calendar"
         },
+        "rootCauseCategory": "permission_config_issue",
         "scenario": "Show my next calendar events.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_calendar"
@@ -75,7 +77,7 @@
       "title": "e2e_response_quality_calendar"
     },
     {
-      "category": "runtime_drift",
+      "category": "runtime_permission_config",
       "evidence": {
         "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
@@ -102,6 +104,7 @@
           "promptPrefix": "Use List Events, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_calendar"
         },
+        "rootCauseCategory": "permission_config_issue",
         "scenario": "Use List Events, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_calendar"
@@ -112,7 +115,7 @@
       "title": "e2e_response_quality_calendar"
     },
     {
-      "category": "runtime_drift",
+      "category": "runtime_permission_config",
       "evidence": {
         "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
@@ -139,6 +142,7 @@
           "promptPrefix": "What's on my schedule today?",
           "violationCode": "e2e_response_quality_calendar"
         },
+        "rootCauseCategory": "permission_config_issue",
         "scenario": "What's on my schedule today?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_calendar"
@@ -149,7 +153,7 @@
       "title": "e2e_response_quality_calendar"
     },
     {
-      "category": "runtime_drift",
+      "category": "runtime_permission_config",
       "evidence": {
         "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
@@ -176,6 +180,7 @@
           "promptPrefix": "Show my next calendar events.",
           "violationCode": "e2e_response_quality_calendar"
         },
+        "rootCauseCategory": "permission_config_issue",
         "scenario": "Show my next calendar events.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_calendar"
@@ -186,7 +191,7 @@
       "title": "e2e_response_quality_calendar"
     },
     {
-      "category": "runtime_drift",
+      "category": "runtime_permission_config",
       "evidence": {
         "actual": "Calendar event tools are unavailable in this build right now.",
         "agent": "cortex",
@@ -213,6 +218,7 @@
           "promptPrefix": "Use List Events, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_calendar"
         },
+        "rootCauseCategory": "permission_config_issue",
         "scenario": "Use List Events, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_calendar"
@@ -223,7 +229,7 @@
       "title": "e2e_response_quality_calendar"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Precision is about how many returned results are actually relevant. Recall is about how many of all relevant results the system managed to find. Higher precision avoids clutter; higher recall avoids missing useful matches.",
         "agent": "mouth",
@@ -250,17 +256,18 @@
           "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
           "violationCode": "e2e_response_quality_chat"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_chat"
       },
       "id": "e857b86a30a77410851456c9",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_chat"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
         "agent": "mouth",
@@ -287,17 +294,18 @@
           "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
           "violationCode": "e2e_response_quality_emaildraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_emaildraft"
       },
       "id": "1a3ab3c98bdba96679a2c2ef",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_emaildraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -324,17 +332,18 @@
           "promptPrefix": "Give me directions to the nearest hardware store.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Give me directions to the nearest hardware store.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "4830bbd0c5d4625d0f1cbcd4",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -361,17 +370,18 @@
           "promptPrefix": "Give me directions to the nearest hardware store.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Give me directions to the nearest hardware store.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "df93343f42501e4af714300a",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -398,17 +408,18 @@
           "promptPrefix": "Find coffee near me.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Find coffee near me.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "f4ec2f85ec8acd42c13ac815",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -435,17 +446,18 @@
           "promptPrefix": "Find a pharmacy nearby.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Find a pharmacy nearby.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "3449e2cab57c96cbdb30ed12",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -472,17 +484,18 @@
           "promptPrefix": "Use Search Nearby, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Search Nearby, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "03e36494e69e854d406d84b1",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -509,17 +522,18 @@
           "promptPrefix": "Give me directions to the nearest hardware store.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Give me directions to the nearest hardware store.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "4830bbd0c5d4625d0f1cbcd4",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -546,17 +560,18 @@
           "promptPrefix": "Give me directions to the nearest hardware store.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Give me directions to the nearest hardware store.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "df93343f42501e4af714300a",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -583,17 +598,18 @@
           "promptPrefix": "Find coffee near me.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Find coffee near me.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "f4ec2f85ec8acd42c13ac815",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -620,17 +636,18 @@
           "promptPrefix": "Find a pharmacy nearby.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Find a pharmacy nearby.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "3449e2cab57c96cbdb30ed12",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the maps/location request.",
         "agent": "cortex",
@@ -657,17 +674,18 @@
           "promptPrefix": "Use Search Nearby, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_maps"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Search Nearby, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_maps"
       },
       "id": "03e36494e69e854d406d84b1",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_maps"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -694,17 +712,18 @@
           "promptPrefix": "Tell me what style I asked you to use.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Tell me what style I asked you to use.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "08115dc6a9c304a8bd3c105a",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -731,17 +750,18 @@
           "promptPrefix": "What do you remember about my response style preference?",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "What do you remember about my response style preference?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "6ac383d42bab6fccf3efb462",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -768,17 +788,18 @@
           "promptPrefix": "Use Recall Memory, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Recall Memory, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "39c7b9a1e03d57c1b899ffcf",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -805,17 +826,18 @@
           "promptPrefix": "Keep in mind that I like short answers.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Keep in mind that I like short answers.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "4eb6361cb7cefb54106e1efa",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -842,17 +864,18 @@
           "promptPrefix": "Remember that I prefer concise bullet points.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Remember that I prefer concise bullet points.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "9be6e44d79d5f414562798e3",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -879,17 +902,18 @@
           "promptPrefix": "Use Save Memory, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Save Memory, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "e302dae804beb411dfcc404d",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I remember that you prefer concise bullet points.",
         "agent": "mouth",
@@ -916,17 +940,18 @@
           "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "cf61a79cb979423e1302ae9b",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -953,17 +978,18 @@
           "promptPrefix": "Tell me what style I asked you to use.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Tell me what style I asked you to use.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "08115dc6a9c304a8bd3c105a",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -990,17 +1016,18 @@
           "promptPrefix": "What do you remember about my response style preference?",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "What do you remember about my response style preference?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "6ac383d42bab6fccf3efb462",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -1027,17 +1054,18 @@
           "promptPrefix": "Use Recall Memory, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Recall Memory, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "39c7b9a1e03d57c1b899ffcf",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -1064,17 +1092,18 @@
           "promptPrefix": "Keep in mind that I like short answers.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Keep in mind that I like short answers.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "4eb6361cb7cefb54106e1efa",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -1101,17 +1130,18 @@
           "promptPrefix": "Remember that I prefer concise bullet points.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Remember that I prefer concise bullet points.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "9be6e44d79d5f414562798e3",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Memory tool output could not be validated.",
         "agent": "mouth",
@@ -1138,17 +1168,18 @@
           "promptPrefix": "Use Save Memory, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_memory"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Save Memory, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_memory"
       },
       "id": "e302dae804beb411dfcc404d",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_memory"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "What should the message say?",
         "agent": "cortex",
@@ -1175,17 +1206,18 @@
           "promptPrefix": "Text 5551234567 that I am late.",
           "violationCode": "e2e_response_quality_messagedraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Text 5551234567 that I am late.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_messagedraft"
       },
       "id": "5c09f189b1373d1fdb701dd0",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_messagedraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "What should the message say?",
         "agent": "cortex",
@@ -1212,17 +1244,18 @@
           "promptPrefix": "Text 5551234567 that approval boundary works.",
           "violationCode": "e2e_response_quality_messagedraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Text 5551234567 that approval boundary works.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_messagedraft"
       },
       "id": "783a65be719b0992888bd07e",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_messagedraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Who should I message, and what should it say?",
         "agent": "cortex",
@@ -1249,17 +1282,18 @@
           "promptPrefix": "Draft a message to 5551234567 saying I am running late.",
           "violationCode": "e2e_response_quality_messagedraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Draft a message to 5551234567 saying I am running late.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_messagedraft"
       },
       "id": "06e3f84422638ec5ba6ac5a7",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_messagedraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "What should the message say?",
         "agent": "cortex",
@@ -1286,17 +1320,18 @@
           "promptPrefix": "Text 5551234567 that I am late.",
           "violationCode": "e2e_response_quality_messagedraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Text 5551234567 that I am late.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_messagedraft"
       },
       "id": "5c09f189b1373d1fdb701dd0",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_messagedraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "What should the message say?",
         "agent": "cortex",
@@ -1323,17 +1358,18 @@
           "promptPrefix": "Text 5551234567 that approval boundary works.",
           "violationCode": "e2e_response_quality_messagedraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Text 5551234567 that approval boundary works.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_messagedraft"
       },
       "id": "783a65be719b0992888bd07e",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_messagedraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Who should I message, and what should it say?",
         "agent": "cortex",
@@ -1360,17 +1396,18 @@
           "promptPrefix": "Draft a message to 5551234567 saying I am running late.",
           "violationCode": "e2e_response_quality_messagedraft"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Draft a message to 5551234567 saying I am running late.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_messagedraft"
       },
       "id": "06e3f84422638ec5ba6ac5a7",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_messagedraft"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the motion/activity request.",
         "agent": "cortex",
@@ -1397,17 +1434,18 @@
           "promptPrefix": "Am I walking or stationary right now?",
           "violationCode": "e2e_response_quality_motion"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Am I walking or stationary right now?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_motion"
       },
       "id": "86b04433a3bbbea050e60cb2",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_motion"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the motion/activity request.",
         "agent": "cortex",
@@ -1434,17 +1472,18 @@
           "promptPrefix": "What motion activity is detected right now?",
           "violationCode": "e2e_response_quality_motion"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "What motion activity is detected right now?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_motion"
       },
       "id": "371656c5cf725ff05816effa",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_motion"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the motion/activity request.",
         "agent": "cortex",
@@ -1471,17 +1510,18 @@
           "promptPrefix": "Use Motion Activity, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_motion"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Motion Activity, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_motion"
       },
       "id": "86c25e29f38f52f077695701",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_motion"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the motion/activity request.",
         "agent": "cortex",
@@ -1508,17 +1548,18 @@
           "promptPrefix": "Am I walking or stationary right now?",
           "violationCode": "e2e_response_quality_motion"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Am I walking or stationary right now?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_motion"
       },
       "id": "86b04433a3bbbea050e60cb2",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_motion"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the motion/activity request.",
         "agent": "cortex",
@@ -1545,17 +1586,18 @@
           "promptPrefix": "What motion activity is detected right now?",
           "violationCode": "e2e_response_quality_motion"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "What motion activity is detected right now?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_motion"
       },
       "id": "371656c5cf725ff05816effa",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_motion"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "I couldn’t safely complete the motion/activity request.",
         "agent": "cortex",
@@ -1582,17 +1624,18 @@
           "promptPrefix": "Use Motion Activity, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_motion"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use Motion Activity, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_motion"
       },
       "id": "86c25e29f38f52f077695701",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_motion"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1619,17 +1662,18 @@
           "promptPrefix": "Show attachments on the latest Outlook email.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Show attachments on the latest Outlook email.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "aafae61b682e317664843d1c",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1656,17 +1700,18 @@
           "promptPrefix": "List attachments for my latest Outlook email.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "List attachments for my latest Outlook email.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "3023505d795f2961e7a187c3",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1693,17 +1738,18 @@
           "promptPrefix": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "69c78eb2cf15702abe35358d",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1730,17 +1776,18 @@
           "promptPrefix": "Compose an Outlook draft to alex@example.com subject Update body Done.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Compose an Outlook draft to alex@example.com subject Update body Done.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "90c017775d17df470e006893",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1767,17 +1814,18 @@
           "promptPrefix": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "4590307bed2d7acfbd774d2a",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1804,17 +1852,18 @@
           "promptPrefix": "Show attachments on the latest Outlook email.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Show attachments on the latest Outlook email.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "aafae61b682e317664843d1c",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1841,17 +1890,18 @@
           "promptPrefix": "List attachments for my latest Outlook email.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "List attachments for my latest Outlook email.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "3023505d795f2961e7a187c3",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1878,17 +1928,18 @@
           "promptPrefix": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "69c78eb2cf15702abe35358d",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1915,17 +1966,18 @@
           "promptPrefix": "Compose an Outlook draft to alex@example.com subject Update body Done.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Compose an Outlook draft to alex@example.com subject Update body Done.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "90c017775d17df470e006893",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1952,17 +2004,18 @@
           "promptPrefix": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "4590307bed2d7acfbd774d2a",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -1989,17 +2042,18 @@
           "promptPrefix": "Create an Outlook draft to alex@example.com with subject Update and body All good.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Create an Outlook draft to alex@example.com with subject Update and body All good.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "41ae8b03ac26d3ff667e8071",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -2026,17 +2080,18 @@
           "promptPrefix": "Show Outlook mail folders.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Show Outlook mail folders.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "843c640738de542449c8b778",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Outlook tool output could not be validated.",
         "agent": "cortex",
@@ -2063,17 +2118,18 @@
           "promptPrefix": "List my Outlook folders.",
           "violationCode": "e2e_response_quality_outlook"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "List my Outlook folders.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_outlook"
       },
       "id": "f37ef698337a57c1280d5dfa",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_outlook"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "{\"intent\":\"rag\",\"module\":\"photos\",\"module(s)\":[\"Photos\"],\"nextModel\":\"rag\",\"reasoningSummary\":\"RAG search results: [1] Photos · Photos 2026-06 Photos (2026-06): 98 items between Jun 3, 2026 and Jun 18, 2026. 0 favorites, 0 videos, 80 screenshots, 0 selfies, 0 live photos, 3 portraits, 6 with location. [2] Photos · Photos 2025-12 Photos (2025-12): 55 items between Dec 20, 2025 and Dec 29, 2025. 0 favorites, 1 videos, 41 screenshots, 0 selfies, 3 live photos, 5 portraits, 8 with location.\"} Source: retrieved file snippet [1].",
         "agent": "mouth",
@@ -2100,17 +2156,18 @@
           "promptPrefix": "Search my files for architecture notes and summarize key modules.",
           "violationCode": "e2e_response_quality_rag"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Search my files for architecture notes and summarize key modules.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_rag"
       },
       "id": "fa456f28f18bd623d03d8280",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_rag"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Approval required for trigger.create. Trigger request prepared for: Schedule a trigger to summarize reminders tonight and confirm what will run.. It will run the scheduled agent prompt after approval.",
         "agent": "mouth",
@@ -2137,17 +2194,18 @@
           "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
           "violationCode": "e2e_response_quality_trigger"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_trigger"
       },
       "id": "b741153d794e569516164478",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_trigger"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Weather update: Weather at your location: · overcast · 18°C · feels like 18°C · humidity 90% · wind 19 km/h · gusts 40 km/h · cloud cover 100% · updated 2026-06-18T20:45",
         "agent": "mouth",
@@ -2174,17 +2232,18 @@
           "promptPrefix": "What is the weather here and should I carry an umbrella?",
           "violationCode": "e2e_response_quality_weather"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "What is the weather here and should I carry an umbrella?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_weather"
       },
       "id": "32e6230adf20e6d793d09b6f",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_weather"
     },
     {
-      "category": "runtime_drift",
+      "category": "skipped_live_model_generation",
       "evidence": {
         "actual": "Search results for: Search the web for two recent Swift concurrency best practices and summarize them.\n\n1. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Embracing Swift concurrency - WWDC25 - Videos - Apple Developer\nhttps://developer.apple.com/videos/play/wwdc2025/268/\n\n4. Swift Concurrency: The Complete Guide - atelier-socle.com\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-modern\n\n5. The Essential Guide to Concurrency in Swift: Avoiding Common ... - Medium\nhttps://medium.com/@rashadsh/the-essential-guide-to-concurrency-in-swift-avoiding-common-pitfalls-9ac58ada1367\n\n6. Mastering Swift Concurrency for Modern Developers | MoldStud\nhttps://moldstud.com/articles/p-mastering-swift-concurrency-a-comprehensive-guide-for-modern-developers",
         "agent": "mouth",
@@ -2211,13 +2270,14 @@
           "promptPrefix": "Search the web for two recent Swift concurrency best practices and summarize them.",
           "violationCode": "e2e_response_quality_websearch"
         },
+        "rootCauseCategory": "skipped_live_model_generation",
         "scenario": "Search the web for two recent Swift concurrency best practices and summarize them.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
         "type": "e2e_response_quality_websearch"
       },
       "id": "a780612d34145def0b56278d",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
       "title": "e2e_response_quality_websearch"
     }
   ]

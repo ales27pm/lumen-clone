@@ -1,8 +1,8 @@
 # Background Processing
 
 Lumen retains existing `TriggerScheduler` identifiers:
-- `com.27pm.lumen.agent.refresh`
-- `com.27pm.lumen.agent.process`
+- `com.27pm.lumenclone.agent.refresh`
+- `com.27pm.lumenclone.agent.process`
 
 `BackgroundOrchestrator` is additive and wraps scheduling/handling:
 - `register()` and `schedule()` delegate to `TriggerScheduler`.

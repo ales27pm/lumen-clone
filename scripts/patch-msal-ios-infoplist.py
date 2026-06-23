@@ -10,17 +10,17 @@ Lumen target Debug/Release build settings idempotently.
 """
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "ios" / "Lumen.xcodeproj" / "project.pbxproj"
 
-URL_TYPES = '''\t\t\t\tINFOPLIST_KEY_CFBundleURLTypes = (
+URL_TYPES_TEMPLATE = '''\t\t\t\tINFOPLIST_KEY_CFBundleURLTypes = (
 \t\t\t\t\t{
-\t\t\t\t\t\tCFBundleURLName = "com.27pm.lumen";
+\t\t\t\t\t\tCFBundleURLName = "{bundle_id}";
 \t\t\t\t\t\tCFBundleURLSchemes = (
-\t\t\t\t\t\t\t"msauth.com.27pm.lumen",
+\t\t\t\t\t\t\t"msauth.{bundle_id}",
 \t\t\t\t\t\t);
 \t\t\t\t\t},
 \t\t\t\t);
@@ -100,7 +100,14 @@ def replace_or_insert_setting(block: str, key: str, value: str) -> str:
     return block[: insertion_point + 1] + value + block[insertion_point + 1 :]
 
 
-def discover_target_config_ids(text: str, target_name: str) -> list[str]:
+def extract_setting(block: str, key: str) -> str | None:
+    match = re.search(rf"^\s*{re.escape(key)}\s*=\s*([^;]+);", block, re.MULTILINE)
+    if not match:
+        return None
+    return match.group(1).strip().strip('"')
+
+
+def discover_target_config_ids(text: str, target_name: str) -> list[tuple[str, str]]:
     config_list_pattern = re.compile(
         rf'(?P<config_list>[A-Fa-f0-9]{{24}})\s+/\*\s+Build configuration list for PBXNativeTarget "{re.escape(target_name)}"\s+\*/\s*=\s*\{{',
         re.IGNORECASE,
@@ -117,17 +124,17 @@ def discover_target_config_ids(text: str, target_name: str) -> list[str]:
     build_configs_match = re.search(r"buildConfigurations = \((?P<body>.*?)\);", list_block, re.DOTALL)
     if not build_configs_match:
         raise RuntimeError(f"Missing buildConfigurations for target {target_name}")
-    config_ids = re.findall(
-        r"\b([A-Fa-f0-9]{24})\b\s*/\*\s*[^*]+\*/",
+    configs = re.findall(
+        r"\b([A-Fa-f0-9]{24})\b\s*/\*\s*([^*]+)\s*\*/",
         build_configs_match.group("body"),
         re.MULTILINE,
     )
-    if not config_ids:
+    if not configs:
         raise RuntimeError(f"No build configurations found for target {target_name}")
-    return config_ids
+    return [(name.strip(), config_id) for config_id, name in configs]
 
 
-def patch_config(text: str, config_id: str) -> str:
+def patch_config(text: str, config_id: str) -> tuple[str, str]:
     marker = f"\t\t{config_id} /* "
     config_start = text.find(marker)
     if config_start < 0:
@@ -135,16 +142,32 @@ def patch_config(text: str, config_id: str) -> str:
     open_index = text.find("{", config_start)
     close_index = find_matching_brace(text, open_index)
     block = text[open_index : close_index + 1]
-    block = replace_or_insert_setting(block, "INFOPLIST_KEY_CFBundleURLTypes", URL_TYPES)
+    bundle_id = extract_setting(block, "PRODUCT_BUNDLE_IDENTIFIER")
+    if not bundle_id:
+        raise RuntimeError(f"Missing PRODUCT_BUNDLE_IDENTIFIER for build configuration {config_id}")
+    block = replace_or_insert_setting(
+        block,
+        "INFOPLIST_KEY_CFBundleURLTypes",
+        URL_TYPES_TEMPLATE.format(bundle_id=bundle_id),
+    )
     block = replace_or_insert_setting(block, "INFOPLIST_KEY_LSApplicationQueriesSchemes", QUERY_SCHEMES)
-    return text[:open_index] + block + text[close_index + 1 :]
+    return text[:open_index] + block + text[close_index + 1 :], bundle_id
 
 
 def main() -> None:
     text = PROJECT.read_text(encoding="utf-8")
     original = text
-    for config_id in discover_target_config_ids(text, "Lumen"):
-        text = patch_config(text, config_id)
+    bundle_ids: set[str] = set()
+    for _, config_id in discover_target_config_ids(text, "Lumen"):
+        text, bundle_id = patch_config(text, config_id)
+        bundle_ids.add(bundle_id)
+
+    if len(bundle_ids) != 1:
+        raise SystemExit(
+            "Lumen target build configurations must use one bundle identifier, found: "
+            + ", ".join(sorted(bundle_ids))
+        )
+    bundle_id = next(iter(bundle_ids))
 
     if text != original:
         PROJECT.write_text(text, encoding="utf-8")
@@ -154,7 +177,7 @@ def main() -> None:
 
     for required in [
         'INFOPLIST_KEY_CFBundleURLTypes',
-        '"msauth.com.27pm.lumen"',
+        f'"msauth.{bundle_id}"',
         'INFOPLIST_KEY_LSApplicationQueriesSchemes',
         'msauthv2',
         'msauthv3',

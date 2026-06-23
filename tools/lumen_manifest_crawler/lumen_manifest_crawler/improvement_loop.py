@@ -220,11 +220,16 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         "nextActionPromptCount": len(next_prompts),
     }
 
+    triage = _build_gap_triage(gaps, runtime_reports, config)
+    state["triage"] = triage["summary"]
+
     _write_json(loop_output / "loop_state.json", state)
     _write_json(loop_output / "loop_gaps.json", {"gaps": gaps})
+    _write_json(loop_output / "gap_triage.json", triage)
     _write_jsonl(loop_output / "next_action_prompts.jsonl", next_prompts)
     _write_jsonl(loop_output / TESTFLIGHT_SCENARIOS_FILE, testflight_scenarios)
     _write_markdown_report(loop_output / "LOOP_REPORT.md", state, gaps, next_prompts)
+    _write_gap_triage_markdown(loop_output / "GAP_TRIAGE.md", triage)
     _write_testflight_runbook(loop_output / TESTFLIGHT_RUNBOOK_FILE, state, testflight_scenarios)
 
     result = AgentImprovementLoopResult(
@@ -323,17 +328,70 @@ def _dataset_summary(datasets: dict[str, list[dict[str, Any]]], fine_tuning_data
 
 def _runtime_summary(runtime_reports: list[dict[str, Any]]) -> dict[str, Any]:
     failures = [failure for report in runtime_reports for failure in report.get("failures", []) if isinstance(failure, dict)]
+    executable_failures = [failure for failure in failures if not _is_skipped_live_model_generation(failure)]
+    skipped_failures = [failure for failure in failures if _is_skipped_live_model_generation(failure)]
     by_type: dict[str, int] = {}
+    by_all_type: dict[str, int] = {}
     by_layer: dict[str, int] = {}
-    for failure in failures:
+    for failure in executable_failures:
         by_type[str(failure.get("type") or "unknown")] = by_type.get(str(failure.get("type") or "unknown"), 0) + 1
+    for failure in failures:
+        by_all_type[str(failure.get("type") or "unknown")] = by_all_type.get(str(failure.get("type") or "unknown"), 0) + 1
         by_layer[str(failure.get("sourceLayer") or "unknown")] = by_layer.get(str(failure.get("sourceLayer") or "unknown"), 0) + 1
     return {
         "reportCount": len(runtime_reports),
-        "failureCount": len(failures),
+        "failureCount": len(executable_failures),
+        "rawFailureCount": len(failures),
+        "skippedLiveModelGenerationCount": len(skipped_failures),
         "failureTypes": dict(sorted(by_type.items())),
+        "allFailureTypes": dict(sorted(by_all_type.items())),
         "sourceLayers": dict(sorted(by_layer.items())),
     }
+
+
+def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
+    scenario = failure.get("e2eScenario")
+    if isinstance(scenario, dict) and scenario.get("skippedLiveModelRun") is True:
+        return True
+    return failure.get("skippedLiveModelRun") is True
+
+
+def _runtime_gap_category(failure: dict[str, Any]) -> str:
+    if _is_skipped_live_model_generation(failure):
+        return "skipped_live_model_generation"
+    root_cause = _runtime_root_cause_category(failure)
+    if root_cause == "manifest_mismatch":
+        return "manifest_mismatch"
+    if root_cause == "permission_config_issue":
+        return "runtime_permission_config"
+    return "runtime_drift"
+
+
+def _runtime_root_cause_category(failure: dict[str, Any]) -> str:
+    failure_type = str(failure.get("type") or "").lower()
+    actual = str(failure.get("actual") or failure.get("final") or "").lower()
+    problem = str(failure.get("problem") or "").lower()
+    combined = f"{failure_type}\n{actual}\n{problem}"
+
+    if _is_skipped_live_model_generation(failure):
+        return "skipped_live_model_generation"
+    if any(token in combined for token in ["unknown_tool", "not_allowed", "static_manifest", "manifest"]):
+        return "manifest_mismatch"
+    if any(token in combined for token in [
+        "permission",
+        "access was denied",
+        "access denied",
+        "not signed in",
+        "sign in",
+        "authorization",
+        "oauth",
+        "unavailable in this build",
+        "tools are unavailable",
+    ]):
+        return "permission_config_issue"
+    if any(token in combined for token in ["unimplemented", "unsupported", "missing implementation", "not implemented"]):
+        return "true_missing_implementation"
+    return "stale_or_unclassified_runtime_evidence"
 
 
 def _build_testflight_scenario_queue(
@@ -604,14 +662,18 @@ def _build_gap_report(  # NOSONAR
     runtime_failures = [failure for report in runtime_reports for failure in report.get("failures", []) if isinstance(failure, dict)]
     for failure in runtime_failures[:200]:
         failure_type = str(failure.get("type") or "runtime_failure")
-        severity = "critical" if any(token in failure_type for token in ["unknown_tool", "sentinel", "not_allowed"]) else "error"
+        skipped_live_generation = _is_skipped_live_model_generation(failure)
+        severity = "warning" if skipped_live_generation else "critical" if any(token in failure_type for token in ["unknown_tool", "sentinel", "not_allowed"]) else "error"
+        category = _runtime_gap_category(failure)
+        evidence = dict(failure)
+        evidence["rootCauseCategory"] = _runtime_root_cause_category(failure)
         gaps.append({
             "id": _stable_id("runtime", failure),
             "severity": severity,
-            "category": "runtime_drift",
+            "category": category,
             "title": failure_type,
-            "evidence": failure,
-            "recommendedAction": _runtime_recommendation(failure_type),
+            "evidence": evidence,
+            "recommendedAction": _runtime_recommendation(failure_type, skipped_live_generation=skipped_live_generation),
         })
 
     required_families = {
@@ -670,7 +732,9 @@ def _build_gap_report(  # NOSONAR
     return sorted(gaps, key=lambda gap: (str(gap.get("severity")), str(gap.get("category")), str(gap.get("title"))))
 
 
-def _runtime_recommendation(failure_type: str) -> str:
+def _runtime_recommendation(failure_type: str, *, skipped_live_generation: bool = False) -> str:
+    if skipped_live_generation:
+        return "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure."
     if failure_type == "agent_grounding_no_recent_model_traces":
         return "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence."
     if failure_type == "persistent_diagnostics_scenario_not_passed":
@@ -688,6 +752,112 @@ def _runtime_recommendation(failure_type: str) -> str:
     if failure_type == "trace_parse_error":
         return "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope."
     return "Convert this failure into a REM repair sample and add a regression eval."
+
+
+def _build_gap_triage(
+    gaps: list[dict[str, Any]],
+    runtime_reports: list[dict[str, Any]],
+    config: AgentImprovementLoopConfig,
+) -> dict[str, Any]:
+    groups: dict[str, dict[str, Any]] = {}
+    root_cause_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    severity_counts: dict[str, int] = {}
+
+    for gap in gaps:
+        category = str(gap.get("category") or "unknown")
+        severity = str(gap.get("severity") or "unknown")
+        evidence = gap.get("evidence") if isinstance(gap.get("evidence"), dict) else {}
+        failure_type = str(evidence.get("type") or gap.get("title") or "unknown")
+        group = _failure_group(failure_type, evidence)
+        root_cause = str(evidence.get("rootCauseCategory") or _gap_root_cause_category(gap))
+
+        category_counts[category] = category_counts.get(category, 0) + 1
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        root_cause_counts[root_cause] = root_cause_counts.get(root_cause, 0) + 1
+
+        bucket = groups.setdefault(group, {
+            "group": group,
+            "count": 0,
+            "categories": {},
+            "severities": {},
+            "rootCauseCategories": {},
+            "skippedLiveModelGenerationCount": 0,
+            "freshRuntimeFailureCount": 0,
+            "examples": [],
+            "recommendedAction": gap.get("recommendedAction"),
+            "status": "deferred",
+        })
+        bucket["count"] += 1
+        bucket["categories"][category] = bucket["categories"].get(category, 0) + 1
+        bucket["severities"][severity] = bucket["severities"].get(severity, 0) + 1
+        bucket["rootCauseCategories"][root_cause] = bucket["rootCauseCategories"].get(root_cause, 0) + 1
+        if root_cause == "skipped_live_model_generation":
+            bucket["skippedLiveModelGenerationCount"] += 1
+            bucket["status"] = "needs_fresh_runtime_evidence"
+        else:
+            bucket["freshRuntimeFailureCount"] += 1
+            if root_cause == "permission_config_issue":
+                bucket["status"] = "code_or_configuration_fix_required"
+            elif root_cause == "manifest_mismatch":
+                bucket["status"] = "manifest_reconciliation_required"
+        if len(bucket["examples"]) < 5:
+            scenario = evidence.get("e2eScenario") if isinstance(evidence.get("e2eScenario"), dict) else {}
+            bucket["examples"].append({
+                "title": gap.get("title"),
+                "category": category,
+                "severity": severity,
+                "rootCauseCategory": root_cause,
+                "prompt": scenario.get("prompt") or evidence.get("scenario"),
+                "actual": evidence.get("actual"),
+                "skippedLiveModelRun": scenario.get("skippedLiveModelRun"),
+            })
+
+    sorted_groups = sorted(groups.values(), key=lambda item: (-int(item["count"]), str(item["group"])))
+    runtime_failures = [failure for report in runtime_reports for failure in report.get("failures", []) if isinstance(failure, dict)]
+    skipped_runtime = [failure for failure in runtime_failures if _is_skipped_live_model_generation(failure)]
+    fresh_runtime = [failure for failure in runtime_failures if not _is_skipped_live_model_generation(failure)]
+
+    return {
+        "schemaVersion": "1.0.0",
+        "generatedAt": DETERMINISTIC_LOOP_TIMESTAMP if config.deterministic else datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "totalGaps": len(gaps),
+            "runtimeAuditReports": len(runtime_reports),
+            "rawRuntimeFailureCount": len(runtime_failures),
+            "freshRuntimeFailureCount": len(fresh_runtime),
+            "skippedLiveModelGenerationCount": len(skipped_runtime),
+            "categoryCounts": dict(sorted(category_counts.items())),
+            "severityCounts": dict(sorted(severity_counts.items())),
+            "rootCauseCounts": dict(sorted(root_cause_counts.items())),
+            "groupCounts": {str(group["group"]): int(group["count"]) for group in sorted_groups},
+            "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
+        },
+        "groups": sorted_groups,
+    }
+
+
+def _gap_root_cause_category(gap: dict[str, Any]) -> str:
+    category = str(gap.get("category") or "")
+    if category == "validation":
+        return "manifest_mismatch"
+    if category == "command_failure":
+        return "permission_config_issue"
+    if category == "testflight_runtime_pending":
+        return "stale_audit_evidence"
+    return "stale_or_unclassified_runtime_evidence"
+
+
+def _failure_group(failure_type: str, evidence: dict[str, Any]) -> str:
+    if failure_type.startswith("e2e_response_quality_"):
+        return failure_type.removeprefix("e2e_response_quality_")
+    scenario = evidence.get("e2eScenario") if isinstance(evidence.get("e2eScenario"), dict) else {}
+    intent = scenario.get("intent") or scenario.get("expectedIntent")
+    if intent:
+        return str(intent)
+    if "." in failure_type:
+        return failure_type.split(".", maxsplit=1)[0]
+    return failure_type or "unknown"
 
 
 def _build_next_action_prompts(
@@ -795,6 +965,8 @@ def _write_markdown_report(path: Path, state: dict[str, Any], gaps: list[dict[st
         f"- Dataset records: `{state['dataset']['recordCount']}`",
         f"- Runtime audit reports: `{state['runtime']['reportCount']}`",
         f"- Runtime failures: `{state['runtime']['failureCount']}`",
+        f"- Raw runtime failures: `{state['runtime'].get('rawFailureCount', state['runtime']['failureCount'])}`",
+        f"- Skipped live model generation: `{state['runtime'].get('skippedLiveModelGenerationCount', 0)}`",
         f"- TestFlight status: `{state['testFlight']['status']}`",
         f"- TestFlight scenarios: `{state['testFlight']['scenarioCount']}`",
         f"- Gaps: `{len(gaps)}`",
@@ -817,6 +989,53 @@ def _write_markdown_report(path: Path, state: dict[str, Any], gaps: list[dict[st
         ])
     if not gaps:
         lines.append("No blocking gaps detected. The next loop should expand TestFlight runtime coverage.")
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def _write_gap_triage_markdown(path: Path, triage: dict[str, Any]) -> None:
+    summary = triage.get("summary") if isinstance(triage.get("summary"), dict) else {}
+    groups = triage.get("groups") if isinstance(triage.get("groups"), list) else []
+    lines = [
+        "# Agent Improvement Gap Triage",
+        "",
+        f"- Total gaps: `{summary.get('totalGaps', 0)}`",
+        f"- Raw runtime failures: `{summary.get('rawRuntimeFailureCount', 0)}`",
+        f"- Fresh runtime failures: `{summary.get('freshRuntimeFailureCount', 0)}`",
+        f"- Skipped live model generation: `{summary.get('skippedLiveModelGenerationCount', 0)}`",
+        f"- Classification rule: {summary.get('classificationRule', '')}",
+        "",
+        "## Root Cause Counts",
+        "",
+    ]
+    root_counts = summary.get("rootCauseCounts") if isinstance(summary.get("rootCauseCounts"), dict) else {}
+    for name, count in sorted(root_counts.items()):
+        lines.append(f"- `{name}`: `{count}`")
+    if not root_counts:
+        lines.append("- None")
+
+    lines.extend(["", "## Failure Groups", ""])
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        lines.extend([
+            f"### {group.get('group')}",
+            "",
+            f"- Count: `{group.get('count')}`",
+            f"- Status: `{group.get('status')}`",
+            f"- Root causes: `{json.dumps(group.get('rootCauseCategories', {}), sort_keys=True)}`",
+            f"- Categories: `{json.dumps(group.get('categories', {}), sort_keys=True)}`",
+            f"- Fresh runtime failures: `{group.get('freshRuntimeFailureCount', 0)}`",
+            f"- Skipped live model generation: `{group.get('skippedLiveModelGenerationCount', 0)}`",
+            f"- Recommended action: {group.get('recommendedAction')}",
+            "",
+        ])
+        examples = group.get("examples") if isinstance(group.get("examples"), list) else []
+        for example in examples[:3]:
+            prompt = str(example.get("prompt") or "").replace("\n", " ").strip()
+            actual = str(example.get("actual") or "").replace("\n", " ").strip()
+            lines.append(f"  - `{example.get('rootCauseCategory')}` | skipped=`{example.get('skippedLiveModelRun')}` | prompt: {prompt} | actual: {actual[:240]}")
+        lines.append("")
+
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
