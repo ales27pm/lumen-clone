@@ -7,9 +7,9 @@
       "cortex": {
         "eval": 555,
         "trainDPO": 8,
-        "trainSFT": 309,
+        "trainSFT": 312,
         "valDPO": 1,
-        "valSFT": 54
+        "valSFT": 55
       },
       "executor": {
         "eval": 111,
@@ -21,9 +21,9 @@
       "fleet": {
         "eval": 84,
         "trainDPO": 14,
-        "trainSFT": 1184,
+        "trainSFT": 1178,
         "valDPO": 2,
-        "valSFT": 209
+        "valSFT": 208
       },
       "mimicry": {
         "eval": 3,
@@ -35,32 +35,32 @@
       "mouth": {
         "eval": 5,
         "trainDPO": 10,
-        "trainSFT": 138,
+        "trainSFT": 143,
         "valDPO": 2,
-        "valSFT": 24
+        "valSFT": 25
       },
       "rem": {
         "eval": 4,
         "trainDPO": 7,
-        "trainSFT": 527,
+        "trainSFT": 521,
         "valDPO": 1,
-        "valSFT": 93
+        "valSFT": 92
       }
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_corpus": 478,
-      "codebase_home_sft": 478,
+      "codebase_home_corpus": 482,
+      "codebase_home_sft": 482,
       "cortex_routing": 69,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 1058,
+      "embedding_corpus": 1051,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 1227,
-      "embedding_hard_negatives": 1227,
+      "embedding_eval_retrieval": 1220,
+      "embedding_hard_negatives": 1220,
       "embedding_train_pairs": 1098,
-      "embedding_train_triplets": 1108,
-      "embedding_val_pairs": 129,
-      "embedding_val_triplets": 119,
+      "embedding_train_triplets": 1102,
+      "embedding_val_pairs": 122,
+      "embedding_val_triplets": 118,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -68,61 +68,61 @@
       "mouth_responses": 53,
       "negative_samples": 53,
       "rem_reflection": 5,
-      "runtime_audit_repairs": 53,
+      "runtime_audit_repairs": 42,
       "tool_schema_cards": 91,
       "train_sft": 298,
       "validation_sft": 53
     },
     "familyCount": 24,
-    "recordCount": 8376
+    "recordCount": 8338
   },
-  "errorGapCount": 55,
-  "gapCount": 55,
+  "errorGapCount": 46,
+  "gapCount": 46,
   "manifest": {
-    "commit": "c6534d7f9673d5d57b730cc567064daf8302dc11",
-    "fingerprint": "d3443b26c0a636c37cb7eea3903a19f94f40df251af1cfa771073db20d56de0b",
+    "commit": "ac9fdc25fcbb6730d0ef70f426a13cbc505e25ba",
+    "fingerprint": "fe743eee83b090f8625247033d114d8c01d2d0aa9cb4d1385dbda9ee976f1771",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
     "toolCount": 53
   },
-  "nextActionPromptCount": 55,
-  "output": "/home/ales27pm/lumen-clone/generated/agent_manifest",
+  "nextActionPromptCount": 46,
+  "output": "/Users/ales27pm/lumen-clone/generated/agent_manifest",
   "passed": false,
-  "root": "/home/ales27pm/lumen-clone",
+  "root": "/Users/ales27pm/lumen-clone",
   "runtime": {
-    "failureCount": 55,
+    "failureCount": 46,
     "failureTypes": {
-      "argument_mismatch": 41,
-      "e2e_response_quality_chat": 1,
-      "e2e_response_quality_emaildraft": 1,
+      "argument_mismatch": 27,
+      "e2e_response_quality_chat": 4,
+      "e2e_response_quality_emaildraft": 2,
       "e2e_response_quality_memory": 1,
       "e2e_response_quality_rag": 1,
       "e2e_response_quality_trigger": 1,
-      "e2e_response_quality_weather": 1,
-      "e2e_response_quality_websearch": 1,
-      "trace_parse_error": 7
+      "e2e_response_quality_weather": 2,
+      "e2e_response_quality_websearch": 2,
+      "missing_live_argument": 1,
+      "persistent_diagnostics_scenario_not_passed": 4,
+      "unmanifested_live_argument": 1
     },
-    "reportCount": 3,
+    "reportCount": 4,
     "sourceLayers": {
-      "agentBehaviorTraceRecorder": 7,
-      "e2eTestReport.evidenceLayer": 7,
-      "runtimeManifestAudit": 41
+      "e2eTestReport.evidenceLayer": 13,
+      "persistentRuntimeDiagnostics.records": 4,
+      "runtimeManifestAudit": 29
     }
   },
   "runtimeAuditInputs": [
-    "/home/ales27pm/lumen-clone/exports/lumen-agent-grounding-audit-2026-06-13T09-57-35Z-3c370901-d877-4469-97cb-be29f52e669d.json",
-    "/home/ales27pm/lumen-clone/exports/lumen-live-e2e-report-2026-06-13T09-48-53Z-97ce1d87-5200-437f-81df-bc97c21285b7.json",
-    "/home/ales27pm/lumen-clone/runtime-audits/2026-06-09-third-improve-loop/4-persistent-runtime-diagnostics-export-11.json"
+    "exports/testflight-20260609-0426"
   ],
   "schemaVersion": "1.1.0",
   "startedAt": "1970-01-01T00:00:00+00:00",
   "testFlight": {
     "buildLabel": null,
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "d3443b26c0a636c37cb7eea3903a19f94f40df251af1cfa771073db20d56de0b",
+    "manifestFingerprint": "fe743eee83b090f8625247033d114d8c01d2d0aa9cb4d1385dbda9ee976f1771",
     "mode": "testflight",
-    "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /home/ales27pm/lumen-clone --output /home/ales27pm/lumen-clone/generated/agent_manifest --loop-output /home/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
+    "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
     "requiresTestFlightAppRun": true,
     "runbookPath": "TESTFLIGHT_RUNBOOK.md",

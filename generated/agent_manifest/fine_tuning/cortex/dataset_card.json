@@ -1,19 +1,19 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 1526,
+  "availableSFTRecords": 1608,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
     "sentinelSafe": true
   },
   "deterministic": true,
-  "manifestCommit": "90063b95b71401d96efaacaa40c9e3704d6bdffc",
+  "manifestCommit": "ac9fdc25fcbb6730d0ef70f426a13cbc505e25ba",
   "recordCounts": {
     "eval": 555,
     "train_dpo": 8,
-    "train_sft": 287,
+    "train_sft": 312,
     "val_dpo": 1,
-    "val_sft": 51
+    "val_sft": 55
   },
   "sourceFamilies": [
     "codebase_home_corpus",
@@ -30,6 +30,7 @@
     "embedding_val_triplets",
     "fleet_system_prompts",
     "manifest_grounding_cards",
+    "runtime_audit_repairs",
     "train_sft"
   ],
   "systemPrompt": "You are Cortex, Lumen’s routing and planning agent. Select manifest-approved tools, persist required action steps, and delegate execution to Executor.",
@@ -54,6 +55,7 @@
     "intent_routing",
     "manifest_grounding_cards",
     "role_directory",
+    "runtime_manifest_drift_repair",
     "source_code_self_knowledge",
     "source_routing_knowledge",
     "tool_id_repair"

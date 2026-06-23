@@ -4,13 +4,13 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `8376`
-- Runtime audit reports: `3`
-- Runtime failures: `55`
+- Dataset records: `8338`
+- Runtime audit reports: `4`
+- Runtime failures: `46`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `55`
-- Next action prompts: `55`
+- Gaps: `46`
+- Next action prompts: `46`
 
 ## TestFlight handoff
 
@@ -153,17 +153,17 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app datase
 - Category: `runtime_drift`
 - Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
 
-### ERROR — argument_mismatch
+### ERROR — e2e_response_quality_chat
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
 
-### ERROR — argument_mismatch
-
-- Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
+### ERROR — e2e_response_quality_chat
 
 - Category: `runtime_drift`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
+
+### ERROR — e2e_response_quality_chat
+
+- Category: `runtime_drift`
+- Recommendation: Convert this failure into a REM repair sample and add a regression eval.

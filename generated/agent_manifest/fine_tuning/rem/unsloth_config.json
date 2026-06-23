@@ -1,17 +1,22 @@
 {
   "adapterExport": {
-    "adapterArtifact": "models/lora/rem",
-    "adapterDirectory": "models/lora/rem",
+    "adapterArtifact": "models/lora_qwen3_bootstrap/rem",
+    "adapterDirectory": "models/lora_qwen3_bootstrap/rem",
+    "adapterGGUFArtifact": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
     "adapterID": "lumen-rem-adapter",
+    "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
     "agent": "rem",
     "baseModelID": "Qwen/Qwen3-1.7B",
     "enabled": true,
     "mergeAdaptersByDefault": false,
     "rollbackUnit": "adapter",
     "saveAdapterByDefault": true,
+    "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+    "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
     "trainBaseModelWeights": false
   },
-  "adapter_output_dir": "models/lora/rem",
+  "adapter_gguf_output_path": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
+  "adapter_output_dir": "models/lora_qwen3_bootstrap/rem",
   "agent": "rem",
   "artifactMode": "adapter_first",
   "artifact_mode": "adapter_first",
@@ -22,7 +27,7 @@
   "defaultExportArtifact": "lora_adapter",
   "default_export_artifact": "lora_adapter",
   "fleet_strategy": "per_slot_adapter",
-  "gguf_output_dir": "models/gguf_release_bake/rem_merged_gguf",
+  "gguf_output_dir": "models/gguf_release_bake_qwen3_bootstrap/rem_merged_gguf",
   "gguf_quantization": "q4_k_m",
   "gguf_repo_id": "ales27pm/lumen-fleet-gguf",
   "gradient_accumulation_steps": 8,
@@ -42,7 +47,7 @@
   "merge_adapters_by_default": false,
   "merge_target": null,
   "num_train_epochs": 2,
-  "output_dir": "models/lora/rem",
+  "output_dir": "models/lora_qwen3_bootstrap/rem",
   "release_bake_enabled_by_default": false,
   "warmup_steps": 20
 }

@@ -158,7 +158,7 @@ extension AssistantKernel: AgentKernelRunning {
     func runLegacyAgentBridge(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentKernelEvent> {
         AsyncStream { continuation in
             let task = Task { @MainActor in
-                for await event in AgentService.shared.run(request, options: options) {
+                for await event in AgentService.shared.runKernelBridge(request, options: options) {
                     continuation.yield(event.agentKernelEvent)
                 }
                 continuation.finish()

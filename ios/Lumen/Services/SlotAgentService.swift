@@ -182,6 +182,10 @@ final class SlotAgentService {
         }
     }
 
+    func runKernelDiagnostics(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        run(req, options: options)
+    }
+
     func prepareGroundedRequestForDiagnostics(_ req: AgentRequest, options: LegacyAgentRunOptions) async -> LegacyGroundingResult {
         let request = Self.makeLegacyGroundingRequest(
             req,
