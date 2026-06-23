@@ -277,7 +277,7 @@ struct VoiceModeView: View {
             let memories = await safeRecalledMemories(query: text, routing: routing)
             let history = safeShortTermContext(in: convo, excludingCurrentUserMessageID: userMsg.id)
 
-            var finalText = ""
+            var voiceEventState = VoiceKernelEventState()
             var lastUIUpdate = Date.distantPast
             let eventStream = VoiceAgentRuntimeBridge.streamVoiceTurn(
                 text: text,
@@ -289,34 +289,39 @@ struct VoiceModeView: View {
                 turnID: turnID,
                 modelContext: modelContext
             )
-            for await event in eventStream {
-                if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") || CPUWatchdogGuard.shared.shouldDegrade(category: .voice) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") { break }
+            for await kernelEvent in eventStream {
+                if Task.isCancelled || activeVoiceTurnID != turnID || !generationController.isCurrent(controllerRequestID, for: "voice") || CPUWatchdogGuard.shared.shouldDegrade(category: .voice) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") {
+                    _ = VoiceKernelEventReducer.cancel(state: &voiceEventState, reason: voiceCancellationReason(turnID: turnID, requestID: controllerRequestID))
+                    break
+                }
                 let workStartedAt = ProcessInfo.processInfo.systemUptime
                 defer { CPUWatchdogGuard.shared.recordWork(category: .voice, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
-                switch event {
-                case .step(let s): stepsBuffer.append(contentsOf: AgentStepContentBudget.boundedSanitizedSteps([s]))
-                case .stepDelta: break
-                case .finalDelta(let chunk):
-                    finalText += chunk
-                    let sanitized = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
-                    if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
-                        responseText = FinalIntentValidator.validate(sanitized, routing: routing, fallback: nil)
+                let mutation = VoiceKernelEventReducer.reduce(kernelEvent, state: &voiceEventState, lastUserMessage: text, routing: routing)
+                if mutation.stepsChanged {
+                    stepsBuffer = AgentStepContentBudget.boundedSanitizedSteps(voiceEventState.steps)
+                    if mutation.shouldEmitStepFeedback {
+                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    }
+                }
+                if mutation.textChanged, Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
+                    responseText = voiceEventState.responseText
+                    if mutation.shouldEmitUIUpdateDiagnostic {
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .uiUpdate, values: ["surface": "voice", "targetHz": "1"]))
-                        lastUIUpdate = Date()
-                        if phase != .speaking { phase = .speaking }; session.startSpeaking()
+                    }
+                    lastUIUpdate = Date()
+                    if mutation.shouldStartSpeaking {
+                        if phase != .speaking { phase = .speaking }
+                        session.startSpeaking()
+                    }
+                    if mutation.shouldSpeakPending {
                         speakPending()
                     }
-                case .done(let f, let all):
-                    finalText = f.isEmpty ? finalText : f
-                    stepsBuffer = AgentStepContentBudget.boundedSanitizedSteps(all)
-                case .error(let msg):
-                    finalText = msg
-                    responseText = FinalIntentValidator.validate(msg, routing: routing, fallback: nil)
                 }
             }
 
             guard !Task.isCancelled, activeVoiceTurnID == turnID, generationController.isCurrent(controllerRequestID, for: "voice") else { return }
             finishedStreaming = true
+            var finalText = voiceEventState.finalText
             finalText = AssistantOutputSanitizer.sanitize(finalText, lastUserMessage: text)
             finalText = FinalIntentValidator.validate(finalText, routing: routing, fallback: nil)
             let persistedFinal = FinalOutputSanitizer.sanitizeUserVisibleText(finalText).text
@@ -369,6 +374,15 @@ struct VoiceModeView: View {
 
     private func ensureChatModelLoaded() async -> Bool {
         await ModelLoader.ensureChatLoaded(appState: appState, stored: storedModels, intent: .userVoice)
+    }
+
+    private func voiceCancellationReason(turnID: UUID, requestID: UUID) -> String {
+        if Task.isCancelled { return AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled" }
+        if activeVoiceTurnID != turnID { return "voice-turn-superseded" }
+        if !generationController.isCurrent(requestID, for: "voice") { return "voice-generation-superseded" }
+        if CPUWatchdogGuard.shared.shouldDegrade(category: .voice) { return "voice-cpu-budget" }
+        if !ResourceBudgetGate.allowsHeavyModelWork(reason: "userVoice.stream") { return "resource-budget" }
+        return "unknown"
     }
 
     private func speakPending() {
