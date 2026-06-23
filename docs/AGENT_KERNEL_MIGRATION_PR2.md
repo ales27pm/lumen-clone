@@ -27,4 +27,4 @@ This PR does not migrate `ChatView`, voice, AppIntents, triggers, diagnostics, o
 
 ## Follow-up
 
-PR3 should migrate `ChatView` to call `AssistantKernel.run(...)` directly and consume `AgentKernelEvent`/temporary legacy adapter events.
+PR3 should migrate `ChatView` to call `AssistantKernel.run(...)` directly and consume native `AgentKernelEvent` values.

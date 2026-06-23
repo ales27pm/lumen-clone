@@ -110,3 +110,11 @@
 - Scene phase handlers now prefer immediate cancellation over foreground/background maintenance work.
 - Background trigger/headless execution returns a skipped/degraded result instead of loading local model assets.
 - Remaining audit risk: device symbolication with the matching dSYM is still needed to map the original crash offsets to exact functions.
+
+## Chat kernel event update
+
+- `ChatView.runAgent(...)` now enters through `AssistantKernel.shared.run(...)` and reduces native `AgentKernelEvent` values with `ChatKernelEventReducer`.
+- `AgentKernelEvent.legacyAgentEvent` no longer feeds ChatView.
+- `LegacyAgentCompatibilityBridge` remains for documented compatibility paths, including kernel-internal tool-required chat routing, tool-capable voice routing, live diagnostics/E2E probes, and grounding audit smoke tests.
+- Voice routing remains mixed: `VoiceCommandRouter` can still adapt kernel events back to `AgentEvent` and tool-capable voice can still use `runLegacyAgentBridge(...)`.
+- This update does not claim all legacy services are removed or that the app is production-ready without Xcode/device validation.

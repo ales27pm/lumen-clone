@@ -33,7 +33,7 @@ The existing `runTextTurn(_:)` implementation remains intact and is used under t
 
 ## Migration compatibility
 
-`AgentKernelEvent.legacyAgentEvent` provides a short-lived compatibility bridge to the existing `AgentEvent` stream used by current UI and service code. It should be deleted once ChatView, voice, headless, diagnostics, and E2E have moved to kernel-native events.
+`AgentKernelEvent.legacyAgentEvent` provides a short-lived compatibility bridge to the existing `AgentEvent` stream used by remaining compatibility paths. ChatView no longer consumes it; it should be deleted once voice, diagnostics, E2E, grounding audits, and other bridge-only paths have moved to kernel-native events.
 
 ## Boundary guard
 
