@@ -1332,8 +1332,8 @@ nonisolated enum AgentParseNoiseSummaryLoader {
 @MainActor
 final class AgentService {
     static let shared = AgentService()
-    private static let structuredTurnMaxTokenCap = 384
-    private static let structuredTurnMinTokenCap = 128
+    private nonisolated static let structuredTurnMaxTokenCap = 384
+    private nonisolated static let structuredTurnMinTokenCap = 128
     private nonisolated static let structuredContextNoteCharCap = 1_200
     private nonisolated static let structuredUserMessageCharCap = 1_600
     private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
@@ -1407,12 +1407,12 @@ final class AgentService {
                 attachments: stepIndex == 0 ? req.attachments : []
             )
 
-            let scanner = StreamingJSONScanner()
+            var scanner = StreamingJSONScanner()
             var raw = ""
             let thoughtStepID = UUID()
             var thoughtStepYielded = false
             var streamedFinalLen = 0
-            let generationStartedAt = Date()
+            var generationStartedAt = Date()
             var firstTokenLatencyMs: Int?
             var outputChunks = 0
 
@@ -1442,6 +1442,46 @@ final class AgentService {
                     }
                 case .done:
                     break
+                }
+            }
+
+            if !Task.isCancelled,
+               raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let retryGenReq = Self.agentJSONEmptyOutputRetryRequest(from: genReq, userTurn: userTurn)
+                scanner = StreamingJSONScanner()
+                raw = ""
+                streamedFinalLen = 0
+                firstTokenLatencyMs = nil
+                outputChunks = 0
+                generationStartedAt = Date()
+
+                for await token in await AppLlamaService.shared.stream(retryGenReq, slot: Self.structuredAgentModelSlot) {
+                    if Task.isCancelled { break }
+                    switch token {
+                    case .text(let s):
+                        if firstTokenLatencyMs == nil {
+                            firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
+                        }
+                        outputChunks += 1
+                        raw += s
+                        for event in scanner.feed(s) {
+                            switch event {
+                            case .thoughtDelta:
+                                let current = scanner.thought
+                                if !thoughtStepYielded {
+                                    continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
+                                    thoughtStepYielded = true
+                                } else {
+                                    continuation.yield(.stepDelta(id: thoughtStepID, text: current))
+                                }
+                            case .finalDelta(let delta):
+                                streamedFinalLen += delta.count
+                                continuation.yield(.finalDelta(delta))
+                            }
+                        }
+                    case .done:
+                        break
+                    }
                 }
             }
 
@@ -1730,6 +1770,44 @@ final class AgentService {
             out += "\n\nEmit the first JSON object now. Choose either action or final."
         }
         return out
+    }
+
+    private nonisolated static func agentJSONEmptyOutputRetryRequest(
+        from request: GenerateRequest,
+        userTurn: String
+    ) -> GenerateRequest {
+        GenerateRequest(
+            id: request.id,
+            sessionID: request.sessionID,
+            systemPrompt: request.systemPrompt,
+            history: request.history,
+            userMessage: agentJSONEmptyOutputRetryUserTurn(from: userTurn),
+            temperature: min(request.temperature, 0.05),
+            topP: min(request.topP, 0.6),
+            repetitionPenalty: max(request.repetitionPenalty, 1.05),
+            maxTokens: min(max(request.maxTokens, structuredTurnMinTokenCap), structuredTurnMaxTokenCap),
+            modelName: request.modelName,
+            relevantMemories: request.relevantMemories,
+            attachments: request.attachments,
+            seed: request.seed.map { $0 &+ 1 },
+            developerTraceModeEnabled: request.developerTraceModeEnabled,
+            reasoningCaptureEnabled: request.reasoningCaptureEnabled,
+            reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters
+        )
+    }
+
+    private nonisolated static func agentJSONEmptyOutputRetryUserTurn(from userTurn: String) -> String {
+        """
+        \(userTurn)
+
+        Previous live agent-json attempt emitted no tokens. Do not stop silently.
+        Emit exactly one non-empty JSON object now, with no prose, no markdown, and no code fence.
+        The object must contain either:
+        {"action":{"tool":"<allowed tool id>","args":{...}}}
+        or:
+        {"final":"<concise user-facing answer>"}
+        Start the response with { and finish after the matching }.
+        """
     }
 
     private func recordAgentModelTurnTrace(
@@ -2119,6 +2197,10 @@ final class AgentService {
 
     func structuredAgentUserTurnForTests(req: AgentRequest, stepIndex: Int = 0, scratchpad: String = "") -> String {
         buildAgentUserTurn(req: req, stepIndex: stepIndex, scratchpad: scratchpad)
+    }
+
+    nonisolated static func agentJSONEmptyOutputRetryUserTurnForTests(from userTurn: String) -> String {
+        agentJSONEmptyOutputRetryUserTurn(from: userTurn)
     }
 
     /// Exposes the internal structured parse failure recovery function for testing.
