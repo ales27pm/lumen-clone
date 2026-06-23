@@ -117,6 +117,7 @@
 				105FC5762E9EAD3100EA8BCF /* Sources */,
 				105FC5772E9EAD3100EA8BCF /* Frameworks */,
 				105FC5782E9EAD3100EA8BCF /* Resources */,
+				B7A1C2D3E4F5061728394A5C /* Apply Files App Document Exposure */,
 				B7A1C2D3E4F5061728394A5B /* Bundle Agent Grounding Artifacts */,
 			);
 			buildRules = (
@@ -254,6 +255,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		B7A1C2D3E4F5061728394A5C /* Apply Files App Document Exposure */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Apply Files App Document Exposure";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\nplist=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$plist\" ]; then\n  exit 0\nfi\nset_bool() {\n  key=\"$1\"\n  /usr/libexec/PlistBuddy -c \"Set :${key} true\" \"$plist\" 2>/dev/null || \\\n    /usr/libexec/PlistBuddy -c \"Add :${key} bool true\" \"$plist\"\n}\nset_bool UIFileSharingEnabled\nset_bool LSSupportsOpeningDocumentsInPlace\nset_bool UISupportsDocumentBrowser\n";
+		};
 		B7A1C2D3E4F5061728394A5B /* Bundle Agent Grounding Artifacts */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -474,7 +494,7 @@
 				CODE_SIGN_ENTITLEMENTS = Lumen/Lumen.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20260619225841;
+				CURRENT_PROJECT_VERSION = 20260623061201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = 52T7P32J34;
@@ -485,6 +505,7 @@
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.27pm.lumenclone\";\n    CFBundleURLSchemes =     (\n        \"msauth.com.27pm.lumenclone\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_LSApplicationQueriesSchemes = "msauth msauthv2 msauthv3";
 				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
@@ -503,7 +524,9 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LIBRARY_SEARCH_PATHS = (
@@ -538,7 +561,7 @@
 				CODE_SIGN_ENTITLEMENTS = Lumen/LumenAppStore.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 20260619225841;
+				CURRENT_PROJECT_VERSION = 20260623061201;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = 52T7P32J34;
 				ENABLE_PREVIEWS = YES;
@@ -548,6 +571,7 @@
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.27pm.lumenclone\";\n    CFBundleURLSchemes =     (\n        \"msauth.com.27pm.lumenclone\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_LSApplicationQueriesSchemes = "msauth msauthv2 msauthv3";
 				INFOPLIST_KEY_NSAlarmKitUsageDescription = "Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Lumen uses your calendar to create and read events when you ask.";
@@ -566,7 +590,9 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LIBRARY_SEARCH_PATHS = (
@@ -602,7 +628,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20260619225841;
+				CURRENT_PROJECT_VERSION = 20260623061201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -631,7 +657,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20260619225841;
+				CURRENT_PROJECT_VERSION = 20260623061201;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -662,7 +688,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20260619225841;
+				CURRENT_PROJECT_VERSION = 20260623061201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -689,7 +715,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20260619225841;
+				CURRENT_PROJECT_VERSION = 20260623061201;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.0;

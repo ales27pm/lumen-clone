@@ -93,6 +93,15 @@ final class AppState {
         get { settings.developerReasoningCaptureEnabled }
         set { settings.developerReasoningCaptureEnabled = newValue }
     }
+    var networkToolsEnabled: Bool {
+        get { settings.networkToolsEnabled }
+        set {
+            settings.networkToolsEnabled = newValue
+            Task { @MainActor [newValue] in
+                PermissionRegistry.shared.setNetworkAccessEnabled(newValue)
+            }
+        }
+    }
     var autoDownloadFleetModels: Bool {
         get { settings.autoDownloadFleetModels }
         set { settings.autoDownloadFleetModels = newValue }

@@ -177,10 +177,20 @@
     },
     {
       "categories": {
+        "runtime_drift": 1,
         "skipped_live_model_generation": 2
       },
-      "count": 2,
+      "count": 3,
       "examples": [
+        {
+          "actual": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
+          "category": "runtime_drift",
+          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_emaildraft"
+        },
         {
           "actual": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
           "category": "skipped_live_model_generation",
@@ -200,16 +210,135 @@
           "title": "e2e_response_quality_emaildraft"
         }
       ],
-      "freshRuntimeFailureCount": 0,
+      "freshRuntimeFailureCount": 1,
       "group": "emaildraft",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "rootCauseCategories": {
-        "skipped_live_model_generation": 2
+        "skipped_live_model_generation": 2,
+        "stale_or_unclassified_runtime_evidence": 1
       },
       "severities": {
+        "error": 1,
         "warning": 2
       },
       "skippedLiveModelGenerationCount": 2,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "runtime_drift": 2
+      },
+      "count": 2,
+      "examples": [
+        {
+          "actual": "recentTraces is empty",
+          "category": "runtime_drift",
+          "prompt": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "agent_grounding_no_recent_model_traces"
+        },
+        {
+          "actual": "recentTraces is empty",
+          "category": "runtime_drift",
+          "prompt": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "agent_grounding_no_recent_model_traces"
+        }
+      ],
+      "freshRuntimeFailureCount": 2,
+      "group": "agent_grounding_no_recent_model_traces",
+      "recommendedAction": "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence.",
+      "rootCauseCategories": {
+        "stale_or_unclassified_runtime_evidence": 2
+      },
+      "severities": {
+        "error": 2
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "runtime_drift": 1,
+        "skipped_live_model_generation": 1
+      },
+      "count": 2,
+      "examples": [
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
+          "category": "runtime_drift",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_rag"
+        },
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
+          "category": "skipped_live_model_generation",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_rag"
+        }
+      ],
+      "freshRuntimeFailureCount": 1,
+      "group": "rag",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1,
+        "stale_or_unclassified_runtime_evidence": 1
+      },
+      "severities": {
+        "error": 1,
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
+      "status": "needs_fresh_runtime_evidence"
+    },
+    {
+      "categories": {
+        "runtime_drift": 1,
+        "skipped_live_model_generation": 1
+      },
+      "count": 2,
+      "examples": [
+        {
+          "actual": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
+          "category": "runtime_drift",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_trigger"
+        },
+        {
+          "actual": "I hit an internal response-format issue. Please try again.\n\ntrigger",
+          "category": "skipped_live_model_generation",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "rootCauseCategory": "skipped_live_model_generation",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_response_quality_trigger"
+        }
+      ],
+      "freshRuntimeFailureCount": 1,
+      "group": "trigger",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "skipped_live_model_generation": 1,
+        "stale_or_unclassified_runtime_evidence": 1
+      },
+      "severities": {
+        "error": 1,
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 1,
       "status": "needs_fresh_runtime_evidence"
     },
     {
@@ -344,62 +473,6 @@
     },
     {
       "categories": {
-        "skipped_live_model_generation": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
-          "category": "skipped_live_model_generation",
-          "prompt": "Search my files for architecture notes and summarize key modules.",
-          "rootCauseCategory": "skipped_live_model_generation",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_response_quality_rag"
-        }
-      ],
-      "freshRuntimeFailureCount": 0,
-      "group": "rag",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "skipped_live_model_generation": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 1,
-      "status": "needs_fresh_runtime_evidence"
-    },
-    {
-      "categories": {
-        "skipped_live_model_generation": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "I hit an internal response-format issue. Please try again.\n\ntrigger",
-          "category": "skipped_live_model_generation",
-          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-          "rootCauseCategory": "skipped_live_model_generation",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_response_quality_trigger"
-        }
-      ],
-      "freshRuntimeFailureCount": 0,
-      "group": "trigger",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "skipped_live_model_generation": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 1,
-      "status": "needs_fresh_runtime_evidence"
-    },
-    {
-      "categories": {
         "manifest_mismatch": 1
       },
       "count": 1,
@@ -431,36 +504,37 @@
   "summary": {
     "categoryCounts": {
       "manifest_mismatch": 29,
-      "runtime_drift": 4,
+      "runtime_drift": 9,
       "skipped_live_model_generation": 13
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
-    "freshRuntimeFailureCount": 33,
+    "freshRuntimeFailureCount": 38,
     "groupCounts": {
+      "agent_grounding_no_recent_model_traces": 2,
       "argument_mismatch": 27,
       "chat": 4,
-      "emaildraft": 2,
+      "emaildraft": 3,
       "memory": 1,
       "missing_live_argument": 1,
       "persistent_diagnostics_scenario_not_passed": 4,
-      "rag": 1,
-      "trigger": 1,
+      "rag": 2,
+      "trigger": 2,
       "unmanifested_live_argument": 1,
       "weather": 2,
       "websearch": 2
     },
-    "rawRuntimeFailureCount": 46,
+    "rawRuntimeFailureCount": 51,
     "rootCauseCounts": {
       "manifest_mismatch": 29,
       "skipped_live_model_generation": 13,
-      "stale_or_unclassified_runtime_evidence": 4
+      "stale_or_unclassified_runtime_evidence": 9
     },
-    "runtimeAuditReports": 4,
+    "runtimeAuditReports": 20,
     "severityCounts": {
-      "error": 33,
+      "error": 38,
       "warning": 13
     },
     "skippedLiveModelGenerationCount": 13,
-    "totalGaps": 46
+    "totalGaps": 51
   }
 }

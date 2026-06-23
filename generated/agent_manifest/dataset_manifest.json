@@ -10,7 +10,7 @@
     "mouth_responses": 53,
     "negative_samples": 53,
     "rem_reflection": 5,
-    "runtime_audit_repairs": 42,
+    "runtime_audit_repairs": 49,
     "tool_schema_cards": 91,
     "train_sft": 309,
     "validation_sft": 55
@@ -21,7 +21,7 @@
     "dpo_preference_pairs": "4f767adaddc8004a98edfdd72b4ed9097d199d6890731154f06b8c300a9ca48f",
     "eval_scenarios": "719a4dedd0dab84679efe032385d7994ecb6ad1b0e72cd835a95121243d55c5d",
     "manifest_grounding_cards": "1d0cef01d0db5365957b22d31f0ed18e24e713ec7b7494aea9d584189d308107",
-    "runtime_audit_repairs": "2df0db3bad6357e606aff6981ea45f916d99b3e7416dd8b2beac9d43c31f59ff",
+    "runtime_audit_repairs": "52de5948ba729c077db76e992a7c363125041873e53c16ab4f4aaf07d9847ca1",
     "tool_schema_cards": "650b17b0d04fefc0c8665f935b4bedfe428c54addd96e62bf83186f868ad839e",
     "train_sft": "7d784ddbefa3a2b126288d68f1cf3b5e9108ac58d1ec89f737f951595bab7b63",
     "validation_sft": "88d49f636aa1b6ff2104d3494d78866a124a5addaaa529f44ee1aad8e0acb236"
@@ -46,10 +46,11 @@
     ],
     "runtimeAuditFormats": [
       "live-e2e-test-report-json",
+      "lumen_e2e_text_report",
       "lumen_in_app_dataset_package",
       "persistent_runtime_diagnostics_export"
     ],
-    "runtimeAuditReports": 4,
+    "runtimeAuditReports": 20,
     "staticSwiftSourceFiles": 13
   },
   "trainingPolicy": {

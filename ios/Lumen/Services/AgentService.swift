@@ -1432,6 +1432,13 @@ final class AgentService {
             if Task.isCancelled { break }
 
             let turn = AgentTurnParser.parse(raw)
+            recordAgentModelTurnTrace(
+                req: req,
+                userTurn: userTurn,
+                raw: raw,
+                turn: turn,
+                stepIndex: stepIndex
+            )
 
             if turn.hadNoise {
                 recordRecoverableNoise(
@@ -1695,6 +1702,43 @@ final class AgentService {
             out += "\n\nEmit the first JSON object now. Choose either action or final."
         }
         return out
+    }
+
+    private func recordAgentModelTurnTrace(
+        req: AgentRequest,
+        userTurn: String,
+        raw: String,
+        turn: AgentTurn,
+        stepIndex: Int
+    ) {
+        let routing = IntentRouter.classify(Self.sanitizedStructuredUserMessage(req.userMessage))
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "agent",
+                stage: "agent-json-step-\(stepIndex)",
+                intent: routing.intent.rawValue,
+                promptPrefix: ModelOutputSanitizer.boundedPrefix(req.userMessage, limit: 1200),
+                rawOutputPrefix: ModelOutputSanitizer.boundedPrefix(raw, limit: 1600),
+                selectedToolID: turn.action.map { ToolRouteGuard.canonicalToolID($0.tool) },
+                toolArguments: turn.action?.args.stringCoerced ?? [:],
+                allowedToolIDs: req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }.sorted(),
+                requiresApproval: turn.action.map { ToolRouteGuard.requiresUserApproval(ToolRouteGuard.canonicalToolID($0.tool)) },
+                approvalMode: nil,
+                parseError: turn.parseError?.rawValue,
+                emittedFinalInActionTurn: turn.final?.isEmpty == false,
+                modelFamily: LumenModelFamily.persistedSelected.rawValue,
+                adapterSlot: "agent",
+                generationElapsedMs: nil,
+                outputTokenCount: nil,
+                estimatedPromptTokenCount: nil,
+                runtimePath: "agent-model",
+                activeAdapterSlot: "agent",
+                promptCharCount: userTurn.count
+            )
+        )
     }
 
     private func compactScratchpadObservation(_ text: String) -> String {

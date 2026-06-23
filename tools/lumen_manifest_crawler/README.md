@@ -110,6 +110,35 @@ Or from the repo root after installation:
 python -m lumen_manifest_crawler generate --root . --output generated/agent_manifest --pretty
 ```
 
+## Run the unified developer cycle
+
+From the repo root:
+
+```bash
+python3 -m lumen_manifest_crawler developer-cycle --root . --portable
+```
+
+or:
+
+```bash
+bash scripts/run-lumen-developer-cycle.sh --portable
+```
+
+The developer cycle is the top-level repeatable workflow for static checks, manifest/dataset generation, runtime-audit ingestion, improvement-loop reports, optional Xcode validation, and optional training/HF job planning. It writes:
+
+```text
+generated/developer_framework/developer_cycle_report.json
+generated/developer_framework/DEVELOPER_CYCLE_REPORT.md
+generated/developer_framework/framework_report.json
+generated/developer_framework/runtime_report_index.json
+```
+
+Use `--runtime-audit PATH` multiple times to add TestFlight/runtime/E2E exports. Use `--with-xcode` to require `scripts/validate_lumen_ios.sh`. Use `--with-training-plan` to print the expensive/credentialed Ubuntu training jobs without running them, and `--run-training` only when those jobs should execute.
+
+The report separates portable and release-candidate semantics. Xcode unavailable is `skipped` unless `--with-xcode` is set, missing runtime evidence remains missing evidence, and skipped live model generation is not counted as live model success.
+
+Runtime evidence inputs are `exports/`, `runtime-audits/`, and explicit `--runtime-audit PATH` values. `generated/agent_improvement_loop/` is treated as improve-loop output, not runtime input, so generated reports, gap files, scenario queues, and command logs are not fed back as live evidence.
+
 ## Run one closed improvement-loop cycle
 
 The `improve-loop` command performs one auditable cycle of the static/TestFlight-runtime/training loop:

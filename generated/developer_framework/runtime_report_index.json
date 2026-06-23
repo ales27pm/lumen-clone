@@ -1,0 +1,11 @@
+{
+  "inputPaths": [
+    "/Users/ales27pm/lumen-clone/exports",
+    "/Users/ales27pm/lumen-clone/runtime-audits",
+    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop"
+  ],
+  "plainFindingCount": 3,
+  "reportCount": 20,
+  "runtimeFailureCount": 51,
+  "schemaVersion": "lumen.developer_cycle.runtime_report_index/1.0.0"
+}

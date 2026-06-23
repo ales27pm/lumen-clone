@@ -155,6 +155,9 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Network tools", isOn: Binding(get: { state.networkToolsEnabled }, set: { state.networkToolsEnabled = $0 }))
+                        .accessibilityIdentifier("settings.privacy.networkTools")
+
                     NavigationLink {
                         PermissionsView()
                     } label: {
@@ -163,7 +166,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Privacy")
                 } footer: {
-                    Text("Review which system features Lumen can access.")
+                    Text("Network tools allow explicit web and external data lookups. Individual tools still follow the Tools screen enablement and approval rules.")
                 }
 
                 Section("About") {
@@ -246,6 +249,7 @@ struct SettingsView: View {
         • showThinkingByDefault: \(appState.showThinkingByDefault ? "true" : "false")
         • developerTraceModeEnabled: \(appState.developerTraceModeEnabled ? "true" : "false")
         • developerReasoningCaptureEnabled: \(appState.developerReasoningCaptureEnabled ? "true" : "false")
+        • networkToolsEnabled: \(appState.networkToolsEnabled ? "true" : "false")
         • maxAgentSteps: \(appState.maxAgentSteps)
 
         Fleet:
@@ -341,7 +345,7 @@ struct E2ETestRunnerView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
     @State private var isRunning = false
-    @State private var runMode: RunMode = .standard
+    @State private var runMode: RunMode
     @State private var reportText = E2ETestLogStore.latestText()
     @State private var latestReport: E2ETestReport? = E2ETestLogStore.latestReport()
     @State private var liveResults: [E2ETestResult] = []
@@ -349,6 +353,10 @@ struct E2ETestRunnerView: View {
     @State private var runStartedAt: Date?
     @State private var lastExportURL: URL?
     @State private var exportError: String?
+
+    init(initialRunMode: RunMode = .standard) {
+        _runMode = State(initialValue: initialRunMode)
+    }
 
     var body: some View {
         List {
@@ -904,7 +912,7 @@ private func durationText(_ seconds: Double) -> String {
 }
 
 
-private extension E2ETestRunnerView {
+extension E2ETestRunnerView {
     enum RunMode: CaseIterable {
         case standard
         case trainingValidation

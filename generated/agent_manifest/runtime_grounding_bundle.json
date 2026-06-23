@@ -2,14 +2,14 @@
   "artifactKind": "agent_grounding_runtime_bundle",
   "codebaseHome": {
     "languageCounts": {
-      "csv": 10,
-      "json": 69,
-      "markdown": 67,
+      "csv": 8,
+      "json": 59,
+      "markdown": 63,
       "mixed": 1,
       "plist": 3,
       "python": 92,
       "shell": 10,
-      "swift": 470,
+      "swift": 468,
       "text": 6,
       "toml": 1,
       "xcode_project": 1,
@@ -25,7 +25,7 @@
       "Assets.xcassets/LumenAssistantMark.imageset": 1,
       "Assets.xcassets/LumenVerticalLogo.imageset": 1,
       "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
-      "Assistant": 26,
+      "Assistant": 24,
       "Background": 4,
       "Brand": 2,
       "Developer": 3,
@@ -37,7 +37,7 @@
       "RAG": 9,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
       "Scripts": 1,
-      "Services": 57,
+      "Services": 55,
       "Services/AgentGrounding": 13,
       "Services/Diagnostics": 1,
       "Services/IntentClassification": 5,
@@ -52,16 +52,16 @@
       "Tools": 14,
       "Tools/Builtin": 12,
       "Views": 31,
-      "Voice": 6,
+      "Voice": 7,
       "app": 6,
       "codebase_txt_chunks": 2,
       "docs": 51,
       "docs/stabilization": 1,
-      "generated/agent_manifest": 26,
+      "generated/agent_manifest": 10,
       "ios": 1,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 147,
+      "ios/LumenTests": 148,
       "ios/LumenUITests": 2,
       "repo": 6,
       "runtime-audits": 1,
@@ -81,7 +81,7 @@
       "tools/pipeline/tests": 2,
       "tools/security": 1
     },
-    "recordCount": 732,
+    "recordCount": 714,
     "selectedFiles": [
       {
         "imports": [
@@ -1187,7 +1187,7 @@
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/CalendarTools.swift",
         "responsibility": "`ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, CalendarOperation, CalendarEventRecord, CalendarListQuery, CalendarToolResponse, EventProvider, EventKitProvider, CalendarProviderError, authorizationState, events.",
-        "sha256": "ec038cd083208e3a44eb9711c4698f2707affa98c5e94924a09ad707d35b19cb",
+        "sha256": "ee9bd0d94f87efc885d7889ee017e1683272c093cbe50dc3fe74a29ff26a10ac",
         "symbols": [
           "CalendarTools",
           "CalendarOperation",
@@ -1200,11 +1200,11 @@
           "authorizationState",
           "events",
           "createEvent",
+          "hasCalendarUsageDescription",
           "createEventResult",
           "listEvents",
           "listEventsResult",
-          "parseListArguments",
-          "unavailableResponse"
+          "parseListArguments"
         ]
       },
       {
@@ -1677,7 +1677,7 @@
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/IntentClassifierService.swift",
         "responsibility": "Determines the routing decision for the given text.",
-        "sha256": "8356b48f97454fedbf634edf22d6f2dcafdf265a0e2994de683dfd685be89784",
+        "sha256": "49fcf89fe72179aaf0aa874bbfbc8fd3f12ca10fd6421a326a57913258b6cc6e",
         "symbols": [
           "IntentClassifierService",
           "route",
@@ -2115,7 +2115,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
+  "manifestCommit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

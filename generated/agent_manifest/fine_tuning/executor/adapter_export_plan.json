@@ -7,11 +7,11 @@
   "agent": "executor",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "50dc56691bf538cf816b2847e0b97005e185f4d0",
+    "manifestCommit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
     "recordCounts": {
       "eval": 114,
       "train_dpo": 14,
-      "train_sft": 858,
+      "train_sft": 859,
       "val_dpo": 2,
       "val_sft": 152
     },

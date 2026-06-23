@@ -45,6 +45,17 @@ struct UserSettingsToolMigrationTests {
         #expect(persisted.contains("legacy.future.tool"))
     }
 
+    @Test func networkToolsSettingPersistsIntoSnapshots() async throws {
+        let defaults = isolatedDefaults("network-tools")
+        let settings = UserSettings(defaults: defaults)
+        #expect(settings.networkToolsEnabled == false)
+
+        settings.networkToolsEnabled = true
+
+        #expect(UserSettings(defaults: defaults).networkToolsEnabled == true)
+        #expect(SettingsSnapshot.loadFromDisk(defaults: defaults).networkToolsEnabled == true)
+    }
+
     private func isolatedDefaults(_ suffix: String) -> UserDefaults {
         let name = "UserSettingsToolMigrationTests.\(suffix).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
