@@ -22,8 +22,12 @@ final class BackgroundRuntimeContinuation {
             )
             : nil
         taskID = UIApplication.shared.beginBackgroundTask(withName: name) {
-            Task { @MainActor in
-                continuation?.finish(success: false)
+            if let continuation {
+                continuation.finish(success: false)
+            } else if taskID != .invalid {
+                continuedLease?.complete(success: false)
+                UIApplication.shared.endBackgroundTask(taskID)
+                taskID = .invalid
             }
         }
         guard taskID != .invalid else {
