@@ -12,6 +12,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
     let event: Event
     let slot: String
     let stage: String
+    let scenarioID: String?
+    let e2eRunID: UUID?
+    let agentRunID: UUID?
+    let conversationID: UUID?
+    let turnID: UUID?
     let intent: String?
     let promptPrefix: String
     let rawOutputPrefix: String
@@ -52,7 +57,7 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
 
 
     enum CodingKeys: String, CodingKey {
-        case id, createdAt, event, slot, stage, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason
+        case id, createdAt, event, slot, stage, scenarioID, e2eRunID, agentRunID, conversationID, turnID, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason
         case promptTokenCount
         case promptEvalMs
     }
@@ -64,6 +69,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         event = try container.decode(Event.self, forKey: .event)
         slot = try container.decode(String.self, forKey: .slot)
         stage = try container.decode(String.self, forKey: .stage)
+        scenarioID = try container.decodeIfPresent(String.self, forKey: .scenarioID)
+        e2eRunID = try container.decodeIfPresent(UUID.self, forKey: .e2eRunID)
+        agentRunID = try container.decodeIfPresent(UUID.self, forKey: .agentRunID)
+        conversationID = try container.decodeIfPresent(UUID.self, forKey: .conversationID)
+        turnID = try container.decodeIfPresent(UUID.self, forKey: .turnID)
         intent = try container.decodeIfPresent(String.self, forKey: .intent)
         promptPrefix = try container.decode(String.self, forKey: .promptPrefix)
         rawOutputPrefix = try container.decode(String.self, forKey: .rawOutputPrefix)
@@ -109,6 +119,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         try container.encode(event, forKey: .event)
         try container.encode(slot, forKey: .slot)
         try container.encode(stage, forKey: .stage)
+        try container.encodeIfPresent(scenarioID, forKey: .scenarioID)
+        try container.encodeIfPresent(e2eRunID, forKey: .e2eRunID)
+        try container.encodeIfPresent(agentRunID, forKey: .agentRunID)
+        try container.encodeIfPresent(conversationID, forKey: .conversationID)
+        try container.encodeIfPresent(turnID, forKey: .turnID)
         try container.encodeIfPresent(intent, forKey: .intent)
         try container.encode(promptPrefix, forKey: .promptPrefix)
         try container.encode(rawOutputPrefix, forKey: .rawOutputPrefix)
@@ -153,6 +168,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         event: Event,
         slot: String,
         stage: String,
+        scenarioID: String? = nil,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil,
         intent: String?,
         promptPrefix: String,
         rawOutputPrefix: String,
@@ -195,6 +215,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         self.event = event
         self.slot = slot
         self.stage = stage
+        self.scenarioID = scenarioID
+        self.e2eRunID = e2eRunID
+        self.agentRunID = agentRunID
+        self.conversationID = conversationID
+        self.turnID = turnID
         self.intent = intent
         self.promptPrefix = promptPrefix
         self.rawOutputPrefix = rawOutputPrefix

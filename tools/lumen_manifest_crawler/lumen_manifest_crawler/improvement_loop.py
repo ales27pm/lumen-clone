@@ -28,6 +28,17 @@ DEFAULT_LOOP_DIR = Path("generated/agent_improvement_loop")
 TESTFLIGHT_SCENARIOS_FILE = "testflight_scenarios.jsonl"
 TESTFLIGHT_RUNBOOK_FILE = "TESTFLIGHT_RUNBOOK.md"
 EXPORT_DATASET_INSTRUCTION = "Export the in-app dataset package JSON from Agent Grounding."
+EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
+    "agent_json_empty_generation",
+    "agent_json_parse_empty",
+    "agent_json_parse_error",
+    "agent_model_empty_output",
+    "agent_model_parse_error",
+    "no_correlated_model_turn",
+    "deterministic_compatibility_not_training_evidence",
+    "agent_service_not_entered",
+    "missing_sidecar_trace_export",
+}
 
 
 @dataclass(frozen=True)
@@ -351,10 +362,10 @@ def _runtime_summary(runtime_reports: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
     root_cause = str(failure.get("rootCauseCategory") or "")
-    if root_cause in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+    if root_cause in EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
         return False
     scenario = failure.get("e2eScenario")
-    if isinstance(scenario, dict) and scenario.get("modelEvidenceRootCause") in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+    if isinstance(scenario, dict) and scenario.get("modelEvidenceRootCause") in EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
         return False
     if isinstance(scenario, dict) and scenario.get("skippedLiveModelRun") is True:
         return True
@@ -363,7 +374,7 @@ def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
 
 def _runtime_gap_category(failure: dict[str, Any]) -> str:
     root_cause = _runtime_root_cause_category(failure)
-    if root_cause in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+    if root_cause in EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
         return root_cause
     if _is_skipped_live_model_generation(failure):
         return "skipped_live_model_generation"
@@ -376,12 +387,12 @@ def _runtime_gap_category(failure: dict[str, Any]) -> str:
 
 def _runtime_root_cause_category(failure: dict[str, Any]) -> str:
     explicit = str(failure.get("rootCauseCategory") or "")
-    if explicit in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+    if explicit in EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
         return explicit
     scenario = failure.get("e2eScenario")
     if isinstance(scenario, dict):
         scenario_root = str(scenario.get("modelEvidenceRootCause") or "")
-        if scenario_root in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+        if scenario_root in EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
             return scenario_root
     failure_type = str(failure.get("type") or "").lower()
     actual = str(failure.get("actual") or failure.get("final") or "").lower()

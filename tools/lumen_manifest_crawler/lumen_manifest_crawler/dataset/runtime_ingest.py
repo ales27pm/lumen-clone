@@ -92,7 +92,23 @@ def _load_e2e_sidecars(directory: Path) -> dict[str, list[dict[str, Any]]]:
         "agent_behavior_traces": _load_first_matching_jsonl(directory, "agent-behavior-traces.jsonl"),
         "agent_parse_failures": _load_first_matching_jsonl(directory, "agent-parse-failures.jsonl"),
         "e2e_results": _load_first_matching_jsonl(directory, "e2e-results.jsonl"),
+        "_sidecar_presence": [
+            {
+                "agent_behavior_traces": _matching_jsonl_exists(directory, "agent-behavior-traces.jsonl"),
+                "agent_parse_failures": _matching_jsonl_exists(directory, "agent-parse-failures.jsonl"),
+                "e2e_results": _matching_jsonl_exists(directory, "e2e-results.jsonl"),
+            }
+        ],
     }
+
+
+def _matching_jsonl_exists(directory: Path, suffix: str) -> bool:
+    candidates = [directory / suffix]
+    try:
+        candidates.extend(sorted(path for path in directory.glob(f"*{suffix}") if path.name != suffix))
+    except OSError:
+        pass
+    return any(candidate.exists() for candidate in candidates)
 
 
 def _load_first_matching_jsonl(directory: Path, suffix: str) -> list[dict[str, Any]]:
