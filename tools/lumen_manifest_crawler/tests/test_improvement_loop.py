@@ -135,7 +135,10 @@ def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Pat
                     "requiresAgentRun": True,
                     "failures": ["Live E2E scenario did not run: no chat model loaded"],
                     "final": "Outlook tool output could not be validated.",
-                    "events": [{"phase": "models", "message": "no chat model loaded"}],
+                    "events": [
+                        {"phase": "models", "message": "no chat model loaded"},
+                        {"phase": "model-evidence", "message": "AgentService model path was not entered; reason=model not loaded; scenarioID=Live outlook.folders.list direct,e2eRunID=11111111-1111-4111-8111-111111111111"},
+                    ],
                 }
             ],
         }),

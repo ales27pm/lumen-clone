@@ -8,12 +8,20 @@ from lumen_manifest_crawler.dataset.e2e_policy import e2e_failure_policy
 
 
 def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
-    scenarios = _coerce_e2e_scenarios(value)
+    raw_scenarios = _coerce_e2e_scenarios(value)
     sidecars = sidecars or {}
     failures = []
-    for scenario in scenarios:
-        diagnosis = _sidecar_diagnosis_for_scenario(scenario, sidecars)
-        if scenario.get("passed") is not True or _scenario_skipped_live_model_run(
+    scenarios = []
+    for raw_scenario in raw_scenarios:
+        scenario = dict(raw_scenario)
+        diagnosis = _model_evidence_diagnosis_for_scenario(scenario, sidecars)
+        if diagnosis:
+            scenario["modelEvidenceStatus"] = diagnosis.get("rootCauseCategory")
+            scenario["modelEvidenceTrace"] = diagnosis.get("trace")
+        scenarios.append(scenario)
+        evidence_requires_failure = _scenario_model_evidence_requires_failure(scenario, diagnosis)
+        failure_diagnosis = diagnosis if evidence_requires_failure or _has_generic_missing_model_evidence(scenario) else None
+        if scenario.get("passed") is not True or evidence_requires_failure or _scenario_skipped_live_model_run(
             scenario,
             sidecar_diagnosis=diagnosis,
         ):
@@ -21,7 +29,7 @@ def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format
                 e2e_failure_from_scenario(
                     scenario,
                     source_layer=source_layer,
-                    sidecar_diagnosis=diagnosis,
+                    sidecar_diagnosis=failure_diagnosis,
                 )
             )
     return {
@@ -57,6 +65,12 @@ def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
             "name": result.get("title") or result.get("scenarioID"),
             "passed": result.get("passed") is True,
             "requiresAgentRun": result.get("requiresAgentRun") is True,
+            "kind": result.get("kind"),
+            "scenarioID": result.get("scenarioID"),
+            "e2eRunID": result.get("e2eRunID"),
+            "agentRunID": result.get("agentRunID"),
+            "conversationID": result.get("conversationID"),
+            "turnID": result.get("turnID"),
             "prompt": result.get("prompt"),
             "intent": result.get("actualIntent") or result.get("expectedIntent"),
             "expectedIntent": result.get("expectedIntent"),
@@ -71,7 +85,7 @@ def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
 
 def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, sidecar_diagnosis: dict[str, Any] | None = None) -> dict[str, Any]:
     failure_text = str(scenario.get("failures") or "E2E scenario failed.").strip()
-    if sidecar_diagnosis and _is_generic_missing_model_evidence(failure_text):
+    if sidecar_diagnosis and (_is_generic_missing_model_evidence(failure_text) or failure_text == "E2E scenario failed."):
         failure_text = str(sidecar_diagnosis.get("message") or failure_text)
     if _scenario_skipped_live_model_run(scenario, sidecar_diagnosis=sidecar_diagnosis) and failure_text == "E2E scenario failed.":
         failure_text = "Agent model did not execute: scenario fell back to routing-only checks because no chat model was loaded."
@@ -101,6 +115,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
             "skippedLiveModelRun": _scenario_skipped_live_model_run(scenario, sidecar_diagnosis=sidecar_diagnosis),
             "modelEvidenceRootCause": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None,
             "modelEvidenceTrace": sidecar_diagnosis.get("trace") if sidecar_diagnosis else None,
+            "modelEvidenceStatus": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else scenario.get("modelEvidenceStatus"),
         },
         "repairSample": {
             "agent": policy.agent,
@@ -125,6 +140,11 @@ def _scenario_intent(scenario: dict[str, Any]) -> str:
 
 def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     if sidecar_diagnosis:
+        category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
+        if category == "deterministic_compatibility_not_training_evidence":
+            return "Training scenarios must record fresh model-backed AgentBehaviorTrace modelTurn evidence; deterministic compatibility or policy-first traces are not training evidence."
+        if category in {"no_correlated_model_turn", "agent_service_not_entered", "missing_sidecar_trace_export"}:
+            return "Training scenarios that require an agent run must export a correlated model-backed AgentBehaviorTrace modelTurn or fail closed with the exact missing-path reason."
         return "Agent-json turns must produce non-empty model output that parses as structured JSON before deterministic recovery or final-answer validation can count."
     if _scenario_skipped_live_model_run(scenario):
         return "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
@@ -140,6 +160,13 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
     if sidecar_diagnosis:
+        category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
+        if category == "deterministic_compatibility_not_training_evidence":
+            return "Route this training scenario through AgentService's model-backed agent-json path and keep deterministic compatibility traces as diagnostics only."
+        if category == "missing_sidecar_trace_export":
+            return "Export the AgentBehaviorTrace sidecar or include correlated model-evidence events in the live E2E report before using this artifact as training evidence."
+        if category in {"no_correlated_model_turn", "agent_service_not_entered"}:
+            return "Pass the E2E correlation IDs into AgentService and persist them on AgentBehaviorTrace modelTurn records, or keep the scenario failed with the precise missing-path diagnostic."
         return "Fix the executor-slot agent-json generation path so it emits non-empty structured JSON, or keep this scenario failed with the precise agent-json empty-output parse diagnostic."
     if _scenario_skipped_live_model_run(scenario):
         return "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence."
@@ -268,9 +295,29 @@ def _is_useful_final(final: str, *, intent: str) -> bool:
     return len(stripped.split()) >= 3
 
 
-def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis: dict[str, Any] | None = None) -> bool:
-    if sidecar_diagnosis and sidecar_diagnosis.get("rootCauseCategory") in {"agent_json_empty_generation", "agent_json_parse_empty", "agent_json_parse_error"}:
+_EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
+    "valid_model_backed_evidence",
+    "no_correlated_model_turn",
+    "agent_model_empty_output",
+    "agent_model_parse_error",
+    "deterministic_compatibility_not_training_evidence",
+    "agent_service_not_entered",
+    "missing_sidecar_trace_export",
+    # Backward-compatible names produced by older sidecar diagnostics.
+    "agent_json_empty_generation",
+    "agent_json_parse_empty",
+    "agent_json_parse_error",
+}
+
+
+def _scenario_model_evidence_requires_failure(scenario: dict[str, Any], diagnosis: dict[str, Any] | None) -> bool:
+    if scenario.get("requiresAgentRun") is not True or not diagnosis:
         return False
+    category = str(diagnosis.get("rootCauseCategory") or "")
+    return category in _EXPLICIT_MODEL_EVIDENCE_CATEGORIES and category != "valid_model_backed_evidence"
+
+
+def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis: dict[str, Any] | None = None) -> bool:
     final = str(scenario.get("final") or scenario.get("finalText") or "").casefold()
     failures = str(scenario.get("failures") or "").casefold()
     events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
@@ -279,59 +326,71 @@ def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis
     if (
         "no model loaded" in haystack
         or "routing-only checks completed" in haystack
-        or "did not record model-backed generation evidence" in haystack
+    ):
+        return True
+    if sidecar_diagnosis and sidecar_diagnosis.get("rootCauseCategory") in _EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
+        return False
+    if (
+        "did not record model-backed generation evidence" in haystack
         or "missing fresh agentbehaviortrace modelturn" in haystack
     ):
         return True
-    if scenario.get("requiresAgentRun") is True and not _scenario_has_model_evidence_event(events):
+    if scenario.get("requiresAgentRun") is True and not _scenario_has_model_evidence_event(events, scenario=scenario):
         return True
     return False
 
 
-def _sidecar_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
     prompt = str(scenario.get("prompt") or "").strip()
+    event_diagnosis = _diagnosis_from_model_evidence_events(scenario)
+    if event_diagnosis and event_diagnosis.get("rootCauseCategory") in {
+        "valid_model_backed_evidence",
+        "deterministic_compatibility_not_training_evidence",
+        "agent_service_not_entered",
+    }:
+        return event_diagnosis
     if not prompt:
-        return None
+        return event_diagnosis
     prompt_key = prompt.casefold()
+    traces = sidecars.get("agent_behavior_traces", [])
+    sidecar_present = _trace_sidecar_present(sidecars)
 
-    matching_trace = next(
-        (
-            trace
-            for trace in sidecars.get("agent_behavior_traces", [])
-            if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
-            and _sidecar_record_matches_scenario_time(trace, scenario)
-            and str(trace.get("event") or "") == "modelTurn"
-            and str(trace.get("stage") or "").startswith("agent-json")
-        ),
-        None,
-    )
+    matching_trace, matched_by = _matching_sidecar_trace_for_scenario(scenario, traces, prompt_key)
     if matching_trace is not None:
         raw = str(matching_trace.get("rawOutputPrefix") or "")
         parse_error = matching_trace.get("parseError")
         runtime_path = str(matching_trace.get("runtimePath") or "unknown")
-        if not raw.strip() and parse_error:
+        stage = str(matching_trace.get("stage") or "unknown")
+        if _is_model_backed_trace(matching_trace) and raw.strip() and not parse_error:
+            return {
+                "rootCauseCategory": "valid_model_backed_evidence",
+                "message": f"valid model-backed AgentBehaviorTrace modelTurn found; stage={stage}; runtimePath={runtime_path}; matchedBy={matched_by}",
+                "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=False),
+            }
+        if runtime_path == "deterministic-compatibility" and _is_training_scenario(scenario):
+            return {
+                "rootCauseCategory": "deterministic_compatibility_not_training_evidence",
+                "message": f"deterministic compatibility trace is not training model evidence; stage={stage}; runtimePath={runtime_path}",
+                "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=not raw.strip()),
+            }
+        if not raw.strip():
+            category = "agent_model_empty_output"
+            if parse_error == "empty":
+                category = "agent_json_empty_generation"
+            empty_reason = str(matching_trace.get("emptyOutputReason") or "")
+            detail = "model stream returned no tokens" if empty_reason == "agent-json-stream-completed-without-text" else "agent-json emitted empty output"
             stage = str(matching_trace.get("stage") or "unknown")
             return {
-                "rootCauseCategory": "agent_json_empty_generation",
-                "message": f"agent-json emitted empty output; parseError={parse_error}; stage={stage}; runtimePath={runtime_path}",
-                "trace": {
-                    "stage": stage,
-                    "runtimePath": runtime_path,
-                    "parseError": parse_error,
-                    "rawOutputEmpty": True,
-                },
+                "rootCauseCategory": category,
+                "message": f"{detail}; parseError={parse_error or 'none'}; stage={stage}; runtimePath={runtime_path}",
+                "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=True),
             }
         if parse_error:
-            stage = str(matching_trace.get("stage") or "unknown")
+            category = "agent_json_parse_error" if str(parse_error) in {"noJSONObject", "multipleJSONObjects", "noisyOutput", "malformedEscapeSequence", "incompleteJSON", "invalidJSONObject", "invalidThoughtType", "invalidFinalType", "mixedTurn", "mixedActionShapes", "missingActionOrFinal", "missingActionTool", "invalidActionType", "invalidActionArgsType"} else "agent_model_parse_error"
             return {
-                "rootCauseCategory": "agent_json_parse_error",
+                "rootCauseCategory": category,
                 "message": f"agent-json output failed to parse; parseError={parse_error}; stage={stage}; runtimePath={runtime_path}",
-                "trace": {
-                    "stage": stage,
-                    "runtimePath": runtime_path,
-                    "parseError": parse_error,
-                    "rawOutputEmpty": False,
-                },
+                "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=False),
             }
 
     matching_parse_failure = next(
@@ -358,7 +417,208 @@ def _sidecar_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str
                     "rawOutputEmpty": not raw.strip(),
                 },
             }
+    if event_diagnosis:
+        return event_diagnosis
+    if scenario.get("requiresAgentRun") is True and not _scenario_reported_no_model_loaded(scenario) and _has_generic_missing_model_evidence(scenario):
+        if not sidecar_present:
+            return {
+                "rootCauseCategory": "missing_sidecar_trace_export",
+                "message": "missing AgentBehaviorTrace sidecar export; cannot verify correlated modelTurn evidence",
+                "trace": {"sidecarPresent": False},
+            }
+        return {
+            "rootCauseCategory": "no_correlated_model_turn",
+            "message": f"no correlated AgentBehaviorTrace modelTurn found; checked {_scenario_correlation_text(scenario)}",
+            "trace": {"sidecarPresent": True, "checked": _scenario_correlation_fields(scenario)},
+        }
     return None
+
+
+def _diagnosis_from_model_evidence_events(scenario: dict[str, Any]) -> dict[str, Any] | None:
+    events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        phase = str(event.get("phase") or "").casefold()
+        message = str(event.get("message") or "")
+        lowered = message.casefold()
+        if phase != "model-evidence":
+            continue
+        values = _parse_model_evidence_values(message)
+        runtime = str(values.get("runtime") or "").casefold()
+        kind = str(values.get("kind") or "").casefold()
+        parse_error = str(values.get("parseError") or values.get("parseerror") or "none")
+        if "no correlated agentbehaviortrace" in lowered:
+            return {
+                "rootCauseCategory": "no_correlated_model_turn",
+                "message": message,
+                "trace": {"eventMessage": message, "checked": _scenario_correlation_fields(scenario)},
+            }
+        if "agentservice model path was not entered" in lowered:
+            if "model not loaded" in lowered or _scenario_reported_no_model_loaded(scenario):
+                continue
+            return {
+                "rootCauseCategory": "agent_service_not_entered",
+                "message": message,
+                "trace": {"eventMessage": message},
+            }
+        if "missing sidecar trace export" in lowered:
+            return {
+                "rootCauseCategory": "missing_sidecar_trace_export",
+                "message": message,
+                "trace": {"eventMessage": message, "sidecarPresent": False},
+            }
+        if "deterministic-compatibility" in runtime or "policy-first-deterministic" in kind or "deterministic-compatibility execution trace" in lowered:
+            if _is_training_scenario(scenario):
+                return {
+                    "rootCauseCategory": "deterministic_compatibility_not_training_evidence",
+                    "message": f"deterministic compatibility trace is not training model evidence; {message}",
+                    "trace": {"eventMessage": message, "runtimePath": runtime or "deterministic-compatibility", "stage": values.get("stage")},
+                }
+            continue
+        if "model stream returned no tokens" in lowered or "raw output was empty" in lowered or "agent-json emitted empty output" in lowered:
+            return {
+                "rootCauseCategory": "agent_model_empty_output",
+                "message": message,
+                "trace": {"eventMessage": message, "stage": values.get("stage"), "runtimePath": values.get("runtime"), "parseError": parse_error, "rawOutputEmpty": True},
+            }
+        if "parseerror=" in lowered and parse_error.casefold() not in {"", "none", "nil", "null"}:
+            return {
+                "rootCauseCategory": "agent_model_parse_error",
+                "message": message,
+                "trace": {"eventMessage": message, "stage": values.get("stage"), "runtimePath": values.get("runtime"), "parseError": parse_error, "rawOutputEmpty": False},
+            }
+        if "runtime=" in lowered and "missing" not in lowered and runtime != "deterministic-compatibility":
+            return {
+                "rootCauseCategory": "valid_model_backed_evidence",
+                "message": message,
+                "trace": {"eventMessage": message, "stage": values.get("stage"), "runtimePath": values.get("runtime"), "parseError": parse_error, "rawOutputEmpty": False},
+            }
+    return None
+
+
+def _parse_model_evidence_values(message: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for match in re.finditer(r"([A-Za-z][A-Za-z0-9_]+)=([^,;]+)", message):
+        values[match.group(1)] = match.group(2).strip()
+    return values
+
+
+def _trace_sidecar_present(sidecars: dict[str, list[dict[str, Any]]]) -> bool:
+    presence_records = sidecars.get("_sidecar_presence") or []
+    if presence_records and isinstance(presence_records[0], dict):
+        return presence_records[0].get("agent_behavior_traces") is True
+    return "agent_behavior_traces" in sidecars
+
+
+def _matching_sidecar_trace_for_scenario(
+    scenario: dict[str, Any],
+    traces: list[dict[str, Any]],
+    prompt_key: str,
+) -> tuple[dict[str, Any] | None, str]:
+    correlated = next(
+        (
+            trace
+            for trace in traces
+            if _sidecar_trace_matches_correlation(trace, scenario)
+            and str(trace.get("event") or "") == "modelTurn"
+            and str(trace.get("stage") or "").startswith("agent-json")
+        ),
+        None,
+    )
+    if correlated is not None:
+        return correlated, "correlation"
+    fallback = next(
+        (
+            trace
+            for trace in traces
+            if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
+            and _sidecar_record_matches_scenario_time(trace, scenario)
+            and str(trace.get("event") or "") == "modelTurn"
+            and str(trace.get("stage") or "").startswith("agent-json")
+        ),
+        None,
+    )
+    if fallback is not None:
+        return fallback, "prompt-time"
+    return None, "none"
+
+
+def _sidecar_trace_matches_correlation(trace: dict[str, Any], scenario: dict[str, Any]) -> bool:
+    matched_strong_identifier = False
+    for key in ("e2eRunID", "agentRunID", "conversationID", "turnID"):
+        expected = str(scenario.get(key) or "").strip()
+        actual = str(trace.get(key) or "").strip()
+        if expected and actual:
+            if expected != actual:
+                return False
+            matched_strong_identifier = True
+    expected_scenario = str(scenario.get("scenarioID") or scenario.get("id") or "").strip()
+    actual_scenario = str(trace.get("scenarioID") or "").strip()
+    if expected_scenario and actual_scenario and expected_scenario != actual_scenario:
+        return False
+    if matched_strong_identifier:
+        return True
+    return bool(expected_scenario and actual_scenario and expected_scenario == actual_scenario and _sidecar_record_matches_scenario_time(trace, scenario))
+
+
+def _is_model_backed_trace(trace: dict[str, Any]) -> bool:
+    return str(trace.get("event") or "") == "modelTurn" and str(trace.get("runtimePath") or "") != "deterministic-compatibility"
+
+
+def _trace_summary(trace: dict[str, Any], *, matched_by: str, raw_output_empty: bool) -> dict[str, Any]:
+    return {
+        "stage": str(trace.get("stage") or "unknown"),
+        "runtimePath": str(trace.get("runtimePath") or "unknown"),
+        "parseError": trace.get("parseError"),
+        "rawOutputEmpty": raw_output_empty,
+        "matchedBy": matched_by,
+        "scenarioID": trace.get("scenarioID"),
+        "e2eRunID": trace.get("e2eRunID"),
+        "agentRunID": trace.get("agentRunID"),
+        "conversationID": trace.get("conversationID"),
+        "turnID": trace.get("turnID"),
+    }
+
+
+def _is_training_scenario(scenario: dict[str, Any]) -> bool:
+    kind = str(scenario.get("kind") or "").casefold()
+    if kind == "training":
+        return True
+    scenario_id = str(scenario.get("scenarioID") or scenario.get("id") or scenario.get("name") or "").casefold()
+    return scenario_id.startswith("training")
+
+
+def _scenario_correlation_fields(scenario: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scenarioID": scenario.get("scenarioID") or scenario.get("id"),
+        "e2eRunID": scenario.get("e2eRunID"),
+        "agentRunID": scenario.get("agentRunID"),
+        "conversationID": scenario.get("conversationID"),
+        "turnID": scenario.get("turnID"),
+    }
+
+
+def _scenario_correlation_text(scenario: dict[str, Any]) -> str:
+    fields = _scenario_correlation_fields(scenario)
+    return ",".join(f"{key}={value or 'nil'}" for key, value in fields.items())
+
+
+def _has_generic_missing_model_evidence(scenario: dict[str, Any]) -> bool:
+    failures = str(scenario.get("failures") or "")
+    events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
+    event_text = " ".join(str(event) for event in events)
+    return _is_generic_missing_model_evidence(f"{failures}\n{event_text}") or (
+        scenario.get("requiresAgentRun") is True and not _scenario_has_model_evidence_event(events, scenario=scenario)
+    )
+
+
+def _scenario_reported_no_model_loaded(scenario: dict[str, Any]) -> bool:
+    final = str(scenario.get("final") or scenario.get("finalText") or "").casefold()
+    failures = str(scenario.get("failures") or "").casefold()
+    events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
+    event_text = " ".join(str(event) for event in events).casefold()
+    return "no chat model loaded" in f"{final}\n{failures}\n{event_text}" or "no model loaded" in f"{final}\n{failures}\n{event_text}"
 
 
 def _sidecar_text_matches_prompt(value: str, prompt_key: str) -> bool:
@@ -401,13 +661,20 @@ def _is_generic_missing_model_evidence(text: str) -> bool:
     )
 
 
-def _scenario_has_model_evidence_event(events: list[Any]) -> bool:
+def _scenario_has_model_evidence_event(events: list[Any], *, scenario: dict[str, Any] | None = None) -> bool:
     for event in events:
         if not isinstance(event, dict):
             continue
         phase = str(event.get("phase") or "").casefold()
         message = str(event.get("message") or "").casefold()
-        if phase == "model-evidence" and "runtime=" in message and "missing" not in message:
+        if phase != "model-evidence" or "runtime=" not in message or "missing" in message:
+            continue
+        is_deterministic = "deterministic-compatibility" in message or "policy-first-deterministic" in message
+        if is_deterministic:
+            if scenario and _is_training_scenario(scenario):
+                continue
+            return True
+        if "kind=model-backed" in message or "deterministic-compatibility" not in message:
             return True
     return False
 

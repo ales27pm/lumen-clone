@@ -7,6 +7,9 @@ nonisolated struct LegacyAgentRunOptions: @unchecked Sendable {
     var modelContext: ModelContext?
     var conversationID: UUID?
     var turnID: UUID?
+    var scenarioID: String? = nil
+    var e2eRunID: UUID? = nil
+    var agentRunID: UUID? = nil
     var groundingMode: GroundingMode
     var allowDegradedGrounding: Bool
     var preventDoubleGrounding: Bool

@@ -153,7 +153,10 @@ final class RolePipelineAgentService {
             relevantMemories: original.relevantMemories,
             attachments: original.attachments,
             conversationID: options.conversationID ?? original.conversationID,
-            turnID: options.turnID ?? original.turnID
+            turnID: options.turnID ?? original.turnID,
+            scenarioID: options.scenarioID ?? original.scenarioID,
+            e2eRunID: options.e2eRunID ?? original.e2eRunID,
+            agentRunID: options.agentRunID ?? original.agentRunID
         )
     }
 
