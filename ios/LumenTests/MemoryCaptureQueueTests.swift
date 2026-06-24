@@ -102,6 +102,35 @@ final class MemoryCaptureQueueTests: XCTestCase {
         XCTAssertEqual(result.remaining, 1)
     }
 
+    @MainActor
+    func testDiagnosticsSnapshotExposesQueueMetadataOnly() async throws {
+        let fileURL = temporaryQueueURL()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let oldest = Date(timeIntervalSince1970: 1_700_000_000)
+        _ = try MemoryCaptureQueue.enqueue(
+            content: "private preference text",
+            createdAt: oldest,
+            fileURL: fileURL
+        )
+        _ = try MemoryCaptureQueue.enqueue(
+            content: "another local memory",
+            createdAt: oldest.addingTimeInterval(120),
+            fileURL: fileURL
+        )
+
+        _ = await MemoryCaptureQueue.drain(maxItems: 1, fileURL: fileURL) { _ in
+            throw TestPromotionError.embeddingUnavailable
+        }
+
+        let snapshot = try MemoryCaptureQueue.diagnosticsSnapshot(fileURL: fileURL)
+
+        XCTAssertEqual(snapshot.pendingCount, 2)
+        XCTAssertEqual(snapshot.oldestCreatedAt, oldest)
+        XCTAssertEqual(snapshot.maxRetryCount, 1)
+        XCTAssertEqual(snapshot.lastError, "embeddingunavailable")
+    }
+
     private func temporaryQueueURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("lumen-memory-capture-\(UUID().uuidString)", isDirectory: false)

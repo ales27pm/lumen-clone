@@ -63,6 +63,25 @@ nonisolated struct MemoryCaptureDrainResult: Equatable, Sendable {
     }
 }
 
+nonisolated struct MemoryCaptureQueueDiagnostics: Equatable, Sendable {
+    let pendingCount: Int
+    let oldestCreatedAt: Date?
+    let maxRetryCount: Int
+    let lastError: String?
+
+    init(
+        pendingCount: Int,
+        oldestCreatedAt: Date? = nil,
+        maxRetryCount: Int = 0,
+        lastError: String? = nil
+    ) {
+        self.pendingCount = pendingCount
+        self.oldestCreatedAt = oldestCreatedAt
+        self.maxRetryCount = max(0, maxRetryCount)
+        self.lastError = lastError
+    }
+}
+
 enum MemoryCaptureQueueError: LocalizedError, Equatable {
     case diskWriteDeferred
 
@@ -119,6 +138,16 @@ enum MemoryCaptureQueue {
 
     static func pendingCount(fileURL: URL? = nil) throws -> Int {
         try loadPending(fileURL: resolvedFileURL(fileURL)).count
+    }
+
+    static func diagnosticsSnapshot(fileURL: URL? = nil) throws -> MemoryCaptureQueueDiagnostics {
+        let captures = try loadPending(fileURL: resolvedFileURL(fileURL))
+        return MemoryCaptureQueueDiagnostics(
+            pendingCount: captures.count,
+            oldestCreatedAt: captures.map(\.createdAt).min(),
+            maxRetryCount: captures.map(\.retryCount).max() ?? 0,
+            lastError: captures.first(where: { ($0.lastError?.isEmpty == false) })?.lastError
+        )
     }
 
     static func loadPending(fileURL: URL? = nil) throws -> [PendingMemoryCapture] {

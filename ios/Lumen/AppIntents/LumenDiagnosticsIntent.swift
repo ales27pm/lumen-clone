@@ -15,12 +15,12 @@ struct LumenDiagnosticsIntent: AppIntent {
         let state = await PersistentRuntimeDiagnosticsStore.shared.loadState()
         let campaign = await PersistentRuntimeDiagnosticsStore.shared.loadCampaign()
         let snapshot = DiagnosticsProvider().cachedSnapshot()
-        let pendingMemoryCaptureCount = try? MemoryCaptureQueue.pendingCount()
+        let memoryCaptureQueue = try? MemoryCaptureQueue.diagnosticsSnapshot()
         let summary = PersistentRuntimeDiagnosticsSummaryRenderer.render(
             state: state,
             campaign: campaign,
             snapshot: snapshot,
-            pendingMemoryCaptureCount: pendingMemoryCaptureCount,
+            memoryCaptureQueue: memoryCaptureQueue,
             includeRemediation: includeRemediation
         )
         return .result(value: summary)

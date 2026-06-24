@@ -39,14 +39,22 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
             state: state,
             campaign: PersistentDiagnosticCampaign(enabled: true, runContinuously: true),
             snapshot: Self.snapshot(),
-            pendingMemoryCaptureCount: 2,
-            includeRemediation: true
+            memoryCaptureQueue: MemoryCaptureQueueDiagnostics(
+                pendingCount: 2,
+                oldestCreatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                maxRetryCount: 2,
+                lastError: "embedding_runtime_unavailable"
+            ),
+            includeRemediation: true,
+            now: Date(timeIntervalSince1970: 1_700_007_200)
         )
 
         XCTAssertTrue(text.contains("campaign=continuous"))
         XCTAssertTrue(text.contains("passed=2, failed=1, skipped=1"))
         XCTAssertTrue(text.contains("Privacy: localOnly=true; network=unknown"))
         XCTAssertTrue(text.contains("Memory capture queue: 2 pending local captures awaiting indexing."))
+        XCTAssertTrue(text.contains("Memory queue oldest: 2h old."))
+        XCTAssertTrue(text.contains("Memory capture retries: max=2; lastError=embedding_runtime_unavailable."))
         XCTAssertTrue(text.contains("Memory remediation: open Lumen with a local embedding runtime available"))
         XCTAssertTrue(text.contains("Latest: Thermal resource gate failed"))
         XCTAssertTrue(text.contains("Remediation: Fix the resource-gate policy matrix"))
@@ -73,11 +81,18 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
             state: nil,
             campaign: nil,
             snapshot: Self.snapshot(),
-            pendingMemoryCaptureCount: 1,
-            includeRemediation: false
+            memoryCaptureQueue: MemoryCaptureQueueDiagnostics(
+                pendingCount: 1,
+                oldestCreatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                maxRetryCount: 0,
+                lastError: nil
+            ),
+            includeRemediation: false,
+            now: Date(timeIntervalSince1970: 1_700_000_030)
         )
 
         XCTAssertTrue(text.contains("Memory capture queue: 1 pending local capture awaiting indexing."))
+        XCTAssertTrue(text.contains("Memory queue oldest: 30s old."))
         XCTAssertFalse(text.contains("Memory remediation:"))
     }
 

@@ -7,8 +7,10 @@ nonisolated enum PersistentRuntimeDiagnosticsSummaryRenderer {
         state: PersistentDiagnosticState?,
         campaign: PersistentDiagnosticCampaign?,
         snapshot: DiagnosticsSnapshot?,
+        memoryCaptureQueue: MemoryCaptureQueueDiagnostics? = nil,
         pendingMemoryCaptureCount: Int? = nil,
         includeRemediation: Bool = true,
+        now: Date = Date(),
         maxCharacters: Int = defaultMaxCharacters
     ) -> String {
         var lines: [String] = []
@@ -33,9 +35,16 @@ nonisolated enum PersistentRuntimeDiagnosticsSummaryRenderer {
             lines.append("Privacy: localOnly=\(snapshot.privacy.localOnlyMode); network=\(snapshot.privacy.networkAccessState).")
         }
 
-        if let pendingMemoryCaptureCount {
-            if pendingMemoryCaptureCount > 0 {
-                lines.append("Memory capture queue: \(pendingMemoryCaptureCount) pending local capture\(pendingMemoryCaptureCount == 1 ? "" : "s") awaiting indexing.")
+        if let queue = memoryCaptureQueue ?? pendingMemoryCaptureCount.map({ MemoryCaptureQueueDiagnostics(pendingCount: $0) }) {
+            if queue.pendingCount > 0 {
+                lines.append("Memory capture queue: \(queue.pendingCount) pending local capture\(queue.pendingCount == 1 ? "" : "s") awaiting indexing.")
+                if let oldestCreatedAt = queue.oldestCreatedAt {
+                    lines.append("Memory queue oldest: \(ageDescription(since: oldestCreatedAt, now: now)) old.")
+                }
+                if queue.maxRetryCount > 0 || queue.lastError != nil {
+                    let error = queue.lastError.map { "; lastError=\($0)" } ?? ""
+                    lines.append("Memory capture retries: max=\(queue.maxRetryCount)\(error).")
+                }
                 if includeRemediation {
                     lines.append("Memory remediation: open Lumen with a local embedding runtime available to promote pending captures.")
                 }
@@ -69,6 +78,17 @@ nonisolated enum PersistentRuntimeDiagnosticsSummaryRenderer {
 
     private static func availability(_ value: Bool) -> String {
         value ? "available" : "unavailable"
+    }
+
+    private static func ageDescription(since date: Date, now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        let days = seconds / 86_400
+        if days > 0 { return "\(days)d" }
+        let hours = seconds / 3_600
+        if hours > 0 { return "\(hours)h" }
+        let minutes = seconds / 60
+        if minutes > 0 { return "\(minutes)m" }
+        return "\(seconds)s"
     }
 
     private static func bounded(_ text: String, maxCharacters: Int) -> String {
