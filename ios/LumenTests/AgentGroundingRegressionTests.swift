@@ -663,6 +663,59 @@ extension AgentGroundingRegressionTests {
         #expect(!chat.preservesRawStructuredAgentOutput)
     }
 
+    @Test func agentJSONParsesEmptyQwenThinkWrapperBeforeActionJSON() throws {
+        let raw = """
+        <think>
+
+        </think>
+
+        {"thought":"run_weather","action":{"tool":"weather","args":{}}}
+        """
+
+        let parsed = AgentTurnParser.parse(raw)
+        let noise = AgentNoiseInspector.inspect(raw)
+
+        #expect(parsed.parseError == nil)
+        #expect(parsed.action?.tool == "weather")
+        #expect(parsed.hadNoise)
+        #expect(noise.prefixNoise?.contains("leading empty <think> block stripped") == true)
+    }
+
+    @Test func agentJSONParsesWhitespaceThenQwenThinkWrapperBeforeFinalJSON() throws {
+        let raw = " \n\t<think>\n\n</think>\n\n{\"final\":\"Precision is relevance; recall is coverage.\"}"
+
+        let parsed = AgentTurnParser.parse(raw)
+
+        #expect(parsed.parseError == nil)
+        #expect(parsed.final == "Precision is relevance; recall is coverage.")
+        #expect(parsed.hadNoise)
+    }
+
+    @Test func agentJSONRecoversFromInvalidPrefixNoiseWhenJSONIsPresent() throws {
+        let raw = "Here is the JSON you asked for:\n{\"action\":{\"tool\":\"web.search\",\"args\":{\"query\":\"Swift concurrency\"}}}"
+
+        let parsed = AgentTurnParser.parse(raw)
+        let noise = AgentNoiseInspector.inspect(raw)
+
+        #expect(parsed.parseError == nil)
+        #expect(parsed.action?.tool == "web.search")
+        #expect(parsed.hadNoise)
+        #expect(noise.prefixNoise?.contains("Here is the JSON") == true)
+    }
+
+    @Test func agentJSONOnlyQwenThinkWrapperWithoutJSONRemainsEmpty() throws {
+        let raw = "<think>\nprivate reasoning\n</think>\n"
+
+        let parsed = AgentTurnParser.parse(raw)
+        let noise = AgentNoiseInspector.inspect(raw)
+
+        #expect(parsed.parseError == .empty)
+        #expect(parsed.action == nil)
+        #expect(parsed.final == nil)
+        #expect(noise.prefixNoise?.contains("private reasoning") != true)
+        #expect(noise.prefixNoise?.contains("redacted") == true)
+    }
+
     @Test func agentJSONEmptyOutputRetryPromptRequiresNonEmptyJSONOnly() {
         let firstTurn = "User request:\nFind coffee near me.\n\nEmit the first JSON object now. Choose either action or final."
 
@@ -674,6 +727,143 @@ extension AgentGroundingRegressionTests {
         #expect(retryTurn.contains(#"{"action":{"tool":"<allowed tool id>","args":{...}}}"#))
         #expect(retryTurn.contains(#"{"final":"<concise user-facing answer>"}"#))
         #expect(retryTurn.contains("Start the response with {"))
+    }
+
+    @MainActor
+    @Test func postObservationAgentJSONPromptPrefersFinalAndRejectsStringAction() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "What is the weather here and should I carry an umbrella?",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { ["weather", "location.current"].contains(ToolRouteGuard.canonicalToolID($0.id)) },
+            relevantMemories: []
+        )
+        let scratchpad = "Action: location.current\nObservation: Current location is Montreal.\nAction: weather\nObservation: Weather at your location: light rain."
+
+        let userTurn = AgentService.shared.structuredAgentUserTurnForTests(
+            req: req,
+            stepIndex: 1,
+            scratchpad: scratchpad
+        )
+        let systemPrompt = AgentService.shared.structuredSystemPromptForTests(req: req)
+
+        #expect(systemPrompt.contains("action must be a JSON object"))
+        #expect(systemPrompt.contains(#"Invalid: {"action":"weather"}"#))
+        #expect(userTurn.contains("If the observations already answer the user, choose final"))
+        #expect(userTurn.contains("never emit action as a string"))
+    }
+
+    @Test func weatherObservationFallbackConvertsSummaryJSONToPlainText() {
+        #if DEBUG
+        let raw = #"{"summary":"Weather at your location is rainy, so carry an umbrella.","Key modules":["weather"]}"#
+
+        let text = AgentService.observationFallbackPlainTextForTests(from: raw, intent: .weather)
+
+        #expect(text == "Weather at your location is rainy, so carry an umbrella.")
+        #expect(text?.contains("Key modules") == false)
+        #expect(text?.contains("{") == false)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragObservationFallbackMayRetainKeyModulesWithoutJSONBraces() {
+        #if DEBUG
+        let raw = #"{"summary":"[1] The architecture notes mention AgentService and ToolExecutor.","Key modules":["AgentService","ToolExecutor"]}"#
+
+        let text = AgentService.observationFallbackPlainTextForTests(from: raw, intent: .rag)
+
+        #expect(text?.contains("[1] The architecture notes") == true)
+        #expect(text?.contains("Key modules: AgentService, ToolExecutor") == true)
+        #expect(text?.contains("{") == false)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @MainActor
+    @Test func compactAgentJSONPromptCapsVerboseToolsAndKeepsRequiredTools() {
+        let tools = [
+            ToolDefinition(id: "web.search", name: "Web Search", category: .knowledge, description: String(repeating: "Search the web. Args: query. ", count: 40), icon: "globe", tint: "blue", requiresApproval: false, permissionKey: nil),
+            ToolDefinition(id: "web.fetch", name: "Fetch URL", category: .knowledge, description: String(repeating: "Fetch URL. Args: url. ", count: 40), icon: "link", tint: "blue", requiresApproval: false, permissionKey: nil)
+        ]
+        let req = AgentRequest(
+            systemPrompt: String(repeating: "Style note. ", count: 200),
+            history: [],
+            userMessage: "Search the web for Swift concurrency best practices.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 512,
+            maxSteps: 1,
+            availableTools: tools,
+            relevantMemories: []
+        )
+
+        let systemPrompt = AgentService.shared.structuredSystemPromptForTests(req: req)
+
+        #expect(systemPrompt.contains("web.search"))
+        #expect(systemPrompt.contains("web.fetch"))
+        #expect(!systemPrompt.contains(String(repeating: "Search the web. Args: query. ", count: 3)))
+        #expect(systemPrompt.count < 2_200)
+    }
+
+    @MainActor
+    @Test func trainingAgentJSONPromptsFitExecutorBudget() async {
+        let promptsAndTools: [(String, [String])] = [
+            ("What is the weather here and should I carry an umbrella?", ["location.current", "weather"]),
+            ("Search the web for two recent Swift concurrency best practices and summarize them.", ["web.search", "web.fetch"]),
+            ("Remember that I prefer concise bullet points, then tell me what you remembered.", ["memory.save", "memory.recall"]),
+            ("Search my files for architecture notes and summarize key modules.", ["rag.search", "files.read", "photos.search", "rag.index_files", "rag.index_photos"]),
+            ("Schedule a trigger to summarize reminders tonight and confirm what will run.", ["trigger.create", "trigger.list", "trigger.cancel"]),
+            ("Draft an email to Alex with a professional update and ask one clarifying question.", ["contacts.search", "mail.draft"]),
+            ("Explain tradeoffs between precision and recall in retrieval systems in plain English.", [])
+        ]
+
+        for (prompt, ids) in promptsAndTools {
+            let req = AgentRequest(
+                systemPrompt: String(repeating: "Verbose app prompt. ", count: 200),
+                history: [],
+                userMessage: prompt,
+                temperature: 0.1,
+                topP: 0.8,
+                repetitionPenalty: 1.05,
+                maxTokens: 512,
+                maxSteps: 3,
+                availableTools: ToolRegistry.all.filter { ids.contains(ToolRouteGuard.canonicalToolID($0.id)) },
+                relevantMemories: []
+            )
+            let genReq = GenerateRequest(
+                systemPrompt: AgentService.shared.structuredSystemPromptForTests(req: req),
+                history: [],
+                userMessage: AgentService.shared.structuredAgentUserTurnForTests(req: req),
+                temperature: 0.05,
+                topP: 0.6,
+                repetitionPenalty: 1.05,
+                maxTokens: 384,
+                modelName: "agent-json",
+                relevantMemories: [],
+                attachments: []
+            )
+            let result = await AppLlamaService.shared.buildMessagesForTesting(req: genReq, contextSize: 2048, slot: .executor)
+            #expect(result.estimatedPromptTokens + genReq.maxTokens + PromptBudgetConstants.agentJSONSafetyTokens < 2048, "Prompt exceeded agent-json budget for \(prompt)")
+            for id in ids.prefix(3) {
+                #expect(result.messages.map(\.content).joined(separator: "\n").contains(id), "Missing required tool \(id) for \(prompt)")
+            }
+        }
+    }
+
+    @Test func promptContextOverflowClassifiesAsContextWindowExceeded() {
+        let raw = "Generation error: Failed to initialize context: Prompt exceeds shared chat context window"
+
+        #expect(AppLlamaService.isPromptContextWindowExceeded(LlamaError.failedToInitializeContext("Prompt exceeds shared chat context window")))
+        #expect(AgentService.runtimeFailureParseErrorForTests(from: raw) == .contextWindowExceeded)
+        #expect(AgentTurnParser.parse(raw).parseError == .noJSONObject)
     }
 
     @Test func structuredAgentJSONUsesExecutorModelSlot() {

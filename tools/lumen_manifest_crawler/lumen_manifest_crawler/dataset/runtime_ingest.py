@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -322,15 +323,71 @@ def _layered_failures(
 def _trace_parse_error_failure(
     trace: dict[str, Any], parse_error: Any
 ) -> dict[str, Any]:
+    raw_output = str(trace.get("rawOutputPrefix") or "")
+    parse_error_text = str(parse_error)
+    context_overflow = _is_agent_json_context_overflow(raw_output, parse_error_text)
+    empty_stream_category = (
+        _agent_json_empty_stream_category(trace)
+        if not raw_output.strip() and parse_error_text.casefold() == "empty"
+        else None
+    )
     return {
-        "type": "trace_parse_error",
+        "type": "prompt_budget_overflow" if context_overflow else (empty_stream_category or "trace_parse_error"),
         "agent": trace.get("slot") or trace.get("stage") or "unknown",
-        "expected": ["strict manifest-valid structured output"],
+        "expected": [
+            "agent-json prompt fits executor/shared chat context window"
+            if context_overflow
+            else "agent-json stream emits at least one usable text chunk"
+            if empty_stream_category
+            else "strict manifest-valid structured output"
+        ],
         "actual": str(parse_error),
         "scenario": trace.get("promptPrefix"),
-        "problem": "A recorded in-app model trace contained a parse error.",
+        "problem": (
+            "A recorded in-app agent-json trace exceeded the executor/shared chat context window before generation."
+            if context_overflow
+            else f"A recorded in-app agent-json stream completed without usable text ({trace.get('emptyOutputReason') or trace.get('streamTerminationReason') or 'unknown'})."
+            if empty_stream_category
+            else "A recorded in-app model trace contained a parse error."
+        ),
+        "rootCauseCategory": "agent_json_context_overflow" if context_overflow else empty_stream_category,
         "sourceLayer": "agentBehaviorTraceRecorder",
     }
+
+
+def _is_agent_json_context_overflow(raw_output: str, parse_error: str) -> bool:
+    parse_text = parse_error.casefold()
+    raw_text = raw_output.casefold()
+    return (
+        parse_text in {"contextwindowexceeded", "prompttoolarge"}
+        or "prompt exceeded context window before generation" in raw_text
+        or "prompt exceeds shared chat context window" in raw_text
+        or "failed to initialize context: prompt exceeds" in raw_text
+    )
+
+
+def _agent_json_empty_stream_category(trace: dict[str, Any]) -> str:
+    termination_reason = str(trace.get("streamTerminationReason") or "")
+    termination_compact = re.sub(r"[^a-z0-9]", "", termination_reason.casefold())
+    if "resourcebudgetdenied" in termination_compact:
+        return "agent_json_resource_budget_denied_before_first_token"
+
+    reason = str(trace.get("emptyOutputReason") or trace.get("streamTerminationReason") or "").casefold()
+    if reason in {"completedwithouttext", "agent-json-stream-completed-without-text", "stream-completed-without-text-chunks"}:
+        return "agent_json_completed_without_text"
+    if reason in {"stoppedbeforefirsttoken", "stopsequencebeforetext", "eosbeforetext"}:
+        return "agent_json_stop_before_first_token"
+    if reason == "cancelledbeforefirsttoken":
+        return "agent_json_cancelled_before_first_token"
+    if reason == "decodebudgetzero":
+        return "agent_json_decode_budget_zero"
+    if reason == "modelnotloaded":
+        return "agent_json_model_not_loaded"
+    if reason == "slotunavailable":
+        return "agent_json_slot_unavailable"
+    if reason == "runtimeunavailable":
+        return "agent_json_runtime_unavailable"
+    return "agent_json_empty_stream"
 
 
 def _should_report_trace_parse_error(trace: dict[str, Any]) -> bool:

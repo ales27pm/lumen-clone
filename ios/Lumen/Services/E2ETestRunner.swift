@@ -224,6 +224,20 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
     }
 }
 
+private extension AgentBehaviorTrace {
+    var streamStartedText: String {
+        streamStarted.map { $0 ? "true" : "false" } ?? "unknown"
+    }
+
+    var firstChunkReceivedText: String {
+        firstChunkReceived.map { $0 ? "true" : "false" } ?? "unknown"
+    }
+
+    var finalChunkReceivedText: String {
+        finalChunkReceived.map { $0 ? "true" : "false" } ?? "unknown"
+    }
+}
+
 nonisolated struct E2EPerformanceSample: Codable, Sendable {
     let timestamp: Date
     let residentMemoryMB: Double?
@@ -248,6 +262,20 @@ nonisolated struct E2ETestEvent: Codable, Sendable, Identifiable {
     let phase: String
     let message: String
 }
+
+#if DEBUG
+nonisolated struct AgentJSONTrainingProbeResult: Codable, Sendable, Hashable {
+    let scenarioID: String
+    let promptFitsBudget: Bool
+    let streamStarted: Bool
+    let firstChunkReceived: Bool
+    let firstTextReceived: Bool
+    let parsedJSON: Bool
+    let actionOrFinal: String?
+    let selectedTool: String?
+    let emptyStreamReason: String?
+}
+#endif
 
 nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     let id: UUID
@@ -586,6 +614,7 @@ nonisolated enum E2ETestRunner {
         )
         var performanceSamples: [E2EPerformanceSample] = []
         var lastPerformanceSampleAt: Date?
+        var hasAcceptedModelEvidenceForScenario = !scenario.requiresAgentRun
         let totalMemoryMB = Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)
 
         func event(_ phase: String, _ message: String) async {
@@ -728,7 +757,8 @@ nonisolated enum E2ETestRunner {
                     preventDoubleGrounding: true,
                     diagnosticsEnabled: false,
                     allowDeterministicCompatibility: scenario.kind != .training,
-                    allowParseFailureDeterministicRecovery: scenario.kind != .training
+                    allowParseFailureDeterministicRecovery: scenario.kind != .training,
+                    allowsMemoryPressureContinuation: scenario.kind == .training
                 )
                 let agentEvents = await MainActor.run {
                     AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
@@ -767,8 +797,10 @@ nonisolated enum E2ETestRunner {
                     since: modelEvidenceStartedAt,
                     prompt: scenario.prompt,
                     correlation: traceCorrelation,
-                    acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+                    acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
+                    requiresPrimaryAgentJSON: scenario.kind == .training
                 )
+                hasAcceptedModelEvidenceForScenario = evidenceDiagnosis.evidence != nil
                 if let evidence = evidenceDiagnosis.evidence {
                     let elapsed = evidence.generationElapsedMs.map(String.init) ?? "unknown"
                     let tokens = evidence.outputTokenCount.map(String.init) ?? "unknown"
@@ -783,6 +815,10 @@ nonisolated enum E2ETestRunner {
                 await Task.yield()
                 agentSteps = steps
                 rawFinalText = FinalIntentValidator.validate(rawFinalText, routing: routing, fallback: nil)
+                let allowsEvalRewrite = shouldRewriteFinalForEvalHints(
+                    scenario: scenario,
+                    hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario
+                )
 
                 let recoveredBeforeRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rawFinalText)
                 let rawSanitized = mergeSanitizerOutputs(FinalOutputSanitizer.sanitizeUserVisibleText(rawFinalText), recovered: recoveredBeforeRewrite)
@@ -790,11 +826,18 @@ nonisolated enum E2ETestRunner {
 
                 try Task.checkCancellation()
                 await Task.yield()
-                let rewriteOutcome = await validateAndRewriteFinalTextIfNeeded(
-                    scenario: scenario,
-                    routing: routing,
-                    originalFinal: finalText
-                )
+                let rewriteOutcome = allowsEvalRewrite
+                    ? await validateAndRewriteFinalTextIfNeeded(
+                        scenario: scenario,
+                        routing: routing,
+                        originalFinal: finalText
+                    )
+                    : EvalRewriteOutcome(
+                        finalText: finalText,
+                        missingHints: requiredHintsMissing(in: finalText, scenario: scenario),
+                        rewriteAttempted: false,
+                        rewriteSuccess: false
+                    )
 
                 let recoveredAfterRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rewriteOutcome.finalText)
                 let postRewriteSanitized = mergeSanitizerOutputs(FinalOutputSanitizer.sanitizeUserVisibleText(rewriteOutcome.finalText), recovered: recoveredAfterRewrite)
@@ -854,27 +897,32 @@ nonisolated enum E2ETestRunner {
                 failures.append("Live agent selected no manifest-allowed action tool")
             }
         }
-        for hint in scenario.requiredTextHints where !lowerFinal.contains(hint.lowercased()) {
-            failures.append("Required final hint missing: \(hint)")
-        }
-        if scenario.expectedIntent == .rag && scenario.requiresAgentRun && scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search") {
-            if !lowerFinal.contains("module") && !lowerFinal.contains("modules") {
-                failures.append("RAG final response must mention module/modules")
+        if shouldValidateFinalContentHints(
+            scenario: scenario,
+            hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario
+        ) {
+            for hint in scenario.requiredTextHints where !lowerFinal.contains(hint.lowercased()) {
+                failures.append("Required final hint missing: \(hint)")
             }
-            let hasGroundingMarkers = finalText.contains("[") || lowerFinal.contains("snippet") || lowerFinal.contains("source")
-            if !hasGroundingMarkers {
-                failures.append("RAG final response must reference retrieved docs/snippets")
+            if scenario.expectedIntent == .rag && scenario.requiresAgentRun && scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search") {
+                if !lowerFinal.contains("module") && !lowerFinal.contains("modules") {
+                    failures.append("RAG final response must mention module/modules")
+                }
+                let hasGroundingMarkers = finalText.contains("[") || lowerFinal.contains("snippet") || lowerFinal.contains("source")
+                if !hasGroundingMarkers {
+                    failures.append("RAG final response must reference retrieved docs/snippets")
+                }
             }
-        }
-        for hint in scenario.forbiddenTextHints where lowerFinal.contains(hint.lowercased()) {
-            failures.append("Forbidden final hint present: \(hint)")
-        }
-        if scenario.id == "training-rag-grounding" {
-            if !(lowerFinal.contains("module") || lowerFinal.contains("modules")) {
-                failures.append("RAG grounding assertion failed: final text must mention module/modules")
+            for hint in scenario.forbiddenTextHints where lowerFinal.contains(hint.lowercased()) {
+                failures.append("Forbidden final hint present: \(hint)")
             }
-            if !referencesRetrievedSnippet(lowerFinal) {
-                failures.append("RAG grounding assertion failed: summary must reference retrieved docs/snippets")
+            if scenario.id == "training-rag-grounding" {
+                if !(lowerFinal.contains("module") || lowerFinal.contains("modules")) {
+                    failures.append("RAG grounding assertion failed: final text must mention module/modules")
+                }
+                if !referencesRetrievedSnippet(lowerFinal) {
+                    failures.append("RAG grounding assertion failed: summary must reference retrieved docs/snippets")
+                }
             }
         }
 
@@ -922,13 +970,15 @@ nonisolated enum E2ETestRunner {
         since startedAt: Date,
         prompt: String,
         correlation: E2ETraceCorrelation? = nil,
-        acceptsPolicyFirstEvidence: Bool
+        acceptsPolicyFirstEvidence: Bool,
+        requiresPrimaryAgentJSON: Bool = false
     ) -> ModelRuntimeEvidence? {
         modelRuntimeEvidenceDiagnosis(
             since: startedAt,
             prompt: prompt,
             correlation: correlation,
-            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
+            requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
         ).evidence
     }
 
@@ -936,7 +986,8 @@ nonisolated enum E2ETestRunner {
         since startedAt: Date,
         prompt: String,
         correlation: E2ETraceCorrelation? = nil,
-        acceptsPolicyFirstEvidence: Bool
+        acceptsPolicyFirstEvidence: Bool,
+        requiresPrimaryAgentJSON: Bool = false
     ) -> ModelRuntimeEvidenceDiagnosis {
         let promptNeedle = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let recentTraces = AgentBehaviorTraceRecorder.recent(limit: 64).reversed()
@@ -956,12 +1007,11 @@ nonisolated enum E2ETestRunner {
         let matchingTraces = hasExplicitCorrelation ? correlatedTraces : fallbackTraces
         let matchedBy = hasExplicitCorrelation ? "correlation" : "prompt-time"
 
-        if let modelTrace = matchingTraces.first(where: { trace in
-            trace.event == AgentBehaviorTrace.Event.modelTurn
-                && trace.runtimePath != "deterministic-compatibility"
-                && trace.parseError == nil
-                && !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }) {
+        let validModelTrace = matchingTraces.first { trace in
+            isValidModelBackedEvidenceTrace(trace, requiresPrimaryAgentJSON: requiresPrimaryAgentJSON)
+        }
+
+        if let modelTrace = validModelTrace {
             let evidence = ModelRuntimeEvidence(
                 runtimePath: modelTrace.runtimePath ?? "unknown",
                 stage: modelTrace.stage,
@@ -997,7 +1047,8 @@ nonisolated enum E2ETestRunner {
                 acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
                 correlation: correlation,
                 usedCorrelation: usedCorrelation,
-                fallbackTraceCount: fallbackTraces.count
+                fallbackTraceCount: fallbackTraces.count,
+                requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
             )
         )
     }
@@ -1040,9 +1091,13 @@ nonisolated enum E2ETestRunner {
         acceptsPolicyFirstEvidence: Bool,
         correlation: E2ETraceCorrelation? = nil,
         usedCorrelation: Bool = false,
-        fallbackTraceCount: Int = 0
+        fallbackTraceCount: Int = 0,
+        requiresPrimaryAgentJSON: Bool = false
     ) -> String {
-        if let rejectedModelTrace = matchingTraces.first(where: { $0.event == .modelTurn }) {
+        let preferredRejectedTrace = requiresPrimaryAgentJSON
+            ? matchingTraces.first(where: isPrimaryAgentJSONTrace)
+            : nil
+        if let rejectedModelTrace = preferredRejectedTrace ?? matchingTraces.first(where: { $0.event == .modelTurn }) {
             let rawIsEmpty = rejectedModelTrace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let runtimePath = rejectedModelTrace.runtimePath ?? "unknown"
             let parseError = rejectedModelTrace.parseError ?? "none"
@@ -1062,12 +1117,19 @@ nonisolated enum E2ETestRunner {
                 }
             }
             if rejectedModelTrace.parseError != nil {
-                reasons.append("parseError=\(parseError)")
+                if rejectedModelTrace.parseError == AgentTurnParseError.contextWindowExceeded.rawValue {
+                    reasons.append(AgentTurnParseError.contextWindowExceeded.rawValue)
+                } else {
+                    reasons.append("parseError=\(parseError)")
+                }
             }
             if reasons.isEmpty {
                 reasons.append("trace did not satisfy model-backed evidence policy")
             }
-            return "found AgentBehaviorTrace modelTurn but \(reasons.joined(separator: "; ")); stage=\(rejectedModelTrace.stage); runtimePath=\(runtimePath); parseError=\(parseError); outputTokens=\(rejectedModelTrace.outputTokenCount.map(String.init) ?? "unknown")"
+            let subject = isPrimaryAgentJSONTrace(rejectedModelTrace)
+                ? "found primary agent-json modelTurn"
+                : "found AgentBehaviorTrace modelTurn"
+            return "\(subject) but \(reasons.joined(separator: "; ")); stage=\(rejectedModelTrace.stage); runtimePath=\(runtimePath); parseError=\(parseError); outputTokens=\(rejectedModelTrace.outputTokenCount.map(String.init) ?? "unknown"); streamStarted=\(rejectedModelTrace.streamStartedText); firstChunkReceived=\(rejectedModelTrace.firstChunkReceivedText); textChunkCount=\(rejectedModelTrace.textChunkCount.map(String.init) ?? "unknown"); finalChunkReceived=\(rejectedModelTrace.finalChunkReceivedText); streamTerminationReason=\(rejectedModelTrace.streamTerminationReason ?? "unknown")"
         }
 
         if let policyTrace = matchingTraces.first(where: { $0.runtimePath == "deterministic-compatibility" }) {
@@ -1083,6 +1145,35 @@ nonisolated enum E2ETestRunner {
             return "no correlated AgentBehaviorTrace found; checked \(correlation.diagnosticText)\(fallbackText); \(base); AgentService model path was not entered or trace export failed"
         }
         return base
+    }
+
+    private nonisolated static func isPrimaryAgentJSONTrace(_ trace: AgentBehaviorTrace) -> Bool {
+        trace.event == .modelTurn
+            && trace.stage.hasPrefix("agent-json")
+            && trace.runtimePath == "agent-model"
+    }
+
+    private nonisolated static func isValidModelBackedEvidenceTrace(
+        _ trace: AgentBehaviorTrace,
+        requiresPrimaryAgentJSON: Bool
+    ) -> Bool {
+        guard trace.event == AgentBehaviorTrace.Event.modelTurn,
+              trace.runtimePath != "deterministic-compatibility",
+              trace.parseError == nil,
+              !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        if requiresPrimaryAgentJSON {
+            guard isPrimaryAgentJSONTrace(trace) else { return false }
+            let parsed = AgentTurnParser.parse(trace.rawOutputPrefix)
+            guard parsed.parseError == nil else { return false }
+            if let action = parsed.action {
+                let canonicalTool = ToolRouteGuard.canonicalToolID(action.tool)
+                return trace.allowedToolIDs.contains(canonicalTool)
+            }
+            return parsed.final?.isEmpty == false && trace.allowedToolIDs.isEmpty
+        }
+        return true
     }
 
     /// Determines if an agent behavior trace qualifies as a policy-first execution trace.
@@ -1122,13 +1213,15 @@ nonisolated enum E2ETestRunner {
         agentRunID: UUID? = nil,
         conversationID: UUID? = nil,
         turnID: UUID? = nil,
-        acceptsPolicyFirstEvidence: Bool = false
+        acceptsPolicyFirstEvidence: Bool = false,
+        requiresPrimaryAgentJSON: Bool = false
     ) -> Bool {
         modelRuntimeEvidence(
             since: startedAt,
             prompt: prompt,
             correlation: E2ETraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
-            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
+            requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
         ) != nil
     }
 
@@ -1140,14 +1233,121 @@ nonisolated enum E2ETestRunner {
         agentRunID: UUID? = nil,
         conversationID: UUID? = nil,
         turnID: UUID? = nil,
-        acceptsPolicyFirstEvidence: Bool = false
+        acceptsPolicyFirstEvidence: Bool = false,
+        requiresPrimaryAgentJSON: Bool = false
     ) -> String {
         modelRuntimeEvidenceDiagnosis(
             since: startedAt,
             prompt: prompt,
             correlation: E2ETraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
-            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
+            requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
         ).failureMessage
+    }
+
+    nonisolated static func shouldRewriteFinalForEvalHintsForTests(
+        _ scenario: E2ETestScenario,
+        hasAcceptedModelEvidence: Bool
+    ) -> Bool {
+        shouldRewriteFinalForEvalHints(
+            scenario: scenario,
+            hasAcceptedModelEvidence: hasAcceptedModelEvidence
+        )
+    }
+
+    nonisolated static func shouldValidateFinalContentHintsForTests(
+        _ scenario: E2ETestScenario,
+        hasAcceptedModelEvidence: Bool
+    ) -> Bool {
+        shouldValidateFinalContentHints(
+            scenario: scenario,
+            hasAcceptedModelEvidence: hasAcceptedModelEvidence
+        )
+    }
+
+    static func agentJSONTrainingProbeForTests() async -> [AgentJSONTrainingProbeResult] {
+        var results: [AgentJSONTrainingProbeResult] = []
+        for scenario in E2ETestScenario.trainingValidation {
+            let allowedIDs = Set(scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID))
+            let tools = ToolRegistry.all.filter { allowedIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
+            let req = AgentRequest(
+                systemPrompt: "You are Lumen's local structured agent executor.",
+                history: [],
+                userMessage: scenario.prompt,
+                temperature: 0.1,
+                topP: 0.8,
+                repetitionPenalty: 1.05,
+                maxTokens: 512,
+                maxSteps: 1,
+                availableTools: tools,
+                relevantMemories: []
+            )
+            let structuredSystemPrompt = await AgentService.shared.structuredSystemPromptForTests(req: req)
+            let structuredUserTurn = await AgentService.shared.structuredAgentUserTurnForTests(req: req)
+            let structuredMaxTokens = await AgentService.shared.structuredTurnMaxTokensForTests(from: req.maxTokens)
+            let genReq = GenerateRequest(
+                systemPrompt: structuredSystemPrompt,
+                history: [],
+                userMessage: structuredUserTurn,
+                temperature: 0.05,
+                topP: 0.6,
+                repetitionPenalty: 1.05,
+                maxTokens: structuredMaxTokens,
+                modelName: "agent-json",
+                relevantMemories: [],
+                attachments: [],
+                allowsMemoryPressureContinuation: true
+            )
+            let promptBuild = await AppLlamaService.shared.buildMessagesForTesting(req: genReq, contextSize: 2048, slot: .executor)
+            let promptFitsBudget = promptBuild.estimatedPromptTokens + genReq.maxTokens + PromptBudgetConstants.agentJSONSafetyTokens < 2048
+            var raw = ""
+            var streamStarted = false
+            var firstTextReceived = false
+            var finalChunkReceived = false
+            var textChunkCount = 0
+            streamStarted = true
+            for await token in await AppLlamaService.shared.stream(genReq, slot: .executor) {
+                switch token {
+                case .text(let text):
+                    if !text.isEmpty {
+                        firstTextReceived = true
+                        textChunkCount += 1
+                    }
+                    raw += text
+                case .done:
+                    finalChunkReceived = true
+                    break
+                }
+            }
+            let payload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: genReq.id)
+            let fallbackEmptyReason = raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? (finalChunkReceived ? "completedWithoutText" : "unknownEmptyStream")
+                : nil
+            let parsed = AgentTurnParser.parse(raw)
+            let actionTool = parsed.action.map { ToolRouteGuard.canonicalToolID($0.tool) }
+            let actionOrFinal: String?
+            if actionTool != nil {
+                actionOrFinal = "action"
+            } else if parsed.final?.isEmpty == false {
+                actionOrFinal = "final"
+            } else {
+                actionOrFinal = nil
+            }
+            results.append(
+                AgentJSONTrainingProbeResult(
+                    scenarioID: scenario.id,
+                    promptFitsBudget: promptFitsBudget,
+                    streamStarted: payload?.streamStarted ?? streamStarted,
+                    firstChunkReceived: payload?.firstChunkReceived ?? firstTextReceived,
+                    firstTextReceived: (payload?.textChunkCount ?? textChunkCount) > 0,
+                    parsedJSON: parsed.parseError == nil,
+                    actionOrFinal: actionOrFinal,
+                    selectedTool: actionTool,
+                    emptyStreamReason: payload?.emptyOutputReason ?? fallbackEmptyReason
+                )
+            )
+        }
+        return results
     }
 #endif
 
@@ -1309,6 +1509,26 @@ nonisolated enum E2ETestRunner {
         let missingHints: [String]
         let rewriteAttempted: Bool
         let rewriteSuccess: Bool
+    }
+
+    nonisolated private static func shouldRewriteFinalForEvalHints(
+        scenario: E2ETestScenario,
+        hasAcceptedModelEvidence: Bool
+    ) -> Bool {
+        if scenario.kind == .training, !hasAcceptedModelEvidence {
+            return false
+        }
+        return true
+    }
+
+    nonisolated private static func shouldValidateFinalContentHints(
+        scenario: E2ETestScenario,
+        hasAcceptedModelEvidence: Bool
+    ) -> Bool {
+        if scenario.kind == .training, !hasAcceptedModelEvidence {
+            return false
+        }
+        return true
     }
 
     nonisolated private static func validateAndRewriteFinalTextIfNeeded(

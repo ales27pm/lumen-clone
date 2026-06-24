@@ -67,7 +67,7 @@ actor SlotModelRuntimeCoordinator {
             }
 
             do {
-                try await AppLlamaService.shared.unloadAllChat()
+                await AppLlamaService.shared.unloadAllChat()
                 try await AppLlamaService.shared.loadChatModel(path: path, contextSize: contextSize)
                 logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
                 return candidate.id.uuidString
@@ -75,7 +75,7 @@ actor SlotModelRuntimeCoordinator {
                 if isContextInitFailed(error) {
                     do {
                         logger.info("transition event=retry_context_2048 role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
-                        try await AppLlamaService.shared.unloadAllChat()
+                        await AppLlamaService.shared.unloadAllChat()
                         try await AppLlamaService.shared.loadChatModel(path: path, contextSize: 2048)
                         logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) context=2048")
                         return candidate.id.uuidString
@@ -134,8 +134,22 @@ actor SlotModelRuntimeCoordinator {
         _ = try await ensureReadyWithMetrics(slot: slot)
     }
 
-    func ensureReadyWithMetrics(slot: LumenModelSlot) async throws -> RuntimeReadinessMetrics {
-        guard await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else {
+    func ensureReadyWithMetrics(
+        slot: LumenModelSlot,
+        allowsLoadedMemoryPressureContinuation: Bool = false
+    ) async throws -> RuntimeReadinessMetrics {
+        let started = Date()
+        guard !Task.isCancelled else {
+            throw LocalRuntimeError.unavailable("resource budget denied model load")
+        }
+        let allowsModelLoad = await MainActor.run {
+            ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue)
+        }
+        guard allowsModelLoad else {
+            if allowsLoadedMemoryPressureContinuation,
+               let loadedMetrics = await loadedContinuationMetricsIfReady(slot: slot, started: started) {
+                return loadedMetrics
+            }
             throw LocalRuntimeError.unavailable("resource budget denied model load")
         }
         guard slot != .embedding else {
@@ -148,8 +162,6 @@ actor SlotModelRuntimeCoordinator {
                 accelerationDiagnostics: RuntimeAccelerationDiagnostics.forCurrentRuntime(requestedBackend: "unknown", requestedGpuLayers: nil, requestedKQVOffload: nil)
             )
         }
-        let started = Date()
-
         let assignment = resolvedAssignment(for: slot)
         guard let assignment else {
             if await AppLlamaService.shared.isChatLoaded {
@@ -171,12 +183,13 @@ actor SlotModelRuntimeCoordinator {
 
         if assignment.usesRoleAdapter || assignment.modelFamily == .qwen3 {
             let activationMs = try await ensureAdapterRuntimeReady(slot: slot, assignment: assignment)
+            let activeAdapterSlot = await AppLlamaService.shared.activeAdapterSlotValue?.rawValue
             let elapsed = Int(Date().timeIntervalSince(started) * 1000)
             return RuntimeReadinessMetrics(
                 ensureReadyMs: elapsed,
                 adapterActivationMs: activationMs,
                 runtimePath: "sharedAdapter",
-                activeAdapterSlot: slot.rawValue,
+                activeAdapterSlot: activeAdapterSlot,
                 accelerationDiagnostic: "See accelerationDiagnostics for parsed llama.cpp Metal/offload evidence.",
                 accelerationDiagnostics: await AppLlamaService.shared.currentAccelerationDiagnostics()
             )
@@ -194,6 +207,68 @@ actor SlotModelRuntimeCoordinator {
         )
     }
 
+
+    func hasLoadedRuntimeReadyForContinuation(slot: LumenModelSlot) async -> Bool {
+        await loadedContinuationMetricsIfReady(slot: slot, started: Date()) != nil
+    }
+
+    private func loadedContinuationMetricsIfReady(slot: LumenModelSlot, started: Date) async -> RuntimeReadinessMetrics? {
+        guard slot != .embedding else { return nil }
+
+        guard let assignment = resolvedAssignment(for: slot) else {
+            guard await AppLlamaService.shared.isChatLoaded else { return nil }
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            return RuntimeReadinessMetrics(
+                ensureReadyMs: elapsed,
+                adapterActivationMs: 0,
+                runtimePath: "loadedChatFallback",
+                activeAdapterSlot: nil,
+                accelerationDiagnostic: "Using already-loaded standalone chat runtime without a fleet slot assignment.",
+                accelerationDiagnostics: await AppLlamaService.shared.currentAccelerationDiagnostics()
+            )
+        }
+
+        guard FileManager.default.fileExists(atPath: assignment.localPath) else { return nil }
+
+        if assignment.usesRoleAdapter || assignment.modelFamily == .qwen3 {
+            let requiresRoleAdapter = requiresRoleAdapter(slot: slot, assignment: assignment)
+            guard await AppLlamaService.shared.loadedChatPath == assignment.localPath else { return nil }
+            let activeAdapterSlot = await AppLlamaService.shared.activeAdapterSlotValue
+            if requiresRoleAdapter {
+                guard let adapterPath = assignment.adapterPath,
+                      FileManager.default.fileExists(atPath: adapterPath),
+                      activeAdapterSlot == slot else {
+                    return nil
+                }
+            } else if let adapterPath = assignment.adapterPath,
+                      FileManager.default.fileExists(atPath: adapterPath),
+                      activeAdapterSlot != slot {
+                return nil
+            }
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            return RuntimeReadinessMetrics(
+                ensureReadyMs: elapsed,
+                adapterActivationMs: 0,
+                runtimePath: "sharedAdapterLoadedContinuation",
+                activeAdapterSlot: activeAdapterSlot?.rawValue,
+                accelerationDiagnostic: "Continuing with already-loaded shared runtime after memory-pressure gate.",
+                accelerationDiagnostics: await AppLlamaService.shared.currentAccelerationDiagnostics()
+            )
+        }
+
+        let slotLoaded = await AppLlamaService.shared.loadedChatPath(for: slot) == assignment.localPath
+        let aliasLoaded = await AppLlamaService.shared.slotLoaded(withPath: assignment.localPath) != nil
+        guard slotLoaded || aliasLoaded else { return nil }
+        let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+        return RuntimeReadinessMetrics(
+            ensureReadyMs: elapsed,
+            adapterActivationMs: 0,
+            runtimePath: "legacySlotLoadedContinuation",
+            activeAdapterSlot: nil,
+            accelerationDiagnostic: "Continuing with already-loaded slot runtime after memory-pressure gate.",
+            accelerationDiagnostics: await AppLlamaService.shared.currentAccelerationDiagnostics()
+        )
+    }
 
     private func resolvedAssignment(for slot: LumenModelSlot) -> LumenModelAssignment? {
         if let direct = assignments[slot] {
@@ -214,6 +289,7 @@ actor SlotModelRuntimeCoordinator {
 
     private func ensureAdapterRuntimeReady(slot: LumenModelSlot, assignment: LumenModelAssignment) async throws -> Int {
         let activationStart = Date()
+        let requiresRoleAdapter = requiresRoleAdapter(slot: slot, assignment: assignment)
         if await AppLlamaService.shared.loadedChatPath != assignment.localPath {
             do {
                 try await AppLlamaService.shared.loadSharedChatModel(path: assignment.localPath, contextSize: contextSize)
@@ -229,12 +305,15 @@ actor SlotModelRuntimeCoordinator {
 
         guard let adapterPath = assignment.adapterPath else {
             await AppLlamaService.shared.clearActiveRoleAdapter()
+            if requiresRoleAdapter {
+                throw LocalRuntimeError.unavailable("role adapter missing for \(slot.rawValue)")
+            }
             return Int(Date().timeIntervalSince(activationStart) * 1000)
         }
         guard FileManager.default.fileExists(atPath: adapterPath) else {
             logger.error("role_adapter_missing slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .public)")
             await AppLlamaService.shared.clearActiveRoleAdapter()
-            return Int(Date().timeIntervalSince(activationStart) * 1000)
+            throw LlamaError.modelFileNotFound(adapterPath)
         }
 
         do {
@@ -246,8 +325,17 @@ actor SlotModelRuntimeCoordinator {
         } catch {
             logger.error("role_adapter_activation_failed slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .public) error=\(String(describing: error), privacy: .public)")
             await AppLlamaService.shared.unloadRoleAdapter(slot: slot)
+            throw error
         }
         return Int(Date().timeIntervalSince(activationStart) * 1000)
+    }
+
+    private func requiresRoleAdapter(slot: LumenModelSlot, assignment: LumenModelAssignment) -> Bool {
+        if assignment.usesRoleAdapter { return true }
+        guard assignment.modelFamily == .qwen3 else { return false }
+        return LumenTrainedModelRuntimeRegistry
+            .contract(for: .qwen3)
+            .adapterRole(for: slot) != nil
     }
 
     private func ensureLegacyRuntimeReady(slot: LumenModelSlot, assignment: LumenModelAssignment) async throws {

@@ -34,6 +34,41 @@ final class ResourceBudgetGateTests: XCTestCase {
         XCTAssertTrue(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
     }
 
+    func testFreshMemoryWarningAllowsOnlyExplicitLoadedContinuation() {
+        let snapshot = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 1, lastMemoryWarningAt: Date())
+
+        XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(snapshot: snapshot, reason: ModelLoadIntent.userChat.rawValue))
+        XCTAssertTrue(ResourceBudgetGate.allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: snapshot, reason: ModelLoadIntent.userChat.rawValue))
+    }
+
+    func testMemoryPressureContinuationStillDeniesUnsafeThermalState() {
+        let snapshot = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .serious, recentMemoryWarningCount: 1, lastMemoryWarningAt: Date())
+
+        XCTAssertFalse(ResourceBudgetGate.allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: snapshot, reason: ModelLoadIntent.userChat.rawValue))
+    }
+
+    func testGenerateRequestCappedReasoningPreservesMemoryPressureContinuation() {
+        let request = GenerateRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "user",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 999,
+            modelName: "agent-json",
+            relevantMemories: [],
+            developerTraceModeEnabled: true,
+            reasoningCaptureEnabled: true,
+            allowsMemoryPressureContinuation: true
+        )
+
+        let capped = request.cappedForDeveloperReasoning()
+
+        XCTAssertEqual(capped.maxTokens, 768)
+        XCTAssertTrue(capped.allowsMemoryPressureContinuation)
+    }
+
     func testMemoryPressureMonitorAgesOutWarningCount() {
         let metricsURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let monitor = MemoryPressureMonitor(metricsStore: RuntimeMetricsStore(fileURL: metricsURL), notificationCenter: NotificationCenter())
