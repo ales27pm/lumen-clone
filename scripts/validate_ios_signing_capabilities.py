@@ -16,6 +16,17 @@ ALLOWED_CARPLAY_ENTITLEMENTS = {
     "com.apple.developer.carplay-voice-based-conversation",
 }
 
+APP_STORE_ONLY_SANITIZED_ENTITLEMENTS = {
+    "com.apple.developer.kernel.increased-debugging-memory-limit": (
+        "The increased debugging memory limit entitlement is only allowed for "
+        "TestFlight Internal Only distribution."
+    ),
+    "com.apple.security.hardened-process.checked-allocations.soft-mode": (
+        "Checked allocations soft mode is a development-only hardened runtime "
+        "setting and should not be signed into App Store archives."
+    ),
+}
+
 DISALLOWED_PROJECT_SETTINGS = {
     "INFOPLIST_KEY_UIApplicationSupportsCarPlay": (
         "Use the CPTemplateApplicationSceneSessionRoleApplication scene manifest "
@@ -54,7 +65,7 @@ def sanitized_entitlements(entitlements: dict[str, Any]) -> tuple[dict[str, Any]
     sanitized = dict(entitlements)
     removed: list[str] = []
     for key in list(sanitized):
-        if disallowed_entitlement_message(key):
+        if sanitized_entitlement_message(key):
             sanitized.pop(key)
             removed.append(key)
     return sanitized, removed
@@ -80,6 +91,12 @@ def disallowed_entitlement_message(key: str) -> str | None:
             "Remove stale or unsupported CarPlay entitlement keys."
         )
     return None
+
+
+def sanitized_entitlement_message(key: str) -> str | None:
+    if key in APP_STORE_ONLY_SANITIZED_ENTITLEMENTS:
+        return APP_STORE_ONLY_SANITIZED_ENTITLEMENTS[key]
+    return disallowed_entitlement_message(key)
 
 
 def validate_entitlements(path: Path) -> list[str]:
