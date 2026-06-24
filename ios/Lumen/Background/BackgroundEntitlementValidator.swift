@@ -12,8 +12,6 @@ enum BackgroundEntitlementValidator {
         TriggerScheduler.continuedProcessingIdentifier
     ]
 
-    static let requiredEntitlementKeys: [(key: String, displayName: String)] = RuntimeEntitlementReader.requiredProductionEntitlements
-
     static func validate(infoDictionary: [String: Any]) -> [EntitlementAuditWarning] {
         var warnings: [EntitlementAuditWarning] = []
         let permitted: Set<String>
@@ -49,9 +47,6 @@ enum BackgroundEntitlementValidator {
         }
         for required in ["audio", "fetch", "location", "processing"] where !backgroundModes.contains(required) {
             warnings.append(.init(code: "missing_background_mode", message: "Missing background mode: \(required)"))
-        }
-        for required in requiredEntitlementKeys where !RuntimeEntitlementReader.boolValue(for: required.key) {
-            warnings.append(.init(code: "missing_entitlement", message: "Missing entitlement: \(required.displayName)"))
         }
         return warnings
     }

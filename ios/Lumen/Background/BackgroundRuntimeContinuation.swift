@@ -11,27 +11,38 @@ final class BackgroundRuntimeContinuation {
         self.continuedProcessingLease = continuedProcessingLease
     }
 
-    static func begin(name: String) -> BackgroundRuntimeContinuation? {
+    static func begin(name: String, allowsContinuedProcessing: Bool = false) -> BackgroundRuntimeContinuation? {
         var taskID: UIBackgroundTaskIdentifier = .invalid
-        let continuedLease = BackgroundContinuedProcessingCoordinator.shared.begin(
-            title: "Lumen",
-            subtitle: name,
-            prefersGPU: true
-        )
+        var continuation: BackgroundRuntimeContinuation?
+        let continuedLease = allowsContinuedProcessing
+            ? BackgroundContinuedProcessingCoordinator.shared.begin(
+                title: "Lumen",
+                subtitle: name,
+                prefersGPU: true
+            )
+            : nil
         taskID = UIApplication.shared.beginBackgroundTask(withName: name) {
-            guard taskID != .invalid else { return }
-            UIApplication.shared.endBackgroundTask(taskID)
-            taskID = .invalid
-            continuedLease?.complete(success: false)
+            Task { @MainActor in
+                continuation?.finish(success: false)
+            }
         }
-        guard taskID != .invalid else { return nil }
-        return BackgroundRuntimeContinuation(identifier: taskID, continuedProcessingLease: continuedLease)
+        guard taskID != .invalid else {
+            continuedLease?.complete(success: false)
+            return nil
+        }
+        let runtimeContinuation = BackgroundRuntimeContinuation(identifier: taskID, continuedProcessingLease: continuedLease)
+        continuation = runtimeContinuation
+        return runtimeContinuation
     }
 
-    func end() {
+    func end(success: Bool = true) {
+        finish(success: success)
+    }
+
+    private func finish(success: Bool) {
         guard !ended, identifier != .invalid else { return }
         ended = true
-        continuedProcessingLease?.complete(success: true)
+        continuedProcessingLease?.complete(success: success)
         continuedProcessingLease = nil
         UIApplication.shared.endBackgroundTask(identifier)
         identifier = .invalid

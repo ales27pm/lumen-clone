@@ -6,19 +6,19 @@ import EnergyKit
 
 struct EnergyKitCapabilitySnapshot: Sendable, Equatable {
     let frameworkAvailable: Bool
-    let entitled: Bool
+    let expectedEntitlementConfigured: Bool
     let status: String
     let venueCount: Int?
 }
 
 enum EnergyKitCapabilityService {
     static func snapshot() async -> EnergyKitCapabilitySnapshot {
-        let entitled = RuntimeEntitlementReader.boolValue(for: RuntimeEntitlementKey.energyKit)
+        let expectedEntitlementConfigured = ExpectedEntitlementManifest.expectedBoolValue(for: ExpectedEntitlementKey.energyKit)
         #if canImport(EnergyKit)
         guard #available(iOS 26.1, *) else {
             return EnergyKitCapabilitySnapshot(
                 frameworkAvailable: true,
-                entitled: entitled,
+                expectedEntitlementConfigured: expectedEntitlementConfigured,
                 status: "requires_ios_26_1_for_venue_discovery",
                 venueCount: nil
             )
@@ -27,14 +27,14 @@ enum EnergyKitCapabilityService {
             let venues = try await EnergyVenue.venues()
             return EnergyKitCapabilitySnapshot(
                 frameworkAvailable: true,
-                entitled: entitled,
+                expectedEntitlementConfigured: expectedEntitlementConfigured,
                 status: "venues_available",
                 venueCount: venues.count
             )
         } catch {
             return EnergyKitCapabilitySnapshot(
                 frameworkAvailable: true,
-                entitled: entitled,
+                expectedEntitlementConfigured: expectedEntitlementConfigured,
                 status: "venue_probe_failed:\(RuntimeMetricErrorSanitizer.code(for: error))",
                 venueCount: nil
             )
@@ -42,7 +42,7 @@ enum EnergyKitCapabilityService {
         #else
         return EnergyKitCapabilitySnapshot(
             frameworkAvailable: false,
-            entitled: entitled,
+            expectedEntitlementConfigured: expectedEntitlementConfigured,
             status: "framework_unavailable",
             venueCount: nil
         )

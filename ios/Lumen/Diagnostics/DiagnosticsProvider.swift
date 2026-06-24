@@ -24,11 +24,11 @@ final class DiagnosticsProvider {
         let background = BackgroundDiagnosticsSnapshot(
             permittedIdentifiers: [],
             entitlementWarnings: [],
-            entitlementStates: RuntimeEntitlementReader.currentStates(),
+            entitlementStates: ExpectedEntitlementManifest.currentStates(),
             backgroundGPUSupported: BackgroundContinuedProcessingCoordinator.shared.gpuSupported,
             continuedProcessingStatus: BackgroundContinuedProcessingCoordinator.shared.lastSubmissionStatus,
             availableMemoryBytes: profiler.availableMemoryBytes,
-            energyKit: EnergyKitCapabilitySnapshot(frameworkAvailable: false, entitled: RuntimeEntitlementReader.boolValue(for: RuntimeEntitlementKey.energyKit), status: "cached", venueCount: nil),
+            energyKit: EnergyKitCapabilitySnapshot(frameworkAvailable: false, expectedEntitlementConfigured: ExpectedEntitlementManifest.expectedBoolValue(for: ExpectedEntitlementKey.energyKit), status: "cached", venueCount: nil),
             storeKit: StoreKitCapabilitySnapshot(frameworkAvailable: true, status: "cached", environment: "cached")
         )
         let grounding = GroundingDiagnosticsSnapshot(contextSource: "cached", degradedReasons: [], sectionCounts: [:], doubleGroundingNormalized: true)
@@ -76,7 +76,7 @@ final class DiagnosticsProvider {
         let background = await BackgroundDiagnosticsSnapshot(
             permittedIdentifiers: permitted,
             entitlementWarnings: warnings.map(\.message),
-            entitlementStates: RuntimeEntitlementReader.currentStates(),
+            entitlementStates: ExpectedEntitlementManifest.currentStates(),
             backgroundGPUSupported: BackgroundContinuedProcessingCoordinator.shared.gpuSupported,
             continuedProcessingStatus: BackgroundContinuedProcessingCoordinator.shared.lastSubmissionStatus,
             availableMemoryBytes: profiler.availableMemoryBytes,

@@ -7,8 +7,8 @@ final class BackgroundContinuedProcessingCoordinator {
     static let shared = BackgroundContinuedProcessingCoordinator()
 
     private let logger = Logger(subsystem: "ai.lumen.app", category: "background")
-    private var activeTask: BGTask?
-    private var pendingCompletion: Bool?
+    private var activeTasks: [String: BGTask] = [:]
+    private var pendingCompletions: [String: Bool] = [:]
     private var registered = false
     private(set) var lastSubmissionStatus: String = "not_requested"
 
@@ -39,8 +39,10 @@ final class BackgroundContinuedProcessingCoordinator {
         registerIfAvailable()
         guard registered else { return nil }
 
+        let submissionToken = UUID().uuidString
+        let identifier = TriggerScheduler.continuedProcessingIdentifier(for: submissionToken)
         let request = BGContinuedProcessingTaskRequest(
-            identifier: TriggerScheduler.continuedProcessingIdentifier,
+            identifier: identifier,
             title: title,
             subtitle: subtitle
         )
@@ -52,7 +54,7 @@ final class BackgroundContinuedProcessingCoordinator {
         do {
             try BGTaskScheduler.shared.submit(request)
             lastSubmissionStatus = request.requiredResources.contains(.gpu) ? "submitted_gpu" : "submitted_default"
-            return BackgroundContinuedProcessingLease(identifier: request.identifier)
+            return BackgroundContinuedProcessingLease(identifier: request.identifier, submissionToken: submissionToken)
         } catch {
             lastSubmissionStatus = "submit_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
             logger.warning("continued_processing_submit_failed error=\(String(describing: error), privacy: .public)")
@@ -60,32 +62,31 @@ final class BackgroundContinuedProcessingCoordinator {
         }
     }
 
-    func complete(identifier: String, success: Bool) {
-        guard identifier == TriggerScheduler.continuedProcessingIdentifier else { return }
-        if let task = activeTask {
+    func complete(identifier: String, submissionToken: String, success: Bool) {
+        guard identifier == TriggerScheduler.continuedProcessingIdentifier(for: submissionToken) else { return }
+        if let task = activeTasks.removeValue(forKey: identifier) {
             if #available(iOS 26.0, *), let continuedTask = task as? BGContinuedProcessingTask {
                 continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount
             }
             task.setTaskCompleted(success: success)
-            activeTask = nil
-            pendingCompletion = nil
+            pendingCompletions[identifier] = nil
             lastSubmissionStatus = success ? "completed" : "completed_unsuccessful"
         } else {
-            pendingCompletion = success
+            pendingCompletions[identifier] = success
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
             lastSubmissionStatus = success ? "cancelled_before_launch_after_success" : "cancelled_before_launch_after_failure"
         }
     }
 
     private func attach(_ task: BGTask) {
-        guard task.identifier == TriggerScheduler.continuedProcessingIdentifier else {
+        guard task.identifier.hasPrefix(TriggerScheduler.continuedProcessingIdentifierPrefix) else {
             task.setTaskCompleted(success: false)
             return
         }
-        activeTask = task
+        activeTasks[task.identifier] = task
         task.expirationHandler = { [weak self] in
             Task { @MainActor in
-                self?.complete(identifier: task.identifier, success: false)
+                self?.completeAttachedTask(identifier: task.identifier, success: false)
             }
         }
         if #available(iOS 26.0, *), let continuedTask = task as? BGContinuedProcessingTask {
@@ -93,18 +94,29 @@ final class BackgroundContinuedProcessingCoordinator {
             continuedTask.progress.completedUnitCount = 5
             continuedTask.updateTitle("Lumen", subtitle: "Continuing local model work")
         }
-        if let pendingCompletion {
-            complete(identifier: task.identifier, success: pendingCompletion)
+        if let pendingCompletion = pendingCompletions.removeValue(forKey: task.identifier) {
+            completeAttachedTask(identifier: task.identifier, success: pendingCompletion)
         }
+    }
+
+    private func completeAttachedTask(identifier: String, success: Bool) {
+        guard let task = activeTasks.removeValue(forKey: identifier) else { return }
+        if #available(iOS 26.0, *), let continuedTask = task as? BGContinuedProcessingTask {
+            continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount
+        }
+        task.setTaskCompleted(success: success)
+        pendingCompletions[identifier] = nil
+        lastSubmissionStatus = success ? "completed" : "completed_unsuccessful"
     }
 }
 
 struct BackgroundContinuedProcessingLease {
     let identifier: String
+    let submissionToken: String
 
     func complete(success: Bool = true) {
         Task { @MainActor in
-            BackgroundContinuedProcessingCoordinator.shared.complete(identifier: identifier, success: success)
+            BackgroundContinuedProcessingCoordinator.shared.complete(identifier: identifier, submissionToken: submissionToken, success: success)
         }
     }
 }

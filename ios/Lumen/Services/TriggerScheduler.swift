@@ -12,8 +12,13 @@ final class TriggerScheduler {
 
     nonisolated static let refreshIdentifier = "com.27pm.lumenclone.agent.refresh"
     nonisolated static let processIdentifier = "com.27pm.lumenclone.agent.process"
-    nonisolated static let continuedProcessingIdentifier = "com.27pm.lumenclone.agent.continued-processing"
+    nonisolated static let continuedProcessingIdentifierPrefix = "com.27pm.lumenclone.agent.continued-processing."
+    nonisolated static let continuedProcessingIdentifier = "\(continuedProcessingIdentifierPrefix)*"
     nonisolated static let notificationCategory = "LumenAgent"
+
+    nonisolated static func continuedProcessingIdentifier(for submissionToken: String) -> String {
+        "\(continuedProcessingIdentifierPrefix)\(submissionToken)"
+    }
 
     private var registered = false
     private var isRunning = false

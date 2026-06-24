@@ -1,6 +1,6 @@
 import Foundation
 
-enum RuntimeEntitlementKey {
+enum ExpectedEntitlementKey {
     static let backgroundGPU = "com.apple.developer.background-tasks.continued-processing.gpu"
     static let carPlayVoiceConversation = "com.apple.developer.carplay-voice-based-conversation"
     static let energyKit = "com.apple.developer.energykit"
@@ -15,7 +15,7 @@ enum RuntimeEntitlementKey {
     static let hardenedProcessPlatformRestrictions = "com.apple.security.hardened-process.platform-restrictions"
 }
 
-struct RuntimeEntitlementState: Sendable, Equatable, Identifiable {
+struct ExpectedEntitlementState: Sendable, Equatable, Identifiable {
     let key: String
     let displayName: String
     let valueDescription: String
@@ -24,30 +24,30 @@ struct RuntimeEntitlementState: Sendable, Equatable, Identifiable {
     var id: String { key }
 }
 
-enum RuntimeEntitlementReader {
-    static let requiredProductionEntitlements: [(key: String, displayName: String)] = [
-        (RuntimeEntitlementKey.backgroundGPU, "Background GPU Access"),
-        (RuntimeEntitlementKey.carPlayVoiceConversation, "CarPlay Voice Based Conversation"),
-        (RuntimeEntitlementKey.energyKit, "EnergyKit"),
-        (RuntimeEntitlementKey.healthKit, "HealthKit"),
-        (RuntimeEntitlementKey.hardenedProcess, "Enhanced Security: Hardened Process"),
-        (RuntimeEntitlementKey.hardenedProcessCheckedAllocations, "Enhanced Security: Checked Allocations"),
-        (RuntimeEntitlementKey.hardenedProcessCheckedAllocationsSoftMode, "Enhanced Security: Checked Allocations Soft Mode"),
-        (RuntimeEntitlementKey.hardenedProcessDyldRO, "Enhanced Security: dyld-ro"),
-        (RuntimeEntitlementKey.hardenedProcessEnhancedSecurityVersion, "Enhanced Security: Version"),
-        (RuntimeEntitlementKey.hardenedProcessHardenedHeap, "Enhanced Security: Hardened Heap"),
-        (RuntimeEntitlementKey.hardenedProcessPlatformRestrictions, "Enhanced Security: Platform Restrictions")
+enum ExpectedEntitlementManifest {
+    static let productionEntitlements: [(key: String, displayName: String)] = [
+        (ExpectedEntitlementKey.backgroundGPU, "Background GPU Access"),
+        (ExpectedEntitlementKey.carPlayVoiceConversation, "CarPlay Voice Based Conversation"),
+        (ExpectedEntitlementKey.energyKit, "EnergyKit"),
+        (ExpectedEntitlementKey.healthKit, "HealthKit"),
+        (ExpectedEntitlementKey.hardenedProcess, "Enhanced Security: Hardened Process"),
+        (ExpectedEntitlementKey.hardenedProcessCheckedAllocations, "Enhanced Security: Checked Allocations"),
+        (ExpectedEntitlementKey.hardenedProcessDyldRO, "Enhanced Security: dyld-ro"),
+        (ExpectedEntitlementKey.hardenedProcessEnhancedSecurityVersion, "Enhanced Security: Version"),
+        (ExpectedEntitlementKey.hardenedProcessHardenedHeap, "Enhanced Security: Hardened Heap"),
+        (ExpectedEntitlementKey.hardenedProcessPlatformRestrictions, "Enhanced Security: Platform Restrictions")
     ]
 
     static let developmentOnlyEntitlements: [(key: String, displayName: String)] = [
-        (RuntimeEntitlementKey.increasedDebuggingMemory, "Increased Debugging Memory Limit")
+        (ExpectedEntitlementKey.increasedDebuggingMemory, "Increased Debugging Memory Limit"),
+        (ExpectedEntitlementKey.hardenedProcessCheckedAllocationsSoftMode, "Enhanced Security: Checked Allocations Soft Mode")
     ]
 
-    static func currentStates(includeDevelopmentOnly: Bool = true) -> [RuntimeEntitlementState] {
-        let keys = includeDevelopmentOnly ? requiredProductionEntitlements + developmentOnlyEntitlements : requiredProductionEntitlements
+    static func currentStates(includeDevelopmentOnly: Bool = includesDevelopmentOnlyByDefault) -> [ExpectedEntitlementState] {
+        let keys = includeDevelopmentOnly ? productionEntitlements + developmentOnlyEntitlements : productionEntitlements
         return keys.map { key, name in
             let value = valueDescription(for: key)
-            return RuntimeEntitlementState(
+            return ExpectedEntitlementState(
                 key: key,
                 displayName: name,
                 valueDescription: value ?? "missing",
@@ -56,13 +56,13 @@ enum RuntimeEntitlementReader {
         }
     }
 
-    static func boolValue(for key: String) -> Bool {
-        guard let value = configuredEntitlementValues[key] else { return false }
+    static func expectedBoolValue(for key: String) -> Bool {
+        guard let value = expectedEntitlementValues[key] else { return false }
         return isEnabled(valueDescription: value)
     }
 
     static func valueDescription(for key: String) -> String? {
-        configuredEntitlementValues[key]
+        expectedEntitlementValues[key]
     }
 
     private static func isEnabled(valueDescription: String) -> Bool {
@@ -76,25 +76,33 @@ enum RuntimeEntitlementReader {
         }
     }
 
-    private static let configuredEntitlementValues: [String: String] = {
+    private static let expectedEntitlementValues: [String: String] = {
         var values = [
-            RuntimeEntitlementKey.backgroundGPU: "true",
-            RuntimeEntitlementKey.carPlayVoiceConversation: "true",
-            RuntimeEntitlementKey.energyKit: "true",
-            RuntimeEntitlementKey.healthKit: "true",
-            RuntimeEntitlementKey.hardenedProcess: "true",
-            RuntimeEntitlementKey.hardenedProcessCheckedAllocations: "true",
-            RuntimeEntitlementKey.hardenedProcessCheckedAllocationsSoftMode: "true",
-            RuntimeEntitlementKey.hardenedProcessDyldRO: "true",
-            RuntimeEntitlementKey.hardenedProcessEnhancedSecurityVersion: "1",
-            RuntimeEntitlementKey.hardenedProcessHardenedHeap: "true",
-            RuntimeEntitlementKey.hardenedProcessPlatformRestrictions: "2"
+            ExpectedEntitlementKey.backgroundGPU: "true",
+            ExpectedEntitlementKey.carPlayVoiceConversation: "true",
+            ExpectedEntitlementKey.energyKit: "true",
+            ExpectedEntitlementKey.healthKit: "true",
+            ExpectedEntitlementKey.hardenedProcess: "true",
+            ExpectedEntitlementKey.hardenedProcessCheckedAllocations: "true",
+            ExpectedEntitlementKey.hardenedProcessDyldRO: "true",
+            ExpectedEntitlementKey.hardenedProcessEnhancedSecurityVersion: "1",
+            ExpectedEntitlementKey.hardenedProcessHardenedHeap: "true",
+            ExpectedEntitlementKey.hardenedProcessPlatformRestrictions: "2"
         ]
 
         #if DEBUG
-        values[RuntimeEntitlementKey.increasedDebuggingMemory] = "true"
+        values[ExpectedEntitlementKey.increasedDebuggingMemory] = "true"
+        values[ExpectedEntitlementKey.hardenedProcessCheckedAllocationsSoftMode] = "true"
         #endif
 
         return values
     }()
+
+    private static var includesDevelopmentOnlyByDefault: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
 }

@@ -272,7 +272,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\nplist=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$plist\" ]; then\n  exit 0\nfi\nset_bool() {\n  key=\"$1\"\n  /usr/libexec/PlistBuddy -c \"Set :${key} true\" \"$plist\" 2>/dev/null || \\\n    /usr/libexec/PlistBuddy -c \"Add :${key} bool true\" \"$plist\"\n}\nset_background_modes() {\n  /usr/libexec/PlistBuddy -c \"Delete :UIBackgroundModes\" \"$plist\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Add :UIBackgroundModes array\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIBackgroundModes:0 string audio\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIBackgroundModes:1 string fetch\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIBackgroundModes:2 string location\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIBackgroundModes:3 string processing\" \"$plist\"\n}\nset_background_task_identifiers() {\n  /usr/libexec/PlistBuddy -c \"Delete :BGTaskSchedulerPermittedIdentifiers\" \"$plist\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Add :BGTaskSchedulerPermittedIdentifiers array\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :BGTaskSchedulerPermittedIdentifiers:0 string com.27pm.lumenclone.agent.refresh\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :BGTaskSchedulerPermittedIdentifiers:1 string com.27pm.lumenclone.agent.process\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :BGTaskSchedulerPermittedIdentifiers:2 string com.27pm.lumenclone.agent.continued-processing\" \"$plist\"\n}\nset_carplay_voice_scene() {\n  module=\"${PRODUCT_MODULE_NAME:-Lumen}\"\n  /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest dict\" \"$plist\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Set :UIApplicationSceneManifest:UIApplicationSupportsMultipleScenes true\" \"$plist\" 2>/dev/null || \\\n    /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest:UIApplicationSupportsMultipleScenes bool true\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest:UISceneConfigurations dict\" \"$plist\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Delete :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication\" \"$plist\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication array\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication:0 dict\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication:0:UISceneConfigurationName string Lumen CarPlay Voice\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication:0:UISceneDelegateClassName string ${module}.CarPlayVoiceSceneDelegate\" \"$plist\"\n  /usr/libexec/PlistBuddy -c \"Add :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication:0:UISceneClassName string CPTemplateApplicationScene\" \"$plist\"\n}\nset_bool UIFileSharingEnabled\nset_bool LSSupportsOpeningDocumentsInPlace\nset_bool UISupportsDocumentBrowser\nset_background_modes\nset_background_task_identifiers\nset_carplay_voice_scene\n";
+				shellScript = "/bin/sh \"${PROJECT_DIR}/Lumen/Scripts/apply_generated_infoplist_capabilities.sh\"\n";
 		};
 		B7A1C2D3E4F5061728394A5B /* Bundle Agent Grounding Artifacts */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -501,7 +501,11 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.27pm.lumenclone.agent.refresh com.27pm.lumenclone.agent.process com.27pm.lumenclone.agent.continued-processing";
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
+					com.27pm.lumenclone.agent.refresh,
+					com.27pm.lumenclone.agent.process,
+					"com.27pm.lumenclone.agent.continued-processing.*",
+				);
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.27pm.lumenclone\";\n    CFBundleURLSchemes =     (\n        \"msauth.com.27pm.lumenclone\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -574,7 +578,11 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.27pm.lumenclone.agent.refresh com.27pm.lumenclone.agent.process com.27pm.lumenclone.agent.continued-processing";
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
+					com.27pm.lumenclone.agent.refresh,
+					com.27pm.lumenclone.agent.process,
+					"com.27pm.lumenclone.agent.continued-processing.*",
+				);
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleURLName = \"com.27pm.lumenclone\";\n    CFBundleURLSchemes =     (\n        \"msauth.com.27pm.lumenclone\"\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
