@@ -277,12 +277,16 @@ def test_ingestion_flags_e2e_no_model_fallback_as_invalid_evidence(tmp_path: Pat
             {
                 "name": "chat should run model",
                 "passed": True,
+                "requiresAgentRun": True,
                 "prompt": "Explain actor isolation in Swift.",
                 "intent": "chat",
                 "expectedIntent": "chat",
                 "failures": [],
                 "final": "No model loaded; routing-only checks completed.",
-                "events": [{"phase": "models", "message": "no chat model loaded"}],
+                "events": [
+                    {"phase": "models", "message": "no chat model loaded"},
+                    {"phase": "model-evidence", "message": "AgentService model path was not entered; reason=model not loaded; scenarioID=chat should run model,e2eRunID=11111111-1111-4111-8111-111111111111"},
+                ],
             }
         ],
     }
@@ -292,7 +296,9 @@ def test_ingestion_flags_e2e_no_model_fallback_as_invalid_evidence(tmp_path: Pat
 
     assert len(normalized["failures"]) == 1
     failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] is None
     assert failure["e2eScenario"]["skippedLiveModelRun"] is True
+    assert failure["e2eScenario"]["modelEvidenceRootCause"] is None
     assert "routing-only fallback is not valid E2E evidence" in failure["expected"][0]
     assert "Load the configured chat model" in failure["repairSample"]["correctedOutput"]
     assert "AgentService" in failure["repairSample"]["correctedOutput"]
@@ -408,6 +414,71 @@ def test_ingestion_matches_sidecar_by_correlation_despite_prompt_mismatch(tmp_pa
     assert normalized["failures"] == []
     assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
     assert normalized["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+
+
+def test_ingestion_rejects_sidecar_correlation_with_conflicting_ids(tmp_path: Path):
+    report_path = tmp_path / "e2e-conflicting-sidecar.json"
+    import json
+
+    e2e_run_id = "11111111-1111-4111-8111-111111111111"
+    expected_agent_run_id = "22222222-2222-4222-8222-222222222222"
+    expected_turn_id = "33333333-3333-4333-8333-333333333333"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "results": [
+            {
+                "scenarioID": "training-general-chat",
+                "kind": "training",
+                "title": "Training eval: pure chat quality",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "Explain tradeoffs between precision and recall.",
+                "actualIntent": "chat",
+                "expectedIntent": "chat",
+                "e2eRunID": e2e_run_id,
+                "agentRunID": expected_agent_run_id,
+                "turnID": expected_turn_id,
+                "failures": [],
+                "finalText": "Precision is exactness; recall is coverage.",
+                "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text("\n".join([
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": None,
+            "rawOutputPrefix": "{\"final\":\"Precision is exactness; recall is coverage.\"}",
+            "promptPrefix": "Grounded wrapper prompt without the original wording.",
+            "scenarioID": "training-general-chat",
+            "e2eRunID": e2e_run_id,
+            "agentRunID": "44444444-4444-4444-8444-444444444444",
+            "turnID": expected_turn_id,
+        }),
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": None,
+            "rawOutputPrefix": "{\"final\":\"Precision is exactness; recall is coverage.\"}",
+            "promptPrefix": "Another grounded wrapper prompt.",
+            "scenarioID": "training-general-chat",
+            "e2eRunID": e2e_run_id,
+            "agentRunID": expected_agent_run_id,
+            "turnID": "55555555-5555-4555-8555-555555555555",
+        }),
+    ]) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"][0]["rootCauseCategory"] == "no_correlated_model_turn"
+    assert normalized["failures"][0]["e2eScenario"]["skippedLiveModelRun"] is False
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "no_correlated_model_turn"
 
 
 def test_training_deterministic_model_evidence_is_not_model_backed(tmp_path: Path):

@@ -318,8 +318,6 @@ def _scenario_model_evidence_requires_failure(scenario: dict[str, Any], diagnosi
 
 
 def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis: dict[str, Any] | None = None) -> bool:
-    if sidecar_diagnosis and sidecar_diagnosis.get("rootCauseCategory") in _EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
-        return False
     final = str(scenario.get("final") or scenario.get("finalText") or "").casefold()
     failures = str(scenario.get("failures") or "").casefold()
     events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
@@ -328,7 +326,12 @@ def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis
     if (
         "no model loaded" in haystack
         or "routing-only checks completed" in haystack
-        or "did not record model-backed generation evidence" in haystack
+    ):
+        return True
+    if sidecar_diagnosis and sidecar_diagnosis.get("rootCauseCategory") in _EXPLICIT_MODEL_EVIDENCE_CATEGORIES:
+        return False
+    if (
+        "did not record model-backed generation evidence" in haystack
         or "missing fresh agentbehaviortrace modelturn" in haystack
     ):
         return True
@@ -452,6 +455,8 @@ def _diagnosis_from_model_evidence_events(scenario: dict[str, Any]) -> dict[str,
                 "trace": {"eventMessage": message, "checked": _scenario_correlation_fields(scenario)},
             }
         if "agentservice model path was not entered" in lowered:
+            if "model not loaded" in lowered or _scenario_reported_no_model_loaded(scenario):
+                continue
             return {
                 "rootCauseCategory": "agent_service_not_entered",
                 "message": message,
@@ -540,13 +545,20 @@ def _matching_sidecar_trace_for_scenario(
 
 
 def _sidecar_trace_matches_correlation(trace: dict[str, Any], scenario: dict[str, Any]) -> bool:
+    matched_strong_identifier = False
     for key in ("e2eRunID", "agentRunID", "conversationID", "turnID"):
         expected = str(scenario.get(key) or "").strip()
         actual = str(trace.get(key) or "").strip()
-        if expected and actual and expected == actual:
-            return True
+        if expected and actual:
+            if expected != actual:
+                return False
+            matched_strong_identifier = True
     expected_scenario = str(scenario.get("scenarioID") or scenario.get("id") or "").strip()
     actual_scenario = str(trace.get("scenarioID") or "").strip()
+    if expected_scenario and actual_scenario and expected_scenario != actual_scenario:
+        return False
+    if matched_strong_identifier:
+        return True
     return bool(expected_scenario and actual_scenario and expected_scenario == actual_scenario and _sidecar_record_matches_scenario_time(trace, scenario))
 
 
