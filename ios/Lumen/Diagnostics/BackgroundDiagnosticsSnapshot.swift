@@ -3,7 +3,7 @@ import Foundation
 struct BackgroundDiagnosticsSnapshot: Sendable {
     let permittedIdentifiers: [String]
     let entitlementWarnings: [String]
-    let entitlementStates: [RuntimeEntitlementState]
+    let entitlementStates: [ExpectedEntitlementState]
     let backgroundGPUSupported: Bool
     let continuedProcessingStatus: String
     let availableMemoryBytes: UInt64

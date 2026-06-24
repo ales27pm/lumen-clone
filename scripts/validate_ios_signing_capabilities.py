@@ -12,41 +12,22 @@ import sys
 from pathlib import Path
 from typing import Any
 
-CARPLAY_REMOVED_MESSAGE = (
-    "CarPlay support has been removed. Remove this entitlement and archive "
-    "with a provisioning profile that does not require CarPlay capabilities."
-)
-
-# Lumen no longer ships CarPlay features. Reject the generic CarPlay entitlement
-# and any category-specific CarPlay entitlement so archive signing does not
-# require CarPlay-enabled provisioning profiles.
-DISALLOWED_ENTITLEMENT_PREFIXES = {
-    "com.apple.developer.carplay": CARPLAY_REMOVED_MESSAGE,
+ALLOWED_CARPLAY_ENTITLEMENTS = {
+    "com.apple.developer.carplay-voice-based-conversation",
 }
 
 DISALLOWED_PROJECT_SETTINGS = {
     "INFOPLIST_KEY_UIApplicationSupportsCarPlay": (
-        "CarPlay support has been removed. Remove UIApplicationSupportsCarPlay "
-        "so Xcode/App Store signing does not expect CarPlay capability support."
-    ),
-    "CPTemplateApplicationSceneSessionRoleApplication": (
-        "CarPlay scene sessions must not be declared in generated Info.plist settings."
-    ),
-    "CarPlaySceneDelegate": (
-        "CarPlay scene delegate references must be removed from project settings."
+        "Use the CPTemplateApplicationSceneSessionRoleApplication scene manifest "
+        "for CarPlay voice support instead of the legacy UIApplicationSupportsCarPlay key."
     ),
     "com.apple.developer.carplay": (
-        "CarPlay must not be enabled in Xcode SystemCapabilities."
+        "CarPlay must not be enabled through stale Xcode SystemCapabilities entries. "
+        "Use the checked-in voice-based conversation entitlement instead."
     ),
 }
 
-DISALLOWED_APP_SOURCE_TOKENS = {
-    "import CarPlay": "Remove CarPlay framework imports from Swift sources.",
-    "CPTemplateApplicationSceneSessionRoleApplication": (
-        "Remove CarPlay scene manifest entries from app plist fragments."
-    ),
-    "CarPlaySceneDelegate": "Remove CarPlay scene delegate code and references.",
-}
+DISALLOWED_APP_SOURCE_TOKENS: dict[str, str] = {}
 
 APP_SOURCE_SUFFIXES = {".swift", ".plist", ".entitlements", ".fragment"}
 
@@ -93,9 +74,11 @@ def sanitize_entitlements_file(source: Path, destination: Path) -> list[str]:
 
 
 def disallowed_entitlement_message(key: str) -> str | None:
-    for prefix, message in DISALLOWED_ENTITLEMENT_PREFIXES.items():
-        if key.startswith(prefix):
-            return message
+    if key.startswith("com.apple.developer.carplay") and key not in ALLOWED_CARPLAY_ENTITLEMENTS:
+        return (
+            "Only the CarPlay Voice Based Conversation entitlement is allowed. "
+            "Remove stale or unsupported CarPlay entitlement keys."
+        )
     return None
 
 

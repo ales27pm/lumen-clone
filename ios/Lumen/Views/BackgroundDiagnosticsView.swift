@@ -10,6 +10,7 @@ struct BackgroundDiagnosticsView: View {
                 Text("Continued processing: \(background.continuedProcessingStatus)")
                 Text("Available memory: \(Self.formatBytes(background.availableMemoryBytes))")
                 Text("EnergyKit: \(background.energyKit.status)")
+                Text("EnergyKit entitlement expected: \(background.energyKit.expectedEntitlementConfigured ? "Yes" : "No")")
                 if let venueCount = background.energyKit.venueCount {
                     Text("Energy venues: \(venueCount)")
                 }
@@ -31,7 +32,7 @@ struct BackgroundDiagnosticsView: View {
 }
 
 private struct EntitlementStateRow: View {
-    let state: RuntimeEntitlementState
+    let state: ExpectedEntitlementState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
