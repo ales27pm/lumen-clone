@@ -21,7 +21,16 @@ final class DiagnosticsProvider {
         let tools = ToolSecuritySnapshot(tools: SecureToolRegistry.shared.definitions().map { def in
             ToolSecuritySnapshot.ToolRow(id: def.id, category: def.category.rawValue, requiredPermissions: def.requiredPermissions.map(\.rawValue), supportsBackground: def.supportsBackgroundExecution, requiresApproval: def.requiresUserApproval)
         })
-        let background = BackgroundDiagnosticsSnapshot(permittedIdentifiers: [], entitlementWarnings: [])
+        let background = BackgroundDiagnosticsSnapshot(
+            permittedIdentifiers: [],
+            entitlementWarnings: [],
+            entitlementStates: ExpectedEntitlementManifest.currentStates(),
+            backgroundGPUSupported: BackgroundContinuedProcessingCoordinator.shared.gpuSupported,
+            continuedProcessingStatus: BackgroundContinuedProcessingCoordinator.shared.lastSubmissionStatus,
+            availableMemoryBytes: profiler.availableMemoryBytes,
+            energyKit: EnergyKitCapabilitySnapshot(frameworkAvailable: false, expectedEntitlementConfigured: ExpectedEntitlementManifest.expectedBoolValue(for: ExpectedEntitlementKey.energyKit), status: "cached", venueCount: nil),
+            storeKit: StoreKitCapabilitySnapshot(frameworkAvailable: true, status: "cached", environment: "cached")
+        )
         let grounding = GroundingDiagnosticsSnapshot(contextSource: "cached", degradedReasons: [], sectionCounts: [:], doubleGroundingNormalized: true)
         let privacy = PrivacyReportSnapshot(localOnlyMode: true, networkAccessState: "cached", recentToolCategories: Array(Set(tools.tools.map(\.category))).sorted(), appIntentLimitations: ["Expensive diagnostics require explicit refresh"])
         return DiagnosticsSnapshot(runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
@@ -62,7 +71,18 @@ final class DiagnosticsProvider {
         if let values = info["BGTaskSchedulerPermittedIdentifiers"] as? [String] { permitted = values }
         else if let value = info["BGTaskSchedulerPermittedIdentifiers"] as? String { permitted = value.split { $0 == " " || $0 == ";" || $0 == "," }.map(String.init) }
         else { permitted = [] }
-        let background = BackgroundDiagnosticsSnapshot(permittedIdentifiers: permitted, entitlementWarnings: warnings.map(\.message))
+        async let energyKit = EnergyKitCapabilityService.snapshot()
+        async let storeKit = StoreKitCapabilityService.snapshot()
+        let background = await BackgroundDiagnosticsSnapshot(
+            permittedIdentifiers: permitted,
+            entitlementWarnings: warnings.map(\.message),
+            entitlementStates: ExpectedEntitlementManifest.currentStates(),
+            backgroundGPUSupported: BackgroundContinuedProcessingCoordinator.shared.gpuSupported,
+            continuedProcessingStatus: BackgroundContinuedProcessingCoordinator.shared.lastSubmissionStatus,
+            availableMemoryBytes: profiler.availableMemoryBytes,
+            energyKit: energyKit,
+            storeKit: storeKit
+        )
 
         let grounding = GroundingDiagnosticsSnapshot(contextSource: SharedContainer.shared == nil ? "unavailable" : "sharedContainer", degradedReasons: SharedContainer.shared == nil ? ["model_context_unavailable"] : [], sectionCounts: [:], doubleGroundingNormalized: true)
 

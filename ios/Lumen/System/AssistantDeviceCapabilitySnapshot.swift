@@ -24,6 +24,7 @@ struct AssistantDeviceCapabilitySnapshot: Codable, Sendable, Equatable {
     let deviceIdiom: String
     let processorCount: Int
     let physicalMemoryBytes: UInt64
+    let availableMemoryBytes: UInt64
     let lowPowerModeEnabled: Bool
     let thermalState: DeviceThermalState
     let metalAvailable: Bool

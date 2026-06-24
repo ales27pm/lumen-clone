@@ -12,7 +12,13 @@ final class TriggerScheduler {
 
     nonisolated static let refreshIdentifier = "com.27pm.lumenclone.agent.refresh"
     nonisolated static let processIdentifier = "com.27pm.lumenclone.agent.process"
+    nonisolated static let continuedProcessingIdentifierPrefix = "com.27pm.lumenclone.agent.continued-processing."
+    nonisolated static let continuedProcessingIdentifier = "\(continuedProcessingIdentifierPrefix)*"
     nonisolated static let notificationCategory = "LumenAgent"
+
+    nonisolated static func continuedProcessingIdentifier(for submissionToken: String) -> String {
+        "\(continuedProcessingIdentifierPrefix)\(submissionToken)"
+    }
 
     private var registered = false
     private var isRunning = false
@@ -52,6 +58,7 @@ final class TriggerScheduler {
             guard let proc = task as? BGProcessingTask else { task.setTaskCompleted(success: false); return }
             Task { @MainActor in await self.handleRefresh(task: proc) }
         }
+        BackgroundContinuedProcessingCoordinator.shared.registerIfAvailable()
         let center = UNUserNotificationCenter.current()
         let category = UNNotificationCategory(identifier: Self.notificationCategory, actions: [], intentIdentifiers: [], options: [])
         center.setNotificationCategories([category])
