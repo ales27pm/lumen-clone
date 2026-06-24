@@ -15,7 +15,7 @@ Safety rules:
 - Outputs are bounded and compact.
 - If model/store context is unavailable, intents return degraded responses and do not fake success.
 - Add Memory saves through the local vector-backed memory store when embeddings are available. If local embedding/indexing is unavailable, it writes a bounded pending capture to local app storage and reports later indexing instead of using cloud fallback or claiming indexed memory.
-- Diagnostics intent is passive: it reads cached local capability state plus persistent diagnostic run/remediation state, and does not start model loading, background jobs, or diagnostic campaigns.
+- Diagnostics intent is passive: it reads cached local capability state, persistent diagnostic run/remediation state, and the count of pending local memory captures. It does not start model loading, memory indexing, background jobs, or diagnostic campaigns.
 
 ## Build integration notes
 
