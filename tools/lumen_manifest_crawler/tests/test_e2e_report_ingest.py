@@ -321,13 +321,15 @@ def test_ingestion_flags_live_e2e_without_model_evidence_event(tmp_path: Path):
         ],
     }
     report_path.write_text(json.dumps(report), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text("", encoding="utf-8")
 
     normalized = load_runtime_audit_reports([report_path])[0]
 
     assert len(normalized["failures"]) == 1
     failure = normalized["failures"][0]
-    assert failure["e2eScenario"]["skippedLiveModelRun"] is True
-    assert "must execute an actual loaded chat model" in failure["expected"][0]
+    assert failure["rootCauseCategory"] == "no_correlated_model_turn"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
+    assert "correlated model-backed AgentBehaviorTrace" in failure["expected"][0]
 
 
 def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
@@ -360,6 +362,166 @@ def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
     normalized = load_runtime_audit_reports([report_path])[0]
 
     assert normalized["failures"] == []
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
+
+
+def test_ingestion_matches_sidecar_by_correlation_despite_prompt_mismatch(tmp_path: Path):
+    report_path = tmp_path / "e2e-correlated-sidecar.json"
+    import json
+
+    e2e_run_id = "11111111-1111-4111-8111-111111111111"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "results": [
+            {
+                "scenarioID": "training-general-chat",
+                "kind": "training",
+                "title": "Training eval: pure chat quality",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "Explain tradeoffs between precision and recall.",
+                "actualIntent": "chat",
+                "expectedIntent": "chat",
+                "e2eRunID": e2e_run_id,
+                "failures": [],
+                "finalText": "Precision is exactness; recall is coverage.",
+                "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": None,
+        "rawOutputPrefix": "{\"final\":\"Precision is exactness; recall is coverage.\"}",
+        "promptPrefix": "Grounded wrapper prompt without the original wording.",
+        "scenarioID": "training-general-chat",
+        "e2eRunID": e2e_run_id,
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"] == []
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
+    assert normalized["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+
+
+def test_training_deterministic_model_evidence_is_not_model_backed(tmp_path: Path):
+    report_path = tmp_path / "e2e-training-deterministic.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "scenarios": [
+            {
+                "id": "training-weather-grounded",
+                "name": "Training eval: weather stays grounded",
+                "kind": "training",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "What is the weather here?",
+                "intent": "weather",
+                "expectedIntent": "weather",
+                "failures": [],
+                "final": "Weather summary.",
+                "events": [{"phase": "model-evidence", "message": "runtime=deterministic-compatibility, kind=policy-first-deterministic, stage=compatibility-tool-action"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "deterministic_compatibility_not_training_evidence"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
+    assert "deterministic compatibility" in failure["problem"]
+
+
+def test_missing_sidecar_trace_export_is_distinguishable(tmp_path: Path):
+    report_path = tmp_path / "e2e-missing-sidecar.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "id": "training-general-chat",
+                "name": "Training eval: pure chat quality",
+                "kind": "training",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Explain precision and recall.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Precision is exactness; recall is coverage.",
+                "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "missing_sidecar_trace_export"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
+    assert "sidecar export" in failure["problem"]
+
+
+def test_report_events_classify_empty_output_and_parse_error(tmp_path: Path):
+    report_path = tmp_path / "e2e-event-diagnostics.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 2,
+        "scenarios": [
+            {
+                "id": "training-empty",
+                "name": "Training eval: empty",
+                "kind": "training",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Empty output prompt.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "",
+                "events": [{"phase": "model-evidence", "message": "found AgentBehaviorTrace modelTurn but model stream returned no tokens; stage=agent-json-step-0; runtimePath=agent-model; parseError=empty; outputTokens=0"}],
+            },
+            {
+                "id": "training-parse",
+                "name": "Training eval: parse",
+                "kind": "training",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Parse error prompt.",
+                "intent": "chat",
+                "expectedIntent": "chat",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "plain text",
+                "events": [{"phase": "model-evidence", "message": "found AgentBehaviorTrace modelTurn but parseError=noJSONObject; stage=agent-json-step-0; runtimePath=agent-model; outputTokens=4"}],
+            },
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failures_by_prompt = {failure["scenario"]: failure for failure in normalized["failures"]}
+    assert failures_by_prompt["Empty output prompt."]["rootCauseCategory"] == "agent_model_empty_output"
+    assert failures_by_prompt["Parse error prompt."]["rootCauseCategory"] == "agent_model_parse_error"
 
 
 def test_ingestion_uses_sidecar_empty_agent_json_trace_as_precise_root_cause(tmp_path: Path):
@@ -438,8 +600,8 @@ def test_ingestion_does_not_match_empty_sidecar_prompt_to_scenario(tmp_path: Pat
     normalized = load_runtime_audit_reports([report_path])[0]
 
     failure = normalized["failures"][0]
-    assert failure["rootCauseCategory"] is None
-    assert failure["e2eScenario"]["skippedLiveModelRun"] is True
+    assert failure["rootCauseCategory"] == "no_correlated_model_turn"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
 
 
 def test_ingestion_rejects_sidecar_outside_scenario_time_window(tmp_path: Path):
@@ -478,8 +640,8 @@ def test_ingestion_rejects_sidecar_outside_scenario_time_window(tmp_path: Path):
     normalized = load_runtime_audit_reports([report_path])[0]
 
     failure = normalized["failures"][0]
-    assert failure["rootCauseCategory"] is None
-    assert failure["e2eScenario"]["skippedLiveModelRun"] is True
+    assert failure["rootCauseCategory"] == "no_correlated_model_turn"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
 
 
 def test_text_e2e_report_uses_sidecar_diagnostics(tmp_path: Path):
@@ -596,7 +758,8 @@ def test_ingestion_distinguishes_missing_empty_parse_valid_and_policy_first_evid
     normalized = load_runtime_audit_reports([report_path])[0]
 
     failures_by_prompt = {failure["scenario"]: failure for failure in normalized["failures"]}
-    assert failures_by_prompt["Missing evidence prompt."]["e2eScenario"]["skippedLiveModelRun"] is True
+    assert failures_by_prompt["Missing evidence prompt."]["rootCauseCategory"] == "no_correlated_model_turn"
+    assert failures_by_prompt["Missing evidence prompt."]["e2eScenario"]["skippedLiveModelRun"] is False
     assert failures_by_prompt["Empty output prompt."]["rootCauseCategory"] == "agent_json_empty_generation"
     assert failures_by_prompt["Parse error prompt."]["rootCauseCategory"] == "agent_json_parse_error"
     assert "Valid model prompt." not in failures_by_prompt
