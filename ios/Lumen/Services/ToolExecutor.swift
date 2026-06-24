@@ -7,8 +7,18 @@ nonisolated enum ToolExecutionApproval: Sendable {
 }
 
 nonisolated enum ToolRouteGuard {
+    enum PermissionGateDecision: Equatable, Sendable {
+        case allowed
+        case request
+        case denied(String)
+    }
+
     @MainActor
-    static func ensurePermissionIfNeeded(for canonicalToolID: String, arguments: [String: String]) async -> String? {
+    static func ensurePermissionIfNeeded(
+        for canonicalToolID: String,
+        arguments: [String: String],
+        isForeground: Bool = true
+    ) async -> String? {
         if canonicalToolID == "weather" {
             let value = (arguments["location"] ?? arguments["city"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if !value.isEmpty, value != "here", value != "current", value != "current location" {
@@ -22,20 +32,33 @@ nonisolated enum ToolRouteGuard {
 
         let permissions = PermissionsCenter.shared
         let initial = permissions.state(permissionKind)
-        switch initial {
-        case .granted:
+        switch permissionGateDecision(for: permissionKind, state: initial, isForeground: isForeground) {
+        case .allowed:
             return nil
-        case .notDetermined:
+        case .request:
             await permissions.request(permissionKind)
             let updated = permissions.state(permissionKind)
             if updated == .granted || updated == .limited {
                 return nil
             }
             return permissionUnavailableMessage(for: permissionKind)
-        case .limited:
-            return nil
+        case .denied(let message):
+            return message
+        }
+    }
+
+    static func permissionGateDecision(
+        for permissionKind: PermissionKind,
+        state: PermissionState,
+        isForeground: Bool
+    ) -> PermissionGateDecision {
+        switch state {
+        case .granted, .limited:
+            return .allowed
+        case .notDetermined:
+            return isForeground ? .request : .denied(permissionUnavailableMessage(for: permissionKind))
         case .denied, .restricted, .unavailable:
-            return permissionUnavailableMessage(for: permissionKind)
+            return .denied(permissionUnavailableMessage(for: permissionKind))
         }
     }
 

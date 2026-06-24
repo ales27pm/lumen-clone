@@ -12,6 +12,8 @@ from lumen_manifest_crawler.dataset.e2e_text_parser import parse_e2e_text_report
 
 SUPPORTED_TEXT_REPORT_SUFFIXES = {".txt", ".md", ".markdown", ".log"}
 SUPPORTED_RUNTIME_AUDIT_SUFFIXES = {".json", *SUPPORTED_TEXT_REPORT_SUFFIXES}
+MAX_REMEDIATION_PROPOSALS = 5
+MAX_REMEDIATION_FIELD_CHARS = 320
 
 
 def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]:
@@ -482,13 +484,20 @@ def _flatten_persistent_runtime_diagnostics(package: dict[str, Any], *, source: 
     state = state if isinstance(state, dict) else {}
     records = list(_iter_dicts(state.get("records", []) or []))
     status_counts: dict[str, int] = {}
+    remediation_severity_counts: dict[str, int] = {}
+    remediation_proposal_count = 0
     failures: list[dict[str, Any]] = []
     for record in records:
         status = str(record.get("status") or "unknown")
         status_counts[status] = status_counts.get(status, 0) + 1
+        proposals = _bounded_remediation_proposals(record)
+        remediation_proposal_count += len(proposals)
+        for proposal in proposals:
+            severity = str(proposal.get("severity") or "unknown")
+            remediation_severity_counts[severity] = remediation_severity_counts.get(severity, 0) + 1
         if status == "passed" or _is_expected_diagnostics_cancellation(record):
             continue
-        failures.append({
+        failure = {
             "type": "persistent_diagnostics_scenario_not_passed",
             "agent": "runtime",
             "expected": ["Persistent diagnostics scenario should pass or be an explicitly expected cancellation."],
@@ -497,7 +506,11 @@ def _flatten_persistent_runtime_diagnostics(package: dict[str, Any], *, source: 
             "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
             "sourceLayer": "persistentRuntimeDiagnostics.records",
             "diagnosticRecordID": record.get("id"),
-        })
+        }
+        if proposals:
+            failure["remediationProposals"] = proposals
+            failure["remediationSeverity"] = _top_remediation_severity(proposals)
+        failures.append(failure)
     ndjson = package.get("ndjson")
     ndjson_line_count = len([line for line in str(ndjson).splitlines() if line.strip()])
     return {
@@ -512,6 +525,8 @@ def _flatten_persistent_runtime_diagnostics(package: dict[str, Any], *, source: 
         "campaign": package.get("campaign") if isinstance(package.get("campaign"), dict) else None,
         "recordCount": len(records),
         "statusCounts": dict(sorted(status_counts.items())),
+        "remediationProposalCount": remediation_proposal_count,
+        "remediationSeverityCounts": dict(sorted(remediation_severity_counts.items())),
         "metricKitPayloadCount": len(package.get("metricKitPayloads", []) or []) if isinstance(package.get("metricKitPayloads"), list) else 0,
         "ndjsonLineCount": ndjson_line_count,
         "failures": failures,
@@ -527,6 +542,40 @@ def _is_expected_diagnostics_cancellation(record: dict[str, Any]) -> bool:
         return False
     reason = str(metrics.get("cancellationReason") or "")
     return reason == "persistent-diagnostics-agent-cancel"
+
+
+def _bounded_remediation_proposals(record: dict[str, Any]) -> list[dict[str, str]]:
+    raw = record.get("remediationProposals")
+    proposals = raw if isinstance(raw, list) else []
+    out: list[dict[str, str]] = []
+    for item in proposals[:MAX_REMEDIATION_PROPOSALS]:
+        if not isinstance(item, dict):
+            continue
+        proposal = {
+            "id": _bounded_remediation_text(item.get("id"), limit=96),
+            "title": _bounded_remediation_text(item.get("title")),
+            "rationale": _bounded_remediation_text(item.get("rationale")),
+            "action": _bounded_remediation_text(item.get("action")),
+            "severity": _normalized_remediation_severity(item.get("severity")),
+        }
+        if proposal["id"] or proposal["title"] or proposal["action"]:
+            out.append(proposal)
+    return out
+
+
+def _bounded_remediation_text(value: Any, *, limit: int = MAX_REMEDIATION_FIELD_CHARS) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[:limit]
+
+
+def _normalized_remediation_severity(value: Any) -> str:
+    severity = str(value or "").strip().lower()
+    return severity if severity in {"info", "warning", "critical"} else "unknown"
+
+
+def _top_remediation_severity(proposals: list[dict[str, str]]) -> str:
+    rank = {"critical": 3, "warning": 2, "info": 1, "unknown": 0}
+    return max((proposal.get("severity") or "unknown" for proposal in proposals), key=lambda item: rank.get(item, 0), default="unknown")
 
 
 def _collect_trace_failures(

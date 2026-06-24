@@ -49,7 +49,7 @@ struct LocationMediaHealthLocalTool: LocalTool {
     ///   - context: The execution context providing access to the permission registry.
     /// - Returns: A tool result containing the execution outcome and related metadata.
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
-        let approval: ToolExecutionApproval = invocation.source == .userInitiated ? .userApproved : .autonomous
+        let approval: ToolExecutionApproval = invocation.source == .userApproved ? .userApproved : .autonomous
         let args = ToolRouteGuard.normalizedArguments(for: toolID, rawToolID: toolID, arguments: invocation.arguments)
 
         guard ToolRouteGuard.canExecuteTool(toolID, arguments: args, approval: approval) else {
@@ -58,17 +58,17 @@ struct LocationMediaHealthLocalTool: LocalTool {
         let text: String
         switch toolID {
         case "location.current":
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
             text = await LocationTools.currentLocation()
         case "weather":
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
             text = await WeatherTools.currentWeather(location: args["location"] ?? args["city"] ?? args["query"])
         case "maps.directions":
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
             let destination = args["destination"] ?? args["query"] ?? ""
@@ -84,28 +84,28 @@ struct LocationMediaHealthLocalTool: LocalTool {
                 }
                 text = await WebTools.webSearch(query: query)
             } else {
-                if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+                if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                     return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
                 }
                 text = await LocationTools.searchNearby(query: query)
             }
         case "photos.search":
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
             text = await PhotosTools.searchPhotos(query: args["query"] ?? "")
         case "camera.capture":
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
             text = await PhotosTools.captureImage()
         case "health.summary":
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
             text = await HealthTools.healthSummary()
         case "motion.activity":
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
             }
             text = await MotionTools.shared.motionActivity()

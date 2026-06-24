@@ -15,4 +15,18 @@ final class LumenAddMemoryIntentPolicyTests: XCTestCase {
             XCTAssertTrue(message?.contains("Open Lumen to approve") == true)
         }
     }
+
+    func testQueuedMessageDescribesLocalLaterIndexing() {
+        if #available(iOS 16.0, *) {
+            let message = LumenAddMemoryIntent.queuedMessage(pendingCount: 2, retryCount: 0)
+            XCTAssertEqual(message, "Memory captured locally for later indexing. Pending captures: 2.")
+        }
+    }
+
+    func testSavedMessageIncludesPromotedPendingCaptures() {
+        if #available(iOS 16.0, *) {
+            let message = LumenAddMemoryIntent.savedMessage(drained: 2)
+            XCTAssertEqual(message, "Memory saved. Also indexed 2 pending memory captures.")
+        }
+    }
 }

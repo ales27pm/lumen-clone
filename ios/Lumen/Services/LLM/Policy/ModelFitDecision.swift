@@ -54,5 +54,8 @@ enum ModelFitReason: String, Sendable, Codable, Equatable, CaseIterable {
     case gpuDisabled
     case tinyIntentAlwaysAllowed
     case remoteDoesNotNeedLocalModelMemory
+    case remoteModelEscalationAllowed
+    case remoteModelEscalationNotAllowed
+    case remoteModelBackgroundBlocked
     case unknownModelSize
 }

@@ -35,11 +35,11 @@ enum BackgroundTaskPolicy {
             return .init(allow: false, denyReason: "thermal state disallows background work", maxSteps: 0, maxTokens: 0, allowModelLoading: false, allowNetwork: false)
         }
         let isLowPowerBackground = input.lowPowerMode && !input.isForeground
-        if isLowPowerBackground && input.taskKind != .triggerScan {
+        if isLowPowerBackground && input.taskKind != .triggerScan && input.taskKind != .modelHousekeeping {
             return .init(allow: false, denyReason: "low power background mode", maxSteps: 0, maxTokens: 0, allowModelLoading: false, allowNetwork: false)
         }
 
-        let allowModelLoading = !(!input.isForeground && input.estimatedCost > 5)
+        let allowModelLoading = input.isForeground && input.estimatedCost <= 5
         let allowNetwork = input.requiresNetwork && !isLowPowerBackground
         if input.requiresNetwork && !allowNetwork {
             return .init(allow: false, denyReason: "network unavailable for required background task", maxSteps: 0, maxTokens: 0, allowModelLoading: false, allowNetwork: false)

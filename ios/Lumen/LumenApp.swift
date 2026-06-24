@@ -158,9 +158,9 @@ final class AppStartupCoordinator {
         await MainActor.run {
             appState.runtime.updateBootStep(id: "triggers", detail: "Registering background tasks", state: .running)
         }
-        await TriggerScheduler.shared.registerTasks()
-        await TriggerScheduler.shared.scheduleBackgroundRefresh()
-        await TriggerScheduler.shared.requestPermission()
+        await BackgroundOrchestrator.shared.register()
+        await BackgroundOrchestrator.shared.schedule()
+        await BackgroundOrchestrator.shared.requestPermission()
         await MainActor.run {
             appState.runtime.updateBootStep(id: "triggers", detail: "Background tasks ready", state: .complete)
         }

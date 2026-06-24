@@ -57,10 +57,6 @@ enum HeadlessAgentKernelRunner {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return ("", []) }
 
-        if source == .trigger, !ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue) {
-            return ("Background trigger skipped: local model work is temporarily unavailable.", [])
-        }
-
         let backgroundTask = BackgroundRuntimeContinuation.begin(name: "Lumen Headless Agent")
         defer { backgroundTask?.end() }
 
@@ -68,11 +64,30 @@ enum HeadlessAgentKernelRunner {
         let resolution = ReferenceResolver.resolve(prompt: trimmed, history: [], relevantMemories: cascade.promptFragments)
         let executionPrompt = resolution.rewrittenPrompt
         let routing = await IntentClassifierService.shared.route(executionPrompt)
+        let heavyModelAllowed = source != .trigger || ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue)
+        let backgroundToolAssessment = source == .trigger
+            ? await BackgroundToolBridgePolicy.assess(
+                prompt: executionPrompt,
+                routing: routing,
+                modelContext: context
+            )
+            : nil
+        let canRunBackgroundToolOnly = backgroundToolAssessment?.canRunWithoutLoadedTextRuntime ?? false
+        let chatRuntimeLoaded = source == .trigger ? await AppLlamaService.shared.isChatLoaded : true
+        if source == .trigger, !canRunBackgroundToolOnly {
+            let toolSkipMessage = backgroundToolAssessment?.skipMessage
+            if !heavyModelAllowed {
+                return (Self.backgroundSkipMessage(toolSkipMessage, fallback: "local model work is temporarily unavailable."), [])
+            }
+            if !chatRuntimeLoaded {
+                return (Self.backgroundSkipMessage(toolSkipMessage, fallback: "local model not loaded."), [])
+            }
+        }
         let memories = MemoryGate.filter(intent: routing.intent, items: cascade.promptFragments, userMessage: executionPrompt)
         let mimicry = MimicryProfiler.profile(userMessage: executionPrompt, settings: settings)
         let task: AssistantTaskKind = source == .trigger ? .backgroundTrigger : .chat
         let options = AgentKernelOptions(
-            allowHeavyRuntime: true,
+            allowHeavyRuntime: source == .trigger ? (heavyModelAllowed && chatRuntimeLoaded) : true,
             allowDegradedMode: true,
             requireUserVisibleFinal: true,
             diagnosticsEnabled: false,
@@ -177,5 +192,12 @@ enum HeadlessAgentKernelRunner {
 
         \(fleetPrompt)
         """
+    }
+
+    private static func backgroundSkipMessage(_ toolReason: String?, fallback: String) -> String {
+        guard let toolReason, !toolReason.isEmpty else {
+            return "Background trigger skipped: \(fallback)"
+        }
+        return "\(toolReason) \(fallback)"
     }
 }

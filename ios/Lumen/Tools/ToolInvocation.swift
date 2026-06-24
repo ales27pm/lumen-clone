@@ -1,6 +1,13 @@
 import Foundation
 
-enum ToolInvocationSource: String, Codable, Sendable { case modelProposed, userInitiated, backgroundTrigger, appIntent, system }
+enum ToolInvocationSource: String, Codable, Sendable {
+    case modelProposed
+    case userInitiated
+    case userApproved
+    case backgroundTrigger
+    case appIntent
+    case system
+}
 
 struct ToolInvocation: Codable, Sendable {
     let id: UUID

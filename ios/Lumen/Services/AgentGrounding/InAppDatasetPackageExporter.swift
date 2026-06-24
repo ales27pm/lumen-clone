@@ -9,11 +9,68 @@ nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
     let runtimeManifestAudit: RuntimeAgentManifestAuditReport?
     let behaviorAudit: AgentBehaviorAuditReport?
     let scenarioResults: [RuntimeScenarioResult]
-    let recentTraces: [AgentBehaviorTrace]
+    let recentTraces: [InAppDatasetTraceExport]
     let traceSelectedToolAllowedCount: Int
     let traceParseErrorCount: Int
     let improveLoop: ImproveLoopDataset
     let exportPolicy: InAppDatasetExportPolicy
+}
+
+nonisolated struct InAppDatasetTraceExport: Codable, Sendable, Hashable {
+    let createdAt: Date
+    let event: AgentBehaviorTrace.Event
+    let slot: String
+    let stage: String
+    let scenarioID: String?
+    let intent: String?
+    let promptPrefix: String
+    let rawOutputPrefix: String
+    let selectedToolID: String?
+    let toolArguments: [String: String]
+    let allowedToolIDs: [String]
+    let requiresApproval: Bool?
+    let approvalMode: String?
+    let parseError: String?
+    let emittedFinalInActionTurn: Bool
+    let modelFamily: String?
+    let baseModelPath: String?
+    let adapterID: String?
+    let adapterSlot: String?
+    let adapterPath: String?
+    let adapterApplied: Bool?
+    let adapterScale: Float?
+    let adapterFailureReason: String?
+    let generationElapsedMs: Int?
+    let firstTokenLatencyMs: Int?
+    let outputTokenCount: Int?
+    let estimatedPromptTokenCount: Int?
+    let preFirstTokenMs: Int?
+    let messageBuildMs: Int?
+    let decodeMs: Int?
+    let tokensPerSecond: Double?
+    let ensureReadyMs: Int?
+    let adapterActivationMs: Int?
+    let runtimePath: String?
+    let activeAdapterSlot: String?
+    let maxTokensRequested: Int?
+    let maxTokensEffective: Int?
+    let promptCharCount: Int?
+    let accelerationDiagnostic: String?
+    let accelerationDiagnostics: RuntimeAccelerationDiagnostics?
+    let emptyOutputReason: String?
+    let streamStarted: Bool?
+    let selectedRuntime: String?
+    let selectedAdapter: String?
+    let modelIdentifier: String?
+    let modelLoaded: Bool?
+    let stopSequences: [String]
+    let temperature: Double?
+    let topP: Double?
+    let cancellationStateBeforeStream: String?
+    let firstChunkReceived: Bool?
+    let textChunkCount: Int?
+    let finalChunkReceived: Bool?
+    let streamTerminationReason: String?
 }
 
 nonisolated struct InAppDatasetAppInfo: Codable, Sendable, Hashable {
@@ -41,7 +98,7 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.2.0"
+    static let schemaVersion = "1.3.0"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
@@ -63,12 +120,14 @@ nonisolated enum InAppDatasetPackageExporter {
     ) -> LumenInAppDatasetPackage {
         let traces = AgentBehaviorTraceRecorder.recent(limit: traceLimit)
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
+        let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
         let improveLoop = ImproveLoopSampleGate.buildDataset(
-            behaviorAudit: mergedBehaviorAudit,
+            behaviorAudit: exportedBehaviorAudit,
             traces: traces,
             scenarioResults: includeScenarioResults ? scenarioResults : [],
-            sourceCommit: mergedBehaviorAudit?.sourceCommit
+            sourceCommit: exportedBehaviorAudit?.sourceCommit
         )
+        let exportedTraces = traces.map(exportTrace)
         return LumenInAppDatasetPackage(
             schemaVersion: schemaVersion,
             generatedAt: Date(),
@@ -81,9 +140,9 @@ nonisolated enum InAppDatasetPackageExporter {
             manifestSource: manifestSource,
             usedRuntimeFallback: usedRuntimeFallback,
             runtimeManifestAudit: runtimeManifestAudit,
-            behaviorAudit: mergedBehaviorAudit,
+            behaviorAudit: exportedBehaviorAudit,
             scenarioResults: includeScenarioResults ? scenarioResults : [],
-            recentTraces: traces,
+            recentTraces: exportedTraces,
             traceSelectedToolAllowedCount: traces.reduce(into: 0) { count, trace in
                 guard let selectedToolID = trace.selectedToolID else { return }
                 let selected = ToolRouteGuard.canonicalToolID(selectedToolID)
@@ -100,8 +159,8 @@ nonisolated enum InAppDatasetPackageExporter {
             improveLoop: improveLoop,
             exportPolicy: InAppDatasetExportPolicy(
                 format: "agent-grounding-runtime-json-package",
-                privacy: "contains only manifest audit failures, behavior violations, bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are exported",
-                promptPolicy: "promptPrefix fields are bounded and should be treated as diagnostic snippets only",
+                privacy: "contains only manifest audit failures, behavior violations, redacted bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, trace identifiers, local paths, or tool payload bodies are exported",
+                promptPolicy: "promptPrefix and rawOutputPrefix fields are redacted, hidden-reasoning-stripped, bounded diagnostic snippets only",
                 traceLimit: traceLimit,
                 source: "RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
                 sourceLayer: "agentGroundingRuntimeAudit",
@@ -111,6 +170,109 @@ nonisolated enum InAppDatasetPackageExporter {
                     ? "Static manifest scenario checks were explicitly included; they are not proof of live model execution and must not be treated as E2E model runs."
                     : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results."
             )
+        )
+    }
+
+    private static func exportTrace(_ trace: AgentBehaviorTrace) -> InAppDatasetTraceExport {
+        InAppDatasetTraceExport(
+            createdAt: trace.createdAt,
+            event: trace.event,
+            slot: safeCode(trace.slot),
+            stage: safeCode(trace.stage),
+            scenarioID: trace.scenarioID.map { sanitizedSnippet($0, limit: 160) },
+            intent: trace.intent.map(safeCode),
+            promptPrefix: sanitizedSnippet(trace.promptPrefix),
+            rawOutputPrefix: sanitizedSnippet(trace.rawOutputPrefix),
+            selectedToolID: trace.selectedToolID.map(ToolRouteGuard.canonicalToolID),
+            toolArguments: redactedToolArguments(trace.toolArguments),
+            allowedToolIDs: Array(Set(trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))).sorted(),
+            requiresApproval: trace.requiresApproval,
+            approvalMode: trace.approvalMode.map(safeCode),
+            parseError: actionTraceParseError(trace) ?? trace.parseError.map(safeCode),
+            emittedFinalInActionTurn: trace.emittedFinalInActionTurn,
+            modelFamily: trace.modelFamily.map(safeModelIdentifier),
+            baseModelPath: trace.baseModelPath.map(pathLeaf),
+            adapterID: trace.adapterID.map(safeModelIdentifier),
+            adapterSlot: trace.adapterSlot.map(safeCode),
+            adapterPath: trace.adapterPath.map(pathLeaf),
+            adapterApplied: trace.adapterApplied,
+            adapterScale: trace.adapterScale,
+            adapterFailureReason: trace.adapterFailureReason.map { sanitizedSnippet($0, limit: 240) },
+            generationElapsedMs: trace.generationElapsedMs,
+            firstTokenLatencyMs: trace.firstTokenLatencyMs,
+            outputTokenCount: trace.outputTokenCount,
+            estimatedPromptTokenCount: trace.estimatedPromptTokenCount,
+            preFirstTokenMs: trace.preFirstTokenMs,
+            messageBuildMs: trace.messageBuildMs,
+            decodeMs: trace.decodeMs,
+            tokensPerSecond: trace.tokensPerSecond,
+            ensureReadyMs: trace.ensureReadyMs,
+            adapterActivationMs: trace.adapterActivationMs,
+            runtimePath: trace.runtimePath.map(safeIdentifier),
+            activeAdapterSlot: trace.activeAdapterSlot.map(safeCode),
+            maxTokensRequested: trace.maxTokensRequested,
+            maxTokensEffective: trace.maxTokensEffective,
+            promptCharCount: trace.promptCharCount,
+            accelerationDiagnostic: trace.accelerationDiagnostic.map { sanitizedSnippet($0, limit: 240) },
+            accelerationDiagnostics: trace.accelerationDiagnostics,
+            emptyOutputReason: trace.emptyOutputReason.map { sanitizedSnippet($0, limit: 240) },
+            streamStarted: trace.streamStarted,
+            selectedRuntime: trace.selectedRuntime.map(safeIdentifier),
+            selectedAdapter: trace.selectedAdapter.map(safeModelIdentifier),
+            modelIdentifier: trace.modelIdentifier.map(safeModelIdentifier),
+            modelLoaded: trace.modelLoaded,
+            stopSequences: trace.stopSequences.map { sanitizedSnippet($0, limit: 80) },
+            temperature: trace.temperature,
+            topP: trace.topP,
+            cancellationStateBeforeStream: trace.cancellationStateBeforeStream.map(safeCode),
+            firstChunkReceived: trace.firstChunkReceived,
+            textChunkCount: trace.textChunkCount,
+            finalChunkReceived: trace.finalChunkReceived,
+            streamTerminationReason: trace.streamTerminationReason.map { sanitizedSnippet($0, limit: 160) }
+        )
+    }
+
+    private static func redactedBehaviorAudit(_ audit: AgentBehaviorAuditReport?) -> AgentBehaviorAuditReport? {
+        guard let audit else { return nil }
+        return AgentBehaviorAuditReport(
+            passed: audit.passed,
+            score: audit.score,
+            generatedAt: audit.generatedAt,
+            traceCount: audit.traceCount,
+            violationCount: audit.violationCount,
+            sourceCommit: audit.sourceCommit,
+            violations: audit.violations.map(redactedViolation),
+            recommendations: audit.recommendations.map { sanitizedSnippet($0, limit: 500) },
+            repairSamples: audit.repairSamples.map(redactedRepairSample)
+        )
+    }
+
+    private static func redactedViolation(_ violation: AgentBehaviorViolation) -> AgentBehaviorViolation {
+        AgentBehaviorViolation(
+            id: violation.id,
+            createdAt: violation.createdAt,
+            severity: violation.severity,
+            code: safeCode(violation.code),
+            agent: safeCode(violation.agent),
+            expected: sanitizedSnippet(violation.expected, limit: 500),
+            actual: sanitizedSnippet(violation.actual, limit: 800),
+            promptPrefix: sanitizedSnippet(violation.promptPrefix),
+            problem: sanitizedSnippet(violation.problem, limit: 500)
+        )
+    }
+
+    private static func redactedRepairSample(_ sample: AgentBehaviorRepairSample) -> AgentBehaviorRepairSample {
+        AgentBehaviorRepairSample(
+            id: sample.id,
+            createdAt: sample.createdAt,
+            agent: safeCode(sample.agent),
+            violationCode: safeCode(sample.violationCode),
+            promptPrefix: sanitizedSnippet(sample.promptPrefix),
+            expected: sanitizedSnippet(sample.expected, limit: 500),
+            badOutput: sanitizedSnippet(sample.badOutput),
+            correctedOutput: sanitizedSnippet(sample.correctedOutput),
+            lesson: sanitizedSnippet(sample.lesson, limit: 500),
+            curriculum: sanitizedSnippet(sample.curriculum, limit: 240)
         )
     }
 
@@ -200,8 +362,8 @@ nonisolated enum InAppDatasetPackageExporter {
                     code: "structured_action_trace_parse_error",
                     agent: trace.slot,
                     expected: "Executor/tool-action traces must be strict structured JSON parsable as an action turn.",
-                    actual: "stage=\(trace.stage); parseError=\(parseError); selectedToolID=\(trace.selectedToolID ?? "nil"); rawOutputPrefix=\(trace.rawOutputPrefix)",
-                    promptPrefix: trace.promptPrefix,
+                    actual: "stage=\(safeCode(trace.stage)); parseError=\(safeCode(parseError)); selectedToolID=\(trace.selectedToolID.map(ToolRouteGuard.canonicalToolID) ?? "nil"); rawOutputPrefix=\(sanitizedSnippet(trace.rawOutputPrefix))",
+                    promptPrefix: sanitizedSnippet(trace.promptPrefix),
                     problem: "A tool-action trace did not contain a parseable structured action object."
                 )
             }
@@ -229,8 +391,8 @@ nonisolated enum InAppDatasetPackageExporter {
                 code: code,
                 agent: trace.slot,
                 expected: "Model turn latency <= \(slowModelTurnThresholdMs) ms; severe latency threshold <= \(severeModelTurnThresholdMs) ms.",
-                actual: "stage=\(trace.stage); elapsedMs=\(elapsed); firstTokenMs=\(trace.firstTokenLatencyMs.map(String.init) ?? "nil"); estimatedPromptTokens=\(trace.estimatedPromptTokenCount.map(String.init) ?? "nil"); outputTokens=\(trace.outputTokenCount.map(String.init) ?? "nil"); tps=\(trace.tokensPerSecond.map { String(format: "%.2f", $0) } ?? "nil"); promptChars=\(trace.promptCharCount.map(String.init) ?? "nil"); modelPath=\(trace.baseModelPath ?? "nil"); adapterPath=\(trace.adapterPath ?? "nil"); accel=\(trace.accelerationDiagnostic ?? "unknown")",
-                promptPrefix: trace.promptPrefix,
+                actual: "stage=\(safeCode(trace.stage)); elapsedMs=\(elapsed); firstTokenMs=\(trace.firstTokenLatencyMs.map(String.init) ?? "nil"); estimatedPromptTokens=\(trace.estimatedPromptTokenCount.map(String.init) ?? "nil"); outputTokens=\(trace.outputTokenCount.map(String.init) ?? "nil"); tps=\(trace.tokensPerSecond.map { String(format: "%.2f", $0) } ?? "nil"); promptChars=\(trace.promptCharCount.map(String.init) ?? "nil"); modelFile=\(trace.baseModelPath.map(pathLeaf) ?? "nil"); adapterFile=\(trace.adapterPath.map(pathLeaf) ?? "nil"); accel=\(trace.accelerationDiagnostic.map { sanitizedSnippet($0, limit: 240) } ?? "unknown")",
+                promptPrefix: sanitizedSnippet(trace.promptPrefix),
                 problem: problem
             )
         }
@@ -293,5 +455,56 @@ nonisolated enum InAppDatasetPackageExporter {
         return formatter.string(from: date)
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: ".", with: "-")
+    }
+
+    private static func sanitizedSnippet(_ text: String, limit: Int = 1_200) -> String {
+        let withoutHiddenReasoning = ModelOutputSanitizer.stripHiddenBlocks(text)
+        let redacted = PersistentRuntimeDiagnosticsRedactor.redactWithoutTruncating(withoutHiddenReasoning)
+        return String(redacted.prefix(max(0, limit)))
+    }
+
+    private static func redactedToolArguments(_ arguments: [String: String]) -> [String: String] {
+        arguments.reduce(into: [:]) { result, element in
+            let (key, value) = element
+            let redactedValue = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "[redacted]"
+            result[safeCode(key)] = redactedValue
+        }
+    }
+
+    private static func pathLeaf(_ path: String) -> String {
+        let leaf = URL(fileURLWithPath: path).lastPathComponent
+        let nonEmpty = leaf.isEmpty ? "[redacted-path]" : leaf
+        return sanitizedSnippet(nonEmpty, limit: 160)
+    }
+
+    private static func safeModelIdentifier(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.contains("/Users/"),
+              !trimmed.contains("/private/"),
+              !trimmed.contains("/var/"),
+              !trimmed.hasPrefix("/") else {
+            return pathLeaf(trimmed)
+        }
+        return safeIdentifier(trimmed)
+    }
+
+    private static func safeCode(_ value: String) -> String {
+        PersistentRuntimeDiagnosticsRedactor.safeCode(value)
+    }
+
+    private static func safeIdentifier(_ value: String) -> String {
+        let stripped = ModelOutputSanitizer.stripHiddenBlocks(value)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutEmails = stripped.replacingOccurrences(
+            of: #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
+            with: "[redacted]",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        let withoutUUIDs = withoutEmails.replacingOccurrences(
+            of: #"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"#,
+            with: "[redacted]",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        return String(withoutUUIDs.prefix(160))
     }
 }

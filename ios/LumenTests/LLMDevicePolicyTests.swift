@@ -28,6 +28,57 @@ struct LLMDevicePolicyTests {
         #expect(decision.report.reasons.contains(ModelFitReason.tinyIntentAlwaysAllowed))
     }
 
+    @Test func remoteModelIsRejectedByDefaultForLocalFirstPolicy() async {
+        let policy = DeviceModelPolicy(provider: TestDeviceCapabilityProvider())
+
+        let decision = await policy.evaluate(
+            model: remoteModel(id: "remote.default-deny"),
+            requestedProfile: InferenceProfile.iphoneBalanced,
+            requestedBudget: InferenceBudget.standard,
+            appIsForeground: true
+        )
+
+        #expect(decision.isRejected)
+        #expect(decision.report.reasons.contains(ModelFitReason.remoteModelEscalationNotAllowed))
+        #expect(decision.report.reasons.contains(ModelFitReason.remoteModelEscalationAllowed) == false)
+    }
+
+    @Test func remoteModelRequiresExplicitForegroundEscalationPolicy() async {
+        let policy = DeviceModelPolicy(
+            provider: TestDeviceCapabilityProvider(),
+            remoteModelAccessPolicy: .userApprovedForeground
+        )
+
+        let decision = await policy.evaluate(
+            model: remoteModel(id: "remote.foreground-approved"),
+            requestedProfile: InferenceProfile.iphoneBalanced,
+            requestedBudget: InferenceBudget.standard,
+            appIsForeground: true
+        )
+
+        #expect(decision.isAllowed)
+        #expect(decision.report.reasons.contains(ModelFitReason.remoteModelEscalationAllowed))
+        #expect(decision.report.reasons.contains(ModelFitReason.remoteDoesNotNeedLocalModelMemory))
+    }
+
+    @Test func remoteModelIsRejectedInBackgroundEvenWhenForegroundEscalationIsAllowed() async {
+        let policy = DeviceModelPolicy(
+            provider: TestDeviceCapabilityProvider(),
+            remoteModelAccessPolicy: .userApprovedForeground
+        )
+
+        let decision = await policy.evaluate(
+            model: remoteModel(id: "remote.background-deny"),
+            requestedProfile: InferenceProfile.iphoneBalanced,
+            requestedBudget: InferenceBudget.standard,
+            appIsForeground: false
+        )
+
+        #expect(decision.isRejected)
+        #expect(decision.report.reasons.contains(ModelFitReason.remoteModelBackgroundBlocked))
+        #expect(decision.report.reasons.contains(ModelFitReason.remoteModelEscalationAllowed) == false)
+    }
+
     @Test func simulatorDisablesMetalAndDowngradesGGUFProfile() async {
         let provider = TestDeviceCapabilityProvider(
             formFactor: .simulator,
@@ -343,6 +394,15 @@ struct LLMDevicePolicyTests {
             quantization: quantization,
             contextLength: 8_192,
             fileSizeBytes: fileSizeBytes
+        )
+    }
+
+    private func remoteModel(id: String) -> LocalLLMModel {
+        LocalLLMModel(
+            id: id,
+            displayName: "Policy Test Remote",
+            backend: .remote,
+            contextLength: 8_192
         )
     }
 }

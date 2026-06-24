@@ -118,6 +118,7 @@ struct PersistentRuntimeDiagnosticsView: View {
             LabeledContent("Final prompt chars", value: finalPromptCharsText)
             LabeledContent("Cancellation", value: status.lastCancellationReason ?? "—")
             LabeledContent("Crash resume", value: status.lastCrashResumeStatus ?? "—")
+            LabeledContent("Remediation", value: status.lastRemediationSummary ?? "—")
             Text(message).font(.caption).foregroundStyle(.secondary)
         }
     }

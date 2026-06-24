@@ -85,7 +85,7 @@ final class SecureToolRegistry {
         )
         let source: ToolInvocationSource
         if approval == .userApproved {
-            source = .userInitiated
+            source = .userApproved
         } else if isBackground {
             source = .backgroundTrigger
         } else {

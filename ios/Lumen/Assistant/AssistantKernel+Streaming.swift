@@ -16,24 +16,62 @@ extension AssistantKernel: AgentKernelRunning {
 
                 emitStep(.thought, "Agent Kernel accepted \(request.source.rawValue) turn for \(String(describing: request.task)).")
 
-                if request.task == .chat {
+                if request.supportsDeterministicToolBridge {
                     let routing = IntentRouter.classify(request.userMessage)
                     if IntentRouter.intentRequiresTool(routing) {
+                        let backgroundAssessment: BackgroundToolBridgeAssessment?
+                        let availableTools: [ToolDefinition]
+                        if request.requiresBackgroundSafeToolBridge {
+                            let assessment = await BackgroundToolBridgePolicy.assess(
+                                prompt: request.userMessage,
+                                routing: routing,
+                                modelContext: modelContext,
+                                toolRegistry: toolRegistry,
+                                metricsStore: metricsStore
+                            )
+                            backgroundAssessment = assessment
+                            availableTools = assessment.availableTools
+                        } else {
+                            backgroundAssessment = nil
+                            availableTools = await toolBridgeAvailableTools(
+                                for: request,
+                                routing: routing,
+                                modelContext: modelContext
+                            )
+                        }
+
+                        if let backgroundAssessment, !backgroundAssessment.canRunWithoutLoadedTextRuntime {
+                            if request.options.diagnosticsEnabled {
+                                continuation.yield(.diagnostic(.init(
+                                    stage: "background-tool-bridge",
+                                    message: backgroundAssessment.skipMessage,
+                                    metadata: backgroundAssessment.diagnosticMetadata.merging([
+                                        "source": request.source.rawValue,
+                                        "task": String(describing: request.task)
+                                    ], uniquingKeysWith: { current, _ in current })
+                                )))
+                            }
+                            emitStep(.observation, backgroundAssessment.skipMessage)
+                            continuation.yield(.final(backgroundAssessment.skipMessage))
+                            continuation.yield(.done(finalText: backgroundAssessment.skipMessage, steps: emittedSteps))
+                            continuation.finish()
+                            return
+                        }
+
                         if request.options.diagnosticsEnabled {
                             continuation.yield(.diagnostic(.init(
                                 stage: "tool-routing-bridge",
-                                message: "Routing tool-backed chat turn through deterministic legacy bridge",
+                                message: "Routing tool-backed \(String(describing: request.task)) turn through deterministic legacy bridge",
                                 metadata: [
                                     "intent": routing.intent.rawValue,
                                     "allowedToolIDs": routing.allowedToolIDs.sorted().joined(separator: ","),
+                                    "availableToolIDs": availableTools.map(\.id).sorted().joined(separator: ","),
+                                    "mode": request.requiresBackgroundSafeToolBridge ? "background-safe" : "foreground",
                                     "source": request.source.rawValue
                                 ]
                             )))
                         }
 
-                        let availableTools = ToolRegistry.all.filter { tool in
-                            routing.allowedToolIDs.contains(ToolRouteGuard.canonicalToolID(tool.id))
-                        }
                         let legacyRequest = AgentRequest(
                             systemPrompt: request.systemPrompt,
                             history: request.history.map { (role: $0.role.messageRole, content: $0.content) },
@@ -60,7 +98,10 @@ extension AssistantKernel: AgentKernelRunning {
                             diagnosticsEnabled: true
                         )
 
-                        for await bridgedEvent in runLegacyAgentBridge(legacyRequest, options: legacyOptions) {
+                        let bridgedEvents = request.requiresBackgroundSafeToolBridge
+                            ? LegacyAgentCompatibilityBridge.runSlotAgentKernelCompatibility(legacyRequest, options: legacyOptions)
+                            : runLegacyAgentBridge(legacyRequest, options: legacyOptions)
+                        for await bridgedEvent in bridgedEvents {
                             continuation.yield(bridgedEvent)
                         }
                         continuation.finish()
@@ -157,5 +198,34 @@ extension AssistantKernel: AgentKernelRunning {
 
     func runLegacyAgentBridge(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentKernelEvent> {
         LegacyAgentCompatibilityBridge.runLegacyAgentService(request, options: options)
+    }
+
+    private func toolBridgeAvailableTools(
+        for request: AgentKernelRequest,
+        routing: IntentRoutingDecision,
+        modelContext: ModelContext?
+    ) async -> [ToolDefinition] {
+        let routedIDs = Set(routing.allowedToolIDs.map { ToolRouteGuard.canonicalToolID($0) })
+        guard request.requiresBackgroundSafeToolBridge else {
+            return ToolRegistry.all.filter { routedIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
+        }
+
+        return await BackgroundToolBridgePolicy.availableTools(
+            for: request.userMessage,
+            routing: routing,
+            modelContext: modelContext,
+            toolRegistry: toolRegistry,
+            metricsStore: metricsStore
+        )
+    }
+}
+
+private extension AgentKernelRequest {
+    var supportsDeterministicToolBridge: Bool {
+        task == .chat || task == .backgroundTrigger
+    }
+
+    var requiresBackgroundSafeToolBridge: Bool {
+        task == .backgroundTrigger || source == .trigger
     }
 }

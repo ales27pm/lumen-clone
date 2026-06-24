@@ -38,8 +38,8 @@ struct LumenRunTriggerIntent: AppIntent {
             }
             trigger = partial[0]
         }
-        if LumenIntentPolicy.requiresOpenAppForSensitiveAction(trigger.prompt) {
-            return .result(value: LumenIntentResultRenderer.openAppRequired("trigger may require sensitive tools"))
+        if let reason = LumenIntentPolicy.openAppReason(forHeadlessPrompt: trigger.prompt) {
+            return .result(value: LumenIntentResultRenderer.openAppRequired(reason))
         }
         let result = await TriggerScheduler.shared.runTrigger(trigger, context: ctx, settings: SettingsSnapshot.loadFromDisk(), notify: false) ?? "No result."
         return .result(value: String(result.prefix(500)))

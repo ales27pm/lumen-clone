@@ -10,6 +10,7 @@ struct LumenAppShortcuts: AppShortcutsProvider {
         AppShortcut(intent: LumenMemorySearchIntent(), phrases: ["Search Lumen memory in \(.applicationName)"], shortTitle: "Search Memory", systemImageName: "magnifyingglass")
         AppShortcut(intent: LumenAddMemoryIntent(), phrases: ["Add memory in \(.applicationName)"], shortTitle: "Add Memory", systemImageName: "brain")
         AppShortcut(intent: LumenRunTriggerIntent(), phrases: ["Run Lumen trigger in \(.applicationName)"], shortTitle: "Run Trigger", systemImageName: "bolt")
+        AppShortcut(intent: LumenDiagnosticsIntent(), phrases: ["Check Lumen diagnostics in \(.applicationName)"], shortTitle: "Diagnostics", systemImageName: "stethoscope")
     }
 }
 #endif

@@ -52,6 +52,7 @@ class AuditInspection:
     e2e_training_signal_count: int = 0
     diagnostics_record_count: int = 0
     diagnostics_failed_count: int = 0
+    diagnostics_remediation_proposal_count: int = 0
     adapter_slots_seen: dict[str, int] = field(default_factory=dict)
     slots_seen: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -336,6 +337,11 @@ def inspect_persistent_runtime_diagnostics(package: dict[str, Any], inspection: 
             for item in records
             if str(item.get("status") or "") != "passed" and not is_expected_diagnostics_cancellation(item)
         ]
+    )
+    inspection.diagnostics_remediation_proposal_count += sum(
+        len(item.get("remediationProposals", []))
+        for item in records
+        if isinstance(item.get("remediationProposals"), list)
     )
     if not records:
         inspection.warnings.append("persistent diagnostics export contains no records")

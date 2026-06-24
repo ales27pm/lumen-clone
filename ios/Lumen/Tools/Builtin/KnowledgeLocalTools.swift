@@ -42,7 +42,7 @@ struct KnowledgeLocalTool: LocalTool {
 
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         let args = ToolRouteGuard.normalizedArguments(for: toolID, rawToolID: toolID, arguments: invocation.arguments)
-        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+        if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
             return result(invocation: invocation, text: permissionFailure, status: .denied, metricsSummary: "permission_denied")
         }
 

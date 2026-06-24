@@ -52,11 +52,11 @@ final class TriggerScheduler {
         registered = true
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: nil) { task in
             guard let refresh = task as? BGAppRefreshTask else { task.setTaskCompleted(success: false); return }
-            Task { @MainActor in await self.handleRefresh(task: refresh) }
+            Task { @MainActor in await BackgroundOrchestrator.shared.handleAppRefresh(task: refresh) }
         }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processIdentifier, using: nil) { task in
             guard let proc = task as? BGProcessingTask else { task.setTaskCompleted(success: false); return }
-            Task { @MainActor in await self.handleRefresh(task: proc) }
+            Task { @MainActor in await BackgroundOrchestrator.shared.handleProcessing(task: proc) }
         }
         BackgroundContinuedProcessingCoordinator.shared.registerIfAvailable()
         let center = UNUserNotificationCenter.current()
@@ -82,19 +82,6 @@ final class TriggerScheduler {
         proc.requiresNetworkConnectivity = true
         proc.requiresExternalPower = false
         try? BGTaskScheduler.shared.submit(proc)
-    }
-
-    private func handleRefresh(task: BGTask) async {
-        scheduleBackgroundRefresh()
-        task.expirationHandler = { task.setTaskCompleted(success: false) }
-        guard let container = SharedContainer.shared else { task.setTaskCompleted(success: true); return }
-        let context = ModelContext(container)
-        // Load settings fresh from disk so the background task never runs against
-        // stale in-memory state from a previous foreground session.
-        let snapshot = SettingsSnapshot.loadFromDisk()
-        guard await AppLlamaService.shared.isChatLoaded else { task.setTaskCompleted(success: true); return }
-        await fireDueTriggers(context: context, settings: snapshot)
-        task.setTaskCompleted(success: true)
     }
 
     // MARK: - Firing
@@ -129,13 +116,6 @@ final class TriggerScheduler {
 
     @discardableResult
     func runTrigger(_ trigger: Trigger, context: ModelContext, settings: SettingsSnapshot, notify: Bool) async -> String? {
-        guard await AppLlamaService.shared.isChatLoaded else {
-            trigger.lastRunAt = Date()
-            trigger.lastResult = "Background trigger skipped: local model not loaded."
-            updateNextFireAfterRun(for: trigger)
-            do { try persist(context, operation: "runTriggerSkipped", scope: "Trigger") } catch { return nil }
-            return trigger.lastResult
-        }
         let result = await HeadlessAgentKernelRunner.run(prompt: trigger.prompt, settings: settings, context: context, maxSteps: min(settings.maxAgentSteps, 3), source: .trigger)
         trigger.lastRunAt = Date()
         trigger.lastResult = result.text

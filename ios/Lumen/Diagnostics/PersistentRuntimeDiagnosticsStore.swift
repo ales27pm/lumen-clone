@@ -121,7 +121,20 @@ actor PersistentRuntimeDiagnosticsStore {
             "previousLaunchUUID": state.activeLaunchUUID?.uuidString ?? "unknown",
             "currentLaunchUUID": launchUUID.uuidString
         ]))
+        let proposals = PersistentDiagnosticRemediationAdvisor.proposals(for: record, status: .interrupted, code: "crash_resume")
+        if !proposals.isEmpty {
+            record.remediationProposals = proposals
+            record.events.append(PersistentDiagnosticEvent(
+                code: "diagnostic_remediation_proposal",
+                message: proposals.map(\.title).joined(separator: "; "),
+                values: [
+                    "ids": proposals.map(\.id).joined(separator: ","),
+                    "severity": proposals.map(\.severity.rawValue).sorted().joined(separator: ",")
+                ]
+            ))
+        }
         state.status.lastCrashResumeStatus = statusText
+        state.status.lastRemediationSummary = record.remediationProposals?.first?.title
         state.records.append(record)
         if state.records.count > maxStoredRecords { state.records.removeFirst(state.records.count - maxStoredRecords) }
         state.markRunCompleted(record.id)

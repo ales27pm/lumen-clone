@@ -2639,9 +2639,24 @@ final class AgentService {
                 generationElapsedMs: 1,
                 firstTokenLatencyMs: outputTokenCount == 0 ? nil : 1,
                 outputTokenCount: outputTokenCount,
+                estimatedPromptTokenCount: nil,
                 maxTokensRequested: req.maxTokens,
                 maxTokensEffective: min(max(req.maxTokens, Self.structuredTurnMinTokenCap), Self.structuredTurnMaxTokenCap),
-                emptyOutputReason: outputTokenCount == 0 ? "agent-json-stream-completed-without-text" : nil
+                promptCharCount: nil,
+                emptyOutputReason: outputTokenCount == 0 ? "agent-json-stream-completed-without-text" : nil,
+                streamStarted: nil,
+                selectedRuntime: nil,
+                selectedAdapter: nil,
+                modelIdentifier: nil,
+                modelLoaded: nil,
+                stopSequences: [],
+                temperature: nil,
+                topP: nil,
+                cancellationStateBeforeStream: nil,
+                firstChunkReceived: nil,
+                textChunkCount: nil,
+                finalChunkReceived: nil,
+                streamTerminationReason: nil
             )
         )
     }

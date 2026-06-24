@@ -177,6 +177,99 @@ final class AssistantKernelRunContractTests: XCTestCase {
         XCTAssertFalse(sawDiagnostic)
     }
 
+    func testBackgroundTriggerToolIntentUsesBackgroundSafeBridge() async {
+        let capture = RequestCapture()
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { request in
+                await capture.record(request)
+                return "background trigger should use the tool bridge"
+            })
+        )
+        let kernel = AssistantKernel(router: router)
+        let options = AgentKernelOptions(
+            allowHeavyRuntime: false,
+            allowDegradedMode: true,
+            requireUserVisibleFinal: true,
+            diagnosticsEnabled: true,
+            maxSteps: 2,
+            prefersFoundationModels: false,
+            maxTokens: 128
+        )
+        let request = AgentKernelRequest(
+            userMessage: "what do you remember about my workshop preferences",
+            task: .backgroundTrigger,
+            source: .trigger,
+            options: options
+        )
+
+        var bridgeMetadata: [String: String]?
+        var doneSteps: [AgentStep] = []
+        for await event in kernel.run(request, modelContext: nil) {
+            switch event {
+            case .diagnostic(let diagnostic) where diagnostic.stage == "tool-routing-bridge":
+                bridgeMetadata = diagnostic.metadata
+            case .done(_, let steps):
+                doneSteps = steps
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(bridgeMetadata?["mode"], "background-safe")
+        XCTAssertTrue(bridgeMetadata?["availableToolIDs"]?.contains("memory.recall") == true)
+        XCTAssertTrue(doneSteps.contains { $0.kind == .action && $0.toolID == "memory.recall" })
+        let generatedRequest = await capture.snapshot()
+        XCTAssertNil(generatedRequest)
+    }
+
+    func testBackgroundTriggerUnavailableToolIntentSkipsBeforeTextRuntime() async {
+        let capture = RequestCapture()
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { request in
+                await capture.record(request)
+                return "background trigger should not use text runtime"
+            })
+        )
+        let kernel = AssistantKernel(router: router)
+        let options = AgentKernelOptions(
+            allowHeavyRuntime: true,
+            allowDegradedMode: true,
+            requireUserVisibleFinal: true,
+            diagnosticsEnabled: true,
+            maxSteps: 2,
+            prefersFoundationModels: false,
+            maxTokens: 128
+        )
+        let request = AgentKernelRequest(
+            userMessage: "search the web for the latest iOS background task docs",
+            task: .backgroundTrigger,
+            source: .trigger,
+            options: options
+        )
+
+        var skipDiagnostic: [String: String]?
+        var finalText: String?
+        var doneSteps: [AgentStep] = []
+        for await event in kernel.run(request, modelContext: nil) {
+            switch event {
+            case .diagnostic(let diagnostic) where diagnostic.stage == "background-tool-bridge":
+                skipDiagnostic = diagnostic.metadata
+            case .final(let text):
+                finalText = text
+            case .done(_, let steps):
+                doneSteps = steps
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(skipDiagnostic?["status"], BackgroundToolBridgeAssessment.Status.noBackgroundSafeRoutedTools.rawValue)
+        XCTAssertTrue(finalText?.contains("no routed tool is allowed to run in background") == true)
+        XCTAssertTrue(doneSteps.contains { $0.kind == .observation && $0.content.contains("no routed tool is allowed to run in background") })
+        let generatedRequest = await capture.snapshot()
+        XCTAssertNil(generatedRequest)
+    }
+
     func testAgentKernelOptionsClampMaxSteps() {
         let options = AgentKernelOptions(
             allowHeavyRuntime: true,

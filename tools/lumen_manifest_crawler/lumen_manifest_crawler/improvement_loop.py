@@ -392,6 +392,8 @@ def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
 
 def _runtime_gap_category(failure: dict[str, Any]) -> str:
     root_cause = _runtime_root_cause_category(failure)
+    if str(failure.get("type") or "") == "persistent_diagnostics_scenario_not_passed" and failure.get("remediationProposals"):
+        return "persistent_diagnostics_remediation"
     if root_cause == "agent_json_context_overflow":
         return "prompt_budget_overflow"
     if root_cause in EXPLICIT_MODEL_EVIDENCE_CATEGORIES or root_cause in AGENT_JSON_MODEL_ROOT_CAUSES:
@@ -709,7 +711,7 @@ def _build_gap_report(  # NOSONAR
     for failure in runtime_failures[:200]:
         failure_type = str(failure.get("type") or "runtime_failure")
         skipped_live_generation = _is_skipped_live_model_generation(failure)
-        severity = "warning" if skipped_live_generation else "critical" if any(token in failure_type for token in ["unknown_tool", "sentinel", "not_allowed"]) else "error"
+        severity = _runtime_gap_severity(failure_type, failure, skipped_live_generation=skipped_live_generation)
         category = _runtime_gap_category(failure)
         evidence = dict(failure)
         evidence["rootCauseCategory"] = _runtime_root_cause_category(failure)
@@ -719,7 +721,7 @@ def _build_gap_report(  # NOSONAR
             "category": category,
             "title": failure_type,
             "evidence": evidence,
-            "recommendedAction": _runtime_recommendation(failure_type, skipped_live_generation=skipped_live_generation),
+            "recommendedAction": _runtime_recommendation(failure_type, failure=failure, skipped_live_generation=skipped_live_generation),
         })
 
     required_families = {
@@ -778,12 +780,20 @@ def _build_gap_report(  # NOSONAR
     return sorted(gaps, key=lambda gap: (str(gap.get("severity")), str(gap.get("category")), str(gap.get("title"))))
 
 
-def _runtime_recommendation(failure_type: str, *, skipped_live_generation: bool = False) -> str:
+def _runtime_recommendation(
+    failure_type: str,
+    *,
+    failure: dict[str, Any] | None = None,
+    skipped_live_generation: bool = False,
+) -> str:
     if skipped_live_generation:
         return "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure."
     if failure_type == "agent_grounding_no_recent_model_traces":
         return "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence."
     if failure_type == "persistent_diagnostics_scenario_not_passed":
+        action = _first_remediation_action(failure)
+        if action:
+            return action
         return "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact."
     if "unknown_tool" in failure_type or "unmanifested" in failure_type or "missing_live_tool" in failure_type:
         return "Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples."
@@ -798,6 +808,40 @@ def _runtime_recommendation(failure_type: str, *, skipped_live_generation: bool 
     if failure_type == "trace_parse_error":
         return "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope."
     return "Convert this failure into a REM repair sample and add a regression eval."
+
+
+def _runtime_gap_severity(
+    failure_type: str,
+    failure: dict[str, Any],
+    *,
+    skipped_live_generation: bool,
+) -> str:
+    if skipped_live_generation:
+        return "warning"
+    if failure_type == "persistent_diagnostics_scenario_not_passed":
+        return {
+            "info": "warning",
+            "warning": "error",
+            "critical": "critical",
+        }.get(str(failure.get("remediationSeverity") or ""), "error")
+    if any(token in failure_type for token in ["unknown_tool", "sentinel", "not_allowed"]):
+        return "critical"
+    return "error"
+
+
+def _first_remediation_action(failure: dict[str, Any] | None) -> str | None:
+    if not isinstance(failure, dict):
+        return None
+    proposals = failure.get("remediationProposals")
+    if not isinstance(proposals, list):
+        return None
+    for proposal in proposals:
+        if not isinstance(proposal, dict):
+            continue
+        action = str(proposal.get("action") or "").strip()
+        if action:
+            return action
+    return None
 
 
 def _build_gap_triage(

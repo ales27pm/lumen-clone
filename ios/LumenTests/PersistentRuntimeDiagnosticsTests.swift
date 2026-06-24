@@ -31,6 +31,27 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(selection.latencyClass, .developerTrace)
     }
 
+    @MainActor
+    func testManualOnlyDiagnosticSkipIncludesLocalRemediationProposal() async throws {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        #endif
+        let store = try makeStore()
+        let runner = PersistentRuntimeDiagnosticsRunner(store: store)
+        let campaign = PersistentDiagnosticCampaign(enabled: true, runContinuously: false, scenarios: [.liveAgentStream])
+
+        let record = await runner.runOnce(campaign)
+
+        let proposal = try XCTUnwrap(record?.remediationProposals?.first)
+        XCTAssertEqual(record?.status, .skipped)
+        XCTAssertEqual(proposal.id, "manual-scenario-foreground")
+        XCTAssertEqual(proposal.severity, .info)
+        XCTAssertTrue(record?.events.contains { $0.code == "diagnostic_remediation_proposal" } ?? false)
+        let state = await store.loadState()
+        XCTAssertEqual(state?.status.lastRemediationSummary, proposal.title)
+    }
+
     func testDiskWriteGateBuffersAndDefersDiagnosticsDuringGeneration() async throws {
         let store = try makeStore()
         let lease = DiskWriteBudget.shared.beginGeneration()
@@ -60,6 +81,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(record?.campaignID, campaignID)
         XCTAssertEqual(record?.status, .interrupted)
         XCTAssertEqual(record?.failureSummary, "interrupted_or_terminated")
+        XCTAssertEqual(record?.remediationProposals?.first?.id, "inspect-lifecycle-interruption")
+        XCTAssertTrue(record?.events.contains { $0.code == "diagnostic_remediation_proposal" } ?? false)
     }
 
     func testRedactionRemovesPromptMemoryAndFileContentsFromLogEvents() {

@@ -51,6 +51,7 @@ enum ResourceBudgetGate {
 
     static func allowsHeavyModelWork(snapshot: Snapshot, reason: String) -> Bool {
         guard !hasRecentMemoryWarning(snapshot) else { return false }
+        guard snapshot.scenePhase == .active else { return false }
         guard let thermal = snapshot.thermalState else { return false }
         guard thermal != .serious, thermal != .critical, thermal != .unknown else { return false }
         guard snapshot.lowPowerModeEnabled != nil else { return false }
