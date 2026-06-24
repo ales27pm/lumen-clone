@@ -252,10 +252,15 @@ nonisolated struct E2ETestEvent: Codable, Sendable, Identifiable {
 nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     let id: UUID
     let scenarioID: String
+    let kind: String
     let title: String
     let prompt: String
     let expectedIntent: String
     let actualIntent: String
+    let e2eRunID: UUID?
+    let agentRunID: UUID?
+    let conversationID: UUID?
+    let turnID: UUID?
     let requiresAgentRun: Bool
     let passed: Bool
     let failures: [String]
@@ -276,10 +281,15 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     init(
         id: UUID,
         scenarioID: String,
+        kind: String = "",
         title: String,
         prompt: String,
         expectedIntent: String,
         actualIntent: String,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil,
         requiresAgentRun: Bool = false,
         passed: Bool,
         failures: [String],
@@ -299,10 +309,15 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     ) {
         self.id = id
         self.scenarioID = scenarioID
+        self.kind = kind
         self.title = title
         self.prompt = prompt
         self.expectedIntent = expectedIntent
         self.actualIntent = actualIntent
+        self.e2eRunID = e2eRunID
+        self.agentRunID = agentRunID
+        self.conversationID = conversationID
+        self.turnID = turnID
         self.requiresAgentRun = requiresAgentRun
         self.passed = passed
         self.failures = failures
@@ -325,10 +340,15 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         scenarioID = try c.decode(String.self, forKey: .scenarioID)
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
         title = try c.decode(String.self, forKey: .title)
         prompt = try c.decode(String.self, forKey: .prompt)
         expectedIntent = try c.decode(String.self, forKey: .expectedIntent)
         actualIntent = try c.decode(String.self, forKey: .actualIntent)
+        e2eRunID = try c.decodeIfPresent(UUID.self, forKey: .e2eRunID)
+        agentRunID = try c.decodeIfPresent(UUID.self, forKey: .agentRunID)
+        conversationID = try c.decodeIfPresent(UUID.self, forKey: .conversationID)
+        turnID = try c.decodeIfPresent(UUID.self, forKey: .turnID)
         requiresAgentRun = try c.decodeIfPresent(Bool.self, forKey: .requiresAgentRun) ?? false
         passed = try c.decode(Bool.self, forKey: .passed)
         failures = try c.decode([String].self, forKey: .failures)
@@ -463,7 +483,7 @@ nonisolated enum E2ETestRunner {
             } catch is CancellationError {
                 break
             } catch {
-                let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", requiresAgentRun: scenario.requiresAgentRun, passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
+                let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", requiresAgentRun: scenario.requiresAgentRun, passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
                 results.append(result)
                 E2ETestLogStore.append(result)
                 await onResult?(result)
@@ -504,6 +524,28 @@ nonisolated enum E2ETestRunner {
         }
     }
 
+    private struct E2ETraceCorrelation: Sendable, Hashable {
+        let scenarioID: String?
+        let e2eRunID: UUID?
+        let agentRunID: UUID?
+        let conversationID: UUID?
+        let turnID: UUID?
+
+        var diagnosticText: String {
+            [
+                "scenarioID=\(scenarioID ?? "nil")",
+                "e2eRunID=\(e2eRunID?.uuidString ?? "nil")",
+                "agentRunID=\(agentRunID?.uuidString ?? "nil")",
+                "conversationID=\(conversationID?.uuidString ?? "nil")",
+                "turnID=\(turnID?.uuidString ?? "nil")"
+            ].joined(separator: ",")
+        }
+
+        var hasAnyIdentifier: Bool {
+            scenarioID?.isEmpty == false || e2eRunID != nil || agentRunID != nil || conversationID != nil || turnID != nil
+        }
+    }
+
     private struct ModelRuntimeEvidence: Sendable {
         let runtimePath: String
         let stage: String
@@ -512,6 +554,7 @@ nonisolated enum E2ETestRunner {
         let outputTokenCount: Int?
         let adapterSlot: String?
         let parseError: String?
+        let matchedBy: String
     }
 
     private struct ModelRuntimeEvidenceDiagnosis: Sendable {
@@ -521,6 +564,10 @@ nonisolated enum E2ETestRunner {
 
     private static func runScenario(_ scenario: E2ETestScenario, config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onEvent: EventCallback? = nil) async throws -> E2ETestResult {
         let started = Date()
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
         var events: [E2ETestEvent] = []
         var failures: [String] = []
         var finalText = ""
@@ -597,6 +644,14 @@ nonisolated enum E2ETestRunner {
         if scenario.requiresAgentRun {
             try Task.checkCancellation()
             await Task.yield()
+            let traceCorrelation = E2ETraceCorrelation(
+                scenarioID: scenario.id,
+                e2eRunID: e2eRunID,
+                agentRunID: agentRunID,
+                conversationID: conversationID,
+                turnID: turnID
+            )
+            await event("correlation", traceCorrelation.diagnosticText)
             let modelLoaded: Bool
             if let ensureChatLoaded = ensureChatLoaded {
                 modelLoaded = await ensureChatLoaded()
@@ -609,6 +664,7 @@ nonisolated enum E2ETestRunner {
             await event("models", modelLoaded ? "chat fleet ready" : "no chat model loaded")
             if !modelLoaded {
                 failures.append("Live E2E scenario did not run: no chat model loaded")
+                await event("model-evidence", "AgentService model path was not entered; reason=model not loaded; \(traceCorrelation.diagnosticText)")
             }
             if modelLoaded {
                 let enabledCanonicalToolIDs = Set(config.enabledToolIDs.map(ToolRouteGuard.canonicalToolID))
@@ -626,7 +682,12 @@ nonisolated enum E2ETestRunner {
                         let canonical = ToolRouteGuard.canonicalToolID(tool.id)
                         return enabledCanonicalToolIDs.contains(canonical) && IntentRouter.isToolAllowed(canonical, for: routing)
                     },
-                    relevantMemories: []
+                    relevantMemories: [],
+                    conversationID: conversationID,
+                    turnID: turnID,
+                    scenarioID: scenario.id,
+                    e2eRunID: e2eRunID,
+                    agentRunID: agentRunID
                 )
                 await event("tools", "available=\(req.availableTools.map(\.id).sorted().joined(separator: ","))")
                 var steps: [AgentStep] = []
@@ -659,6 +720,9 @@ nonisolated enum E2ETestRunner {
                     modelContext: nil,
                     conversationID: req.conversationID,
                     turnID: req.turnID,
+                    scenarioID: scenario.id,
+                    e2eRunID: e2eRunID,
+                    agentRunID: agentRunID,
                     groundingMode: .slotAgent,
                     allowDegradedGrounding: false,
                     preventDoubleGrounding: true,
@@ -702,13 +766,14 @@ nonisolated enum E2ETestRunner {
                 let evidenceDiagnosis = modelRuntimeEvidenceDiagnosis(
                     since: modelEvidenceStartedAt,
                     prompt: scenario.prompt,
+                    correlation: traceCorrelation,
                     acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
                 )
                 if let evidence = evidenceDiagnosis.evidence {
                     let elapsed = evidence.generationElapsedMs.map(String.init) ?? "unknown"
                     let tokens = evidence.outputTokenCount.map(String.init) ?? "unknown"
                     let adapter = evidence.adapterSlot ?? "none"
-                    await event("model-evidence", "runtime=\(evidence.runtimePath), kind=\(evidence.evidenceKind), stage=\(evidence.stage), parseError=\(evidence.parseError ?? "none"), elapsedMs=\(elapsed), outputTokens=\(tokens), adapter=\(adapter)")
+                    await event("model-evidence", "runtime=\(evidence.runtimePath), kind=\(evidence.evidenceKind), stage=\(evidence.stage), parseError=\(evidence.parseError ?? "none"), elapsedMs=\(elapsed), outputTokens=\(tokens), adapter=\(adapter), matchedBy=\(evidence.matchedBy), \(traceCorrelation.diagnosticText)")
                 } else {
                     let requiredEvidence = acceptsPolicyFirstEvidence ? "model-backed or policy-first execution evidence" : "model-backed generation evidence"
                     failures.append("Live E2E scenario did not record \(requiredEvidence)")
@@ -823,7 +888,7 @@ nonisolated enum E2ETestRunner {
         try Task.checkCancellation()
         await Task.yield()
         let matrix = await performanceMatrix(from: performanceSamples, startedAt: started, finishedAt: endedAt)
-        return E2ETestResult(id: UUID(), scenarioID: scenario.id, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, requiresAgentRun: scenario.requiresAgentRun, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
+        return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
     }
 
     /// Determines whether a scenario accepts policy-first deterministic execution traces as valid evidence.
@@ -856,11 +921,13 @@ nonisolated enum E2ETestRunner {
     private nonisolated static func modelRuntimeEvidence(
         since startedAt: Date,
         prompt: String,
+        correlation: E2ETraceCorrelation? = nil,
         acceptsPolicyFirstEvidence: Bool
     ) -> ModelRuntimeEvidence? {
         modelRuntimeEvidenceDiagnosis(
             since: startedAt,
             prompt: prompt,
+            correlation: correlation,
             acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
         ).evidence
     }
@@ -868,10 +935,15 @@ nonisolated enum E2ETestRunner {
     private nonisolated static func modelRuntimeEvidenceDiagnosis(
         since startedAt: Date,
         prompt: String,
+        correlation: E2ETraceCorrelation? = nil,
         acceptsPolicyFirstEvidence: Bool
     ) -> ModelRuntimeEvidenceDiagnosis {
         let promptNeedle = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let matchingTraces = AgentBehaviorTraceRecorder.recent(limit: 64).reversed().filter { trace in
+        let recentTraces = AgentBehaviorTraceRecorder.recent(limit: 64).reversed()
+        let correlatedTraces = recentTraces.filter { trace in
+            traceMatchesCorrelation(trace, correlation: correlation, startedAt: startedAt)
+        }
+        let fallbackTraces = recentTraces.filter { trace in
             guard trace.createdAt >= startedAt else { return false }
             let promptPrefix = trace.promptPrefix.lowercased()
             if !promptNeedle.isEmpty, !promptPrefix.contains(promptNeedle) {
@@ -879,6 +951,9 @@ nonisolated enum E2ETestRunner {
             }
             return true
         }
+        let usedCorrelation = !correlatedTraces.isEmpty
+        let matchingTraces = usedCorrelation ? correlatedTraces : fallbackTraces
+        let matchedBy = usedCorrelation ? "correlation" : "prompt-time"
 
         if let modelTrace = matchingTraces.first(where: { trace in
             trace.event == AgentBehaviorTrace.Event.modelTurn
@@ -893,7 +968,8 @@ nonisolated enum E2ETestRunner {
                 generationElapsedMs: modelTrace.generationElapsedMs,
                 outputTokenCount: modelTrace.outputTokenCount,
                 adapterSlot: modelTrace.activeAdapterSlot ?? modelTrace.adapterSlot,
-                parseError: modelTrace.parseError
+                parseError: modelTrace.parseError,
+                matchedBy: matchedBy
             )
             return ModelRuntimeEvidenceDiagnosis(evidence: evidence, failureMessage: "")
         }
@@ -907,7 +983,8 @@ nonisolated enum E2ETestRunner {
                 generationElapsedMs: policyTrace.generationElapsedMs,
                 outputTokenCount: policyTrace.outputTokenCount,
                 adapterSlot: policyTrace.activeAdapterSlot ?? policyTrace.adapterSlot,
-                parseError: policyTrace.parseError
+                parseError: policyTrace.parseError,
+                matchedBy: matchedBy
             )
             return ModelRuntimeEvidenceDiagnosis(evidence: evidence, failureMessage: "")
         }
@@ -916,14 +993,30 @@ nonisolated enum E2ETestRunner {
             evidence: nil,
             failureMessage: modelRuntimeEvidenceFailureMessage(
                 matchingTraces: Array(matchingTraces),
-                acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+                acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
+                correlation: correlation,
+                usedCorrelation: usedCorrelation,
+                fallbackTraceCount: fallbackTraces.count
             )
         )
     }
 
+    private nonisolated static func traceMatchesCorrelation(_ trace: AgentBehaviorTrace, correlation: E2ETraceCorrelation?, startedAt: Date) -> Bool {
+        guard let correlation, correlation.hasAnyIdentifier else { return false }
+        if let e2eRunID = correlation.e2eRunID, trace.e2eRunID == e2eRunID { return true }
+        if let agentRunID = correlation.agentRunID, trace.agentRunID == agentRunID { return true }
+        if let conversationID = correlation.conversationID, trace.conversationID == conversationID { return true }
+        if let turnID = correlation.turnID, trace.turnID == turnID { return true }
+        if let scenarioID = correlation.scenarioID, !scenarioID.isEmpty, trace.scenarioID == scenarioID, trace.createdAt >= startedAt { return true }
+        return false
+    }
+
     private nonisolated static func modelRuntimeEvidenceFailureMessage(
         matchingTraces: [AgentBehaviorTrace],
-        acceptsPolicyFirstEvidence: Bool
+        acceptsPolicyFirstEvidence: Bool,
+        correlation: E2ETraceCorrelation? = nil,
+        usedCorrelation: Bool = false,
+        fallbackTraceCount: Int = 0
     ) -> String {
         if let rejectedModelTrace = matchingTraces.first(where: { $0.event == .modelTurn }) {
             let rawIsEmpty = rejectedModelTrace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -935,7 +1028,11 @@ nonisolated enum E2ETestRunner {
             }
             if rawIsEmpty {
                 if let emptyOutputReason = rejectedModelTrace.emptyOutputReason, !emptyOutputReason.isEmpty {
-                    reasons.append("agent-json emitted empty output (\(emptyOutputReason))")
+                    if emptyOutputReason == "agent-json-stream-completed-without-text" {
+                        reasons.append("model stream returned no tokens")
+                    } else {
+                        reasons.append("agent-json emitted empty output (\(emptyOutputReason))")
+                    }
                 } else {
                     reasons.append("raw output was empty")
                 }
@@ -954,9 +1051,14 @@ nonisolated enum E2ETestRunner {
             return "found deterministic-compatibility execution trace but \(policy); stage=\(policyTrace.stage); runtimePath=\(policyTrace.runtimePath ?? "deterministic-compatibility"); parseError=\(policyTrace.parseError ?? "none")"
         }
 
-        return acceptsPolicyFirstEvidence
+        let base = acceptsPolicyFirstEvidence
             ? "missing fresh AgentBehaviorTrace modelTurn or deterministic-compatibility execution trace"
             : "missing fresh AgentBehaviorTrace modelTurn"
+        if let correlation, correlation.hasAnyIdentifier, !usedCorrelation {
+            let fallbackText = fallbackTraceCount > 0 ? "; fallbackPromptTimeTraceCount=\(fallbackTraceCount)" : ""
+            return "no correlated AgentBehaviorTrace found; checked \(correlation.diagnosticText)\(fallbackText); \(base); AgentService model path was not entered or trace export failed"
+        }
+        return base
     }
 
     /// Determines if an agent behavior trace qualifies as a policy-first execution trace.
@@ -988,12 +1090,40 @@ nonisolated enum E2ETestRunner {
         shouldTemporarilyEnableNetworkAccess(scenario: scenario, routing: routing, availableToolIDs: availableToolIDs)
     }
 
-    nonisolated static func modelRuntimeEvidenceForTests(since startedAt: Date, prompt: String, acceptsPolicyFirstEvidence: Bool = false) -> Bool {
-        modelRuntimeEvidence(since: startedAt, prompt: prompt, acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence) != nil
+    nonisolated static func modelRuntimeEvidenceForTests(
+        since startedAt: Date,
+        prompt: String,
+        scenarioID: String? = nil,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil,
+        acceptsPolicyFirstEvidence: Bool = false
+    ) -> Bool {
+        modelRuntimeEvidence(
+            since: startedAt,
+            prompt: prompt,
+            correlation: E2ETraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+        ) != nil
     }
 
-    nonisolated static func modelRuntimeEvidenceFailureMessageForTests(since startedAt: Date, prompt: String, acceptsPolicyFirstEvidence: Bool = false) -> String {
-        modelRuntimeEvidenceDiagnosis(since: startedAt, prompt: prompt, acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence).failureMessage
+    nonisolated static func modelRuntimeEvidenceFailureMessageForTests(
+        since startedAt: Date,
+        prompt: String,
+        scenarioID: String? = nil,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil,
+        acceptsPolicyFirstEvidence: Bool = false
+    ) -> String {
+        modelRuntimeEvidenceDiagnosis(
+            since: startedAt,
+            prompt: prompt,
+            correlation: E2ETraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+        ).failureMessage
     }
 #endif
 

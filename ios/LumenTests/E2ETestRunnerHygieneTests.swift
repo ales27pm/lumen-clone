@@ -252,6 +252,154 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func agentBehaviorTraceDecodesWithoutCorrelationFields() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "createdAt": "2026-06-23T10:34:00Z",
+          "event": "modelTurn",
+          "slot": "agent",
+          "stage": "agent-json-step-0",
+          "intent": "chat",
+          "promptPrefix": "Explain precision.",
+          "rawOutputPrefix": "{\\"final\\":\\"Precision is exactness.\\"}",
+          "toolArguments": {},
+          "allowedToolIDs": [],
+          "emittedFinalInActionTurn": true
+        }
+        """.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let trace = try decoder.decode(AgentBehaviorTrace.self, from: json)
+
+        #expect(trace.scenarioID == nil)
+        #expect(trace.e2eRunID == nil)
+        #expect(trace.agentRunID == nil)
+        #expect(trace.conversationID == nil)
+        #expect(trace.turnID == nil)
+    }
+
+    @Test @MainActor func agentServiceModelTurnTraceRecordsE2ECorrelationIDs() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain precision and recall.",
+            temperature: 0.1,
+            topP: 0.9,
+            repetitionPenalty: 1.05,
+            maxTokens: 128,
+            maxSteps: 1,
+            availableTools: [],
+            relevantMemories: [],
+            conversationID: conversationID,
+            turnID: turnID,
+            scenarioID: "training-general-chat",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID
+        )
+
+        AgentService.shared.recordAgentModelTurnTraceForTests(
+            req: req,
+            raw: #"{"final":"Precision is exactness and recall is coverage."}"#,
+            outputTokenCount: 7
+        )
+
+        let trace = AgentBehaviorTraceRecorder.recent(limit: 1).last
+        #expect(trace?.scenarioID == "training-general-chat")
+        #expect(trace?.e2eRunID == e2eRunID)
+        #expect(trace?.agentRunID == agentRunID)
+        #expect(trace?.conversationID == conversationID)
+        #expect(trace?.turnID == turnID)
+        #expect(trace?.runtimePath == "agent-model")
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func promptMismatchStillFindsModelEvidenceByCorrelationID() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let e2eRunID = UUID()
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "agent",
+                stage: "agent-json-step-0",
+                scenarioID: "training-general-chat",
+                e2eRunID: e2eRunID,
+                agentRunID: UUID(),
+                conversationID: UUID(),
+                turnID: UUID(),
+                intent: "chat",
+                promptPrefix: "Grounded wrapper prompt that no longer contains the original request.",
+                rawOutputPrefix: #"{"final":"Precision is exactness and recall is coverage."}"#,
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: true,
+                modelFamily: "qwen3",
+                adapterSlot: "executor",
+                generationElapsedMs: 14,
+                firstTokenLatencyMs: 1,
+                outputTokenCount: 8,
+                runtimePath: "agent-model",
+                activeAdapterSlot: "executor"
+            )
+        )
+
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+            e2eRunID: e2eRunID
+        ))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func missingCorrelatedModelTurnReportsCheckedIDs() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let e2eRunID = UUID()
+
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "Explain precision and recall.",
+            scenarioID: "training-general-chat",
+            e2eRunID: e2eRunID
+        ))
+        let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(
+            since: startedAt,
+            prompt: "Explain precision and recall.",
+            scenarioID: "training-general-chat",
+            e2eRunID: e2eRunID
+        )
+        #expect(message.contains("no correlated AgentBehaviorTrace found"))
+        #expect(message.contains("scenarioID=training-general-chat"))
+        #expect(message.contains("e2eRunID=\(e2eRunID.uuidString)"))
+        #expect(message.contains("AgentService model path was not entered"))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func deterministicCompatibilityDirectChatTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()

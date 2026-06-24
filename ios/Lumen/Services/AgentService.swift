@@ -15,6 +15,9 @@ nonisolated struct AgentRequest: Sendable {
     let attachments: [ChatAttachment]
     let conversationID: UUID?
     let turnID: UUID?
+    let scenarioID: String?
+    let e2eRunID: UUID?
+    let agentRunID: UUID?
 
     init(
         systemPrompt: String,
@@ -29,7 +32,10 @@ nonisolated struct AgentRequest: Sendable {
         relevantMemories: [MemoryContextItem],
         attachments: [ChatAttachment] = [],
         conversationID: UUID? = nil,
-        turnID: UUID? = nil
+        turnID: UUID? = nil,
+        scenarioID: String? = nil,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil
     ) {
         self.systemPrompt = systemPrompt
         self.history = history
@@ -44,6 +50,9 @@ nonisolated struct AgentRequest: Sendable {
         self.attachments = attachments
         self.conversationID = conversationID
         self.turnID = turnID
+        self.scenarioID = scenarioID
+        self.e2eRunID = e2eRunID
+        self.agentRunID = agentRunID
     }
 
     init(
@@ -59,7 +68,10 @@ nonisolated struct AgentRequest: Sendable {
         legacyRelevantMemories: [String],
         attachments: [ChatAttachment] = [],
         conversationID: UUID? = nil,
-        turnID: UUID? = nil
+        turnID: UUID? = nil,
+        scenarioID: String? = nil,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil
     ) {
         self.init(
             systemPrompt: systemPrompt,
@@ -74,7 +86,10 @@ nonisolated struct AgentRequest: Sendable {
             relevantMemories: MemoryContextAdapter.fromLegacyStrings(legacyRelevantMemories),
             attachments: attachments,
             conversationID: conversationID,
-            turnID: turnID
+            turnID: turnID,
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID
         )
     }
 }
@@ -1492,7 +1507,7 @@ final class AgentService {
             let generationDiagnostics = StructuredTurnGenerationDiagnostics(
                 generationElapsedMs: Int(Date().timeIntervalSince(generationStartedAt) * 1000),
                 firstTokenLatencyMs: firstTokenLatencyMs,
-                outputTokenCount: trimmedRaw.isEmpty ? 0 : nil,
+                outputTokenCount: outputChunks,
                 maxTokensRequested: req.maxTokens,
                 maxTokensEffective: genReq.maxTokens,
                 emptyOutputReason: trimmedRaw.isEmpty
@@ -1826,6 +1841,11 @@ final class AgentService {
                 event: .modelTurn,
                 slot: "agent",
                 stage: "agent-json-step-\(stepIndex)",
+                scenarioID: req.scenarioID,
+                e2eRunID: req.e2eRunID,
+                agentRunID: req.agentRunID,
+                conversationID: req.conversationID,
+                turnID: req.turnID,
                 intent: routing.intent.rawValue,
                 promptPrefix: ModelOutputSanitizer.boundedPrefix(req.userMessage, limit: 1200),
                 rawOutputPrefix: ModelOutputSanitizer.boundedPrefix(raw, limit: 1600),
@@ -2128,6 +2148,9 @@ final class AgentService {
             modelContext: options.modelContext,
             conversationID: options.conversationID ?? req.conversationID,
             turnID: options.turnID ?? req.turnID,
+            scenarioID: options.scenarioID ?? req.scenarioID,
+            e2eRunID: options.e2eRunID ?? req.e2eRunID,
+            agentRunID: options.agentRunID ?? req.agentRunID,
             groundingMode: options.groundingMode,
             allowDegradedGrounding: options.allowDegradedGrounding,
             preventDoubleGrounding: options.preventDoubleGrounding,
@@ -2201,6 +2224,29 @@ final class AgentService {
 
     nonisolated static func agentJSONEmptyOutputRetryUserTurnForTests(from userTurn: String) -> String {
         agentJSONEmptyOutputRetryUserTurn(from: userTurn)
+    }
+
+    func recordAgentModelTurnTraceForTests(
+        req: AgentRequest,
+        raw: String,
+        stepIndex: Int = 0,
+        outputTokenCount: Int? = nil
+    ) {
+        recordAgentModelTurnTrace(
+            req: req,
+            userTurn: buildAgentUserTurn(req: req, stepIndex: stepIndex, scratchpad: ""),
+            raw: raw,
+            turn: AgentTurnParser.parse(raw),
+            stepIndex: stepIndex,
+            diagnostics: StructuredTurnGenerationDiagnostics(
+                generationElapsedMs: 1,
+                firstTokenLatencyMs: outputTokenCount == 0 ? nil : 1,
+                outputTokenCount: outputTokenCount,
+                maxTokensRequested: req.maxTokens,
+                maxTokensEffective: min(max(req.maxTokens, Self.structuredTurnMinTokenCap), Self.structuredTurnMaxTokenCap),
+                emptyOutputReason: outputTokenCount == 0 ? "agent-json-stream-completed-without-text" : nil
+            )
+        )
     }
 
     /// Exposes the internal structured parse failure recovery function for testing.
@@ -2432,6 +2478,6 @@ private extension AgentService {
             .init(title: "Runtime policy", content: runtimeContent, estimatedChars: runtimeContent.count, sourceIDs: [], privacyLevel: .low)
         ].filter { !$0.content.isEmpty }
         let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: req.systemPrompt, baseUserMessage: req.userMessage, sections: sections, policy: .rolePipeline)
-        return AgentRequest(systemPrompt: assembled.systemPrompt, history: req.history, userMessage: assembled.userMessage, temperature: req.temperature, topP: req.topP, repetitionPenalty: req.repetitionPenalty, maxTokens: req.maxTokens, maxSteps: req.maxSteps, availableTools: req.availableTools, relevantMemories: req.relevantMemories, attachments: req.attachments, conversationID: req.conversationID, turnID: req.turnID)
+        return AgentRequest(systemPrompt: assembled.systemPrompt, history: req.history, userMessage: assembled.userMessage, temperature: req.temperature, topP: req.topP, repetitionPenalty: req.repetitionPenalty, maxTokens: req.maxTokens, maxSteps: req.maxSteps, availableTools: req.availableTools, relevantMemories: req.relevantMemories, attachments: req.attachments, conversationID: req.conversationID, turnID: req.turnID, scenarioID: req.scenarioID, e2eRunID: req.e2eRunID, agentRunID: req.agentRunID)
     }
 }

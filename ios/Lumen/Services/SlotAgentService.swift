@@ -346,7 +346,10 @@ final class SlotAgentService {
             relevantMemories: original.relevantMemories,
             attachments: original.attachments,
             conversationID: options.conversationID ?? original.conversationID,
-            turnID: options.turnID ?? original.turnID
+            turnID: options.turnID ?? original.turnID,
+            scenarioID: options.scenarioID ?? original.scenarioID,
+            e2eRunID: options.e2eRunID ?? original.e2eRunID,
+            agentRunID: options.agentRunID ?? original.agentRunID
         )
     }
 
@@ -544,6 +547,11 @@ final class SlotAgentService {
                 event: event,
                 slot: slot,
                 stage: stage,
+                scenarioID: req.scenarioID,
+                e2eRunID: req.e2eRunID,
+                agentRunID: req.agentRunID,
+                conversationID: req.conversationID,
+                turnID: req.turnID,
                 intent: routing.intent.rawValue,
                 promptPrefix: ModelOutputSanitizer.boundedPrefix(req.userMessage, limit: 1200),
                 rawOutputPrefix: ModelOutputSanitizer.boundedPrefix(rawOutput, limit: 1600),
