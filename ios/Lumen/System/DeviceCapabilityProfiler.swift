@@ -31,6 +31,7 @@ struct DeviceCapabilityProfiler {
             deviceIdiom: idiom,
             processorCount: processInfo.processorCount,
             physicalMemoryBytes: processInfo.physicalMemory,
+            availableMemoryBytes: SystemMemoryLimit.availableMemoryBytes(),
             lowPowerModeEnabled: processInfo.isLowPowerModeEnabled,
             thermalState: .from(processThermalState: processInfo.thermalState),
             metalAvailable: MTLCreateSystemDefaultDevice() != nil,

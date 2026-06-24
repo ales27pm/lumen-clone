@@ -8,7 +8,8 @@ struct EntitlementAuditWarning: Sendable, Equatable {
 enum BackgroundEntitlementValidator {
     static let requiredTaskIDs: Set<String> = [
         TriggerScheduler.refreshIdentifier,
-        TriggerScheduler.processIdentifier
+        TriggerScheduler.processIdentifier,
+        TriggerScheduler.continuedProcessingIdentifier
     ]
 
     static func validate(infoDictionary: [String: Any]) -> [EntitlementAuditWarning] {

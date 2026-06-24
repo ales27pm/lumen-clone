@@ -1173,7 +1173,7 @@ final actor AppLlamaService {
 
                     let startedAt = Date()
                     let backgroundTask = await MainActor.run {
-                        BackgroundRuntimeContinuation.begin(name: "Lumen Chat Generation")
+                        BackgroundRuntimeContinuation.begin(name: "Lumen Chat Generation", allowsContinuedProcessing: true)
                     }
                     defer {
                         Task { @MainActor in
