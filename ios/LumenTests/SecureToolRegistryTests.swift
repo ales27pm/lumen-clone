@@ -110,6 +110,62 @@ final class SecureToolRegistryTests: XCTestCase {
             .denied
         )
     }
+
+    @MainActor
+    func testLegacyBridgeMapsConfirmedApprovalToUserApprovedSource() async {
+        let registry = SecureToolRegistry(tools: [CapturingApprovalTool()])
+
+        let result = await registry.executeLegacyTool(
+            "capture.approval",
+            arguments: AgentJSONArguments(stringDictionary: [:]),
+            approval: .userApproved
+        )
+
+        XCTAssertEqual(result, "source=userApproved")
+    }
+
+    @MainActor
+    func testLegacyBridgeDoesNotTreatAutonomousExecutionAsApproval() async {
+        let registry = SecureToolRegistry(tools: [CapturingApprovalTool()])
+
+        let result = await registry.executeLegacyTool(
+            "capture.approval",
+            arguments: AgentJSONArguments(stringDictionary: [:]),
+            approval: .autonomous
+        )
+
+        XCTAssertEqual(result, "User approval required")
+    }
+
+    @MainActor
+    func testBackgroundAvailabilityExcludesApprovalRequiredToolEvenWhenBackgroundSupported() async {
+        let registry = SecureToolRegistry(tools: [BackgroundApprovalRequiredTool()])
+        let context = ToolExecutionContext(
+            isForeground: false,
+            appState: nil,
+            modelContext: nil,
+            permissionRegistry: .shared,
+            metricsStore: .shared
+        )
+
+        let definitions = await registry.availableDefinitions(context: context, source: .backgroundTrigger)
+        let result = await registry.execute(
+            ToolInvocation(
+                id: UUID(),
+                toolID: "memory.export",
+                arguments: [:],
+                source: .backgroundTrigger,
+                conversationID: nil,
+                turnID: nil,
+                createdAt: Date()
+            ),
+            context: context
+        )
+
+        XCTAssertFalse(definitions.contains(where: { $0.id == "memory.export" }))
+        XCTAssertEqual(result.status, .denied)
+        XCTAssertEqual(result.displayText, "Tool requires foreground approval")
+    }
 }
 
 private struct DuplicateToolForRegistryTest: LocalTool {
@@ -117,5 +173,66 @@ private struct DuplicateToolForRegistryTest: LocalTool {
     func validateArguments(_ arguments: [String : String]) throws {}
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         ToolResult(invocationID: invocation.id, status: .success, displayText: "ok", modelText: "ok", structuredPayload: nil, privacyLevel: .low, metricsSummary: "ok", errorCode: nil)
+    }
+}
+
+private struct CapturingApprovalTool: LocalTool {
+    let definition = SecureToolDefinition(
+        id: "capture.approval",
+        displayName: "Capture Approval",
+        description: "",
+        category: .sensitiveAction,
+        requiredPermissions: [],
+        supportsBackgroundExecution: false,
+        requiresUserApproval: true,
+        argumentSchemaDescription: "",
+        resultPrivacyLevel: .low,
+        maxOutputCharacters: 100
+    )
+
+    func validateArguments(_ arguments: [String : String]) throws {}
+
+    func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
+        let text = "source=\(invocation.source.rawValue)"
+        return ToolResult(
+            invocationID: invocation.id,
+            status: .success,
+            displayText: text,
+            modelText: text,
+            structuredPayload: nil,
+            privacyLevel: .low,
+            metricsSummary: "ok",
+            errorCode: nil
+        )
+    }
+}
+
+private struct BackgroundApprovalRequiredTool: LocalTool {
+    let definition = SecureToolDefinition(
+        id: "memory.export",
+        displayName: "Export Memory",
+        description: "",
+        category: .readOnly,
+        requiredPermissions: [],
+        supportsBackgroundExecution: true,
+        requiresUserApproval: true,
+        argumentSchemaDescription: "",
+        resultPrivacyLevel: .sensitive,
+        maxOutputCharacters: 100
+    )
+
+    func validateArguments(_ arguments: [String : String]) throws {}
+
+    func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
+        ToolResult(
+            invocationID: invocation.id,
+            status: .success,
+            displayText: "exported",
+            modelText: "exported",
+            structuredPayload: nil,
+            privacyLevel: .sensitive,
+            metricsSummary: "ok",
+            errorCode: nil
+        )
     }
 }

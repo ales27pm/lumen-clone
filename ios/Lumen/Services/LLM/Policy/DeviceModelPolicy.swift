@@ -1,10 +1,38 @@
 import Foundation
 
+struct RemoteModelAccessPolicy: Sendable, Codable, Equatable {
+    let allowsRemoteModels: Bool
+    let allowsBackgroundRemoteModels: Bool
+
+    static let localOnly = RemoteModelAccessPolicy(
+        allowsRemoteModels: false,
+        allowsBackgroundRemoteModels: false
+    )
+
+    static let userApprovedForeground = RemoteModelAccessPolicy(
+        allowsRemoteModels: true,
+        allowsBackgroundRemoteModels: false
+    )
+
+    init(
+        allowsRemoteModels: Bool,
+        allowsBackgroundRemoteModels: Bool = false
+    ) {
+        self.allowsRemoteModels = allowsRemoteModels
+        self.allowsBackgroundRemoteModels = allowsBackgroundRemoteModels
+    }
+}
+
 actor DeviceModelPolicy {
     private let provider: any DeviceCapabilityProviding
+    private let remoteModelAccessPolicy: RemoteModelAccessPolicy
 
-    init(provider: any DeviceCapabilityProviding = SystemDeviceCapabilityProvider()) {
+    init(
+        provider: any DeviceCapabilityProviding = SystemDeviceCapabilityProvider(),
+        remoteModelAccessPolicy: RemoteModelAccessPolicy = .localOnly
+    ) {
         self.provider = provider
+        self.remoteModelAccessPolicy = remoteModelAccessPolicy
     }
 
     func evaluate(
@@ -46,6 +74,37 @@ actor DeviceModelPolicy {
                 reasons: reasons
             ))
         case .remote:
+            guard remoteModelAccessPolicy.allowsRemoteModels else {
+                add(.remoteModelEscalationNotAllowed, to: &reasons)
+                let estimate = ModelMemoryEstimator.estimate(model: model, profile: selectedProfile, budget: selectedBudget)
+                return .rejected(report(
+                    model: model,
+                    snapshot: snapshot,
+                    requestedProfile: requestedProfile,
+                    selectedProfile: selectedProfile,
+                    requestedBudget: requestedBudget,
+                    selectedBudget: selectedBudget,
+                    memoryEstimate: estimate,
+                    reasons: reasons
+                ))
+            }
+
+            guard appIsForeground || remoteModelAccessPolicy.allowsBackgroundRemoteModels else {
+                add(.remoteModelBackgroundBlocked, to: &reasons)
+                let estimate = ModelMemoryEstimator.estimate(model: model, profile: selectedProfile, budget: selectedBudget)
+                return .rejected(report(
+                    model: model,
+                    snapshot: snapshot,
+                    requestedProfile: requestedProfile,
+                    selectedProfile: selectedProfile,
+                    requestedBudget: requestedBudget,
+                    selectedBudget: selectedBudget,
+                    memoryEstimate: estimate,
+                    reasons: reasons
+                ))
+            }
+
+            add(.remoteModelEscalationAllowed, to: &reasons)
             add(.remoteDoesNotNeedLocalModelMemory, to: &reasons)
             let estimate = ModelMemoryEstimator.estimate(model: model, profile: selectedProfile, budget: selectedBudget)
             return .allowed(report(

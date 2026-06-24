@@ -26,4 +26,23 @@ struct WeatherToolsTests {
         #expect(!WeatherTools.isCurrentLocationRequest("weather in Montreal"))
         #expect(!WeatherTools.isCurrentLocationRequest("Paris, France"))
     }
+
+    @Test func deniedLocationFailureKeepsPermissionCause() {
+        let message = WeatherTools.weatherLocationFailureMessage(for: .permissionDenied)
+        #expect(message.contains("Location access is denied"))
+        #expect(message.contains("weather in Montreal"))
+    }
+
+    @Test func timeoutLocationFailureKeepsGPSCause() {
+        let message = WeatherTools.weatherLocationFailureMessage(for: .timedOut)
+        #expect(message.contains("GPS timeout"))
+        #expect(!message.contains("Enable Location permission"))
+    }
+
+    @Test func explicitLocationGeocodeFailureNamesLocation() {
+        let message = WeatherTools.weatherGeocodingFailureMessage(for: "  Atlantis  ")
+        #expect(message.contains("\"Atlantis\""))
+        #expect(message.contains("more specific"))
+        #expect(!message.contains("Location permission"))
+    }
 }

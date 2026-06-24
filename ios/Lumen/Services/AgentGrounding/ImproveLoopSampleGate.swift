@@ -339,7 +339,7 @@ nonisolated enum ImproveLoopSampleGate {
             canonicalToolID: canonicalToolID.map(ToolRouteGuard.canonicalToolID),
             allowedToolIDs: Array(Set(allowedToolIDs.map(ToolRouteGuard.canonicalToolID))).sorted(),
             sourceCommit: sourceCommit,
-            sourceTraceID: sourceTraceID
+            sourceTraceID: nil
         )
     }
 
@@ -413,7 +413,9 @@ nonisolated enum ImproveLoopSampleGate {
     ]
 
     private static func bounded(_ value: String, limit: Int = 1_200) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stripped = ModelOutputSanitizer.stripHiddenBlocks(value)
+        let redacted = PersistentRuntimeDiagnosticsRedactor.redactWithoutTruncating(stripped)
+        let trimmed = redacted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > limit else { return trimmed }
         return String(trimmed.prefix(limit))
     }

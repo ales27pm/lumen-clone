@@ -136,7 +136,20 @@ def test_persistent_runtime_diagnostics_export_ingests_bounded_summary(tmp_path:
                         "cancellationReason": "persistent-diagnostics-agent-cancel",
                     },
                 },
-                {"id": "failed", "scenario": "liveAgentStream", "status": "failed"},
+                {
+                    "id": "failed",
+                    "scenario": "liveAgentStream",
+                    "status": "failed",
+                    "remediationProposals": [
+                        {
+                            "id": "local-chat-model-required",
+                            "title": "Select a local chat model",
+                            "rationale": "Live inference could not run without a local chat runtime.",
+                            "action": "Install or select a local chat model, then rerun the scenario.",
+                            "severity": "warning",
+                        }
+                    ],
+                },
             ]
         },
     }
@@ -149,8 +162,13 @@ def test_persistent_runtime_diagnostics_export_ingests_bounded_summary(tmp_path:
     assert report["statusCounts"] == {"cancelled": 1, "failed": 1, "passed": 1}
     assert report["metricKitPayloadCount"] == 2
     assert report["ndjsonLineCount"] == 2
+    assert report["remediationProposalCount"] == 1
+    assert report["remediationSeverityCounts"] == {"warning": 1}
     assert len(report["failures"]) == 1
     assert report["failures"][0]["scenario"] == "liveAgentStream"
+    assert report["failures"][0]["remediationSeverity"] == "warning"
+    assert report["failures"][0]["remediationProposals"][0]["id"] == "local-chat-model-required"
+    assert report["failures"][0]["remediationProposals"][0]["action"] == "Install or select a local chat model, then rerun the scenario."
 
 
 def test_empty_trace_evidence_layer_envelope_generates_trace_gap(tmp_path: Path) -> None:

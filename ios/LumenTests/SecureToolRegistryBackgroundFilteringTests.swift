@@ -9,6 +9,8 @@ final class SecureToolRegistryBackgroundFilteringTests: XCTestCase {
         XCTAssertTrue(defs.contains(where: {$0.id == "device.status"}))
         XCTAssertTrue(defs.contains(where: {$0.id == "memory.search"}))
         XCTAssertTrue(defs.contains(where: {$0.id == "rag.search.secure"}))
+        XCTAssertTrue(defs.allSatisfy(\.supportsBackgroundExecution))
+        XCTAssertFalse(defs.contains(where: {$0.id == "position.snapshot"}))
         XCTAssertFalse(defs.contains(where: {$0.id == "open.url"}))
     }
 }

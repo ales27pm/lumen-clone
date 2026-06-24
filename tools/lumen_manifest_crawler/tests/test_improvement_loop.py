@@ -170,6 +170,59 @@ def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Pat
     assert result.state["triage"]["rootCauseCounts"]["skipped_live_model_generation"] == 1
 
 
+def test_improvement_loop_uses_persistent_diagnostic_remediation_action(tmp_path: Path):
+    report = tmp_path / "persistent-runtime-diagnostics-export.json"
+    report.write_text(
+        json.dumps({
+            "exportedAt": "2026-06-24T00:00:00Z",
+            "appVersion": "1.0.0",
+            "ndjson": "",
+            "state": {
+                "records": [
+                    {
+                        "id": "manual-skip",
+                        "scenario": "liveAgentStream",
+                        "status": "skipped",
+                        "remediationProposals": [
+                            {
+                                "id": "manual-scenario-foreground",
+                                "title": "Run the diagnostic from the foreground control",
+                                "rationale": "This scenario requires explicit user action and should not run unattended.",
+                                "action": "Open Runtime Diagnostics and start the matching manual probe from the foreground UI.",
+                                "severity": "info",
+                            }
+                        ],
+                    }
+                ]
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(report,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+        )
+    )
+
+    runtime_gaps = [gap for gap in result.gaps if gap["title"] == "persistent_diagnostics_scenario_not_passed"]
+    assert len(runtime_gaps) == 1
+    assert runtime_gaps[0]["severity"] == "warning"
+    assert runtime_gaps[0]["category"] == "persistent_diagnostics_remediation"
+    assert runtime_gaps[0]["recommendedAction"] == "Open Runtime Diagnostics and start the matching manual probe from the foreground UI."
+    assert runtime_gaps[0]["evidence"]["remediationProposals"][0]["id"] == "manual-scenario-foreground"
+    assert result.state["runtime"]["failureCount"] == 1
+    assert result.state["runtime"]["allFailureTypes"] == {"persistent_diagnostics_scenario_not_passed": 1}
+
+
 def test_improvement_loop_surfaces_agent_json_completed_without_text_from_sidecars(tmp_path: Path):
     report = tmp_path / "latest-e2e-report.json"
     report.write_text(

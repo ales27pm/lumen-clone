@@ -113,6 +113,7 @@ nonisolated struct PersistentDiagnosticRunRecord: Codable, Sendable, Identifiabl
     var metrics: PersistentDiagnosticMetrics
     var events: [PersistentDiagnosticEvent]
     var failureSummary: String?
+    var remediationProposals: [PersistentDiagnosticRemediationProposal]?
 
     init(id: UUID = UUID(), campaignID: UUID, scenario: PersistentDiagnosticScenarioKind, startedAt: Date = Date(), status: PersistentDiagnosticStatus = .pending, metrics: PersistentDiagnosticMetrics = .init(), events: [PersistentDiagnosticEvent] = [], failureSummary: String? = nil) {
         self.id = id
@@ -124,6 +125,7 @@ nonisolated struct PersistentDiagnosticRunRecord: Codable, Sendable, Identifiabl
         self.metrics = metrics
         self.events = events
         self.failureSummary = failureSummary
+        self.remediationProposals = nil
     }
 }
 
@@ -232,6 +234,72 @@ nonisolated struct PersistentDiagnosticEvent: Codable, Sendable, Identifiable, E
     }
 }
 
+nonisolated enum PersistentDiagnosticRemediationSeverity: String, Codable, Sendable, Equatable {
+    case info
+    case warning
+    case critical
+}
+
+nonisolated struct PersistentDiagnosticRemediationProposal: Codable, Sendable, Equatable, Identifiable {
+    let id: String
+    let title: String
+    let rationale: String
+    let action: String
+    let severity: PersistentDiagnosticRemediationSeverity
+}
+
+nonisolated enum PersistentDiagnosticRemediationAdvisor {
+    static func proposals(
+        for record: PersistentDiagnosticRunRecord,
+        status: PersistentDiagnosticStatus,
+        code: String
+    ) -> [PersistentDiagnosticRemediationProposal] {
+        guard status != .passed else { return [] }
+
+        switch code {
+        case "resource_gate_paused":
+            return [proposal(id: "resource-gate-wait", title: "Wait for a safer resource window", rationale: "Diagnostics were paused by thermal, memory, or lifecycle resource policy.", action: "Run diagnostics again while the app is foreground, the device is cool, and no generation is active.", severity: .info)]
+        case "manual_scenario_requires_explicit_request", "manual_live_agent_stream_required", "manual_probe_required":
+            return [proposal(id: "manual-scenario-foreground", title: "Run the diagnostic from the foreground control", rationale: "This scenario requires explicit user action and should not run unattended.", action: "Open Runtime Diagnostics and start the matching manual probe from the foreground UI.", severity: .info)]
+        case "skipped_no_model":
+            return [proposal(id: "local-chat-model-required", title: "Select a local chat model", rationale: "Prompt budget checks ran, but live inference could not run without a loaded local chat runtime.", action: "Install or select a local GGUF/Core ML/FoundationModels-backed chat model, then rerun the scenario.", severity: .warning)]
+        case "fast_prompt_too_large", "fast_tokens_too_large", "fast_latency_missing":
+            return [proposal(id: "tighten-fast-prompt-budget", title: "Tighten fast prompt budgeting", rationale: "The fast prompt path exceeded its expected character, token, or latency class budget.", action: "Inspect prompt assembly, memory/RAG injection, and latency classification for the fast path.", severity: .warning)]
+        case "developer_trace_bypass_missing":
+            return [proposal(id: "restore-developer-trace-bypass", title: "Restore developer-trace bypass classification", rationale: "Developer trace mode should bypass normal fast-interactive routing.", action: "Check PromptLatencyClassifier developer-trace handling and regression coverage.", severity: .warning)]
+        case "tool_prompt_used_fast_path":
+            return [proposal(id: "route-tool-prompts-through-agent-grounding", title: "Route tool prompts through grounded agent planning", rationale: "A tool prompt incorrectly selected the fast answer path.", action: "Fix SlotAgentService.shouldUseFastAgentPath and prompt routing rules for tool-bearing requests.", severity: .critical)]
+        case "agent_fast_path_unbounded":
+            return [proposal(id: "bound-fast-agent-grounding", title: "Reduce fast-agent grounding payload", rationale: "Fast-agent grounding exceeded its bounded local context contract.", action: "Trim bridged tools, memory snippets, or grounding sections before fast-agent execution.", severity: .warning)]
+        case "agent_tool_dry_run_unbounded", "sandboxed_tool_plan_unbounded", "grounding_cost_unbounded":
+            return [proposal(id: "bound-grounding-and-tool-bridge", title: "Bound grounding and tool-bridge cost", rationale: "Grounding or tool planning exceeded the local diagnostic budget.", action: "Inspect LegacyTurnGroundingCoordinator, LegacyToolSchemaBridge, and context budgeting for this scenario.", severity: .warning)]
+        case "disk_gate_unexpected":
+            return [proposal(id: "audit-diagnostic-disk-write-gate", title: "Audit diagnostic disk-write gating", rationale: "Diagnostics writes did not obey the expected generation-time disk budget.", action: "Check DiskWriteBudget category handling and PersistentRuntimeDiagnosticsStore buffering.", severity: .warning)]
+        case "ui_churn_excessive":
+            return [proposal(id: "throttle-diagnostic-ui-updates", title: "Throttle diagnostic UI updates", rationale: "Synthetic UI churn exceeded the bounded update contract.", action: "Audit reducers and streaming update coalescing before widening diagnostic cadence.", severity: .warning)]
+        case "resource_gate_policy_failed":
+            return [proposal(id: "fix-resource-gate-policy-matrix", title: "Fix the resource-gate policy matrix", rationale: "Simulated resource states did not match expected foreground/background model-load policy.", action: "Inspect ResourceBudgetGate and ModelLoader policy checks for thermal, scene phase, and Low Power Mode drift.", severity: .critical)]
+        case "not_manual_scenario":
+            return [proposal(id: "choose-supported-diagnostic-scenario", title: "Choose a supported diagnostic scenario", rationale: "The requested manual runner path does not own this scenario.", action: "Run automatic scenarios through Run Once or choose a manual-only scenario from the foreground controls.", severity: .info)]
+        case "crash_resume", "interrupted_or_terminated":
+            return [proposal(id: "inspect-lifecycle-interruption", title: "Inspect lifecycle cancellation and crash-resume evidence", rationale: "A diagnostic run was interrupted or terminated before clean completion.", action: "Review scene-transition, cancellation-bus, and last-run events in the exported diagnostics package.", severity: .critical)]
+        default:
+            guard status == .failed || status == .interrupted else { return [] }
+            return [proposal(id: "inspect-diagnostic-failure-\(code)", title: "Inspect diagnostic failure evidence", rationale: "The diagnostic failed with code \(code).", action: "Export persistent diagnostics and inspect the redacted events, metrics, and scenario-specific code path.", severity: status == .interrupted ? .critical : .warning)]
+        }
+    }
+
+    private static func proposal(
+        id: String,
+        title: String,
+        rationale: String,
+        action: String,
+        severity: PersistentDiagnosticRemediationSeverity
+    ) -> PersistentDiagnosticRemediationProposal {
+        PersistentDiagnosticRemediationProposal(id: id, title: title, rationale: rationale, action: action, severity: severity)
+    }
+}
+
 nonisolated struct PersistentDiagnosticRunnerStatus: Codable, Sendable, Equatable {
     var isRunning: Bool = false
     var isPaused: Bool = false
@@ -243,6 +311,7 @@ nonisolated struct PersistentDiagnosticRunnerStatus: Codable, Sendable, Equatabl
     var lastPromptFinalChars: Int?
     var lastCancellationReason: String?
     var lastCrashResumeStatus: String?
+    var lastRemediationSummary: String?
     var lastUpdatedAt: Date = Date()
 }
 
@@ -293,6 +362,7 @@ nonisolated enum PersistentRuntimeDiagnosticsRedactor {
             #"(?i)(prompt|memory|file|path|content|body|text)=([^,\n]+)"#,
             #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
             #"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"#,
+            #"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"#,
             #"/[^\s,]+"#
         ]
         for pattern in patterns {

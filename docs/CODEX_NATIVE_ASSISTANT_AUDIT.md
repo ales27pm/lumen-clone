@@ -46,7 +46,7 @@
 - Added thermal, power, and memory pressure monitors plus memory-pressure metrics emission.
 - Added JSONL-backed runtime metrics store (`Application Support/Lumen/runtime-metrics.jsonl`).
 - Added deterministic background policy and background execution lease actor.
-- Added background orchestrator wrapper that preserves existing TriggerScheduler behavior and identifiers; launch wiring remains staged to avoid duplicate BGTaskScheduler registration for the same identifiers until Xcode/device validation.
+- Added background orchestrator wrapper that preserves existing TriggerScheduler identifiers; launch wiring now uses a single delegation path so startup calls the orchestrator facade, registration remains owned by TriggerScheduler, and BG task callbacks enter orchestrator handlers for lease/policy/metrics handling.
 - Added entitlement validator for BG task IDs and usage description keys with non-fatal warnings.
 
 ## Phase 5 Update
@@ -88,7 +88,7 @@
 
 - Concrete AppIntent entrypoints implemented with bounded/degraded-safe behavior and open-app-required gates for sensitive actions.
 
-- DiagnosticsProvider and diagnostics UI surfaces implemented with metadata-only snapshots (no raw user content).
+- DiagnosticsProvider and diagnostics UI surfaces implemented with metadata-only snapshots (no raw user content); persistent diagnostic runs now attach local remediation proposals to failed, skipped, or interrupted records.
 
 - VoiceModeView migration completed to VoiceSessionController primary state/runtime with legacy VoiceService bridge for compatibility.
 
@@ -101,7 +101,7 @@
 - Background, metrics, permission, tool, AppIntent, Memory, and RAG review fixes are tracked in `docs/PR_REVIEW_REMEDIATION.md`.
 
 ## Final PR #232 Cleanup Update
-- Final cleanup made the staged AssistantKernel `@MainActor` for ModelContext-dependent grounding/tool helpers, removed `LegacyAgentRunOptions` Sendable conformance, clarified staged BackgroundOrchestrator status, and fixed remaining legacy grounding/test hygiene comments tracked in `docs/PR_REVIEW_FINAL_CLEANUP.md`.
+- Final cleanup made the staged AssistantKernel `@MainActor` for ModelContext-dependent grounding/tool helpers, removed `LegacyAgentRunOptions` Sendable conformance, clarified the background orchestrator status at that time, and fixed remaining legacy grounding/test hygiene comments tracked in `docs/PR_REVIEW_FINAL_CLEANUP.md`.
 
 ## Runtime resource-kill mitigation update
 
@@ -118,3 +118,10 @@
 - `LegacyAgentCompatibilityBridge` remains for documented compatibility paths, including kernel-internal tool-required chat routing, tool-capable voice routing, live diagnostics/E2E probes, and grounding audit smoke tests.
 - Voice routing remains mixed: `VoiceCommandRouter` can still adapt kernel events back to `AgentEvent` and tool-capable voice can still use `runLegacyAgentBridge(...)`.
 - This update does not claim all legacy services are removed or that the app is production-ready without Xcode/device validation.
+
+## Background tool-only trigger update
+
+- Background trigger scans no longer require `AppLlamaService.shared.isChatLoaded` before reaching due triggers.
+- `BackgroundTaskPolicy` allows background trigger scans while keeping `allowModelLoading=false` for background execution.
+- Safe local tool-only prompts can run through the background-safe bridge without a loaded chat runtime; model-heavy background prompts still skip/degrade instead of loading model assets.
+- `BackgroundOrchestrator` records trigger-scan metrics through the same policy/lease path used by BG refresh and processing callbacks.

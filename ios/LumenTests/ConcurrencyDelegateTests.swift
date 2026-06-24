@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct ConcurrencyDelegateTests {
     @Test func locationDelegateOnlyDispatchesHandlerOnceUnderRacingCallbacks() async {
-        var captures: [CLLocationCoordinate2D?] = []
+        var captures: [LocationCoordinateProbeResult] = []
         let manager = CLLocationManager()
         let delegate = SingleShotLocationDelegate(manager: manager) { captures.append($0) }
 

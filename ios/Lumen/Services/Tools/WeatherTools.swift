@@ -6,18 +6,31 @@ enum WeatherTools {
     private static let retryPolicy = ToolRetryPolicy(maxAttempts: 3, baseDelay: 0.4, maxDelay: 2.0, jitterRatio: 0.2)
 
     static func currentWeather(location: String? = nil) async -> String {
-        let coordinate: CLLocationCoordinate2D?
+        let coordinateResult: WeatherCoordinateResolution
         let requestedLocation = (location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let usesDeviceLocation = isCurrentLocationRequest(requestedLocation)
 
         if usesDeviceLocation {
-            coordinate = await LocationProbe.currentCoordinate()
+            switch await LocationProbe.currentCoordinateResult() {
+            case .success(let coordinate):
+                coordinateResult = .success(coordinate)
+            case .failure(let failure):
+                coordinateResult = .failure(weatherLocationFailureMessage(for: failure))
+            }
         } else {
-            coordinate = await geocode(requestedLocation)
+            if let coordinate = await geocode(requestedLocation) {
+                coordinateResult = .success(coordinate)
+            } else {
+                coordinateResult = .failure(weatherGeocodingFailureMessage(for: requestedLocation))
+            }
         }
 
-        guard let coordinate else {
-            return "I need location access, or a city name, to check the weather. Try asking `weather in Montreal` or enable Location permission."
+        let coordinate: CLLocationCoordinate2D
+        switch coordinateResult {
+        case .success(let resolvedCoordinate):
+            coordinate = resolvedCoordinate
+        case .failure(let message):
+            return message
         }
 
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
@@ -84,6 +97,35 @@ enum WeatherTools {
             || normalized == "this location"
             || normalized == "device location"
             || normalized == "near me"
+    }
+
+    nonisolated static func weatherLocationFailureMessage(for failure: LocationCoordinateFailure) -> String {
+        switch failure {
+        case .permissionDenied:
+            return "Location access is denied. Enable Location permission for Lumen or ask with a city, for example `weather in Montreal`."
+        case .permissionRestricted:
+            return "Location access is restricted on this device. Ask with a city, for example `weather in Montreal`."
+        case .permissionNotDetermined:
+            return "Location permission has not been granted yet. Open Lumen to approve Location access, or ask with a city, for example `weather in Montreal`."
+        case .timedOut:
+            return "Couldn't get your current location before the GPS timeout. Try again, move somewhere with a clearer signal, or ask with a city."
+        case .unavailable(let detail):
+            let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return "Couldn't get your current location from Location Services. Try again or ask with a city."
+            }
+            return "Couldn't get your current location from Location Services: \(trimmed)"
+        case .unknownAuthorizationStatus:
+            return "Couldn't determine the current Location permission state. Open Lumen to review Location permission, or ask with a city."
+        }
+    }
+
+    nonisolated static func weatherGeocodingFailureMessage(for requestedLocation: String) -> String {
+        let trimmed = requestedLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "I need location access, or a city name, to check the weather. Try asking `weather in Montreal` or enable Location permission."
+        }
+        return "Couldn't find weather coordinates for \"\(trimmed)\". Try a more specific city, region, or address."
     }
 
     private static func executeRequest(endpoint: String, request: URLRequest, timeout: TimeInterval, retryPolicy: ToolRetryPolicy, context: String) async -> Result<(Data, HTTPURLResponse?), any Error> {
@@ -164,4 +206,9 @@ enum WeatherTools {
         default: return "weather code \(code)"
         }
     }
+}
+
+private enum WeatherCoordinateResolution {
+    case success(CLLocationCoordinate2D)
+    case failure(String)
 }

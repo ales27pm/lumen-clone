@@ -511,15 +511,17 @@ struct ToolCallCard: View {
 
     private func approve() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        let toolID = message.toolName ?? ""
+        let toolID = ToolRouteGuard.canonicalToolID(message.toolName ?? "")
         var args = parseArgs(message.content)
-        if let pendingIDRaw = args["pendingActionID"] ?? args["pending_action_id"],
-           let pendingID = UUID(uuidString: pendingIDRaw),
-           let pending = ToolApprovalQueue.shared.consume(pendingID) {
+        switch ToolApprovalPayloadCodec.consumePendingApproval(from: args, matchingToolID: toolID) {
+        case .success(let pending):
             args = pending.arguments.stringCoerced
+        case .failure(let error):
+            message.toolStatus = ToolStatus.denied.rawValue
+            message.toolResult = error.userMessage
+            try? modelContext.save()
+            return
         }
-        args.removeValue(forKey: "pendingActionID")
-        args.removeValue(forKey: "pending_action_id")
         let routing = IntentRouter.classify(inferredUserPrompt())
         guard IntentRouter.isToolAllowed(toolID, for: routing) else {
             message.toolStatus = ToolStatus.denied.rawValue
@@ -556,18 +558,17 @@ struct ToolCallCard: View {
 
     private func deny() {
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        let args = parseArgs(message.content)
+        if let pendingID = ToolApprovalPayloadCodec.pendingActionID(from: args) {
+            ToolApprovalQueue.shared.clear(pendingID)
+        }
         message.toolStatus = ToolStatus.denied.rawValue
         message.toolResult = "Denied by user."
         try? modelContext.save()
     }
 
     private func parseArgs(_ string: String) -> [String: String] {
-        var out: [String: String] = [:]
-        for pair in string.components(separatedBy: ",") {
-            let parts = pair.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            if parts.count == 2 { out[parts[0]] = parts[1] }
-        }
-        return out
+        ToolApprovalPayloadCodec.parseLooseArguments(string)
     }
 }
 

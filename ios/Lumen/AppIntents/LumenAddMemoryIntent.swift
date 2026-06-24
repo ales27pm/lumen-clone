@@ -26,11 +26,18 @@ struct LumenAddMemoryIntent: AppIntent {
         guard score.decision == .save else {
             return .result(value: "Memory not saved: did not meet save policy.")
         }
+        let drain = await MemoryCaptureQueue.drain(context: ctx, maxItems: 3, allowPromotion: true)
         do {
             try await MemoryStore.remember(body, kind: .fact, source: "app-intent", topic: nil, context: ctx)
-            return .result(value: "Memory saved.")
+            return .result(value: Self.savedMessage(drained: drain.promoted))
         } catch {
-            return .result(value: LumenIntentResultRenderer.degraded("memory save failed"))
+            do {
+                let queued = try MemoryCaptureQueue.enqueue(content: body, kind: .fact, source: "app-intent-pending")
+                let pending = (try? MemoryCaptureQueue.pendingCount()) ?? 1
+                return .result(value: Self.queuedMessage(pendingCount: pending, retryCount: queued.retryCount))
+            } catch {
+                return .result(value: LumenIntentResultRenderer.degraded("memory capture failed"))
+            }
         }
     }
 
@@ -43,6 +50,16 @@ struct LumenAddMemoryIntent: AppIntent {
             return LumenIntentResultRenderer.openAppRequired("sensitive memory requires in-app approval")
         }
         return nil
+    }
+
+    static func savedMessage(drained: Int) -> String {
+        guard drained > 0 else { return "Memory saved." }
+        return "Memory saved. Also indexed \(drained) pending memory capture\(drained == 1 ? "" : "s")."
+    }
+
+    static func queuedMessage(pendingCount: Int, retryCount: Int) -> String {
+        let retrySuffix = retryCount > 0 ? " Retry count: \(retryCount)." : ""
+        return "Memory captured locally for later indexing. Pending captures: \(max(1, pendingCount)).\(retrySuffix)"
     }
 }
 #endif

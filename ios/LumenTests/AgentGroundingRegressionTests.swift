@@ -368,6 +368,88 @@ struct AgentGroundingRegressionTests {
         #expect(package.scenarioResults.count == 1)
     }
 
+    @Test func agentGroundingPackageRedactsTraceExportWhilePreservingAdapterEvidence() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let traceID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: traceID,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            event: .modelTurn,
+            slot: "mouth",
+            stage: "mouth-final",
+            scenarioID: "trace-\(traceID.uuidString)",
+            e2eRunID: traceID,
+            agentRunID: UUID(uuidString: "22222222-2222-4222-8222-222222222222"),
+            conversationID: UUID(uuidString: "33333333-3333-4333-8333-333333333333"),
+            turnID: UUID(uuidString: "44444444-4444-4444-8444-444444444444"),
+            intent: "chat",
+            promptPrefix: "prompt=My private question email alexis@example.com file=/Users/ales27pm/private.txt <think>secret reasoning</think>",
+            rawOutputPrefix: "<think>hidden plan</think>{\"final\":\"Email alexis@example.com from /Users/ales27pm/Secret/model.gguf\"}",
+            selectedToolID: nil,
+            toolArguments: ["body": "Hello Alexis", "empty": ""],
+            allowedToolIDs: ["weather"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            modelFamily: "qwen3",
+            baseModelPath: "/Users/ales27pm/Models/lumen-qwen3.gguf",
+            adapterID: "ales27pm/lumen-mouth-lora",
+            adapterSlot: "mouth",
+            adapterPath: "/private/var/mobile/Containers/Data/lumen-mouth-lora.gguf",
+            adapterApplied: true,
+            generationElapsedMs: 1_200,
+            runtimePath: "sharedAdapter",
+            activeAdapterSlot: "mouth",
+            modelIdentifier: "Qwen/Qwen3-1.7B"
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+        let trace = try #require(package.recentTraces.first)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let text = String(decoding: try encoder.encode(package), as: UTF8.self)
+
+        #expect(trace.runtimePath == "sharedAdapter")
+        #expect(trace.adapterSlot == "mouth")
+        #expect(trace.adapterApplied == true)
+        #expect(trace.baseModelPath == "lumen-qwen3.gguf")
+        #expect(trace.adapterPath == "lumen-mouth-lora.gguf")
+        #expect(trace.modelIdentifier == "Qwen/Qwen3-1.7B")
+        #expect(trace.toolArguments["body"] == "[redacted]")
+        #expect(trace.toolArguments["empty"] == "")
+        #expect(!trace.promptPrefix.contains("My private question"))
+        #expect(!trace.promptPrefix.contains("alexis@example.com"))
+        #expect(!trace.rawOutputPrefix.contains("hidden plan"))
+
+        for forbidden in [
+            traceID.uuidString,
+            "22222222-2222-4222-8222-222222222222",
+            "33333333-3333-4333-8333-333333333333",
+            "44444444-4444-4444-8444-444444444444",
+            "alexis@example.com",
+            "/Users/ales27pm",
+            "/private/var",
+            "secret reasoning",
+            "hidden plan",
+            "Hello Alexis",
+            "sourceTraceID"
+        ] {
+            #expect(!text.contains(forbidden))
+        }
+        #expect(text.contains("sharedAdapter"))
+        #expect(text.contains("lumen-mouth-lora.gguf"))
+    }
+
     @Test func agentGroundingPackageFlagsSlowRuntimeModelTurns() throws {
         AgentBehaviorTraceRecorder.clear()
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(

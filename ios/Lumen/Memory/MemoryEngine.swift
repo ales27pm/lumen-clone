@@ -34,7 +34,9 @@ final class MemoryEngine {
         try await MemoryStore.remember(candidate.text, kind: .fact, source: "memory-engine", topic: candidate.topics.first, context: context)
     }
 
-    func consolidateDueMemories(context: ModelContext) async { await MemoryConsolidator.consolidate(context: context) }
+    func consolidateDueMemories(context: ModelContext) async {
+        await MemoryConsolidator.consolidate(context: context, promoteQueuedCaptures: true)
+    }
     func deleteMemory(id: UUID, context: ModelContext) throws {
         var descriptor = FetchDescriptor<MemoryItem>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1

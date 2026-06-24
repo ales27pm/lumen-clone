@@ -11,8 +11,8 @@ final class AssistantKernel {
     }
 
     private let router: AssistantRuntimeRouter
-    private let metricsStore: RuntimeMetricsStore
-    private let toolRegistry: SecureToolRegistry
+    let metricsStore: RuntimeMetricsStore
+    let toolRegistry: SecureToolRegistry
     private let memoryEngine = MemoryEngine()
     private let ragEngine = RAGEngine()
 

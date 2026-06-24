@@ -7,25 +7,38 @@ enum LocationProbe {
     @MainActor private static var activeDelegates: [UUID: AnyObject] = [:]
 
     static func currentCoordinate(timeout: TimeInterval = 8) async -> CLLocationCoordinate2D? {
+        guard case .success(let coordinate) = await currentCoordinateResult(timeout: timeout) else {
+            return nil
+        }
+        return coordinate
+    }
+
+    static func currentCoordinateResult(timeout: TimeInterval = 8) async -> LocationCoordinateProbeResult {
         let manager = CLLocationManager()
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         let status = manager.authorizationStatus
-        if status == .denied || status == .restricted {
-            return nil
+        switch locationAuthorizationAction(for: status) {
+        case .deniedOrRestricted:
+            return .failure(LocationCoordinateFailure.authorizationFailure(for: status))
+        case .unknown:
+            logUnknownAuthorizationStatus(status, source: "LocationProbe.currentCoordinateResult")
+            return .failure(.unknownAuthorizationStatus(rawValue: status.rawValue))
+        case .requestLocation, .requestWhenInUseAuthorization, .waitForChoice:
+            break
         }
 
-        return await withCheckedContinuation { (cont: CheckedContinuation<CLLocationCoordinate2D?, Never>) in
+        return await withCheckedContinuation { (cont: CheckedContinuation<LocationCoordinateProbeResult, Never>) in
             let token = UUID()
-            let delegate = SingleShotLocationDelegate(manager: manager) { coord in
+            let delegate = SingleShotLocationDelegate(manager: manager) { result in
                 activeDelegates[token] = nil
-                cont.resume(returning: coord)
+                cont.resume(returning: result)
             }
             activeDelegates[token] = delegate
             manager.delegate = delegate
 
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(timeout))
-                delegate.finish(with: nil)
+                delegate.finishTimedOut()
             }
 
             delegate.begin()
@@ -57,6 +70,31 @@ enum LocationProbe {
             delegate.begin()
         }
     }
+}
+
+enum LocationCoordinateFailure: Equatable {
+    case permissionDenied
+    case permissionRestricted
+    case permissionNotDetermined
+    case timedOut
+    case unavailable(String)
+    case unknownAuthorizationStatus(rawValue: Int32)
+
+    static func authorizationFailure(for status: CLAuthorizationStatus) -> LocationCoordinateFailure {
+        switch status {
+        case .authorizedAlways, .authorizedWhenInUse:
+            return .unavailable("Location permission is authorized, but no location was available.")
+        case .denied: return .permissionDenied
+        case .restricted: return .permissionRestricted
+        case .notDetermined: return .permissionNotDetermined
+        @unknown default: return .unknownAuthorizationStatus(rawValue: status.rawValue)
+        }
+    }
+}
+
+enum LocationCoordinateProbeResult {
+    case success(CLLocationCoordinate2D)
+    case failure(LocationCoordinateFailure)
 }
 
 private enum LocationAuthorizationAction {
@@ -101,10 +139,10 @@ private func logUnknownAuthorizationStatus(_ status: CLAuthorizationStatus, sour
 final class SingleShotLocationDelegate: NSObject, CLLocationManagerDelegate {
     /// Concurrency contract: callbacks are normalized onto MainActor before reading or mutating state.
     private let manager: CLLocationManager
-    private let handler: (CLLocationCoordinate2D?) -> Void
+    private let handler: (LocationCoordinateProbeResult) -> Void
     private var done = false
 
-    init(manager: CLLocationManager, handler: @escaping (CLLocationCoordinate2D?) -> Void) {
+    init(manager: CLLocationManager, handler: @escaping (LocationCoordinateProbeResult) -> Void) {
         self.manager = manager
         self.handler = handler
     }
@@ -117,32 +155,62 @@ final class SingleShotLocationDelegate: NSObject, CLLocationManagerDelegate {
         case .requestWhenInUseAuthorization:
             manager.requestWhenInUseAuthorization()
         case .deniedOrRestricted:
-            finish(with: nil)
+            finish(with: .failure(LocationCoordinateFailure.authorizationFailure(for: manager.authorizationStatus)))
         case .waitForChoice:
             break
         case .unknown:
             logUnknownAuthorizationStatus(manager.authorizationStatus, source: "SingleShotLocationDelegate.begin")
-            finish(with: nil)
+            finish(with: .failure(.unknownAuthorizationStatus(rawValue: manager.authorizationStatus.rawValue)))
         }
     }
 
-    func finish(with coord: CLLocationCoordinate2D?) {
+    func finish(with result: LocationCoordinateProbeResult) {
         MainActor.preconditionIsolated()
         if done { return }
         done = true
-        handler(coord)
+        handler(result)
+    }
+
+    func finishTimedOut() {
+        MainActor.preconditionIsolated()
+        guard !done else { return }
+        if manager.authorizationStatus == .notDetermined {
+            finish(with: .failure(.permissionNotDetermined))
+        } else {
+            finish(with: .failure(.timedOut))
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        let coord = locations.last?.coordinate
+        let result: LocationCoordinateProbeResult
+        if let coord = locations.last?.coordinate {
+            result = .success(coord)
+        } else {
+            result = .failure(.unavailable("Location services returned no coordinates."))
+        }
         Task { @MainActor in
-            self.finish(with: coord)
+            self.finish(with: result)
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let nsError = error as NSError
+        let failure: LocationCoordinateFailure
+        if nsError.domain == kCLErrorDomain,
+           let code = CLError.Code(rawValue: nsError.code) {
+            switch code {
+            case .denied:
+                failure = .permissionDenied
+            case .locationUnknown, .network, .deferredFailed, .deferredNotUpdatingLocation, .promptDeclined:
+                failure = .unavailable(error.localizedDescription)
+            default:
+                failure = .unavailable(error.localizedDescription)
+            }
+        } else {
+            failure = .unavailable(error.localizedDescription)
+        }
         Task { @MainActor in
-            self.finish(with: nil)
+            self.finish(with: .failure(failure))
         }
     }
 
@@ -153,12 +221,12 @@ final class SingleShotLocationDelegate: NSObject, CLLocationManagerDelegate {
             case .requestLocation:
                 manager.requestLocation()
             case .deniedOrRestricted:
-                self.finish(with: nil)
+                self.finish(with: .failure(LocationCoordinateFailure.authorizationFailure(for: manager.authorizationStatus)))
             case .waitForChoice, .requestWhenInUseAuthorization:
                 break
             case .unknown:
                 logUnknownAuthorizationStatus(manager.authorizationStatus, source: "SingleShotLocationDelegate.locationManagerDidChangeAuthorization")
-                self.finish(with: nil)
+                self.finish(with: .failure(.unknownAuthorizationStatus(rawValue: manager.authorizationStatus.rawValue)))
             }
         }
     }

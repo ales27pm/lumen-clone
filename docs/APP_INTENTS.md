@@ -5,6 +5,7 @@ Implemented concrete intents:
 - Search Lumen Memory (`LumenMemorySearchIntent`)
 - Add Lumen Memory (`LumenAddMemoryIntent`)
 - Run Lumen Trigger (`LumenRunTriggerIntent`)
+- Check Lumen Diagnostics (`LumenDiagnosticsIntent`)
 - App shortcuts provider (`LumenAppShortcuts`)
 
 Safety rules:
@@ -13,6 +14,8 @@ Safety rules:
 - No external network by default.
 - Outputs are bounded and compact.
 - If model/store context is unavailable, intents return degraded responses and do not fake success.
+- Add Memory saves through the local vector-backed memory store when embeddings are available. If local embedding/indexing is unavailable, it writes a bounded pending capture to local app storage and reports later indexing instead of using cloud fallback or claiming indexed memory.
+- Diagnostics intent is passive: it reads cached local capability state plus persistent diagnostic run/remediation state, and does not start model loading, background jobs, or diagnostic campaigns.
 
 ## Build integration notes
 

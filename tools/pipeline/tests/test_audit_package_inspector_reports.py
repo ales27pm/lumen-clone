@@ -69,6 +69,17 @@ class AuditPackageInspectorReportTests(unittest.TestCase):
                                     },
                                 },
                                 {"status": "failed"},
+                                {
+                                    "status": "skipped",
+                                    "remediationProposals": [
+                                        {
+                                            "id": "manual-scenario-foreground",
+                                            "title": "Run the diagnostic from the foreground control",
+                                            "action": "Open Runtime Diagnostics and start the matching manual probe from the foreground UI.",
+                                            "severity": "info",
+                                        }
+                                    ],
+                                },
                             ]
                         },
                     }
@@ -80,8 +91,9 @@ class AuditPackageInspectorReportTests(unittest.TestCase):
 
         self.assertEqual("persistent_runtime_diagnostics_export", inspection.source_format)
         self.assertEqual("persistentRuntimeDiagnostics", inspection.source_layer)
-        self.assertEqual(3, inspection.diagnostics_record_count)
-        self.assertEqual(1, inspection.diagnostics_failed_count)
+        self.assertEqual(4, inspection.diagnostics_record_count)
+        self.assertEqual(2, inspection.diagnostics_failed_count)
+        self.assertEqual(1, inspection.diagnostics_remediation_proposal_count)
         self.assertNotIn("unrecognized JSON audit shape", inspection.warnings)
 
 

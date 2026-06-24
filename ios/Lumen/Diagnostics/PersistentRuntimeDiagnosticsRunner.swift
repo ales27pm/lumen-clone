@@ -264,6 +264,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         state.status.lastFirstTokenLatencyMs = copy.metrics.firstTokenLatencyMs
         state.status.lastPromptFinalChars = copy.metrics.promptFinalChars
         state.status.lastCancellationReason = copy.metrics.cancellationReason
+        state.status.lastRemediationSummary = copy.remediationProposals?.first?.title
         state.status.lastUpdatedAt = Date()
         try? await store.saveState(state)
         await store.appendRunUpdate(copy)
@@ -275,6 +276,17 @@ actor PersistentRuntimeDiagnosticsRunner {
         record.finishedAt = Date()
         record.events.append(PersistentDiagnosticEvent(code: code, message: message))
         if status == .failed { record.failureSummary = code }
+        let proposals = PersistentDiagnosticRemediationAdvisor.proposals(for: record, status: status, code: code)
+        guard !proposals.isEmpty else { return }
+        record.remediationProposals = proposals
+        record.events.append(PersistentDiagnosticEvent(
+            code: "diagnostic_remediation_proposal",
+            message: proposals.map(\.title).joined(separator: "; "),
+            values: [
+                "ids": proposals.map(\.id).joined(separator: ","),
+                "severity": proposals.map(\.severity.rawValue).sorted().joined(separator: ",")
+            ]
+        ))
     }
 
     private func scenarioPlainFastPrompt(_ record: inout PersistentDiagnosticRunRecord) async {
@@ -522,21 +534,22 @@ actor PersistentRuntimeDiagnosticsRunner {
 
         let seriousDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedSerious, reason: "userChat.agentGrounding") }
         let criticalDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedCritical, reason: "userChat.agentGrounding") }
-        let backgroundAllowed = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedBackground, reason: "userChat.agentGrounding") }
+        let backgroundDenied = await MainActor.run { !ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedBackground, reason: "userChat.agentGrounding") }
         let lowPowerAllowed = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(snapshot: simulatedLowPower, reason: ModelLoadIntent.diagnostics.rawValue) }
 
         #if DEBUG
-        let overrideAllowed = await MainActor.run {
+        let overrideDenied = await MainActor.run {
             ResourceBudgetGate.setDiagnosticSnapshotOverride(simulatedBackground)
             defer { ResourceBudgetGate.clearDiagnosticSnapshotOverride() }
-            return ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding")
+            return !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.agentGrounding")
         }
         #else
-        let overrideAllowed = backgroundAllowed
+        let overrideDenied = backgroundDenied
         #endif
 
         let realExpectedAllowed: Bool
-        if realSnapshot.lowPowerModeEnabled == false,
+        if realSnapshot.scenePhase == .active,
+           realSnapshot.lowPowerModeEnabled == false,
            realSnapshot.recentMemoryWarningCount == 0 || realSnapshot.recentMemoryWarningCount == nil,
            realSnapshot.thermalState == .nominal || realSnapshot.thermalState == .fair {
             realExpectedAllowed = true
@@ -544,7 +557,7 @@ actor PersistentRuntimeDiagnosticsRunner {
             realExpectedAllowed = false
         }
         let realPass = realExpectedAllowed ? !realDenied : true
-        let simulatedPass = seriousDenied && criticalDenied && backgroundAllowed && lowPowerAllowed && overrideAllowed
+        let simulatedPass = seriousDenied && criticalDenied && backgroundDenied && lowPowerAllowed && overrideDenied
 
         record.metrics.didFallback = simulatedPass
         record.metrics.fallbackReason = "resource_gate_probe"
@@ -557,7 +570,7 @@ actor PersistentRuntimeDiagnosticsRunner {
         record.events.append(PersistentDiagnosticEvent(code: "resource_gate_matrix", message: "Resource gate matrix evaluated", values: [
             "seriousDenied": String(seriousDenied),
             "criticalDenied": String(criticalDenied),
-            "backgroundAllowed": String(backgroundAllowed),
+            "backgroundDenied": String(backgroundDenied),
             "lowPowerAllowed": String(lowPowerAllowed),
             "realExpectedAllowed": String(realExpectedAllowed),
             "realDenied": String(realDenied)

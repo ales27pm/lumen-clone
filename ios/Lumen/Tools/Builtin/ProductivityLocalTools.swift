@@ -50,7 +50,7 @@ struct ProductivityLocalTool: LocalTool {
     func validateArguments(_ arguments: [String: String]) throws {}
 
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
-        let approval: ToolExecutionApproval = invocation.source == .userInitiated ? .userApproved : .autonomous
+        let approval: ToolExecutionApproval = invocation.source == .userApproved ? .userApproved : .autonomous
         let args = ToolRouteGuard.normalizedArguments(
             for: toolID,
             rawToolID: toolID,
@@ -85,7 +85,7 @@ struct ProductivityLocalTool: LocalTool {
                 await requestCalendarPermissionIfNeeded()
             }
         } else {
-            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args) {
+            if let permissionFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: toolID, arguments: args, isForeground: context.isForeground) {
                 return result(
                     invocation: invocation,
                     text: permissionFailure,

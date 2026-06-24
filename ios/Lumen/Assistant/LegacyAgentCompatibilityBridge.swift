@@ -22,6 +22,21 @@ enum LegacyAgentCompatibilityBridge {
         }
     }
 
+    static func runSlotAgentKernelCompatibility(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentKernelEvent> {
+        AsyncStream { continuation in
+            let task = Task { @MainActor in
+                for await event in SlotAgentService.shared.run(request, options: options) {
+                    continuation.yield(event.agentKernelEvent)
+                }
+                continuation.finish()
+            }
+
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
+    }
+
     static func runSlotAgentCompatibility(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
         SlotAgentService.shared.run(request, options: options)
     }
