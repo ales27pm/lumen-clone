@@ -39,12 +39,15 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
             state: state,
             campaign: PersistentDiagnosticCampaign(enabled: true, runContinuously: true),
             snapshot: Self.snapshot(),
+            pendingMemoryCaptureCount: 2,
             includeRemediation: true
         )
 
         XCTAssertTrue(text.contains("campaign=continuous"))
         XCTAssertTrue(text.contains("passed=2, failed=1, skipped=1"))
         XCTAssertTrue(text.contains("Privacy: localOnly=true; network=unknown"))
+        XCTAssertTrue(text.contains("Memory capture queue: 2 pending local captures awaiting indexing."))
+        XCTAssertTrue(text.contains("Memory remediation: open Lumen with a local embedding runtime available"))
         XCTAssertTrue(text.contains("Latest: Thermal resource gate failed"))
         XCTAssertTrue(text.contains("Remediation: Fix the resource-gate policy matrix"))
         XCTAssertLessThanOrEqual(text.count, PersistentRuntimeDiagnosticsSummaryRenderer.defaultMaxCharacters)
@@ -55,12 +58,27 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
             state: nil,
             campaign: nil,
             snapshot: Self.snapshot(),
+            pendingMemoryCaptureCount: 0,
             includeRemediation: true
         )
 
         XCTAssertTrue(text.contains("campaign=not configured"))
+        XCTAssertTrue(text.contains("Memory capture queue: clear."))
         XCTAssertTrue(text.contains("No persistent diagnostic runs recorded yet."))
         XCTAssertFalse(text.contains("Remediation:"))
+    }
+
+    func testMemoryQueueRemediationCanBeExcluded() {
+        let text = PersistentRuntimeDiagnosticsSummaryRenderer.render(
+            state: nil,
+            campaign: nil,
+            snapshot: Self.snapshot(),
+            pendingMemoryCaptureCount: 1,
+            includeRemediation: false
+        )
+
+        XCTAssertTrue(text.contains("Memory capture queue: 1 pending local capture awaiting indexing."))
+        XCTAssertFalse(text.contains("Memory remediation:"))
     }
 
     private static func snapshot() -> DiagnosticsSnapshot {

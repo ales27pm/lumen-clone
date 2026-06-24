@@ -7,6 +7,7 @@ nonisolated enum PersistentRuntimeDiagnosticsSummaryRenderer {
         state: PersistentDiagnosticState?,
         campaign: PersistentDiagnosticCampaign?,
         snapshot: DiagnosticsSnapshot?,
+        pendingMemoryCaptureCount: Int? = nil,
         includeRemediation: Bool = true,
         maxCharacters: Int = defaultMaxCharacters
     ) -> String {
@@ -30,6 +31,17 @@ nonisolated enum PersistentRuntimeDiagnosticsSummaryRenderer {
         if let snapshot {
             lines.append("Runtime: FoundationModels=\(availability(snapshot.runtime.foundationModelsAvailable)); CoreML=\(availability(snapshot.runtime.coreMLAvailable)); thermal=\(snapshot.runtime.thermalState); lowPower=\(snapshot.runtime.lowPowerModeEnabled).")
             lines.append("Privacy: localOnly=\(snapshot.privacy.localOnlyMode); network=\(snapshot.privacy.networkAccessState).")
+        }
+
+        if let pendingMemoryCaptureCount {
+            if pendingMemoryCaptureCount > 0 {
+                lines.append("Memory capture queue: \(pendingMemoryCaptureCount) pending local capture\(pendingMemoryCaptureCount == 1 ? "" : "s") awaiting indexing.")
+                if includeRemediation {
+                    lines.append("Memory remediation: open Lumen with a local embedding runtime available to promote pending captures.")
+                }
+            } else {
+                lines.append("Memory capture queue: clear.")
+            }
         }
 
         if let latest = latestRecord(in: state) {
