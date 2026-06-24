@@ -372,6 +372,65 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func mismatchedE2ERunIDDoesNotUseScenarioOrPromptFallback() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let expectedRunID = UUID()
+        let differentRunID = UUID()
+        let prompt = "Explain precision and recall."
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "agent",
+                stage: "agent-json-step-0",
+                scenarioID: "training-general-chat",
+                e2eRunID: differentRunID,
+                agentRunID: UUID(),
+                conversationID: UUID(),
+                turnID: UUID(),
+                intent: "chat",
+                promptPrefix: prompt,
+                rawOutputPrefix: #"{"final":"Precision is exactness and recall is coverage."}"#,
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: true,
+                modelFamily: "qwen3",
+                adapterSlot: "executor",
+                generationElapsedMs: 14,
+                firstTokenLatencyMs: 1,
+                outputTokenCount: 8,
+                runtimePath: "agent-model",
+                activeAdapterSlot: "executor"
+            )
+        )
+
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: prompt,
+            scenarioID: "training-general-chat",
+            e2eRunID: expectedRunID
+        ))
+        let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(
+            since: startedAt,
+            prompt: prompt,
+            scenarioID: "training-general-chat",
+            e2eRunID: expectedRunID
+        )
+        #expect(message.contains("no correlated AgentBehaviorTrace found"))
+        #expect(message.contains("fallbackPromptTimeTraceCount=1"))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func missingCorrelatedModelTurnReportsCheckedIDs() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()

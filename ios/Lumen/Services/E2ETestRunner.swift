@@ -943,6 +943,7 @@ nonisolated enum E2ETestRunner {
         let correlatedTraces = recentTraces.filter { trace in
             traceMatchesCorrelation(trace, correlation: correlation, startedAt: startedAt)
         }
+        let hasExplicitCorrelation = correlation?.hasAnyIdentifier == true
         let fallbackTraces = recentTraces.filter { trace in
             guard trace.createdAt >= startedAt else { return false }
             let promptPrefix = trace.promptPrefix.lowercased()
@@ -952,8 +953,8 @@ nonisolated enum E2ETestRunner {
             return true
         }
         let usedCorrelation = !correlatedTraces.isEmpty
-        let matchingTraces = usedCorrelation ? correlatedTraces : fallbackTraces
-        let matchedBy = usedCorrelation ? "correlation" : "prompt-time"
+        let matchingTraces = hasExplicitCorrelation ? correlatedTraces : fallbackTraces
+        let matchedBy = hasExplicitCorrelation ? "correlation" : "prompt-time"
 
         if let modelTrace = matchingTraces.first(where: { trace in
             trace.event == AgentBehaviorTrace.Event.modelTurn
@@ -1003,12 +1004,35 @@ nonisolated enum E2ETestRunner {
 
     private nonisolated static func traceMatchesCorrelation(_ trace: AgentBehaviorTrace, correlation: E2ETraceCorrelation?, startedAt: Date) -> Bool {
         guard let correlation, correlation.hasAnyIdentifier else { return false }
-        if let e2eRunID = correlation.e2eRunID, trace.e2eRunID == e2eRunID { return true }
-        if let agentRunID = correlation.agentRunID, trace.agentRunID == agentRunID { return true }
-        if let conversationID = correlation.conversationID, trace.conversationID == conversationID { return true }
-        if let turnID = correlation.turnID, trace.turnID == turnID { return true }
-        if let scenarioID = correlation.scenarioID, !scenarioID.isEmpty, trace.scenarioID == scenarioID, trace.createdAt >= startedAt { return true }
-        return false
+        var matchedAny = false
+        if let scenarioID = correlation.scenarioID, !scenarioID.isEmpty {
+            guard trace.scenarioID == scenarioID else { return false }
+            matchedAny = true
+        }
+        if let e2eRunID = correlation.e2eRunID {
+            guard trace.e2eRunID == e2eRunID else { return false }
+            matchedAny = true
+        }
+        if let agentRunID = correlation.agentRunID {
+            guard trace.agentRunID == agentRunID else { return false }
+            matchedAny = true
+        }
+        if let conversationID = correlation.conversationID {
+            guard trace.conversationID == conversationID else { return false }
+            matchedAny = true
+        }
+        if let turnID = correlation.turnID {
+            guard trace.turnID == turnID else { return false }
+            matchedAny = true
+        }
+        guard matchedAny else { return false }
+        if correlation.e2eRunID == nil,
+           correlation.agentRunID == nil,
+           correlation.conversationID == nil,
+           correlation.turnID == nil {
+            return trace.createdAt >= startedAt
+        }
+        return true
     }
 
     private nonisolated static func modelRuntimeEvidenceFailureMessage(
