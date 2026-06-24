@@ -459,6 +459,104 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func trainingEvidencePrefersPrimaryAgentJSONContextOverflowOverRepairTrace() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let prompt = "What is the weather here and should I carry an umbrella?"
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "agent",
+                stage: "agent-json-step-0",
+                intent: "weather",
+                promptPrefix: prompt,
+                rawOutputPrefix: "Prompt exceeded context window before generation",
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: ["location.current", "weather"],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: AgentTurnParseError.contextWindowExceeded.rawValue,
+                emittedFinalInActionTurn: false,
+                modelFamily: "qwen3",
+                runtimePath: "agent-model",
+                activeAdapterSlot: "executor"
+            )
+        )
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "executor",
+                stage: "agent-repair",
+                intent: "weather",
+                promptPrefix: prompt,
+                rawOutputPrefix: "{}",
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: ["location.current", "weather"],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: AgentTurnParseError.missingActionOrFinal.rawValue,
+                emittedFinalInActionTurn: false,
+                modelFamily: "qwen3",
+                runtimePath: "sharedAdapter",
+                activeAdapterSlot: "executor"
+            )
+        )
+
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt, requiresPrimaryAgentJSON: true))
+        let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(since: startedAt, prompt: prompt, requiresPrimaryAgentJSON: true)
+        #expect(message.contains("found primary agent-json modelTurn"))
+        #expect(message.contains("contextWindowExceeded"))
+        #expect(message.contains("stage=agent-json-step-0"))
+        #expect(message.contains("runtimePath=agent-model"))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func trainingEvidenceRejectsAgentRepairModelTurn() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let prompt = "Explain tradeoffs between precision and recall in retrieval systems in plain English."
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "executor",
+                stage: "agent-repair",
+                intent: "chat",
+                promptPrefix: prompt,
+                rawOutputPrefix: #"{"final":"Precision is relevance; recall is coverage."}"#,
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: true,
+                modelFamily: "qwen3",
+                runtimePath: "sharedAdapter",
+                activeAdapterSlot: "executor"
+            )
+        )
+
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt))
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt, requiresPrimaryAgentJSON: true))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func deterministicCompatibilityDirectChatTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()

@@ -1071,6 +1071,12 @@ def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str])
             "failure": actual,
             "alsoAdd": ["rem_repair_sample", "trace_parse_regression_eval"],
         }
+    if failure_type == "prompt_budget_overflow":
+        return {
+            "action": "compact_agent_json_prompt_budget",
+            "failure": actual,
+            "alsoAdd": ["agent_json_context_budget_regression_eval", "rem_repair_sample"],
+        }
     if failure_type in {"tool_not_allowed_by_static_manifest", "tool_not_allowed_by_runtime_router"} and _is_dynamic_local_public_lookup_failure(failure):
         return {
             "action": "add_plan_gather_execute_evaluate_samples",

@@ -185,4 +185,43 @@ final class PromptFastInteractiveBudgetTests: XCTestCase {
         XCTAssertLessThanOrEqual(result.finalPromptChars, PromptBudgetConstants.fastInteractiveTotalChars)
         XCTAssertEqual(result.estimatedPromptTokens, max(1, result.finalPromptChars / 4))
     }
+
+    func testAgentJSONPromptBudgetDropsLargeContextBodies() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("txt")
+        try String(repeating: "large attachment body ", count: 400).write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let request = GenerateRequest(
+            systemPrompt: String(repeating: "Verbose structured routing instructions. ", count: 200),
+            history: (0..<8).map { index in
+                (role: MessageRole.user, content: String(repeating: "history \(index) ", count: 80))
+            },
+            userMessage: String(repeating: "Search the web for Swift concurrency best practices. ", count: 40),
+            temperature: 0.1,
+            topP: 0.8,
+            repetitionPenalty: 1.05,
+            maxTokens: 512,
+            modelName: "agent-json",
+            relevantMemories: [
+                MemoryContextItem(
+                    content: String(repeating: "memory body ", count: 400),
+                    scope: .conversation,
+                    authority: .referenceOnly,
+                    createdAt: nil,
+                    expiresAt: nil,
+                    source: "test",
+                    topic: nil
+                )
+            ],
+            attachments: [ChatAttachment(name: "large.txt", kind: .text, path: url.path, byteSize: 8_000)]
+        )
+
+        let result = await AppLlamaService.shared.buildMessagesForTesting(req: request, contextSize: 2048, slot: .executor)
+
+        XCTAssertLessThanOrEqual(result.finalPromptChars, PromptBudgetConstants.agentJSONTotalChars + 256)
+        XCTAssertLessThanOrEqual(result.assembly.systemPrompt.count, PromptBudgetConstants.agentJSONSystemChars)
+        XCTAssertTrue(result.assembly.attachmentStates.first?.includedChars == 0)
+        XCTAssertFalse(result.messages.map(\.content).joined(separator: "\n").contains("large attachment body"))
+        XCTAssertFalse(result.messages.map(\.content).joined(separator: "\n").contains("memory body"))
+    }
 }

@@ -19,6 +19,11 @@ nonisolated enum PromptBudgetConstants {
     static let fastInteractiveMemoriesChars: Int = 220
     static let fastInteractiveMaxUserChars: Int = 280
     static let fastInteractiveUserMessageChars: Int = 160
+    static let agentJSONTotalChars: Int = 3_800
+    static let agentJSONSystemChars: Int = 1_500
+    static let agentJSONHistoryChars: Int = 420
+    static let agentJSONUserChars: Int = 900
+    static let agentJSONSafetyTokens: Int = 160
 }
 
 nonisolated enum PromptLatencyClass: String, Sendable {
@@ -147,6 +152,26 @@ nonisolated struct PromptBudget: Sendable {
             historyShare: PromptBudgetConstants.fastInteractiveHistoryChars,
             maxUserChars: PromptBudgetConstants.fastInteractiveMaxUserChars,
             maxSystemPromptChars: PromptBudgetConstants.fastInteractiveSystemChars
+        )
+    }
+
+    static func agentJSON(contextSize: Int, maxTokens: Int) -> PromptBudget {
+        let promptTokenBudget = max(
+            256,
+            contextSize - maxTokens - PromptBudgetConstants.agentJSONSafetyTokens
+        )
+        let contextBoundChars = Int(Double(promptTokenBudget) * 3.2)
+        let totalChars = min(
+            PromptBudgetConstants.agentJSONTotalChars,
+            max(1_800, contextBoundChars)
+        )
+        return PromptBudget(
+            totalChars: totalChars,
+            attachmentsShare: 0,
+            memoriesShare: 0,
+            historyShare: min(PromptBudgetConstants.agentJSONHistoryChars, totalChars / 5),
+            maxUserChars: min(PromptBudgetConstants.agentJSONUserChars, totalChars / 3),
+            maxSystemPromptChars: min(PromptBudgetConstants.agentJSONSystemChars, totalChars / 2)
         )
     }
 }

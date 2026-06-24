@@ -11,6 +11,16 @@ def test_trace_parse_error_adds_rem_and_regression_eval() -> None:
     assert repair["failure"] == "noJSONObject"
 
 
+def test_prompt_budget_overflow_adds_agent_json_budget_eval() -> None:
+    repair = _repair_for_runtime_failure(
+        {"type": "prompt_budget_overflow", "actual": "contextWindowExceeded", "scenario": "scenario"},
+        known_tools=["weather"],
+    )
+    assert repair["action"] == "compact_agent_json_prompt_budget"
+    assert repair["alsoAdd"] == ["agent_json_context_budget_regression_eval", "rem_repair_sample"]
+    assert repair["failure"] == "contextWindowExceeded"
+
+
 def test_trace_tool_without_allowed_set_adds_rem_and_regression_eval() -> None:
     repair = _repair_for_runtime_failure(
         {"type": "trace_tool_without_allowed_set", "actual": "camera.capture", "scenario": "scenario"},

@@ -256,4 +256,84 @@ nonisolated struct CompletedGenerationTracePayload: Codable, Sendable, Equatable
     let tokenUsage: TraceTokenUsage?
     let finishReason: String?
     let error: String?
+    let streamStarted: Bool?
+    let selectedRuntime: String?
+    let selectedAdapter: String?
+    let modelIdentifier: String?
+    let modelLoaded: Bool?
+    let maxTokensRequested: Int?
+    let maxTokensEffective: Int?
+    let stopSequences: [String]?
+    let temperature: Double?
+    let topP: Double?
+    let promptCharCount: Int?
+    let estimatedPromptTokenCount: Int?
+    let cancellationStateBeforeStream: String?
+    let firstChunkReceived: Bool?
+    let textChunkCount: Int?
+    let finalChunkReceived: Bool?
+    let streamTerminationReason: String?
+    let elapsedMs: Int?
+    let outputTokenCount: Int?
+    let emptyOutputReason: String?
+
+    init(
+        requestID: UUID,
+        rawModelOutput: String,
+        reasoningText: String?,
+        visibleAnswer: String,
+        parserWarnings: [String],
+        tokenUsage: TraceTokenUsage?,
+        finishReason: String?,
+        error: String?,
+        streamStarted: Bool? = nil,
+        selectedRuntime: String? = nil,
+        selectedAdapter: String? = nil,
+        modelIdentifier: String? = nil,
+        modelLoaded: Bool? = nil,
+        maxTokensRequested: Int? = nil,
+        maxTokensEffective: Int? = nil,
+        stopSequences: [String]? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        promptCharCount: Int? = nil,
+        estimatedPromptTokenCount: Int? = nil,
+        cancellationStateBeforeStream: String? = nil,
+        firstChunkReceived: Bool? = nil,
+        textChunkCount: Int? = nil,
+        finalChunkReceived: Bool? = nil,
+        streamTerminationReason: String? = nil,
+        elapsedMs: Int? = nil,
+        outputTokenCount: Int? = nil,
+        emptyOutputReason: String? = nil
+    ) {
+        self.requestID = requestID
+        self.rawModelOutput = rawModelOutput
+        self.reasoningText = reasoningText
+        self.visibleAnswer = visibleAnswer
+        self.parserWarnings = parserWarnings
+        self.tokenUsage = tokenUsage
+        self.finishReason = finishReason
+        self.error = error
+        self.streamStarted = streamStarted
+        self.selectedRuntime = selectedRuntime
+        self.selectedAdapter = selectedAdapter
+        self.modelIdentifier = modelIdentifier
+        self.modelLoaded = modelLoaded
+        self.maxTokensRequested = maxTokensRequested
+        self.maxTokensEffective = maxTokensEffective
+        self.stopSequences = stopSequences
+        self.temperature = temperature
+        self.topP = topP
+        self.promptCharCount = promptCharCount
+        self.estimatedPromptTokenCount = estimatedPromptTokenCount
+        self.cancellationStateBeforeStream = cancellationStateBeforeStream
+        self.firstChunkReceived = firstChunkReceived
+        self.textChunkCount = textChunkCount
+        self.finalChunkReceived = finalChunkReceived
+        self.streamTerminationReason = streamTerminationReason
+        self.elapsedMs = elapsedMs
+        self.outputTokenCount = outputTokenCount
+        self.emptyOutputReason = emptyOutputReason
+    }
 }

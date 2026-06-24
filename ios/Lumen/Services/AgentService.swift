@@ -170,6 +170,82 @@ nonisolated enum AgentTurnParseError: String, Error, Sendable, Codable {
     case missingActionTool
     case invalidActionType
     case invalidActionArgsType
+    case contextWindowExceeded
+}
+
+private nonisolated enum AgentThinkBlockSanitizer {
+    struct StripResult: Sendable {
+        let text: String
+        let prefixNoise: String?
+        let stripped: Bool
+    }
+
+    static func stripLeadingThinkBlocks(from text: String) -> StripResult {
+        var remaining = text
+        var summaries: [String] = []
+
+        while true {
+            let leadingWhitespaceCount = remaining.prefix(while: { $0.isWhitespace }).count
+            let afterWhitespace = String(remaining.dropFirst(leadingWhitespaceCount))
+            guard let block = leadingThinkBlock(in: afterWhitespace) else { break }
+
+            let redactedChars = block.content.trimmingCharacters(in: .whitespacesAndNewlines).count
+            if redactedChars == 0 {
+                summaries.append("leading empty <\(block.tag)> block stripped")
+            } else {
+                summaries.append("leading <\(block.tag)> block stripped (\(redactedChars) chars redacted)")
+            }
+            remaining = String(afterWhitespace.dropFirst(block.fullLength))
+        }
+
+        return StripResult(
+            text: remaining,
+            prefixNoise: summaries.isEmpty ? nil : summaries.joined(separator: "; "),
+            stripped: !summaries.isEmpty
+        )
+    }
+
+    static func redactedForDiagnostics(_ text: String) -> String {
+        let stripped = stripLeadingThinkBlocks(from: text)
+        guard stripped.stripped else { return text }
+        return [stripped.prefixNoise, stripped.text]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
+    private struct LeadingBlock {
+        let tag: String
+        let content: String
+        let fullLength: Int
+    }
+
+    private static func leadingThinkBlock(in text: String) -> LeadingBlock? {
+        let lower = text.lowercased()
+        let candidates = ["think", "thinking"]
+        for tag in candidates {
+            let openPrefix = "<\(tag)"
+            guard lower.hasPrefix(openPrefix),
+                  let openEnd = lower.firstIndex(of: ">") else {
+                continue
+            }
+            let close = "</\(tag)>"
+            guard let closeRange = lower.range(of: close, range: openEnd..<lower.endIndex) else {
+                continue
+            }
+            let contentStartOffset = lower.distance(from: lower.startIndex, to: lower.index(after: openEnd))
+            let contentEndOffset = lower.distance(from: lower.startIndex, to: closeRange.lowerBound)
+            let fullLength = lower.distance(from: lower.startIndex, to: closeRange.upperBound)
+            let contentStart = text.index(text.startIndex, offsetBy: contentStartOffset)
+            let contentEnd = text.index(text.startIndex, offsetBy: contentEndOffset)
+            return LeadingBlock(
+                tag: tag,
+                content: String(text[contentStart..<contentEnd]),
+                fullLength: fullLength
+            )
+        }
+        return nil
+    }
 }
 
 private nonisolated enum AgentJSONCandidateSelector {
@@ -182,13 +258,19 @@ private nonisolated enum AgentJSONCandidateSelector {
     }
 
     static func select(from text: String) -> Result<Selection, AgentTurnParseError> {
-        let chars = Array(text)
+        let stripped = AgentThinkBlockSanitizer.stripLeadingThinkBlocks(from: text)
+        let chars = Array(stripped.text)
         let rangesResult = discoverRanges(in: chars)
         switch rangesResult {
         case .failure(let error):
+            if stripped.stripped, stripped.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .failure(.empty)
+            }
             return .failure(error)
         case .success(let ranges):
-            guard !ranges.isEmpty else { return .failure(.noJSONObject) }
+            guard !ranges.isEmpty else {
+                return .failure(stripped.stripped && stripped.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .empty : .noJSONObject)
+            }
 
             var candidates: [(range: (Int, Int), object: [String: Any], score: Int)] = []
             var candidateErrors: [AgentTurnParseError] = []
@@ -217,15 +299,21 @@ private nonisolated enum AgentJSONCandidateSelector {
             let prefix = String(chars[..<selected.range.0])
             let suffixStart = selected.range.1 + 1
             let suffix = suffixStart < chars.count ? String(chars[suffixStart..<chars.count]) : ""
-            let prefixNoise = nonEmpty(stripFenceNoise(prefix))
+            let prefixNoise = [
+                stripped.prefixNoise,
+                nonEmpty(stripFenceNoise(prefix))
+            ]
+                .compactMap { $0 }
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "; ")
             let suffixNoise = nonEmpty(stripFenceNoise(suffix))
             return .success(
                 Selection(
                     object: selected.object,
                     selectedJSON: selectedJSON,
-                    prefixNoise: prefixNoise,
+                    prefixNoise: prefixNoise.isEmpty ? nil : prefixNoise,
                     suffixNoise: suffixNoise,
-                    hadUnsupportedNoise: prefixNoise != nil || suffixNoise != nil
+                    hadUnsupportedNoise: !prefixNoise.isEmpty || suffixNoise != nil
                 )
             )
         }
@@ -733,7 +821,7 @@ nonisolated enum AgentNoiseInspector {
         case .failure:
             return Snapshot(
                 selectedJSON: nil,
-                prefixNoise: nonEmpty(raw),
+                prefixNoise: nonEmpty(AgentThinkBlockSanitizer.redactedForDiagnostics(raw)),
                 suffixNoise: nil
             )
         }
@@ -1349,17 +1437,52 @@ final class AgentService {
     static let shared = AgentService()
     private nonisolated static let structuredTurnMaxTokenCap = 384
     private nonisolated static let structuredTurnMinTokenCap = 128
-    private nonisolated static let structuredContextNoteCharCap = 1_200
-    private nonisolated static let structuredUserMessageCharCap = 1_600
+    private nonisolated static let structuredContextNoteCharCap = 280
+    private nonisolated static let structuredUserMessageCharCap = 900
+    private nonisolated static let structuredHistoryTurnCharCap = 180
+    private nonisolated static let structuredHistoryTotalCharCap = 540
+    private nonisolated static let structuredScratchpadCharCap = 900
+    private nonisolated static let structuredToolCountCap = 12
+    private nonisolated static let structuredToolListCharCap = 780
+    private nonisolated static let structuredToolDescriptionCharCap = 88
+    private nonisolated static let structuredPromptPreflightSafetyTokens = 128
+    private nonisolated static let contextWindowExceededRawOutputPrefix = "Prompt exceeded context window before generation"
     private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
 
     private struct StructuredTurnGenerationDiagnostics: Sendable {
         let generationElapsedMs: Int
         let firstTokenLatencyMs: Int?
         let outputTokenCount: Int?
+        let estimatedPromptTokenCount: Int?
         let maxTokensRequested: Int
         let maxTokensEffective: Int
+        let promptCharCount: Int?
         let emptyOutputReason: String?
+        let streamStarted: Bool?
+        let selectedRuntime: String?
+        let selectedAdapter: String?
+        let modelIdentifier: String?
+        let modelLoaded: Bool?
+        let stopSequences: [String]
+        let temperature: Double?
+        let topP: Double?
+        let cancellationStateBeforeStream: String?
+        let firstChunkReceived: Bool?
+        let textChunkCount: Int?
+        let finalChunkReceived: Bool?
+        let streamTerminationReason: String?
+    }
+
+    private struct StructuredPromptPreflight: Sendable {
+        let request: GenerateRequest
+        let contextSize: Int
+        let finalPromptChars: Int
+        let estimatedPromptTokens: Int
+        let fits: Bool
+
+        var totalEstimatedTokens: Int {
+            estimatedPromptTokens + request.maxTokens + AgentService.structuredPromptPreflightSafetyTokens
+        }
     }
 
     /// Executes an agent structured turn and streams progress events.
@@ -1409,7 +1532,7 @@ final class AgentService {
 
             let userTurn = buildAgentUserTurn(req: req, stepIndex: stepIndex, scratchpad: scratchpad)
 
-            let genReq = GenerateRequest(
+            var genReq = GenerateRequest(
                 systemPrompt: sys,
                 history: [],
                 userMessage: userTurn,
@@ -1418,8 +1541,9 @@ final class AgentService {
                 repetitionPenalty: max(req.repetitionPenalty, 1.05),
                 maxTokens: structuredTurnMaxTokens(from: req.maxTokens, req: req, stepIndex: stepIndex),
                 modelName: "agent-json",
-                relevantMemories: req.relevantMemories,
-                attachments: stepIndex == 0 ? req.attachments : []
+                relevantMemories: [],
+                attachments: [],
+                allowsMemoryPressureContinuation: options.allowsMemoryPressureContinuation
             )
 
             var scanner = StreamingJSONScanner()
@@ -1430,47 +1554,29 @@ final class AgentService {
             var generationStartedAt = Date()
             var firstTokenLatencyMs: Int?
             var outputChunks = 0
+            var streamStarted = false
+            var finalChunkReceived = false
+            var completedPayload: CompletedGenerationTracePayload?
+            var preflight = await preflightAgentJSONPrompt(genReq)
+            var forcedParseError: AgentTurnParseError?
 
-            for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
-                if Task.isCancelled { break }
-                switch token {
-                case .text(let s):
-                    if firstTokenLatencyMs == nil {
-                        firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
-                    }
-                    outputChunks += 1
-                    raw += s
-                    for event in scanner.feed(s) {
-                        switch event {
-                        case .thoughtDelta:
-                            let current = scanner.thought
-                            if !thoughtStepYielded {
-                                continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
-                                thoughtStepYielded = true
-                            } else {
-                                continuation.yield(.stepDelta(id: thoughtStepID, text: current))
-                            }
-                        case .finalDelta(let delta):
-                            streamedFinalLen += delta.count
-                            continuation.yield(.finalDelta(delta))
-                        }
-                    }
-                case .done:
-                    break
+            if !preflight.fits {
+                let compactReq = Self.agentJSONContextCompactionRequest(from: genReq)
+                let compactPreflight = await preflightAgentJSONPrompt(compactReq)
+                if compactPreflight.fits {
+                    genReq = compactReq
+                    preflight = compactPreflight
+                } else {
+                    genReq = compactReq
+                    preflight = compactPreflight
+                    raw = Self.contextWindowExceededRawOutputPrefix
+                    forcedParseError = .contextWindowExceeded
                 }
             }
 
-            if !Task.isCancelled,
-               raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let retryGenReq = Self.agentJSONEmptyOutputRetryRequest(from: genReq, userTurn: userTurn)
-                scanner = StreamingJSONScanner()
-                raw = ""
-                streamedFinalLen = 0
-                firstTokenLatencyMs = nil
-                outputChunks = 0
-                generationStartedAt = Date()
-
-                for await token in await AppLlamaService.shared.stream(retryGenReq, slot: Self.structuredAgentModelSlot) {
+            if forcedParseError == nil {
+                streamStarted = true
+                for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
                     if Task.isCancelled { break }
                     switch token {
                     case .text(let s):
@@ -1495,24 +1601,108 @@ final class AgentService {
                             }
                         }
                     case .done:
+                        finalChunkReceived = true
                         break
                     }
+                }
+                completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: genReq.id)
+            }
+
+            if !Task.isCancelled,
+               forcedParseError == nil,
+               Self.runtimeFailureParseError(from: raw) == nil,
+               raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let retryGenReq = Self.agentJSONEmptyOutputRetryRequest(from: genReq, userTurn: userTurn)
+                let retryPreflight = await preflightAgentJSONPrompt(retryGenReq)
+                genReq = retryGenReq
+                preflight = retryPreflight
+                completedPayload = nil
+                if !retryPreflight.fits {
+                    raw = Self.contextWindowExceededRawOutputPrefix
+                    forcedParseError = .contextWindowExceeded
+                } else {
+                    scanner = StreamingJSONScanner()
+                    raw = ""
+                    streamedFinalLen = 0
+                    firstTokenLatencyMs = nil
+                    outputChunks = 0
+                    streamStarted = false
+                    finalChunkReceived = false
+                    generationStartedAt = Date()
+
+                    streamStarted = true
+                    for await token in await AppLlamaService.shared.stream(retryGenReq, slot: Self.structuredAgentModelSlot) {
+                        if Task.isCancelled { break }
+                        switch token {
+                        case .text(let s):
+                            if firstTokenLatencyMs == nil {
+                                firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
+                            }
+                            outputChunks += 1
+                            raw += s
+                            for event in scanner.feed(s) {
+                                switch event {
+                                case .thoughtDelta:
+                                    let current = scanner.thought
+                                    if !thoughtStepYielded {
+                                        continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
+                                        thoughtStepYielded = true
+                                    } else {
+                                        continuation.yield(.stepDelta(id: thoughtStepID, text: current))
+                                    }
+                                case .finalDelta(let delta):
+                                    streamedFinalLen += delta.count
+                                    continuation.yield(.finalDelta(delta))
+                                }
+                            }
+                        case .done:
+                            finalChunkReceived = true
+                            break
+                        }
+                    }
+                    completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: retryGenReq.id)
                 }
             }
 
             if Task.isCancelled { break }
 
-            let turn = AgentTurnParser.parse(raw)
+            let turn = forcedParseError
+                .map { AgentTurn(thought: nil, action: nil, final: nil, parseError: $0, hadNoise: false) }
+                ?? Self.runtimeFailureParseError(from: raw)
+                    .map { AgentTurn(thought: nil, action: nil, final: nil, parseError: $0, hadNoise: false) }
+                ?? AgentTurnParser.parse(raw)
             let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let localEmptyReason = trimmedRaw.isEmpty
+                ? Self.agentJSONEmptyStreamReason(
+                    streamStarted: streamStarted,
+                    textChunkCount: outputChunks,
+                    finalChunkReceived: finalChunkReceived,
+                    taskCancelled: Task.isCancelled,
+                    maxTokensEffective: genReq.maxTokens
+                )
+                : nil
             let generationDiagnostics = StructuredTurnGenerationDiagnostics(
                 generationElapsedMs: Int(Date().timeIntervalSince(generationStartedAt) * 1000),
                 firstTokenLatencyMs: firstTokenLatencyMs,
-                outputTokenCount: outputChunks,
-                maxTokensRequested: req.maxTokens,
-                maxTokensEffective: genReq.maxTokens,
-                emptyOutputReason: trimmedRaw.isEmpty
-                    ? (outputChunks == 0 ? "agent-json-stream-completed-without-text" : "agent-json-stream-empty-text")
-                    : nil
+                outputTokenCount: completedPayload?.outputTokenCount ?? (trimmedRaw.isEmpty ? 0 : nil),
+                estimatedPromptTokenCount: completedPayload?.estimatedPromptTokenCount ?? preflight.estimatedPromptTokens,
+                maxTokensRequested: completedPayload?.maxTokensRequested ?? req.maxTokens,
+                maxTokensEffective: completedPayload?.maxTokensEffective ?? genReq.maxTokens,
+                promptCharCount: completedPayload?.promptCharCount ?? preflight.finalPromptChars,
+                emptyOutputReason: completedPayload?.emptyOutputReason ?? localEmptyReason,
+                streamStarted: completedPayload?.streamStarted ?? streamStarted,
+                selectedRuntime: completedPayload?.selectedRuntime,
+                selectedAdapter: completedPayload?.selectedAdapter,
+                modelIdentifier: completedPayload?.modelIdentifier,
+                modelLoaded: completedPayload?.modelLoaded,
+                stopSequences: completedPayload?.stopSequences ?? [],
+                temperature: completedPayload?.temperature ?? genReq.temperature,
+                topP: completedPayload?.topP ?? genReq.topP,
+                cancellationStateBeforeStream: completedPayload?.cancellationStateBeforeStream,
+                firstChunkReceived: completedPayload?.firstChunkReceived ?? (outputChunks > 0),
+                textChunkCount: completedPayload?.textChunkCount ?? outputChunks,
+                finalChunkReceived: completedPayload?.finalChunkReceived ?? finalChunkReceived,
+                streamTerminationReason: completedPayload?.streamTerminationReason
             )
             recordAgentModelTurnTrace(
                 req: req,
@@ -1638,6 +1828,31 @@ final class AgentService {
                     stepIndex: stepIndex
                 )
 
+                if parseError == .contextWindowExceeded {
+                    let reflection = AgentStep(
+                        kind: .reflection,
+                        content: "Structured agent prompt exceeded the executor context window before generation."
+                    )
+                    steps.append(reflection)
+                    continuation.yield(.step(reflection))
+                    finalAnswer = "I couldn't run the structured agent turn because the prompt exceeded the local model context window."
+                    continuation.yield(.finalDelta(finalAnswer))
+                    break stepsLoop
+                }
+
+                if parseError == .empty, raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let reason = generationDiagnostics.emptyOutputReason ?? "unknownEmptyStream"
+                    let reflection = AgentStep(
+                        kind: .reflection,
+                        content: "Structured agent-json stream produced no usable text. Reason: \(reason)."
+                    )
+                    steps.append(reflection)
+                    continuation.yield(.step(reflection))
+                    finalAnswer = "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: \(reason)."
+                    continuation.yield(.finalDelta(finalAnswer))
+                    break stepsLoop
+                }
+
                 if let recovery = await Self.structuredParseFailureRecovery(req: req, options: options) {
                     for step in recovery.steps {
                         steps.append(step)
@@ -1699,61 +1914,106 @@ final class AgentService {
 
     private func buildSystemPrompt(req: AgentRequest) -> String {
         var sys = """
-        You are Lumen's deterministic tool-routing core.
+        You are Lumen's structured routing executor. Emit one raw JSON object only.
 
-        CRITICAL OUTPUT CONTRACT:
-        Emit exactly ONE raw JSON object and nothing else.
-        No prose before the JSON.
-        No prose after the JSON.
-        No markdown.
-        No code fences.
-        No XML tags.
-        No bullet lists.
-        No explanations outside JSON.
+        Schemas:
+        {"thought":"short","action":{"tool":"tool.id","args":{}}}
+        {"thought":"short","final":"user-facing answer"}
 
-        Valid schemas, choose exactly one:
-        {"thought":"<PRIVATE_REASONING>","action":{"tool":"tool.id","args":{"key":"value"}}}
-        {"thought":"<PRIVATE_REASONING>","final":"<USER_FINAL_TEXT>"}
-
-        JSON rules:
-        - Use double quotes for every key and string.
-        - Escape newlines as \\n inside string values.
-        - Args may contain normal JSON values: strings, numbers, booleans, arrays, objects, or null. Use {} when no arguments are needed.
-        - Do not emit placeholder tokens literally.
-        - Never include both `action` and `final` in the same object.
-        - Never repeat an action with the same arguments.
-        - If no tool is required, emit `final` immediately.
-        - If a tool result is enough, summarize it in `final` and stop.
+        Rules:
+        - Start with { and stop after the matching }.
+        - No markdown, prose, code fences, XML, bullets, or hidden reasoning outside JSON.
+        - Use double-quoted JSON. Use {} for empty args.
+        - Choose exactly one of action or final.
+        - action must be a JSON object, never a string. Invalid: {"action":"weather"}.
+        - action.tool must be one available tool.
+        - Use final when no tool is needed or observations already answer the user.
+        - Keep thought under 12 words and final concise.
         """
 
         let appPrompt = Self.boundedStructuredContextNote(sanitizeSystemPromptForStructuredOutput(req.systemPrompt))
         if !appPrompt.isEmpty {
-            sys += "\n\nLower-priority style/context note. Follow it only when it does not conflict with the JSON contract:\n"
+            sys += "\n\nContext note, lower priority than JSON/tool rules:\n"
             sys += appPrompt
             sys += "\n"
         }
 
         if !req.availableTools.isEmpty {
             sys += "\nAvailable tools:\n"
-            for t in req.availableTools { sys += "- \(t.id): \(t.description)\n" }
+            sys += Self.compactStructuredToolList(req.availableTools, userMessage: req.userMessage)
             sys += "\n"
         } else {
-            sys += "\nNo tools are available. You must emit a `final` JSON object.\n\n"
+            sys += "\nNo tools are available. Emit final JSON only.\n"
         }
 
-        if !req.attachments.isEmpty {
-            sys += "Attached files are already included in the user message context. Do not call files.read for attached files unless the user asks for another imported file by name.\n\n"
-        }
-
-        sys += "Routing guidelines:\n"
-        sys += "- For dynamic public information with local scope and time terms, such as meetings, events, hours, schedules, classes, prices, or showtimes near me today/tomorrow/tonight, call `location.current` if available, then `web.search`; these are not static map POIs.\n"
-        sys += "- For stable physical-place or navigation requests such as restaurants, pharmacies, gas stations, addresses, routes, or directions near me, call `location.current` first, then `maps.search` or `maps.directions` once, then emit `final`.\n"
-        sys += "- For follow-up map intents like \"show me on map\"/\"open on map\", if prior observations already include `Current location:` coordinates from `location.current`, do not call `location.current` again.\n"
-        sys += "- In those follow-ups, route directly to `maps.search` (or equivalent map-opening behavior) using the preserved current-location observation, then emit `final`.\n"
-        sys += "- For web/current-info requests, call `web.search` if available.\n"
-        sys += "- Keep `thought` short. Keep `final` direct.\n"
-        sys += "- The next assistant message must be only the JSON object."
+        sys += "\nRouting hints: current web/research -> web.search; local files/notes -> rag.search; save user preference -> memory.save; recall stored memory -> memory.recall; weather -> weather; draft email -> mail.draft; scheduled agent run -> trigger.create. Do not include attachment bodies or local source snippets in this routing turn."
         return sys
+    }
+
+    private nonisolated static func compactStructuredToolList(_ tools: [ToolDefinition], userMessage: String) -> String {
+        let routing = IntentRouter.classify(sanitizedStructuredUserMessage(userMessage))
+        let preferredIDs = Set(routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
+        let ordered = tools.enumerated().sorted { left, right in
+            let leftPreferred = preferredIDs.contains(ToolRouteGuard.canonicalToolID(left.element.id))
+            let rightPreferred = preferredIDs.contains(ToolRouteGuard.canonicalToolID(right.element.id))
+            if leftPreferred != rightPreferred { return leftPreferred && !rightPreferred }
+            return left.offset < right.offset
+        }
+
+        var seen: Set<String> = []
+        var lines: [String] = []
+        var used = 0
+        for entry in ordered {
+            let tool = entry.element
+            let canonical = ToolRouteGuard.canonicalToolID(tool.id)
+            guard !seen.contains(canonical) else { continue }
+            seen.insert(canonical)
+            guard lines.count < structuredToolCountCap else { break }
+
+            let description = compactStructuredToolDescription(tool.description)
+            let approval = tool.requiresApproval ? " approval" : ""
+            let line = description.isEmpty
+                ? "- \(canonical)\(approval)"
+                : "- \(canonical)\(approval): \(description)"
+            let cost = line.count + 1
+            if !lines.isEmpty, used + cost > structuredToolListCharCap { break }
+            lines.append(line)
+            used += cost
+        }
+
+        if lines.isEmpty {
+            return "- no usable tools after budget cap"
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private nonisolated static func compactStructuredToolDescription(_ description: String) -> String {
+        var text = description
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.contains("  ") {
+            text = text.replacingOccurrences(of: "  ", with: " ")
+        }
+        guard !text.isEmpty else { return "" }
+
+        let argsPart: String? = {
+            guard let range = text.range(of: "Args:", options: .caseInsensitive) else { return nil }
+            return String(text[range.lowerBound...])
+                .split(separator: ".")
+                .first
+                .map(String.init)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+        let firstSentence = text
+            .split(separator: ".")
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? text
+        let combined = [firstSentence, argsPart]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ". ")
+        return String(combined.prefix(structuredToolDescriptionCharCap))
     }
 
     /// Constructs the user message for a structured agent turn.
@@ -1775,16 +2035,26 @@ final class AgentService {
 
         if stepIndex > 0 {
             out += "\n\nPrior structured turns and observations:\n"
-            out += scratchpad
+            out += Self.compactStructuredScratchpad(scratchpad)
             if let locationObservation = latestCurrentLocationObservation(in: scratchpad) {
                 out += "\n\nReusable location context:\n"
                 out += "Observation: \(locationObservation)"
             }
-            out += "\n\nEmit the next JSON object now. Choose either action or final."
+            out += "\n\nEmit the next JSON object now. If the observations already answer the user, choose final. If another tool is absolutely required, action must be an object like {\"tool\":\"tool.id\",\"args\":{}}; never emit action as a string."
         } else {
             out += "\n\nEmit the first JSON object now. Choose either action or final."
         }
         return out
+    }
+
+    private nonisolated static func compactStructuredScratchpad(_ scratchpad: String) -> String {
+        let compact = scratchpad
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        guard compact.count > structuredScratchpadCharCap else { return compact }
+        return String(compact.suffix(structuredScratchpadCharCap))
     }
 
     private nonisolated static func agentJSONEmptyOutputRetryRequest(
@@ -1807,7 +2077,8 @@ final class AgentService {
             seed: request.seed.map { $0 &+ 1 },
             developerTraceModeEnabled: request.developerTraceModeEnabled,
             reasoningCaptureEnabled: request.reasoningCaptureEnabled,
-            reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters
+            reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: request.allowsMemoryPressureContinuation
         )
     }
 
@@ -1823,6 +2094,88 @@ final class AgentService {
         {"final":"<concise user-facing answer>"}
         Start the response with { and finish after the matching }.
         """
+    }
+
+    private func preflightAgentJSONPrompt(_ request: GenerateRequest) async -> StructuredPromptPreflight {
+        let contextSize = await AppLlamaService.shared.contextSizeForDiagnostics(slot: Self.structuredAgentModelSlot)
+        let promptBuild = await AppLlamaService.shared.buildMessagesForDiagnostics(
+            req: request,
+            contextSize: contextSize,
+            slot: Self.structuredAgentModelSlot
+        )
+        let tokenLimit = max(
+            128,
+            contextSize - request.maxTokens - Self.structuredPromptPreflightSafetyTokens
+        )
+        let fits = promptBuild.estimatedPromptTokens <= tokenLimit
+            && promptBuild.finalPromptChars <= PromptBudget.agentJSON(
+                contextSize: contextSize,
+                maxTokens: request.maxTokens
+            ).totalChars + 256
+        return StructuredPromptPreflight(
+            request: request,
+            contextSize: contextSize,
+            finalPromptChars: promptBuild.finalPromptChars,
+            estimatedPromptTokens: promptBuild.estimatedPromptTokens,
+            fits: fits
+        )
+    }
+
+    private nonisolated static func agentJSONContextCompactionRequest(from request: GenerateRequest) -> GenerateRequest {
+        GenerateRequest(
+            id: request.id,
+            sessionID: request.sessionID,
+            systemPrompt: truncateSystemPromptForAgentJSONPreflight(request.systemPrompt),
+            history: [],
+            userMessage: compactAgentJSONUserTurnForPreflight(request.userMessage),
+            temperature: min(request.temperature, 0.05),
+            topP: min(request.topP, 0.6),
+            repetitionPenalty: max(request.repetitionPenalty, 1.05),
+            maxTokens: min(max(request.maxTokens / 2, structuredTurnMinTokenCap), 224),
+            modelName: request.modelName,
+            relevantMemories: [],
+            attachments: [],
+            seed: request.seed,
+            developerTraceModeEnabled: false,
+            reasoningCaptureEnabled: false,
+            reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: request.allowsMemoryPressureContinuation
+        )
+    }
+
+    private nonisolated static func truncateSystemPromptForAgentJSONPreflight(_ systemPrompt: String) -> String {
+        String(systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_200))
+    }
+
+    private nonisolated static func compactAgentJSONUserTurnForPreflight(_ userTurn: String) -> String {
+        var requestText = userTurn
+        if let marker = requestText.range(of: "User request:") {
+            requestText = String(requestText[marker.upperBound...])
+        }
+        if let emit = requestText.range(of: "\n\nEmit ") {
+            requestText = String(requestText[..<emit.lowerBound])
+        }
+        if let prior = requestText.range(of: "\n\nPrior structured turns and observations:") {
+            requestText = String(requestText[..<prior.lowerBound])
+        }
+        requestText = requestText.trimmingCharacters(in: .whitespacesAndNewlines)
+        requestText = String(requestText.prefix(600))
+        return """
+        User request:
+        \(requestText)
+
+        Emit one JSON object now: action with an available tool, or final if no tool is needed.
+        """
+    }
+
+    private nonisolated static func runtimeFailureParseError(from raw: String) -> AgentTurnParseError? {
+        let lower = raw.lowercased()
+        if lower.contains("prompt exceeded context window before generation")
+            || lower.contains("prompt exceeds shared chat context window")
+            || lower.contains("failed to initialize context: prompt exceeds") {
+            return .contextWindowExceeded
+        }
+        return nil
     }
 
     private func recordAgentModelTurnTrace(
@@ -1848,7 +2201,7 @@ final class AgentService {
                 turnID: req.turnID,
                 intent: routing.intent.rawValue,
                 promptPrefix: ModelOutputSanitizer.boundedPrefix(req.userMessage, limit: 1200),
-                rawOutputPrefix: ModelOutputSanitizer.boundedPrefix(raw, limit: 1600),
+                rawOutputPrefix: ModelOutputSanitizer.boundedPrefix(AgentThinkBlockSanitizer.redactedForDiagnostics(raw), limit: 1600),
                 selectedToolID: turn.action.map { ToolRouteGuard.canonicalToolID($0.tool) },
                 toolArguments: turn.action?.args.stringCoerced ?? [:],
                 allowedToolIDs: req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }.sorted(),
@@ -1861,13 +2214,26 @@ final class AgentService {
                 generationElapsedMs: diagnostics.generationElapsedMs,
                 firstTokenLatencyMs: diagnostics.firstTokenLatencyMs,
                 outputTokenCount: diagnostics.outputTokenCount,
-                estimatedPromptTokenCount: nil,
+                estimatedPromptTokenCount: diagnostics.estimatedPromptTokenCount,
                 runtimePath: "agent-model",
                 activeAdapterSlot: Self.structuredAgentModelSlot.rawValue,
                 maxTokensRequested: diagnostics.maxTokensRequested,
                 maxTokensEffective: diagnostics.maxTokensEffective,
-                promptCharCount: userTurn.count,
-                emptyOutputReason: diagnostics.emptyOutputReason
+                promptCharCount: diagnostics.promptCharCount ?? userTurn.count,
+                emptyOutputReason: diagnostics.emptyOutputReason,
+                streamStarted: diagnostics.streamStarted,
+                selectedRuntime: diagnostics.selectedRuntime,
+                selectedAdapter: diagnostics.selectedAdapter,
+                modelIdentifier: diagnostics.modelIdentifier,
+                modelLoaded: diagnostics.modelLoaded,
+                stopSequences: diagnostics.stopSequences,
+                temperature: diagnostics.temperature,
+                topP: diagnostics.topP,
+                cancellationStateBeforeStream: diagnostics.cancellationStateBeforeStream,
+                firstChunkReceived: diagnostics.firstChunkReceived,
+                textChunkCount: diagnostics.textChunkCount,
+                finalChunkReceived: diagnostics.finalChunkReceived,
+                streamTerminationReason: diagnostics.streamTerminationReason
             )
         )
     }
@@ -1901,11 +2267,12 @@ final class AgentService {
         return latest
     }
 
-    /// Formats the last six conversation history entries as role-labeled lines, sanitizing and skipping empty content.
+    /// Formats recent conversation history as role-labeled lines, sanitizing and skipping empty content.
     /// - Returns: A newline-separated string of "Role: content" lines.
     private func sanitizedHistoryContext(_ history: [(role: MessageRole, content: String)]) -> String {
-        let recent = history.suffix(6)
+        let recent = history.suffix(3)
         var lines: [String] = []
+        var used = 0
         for item in recent {
             let role: String
             switch item.role {
@@ -1916,12 +2283,16 @@ final class AgentService {
             }
             let content = sanitizeHistoryContent(item.content)
             guard !content.isEmpty else { continue }
-            lines.append("\(role): \(content)")
+            let line = "\(role): \(content)"
+            let cost = line.count + 1
+            if used + cost > Self.structuredHistoryTotalCharCap { break }
+            lines.append(line)
+            used += cost
         }
         return lines.joined(separator: "\n")
     }
 
-    /// Sanitizes conversation history content for use in structured prompts by removing code blocks, XML-like tags, internal grounding markers, and redundant punctuation, while normalizing whitespace and capping the result to 480 characters.
+    /// Sanitizes conversation history content for use in structured prompts by removing code blocks, XML-like tags, internal grounding markers, and redundant punctuation, while normalizing whitespace and capping the result.
     ///
     /// - Parameter content: The raw history message content to sanitize.
     /// - Returns: The sanitized content, with consecutive spaces collapsed to single spaces and truncated to 480 characters.
@@ -1948,7 +2319,7 @@ final class AgentService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         text = text.replacingOccurrences(of: "\n", with: " ")
         while text.contains("  ") { text = text.replacingOccurrences(of: "  ", with: " ") }
-        return String(text.prefix(480))
+        return String(text.prefix(Self.structuredHistoryTurnCharCap))
     }
 
     func sanitizeHistoryContentForTests(_ content: String) -> String {
@@ -2037,6 +2408,31 @@ final class AgentService {
         return min(max(requestedMaxTokens, Self.structuredTurnMinTokenCap), Self.structuredTurnMaxTokenCap)
     }
 
+    private nonisolated static func agentJSONEmptyStreamReason(
+        streamStarted: Bool,
+        textChunkCount: Int,
+        finalChunkReceived: Bool,
+        taskCancelled: Bool,
+        maxTokensEffective: Int
+    ) -> String {
+        if maxTokensEffective <= 0 {
+            return "decodeBudgetZero"
+        }
+        if taskCancelled, textChunkCount == 0 {
+            return "cancelledBeforeFirstToken"
+        }
+        if !streamStarted {
+            return "runtimeUnavailable"
+        }
+        if finalChunkReceived, textChunkCount == 0 {
+            return "completedWithoutText"
+        }
+        if textChunkCount == 0 {
+            return "stoppedBeforeFirstToken"
+        }
+        return "unknownEmptyStream"
+    }
+
     func structuredTurnMaxTokensForTests(from requestedMaxTokens: Int) -> Int {
         structuredTurnMaxTokens(
             from: requestedMaxTokens,
@@ -2092,7 +2488,7 @@ final class AgentService {
             stepIndex: stepIndex,
             systemPromptPrefix: String(systemPrompt.prefix(2_000)),
             userTurnPrefix: String(userTurn.prefix(2_000)),
-            rawOutputPrefix: String(raw.prefix(4_000)),
+            rawOutputPrefix: String(AgentThinkBlockSanitizer.redactedForDiagnostics(raw).prefix(4_000)),
             streamedThoughtPrefix: String(scanner.thought.prefix(1_000)),
             streamedFinalPrefix: String(scanner.final.prefix(1_000)),
             selectedJSONPrefix: snapshot.selectedJSON.map { String($0.prefix(2_000)) },
@@ -2120,7 +2516,7 @@ final class AgentService {
             stepIndex: stepIndex,
             systemPromptPrefix: String(systemPrompt.prefix(2_000)),
             userTurnPrefix: String(userTurn.prefix(2_000)),
-            rawOutputPrefix: String(raw.prefix(4_000)),
+            rawOutputPrefix: String(AgentThinkBlockSanitizer.redactedForDiagnostics(raw).prefix(4_000)),
             selectedJSONPrefix: snapshot.selectedJSON.map { String($0.prefix(2_000)) },
             prefixNoise: snapshot.prefixNoise.map { String($0.prefix(1_000)) },
             suffixNoise: snapshot.suffixNoise.map { String($0.prefix(1_000)) }
@@ -2156,7 +2552,8 @@ final class AgentService {
             preventDoubleGrounding: options.preventDoubleGrounding,
             diagnosticsEnabled: options.diagnosticsEnabled || options.groundingMode == .slotAgent,
             allowDeterministicCompatibility: options.allowDeterministicCompatibility,
-            allowParseFailureDeterministicRecovery: options.allowParseFailureDeterministicRecovery
+            allowParseFailureDeterministicRecovery: options.allowParseFailureDeterministicRecovery,
+            allowsMemoryPressureContinuation: options.allowsMemoryPressureContinuation
         )
         let recovery = await SlotAgentService.deterministicCompatibilityResponseForRecovery(
             original: req,
@@ -2249,6 +2646,14 @@ final class AgentService {
         )
     }
 
+    nonisolated static func runtimeFailureParseErrorForTests(from raw: String) -> AgentTurnParseError? {
+        runtimeFailureParseError(from: raw)
+    }
+
+    nonisolated static func observationFallbackPlainTextForTests(from raw: String, intent: UserIntent) -> String? {
+        observationFallbackPlainText(from: raw, intent: intent)
+    }
+
     /// Exposes the internal structured parse failure recovery function for testing.
     /// - Returns: A tuple of recovery text and steps if recovery succeeds, otherwise `nil`.
     nonisolated static func structuredParseFailureRecoveryForTests(
@@ -2306,18 +2711,16 @@ final class AgentService {
             return "I couldn't find a confident answer. Try rephrasing the question."
         }
         let userMessage = Self.sanitizedStructuredUserMessage(req.userMessage)
-        var prompt = "The user asked: \"\(userMessage)\"\n\nYou gathered these tool observations:\n"
-        for (i, obs) in observations.enumerated() {
-            prompt += "\n[\(i + 1)] \(obs.tool):\n\(obs.result)\n"
-        }
-        prompt += "\n\(reason.hint)\n"
-        prompt += "Write the final answer in plain text with exactly these sections: Summary, Key modules.\n"
-        prompt += "In Key modules, name concrete modules/components/services/packages from the observations when available; if none are explicit, say that clearly.\n"
-        prompt += "Every bullet/sentence must include at least one bracketed source marker like [1], [2] that maps to the observation numbers above.\n"
-        prompt += "Ground every claim in the listed observations and avoid generic advice. No preamble, no JSON, no prefixes, no apology. If observations conflict, prefer the most recent."
+        let routing = IntentRouter.classify(userMessage)
+        let prompt = Self.observationFallbackPrompt(
+            userMessage: userMessage,
+            observations: observations,
+            intent: routing.intent,
+            reason: reason
+        )
 
         let genReq = GenerateRequest(
-            systemPrompt: "You summarize tool results into a concise user-facing answer. Output plain text only. When summarizing local knowledge/tool retrieval results, include a section named Key modules and ground claims in the provided snippets/sources.",
+            systemPrompt: Self.observationFallbackSystemPrompt(intent: routing.intent),
             history: [],
             userMessage: prompt,
             temperature: 0.2,
@@ -2334,10 +2737,127 @@ final class AgentService {
             if case .done = token { break }
         }
         let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return observations.last?.result ?? "I couldn't produce a confident answer."
+        if let cleaned = Self.observationFallbackPlainText(from: trimmed, intent: routing.intent) {
+            return cleaned
         }
-        return trimmed
+        if let deterministic = Self.deterministicObservationFallback(observations: observations, intent: routing.intent) {
+            return deterministic
+        }
+        return "I couldn't produce a confident answer."
+    }
+
+    private nonisolated static func observationFallbackPrompt(
+        userMessage: String,
+        observations: [(tool: String, result: String)],
+        intent: UserIntent,
+        reason: FallbackReason
+    ) -> String {
+        var prompt = "The user asked: \"\(userMessage)\"\n\nYou gathered these tool observations:\n"
+        for (i, obs) in observations.enumerated() {
+            prompt += "\n[\(i + 1)] \(obs.tool):\n\(obs.result)\n"
+        }
+        prompt += "\n\(reason.hint)\n"
+        if intent == .rag || intent == .files {
+            prompt += "Write the final answer in plain text with exactly these sections: Summary, Key modules.\n"
+            prompt += "In Key modules, name concrete modules/components/services/packages from the observations when available; if none are explicit, say that clearly.\n"
+            prompt += "Every bullet/sentence must include at least one bracketed source marker like [1], [2] that maps to the observation numbers above.\n"
+            prompt += "Ground every claim in the listed observations and avoid generic advice. No preamble, no JSON, no prefixes, no apology. If observations conflict, prefer the most recent."
+        } else {
+            prompt += "Write a concise direct answer in plain text. Do not use JSON, markdown tables, code fences, or a Key modules section. "
+            prompt += "Do not add facts that are not present in the observations. If observations conflict, prefer the most recent."
+        }
+        return prompt
+    }
+
+    private nonisolated static func observationFallbackSystemPrompt(intent: UserIntent) -> String {
+        if intent == .rag || intent == .files {
+            return "You summarize local retrieval results into a concise user-facing answer. Output plain text only. Include Summary and Key modules sections grounded in provided snippets/sources."
+        }
+        return "You summarize tool results into a concise user-facing answer. Output plain text only. Do not output JSON."
+    }
+
+    private nonisolated static func observationFallbackPlainText(from raw: String, intent: UserIntent) -> String? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if let direct = firstUsefulPlainTextFallback(from: text) {
+            return direct
+        }
+
+        guard text.first == "{",
+              let data = text.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        guard let summary = jsonStringValue(object, keys: ["summary", "final", "answer"]) else {
+            return nil
+        }
+        let cleanSummary = sanitizeInternalErrorNoise(from: summary)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanSummary.count >= 8 else { return nil }
+
+        if intent == .rag || intent == .files {
+            var parts = [String(cleanSummary.prefix(4_000))]
+            if let modules = jsonStringListValue(object, keys: ["key modules", "Key modules", "modules"]), !modules.isEmpty {
+                parts.append("Key modules: \(modules.joined(separator: ", "))")
+            }
+            return parts.joined(separator: "\n\n")
+        }
+        return String(cleanSummary.prefix(4_000))
+    }
+
+    private nonisolated static func deterministicObservationFallback(
+        observations: [(tool: String, result: String)],
+        intent: UserIntent
+    ) -> String? {
+        guard !observations.isEmpty else { return nil }
+        if intent == .rag || intent == .files {
+            let sourced = observations.prefix(3).enumerated().map { index, obs in
+                "[\(index + 1)] \(compactObservationResult(obs.result, limit: 700))"
+            }
+            return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nUse the cited observations above for concrete modules when available."
+        }
+        guard let last = observations.last else { return nil }
+        let compact = compactObservationResult(last.result, limit: 1_200)
+        return compact.isEmpty ? nil : compact
+    }
+
+    private nonisolated static func compactObservationResult(_ result: String, limit: Int) -> String {
+        var text = sanitizeInternalErrorNoise(from: result)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.contains("\n\n\n") {
+            text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+        return String(text.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func jsonStringValue(_ object: [String: Any], keys: [String]) -> String? {
+        for key in keys {
+            if let value = object[key] as? String {
+                return value
+            }
+            if let match = object.first(where: { $0.key.caseInsensitiveCompare(key) == .orderedSame })?.value as? String {
+                return match
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func jsonStringListValue(_ object: [String: Any], keys: [String]) -> [String]? {
+        for key in keys {
+            let value = object[key] ?? object.first(where: { $0.key.caseInsensitiveCompare(key) == .orderedSame })?.value
+            if let list = value as? [String] {
+                return list.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            }
+            if let string = value as? String {
+                let parts = string
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                return parts
+            }
+        }
+        return nil
     }
 
     /// Recovers a plain-text final answer from failed structured-turn output.

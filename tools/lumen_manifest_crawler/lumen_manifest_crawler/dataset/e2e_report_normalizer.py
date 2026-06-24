@@ -6,6 +6,21 @@ from typing import Any
 
 from lumen_manifest_crawler.dataset.e2e_policy import e2e_failure_policy
 
+AGENT_JSON_MODEL_ROOT_CAUSES = {
+    "agent_json_empty_stream",
+    "agent_json_completed_without_text",
+    "agent_json_stop_before_first_token",
+    "agent_json_resource_budget_denied_before_first_token",
+    "agent_json_cancelled_before_first_token",
+    "agent_json_decode_budget_zero",
+    "agent_json_model_not_loaded",
+    "agent_json_slot_unavailable",
+    "agent_json_runtime_unavailable",
+    "agent_json_empty_generation",
+    "agent_json_parse_error",
+    "agent_json_context_overflow",
+}
+
 
 def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     raw_scenarios = _coerce_e2e_scenarios(value)
@@ -145,6 +160,8 @@ def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | Non
             return "Training scenarios must record fresh model-backed AgentBehaviorTrace modelTurn evidence; deterministic compatibility or policy-first traces are not training evidence."
         if category in {"no_correlated_model_turn", "agent_service_not_entered", "missing_sidecar_trace_export"}:
             return "Training scenarios that require an agent run must export a correlated model-backed AgentBehaviorTrace modelTurn or fail closed with the exact missing-path reason."
+        if category == "agent_json_context_overflow":
+            return "Agent-json prompt construction must fit the executor/shared chat context window before generation starts."
         return "Agent-json turns must produce non-empty model output that parses as structured JSON before deterministic recovery or final-answer validation can count."
     if _scenario_skipped_live_model_run(scenario):
         return "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
@@ -167,6 +184,8 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
             return "Export the AgentBehaviorTrace sidecar or include correlated model-evidence events in the live E2E report before using this artifact as training evidence."
         if category in {"no_correlated_model_turn", "agent_service_not_entered"}:
             return "Pass the E2E correlation IDs into AgentService and persist them on AgentBehaviorTrace modelTurn records, or keep the scenario failed with the precise missing-path diagnostic."
+        if category == "agent_json_context_overflow":
+            return "Compact the agent-json system prompt, tool list, history, scratchpad, memories, and attachments so the primary structured executor request fits the shared chat context window."
         return "Fix the executor-slot agent-json generation path so it emits non-empty structured JSON, or keep this scenario failed with the precise agent-json empty-output parse diagnostic."
     if _scenario_skipped_live_model_run(scenario):
         return "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence."
@@ -307,7 +326,7 @@ _EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
     "agent_json_empty_generation",
     "agent_json_parse_empty",
     "agent_json_parse_error",
-}
+} | AGENT_JSON_MODEL_ROOT_CAUSES
 
 
 def _scenario_model_evidence_requires_failure(scenario: dict[str, Any], diagnosis: dict[str, Any] | None) -> bool:
@@ -373,17 +392,39 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
                 "message": f"deterministic compatibility trace is not training model evidence; stage={stage}; runtimePath={runtime_path}",
                 "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=not raw.strip()),
             }
-        if not raw.strip():
-            category = "agent_model_empty_output"
-            if parse_error == "empty":
-                category = "agent_json_empty_generation"
-            empty_reason = str(matching_trace.get("emptyOutputReason") or "")
-            detail = "model stream returned no tokens" if empty_reason == "agent-json-stream-completed-without-text" else "agent-json emitted empty output"
-            stage = str(matching_trace.get("stage") or "unknown")
+        if _is_agent_json_context_overflow(raw, parse_error):
             return {
-                "rootCauseCategory": category,
-                "message": f"{detail}; parseError={parse_error or 'none'}; stage={stage}; runtimePath={runtime_path}",
-                "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=True),
+                "rootCauseCategory": "agent_json_context_overflow",
+                "message": f"agent-json prompt exceeded context window; parseError=contextWindowExceeded; stage={stage}; runtimePath={runtime_path}",
+                "trace": {
+                    "stage": stage,
+                    "runtimePath": runtime_path,
+                    "parseError": "contextWindowExceeded",
+                    "rawOutputEmpty": not raw.strip(),
+                    "rawOutputClassification": "contextWindowExceeded",
+                },
+            }
+        if not raw.strip():
+            root_cause = _agent_json_empty_stream_category(matching_trace)
+            empty_reason = str(matching_trace.get("emptyOutputReason") or "unknown")
+            stream_termination_reason = str(matching_trace.get("streamTerminationReason") or "unknown")
+            return {
+                "rootCauseCategory": root_cause,
+                "message": f"agent-json emitted empty output; emptyOutputReason={empty_reason}; streamTerminationReason={stream_termination_reason}; parseError={parse_error}; stage={stage}; runtimePath={runtime_path}",
+                "trace": {
+                    "stage": stage,
+                    "runtimePath": runtime_path,
+                    "parseError": parse_error,
+                    "rawOutputEmpty": True,
+                    "rawOutputClassification": root_cause,
+                    "emptyOutputReason": empty_reason,
+                    "streamStarted": matching_trace.get("streamStarted"),
+                    "firstChunkReceived": matching_trace.get("firstChunkReceived"),
+                    "textChunkCount": matching_trace.get("textChunkCount"),
+                    "finalChunkReceived": matching_trace.get("finalChunkReceived"),
+                    "streamTerminationReason": stream_termination_reason,
+                    "matchedBy": matched_by,
+                },
             }
         if parse_error:
             category = "agent_json_parse_error" if str(parse_error) in {"noJSONObject", "multipleJSONObjects", "noisyOutput", "malformedEscapeSequence", "incompleteJSON", "invalidJSONObject", "invalidThoughtType", "invalidFinalType", "mixedTurn", "mixedActionShapes", "missingActionOrFinal", "missingActionTool", "invalidActionType", "invalidActionArgsType"} else "agent_model_parse_error"
@@ -406,15 +447,29 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
     if matching_parse_failure is not None:
         raw = str(matching_parse_failure.get("rawOutputPrefix") or "")
         parse_error = str(matching_parse_failure.get("parseError") or "unknown")
-        if parse_error == "empty" or not raw.strip():
+        if _is_agent_json_context_overflow(raw, parse_error):
             return {
-                "rootCauseCategory": "agent_json_parse_empty",
+                "rootCauseCategory": "agent_json_context_overflow",
+                "message": "agent-json prompt exceeded context window; parseError=contextWindowExceeded",
+                "trace": {
+                    "stage": "agent-json",
+                    "runtimePath": "unknown",
+                    "parseError": "contextWindowExceeded",
+                    "rawOutputEmpty": not raw.strip(),
+                    "rawOutputClassification": "contextWindowExceeded",
+                },
+            }
+        if parse_error == "empty" or not raw.strip():
+            root_cause = _agent_json_empty_stream_category(matching_parse_failure)
+            return {
+                "rootCauseCategory": root_cause,
                 "message": f"agent-json parse failed with empty output; parseError={parse_error}",
                 "trace": {
                     "stage": "agent-json",
                     "runtimePath": "unknown",
                     "parseError": parse_error,
                     "rawOutputEmpty": not raw.strip(),
+                    "rawOutputClassification": root_cause,
                 },
             }
     if event_diagnosis:
@@ -528,17 +583,14 @@ def _matching_sidecar_trace_for_scenario(
     )
     if correlated is not None:
         return correlated, "correlation"
-    fallback = next(
-        (
-            trace
-            for trace in traces
-            if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
-            and _sidecar_record_matches_scenario_time(trace, scenario)
-            and str(trace.get("event") or "") == "modelTurn"
-            and str(trace.get("stage") or "").startswith("agent-json")
-        ),
-        None,
-    )
+    fallback = _preferred_agent_json_trace([
+        trace
+        for trace in traces
+        if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
+        and _sidecar_record_matches_scenario_time(trace, scenario)
+        and str(trace.get("event") or "") == "modelTurn"
+        and str(trace.get("stage") or "").startswith("agent-json")
+    ])
     if fallback is not None:
         return fallback, "prompt-time"
     return None, "none"
@@ -621,6 +673,63 @@ def _scenario_reported_no_model_loaded(scenario: dict[str, Any]) -> bool:
     return "no chat model loaded" in f"{final}\n{failures}\n{event_text}" or "no model loaded" in f"{final}\n{failures}\n{event_text}"
 
 
+def _is_agent_json_context_overflow(raw_output: str, parse_error: Any) -> bool:
+    parse_text = str(parse_error or "").casefold()
+    raw_text = str(raw_output or "").casefold()
+    return (
+        parse_text in {"contextwindowexceeded", "prompttoolarge"}
+        or "prompt exceeded context window before generation" in raw_text
+        or "prompt exceeds shared chat context window" in raw_text
+        or "failed to initialize context: prompt exceeds" in raw_text
+    )
+
+
+def _agent_json_empty_stream_category(trace: dict[str, Any]) -> str:
+    termination_reason = str(trace.get("streamTerminationReason") or "")
+    termination_compact = re.sub(r"[^a-z0-9]", "", termination_reason.casefold())
+    if "resourcebudgetdenied" in termination_compact:
+        return "agent_json_resource_budget_denied_before_first_token"
+
+    reason = str(trace.get("emptyOutputReason") or trace.get("streamTerminationReason") or "").casefold()
+    if reason in {"completedwithouttext", "agent-json-stream-completed-without-text", "stream-completed-without-text-chunks"}:
+        return "agent_json_completed_without_text"
+    if reason in {"stoppedbeforefirsttoken", "stopsequencebeforetext", "eosbeforetext"}:
+        return "agent_json_stop_before_first_token"
+    if reason == "cancelledbeforefirsttoken":
+        return "agent_json_cancelled_before_first_token"
+    if reason == "decodebudgetzero":
+        return "agent_json_decode_budget_zero"
+    if reason == "modelnotloaded":
+        return "agent_json_model_not_loaded"
+    if reason == "slotunavailable":
+        return "agent_json_slot_unavailable"
+    if reason == "runtimeunavailable":
+        return "agent_json_runtime_unavailable"
+    return "agent_json_empty_stream"
+
+
+def _preferred_agent_json_trace(traces: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not traces:
+        return None
+
+    def score(trace: dict[str, Any]) -> tuple[int, int, int, int, str]:
+        stage = str(trace.get("stage") or "")
+        runtime_path = str(trace.get("runtimePath") or "")
+        raw = str(trace.get("rawOutputPrefix") or "")
+        parse_error = str(trace.get("parseError") or "")
+        is_primary = runtime_path == "agent-model" and stage.startswith("agent-json-step-")
+        has_runtime_path = bool(runtime_path and runtime_path != "unknown")
+        return (
+            1 if parse_error else 0,
+            1 if not raw.strip() else 0,
+            1 if is_primary else 0,
+            1 if has_runtime_path else 0,
+            str(trace.get("createdAt") or ""),
+        )
+
+    return max(traces, key=score)
+
+
 def _sidecar_text_matches_prompt(value: str, prompt_key: str) -> bool:
     normalized = " ".join(value.casefold().split())
     needle = " ".join(prompt_key.split())
@@ -692,6 +801,8 @@ def _clean_derived_fragment(value: str) -> str:
 def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     intent = _scenario_intent(scenario)
     if sidecar_diagnosis:
+        if sidecar_diagnosis.get("rootCauseCategory") == "agent_json_context_overflow":
+            return f"For `{intent}` E2E evals, agent-json prompt budget overflow is an executor prompt-construction failure and must not be grouped as malformed model JSON."
         return f"For `{intent}` E2E evals, empty agent-json output is a model-generation failure, not a skipped live run or a response-quality failure."
     if _scenario_skipped_live_model_run(scenario):
         return f"For `{intent}` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded."

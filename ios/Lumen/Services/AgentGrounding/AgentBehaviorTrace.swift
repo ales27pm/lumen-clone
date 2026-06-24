@@ -53,11 +53,22 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
     let accelerationDiagnostic: String?
     let accelerationDiagnostics: RuntimeAccelerationDiagnostics?
     let emptyOutputReason: String?
-
-
+    let streamStarted: Bool?
+    let selectedRuntime: String?
+    let selectedAdapter: String?
+    let modelIdentifier: String?
+    let modelLoaded: Bool?
+    let stopSequences: [String]
+    let temperature: Double?
+    let topP: Double?
+    let cancellationStateBeforeStream: String?
+    let firstChunkReceived: Bool?
+    let textChunkCount: Int?
+    let finalChunkReceived: Bool?
+    let streamTerminationReason: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, createdAt, event, slot, stage, scenarioID, e2eRunID, agentRunID, conversationID, turnID, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason
+        case id, createdAt, event, slot, stage, scenarioID, e2eRunID, agentRunID, conversationID, turnID, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason, streamStarted, selectedRuntime, selectedAdapter, modelIdentifier, modelLoaded, stopSequences, temperature, topP, cancellationStateBeforeStream, firstChunkReceived, textChunkCount, finalChunkReceived, streamTerminationReason
         case promptTokenCount
         case promptEvalMs
     }
@@ -110,6 +121,19 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         accelerationDiagnostic = try container.decodeIfPresent(String.self, forKey: .accelerationDiagnostic)
         accelerationDiagnostics = try container.decodeIfPresent(RuntimeAccelerationDiagnostics.self, forKey: .accelerationDiagnostics)
         emptyOutputReason = try container.decodeIfPresent(String.self, forKey: .emptyOutputReason)
+        streamStarted = try container.decodeIfPresent(Bool.self, forKey: .streamStarted)
+        selectedRuntime = try container.decodeIfPresent(String.self, forKey: .selectedRuntime)
+        selectedAdapter = try container.decodeIfPresent(String.self, forKey: .selectedAdapter)
+        modelIdentifier = try container.decodeIfPresent(String.self, forKey: .modelIdentifier)
+        modelLoaded = try container.decodeIfPresent(Bool.self, forKey: .modelLoaded)
+        stopSequences = try container.decodeIfPresent([String].self, forKey: .stopSequences) ?? []
+        temperature = try container.decodeIfPresent(Double.self, forKey: .temperature)
+        topP = try container.decodeIfPresent(Double.self, forKey: .topP)
+        cancellationStateBeforeStream = try container.decodeIfPresent(String.self, forKey: .cancellationStateBeforeStream)
+        firstChunkReceived = try container.decodeIfPresent(Bool.self, forKey: .firstChunkReceived)
+        textChunkCount = try container.decodeIfPresent(Int.self, forKey: .textChunkCount)
+        finalChunkReceived = try container.decodeIfPresent(Bool.self, forKey: .finalChunkReceived)
+        streamTerminationReason = try container.decodeIfPresent(String.self, forKey: .streamTerminationReason)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -160,6 +184,19 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         try container.encodeIfPresent(accelerationDiagnostic, forKey: .accelerationDiagnostic)
         try container.encodeIfPresent(accelerationDiagnostics, forKey: .accelerationDiagnostics)
         try container.encodeIfPresent(emptyOutputReason, forKey: .emptyOutputReason)
+        try container.encodeIfPresent(streamStarted, forKey: .streamStarted)
+        try container.encodeIfPresent(selectedRuntime, forKey: .selectedRuntime)
+        try container.encodeIfPresent(selectedAdapter, forKey: .selectedAdapter)
+        try container.encodeIfPresent(modelIdentifier, forKey: .modelIdentifier)
+        try container.encodeIfPresent(modelLoaded, forKey: .modelLoaded)
+        try container.encode(stopSequences, forKey: .stopSequences)
+        try container.encodeIfPresent(temperature, forKey: .temperature)
+        try container.encodeIfPresent(topP, forKey: .topP)
+        try container.encodeIfPresent(cancellationStateBeforeStream, forKey: .cancellationStateBeforeStream)
+        try container.encodeIfPresent(firstChunkReceived, forKey: .firstChunkReceived)
+        try container.encodeIfPresent(textChunkCount, forKey: .textChunkCount)
+        try container.encodeIfPresent(finalChunkReceived, forKey: .finalChunkReceived)
+        try container.encodeIfPresent(streamTerminationReason, forKey: .streamTerminationReason)
     }
 
     init(
@@ -208,7 +245,20 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         promptCharCount: Int? = nil,
         accelerationDiagnostic: String? = nil,
         accelerationDiagnostics: RuntimeAccelerationDiagnostics? = nil,
-        emptyOutputReason: String? = nil
+        emptyOutputReason: String? = nil,
+        streamStarted: Bool? = nil,
+        selectedRuntime: String? = nil,
+        selectedAdapter: String? = nil,
+        modelIdentifier: String? = nil,
+        modelLoaded: Bool? = nil,
+        stopSequences: [String] = [],
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        cancellationStateBeforeStream: String? = nil,
+        firstChunkReceived: Bool? = nil,
+        textChunkCount: Int? = nil,
+        finalChunkReceived: Bool? = nil,
+        streamTerminationReason: String? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -256,6 +306,19 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         self.accelerationDiagnostic = accelerationDiagnostic
         self.accelerationDiagnostics = accelerationDiagnostics
         self.emptyOutputReason = emptyOutputReason
+        self.streamStarted = streamStarted
+        self.selectedRuntime = selectedRuntime
+        self.selectedAdapter = selectedAdapter
+        self.modelIdentifier = modelIdentifier
+        self.modelLoaded = modelLoaded
+        self.stopSequences = stopSequences
+        self.temperature = temperature
+        self.topP = topP
+        self.cancellationStateBeforeStream = cancellationStateBeforeStream
+        self.firstChunkReceived = firstChunkReceived
+        self.textChunkCount = textChunkCount
+        self.finalChunkReceived = finalChunkReceived
+        self.streamTerminationReason = streamTerminationReason
     }
 }
 

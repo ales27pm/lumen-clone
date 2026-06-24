@@ -57,6 +57,14 @@ enum ResourceBudgetGate {
         return true
     }
 
+    static func allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: Snapshot, reason: String) -> Bool {
+        guard hasRecentMemoryWarning(snapshot) else { return false }
+        guard let thermal = snapshot.thermalState else { return false }
+        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return false }
+        guard snapshot.lowPowerModeEnabled != nil else { return false }
+        return true
+    }
+
     static func allowsForegroundModelLoad(reason: String) -> Bool {
         return allowsHeavyModelWork(reason: reason)
     }

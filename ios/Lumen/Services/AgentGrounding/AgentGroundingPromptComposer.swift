@@ -42,7 +42,10 @@ nonisolated enum AgentGroundingPromptComposer {
 
 extension GenerateRequest {
     nonisolated func groundingSystemPrompt(for slot: LumenModelSlot) -> GenerateRequest {
-        GenerateRequest(
+        if preservesRawStructuredAgentOutput {
+            return self
+        }
+        return GenerateRequest(
             id: id,
             sessionID: sessionID,
             systemPrompt: AgentGroundingPromptComposer.composeSystemPrompt(
@@ -61,7 +64,8 @@ extension GenerateRequest {
             seed: seed,
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
-            reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters
+            reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation
         )
     }
 }

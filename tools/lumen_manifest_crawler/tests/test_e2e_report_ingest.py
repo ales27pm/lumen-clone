@@ -620,12 +620,24 @@ def test_ingestion_uses_sidecar_empty_agent_json_trace_as_precise_root_cause(tmp
         "stage": "agent-json-step-0",
         "runtimePath": "agent-model",
         "parseError": "empty",
+        "emptyOutputReason": "completedWithoutText",
+        "streamStarted": True,
+        "firstChunkReceived": False,
+        "textChunkCount": 0,
+        "finalChunkReceived": True,
+        "streamTerminationReason": "stop",
         "rawOutputPrefix": "",
         "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
     }) + "\n", encoding="utf-8")
     (tmp_path / "agent-parse-failures.jsonl").write_text(json.dumps({
         "modelName": "agent-json",
         "parseError": "empty",
+        "emptyOutputReason": "completedWithoutText",
+        "streamStarted": True,
+        "firstChunkReceived": False,
+        "textChunkCount": 0,
+        "finalChunkReceived": True,
+        "streamTerminationReason": "stop",
         "rawOutputPrefix": "",
         "userTurnPrefix": "User request:\nExplain tradeoffs between precision and recall in retrieval systems in plain English.",
     }) + "\n", encoding="utf-8")
@@ -633,10 +645,150 @@ def test_ingestion_uses_sidecar_empty_agent_json_trace_as_precise_root_cause(tmp
     normalized = load_runtime_audit_reports([report_path])[0]
 
     failure = normalized["failures"][0]
-    assert failure["rootCauseCategory"] == "agent_json_empty_generation"
+    assert failure["rootCauseCategory"] == "agent_json_completed_without_text"
     assert failure["e2eScenario"]["skippedLiveModelRun"] is False
     assert failure["e2eScenario"]["modelEvidenceTrace"]["stage"] == "agent-json-step-0"
     assert "agent-json emitted empty output" in failure["problem"]
+
+
+def test_ingestion_classifies_agent_json_context_overflow_separately(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    prompt = "What is the weather here and should I carry an umbrella?"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "name": "Training eval: weather stays grounded",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": prompt,
+                "intent": "weather",
+                "expectedIntent": "weather",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Weather tool output could not be validated.",
+                "events": [{"phase": "model-evidence", "message": "found AgentBehaviorTrace modelTurn but parseError=noJSONObject; stage=agent-repair"}],
+            }
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text("\n".join([
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": "noJSONObject",
+            "rawOutputPrefix": "Generation error: Failed to initialize context: Prompt exceeds shared chat context window",
+            "promptPrefix": prompt,
+        }),
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-repair",
+            "runtimePath": "sharedAdapter",
+            "parseError": "missingActionOrFinal",
+            "rawOutputPrefix": "{}",
+            "promptPrefix": prompt,
+        }),
+    ]) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "agent_json_context_overflow"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
+    assert failure["e2eScenario"]["modelEvidenceTrace"]["stage"] == "agent-json-step-0"
+    assert failure["e2eScenario"]["modelEvidenceTrace"]["parseError"] == "contextWindowExceeded"
+    assert "prompt exceeded context window" in failure["problem"]
+
+
+def test_ingestion_prefers_resource_budget_denied_over_cancelled_empty_reason(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    prompt = "Search the web for two recent Swift concurrency best practices and summarize them."
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "name": "Training eval: web research synthesis",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": prompt,
+                "intent": "webSearch",
+                "expectedIntent": "webSearch",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Search failed.",
+                "events": [{"phase": "model-evidence", "message": "found primary agent-json modelTurn but agent-json emitted empty output"}],
+            }
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": "empty",
+        "emptyOutputReason": "cancelledBeforeFirstToken",
+        "streamStarted": False,
+        "firstChunkReceived": False,
+        "textChunkCount": 0,
+        "finalChunkReceived": False,
+        "streamTerminationReason": "resource-budget-denied-before-prompt-eval",
+        "rawOutputPrefix": "",
+        "promptPrefix": prompt,
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "agent_json_resource_budget_denied_before_first_token"
+    assert "resource-budget-denied-before-prompt-eval" in failure["problem"]
+
+
+def test_ingestion_prefers_primary_agent_json_trace_over_runtime_init_trace(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    prompt = "What is the weather here and should I carry an umbrella?"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "name": "Training eval: weather stays grounded",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": prompt,
+                "intent": "weather",
+                "expectedIntent": "weather",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Weather tool output could not be validated.",
+                "events": [{"phase": "model-evidence", "message": "found AgentBehaviorTrace modelTurn but parseError=noJSONObject; stage=agent-repair"}],
+            }
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text("\n".join([
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json",
+            "runtimePath": "model_initialization_failed_prompt_too_large",
+            "parseError": "contextWindowExceeded",
+            "rawOutputPrefix": "Prompt exceeded context window before generation",
+            "promptPrefix": prompt,
+        }),
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": "contextWindowExceeded",
+            "rawOutputPrefix": "Prompt exceeded context window before generation",
+            "promptPrefix": prompt,
+        }),
+    ]) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    trace = normalized["failures"][0]["e2eScenario"]["modelEvidenceTrace"]
+    assert trace["stage"] == "agent-json-step-0"
+    assert trace["runtimePath"] == "agent-model"
 
 
 def test_ingestion_does_not_match_empty_sidecar_prompt_to_scenario(tmp_path: Path):
@@ -664,6 +816,12 @@ def test_ingestion_does_not_match_empty_sidecar_prompt_to_scenario(tmp_path: Pat
         "stage": "agent-json-step-0",
         "runtimePath": "agent-model",
         "parseError": "empty",
+        "emptyOutputReason": "completedWithoutText",
+        "streamStarted": True,
+        "firstChunkReceived": False,
+        "textChunkCount": 0,
+        "finalChunkReceived": True,
+        "streamTerminationReason": "stop",
         "rawOutputPrefix": "",
         "promptPrefix": "",
     }) + "\n", encoding="utf-8")
@@ -703,6 +861,12 @@ def test_ingestion_rejects_sidecar_outside_scenario_time_window(tmp_path: Path):
         "stage": "agent-json-step-0",
         "runtimePath": "agent-model",
         "parseError": "empty",
+        "emptyOutputReason": "completedWithoutText",
+        "streamStarted": True,
+        "firstChunkReceived": False,
+        "textChunkCount": 0,
+        "finalChunkReceived": True,
+        "streamTerminationReason": "stop",
         "rawOutputPrefix": "",
         "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
         "createdAt": "2026-06-23T11:34:00Z",
@@ -732,6 +896,12 @@ Final: Precision is exactness; recall is coverage.
         "stage": "agent-json-step-0",
         "runtimePath": "agent-model",
         "parseError": "empty",
+        "emptyOutputReason": "completedWithoutText",
+        "streamStarted": True,
+        "firstChunkReceived": False,
+        "textChunkCount": 0,
+        "finalChunkReceived": True,
+        "streamTerminationReason": "stop",
         "rawOutputPrefix": "",
         "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
     }) + "\n", encoding="utf-8")
@@ -739,7 +909,7 @@ Final: Precision is exactness; recall is coverage.
     normalized = load_runtime_audit_reports([report_path])[0]
 
     failure = normalized["failures"][0]
-    assert failure["rootCauseCategory"] == "agent_json_empty_generation"
+    assert failure["rootCauseCategory"] == "agent_json_completed_without_text"
     assert failure["e2eScenario"]["skippedLiveModelRun"] is False
 
 
@@ -813,6 +983,12 @@ def test_ingestion_distinguishes_missing_empty_parse_valid_and_policy_first_evid
             "stage": "agent-json-step-0",
             "runtimePath": "agent-model",
             "parseError": "empty",
+            "emptyOutputReason": "completedWithoutText",
+            "streamStarted": True,
+            "firstChunkReceived": False,
+            "textChunkCount": 0,
+            "finalChunkReceived": True,
+            "streamTerminationReason": "stop",
             "rawOutputPrefix": "",
             "promptPrefix": "Empty output prompt.",
         }),
@@ -831,7 +1007,7 @@ def test_ingestion_distinguishes_missing_empty_parse_valid_and_policy_first_evid
     failures_by_prompt = {failure["scenario"]: failure for failure in normalized["failures"]}
     assert failures_by_prompt["Missing evidence prompt."]["rootCauseCategory"] == "no_correlated_model_turn"
     assert failures_by_prompt["Missing evidence prompt."]["e2eScenario"]["skippedLiveModelRun"] is False
-    assert failures_by_prompt["Empty output prompt."]["rootCauseCategory"] == "agent_json_empty_generation"
+    assert failures_by_prompt["Empty output prompt."]["rootCauseCategory"] == "agent_json_completed_without_text"
     assert failures_by_prompt["Parse error prompt."]["rootCauseCategory"] == "agent_json_parse_error"
     assert "Valid model prompt." not in failures_by_prompt
     assert "Policy first prompt." not in failures_by_prompt

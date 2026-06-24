@@ -21,6 +21,7 @@ nonisolated struct GenerateRequest: Sendable {
     let developerTraceModeEnabled: Bool
     let reasoningCaptureEnabled: Bool
     let reasoningTraceBudgetCharacters: Int
+    let allowsMemoryPressureContinuation: Bool
 
     init(
         id: UUID = UUID(),
@@ -38,7 +39,8 @@ nonisolated struct GenerateRequest: Sendable {
         seed: UInt32? = nil,
         developerTraceModeEnabled: Bool = false,
         reasoningCaptureEnabled: Bool = false,
-        reasoningTraceBudgetCharacters: Int = 16_384
+        reasoningTraceBudgetCharacters: Int = 16_384,
+        allowsMemoryPressureContinuation: Bool = false
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -56,6 +58,7 @@ nonisolated struct GenerateRequest: Sendable {
         self.developerTraceModeEnabled = developerTraceModeEnabled
         self.reasoningCaptureEnabled = developerTraceModeEnabled && reasoningCaptureEnabled
         self.reasoningTraceBudgetCharacters = max(0, reasoningTraceBudgetCharacters)
+        self.allowsMemoryPressureContinuation = allowsMemoryPressureContinuation
     }
 
     init(
@@ -74,7 +77,8 @@ nonisolated struct GenerateRequest: Sendable {
         seed: UInt32? = nil,
         developerTraceModeEnabled: Bool = false,
         reasoningCaptureEnabled: Bool = false,
-        reasoningTraceBudgetCharacters: Int = 16_384
+        reasoningTraceBudgetCharacters: Int = 16_384,
+        allowsMemoryPressureContinuation: Bool = false
     ) {
         self.init(
             id: id,
@@ -92,7 +96,8 @@ nonisolated struct GenerateRequest: Sendable {
             seed: seed,
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
-            reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters
+            reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation
         )
     }
 
@@ -114,7 +119,8 @@ nonisolated struct GenerateRequest: Sendable {
             seed: seed,
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
-            reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters
+            reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation
         )
     }
 
@@ -651,6 +657,10 @@ final actor AppLlamaService {
         completedTracePayloads.removeValue(forKey: requestID)
     }
 
+    func contextSizeForDiagnostics(slot: LumenModelSlot) async -> Int {
+        await contextSizeForGeneration(slot: slot)
+    }
+
     func cancelActiveGeneration(reason: String) async {
         let generations = activeGenerations
         guard !generations.isEmpty else {
@@ -1149,6 +1159,27 @@ final actor AppLlamaService {
         stream(req, slot: primaryChatSlot)
     }
 
+    private func allowsGenerationWork(
+        request: GenerateRequest,
+        slot: LumenModelSlot,
+        resourceReason: String
+    ) async -> Bool {
+        let snapshot = await MainActor.run { ResourceBudgetGate.diagnosticSnapshot() }
+        if await MainActor.run(body: { ResourceBudgetGate.allowsHeavyModelWork(snapshot: snapshot, reason: resourceReason) }) {
+            return true
+        }
+
+        guard request.allowsMemoryPressureContinuation,
+              request.preservesRawStructuredAgentOutput,
+              await SlotModelRuntimeCoordinator.shared.hasLoadedRuntimeReadyForContinuation(slot: slot) else {
+            return false
+        }
+
+        return await MainActor.run {
+            ResourceBudgetGate.allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: snapshot, reason: resourceReason)
+        }
+    }
+
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
         return AsyncStream<GenerationToken>(bufferingPolicy: .unbounded) { (continuation: AsyncStream<GenerationToken>.Continuation) in
             let cancellationToken = LlamaGenerationCancellationToken()
@@ -1163,15 +1194,88 @@ final actor AppLlamaService {
                 }
 
                 await self.registerActiveGeneration(requestID: req.id, slot: slot, token: cancellationToken, taskBox: taskBox, diskWriteLease: diskWriteLease)
+                let requestForGeneration = req.cappedForDeveloperReasoning()
+                let startedAt = Date()
+                var traceRequest = requestForGeneration
+                var selectedRuntime: String?
+                var selectedAdapter: String?
+                var modelIdentifier: String?
+                var modelLoaded: Bool?
+                var estimatedPromptTokenCountForDiagnostics: Int?
+                var promptCharsForDiagnostics: Int?
+                var firstTokenMs: Int?
+                var streamStarted = false
+                var firstChunkReceived = false
+                var textChunkCount = 0
+                var finalChunkReceived = false
+                var cancellationStateBeforeStream: String?
+                var streamTerminationReason: String?
 
                 do {
                     try cancellationToken.checkCancellation()
-                    let requestForGeneration = req.cappedForDeveloperReasoning()
                     guard requestForGeneration.maxTokens > 0 else {
+                        let emptyOutputReason = "decodeBudgetZero"
+                        await self.storeCompletedTracePayloadIfNeeded(
+                            request: requestForGeneration,
+                            payload: CompletedGenerationTracePayload(
+                                requestID: requestForGeneration.id,
+                                rawModelOutput: "",
+                                reasoningText: nil,
+                                visibleAnswer: "",
+                                parserWarnings: [],
+                                tokenUsage: TraceTokenUsage(promptTokens: nil, completionTokens: 0, reasoningTokens: nil, visibleTokens: 0, totalTokens: nil),
+                                finishReason: "decodeBudgetZero",
+                                error: nil,
+                                streamStarted: false,
+                                selectedRuntime: nil,
+                                selectedAdapter: nil,
+                                modelIdentifier: requestForGeneration.modelName,
+                                modelLoaded: await SlotModelRuntimeCoordinator.shared.hasLoadedRuntimeReadyForContinuation(slot: slot),
+                                maxTokensRequested: req.maxTokens,
+                                maxTokensEffective: requestForGeneration.maxTokens,
+                                stopSequences: [],
+                                temperature: requestForGeneration.temperature,
+                                topP: requestForGeneration.topP,
+                                promptCharCount: nil,
+                                estimatedPromptTokenCount: nil,
+                                cancellationStateBeforeStream: cancellationToken.isCancelled ? (cancellationToken.reason ?? "cancelled") : "notCancelled",
+                                firstChunkReceived: false,
+                                textChunkCount: 0,
+                                finalChunkReceived: false,
+                                streamTerminationReason: emptyOutputReason,
+                                elapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
+                                outputTokenCount: 0,
+                                emptyOutputReason: emptyOutputReason
+                            )
+                        )
+                        await self.recordModelTrace(
+                            slot: slot,
+                            request: requestForGeneration,
+                            output: "",
+                            parseError: AgentTurnParseError.empty.rawValue,
+                            generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
+                            outputTokenCount: 0,
+                            runtimePath: nil,
+                            maxTokensRequested: req.maxTokens,
+                            maxTokensEffective: requestForGeneration.maxTokens,
+                            emptyOutputReason: emptyOutputReason,
+                            streamStarted: false,
+                            selectedRuntime: nil,
+                            selectedAdapter: nil,
+                            modelIdentifier: requestForGeneration.modelName,
+                            modelLoaded: await SlotModelRuntimeCoordinator.shared.hasLoadedRuntimeReadyForContinuation(slot: slot),
+                            stopSequences: [],
+                            temperature: requestForGeneration.temperature,
+                            topP: requestForGeneration.topP,
+                            cancellationStateBeforeStream: cancellationToken.isCancelled ? (cancellationToken.reason ?? "cancelled") : "notCancelled",
+                            firstChunkReceived: false,
+                            textChunkCount: 0,
+                            finalChunkReceived: false,
+                            streamTerminationReason: emptyOutputReason
+                        )
                         return
                     }
 
-                    let startedAt = Date()
                     let backgroundTask = await MainActor.run {
                         BackgroundRuntimeContinuation.begin(name: "Lumen Chat Generation", allowsContinuedProcessing: true)
                     }
@@ -1180,15 +1284,31 @@ final actor AppLlamaService {
                             backgroundTask?.end()
                         }
                     }
-                    let allowsWork = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue) }
+                    let allowsWork = await self.allowsGenerationWork(
+                        request: requestForGeneration,
+                        slot: slot,
+                        resourceReason: ModelLoadIntent.userChat.rawValue
+                    )
                     guard allowsWork else {
                         cancellationToken.cancel(reason: "resource-budget-denied-before-prompt-eval")
                         throw CancellationError()
                     }
-                    let readyMetrics = try await SlotModelRuntimeCoordinator.shared.ensureReadyWithMetrics(slot: slot)
+                    let readyMetrics = try await SlotModelRuntimeCoordinator.shared.ensureReadyWithMetrics(
+                        slot: slot,
+                        allowsLoadedMemoryPressureContinuation: requestForGeneration.allowsMemoryPressureContinuation
+                            && requestForGeneration.preservesRawStructuredAgentOutput
+                    )
+                    let readyAdapterPath = await self.roleAdapterPath(for: slot)
+                    let readySlotLoadedPath = await self.loadedChatPath(for: slot)
+                    let readyFallbackLoadedPath = await self.loadedChatPath
+                    selectedRuntime = readyMetrics.runtimePath
+                    selectedAdapter = readyMetrics.activeAdapterSlot ?? readyAdapterPath
+                    modelLoaded = await SlotModelRuntimeCoordinator.shared.hasLoadedRuntimeReadyForContinuation(slot: slot)
+                    modelIdentifier = readySlotLoadedPath ?? readyFallbackLoadedPath ?? requestForGeneration.modelName
                     try cancellationToken.checkCancellation()
                     let contextSize = await self.contextSizeForGeneration(slot: slot)
                     let groundedRequest = requestForGeneration.groundingSystemPrompt(for: slot)
+                    traceRequest = groundedRequest
                     let messageBuildStarted = Date()
                     var promptBuild = await self.buildMessages(req: groundedRequest, contextSize: contextSize, slot: slot)
                     if promptBuild.latencySelection.latencyClass == .fastInteractive, promptBuild.finalPromptChars > PromptBudgetConstants.fastInteractiveTotalChars {
@@ -1200,6 +1320,8 @@ final actor AppLlamaService {
                     let messages = promptBuild.messages
                     let promptChars = promptBuild.finalPromptChars
                     let estimatedPromptTokenCount = promptBuild.estimatedPromptTokens
+                    promptCharsForDiagnostics = promptChars
+                    estimatedPromptTokenCountForDiagnostics = estimatedPromptTokenCount
                     logger.info("event=llama.chat.prompt_budget slot=\(slot.rawValue, privacy: .public) latency_class=\(promptBuild.latencySelection.latencyClass.rawValue, privacy: .public) reason=\(promptBuild.latencySelection.reason, privacy: .public) initial_chars=\(promptBuild.initialPromptChars, privacy: .public) final_chars=\(promptBuild.finalPromptChars, privacy: .public) budget_chars=\(promptBuild.assembly.budgetChars, privacy: .public) estimated_tokens=\(estimatedPromptTokenCount, privacy: .public)")
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaPromptBudget, values: [
                         "latencyClass": promptBuild.latencySelection.latencyClass.rawValue,
@@ -1208,11 +1330,18 @@ final actor AppLlamaService {
                         "estimatedTokens": String(estimatedPromptTokenCount)
                     ]))
                     try cancellationToken.checkCancellation()
-                    let stillAllowsWork = await MainActor.run { ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue) }
+                    let stillAllowsWork = await self.allowsGenerationWork(
+                        request: groundedRequest,
+                        slot: slot,
+                        resourceReason: ModelLoadIntent.userChat.rawValue
+                    )
                     guard stillAllowsWork else {
                         cancellationToken.cancel(reason: "resource-budget-denied-after-prompt-build")
                         throw CancellationError()
                     }
+                    cancellationStateBeforeStream = cancellationToken.isCancelled
+                        ? (cancellationToken.reason ?? "cancelled")
+                        : (Task.isCancelled ? "taskCancelled" : "notCancelled")
                     let stream = try await self.streamResponse(
                         slot: slot,
                         messages: messages,
@@ -1223,6 +1352,8 @@ final actor AppLlamaService {
                         seed: groundedRequest.seed,
                         cancellationToken: cancellationToken
                     )
+                    streamStarted = true
+                    streamTerminationReason = "streamStarted"
                     let preservesStructuredAgentOutput = groundedRequest.preservesRawStructuredAgentOutput
                     var parser = ReasoningAwareStreamParser(
                         config: ReasoningAwareStreamParserConfig(
@@ -1232,10 +1363,11 @@ final actor AppLlamaService {
                     )
                     var streamingSanitizer = StreamingFinalOutputSanitizer()
                     var streamedSanitized = ""
-                    var firstTokenMs: Int?
                     var outputChunks = 0
                     for try await chunk in stream {
                         try Task.checkCancellation()
+                        firstChunkReceived = true
+                        if !chunk.isEmpty { textChunkCount += 1 }
                         if firstTokenMs == nil {
                             firstTokenMs = Int(Date().timeIntervalSince(startedAt) * 1000)
                             PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaFirstToken, values: ["latencyMs": String(firstTokenMs ?? 0)]))
@@ -1256,6 +1388,10 @@ final actor AppLlamaService {
                             await Task.yield()
                         }
                     }
+                    finalChunkReceived = true
+                    streamTerminationReason = textChunkCount == 0
+                        ? (firstChunkReceived ? "eosBeforeText" : "stoppedBeforeFirstToken")
+                        : "stop"
                     let parserResult: ReasoningAwareStreamParserResult
                     let sanitized: String
                     if preservesStructuredAgentOutput {
@@ -1295,9 +1431,14 @@ final actor AppLlamaService {
                     let outputTokenEstimate = max(0, sanitized.split(whereSeparator: \.isWhitespace).count)
                     let emptyOutputReason: String?
                     if sanitized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        emptyOutputReason = outputChunks == 0
-                            ? "stream-completed-without-text-chunks"
-                            : "stream-produced-empty-sanitized-output"
+                        emptyOutputReason = Self.emptyStreamReason(
+                            streamStarted: streamStarted,
+                            firstChunkReceived: firstChunkReceived,
+                            textChunkCount: textChunkCount,
+                            finalChunkReceived: finalChunkReceived,
+                            cancellationReason: cancellationToken.reason,
+                            maxTokensEffective: groundedRequest.maxTokens
+                        )
                     } else {
                         emptyOutputReason = nil
                     }
@@ -1338,7 +1479,11 @@ final actor AppLlamaService {
                             "activeAdapterSlot": readyMetrics.activeAdapterSlot ?? "none",
                             "loadedModelPath": loadedPath,
                             "adapterPath": adapterPath,
-                            "cancelled": Task.isCancelled ? "true" : "false"
+                            "cancelled": Task.isCancelled ? "true" : "false",
+                            "firstChunkReceived": firstChunkReceived ? "true" : "false",
+                            "textChunkCount": String(textChunkCount),
+                            "finalChunkReceived": finalChunkReceived ? "true" : "false",
+                            "streamTerminationReason": streamTerminationReason ?? "unknown"
                         ]))
                     }
                     await self.storeCompletedTracePayloadIfNeeded(
@@ -1351,7 +1496,27 @@ final actor AppLlamaService {
                             parserWarnings: parserResult.parserWarnings,
                             tokenUsage: tokenUsage,
                             finishReason: "stop",
-                            error: nil
+                            error: nil,
+                            streamStarted: streamStarted,
+                            selectedRuntime: readyMetrics.runtimePath,
+                            selectedAdapter: selectedAdapter,
+                            modelIdentifier: modelIdentifier ?? groundedRequest.modelName,
+                            modelLoaded: modelLoaded,
+                            maxTokensRequested: req.maxTokens,
+                            maxTokensEffective: groundedRequest.maxTokens,
+                            stopSequences: [],
+                            temperature: groundedRequest.temperature,
+                            topP: groundedRequest.topP,
+                            promptCharCount: promptChars,
+                            estimatedPromptTokenCount: estimatedPromptTokenCount,
+                            cancellationStateBeforeStream: cancellationStateBeforeStream,
+                            firstChunkReceived: firstChunkReceived,
+                            textChunkCount: textChunkCount,
+                            finalChunkReceived: finalChunkReceived,
+                            streamTerminationReason: streamTerminationReason,
+                            elapsedMs: elapsedMs,
+                            outputTokenCount: emptyOutputReason == nil ? nil : 0,
+                            emptyOutputReason: emptyOutputReason
                         )
                     )
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaComplete, values: [
@@ -1383,29 +1548,176 @@ final actor AppLlamaService {
                         promptCharCount: promptChars,
                         accelerationDiagnostic: readyMetrics.accelerationDiagnostic,
                         accelerationDiagnostics: accelerationDiagnostics,
-                        emptyOutputReason: emptyOutputReason
+                        emptyOutputReason: emptyOutputReason,
+                        streamStarted: streamStarted,
+                        selectedRuntime: readyMetrics.runtimePath,
+                        selectedAdapter: selectedAdapter,
+                        modelIdentifier: modelIdentifier ?? groundedRequest.modelName,
+                        modelLoaded: modelLoaded,
+                        stopSequences: [],
+                        temperature: groundedRequest.temperature,
+                        topP: groundedRequest.topP,
+                        cancellationStateBeforeStream: cancellationStateBeforeStream,
+                        firstChunkReceived: firstChunkReceived,
+                        textChunkCount: textChunkCount,
+                        finalChunkReceived: finalChunkReceived,
+                        streamTerminationReason: streamTerminationReason
                     )
                 } catch is CancellationError {
                     let cancelReason = cancellationToken.reason ?? AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"
                     logger.info("event=llama.chat.generation_cancelled slot=\(slot.rawValue, privacy: .public) reason=\(cancelReason, privacy: .public)")
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaCancel, values: ["reason": cancelReason]))
-                } catch {
-                    let errorText = "Generation error: \(error.localizedDescription)"
+                    streamTerminationReason = cancelReason
+                    let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+                    let emptyOutputReason = firstTokenMs == nil ? "cancelledBeforeFirstToken" : "completedWithoutText"
+                    let currentModelLoaded: Bool
+                    if let modelLoaded {
+                        currentModelLoaded = modelLoaded
+                    } else {
+                        currentModelLoaded = await SlotModelRuntimeCoordinator.shared.hasLoadedRuntimeReadyForContinuation(slot: slot)
+                    }
                     await self.storeCompletedTracePayloadIfNeeded(
-                        request: req,
+                        request: traceRequest,
                         payload: CompletedGenerationTracePayload(
-                            requestID: req.id,
+                            requestID: traceRequest.id,
+                            rawModelOutput: "",
+                            reasoningText: nil,
+                            visibleAnswer: "",
+                            parserWarnings: [],
+                            tokenUsage: TraceTokenUsage(promptTokens: estimatedPromptTokenCountForDiagnostics, completionTokens: 0, reasoningTokens: nil, visibleTokens: 0, totalTokens: nil),
+                            finishReason: "cancelled",
+                            error: cancelReason,
+                            streamStarted: streamStarted,
+                            selectedRuntime: selectedRuntime,
+                            selectedAdapter: selectedAdapter,
+                            modelIdentifier: modelIdentifier ?? traceRequest.modelName,
+                            modelLoaded: currentModelLoaded,
+                            maxTokensRequested: req.maxTokens,
+                            maxTokensEffective: traceRequest.maxTokens,
+                            stopSequences: [],
+                            temperature: traceRequest.temperature,
+                            topP: traceRequest.topP,
+                            promptCharCount: promptCharsForDiagnostics,
+                            estimatedPromptTokenCount: estimatedPromptTokenCountForDiagnostics,
+                            cancellationStateBeforeStream: cancellationStateBeforeStream ?? cancelReason,
+                            firstChunkReceived: firstChunkReceived,
+                            textChunkCount: textChunkCount,
+                            finalChunkReceived: finalChunkReceived,
+                            streamTerminationReason: cancelReason,
+                            elapsedMs: elapsedMs,
+                            outputTokenCount: 0,
+                            emptyOutputReason: emptyOutputReason
+                        )
+                    )
+                    await self.recordModelTrace(
+                        slot: slot,
+                        request: traceRequest,
+                        output: "",
+                        parseError: AgentTurnParseError.empty.rawValue,
+                        generationElapsedMs: elapsedMs,
+                        outputTokenCount: 0,
+                        firstTokenLatencyMs: firstTokenMs,
+                        estimatedPromptTokenCount: estimatedPromptTokenCountForDiagnostics,
+                        runtimePath: selectedRuntime,
+                        activeAdapterSlot: selectedAdapter,
+                        maxTokensRequested: req.maxTokens,
+                        maxTokensEffective: traceRequest.maxTokens,
+                        promptCharCount: promptCharsForDiagnostics,
+                        emptyOutputReason: emptyOutputReason,
+                        streamStarted: streamStarted,
+                        selectedRuntime: selectedRuntime,
+                        selectedAdapter: selectedAdapter,
+                        modelIdentifier: modelIdentifier ?? traceRequest.modelName,
+                        modelLoaded: currentModelLoaded,
+                        stopSequences: [],
+                        temperature: traceRequest.temperature,
+                        topP: traceRequest.topP,
+                        cancellationStateBeforeStream: cancellationStateBeforeStream ?? cancelReason,
+                        firstChunkReceived: firstChunkReceived,
+                        textChunkCount: textChunkCount,
+                        finalChunkReceived: finalChunkReceived,
+                        streamTerminationReason: cancelReason
+                    )
+                } catch {
+                    let promptOverflow = req.preservesRawStructuredAgentOutput && Self.isPromptContextWindowExceeded(error)
+                    let errorText = promptOverflow
+                        ? Self.promptContextWindowExceededMessage
+                        : "Generation error: \(error.localizedDescription)"
+                    let parseError = promptOverflow
+                        ? AgentTurnParseError.contextWindowExceeded.rawValue
+                        : "generation_error"
+                    let terminationReason = promptOverflow
+                        ? "contextWindowExceeded"
+                        : Self.streamErrorTerminationReason(error)
+                    let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+                    let currentModelLoaded: Bool
+                    if let modelLoaded {
+                        currentModelLoaded = modelLoaded
+                    } else {
+                        currentModelLoaded = await SlotModelRuntimeCoordinator.shared.hasLoadedRuntimeReadyForContinuation(slot: slot)
+                    }
+                    await self.storeCompletedTracePayloadIfNeeded(
+                        request: traceRequest,
+                        payload: CompletedGenerationTracePayload(
+                            requestID: traceRequest.id,
                             rawModelOutput: "",
                             reasoningText: nil,
                             visibleAnswer: errorText,
                             parserWarnings: [],
                             tokenUsage: nil,
                             finishReason: "error",
-                            error: error.localizedDescription
+                            error: error.localizedDescription,
+                            streamStarted: streamStarted,
+                            selectedRuntime: selectedRuntime,
+                            selectedAdapter: selectedAdapter,
+                            modelIdentifier: modelIdentifier ?? traceRequest.modelName,
+                            modelLoaded: currentModelLoaded,
+                            maxTokensRequested: req.maxTokens,
+                            maxTokensEffective: traceRequest.maxTokens,
+                            stopSequences: [],
+                            temperature: traceRequest.temperature,
+                            topP: traceRequest.topP,
+                            promptCharCount: promptCharsForDiagnostics,
+                            estimatedPromptTokenCount: estimatedPromptTokenCountForDiagnostics,
+                            cancellationStateBeforeStream: cancellationStateBeforeStream,
+                            firstChunkReceived: firstChunkReceived,
+                            textChunkCount: textChunkCount,
+                            finalChunkReceived: finalChunkReceived,
+                            streamTerminationReason: terminationReason,
+                            elapsedMs: elapsedMs,
+                            outputTokenCount: 0,
+                            emptyOutputReason: promptOverflow ? nil : terminationReason
                         )
                     )
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaFailure, values: ["errorCode": self.classifyError(error).rawValue]))
-                    await self.recordModelTrace(slot: slot, request: req, output: errorText, parseError: "generation_error")
+                    await self.recordModelTrace(
+                        slot: slot,
+                        request: traceRequest,
+                        output: errorText,
+                        parseError: parseError,
+                        generationElapsedMs: elapsedMs,
+                        outputTokenCount: 0,
+                        estimatedPromptTokenCount: estimatedPromptTokenCountForDiagnostics,
+                        runtimePath: promptOverflow ? "model_initialization_failed_prompt_too_large" : selectedRuntime,
+                        activeAdapterSlot: selectedAdapter,
+                        maxTokensRequested: req.maxTokens,
+                        maxTokensEffective: traceRequest.maxTokens,
+                        promptCharCount: promptCharsForDiagnostics,
+                        emptyOutputReason: promptOverflow ? nil : terminationReason,
+                        streamStarted: streamStarted,
+                        selectedRuntime: selectedRuntime,
+                        selectedAdapter: selectedAdapter,
+                        modelIdentifier: modelIdentifier ?? traceRequest.modelName,
+                        modelLoaded: currentModelLoaded,
+                        stopSequences: [],
+                        temperature: traceRequest.temperature,
+                        topP: traceRequest.topP,
+                        cancellationStateBeforeStream: cancellationStateBeforeStream,
+                        firstChunkReceived: firstChunkReceived,
+                        textChunkCount: textChunkCount,
+                        finalChunkReceived: finalChunkReceived,
+                        streamTerminationReason: terminationReason
+                    )
                     continuation.yield(GenerationToken.text(errorText))
                 }
 
@@ -1492,55 +1804,25 @@ final actor AppLlamaService {
             maxTokenCount: UInt32(max(1, contextSize)),
             useGPU: true
         )
-        let service: SwiftLlama.LlamaService
-        do {
-            LlamaRuntimeLogCapture.shared.installIfNeeded()
-            LlamaRuntimeLogCapture.shared.markLoadBoundary()
-            service = SwiftLlama.LlamaService(modelUrl: URL(fileURLWithPath: path), config: preferredConfig)
-            let offload = LlamaOffloadSnapshot.fromRuntimeLogs(totalModelLayers: nil, requestedKQVOffload: true)
-            self.lastAccelerationDiagnostics = RuntimeAccelerationDiagnostics.forCurrentRuntime(
-                requestedBackend: "metal",
-                requestedGpuLayers: 999,
-                requestedKQVOffload: true,
-                actualBackend: offload.actualBackend,
-                actualOffloadedLayers: offload.offloadedLayers,
-                actualTotalLayers: offload.totalLayers,
-                metalDeviceUsed: offload.actualBackend == "metal" ? MTLCreateSystemDefaultDevice()?.name : nil,
-                actualKQVOffload: offload.kqvOffloaded,
-                notes: offload.notes
-            )
-            let diagnostics = self.lastAccelerationDiagnostics
-            logger.info(
-                "event=llama.chat.acceleration_verified backend=\(diagnostics.actualBackend ?? "unknown", privacy: .public) metal_device=\(diagnostics.metalDeviceUsed ?? diagnostics.metalDeviceName ?? "unknown", privacy: .public) offloaded_layers=\(diagnostics.actualOffloadedLayers.map(String.init) ?? "unknown", privacy: .public) total_layers=\(diagnostics.actualTotalLayers.map(String.init) ?? "unknown", privacy: .public) kqv_offload=\(diagnostics.actualKQVOffload.map { String($0) } ?? "unknown", privacy: .public) verification=\(diagnostics.verificationLevel, privacy: .public)"
-            )
-        } catch {
-            logger.error(
-                "event=llama.chat.runtime_init_failure path=\(path, privacy: .public) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public) message=\(error.localizedDescription, privacy: .public) fallback=cpu_or_nonoffload"
-            )
-            let fallbackConfig = LlamaConfig(
-                batchSize: batchSize,
-                maxTokenCount: UInt32(max(1, contextSize)),
-                useGPU: false
-            )
-            service = SwiftLlama.LlamaService(modelUrl: URL(fileURLWithPath: path), config: fallbackConfig)
-            lastAccelerationDiagnostics = RuntimeAccelerationDiagnostics.forCurrentRuntime(requestedBackend: "cpu", requestedGpuLayers: 0, requestedKQVOffload: false, actualBackend: "cpu")
-            logger.info(
-                "event=llama.chat.runtime_init_cpu_fallback_success path=\(path, privacy: .public) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public)"
-            )
-            RuntimeFallbackLogger.record(
-                source: "llama-runtime-init",
-                primaryBehavior: "initialize accelerated llama runtime",
-                fallbackBehavior: "initialize CPU/non-offload llama runtime",
-                reason: RuntimeMetricErrorSanitizer.code(for: error),
-                consequence: "primary acceleration behavior unavailable; latency and energy may degrade",
-                values: [
-                    "slot": slot.rawValue,
-                    "modelPathSHA256": RuntimeFallbackLogger.promptHash(path),
-                    "contextSize": String(contextSize),
-                    "batchSize": String(batchSize)
-                ]
-            )
-        }
+        LlamaRuntimeLogCapture.shared.installIfNeeded()
+        LlamaRuntimeLogCapture.shared.markLoadBoundary()
+        let service = SwiftLlama.LlamaService(modelUrl: URL(fileURLWithPath: path), config: preferredConfig)
+        let offload = LlamaOffloadSnapshot.fromRuntimeLogs(totalModelLayers: nil, requestedKQVOffload: true)
+        self.lastAccelerationDiagnostics = RuntimeAccelerationDiagnostics.forCurrentRuntime(
+            requestedBackend: "metal",
+            requestedGpuLayers: 999,
+            requestedKQVOffload: true,
+            actualBackend: offload.actualBackend,
+            actualOffloadedLayers: offload.offloadedLayers,
+            actualTotalLayers: offload.totalLayers,
+            metalDeviceUsed: offload.actualBackend == "metal" ? MTLCreateSystemDefaultDevice()?.name : nil,
+            actualKQVOffload: offload.kqvOffloaded,
+            notes: offload.notes
+        )
+        let diagnostics = self.lastAccelerationDiagnostics
+        logger.info(
+            "event=llama.chat.acceleration_verified backend=\(diagnostics.actualBackend ?? "unknown", privacy: .public) metal_device=\(diagnostics.metalDeviceUsed ?? diagnostics.metalDeviceName ?? "unknown", privacy: .public) offloaded_layers=\(diagnostics.actualOffloadedLayers.map(String.init) ?? "unknown", privacy: .public) total_layers=\(diagnostics.actualTotalLayers.map(String.init) ?? "unknown", privacy: .public) kqv_offload=\(diagnostics.actualKQVOffload.map { String($0) } ?? "unknown", privacy: .public) verification=\(diagnostics.verificationLevel, privacy: .public)"
+        )
         chatRuntimes[slot] = ChatRuntime(
             service: service,
             modelPath: path,
@@ -1604,7 +1886,20 @@ final actor AppLlamaService {
         promptCharCount: Int? = nil,
         accelerationDiagnostic: String? = nil,
         accelerationDiagnostics: RuntimeAccelerationDiagnostics? = nil,
-        emptyOutputReason: String? = nil
+        emptyOutputReason: String? = nil,
+        streamStarted: Bool? = nil,
+        selectedRuntime: String? = nil,
+        selectedAdapter: String? = nil,
+        modelIdentifier: String? = nil,
+        modelLoaded: Bool? = nil,
+        stopSequences: [String] = [],
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        cancellationStateBeforeStream: String? = nil,
+        firstChunkReceived: Bool? = nil,
+        textChunkCount: Int? = nil,
+        finalChunkReceived: Bool? = nil,
+        streamTerminationReason: String? = nil
     ) async {
         let adapterMetadata = currentAdapterTraceMetadata(slot: slot)
         AgentBehaviorTraceRecorder.record(
@@ -1649,13 +1944,26 @@ final actor AppLlamaService {
                 promptCharCount: promptCharCount,
                 accelerationDiagnostic: accelerationDiagnostic,
                 accelerationDiagnostics: accelerationDiagnostics,
-                emptyOutputReason: emptyOutputReason
+                emptyOutputReason: emptyOutputReason,
+                streamStarted: streamStarted,
+                selectedRuntime: selectedRuntime,
+                selectedAdapter: selectedAdapter,
+                modelIdentifier: modelIdentifier,
+                modelLoaded: modelLoaded,
+                stopSequences: stopSequences,
+                temperature: temperature,
+                topP: topP,
+                cancellationStateBeforeStream: cancellationStateBeforeStream,
+                firstChunkReceived: firstChunkReceived,
+                textChunkCount: textChunkCount,
+                finalChunkReceived: finalChunkReceived,
+                streamTerminationReason: streamTerminationReason
             )
         )
     }
 
     private func storeCompletedTracePayloadIfNeeded(request: GenerateRequest, payload: CompletedGenerationTracePayload) {
-        guard request.sessionID != nil || request.developerTraceModeEnabled else { return }
+        guard request.sessionID != nil || request.developerTraceModeEnabled || request.preservesRawStructuredAgentOutput else { return }
         completedTracePayloads[payload.requestID] = payload
         if completedTracePayloads.count > 32 {
             let overflow = completedTracePayloads.count - 32
@@ -1796,18 +2104,25 @@ final actor AppLlamaService {
                 modelName: req.modelName
             )
         let budget: PromptBudget
-        switch latencySelection.latencyClass {
-        case .fastInteractive:
-            budget = PromptBudget.fastInteractive()
-        case .normalInteractive, .documentGrounded, .developerTrace:
-            budget = PromptBudget.make(
+        if req.preservesRawStructuredAgentOutput {
+            budget = PromptBudget.agentJSON(
                 contextSize: contextSize ?? 2048,
-                maxTokens: req.maxTokens,
-                systemPromptChars: req.systemPrompt.count,
-                userMessageChars: req.userMessage.count,
-                hasAttachments: !req.attachments.isEmpty,
-                hasMemories: !req.relevantMemories.isEmpty
+                maxTokens: req.maxTokens
             )
+        } else {
+            switch latencySelection.latencyClass {
+            case .fastInteractive:
+                budget = PromptBudget.fastInteractive()
+            case .normalInteractive, .documentGrounded, .developerTrace:
+                budget = PromptBudget.make(
+                    contextSize: contextSize ?? 2048,
+                    maxTokens: req.maxTokens,
+                    systemPromptChars: req.systemPrompt.count,
+                    userMessageChars: req.userMessage.count,
+                    hasAttachments: !req.attachments.isEmpty,
+                    hasMemories: !req.relevantMemories.isEmpty
+                )
+            }
         }
 
         let assembly = PromptAssembler.assemble(
@@ -1902,5 +2217,67 @@ final actor AppLlamaService {
             }
         }
         return .runtime
+    }
+
+    private nonisolated static func emptyStreamReason(
+        streamStarted: Bool,
+        firstChunkReceived: Bool,
+        textChunkCount: Int,
+        finalChunkReceived: Bool,
+        cancellationReason: String?,
+        maxTokensEffective: Int
+    ) -> String {
+        if maxTokensEffective <= 0 {
+            return "decodeBudgetZero"
+        }
+        if let cancellationReason, !cancellationReason.isEmpty {
+            return firstChunkReceived ? "completedWithoutText" : "cancelledBeforeFirstToken"
+        }
+        if !streamStarted {
+            return "runtimeUnavailable"
+        }
+        if finalChunkReceived, textChunkCount == 0 {
+            return firstChunkReceived ? "eosBeforeText" : "stoppedBeforeFirstToken"
+        }
+        if !firstChunkReceived {
+            return "stoppedBeforeFirstToken"
+        }
+        return "unknownEmptyStream"
+    }
+
+    private nonisolated static func streamErrorTerminationReason(_ error: Error) -> String {
+        if case LocalRuntimeError.unavailable(let message) = error {
+            if message.localizedCaseInsensitiveContains("resource budget") {
+                return "resource-budget-denied-ensure-ready"
+            }
+            if message.localizedCaseInsensitiveContains("adapter") {
+                return "adapterUnavailable"
+            }
+        }
+        if let llamaError = error as? LlamaError {
+            switch llamaError {
+            case .noModelLoaded, .modelFileNotFound, .embeddingModelNotLoaded:
+                return "modelNotLoaded"
+            case .slotModelNotLoaded:
+                return "slotUnavailable"
+            case .failedToInitializeContext:
+                return "runtimeUnavailable"
+            case .embeddingFailed:
+                return "runtimeUnavailable"
+            }
+        }
+        return "runtimeUnavailable"
+    }
+
+    nonisolated static let promptContextWindowExceededMessage = "Prompt exceeded context window before generation"
+
+    nonisolated static func isPromptContextWindowExceeded(_ error: Error) -> Bool {
+        if case LlamaError.failedToInitializeContext(let details) = error {
+            return details.localizedCaseInsensitiveContains("prompt exceeds shared chat context window")
+                || details.localizedCaseInsensitiveContains("prompt exceeded context window")
+        }
+        let text = error.localizedDescription
+        return text.localizedCaseInsensitiveContains("prompt exceeds shared chat context window")
+            || text.localizedCaseInsensitiveContains("prompt exceeded context window")
     }
 }

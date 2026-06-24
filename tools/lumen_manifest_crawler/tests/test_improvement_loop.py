@@ -170,7 +170,7 @@ def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Pat
     assert result.state["triage"]["rootCauseCounts"]["skipped_live_model_generation"] == 1
 
 
-def test_improvement_loop_surfaces_agent_json_empty_generation_from_sidecars(tmp_path: Path):
+def test_improvement_loop_surfaces_agent_json_completed_without_text_from_sidecars(tmp_path: Path):
     report = tmp_path / "latest-e2e-report.json"
     report.write_text(
         json.dumps({
@@ -199,6 +199,12 @@ def test_improvement_loop_surfaces_agent_json_empty_generation_from_sidecars(tmp
             "stage": "agent-json-step-0",
             "runtimePath": "agent-model",
             "parseError": "empty",
+            "emptyOutputReason": "completedWithoutText",
+            "streamStarted": True,
+            "firstChunkReceived": False,
+            "textChunkCount": 0,
+            "finalChunkReceived": True,
+            "streamTerminationReason": "stop",
             "rawOutputPrefix": "",
             "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
         }) + "\n",
@@ -228,10 +234,134 @@ def test_improvement_loop_surfaces_agent_json_empty_generation_from_sidecars(tmp
         )
     )
 
-    runtime_gaps = [gap for gap in result.gaps if gap["evidence"].get("rootCauseCategory") == "agent_json_empty_generation"]
+    runtime_gaps = [gap for gap in result.gaps if gap["evidence"].get("rootCauseCategory") == "agent_json_completed_without_text"]
     assert len(runtime_gaps) == 1
-    assert runtime_gaps[0]["category"] == "agent_json_empty_generation"
+    assert runtime_gaps[0]["category"] == "agent_json_completed_without_text"
     assert runtime_gaps[0]["severity"] == "error"
     assert result.state["runtime"]["failureCount"] == 1
     assert result.state["runtime"]["skippedLiveModelGenerationCount"] == 0
-    assert result.state["triage"]["rootCauseCounts"]["agent_json_empty_generation"] == 1
+    assert result.state["triage"]["rootCauseCounts"]["agent_json_completed_without_text"] == 1
+
+
+def test_improvement_loop_groups_agent_json_resource_budget_denied(tmp_path: Path):
+    report = tmp_path / "latest-e2e-report.json"
+    prompt = "Search the web for two recent Swift concurrency best practices and summarize them."
+    report.write_text(
+        json.dumps({
+            "kind": "lumen_e2e_test_report",
+            "passed": False,
+            "failed": 1,
+            "scenarios": [
+                {
+                    "name": "Training eval: web research synthesis",
+                    "passed": False,
+                    "prompt": prompt,
+                    "intent": "webSearch",
+                    "expectedIntent": "webSearch",
+                    "requiresAgentRun": True,
+                    "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                    "final": "Search failed.",
+                    "events": [{"phase": "model-evidence", "message": "found primary agent-json modelTurn but agent-json emitted empty output"}],
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": "empty",
+            "emptyOutputReason": "cancelledBeforeFirstToken",
+            "streamStarted": False,
+            "firstChunkReceived": False,
+            "textChunkCount": 0,
+            "finalChunkReceived": False,
+            "streamTerminationReason": "resource-budget-denied-before-prompt-eval",
+            "rawOutputPrefix": "",
+            "promptPrefix": prompt,
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(report,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+        )
+    )
+
+    runtime_gaps = [
+        gap for gap in result.gaps
+        if gap["evidence"].get("rootCauseCategory") == "agent_json_resource_budget_denied_before_first_token"
+    ]
+    assert len(runtime_gaps) == 1
+    assert runtime_gaps[0]["category"] == "agent_json_resource_budget_denied_before_first_token"
+    assert result.state["triage"]["rootCauseCounts"]["agent_json_resource_budget_denied_before_first_token"] == 1
+
+
+def test_improvement_loop_groups_agent_json_context_overflow(tmp_path: Path):
+    report = tmp_path / "latest-e2e-report.json"
+    prompt = "What is the weather here and should I carry an umbrella?"
+    report.write_text(
+        json.dumps({
+            "kind": "lumen_e2e_test_report",
+            "passed": False,
+            "failed": 1,
+            "scenarios": [
+                {
+                    "name": "Training eval: weather stays grounded",
+                    "passed": False,
+                    "prompt": prompt,
+                    "intent": "weather",
+                    "expectedIntent": "weather",
+                    "requiresAgentRun": True,
+                    "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                    "final": "Weather tool output could not be validated.",
+                    "events": [{"phase": "model-evidence", "message": "found AgentBehaviorTrace modelTurn but parseError=noJSONObject; stage=agent-repair"}],
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(
+        json.dumps({
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "parseError": "contextWindowExceeded",
+            "rawOutputPrefix": "Prompt exceeded context window before generation",
+            "promptPrefix": prompt,
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(report,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+        )
+    )
+
+    runtime_gaps = [gap for gap in result.gaps if gap["evidence"].get("rootCauseCategory") == "agent_json_context_overflow"]
+    assert len(runtime_gaps) == 1
+    assert runtime_gaps[0]["category"] == "prompt_budget_overflow"
+    assert runtime_gaps[0]["severity"] == "error"
+    assert result.state["runtime"]["failureCount"] == 1
+    assert result.state["runtime"]["skippedLiveModelGenerationCount"] == 0
+    assert result.state["triage"]["rootCauseCounts"]["agent_json_context_overflow"] == 1
