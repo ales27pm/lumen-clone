@@ -25,6 +25,7 @@ require_dir() {
 PROJECT_DIR_VALUE="${PROJECT_DIR:-}"
 TARGET_BUILD_DIR_VALUE="${TARGET_BUILD_DIR:-}"
 UNLOCALIZED_RESOURCES_FOLDER_PATH_VALUE="${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}"
+AGENT_GROUNDING_RESOURCE_MODE="${AGENT_GROUNDING_RESOURCE_MODE:-full}"
 
 if [ -z "$PROJECT_DIR_VALUE" ]; then
   fail 'PROJECT_DIR is not set. Run this script from an Xcode build action or pass Xcode build settings.'
@@ -94,6 +95,14 @@ log "Resolved REPO_ROOT: $REPO_ROOT"
 APP_RESOURCES_DIR="$TARGET_BUILD_DIR_VALUE/$UNLOCALIZED_RESOURCES_FOLDER_PATH_VALUE"
 DEST_DIR="$APP_RESOURCES_DIR/AgentGrounding"
 
+copy_required_file() {
+  source_path="$1"
+  relative_path="$2"
+  require_file "$source_path" "$relative_path"
+  mkdir -p "$(dirname "$DEST_DIR/$relative_path")"
+  cp "$source_path" "$DEST_DIR/$relative_path"
+}
+
 if [ -d "$LEGACY_CROSS_MODEL_DIR" ]; then
   CROSS_MODEL_DIR="$LEGACY_CROSS_MODEL_DIR"
 elif [ -d "$NESTED_CROSS_MODEL_DIR" ]; then
@@ -114,6 +123,45 @@ if [ ! -d "$AGENT_MANIFEST_DIR" ] || [ -z "$CROSS_MODEL_DIR" ]; then
   APP_RESOURCES_DIR="$TARGET_BUILD_DIR_VALUE/$UNLOCALIZED_RESOURCES_FOLDER_PATH_VALUE"
   DEST_DIR="$APP_RESOURCES_DIR/AgentGrounding"
   mkdir -p "$DEST_DIR/agent_manifest" "$DEST_DIR/cross_model_training"
+  exit 0
+fi
+
+case "$AGENT_GROUNDING_RESOURCE_MODE" in
+  full|minimal|skip)
+    ;;
+  *)
+    fail "Unsupported AGENT_GROUNDING_RESOURCE_MODE=$AGENT_GROUNDING_RESOURCE_MODE (expected full, minimal, or skip)"
+    ;;
+esac
+
+if [ "$AGENT_GROUNDING_RESOURCE_MODE" = "skip" ]; then
+  log "AGENT_GROUNDING_RESOURCE_MODE=skip; creating lightweight AgentGrounding directories only."
+  rm -rf "$DEST_DIR"
+  mkdir -p "$DEST_DIR/agent_manifest" "$DEST_DIR/cross_model_training"
+  exit 0
+fi
+
+if [ "$AGENT_GROUNDING_RESOURCE_MODE" = "minimal" ]; then
+  log "AGENT_GROUNDING_RESOURCE_MODE=minimal; copying only runtime-required grounding resources."
+  rm -rf "$DEST_DIR"
+  mkdir -p "$DEST_DIR/agent_manifest/dataset" "$DEST_DIR/cross_model_training"
+
+  copy_required_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.json" "agent_manifest/AgentBehaviorManifest.json"
+  copy_required_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.md" "agent_manifest/AgentBehaviorManifest.md"
+  copy_required_file "$AGENT_MANIFEST_DIR/fleet_system_prompts.json" "agent_manifest/fleet_system_prompts.json"
+  copy_required_file "$AGENT_MANIFEST_DIR/manifest_validation_report.json" "agent_manifest/manifest_validation_report.json"
+  copy_required_file "$AGENT_MANIFEST_DIR/runtime_grounding_bundle.json" "agent_manifest/runtime_grounding_bundle.json"
+  copy_required_file "$AGENT_MANIFEST_DIR/runtime_grounding_prompt.md" "agent_manifest/runtime_grounding_prompt.md"
+  copy_required_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_corpus.jsonl" "agent_manifest/dataset/codebase_home_corpus.jsonl"
+  copy_required_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_sft.jsonl" "agent_manifest/dataset/codebase_home_sft.jsonl"
+
+  copy_required_file "$CROSS_MODEL_DIR/cross_model_training.jsonl" "cross_model_training/cross_model_training.jsonl"
+  copy_required_file "$CROSS_MODEL_DIR/train_sft_cross.jsonl" "cross_model_training/train_sft_cross.jsonl"
+  copy_required_file "$CROSS_MODEL_DIR/val_sft_cross.jsonl" "cross_model_training/val_sft_cross.jsonl"
+  copy_required_file "$CROSS_MODEL_DIR/dpo_train_cross.jsonl" "cross_model_training/dpo_train_cross.jsonl"
+  copy_required_file "$CROSS_MODEL_DIR/dpo_val_cross.jsonl" "cross_model_training/dpo_val_cross.jsonl"
+
+  log "Installed minimal resources at: $DEST_DIR"
   exit 0
 fi
 

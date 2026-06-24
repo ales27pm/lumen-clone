@@ -6,6 +6,8 @@
 bash scripts/check-lumen-integration-gate.sh
 bash scripts/check-ios-build-readiness.sh
 bash scripts/validate_lumen_ios.sh
+RUN_SIMULATOR_TESTS=1 TEST_TIMEOUT_SECONDS=900 bash scripts/validate_lumen_ios.sh
+bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/AgentGroundingRegressionTests
 python3 -m lumen_manifest_crawler framework status --root .
 python3 -m lumen_manifest_crawler framework plan --root .
 python3 -m lumen_manifest_crawler framework ingest improve-loop --root .
@@ -16,8 +18,10 @@ python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent
 
 - **Portable validation** is static-source safe and works in non-git ZIP/export, Linux/Codex, and macOS environments. It can skip Git-only and Xcode-only checks with explicit reasons.
 - **Local validation** adds repo-aware checks such as `git diff --check` when a git worktree is present.
-- **Release-candidate validation** requires `xcodebuild` and `scripts/validate_lumen_ios.sh`. If Xcode is unavailable, the report must say skipped or failed. It must not claim compile validation passed.
-- **Runtime validation** comes from exported runtime audit/TestFlight/E2E evidence. Missing runtime evidence is not a runtime pass.
+- **Release-candidate validation** requires `xcodebuild` and `scripts/validate_lumen_ios.sh`. By default this performs `build-for-testing` on a generic iOS Simulator destination with minimal AgentGrounding resources and skips simulator XCTest execution, because full simulator handoff is not deterministic on every Xcode/CoreSimulator stack. If Xcode is unavailable, the report must say skipped or failed. It must not claim compile validation passed.
+- **Simulator XCTest validation** is opt-in. Use `RUN_SIMULATOR_TESTS=1` for the full validation script or `scripts/run_focused_simulator_tests.sh` for a pinned focused test. Focused simulator runs use a reusable warmed simulator by default, minimal AgentGrounding resources, a focused `.xctestrun`, disabled parallel workers, and bounded boot/test phases. Set `PREWARM_ONLY=1` to create/boot the reusable simulator without running tests. Set `USE_DISPOSABLE_SIMULATOR=1` only when isolation is worth paying the first-boot migration cost. The focused runner accepts normal `bootstatus` completion or, when `bootstatus` stalls at System App, a Booted device with SpringBoard and backboardd running.
+- **CoreSimulator runtime health** matters. On this host the recurring focused-runner blocker was CoreSimulator runtime/device readiness, visible as simulator-runtime `Info.plist missing` lines, slow MobileInstallation `Preflight/Patch` timings, and fresh simulators spending more than 7 minutes in `bootstatus` migration before XCTest could start. `simctl runtime list -v`, `simctl runtime verify`, and direct `codesign --verify` can disagree on cryptex-mounted simulator runtimes, so the focused runner pins an installed runtime and treats a Booted device with SpringBoard and backboardd running as usable even when `bootstatus` does not reach terminal readiness. Runtime cleanup, `xcodebuild -downloadPlatform iOS`, dyld-cache rebuilds, prewarming a reusable simulator, and attaching Simulator.app before `bootstatus` are host repair tools before treating simulator XCTest timeout as an app regression.
+- **Runtime validation** comes from exported runtime audit/TestFlight/E2E evidence. Missing runtime evidence is not a runtime pass, and simulator XCTest success is not a substitute for live runtime evidence.
 - **Training/HF validation** is opt-in and never runs by default.
 
 ## Failure Flags
@@ -36,4 +40,3 @@ generated/developer_framework/DEVELOPER_CYCLE_REPORT.md
 generated/developer_framework/framework_report.json
 generated/developer_framework/runtime_report_index.json
 ```
-
