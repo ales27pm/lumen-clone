@@ -39,8 +39,7 @@ nonisolated enum ExecutorRuntimePreflight {
             return .init(passed: false, reason: "\(prefix): base model missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath)")
         }
 
-        let adapterRequired = assignment.usesRoleAdapter
-            || (assignment.modelFamily == .qwen3 && LumenTrainedModelRuntimeRegistry.contract(for: .qwen3).adapterRole(for: slot) != nil)
+        let adapterRequired = assignment.requiresRoleAdapterForRuntime
         if adapterRequired {
             guard let adapterPath = assignment.adapterPath, !adapterPath.isEmpty else {
                 return .init(passed: false, reason: "\(prefix): adapter required but adapter path missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath)")
@@ -48,6 +47,8 @@ nonisolated enum ExecutorRuntimePreflight {
             guard FileManager.default.fileExists(atPath: adapterPath) else {
                 return .init(passed: false, reason: "\(prefix): adapter required but file missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(adapterPath)")
             }
+        } else if let adapterPath = assignment.adapterPath, !adapterPath.isEmpty, !FileManager.default.fileExists(atPath: adapterPath) {
+            return .init(passed: false, reason: "\(prefix): adapter configured but file missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(adapterPath)")
         }
 
         let budget = await MainActor.run {
