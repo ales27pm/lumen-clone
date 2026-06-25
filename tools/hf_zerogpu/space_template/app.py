@@ -145,6 +145,7 @@ def _run(command: list[str], *, cwd: Path, log_path: Path) -> None:
         process = subprocess.Popen(command, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         assert process.stdout is not None
         for line in process.stdout:
+            print(line, end="", flush=True)
             handle.write(line)
             handle.flush()
         rc = process.wait()
