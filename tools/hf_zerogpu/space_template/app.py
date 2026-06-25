@@ -44,6 +44,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _optional_int_env(name: str) -> int | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    parsed = int(value)
+    return parsed if parsed > 0 else None
+
+
 def _copy_dataset_snapshot(run_root: Path, dataset_repo: str, revision: str, path_in_repo: str, token: str) -> Path:
     allow_pattern = f"{path_in_repo}/**"
     snapshot = Path(
@@ -100,6 +108,15 @@ def _prepare_configs(
         cfg["seed"] = int(seed)
         cfg["merge_adapters_by_default"] = False
         cfg["release_bake_enabled_by_default"] = False
+        for env_name, key in (
+            ("LUMEN_ZERO_GPU_MAX_TRAIN_RECORDS", "max_train_records"),
+            ("LUMEN_ZERO_GPU_MAX_VAL_RECORDS", "max_val_records"),
+            ("LUMEN_ZERO_GPU_MAX_SEQ_LENGTH", "max_seq_length"),
+            ("LUMEN_ZERO_GPU_NUM_TRAIN_EPOCHS", "num_train_epochs"),
+        ):
+            override = _optional_int_env(env_name)
+            if override is not None:
+                cfg[key] = override
         cfg.setdefault("adapterExport", {})
         cfg["adapterExport"]["trainBaseModelWeights"] = False
         cfg["adapterExport"]["mergeAdaptersByDefault"] = False

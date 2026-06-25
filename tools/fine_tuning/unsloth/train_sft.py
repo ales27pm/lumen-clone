@@ -392,6 +392,13 @@ def _precision_flags(cfg: dict[str, Any]) -> tuple[bool, bool]:
     return False, True
 
 
+def _limit_records(records: list[dict[str, Any]], value: Any) -> list[dict[str, Any]]:
+    limit = int(value or 0)
+    if limit <= 0:
+        return records
+    return records[:limit]
+
+
 def main() -> None:
     args = parse_args()
     cfg_path = Path(args.config).resolve()
@@ -452,8 +459,8 @@ def main() -> None:
         random_state=seed,
     )
 
-    train_records = load_jsonl(train_path)
-    val_records = load_jsonl(val_path)
+    train_records = _limit_records(load_jsonl(train_path), cfg.get("max_train_records"))
+    val_records = _limit_records(load_jsonl(val_path), cfg.get("max_val_records"))
 
     output_dir = Path(cfg["output_dir"]).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
