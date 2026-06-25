@@ -3,6 +3,7 @@ import SwiftData
 
 struct LegacyGroundingBundle: Sendable {
     let grounding: AssistantGroundingContext
+    let budgetPlan: ContextBudgetPlan
     let sections: [PromptGroundingSection]
     let renderedPromptContext: String
     let secureTools: [SecureToolDefinition]
@@ -57,6 +58,6 @@ final class LegacyGroundingBridge {
             ragConfidence: rag.confidence
         )
         try? await metricsStore.appendMetric(.init(timestamp: Date(), runtimeName: "grounding", taskKind: "\(turn.task)", modelIDHash: nil, policySummary: "profile=\(budget.profile.rawValue),m=\(mem.selected.count),r=\(rag.selected.count),t=\(tools.count)", latencyMs: nil, success: true, errorCode: nil, thermalState: .from(processThermalState: turn.thermalState), lowPowerMode: turn.lowPowerMode, memoryWarningCount: 0))
-        return .init(grounding: grounding, sections: sections, renderedPromptContext: rendered, secureTools: tools, metricsSummary: "ok")
+        return .init(grounding: grounding, budgetPlan: budget, sections: sections, renderedPromptContext: rendered, secureTools: tools, metricsSummary: "ok")
     }
 }

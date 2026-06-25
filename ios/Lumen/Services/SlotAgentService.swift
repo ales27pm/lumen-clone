@@ -659,8 +659,35 @@ final class SlotAgentService {
             return PromptGroundingSection(title: "Relevant memories", content: "- \(content)", estimatedChars: content.count + 2, sourceIDs: [item.id.uuidString], privacyLevel: .moderate)
         }
         let sections = Array(tinyMemories)
-        let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: req.systemPrompt, baseUserMessage: req.userMessage, sections: sections, policy: .slotAgent, roleMetadata: nil, preventDoubleGrounding: options.preventDoubleGrounding)
-        return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: AssistantGroundingContext(memoryCount: sections.count, ragCount: 0, toolCount: 0, estimatedChars: assembled.estimatedChars), sections: sections, bridgedTools: [], degradedReasons: [], metricsSummary: "fast-agent", truncationOccurred: assembled.truncationOccurred)
+        let budgetPlan = ContextBudgetAllocator.allocate(
+            for: AssistantTurnContext(
+                task: .chat,
+                input: req.userMessage,
+                isForeground: true,
+                lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                thermalState: ProcessInfo.processInfo.thermalState
+            ),
+            maxInputTokens: 800
+        )
+        let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: req.systemPrompt, baseUserMessage: req.userMessage, sections: sections, policy: .slotAgent, roleMetadata: nil, preventDoubleGrounding: options.preventDoubleGrounding, budgetPlan: budgetPlan)
+        return .init(
+            systemPrompt: assembled.systemPrompt,
+            userMessage: assembled.userMessage,
+            grounding: AssistantGroundingContext(
+                memoryCount: sections.count,
+                ragCount: 0,
+                toolCount: 0,
+                estimatedChars: assembled.estimatedChars,
+                estimatedTokens: assembled.estimatedTokens,
+                contextProfile: assembled.contextProfile,
+                maxInputTokens: assembled.maxInputTokens
+            ),
+            sections: sections,
+            bridgedTools: [],
+            degradedReasons: [],
+            metricsSummary: "fast-agent",
+            truncationOccurred: assembled.truncationOccurred
+        )
     }
 
     nonisolated static func deterministicCompatibilityFallback() -> String {
