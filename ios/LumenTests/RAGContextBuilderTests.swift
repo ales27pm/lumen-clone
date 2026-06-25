@@ -34,4 +34,34 @@ final class RAGContextBuilderTests: XCTestCase {
         XCTAssertEqual(out.selected.count, 1)
         XCTAssertEqual(out.candidateCount, 2)
     }
+
+    func testSelectionDiversifiesSourcesBeforeThirdChunkFromSameSource() {
+        let sourceA = RAGSource(id: "source-a", type: "file", title: "a.md", ref: nil)
+        let sourceB = RAGSource(id: "source-b", type: "file", title: "b.md", ref: nil)
+        let results = [
+            RAGRetrievalResult(chunkID: UUID(), source: sourceA, excerpt: String(repeating: "a", count: 100), score: 0.99, retrievalMode: "semantic", offsetStart: nil, offsetEnd: nil),
+            RAGRetrievalResult(chunkID: UUID(), source: sourceA, excerpt: String(repeating: "b", count: 100), score: 0.98, retrievalMode: "semantic", offsetStart: nil, offsetEnd: nil),
+            RAGRetrievalResult(chunkID: UUID(), source: sourceA, excerpt: String(repeating: "c", count: 100), score: 0.97, retrievalMode: "semantic", offsetStart: nil, offsetEnd: nil),
+            RAGRetrievalResult(chunkID: UUID(), source: sourceB, excerpt: String(repeating: "d", count: 100), score: 0.50, retrievalMode: "semantic", offsetStart: nil, offsetEnd: nil)
+        ]
+
+        let out = RAGContextBuilder.build(results: results, budgetChars: 300)
+
+        XCTAssertEqual(out.selected.map(\.source.id), ["source-a", "source-a", "source-b"])
+        XCTAssertEqual(out.selectedSourceCount, 2)
+        XCTAssertTrue(out.diversityPassApplied)
+    }
+
+    func testSingleSourceCanUseRemainingBudgetAfterDiversityPass() {
+        let source = RAGSource(id: "source-a", type: "file", title: "a.md", ref: nil)
+        let results = (0..<4).map { index in
+            RAGRetrievalResult(chunkID: UUID(), source: source, excerpt: String(repeating: "\(index)", count: 100), score: 1.0 - (Double(index) * 0.01), retrievalMode: "semantic", offsetStart: nil, offsetEnd: nil)
+        }
+
+        let out = RAGContextBuilder.build(results: results, budgetChars: 400)
+
+        XCTAssertEqual(out.selected.count, 4)
+        XCTAssertEqual(out.selectedSourceCount, 1)
+        XCTAssertFalse(out.diversityPassApplied)
+    }
 }
