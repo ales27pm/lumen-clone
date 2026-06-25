@@ -6,6 +6,7 @@ tools/lumen_manifest_crawler/.venv/
 tools/lumen_manifest_crawler/lumen_manifest_crawler/__pycache__/
 .vscode/
 .venv-unsloth/
+.venv-hf-zerogpu/
 models/lora/
 models/gguf_merged/
 models/base/
