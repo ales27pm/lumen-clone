@@ -376,6 +376,10 @@ AGENT_JSON_MODEL_ROOT_CAUSES = {
     "agent_json_context_overflow",
 }
 
+RUNTIME_ENVIRONMENT_ROOT_CAUSES = {
+    "runtime_environment_deferred",
+}
+
 
 def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
     root_cause = str(failure.get("rootCauseCategory") or "")
@@ -396,6 +400,8 @@ def _runtime_gap_category(failure: dict[str, Any]) -> str:
         return "persistent_diagnostics_remediation"
     if root_cause == "agent_json_context_overflow":
         return "prompt_budget_overflow"
+    if root_cause in RUNTIME_ENVIRONMENT_ROOT_CAUSES:
+        return root_cause
     if root_cause in EXPLICIT_MODEL_EVIDENCE_CATEGORIES or root_cause in AGENT_JSON_MODEL_ROOT_CAUSES:
         return root_cause
     if _is_skipped_live_model_generation(failure):
@@ -409,11 +415,15 @@ def _runtime_gap_category(failure: dict[str, Any]) -> str:
 
 def _runtime_root_cause_category(failure: dict[str, Any]) -> str:
     explicit = str(failure.get("rootCauseCategory") or "")
+    if explicit in RUNTIME_ENVIRONMENT_ROOT_CAUSES:
+        return explicit
     if explicit in EXPLICIT_MODEL_EVIDENCE_CATEGORIES or explicit in AGENT_JSON_MODEL_ROOT_CAUSES:
         return explicit
     scenario = failure.get("e2eScenario")
     if isinstance(scenario, dict):
         scenario_root = str(scenario.get("modelEvidenceRootCause") or "")
+        if scenario_root in RUNTIME_ENVIRONMENT_ROOT_CAUSES:
+            return scenario_root
         if scenario_root in EXPLICIT_MODEL_EVIDENCE_CATEGORIES or scenario_root in AGENT_JSON_MODEL_ROOT_CAUSES:
             return scenario_root
     failure_type = str(failure.get("type") or "").lower()

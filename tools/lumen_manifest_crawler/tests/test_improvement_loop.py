@@ -150,7 +150,7 @@ def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Pat
             root=_repo_root(),
             output=tmp_path / "agent_manifest",
             loop_output=tmp_path / "loop",
-            runtime_audit_paths=(report,),
+            runtime_audit_paths=(tmp_path,),
             deterministic=True,
             strict=False,
             dry_run_commands=True,
@@ -204,7 +204,7 @@ def test_improvement_loop_uses_persistent_diagnostic_remediation_action(tmp_path
             root=_repo_root(),
             output=tmp_path / "agent_manifest",
             loop_output=tmp_path / "loop",
-            runtime_audit_paths=(report,),
+            runtime_audit_paths=(tmp_path,),
             deterministic=True,
             strict=False,
             dry_run_commands=True,
@@ -343,7 +343,7 @@ def test_improvement_loop_groups_agent_json_resource_budget_denied(tmp_path: Pat
             root=_repo_root(),
             output=tmp_path / "agent_manifest",
             loop_output=tmp_path / "loop",
-            runtime_audit_paths=(report,),
+            runtime_audit_paths=(tmp_path,),
             deterministic=True,
             strict=False,
             dry_run_commands=True,
@@ -354,11 +354,12 @@ def test_improvement_loop_groups_agent_json_resource_budget_denied(tmp_path: Pat
 
     runtime_gaps = [
         gap for gap in result.gaps
-        if gap["evidence"].get("rootCauseCategory") == "agent_json_resource_budget_denied_before_first_token"
+        if gap["evidence"].get("rootCauseCategory") == "runtime_environment_deferred"
     ]
     assert len(runtime_gaps) == 1
-    assert runtime_gaps[0]["category"] == "agent_json_resource_budget_denied_before_first_token"
-    assert result.state["triage"]["rootCauseCounts"]["agent_json_resource_budget_denied_before_first_token"] == 1
+    assert runtime_gaps[0]["category"] == "runtime_environment_deferred"
+    assert runtime_gaps[0]["evidence"]["trainable"] is False
+    assert result.state["triage"]["rootCauseCounts"]["runtime_environment_deferred"] == 1
 
 
 def test_improvement_loop_groups_agent_json_context_overflow(tmp_path: Path):
