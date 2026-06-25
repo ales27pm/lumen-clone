@@ -1,0 +1,17 @@
+torch>=2.8.0
+torchvision
+torchaudio
+gradio>=4
+spaces
+datasets
+transformers
+trl
+peft
+accelerate
+bitsandbytes
+sentencepiece
+protobuf
+huggingface_hub
+hf_transfer
+trackio
+unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git
