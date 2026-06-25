@@ -235,12 +235,17 @@ def upload_to_hub(
     else:
         print("warning: HF_TOKEN is not set locally; add it as a Space secret before triggering training", file=sys.stderr)
 
+    defaults = read_json(build.defaults_path)
+    gpu_duration_seconds = str(defaults.get("gpu_duration_seconds", 1200))
     variables = {
         "LUMEN_ZERO_GPU_DATASET_REPO": dataset_repo,
         "LUMEN_ZERO_GPU_DATASET_REVISION": "main",
         "LUMEN_ZERO_GPU_DATASET_PATH": build.dataset_path_in_repo,
         "LUMEN_ZERO_GPU_ADAPTER_REPO": adapter_repo,
         "LUMEN_ZERO_GPU_RUN_ID": build.run_id,
+        "LUMEN_ZERO_GPU_SIZE": str(defaults.get("gpu_size", "large")),
+        "LUMEN_ZERO_GPU_DURATION_SECONDS": gpu_duration_seconds,
+        "LUMEN_ZERO_GPU_MAX_DURATION_SECONDS": gpu_duration_seconds,
     }
     for key, value in variables.items():
         add_space_value(api, repo_id=space_repo, key=key, value=value, secret=False, token=token, dry_run=dry_run)
@@ -263,35 +268,105 @@ def trigger_space_training(
     print(f"Trigger Space training via Gradio API: {space_repo}")
     if dry_run:
         return
-    try:
-        from gradio_client import Client
-    except ImportError as exc:
-        raise RuntimeError("Missing gradio_client. Install with: pip install -U gradio_client") from exc
-
     started = time.monotonic()
     last_error: Exception | None = None
     while time.monotonic() - started < timeout_seconds:
         try:
-            client = Client(space_repo, hf_token=token)
-            result = client.predict(
-                run_id,
-                ",".join(agents),
-                base_model,
-                seed,
-                True,
-                False,
-                True,
-                True,
-                gpu_size,
-                api_name="/train_lumen_adapters",
+            _trigger_space_training_via_gradio_api(
+                space_repo=space_repo,
+                run_id=run_id,
+                agents=agents,
+                base_model=base_model,
+                seed=seed,
+                gpu_size=gpu_size,
+                token=token,
             )
-            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) if isinstance(result, dict) else result)
             return
         except Exception as exc:
             last_error = exc
             print(f"Space not ready yet or trigger failed transiently: {exc}", file=sys.stderr)
+            if _is_terminal_space_trigger_error(exc):
+                raise
             time.sleep(20)
     raise RuntimeError(f"Timed out waiting for Space trigger readiness after {timeout_seconds}s: {last_error}")
+
+
+def _is_terminal_space_trigger_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    terminal_fragments = (
+        "zerogpu quota exceeded",
+        "quota exceeded",
+        "zerogpu illegal duration",
+        "requested gpu duration",
+        '"ok": false',
+        "'ok': false",
+    )
+    return any(fragment in message for fragment in terminal_fragments)
+
+
+def _trigger_space_training_via_gradio_api(
+    *,
+    space_repo: str,
+    run_id: str,
+    agents: Sequence[str],
+    base_model: str,
+    seed: int,
+    gpu_size: str,
+    token: str | None,
+) -> None:
+    import httpx
+
+    space_name = space_repo.replace("/", "-")
+    base_url = f"https://{space_name}.hf.space"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    payload = {
+        "data": [
+            run_id,
+            ",".join(agents),
+            base_model,
+            seed,
+            True,
+            False,
+            True,
+            True,
+            gpu_size,
+        ]
+    }
+    with httpx.Client(timeout=None) as client:
+        response = client.post(f"{base_url}/gradio_api/call/train_lumen_adapters", headers=headers, json=payload)
+        response.raise_for_status()
+        event_id = str(response.json()["event_id"])
+        print(f"Triggered Space training event: {event_id}")
+        event_name = ""
+        data_lines: list[str] = []
+        with client.stream("GET", f"{base_url}/gradio_api/call/train_lumen_adapters/{event_id}", headers=headers) as stream:
+            stream.raise_for_status()
+            for line in stream.iter_lines():
+                if not line:
+                    continue
+                print(line, flush=True)
+                if line.startswith("event:"):
+                    event_name = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("data:"):
+                    data = line.split(":", 1)[1].strip()
+                    data_lines.append(data)
+                    if event_name == "error":
+                        raise RuntimeError(f"Space training failed: {data}")
+                    if event_name in {"complete", "done"}:
+                        _raise_if_space_payload_failed(data)
+                        return
+
+
+def _raise_if_space_payload_failed(data: str) -> None:
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        return
+    if isinstance(payload, list) and payload:
+        payload = payload[0]
+    if isinstance(payload, dict) and payload.get("ok") is False:
+        raise RuntimeError(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -306,7 +381,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--agents", default=",".join(AGENTS), help="Comma-separated agent slots to train.")
     parser.add_argument("--base-model", default="", help="Optional base model override. Empty keeps generated per-agent config values.")
     parser.add_argument("--gpu-size", choices=("large", "xlarge"), default="large", help="ZeroGPU decorator size.")
-    parser.add_argument("--gpu-duration-seconds", type=int, default=3600, help="ZeroGPU function duration budget.")
+    parser.add_argument("--gpu-duration-seconds", type=int, default=1200, help="ZeroGPU function duration budget.")
     parser.add_argument("--zero-gpu-hardware", default=os.environ.get("LUMEN_ZERO_GPU_HARDWARE", "zero-a10g"), help="HF hardware id requested for the Space.")
     parser.add_argument("--seed", type=int, default=42, help="Training seed.")
     parser.add_argument("--trigger", action="store_true", help="Trigger Space training after upload.")

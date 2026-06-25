@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,9 @@ from huggingface_hub import HfApi, snapshot_download
 APP_ROOT = Path(__file__).resolve().parent
 DEFAULTS = json.loads((APP_ROOT / "lumen_zero_gpu_defaults.json").read_text(encoding="utf-8"))
 DEFAULT_GPU_SIZE = os.environ.get("LUMEN_ZERO_GPU_SIZE", str(DEFAULTS.get("gpu_size", "large")))
-DEFAULT_GPU_DURATION = int(os.environ.get("LUMEN_ZERO_GPU_DURATION_SECONDS", str(DEFAULTS.get("gpu_duration_seconds", 3600))))
+MAX_ZERO_GPU_DURATION = int(os.environ.get("LUMEN_ZERO_GPU_MAX_DURATION_SECONDS", "1200"))
+REQUESTED_GPU_DURATION = int(os.environ.get("LUMEN_ZERO_GPU_DURATION_SECONDS", str(DEFAULTS.get("gpu_duration_seconds", 1200))))
+DEFAULT_GPU_DURATION = min(REQUESTED_GPU_DURATION, MAX_ZERO_GPU_DURATION)
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 
 
@@ -146,7 +149,10 @@ def _run(command: list[str], *, cwd: Path, log_path: Path) -> None:
             handle.flush()
         rc = process.wait()
     if rc != 0:
-        raise RuntimeError(f"Command failed with exit {rc}: {' '.join(command)}. See {log_path}")
+        tail = ""
+        if log_path.exists():
+            tail = "\n".join(log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-80:])
+        raise RuntimeError(f"Command failed with exit {rc}: {' '.join(command)}. See {log_path}\n{tail}")
 
 
 def _convert_lora_to_gguf(run_root: Path, prepared: list[dict[str, str]], token: str) -> None:
@@ -230,56 +236,67 @@ def train_lumen_adapters(
     upload_outputs: bool,
     gpu_size: str,
 ) -> dict[str, Any]:
-    del gpu_size
-    token = os.environ.get("HF_TOKEN")
-    if not token:
-        raise RuntimeError("HF_TOKEN Space secret is required")
-    agents = _csv_agents(agents_csv)
-    dataset_repo = os.environ.get("LUMEN_ZERO_GPU_DATASET_REPO", str(DEFAULTS["dataset_repo"]))
-    dataset_revision = os.environ.get("LUMEN_ZERO_GPU_DATASET_REVISION", str(DEFAULTS.get("dataset_revision", "main")))
-    dataset_path = os.environ.get("LUMEN_ZERO_GPU_DATASET_PATH", str(DEFAULTS["dataset_path_in_repo"]))
-    adapter_repo = os.environ.get("LUMEN_ZERO_GPU_ADAPTER_REPO", str(DEFAULTS["adapter_repo"]))
-    run_id = run_id.strip() or os.environ.get("LUMEN_ZERO_GPU_RUN_ID", str(DEFAULTS["run_id"]))
+    try:
+        del gpu_size
+        token = os.environ.get("HF_TOKEN")
+        if not token:
+            raise RuntimeError("HF_TOKEN Space secret is required")
+        agents = _csv_agents(agents_csv)
+        dataset_repo = os.environ.get("LUMEN_ZERO_GPU_DATASET_REPO", str(DEFAULTS["dataset_repo"]))
+        dataset_revision = os.environ.get("LUMEN_ZERO_GPU_DATASET_REVISION", str(DEFAULTS.get("dataset_revision", "main")))
+        dataset_path = os.environ.get("LUMEN_ZERO_GPU_DATASET_PATH", str(DEFAULTS["dataset_path_in_repo"]))
+        adapter_repo = os.environ.get("LUMEN_ZERO_GPU_ADAPTER_REPO", str(DEFAULTS["adapter_repo"]))
+        run_id = run_id.strip() or os.environ.get("LUMEN_ZERO_GPU_RUN_ID", str(DEFAULTS["run_id"]))
 
-    run_root = Path(os.environ.get("LUMEN_ZERO_GPU_WORKDIR", "/tmp/lumen_zerogpu_runs")) / run_id
-    if run_root.exists() and not resume:
-        shutil.rmtree(run_root)
-    run_root.mkdir(parents=True, exist_ok=True)
+        run_root = Path(os.environ.get("LUMEN_ZERO_GPU_WORKDIR", "/tmp/lumen_zerogpu_runs")) / run_id
+        if run_root.exists() and not resume:
+            shutil.rmtree(run_root)
+        run_root.mkdir(parents=True, exist_ok=True)
 
-    source_root = _copy_dataset_snapshot(run_root, dataset_repo, dataset_revision, dataset_path, token)
-    _validate_nonempty_assistant_outputs(source_root, agents)
-    prepared = _prepare_configs(source_root=source_root, run_root=run_root, agents=agents, base_model_override=base_model_override, seed=int(seed))
+        source_root = _copy_dataset_snapshot(run_root, dataset_repo, dataset_revision, dataset_path, token)
+        _validate_nonempty_assistant_outputs(source_root, agents)
+        prepared = _prepare_configs(source_root=source_root, run_root=run_root, agents=agents, base_model_override=base_model_override, seed=int(seed))
 
-    for item in prepared:
-        agent = item["agent"]
-        command = [sys.executable, str(APP_ROOT / "lumen_train_sft.py"), "--config", item["config"], "--seed", str(seed)]
-        if assistant_only_loss:
-            command.append("--assistant-only-loss")
-        if resume:
-            command.append("--resume-from-checkpoint")
-        _run(command, cwd=APP_ROOT, log_path=run_root / "logs" / f"train_{agent}.log")
+        for item in prepared:
+            agent = item["agent"]
+            command = [sys.executable, str(APP_ROOT / "lumen_train_sft.py"), "--config", item["config"], "--seed", str(seed)]
+            if assistant_only_loss:
+                command.append("--assistant-only-loss")
+            if resume:
+                command.append("--resume-from-checkpoint")
+            _run(command, cwd=APP_ROOT, log_path=run_root / "logs" / f"train_{agent}.log")
 
-    if convert_gguf:
-        _convert_lora_to_gguf(run_root, prepared, token)
+        if convert_gguf:
+            _convert_lora_to_gguf(run_root, prepared, token)
 
-    uploads = _upload_outputs(run_root, prepared, adapter_repo, run_id, token, convert_gguf) if upload_outputs else {}
-    summary = {
-        "schema": "lumen.zerogpu.training_summary/1.0.0",
-        "run_id": run_id,
-        "run_root": str(run_root),
-        "dataset_repo": dataset_repo,
-        "dataset_revision": dataset_revision,
-        "dataset_path": dataset_path,
-        "adapter_repo": adapter_repo,
-        "agents": prepared,
-        "uploads": uploads,
-        "fresh_run": not resume,
-        "resume": bool(resume),
-        "assistant_only_loss": bool(assistant_only_loss),
-        "convert_gguf": bool(convert_gguf),
-    }
-    (run_root / "lumen_zerogpu_training_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return summary
+        uploads = _upload_outputs(run_root, prepared, adapter_repo, run_id, token, convert_gguf) if upload_outputs else {}
+        summary = {
+            "schema": "lumen.zerogpu.training_summary/1.0.0",
+            "ok": True,
+            "run_id": run_id,
+            "run_root": str(run_root),
+            "dataset_repo": dataset_repo,
+            "dataset_revision": dataset_revision,
+            "dataset_path": dataset_path,
+            "adapter_repo": adapter_repo,
+            "agents": prepared,
+            "uploads": uploads,
+            "fresh_run": not resume,
+            "resume": bool(resume),
+            "assistant_only_loss": bool(assistant_only_loss),
+            "convert_gguf": bool(convert_gguf),
+        }
+        (run_root / "lumen_zerogpu_training_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return summary
+    except Exception as exc:
+        return {
+            "schema": "lumen.zerogpu.training_summary/1.0.0",
+            "ok": False,
+            "run_id": run_id,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(limit=12),
+        }
 
 
 with gr.Blocks() as demo:
