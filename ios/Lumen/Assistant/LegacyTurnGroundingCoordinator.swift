@@ -3,6 +3,7 @@ import SwiftData
 
 struct LegacyTurnGroundingOutput: Sendable {
     let grounding: AssistantGroundingContext
+    let budgetPlan: ContextBudgetPlan
     let sections: [PromptGroundingSection]
     let legacyTools: [ToolDefinition]
     let promptInjection: String
@@ -42,7 +43,7 @@ final class LegacyTurnGroundingCoordinator {
         if let cached = await cache.get(key) {
             AgentGroundingInstrumentation.mark("after LegacyGroundingBridge.build", metrics: .init(sectionCount: cached.sections.count, toolCount: cached.secureTools.count, memoryCount: cached.grounding.memoryCount, promptChars: cached.renderedPromptContext.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: bridgeStart))
             PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .groundingCost, values: ["elapsedMs": String(Int(AgentGroundingInstrumentation.elapsedMs(since: bridgeStart))), "sectionCount": String(cached.sections.count), "promptChars": String(cached.renderedPromptContext.count), "toolCount": String(cached.secureTools.count), "memoryCount": String(cached.grounding.memoryCount), "source": "cache"]))
-            return .init(grounding: cached.grounding, sections: cached.sections, legacyTools: ToolSchemaBridge.toCatalogToolDefinitions(cached.secureTools), promptInjection: cached.renderedPromptContext, metricsSummary: "cache")
+            return .init(grounding: cached.grounding, budgetPlan: cached.budgetPlan, sections: cached.sections, legacyTools: ToolSchemaBridge.toCatalogToolDefinitions(cached.secureTools), promptInjection: cached.renderedPromptContext, metricsSummary: "cache")
         }
         let turn = AssistantTurnContext(task: task, input: userMessage, isForeground: !isBackground, lowPowerMode: lowPower, thermalState: ProcessInfo.processInfo.thermalState)
         let bundle = try await bridge.build(userMessage: userMessage, conversationID: conversationID, turnID: turnID, history: history, modelContext: modelContext, turn: turn, cancellationToken: cancellationToken)
@@ -67,10 +68,10 @@ final class LegacyTurnGroundingCoordinator {
                 maxInputTokens: bundle.grounding.maxInputTokens,
                 ragConfidence: bundle.grounding.ragConfidence
             )
-            roleAwareBundle = .init(grounding: grounding, sections: sections, renderedPromptContext: rendered, secureTools: bundle.secureTools, metricsSummary: bundle.metricsSummary)
+            roleAwareBundle = .init(grounding: grounding, budgetPlan: bundle.budgetPlan, sections: sections, renderedPromptContext: rendered, secureTools: bundle.secureTools, metricsSummary: bundle.metricsSummary)
         }
         await cache.put(key, bundle: roleAwareBundle)
-        return .init(grounding: roleAwareBundle.grounding, sections: roleAwareBundle.sections, legacyTools: ToolSchemaBridge.toCatalogToolDefinitions(roleAwareBundle.secureTools), promptInjection: roleAwareBundle.renderedPromptContext, metricsSummary: roleAwareBundle.metricsSummary)
+        return .init(grounding: roleAwareBundle.grounding, budgetPlan: roleAwareBundle.budgetPlan, sections: roleAwareBundle.sections, legacyTools: ToolSchemaBridge.toCatalogToolDefinitions(roleAwareBundle.secureTools), promptInjection: roleAwareBundle.renderedPromptContext, metricsSummary: roleAwareBundle.metricsSummary)
     }
 
     func prepareGroundedRequest(_ request: LegacyGroundingRequest) async -> LegacyGroundingResult {
@@ -92,8 +93,9 @@ final class LegacyTurnGroundingCoordinator {
             ].filter { !$0.content.isEmpty }
             AgentGroundingInstrumentation.mark("before LegacyPromptAssembler.assemble", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: request.userMessage.count))
             let assembleStart = ProcessInfo.processInfo.systemUptime
+            let budgetPlan = Self.budgetPlan(for: request)
             let assembled = await Task.detached(priority: .userInitiated) {
-                LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: fallbackSections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding)
+                LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: fallbackSections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding, budgetPlan: budgetPlan)
             }.value
             AgentGroundingInstrumentation.mark("after LegacyPromptAssembler.assemble", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: assembleStart))
             AgentGroundingInstrumentation.mark("after LegacyTurnGroundingCoordinator.prepareGroundedRequest", metrics: .init(sectionCount: fallbackSections.count, toolCount: request.externalAvailableTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: requestStart))
@@ -109,6 +111,8 @@ final class LegacyTurnGroundingCoordinator {
                     "conversationID": request.conversationID?.uuidString ?? "none",
                     "promptSHA256": RuntimeFallbackLogger.promptHash(request.userMessage),
                     "promptChars": String(request.userMessage.count),
+                    "contextProfile": budgetPlan.profile.rawValue,
+                    "maxInputTokens": String(budgetPlan.maxInputTokens),
                     "sectionCount": String(fallbackSections.count),
                     "toolCount": String(request.externalAvailableTools.count),
                     "memoryCount": String(request.externalRelevantMemories.count)
@@ -130,14 +134,26 @@ final class LegacyTurnGroundingCoordinator {
         }
         AgentGroundingInstrumentation.mark("before LegacyPromptAssembler.assemble", metrics: .init(sectionCount: sections.count, toolCount: output.legacyTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: request.userMessage.count))
         let assembleStart = ProcessInfo.processInfo.systemUptime
+        let budgetPlan = output.budgetPlan
         let assembled = await Task.detached(priority: .userInitiated) {
-            LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: sections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding)
+            LegacyPromptAssembler.assemble(baseSystemPrompt: request.baseSystemPrompt, baseUserMessage: request.userMessage, sections: sections, policy: request.policy, roleMetadata: request.roleOrSlot, preventDoubleGrounding: request.preventDoubleGrounding, budgetPlan: budgetPlan)
         }.value
         AgentGroundingInstrumentation.mark("after LegacyPromptAssembler.assemble", metrics: .init(sectionCount: sections.count, toolCount: output.legacyTools.count, memoryCount: request.externalRelevantMemories.count, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: assembleStart))
         let tools = output.legacyTools.isEmpty ? request.externalAvailableTools : output.legacyTools
         AgentGroundingInstrumentation.mark("after LegacyTurnGroundingCoordinator.prepareGroundedRequest", metrics: .init(sectionCount: sections.count, toolCount: tools.count, memoryCount: output.grounding.memoryCount, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: requestStart))
         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .groundingCost, values: ["elapsedMs": String(Int(AgentGroundingInstrumentation.elapsedMs(since: requestStart))), "sectionCount": String(sections.count), "promptChars": String(assembled.estimatedChars), "toolCount": String(tools.count), "memoryCount": String(output.grounding.memoryCount), "source": "coordinator"]))
         return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: output.grounding, sections: sections, bridgedTools: tools, degradedReasons: degraded, metricsSummary: output.metricsSummary, truncationOccurred: assembled.truncationOccurred)
+    }
+
+    private static func budgetPlan(for request: LegacyGroundingRequest) -> ContextBudgetPlan {
+        let turn = AssistantTurnContext(
+            task: request.task,
+            input: request.userMessage,
+            isForeground: request.mode == .foreground,
+            lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            thermalState: ProcessInfo.processInfo.thermalState
+        )
+        return ContextBudgetAllocator.allocate(for: turn, maxInputTokens: 800)
     }
 
     private static func cancelledResult(for request: LegacyGroundingRequest) -> LegacyGroundingResult {

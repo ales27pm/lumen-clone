@@ -3039,7 +3039,17 @@ private extension AgentService {
             .init(title: "Available tools", content: toolContent, estimatedChars: toolContent.count, sourceIDs: req.availableTools.prefix(24).map { $0.id }, privacyLevel: .low),
             .init(title: "Runtime policy", content: runtimeContent, estimatedChars: runtimeContent.count, sourceIDs: [], privacyLevel: .low)
         ].filter { !$0.content.isEmpty }
-        let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: req.systemPrompt, baseUserMessage: req.userMessage, sections: sections, policy: .rolePipeline)
+        let budgetPlan = ContextBudgetAllocator.allocate(
+            for: AssistantTurnContext(
+                task: .agentPlan,
+                input: req.userMessage,
+                isForeground: true,
+                lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                thermalState: ProcessInfo.processInfo.thermalState
+            ),
+            maxInputTokens: 800
+        )
+        let assembled = LegacyPromptAssembler.assemble(baseSystemPrompt: req.systemPrompt, baseUserMessage: req.userMessage, sections: sections, policy: .rolePipeline, budgetPlan: budgetPlan)
         return AgentRequest(systemPrompt: assembled.systemPrompt, history: req.history, userMessage: assembled.userMessage, temperature: req.temperature, topP: req.topP, repetitionPenalty: req.repetitionPenalty, maxTokens: req.maxTokens, maxSteps: req.maxSteps, availableTools: req.availableTools, relevantMemories: req.relevantMemories, attachments: req.attachments, conversationID: req.conversationID, turnID: req.turnID, scenarioID: req.scenarioID, e2eRunID: req.e2eRunID, agentRunID: req.agentRunID)
     }
 }
