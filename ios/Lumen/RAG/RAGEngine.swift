@@ -11,18 +11,41 @@ final class RAGEngine {
     private let indexer = RAGIndexer()
 
     func retrieve(query: String, limit: Int, context: ModelContext) async -> [RAGRetrievalResult] {
-        let semantic = await RAGStore.search(query: query, context: context, limit: limit)
-        let mapped = semantic.map { item in
+        let boundedLimit = max(0, limit)
+        guard boundedLimit > 0 else { return [] }
+
+        let candidateLimit = min(max(boundedLimit * 3, boundedLimit + 8), 60)
+        let search = await RAGStore.searchWithDiagnostics(query: query, context: context, limit: candidateLimit)
+        let mapped = search.matches.map { item in
             let ref = item.chunk.sourceRef ?? item.chunk.id.uuidString
-            return RAGRetrievalResult(chunkID: item.chunk.id, source: .init(id: ref, type: item.chunk.sourceType, title: item.chunk.sourceName, ref: item.chunk.sourceRef), excerpt: String(item.chunk.content.prefix(220)), score: item.score, retrievalMode: "semantic", offsetStart: nil, offsetEnd: nil)
+            let excerpt = Self.focusedExcerpt(query: query, content: item.chunk.content, maxLength: 260)
+            let rerankedScore = Self.rerankedScore(query: query, chunk: item.chunk, baseScore: item.score)
+            return RAGRetrievalResult(
+                chunkID: item.chunk.id,
+                source: .init(id: ref, type: item.chunk.sourceType, title: item.chunk.sourceName, ref: item.chunk.sourceRef),
+                excerpt: excerpt.text,
+                score: rerankedScore,
+                retrievalMode: "\(search.mode)+local_rerank",
+                offsetStart: excerpt.offsetStart,
+                offsetEnd: excerpt.offsetEnd
+            )
         }
         var seen = Set<String>()
-        return mapped.filter { result in
-            let key = "\(result.source.id)#\(result.chunkID.uuidString)"
-            if seen.contains(key) { return false }
-            seen.insert(key)
-            return true
-        }
+        return mapped
+            .sorted { lhs, rhs in
+                if lhs.score == rhs.score {
+                    return lhs.excerpt.count > rhs.excerpt.count
+                }
+                return lhs.score > rhs.score
+            }
+            .filter { result in
+                let key = "\(result.source.id)#\(result.chunkID.uuidString)"
+                if seen.contains(key) { return false }
+                seen.insert(key)
+                return true
+            }
+            .prefix(boundedLimit)
+            .map { $0 }
     }
 
     func buildContext(query: String, budget: Int, context: ModelContext) async -> RAGContextResult {
@@ -43,5 +66,63 @@ final class RAGEngine {
         } catch {
             return .init(success: false, metricSummary: "maintenance_failed")
         }
+    }
+
+    nonisolated private static func rerankedScore(query: String, chunk: RAGChunk, baseScore: Double, now: Date = Date()) -> Double {
+        let terms = queryTerms(query)
+        guard !terms.isEmpty else { return clamped(baseScore) }
+
+        let content = chunk.content.lowercased()
+        let title = chunk.sourceName.lowercased()
+        let matchedTerms = terms.filter { content.contains($0) || title.contains($0) }
+        let lexicalCoverage = Double(matchedTerms.count) / Double(terms.count)
+        let titleCoverage = Double(terms.filter { title.contains($0) }.count) / Double(terms.count)
+        let recency = max(0, 0.08 - now.timeIntervalSince(chunk.createdAt) / (60 * 60 * 24 * 365 * 4))
+
+        return clamped((baseScore * 0.70) + (lexicalCoverage * 0.22) + (titleCoverage * 0.08) + recency)
+    }
+
+    nonisolated private static func focusedExcerpt(query: String, content: String, maxLength: Int) -> (text: String, offsetStart: Int?, offsetEnd: Int?) {
+        let boundedMax = max(64, maxLength)
+        guard content.count > boundedMax else {
+            return (content.trimmingCharacters(in: .whitespacesAndNewlines), 0, content.count)
+        }
+
+        let lower = content.lowercased()
+        let terms = queryTerms(query)
+        let firstMatch = terms
+            .compactMap { term -> String.Index? in lower.range(of: term)?.lowerBound }
+            .min()
+
+        guard let matchIndex = firstMatch else {
+            let end = content.index(content.startIndex, offsetBy: boundedMax, limitedBy: content.endIndex) ?? content.endIndex
+            return (String(content[..<end]).trimmingCharacters(in: .whitespacesAndNewlines), 0, content.distance(from: content.startIndex, to: end))
+        }
+
+        let halfWindow = boundedMax / 2
+        let matchOffset = content.distance(from: content.startIndex, to: matchIndex)
+        let startOffset = max(0, matchOffset - halfWindow)
+        let endOffset = min(content.count, startOffset + boundedMax)
+        let start = content.index(content.startIndex, offsetBy: startOffset)
+        let end = content.index(content.startIndex, offsetBy: endOffset)
+        var excerpt = String(content[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if startOffset > 0 { excerpt = "... " + excerpt }
+        if endOffset < content.count { excerpt += " ..." }
+        return (excerpt, startOffset, endOffset)
+    }
+
+    nonisolated private static func queryTerms(_ query: String) -> [String] {
+        let stopwords: Set<String> = [
+            "about", "after", "avec", "dans", "from", "have", "into", "pour", "that", "this", "what", "when", "where", "with"
+        ]
+        var seen = Set<String>()
+        return query.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 3 && !stopwords.contains($0) }
+            .filter { seen.insert($0).inserted }
+    }
+
+    nonisolated private static func clamped(_ value: Double) -> Double {
+        min(1, max(0, value))
     }
 }
