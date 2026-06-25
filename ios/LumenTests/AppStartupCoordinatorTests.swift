@@ -8,7 +8,7 @@ struct AppStartupCoordinatorTests {
     enum TestError: Error { case failed }
 
     @Test func startupFailureTransitionsToFailedState() async throws {
-        var coordinator = AppStartupCoordinator()
+        let coordinator = AppStartupCoordinator()
         let appState = AppState()
 
         await coordinator.initialize(
@@ -26,7 +26,7 @@ struct AppStartupCoordinatorTests {
     }
 
     @Test func startupBootstrapFailureTracksBootstrapStage() async throws {
-        var coordinator = AppStartupCoordinator()
+        let coordinator = AppStartupCoordinator()
         let appState = AppState()
 
         let schema = Schema([
@@ -58,7 +58,7 @@ struct AppStartupCoordinatorTests {
     }
 
     @Test func retryAfterFailureTransitionsToReady() async throws {
-        var coordinator = AppStartupCoordinator()
+        let coordinator = AppStartupCoordinator()
         let appState = AppState()
         var attempts = 0
 
@@ -106,7 +106,7 @@ struct AppStartupCoordinatorTests {
         #expect({ if case .ready = coordinator.state { true } else { false } }())
     }
     @Test func continueInLimitedModeTransitionsToReady() async throws {
-        var coordinator = AppStartupCoordinator()
+        let coordinator = AppStartupCoordinator()
         let appState = AppState()
 
         await coordinator.initialize(

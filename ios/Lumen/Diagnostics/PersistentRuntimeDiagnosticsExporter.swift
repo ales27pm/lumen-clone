@@ -72,7 +72,7 @@ actor PersistentRuntimeDiagnosticsExporter {
     private static func metricKitPayloads() async -> [PersistentMetricKitExportPayload] {
         let urls = await MetricKitDiagnosticsStore.shared.exportSummaryPayloadURLs()
         return urls.compactMap { url in
-            guard let text = try? String(contentsOf: url) else { return nil }
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
             return PersistentMetricKitExportPayload(fileName: url.lastPathComponent, json: text)
         }
     }

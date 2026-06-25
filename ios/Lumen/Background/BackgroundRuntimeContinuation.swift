@@ -12,8 +12,6 @@ final class BackgroundRuntimeContinuation {
     }
 
     static func begin(name: String, allowsContinuedProcessing: Bool = false) -> BackgroundRuntimeContinuation? {
-        var taskID: UIBackgroundTaskIdentifier = .invalid
-        var continuation: BackgroundRuntimeContinuation?
         let continuedLease = allowsContinuedProcessing
             ? BackgroundContinuedProcessingCoordinator.shared.begin(
                 title: "Lumen",
@@ -21,21 +19,18 @@ final class BackgroundRuntimeContinuation {
                 prefersGPU: true
             )
             : nil
-        taskID = UIApplication.shared.beginBackgroundTask(withName: name) {
-            if let continuation {
-                continuation.finish(success: false)
-            } else if taskID != .invalid {
-                continuedLease?.complete(success: false)
-                UIApplication.shared.endBackgroundTask(taskID)
-                taskID = .invalid
+
+        let runtimeContinuation = BackgroundRuntimeContinuation(identifier: .invalid, continuedProcessingLease: continuedLease)
+        let taskID = UIApplication.shared.beginBackgroundTask(withName: name) { [runtimeContinuation] in
+            MainActor.assumeIsolated {
+                runtimeContinuation.finish(success: false)
             }
         }
         guard taskID != .invalid else {
             continuedLease?.complete(success: false)
             return nil
         }
-        let runtimeContinuation = BackgroundRuntimeContinuation(identifier: taskID, continuedProcessingLease: continuedLease)
-        continuation = runtimeContinuation
+        runtimeContinuation.identifier = taskID
         return runtimeContinuation
     }
 

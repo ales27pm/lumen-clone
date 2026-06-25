@@ -158,7 +158,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let exporter = PersistentRuntimeDiagnosticsExporter(store: store)
         let url = try await exporter.export()
         let data = try Data(contentsOf: url)
-        let text = try String(contentsOf: url)
+        let text = try String(contentsOf: url, encoding: .utf8)
 
         XCTAssertLessThanOrEqual(data.count, 1_100_000)
         XCTAssertFalse(text.contains("safe synthetic event 0"))
@@ -178,7 +178,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         await store.appendEvent(PersistentDiagnosticEvent(code: "redaction", message: "prompt=Sensitive prompt memory=Private memory file=/tmp/secret.txt"))
         let exporter = PersistentRuntimeDiagnosticsExporter(store: store)
         let url = try await exporter.export()
-        let text = try String(contentsOf: url)
+        let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertFalse(text.contains("Sensitive prompt"))
         XCTAssertFalse(text.contains("Private memory"))
         XCTAssertFalse(text.contains("/tmp/secret"))
