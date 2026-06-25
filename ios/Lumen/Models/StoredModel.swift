@@ -64,6 +64,33 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
     let role: ModelRole
     let description: String
     let tags: [String]
+    let sourcePath: String?
+
+    init(
+        id: String,
+        name: String,
+        repoId: String,
+        fileName: String,
+        parameters: String,
+        quantization: String,
+        sizeBytes: Int64,
+        role: ModelRole,
+        description: String,
+        tags: [String],
+        sourcePath: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.repoId = repoId
+        self.fileName = fileName
+        self.parameters = parameters
+        self.quantization = quantization
+        self.sizeBytes = sizeBytes
+        self.role = role
+        self.description = description
+        self.tags = tags
+        self.sourcePath = sourcePath
+    }
 
     var downloadURLResult: Result<URL, DownloadURLError> {
         let sanitizedRepoPath: String
@@ -77,9 +104,10 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
             return .failure(.invalidRepoPathCharacters)
         }
 
-        let sanitizedFileName: String
+        let sourcePath = sourcePath ?? fileName
+        let sanitizedSourcePath: String
         do {
-            sanitizedFileName = try Self.sanitizeFileName(fileName)
+            sanitizedSourcePath = try Self.sanitizeFileName(sourcePath)
         } catch let error as DownloadURLError {
             Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: error)
             return .failure(error)
@@ -91,7 +119,7 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
         var components = URLComponents()
         components.scheme = "https"
         components.host = "huggingface.co"
-        components.percentEncodedPath = "/\(sanitizedRepoPath)/resolve/main/\(sanitizedFileName)"
+        components.percentEncodedPath = "/\(sanitizedRepoPath)/resolve/main/\(sanitizedSourcePath)"
         components.queryItems = [URLQueryItem(name: "download", value: "true")]
 
         guard let url = components.url else {

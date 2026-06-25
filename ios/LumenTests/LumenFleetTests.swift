@@ -316,6 +316,7 @@ struct Qwen3AdapterRuntimeCatalogTests {
         #expect(models.filter { $0.role == .embedding }.map(\.fileName) == ["Qwen3-Embedding-0.6B-Q8_0.gguf"])
         #expect(adapters.count == 6)
         #expect(adapters.contains { $0.fileName == "lumen-fleet-lora.gguf" && $0.tags.contains("fleet") })
+        #expect(adapters.contains { $0.fileName == "lumen-executor-lora.gguf" && $0.sourcePath == "models/lora/executor/lumen-executor-lora.gguf" })
         #expect(!models.contains { $0.fileName == "lumen-fleet-lora.gguf" && $0.role == .embedding })
         #expect(Set(adapters.map(\.fileName)) == [
             "lumen-cortex-lora.gguf",

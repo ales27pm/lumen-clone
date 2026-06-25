@@ -27,6 +27,31 @@ struct CatalogModelURLTests {
         #expect(url.query?.contains("download=true") == true)
     }
 
+    @Test func buildsDownloadURLFromRemoteSourcePathWhileKeepingLocalFileName() {
+        let model = CatalogModel(
+            id: "adapter",
+            name: "Adapter",
+            repoId: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
+            fileName: "lumen-executor-lora.gguf",
+            parameters: "LoRA",
+            quantization: "GGUF",
+            sizeBytes: 1,
+            role: .roleAdapter,
+            description: "",
+            tags: [],
+            sourcePath: "models/lora/executor/lumen-executor-lora.gguf"
+        )
+
+        guard case .success(let url) = model.downloadURLResult else {
+            Issue.record("Expected valid adapter metadata to build URL")
+            return
+        }
+
+        #expect(model.fileName == "lumen-executor-lora.gguf")
+        #expect(url.path == "/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/resolve/main/models/lora/executor/lumen-executor-lora.gguf")
+        #expect(url.query?.contains("download=true") == true)
+    }
+
     @Test func failsForMissingRepoPath() {
         let model = CatalogModel(
             id: "missing-repo",
