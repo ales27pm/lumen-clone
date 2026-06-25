@@ -197,7 +197,7 @@ actor PersistentRuntimeDiagnosticsStore {
         var entries: [PersistentDiagnosticLogEntry] = []
         let urls = (includeRotated ? [rotatedLogURL] : []) + [logURL]
         for url in urls {
-            guard let text = try? String(contentsOf: url) else { continue }
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
             for line in text.split(separator: "\n") {
                 guard let data = String(line).data(using: .utf8) else { continue }
                 if let batch = try? decoder.decode([PersistentDiagnosticLogEntry].self, from: data) {

@@ -461,6 +461,14 @@ nonisolated enum E2ETestRunner {
     @TaskLocal static var debugStandardScenariosOverride: [E2ETestScenario]?
     @TaskLocal static var debugAssertScenarioLoopOffMainThread = false
     @TaskLocal static var debugScenarioLoopThreadRecorder: (@Sendable (Bool) -> Void)?
+
+    private static func debugIsRunningOnMainThread() -> Bool {
+        #if canImport(Darwin)
+        pthread_main_np() != 0
+        #else
+        Thread.isMainThread
+        #endif
+    }
     #endif
 
     static func runStandard(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
@@ -526,7 +534,7 @@ nonisolated enum E2ETestRunner {
         var results: [E2ETestResult] = []
         for scenario in scenarios {
             #if DEBUG
-            let isOnMainThread = Thread.isMainThread
+            let isOnMainThread = debugIsRunningOnMainThread()
             await MainActor.run {
                 debugScenarioLoopThreadRecorder?(isOnMainThread)
             }

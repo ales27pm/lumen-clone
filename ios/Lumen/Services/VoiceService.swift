@@ -58,7 +58,7 @@ final class VoiceService: NSObject {
 
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             lastError = "Audio session error: \(error.localizedDescription)"
