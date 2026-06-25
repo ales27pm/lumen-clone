@@ -31,16 +31,16 @@ enum MemoryTools {
         guard let container = SharedContainer.shared else { return "RAG store unavailable." }
         let ctx = ModelContext(container)
         let expandedQuery = expandRAGQueryIfNeeded(trimmed)
-        let embeddingReady = await RAGStore.embeddingRuntimeAvailable()
-        let results = await RAGStore.search(query: expandedQuery, context: ctx, limit: limit)
+        let search = await RAGStore.searchWithDiagnostics(query: expandedQuery, context: ctx, limit: limit)
+        let results = search.matches
         if results.isEmpty {
-            if !embeddingReady {
-                return "RAG search unavailable: embedding model is not loaded or failed to run. Load a local embedding model, then try again."
-            }
             let counts = RAGStore.counts(context: ctx)
             let totalIndexed = counts.values.reduce(0, +)
             if totalIndexed == 0 {
                 return "No matching files found for '\(trimmed)'. Your local index appears empty. Import or create local files/notes, then run reindex files."
+            }
+            if search.mode == "lexical_fallback" {
+                return "No matching files found for '\(trimmed)'. The semantic embedding runtime was unavailable, so Lumen searched the local lexical index only."
             }
             return "No matching files found for '\(trimmed)'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again."
         }

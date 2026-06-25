@@ -3,9 +3,19 @@ import Foundation
 import CoreML
 #endif
 
-enum LocalRuntimeError: Error, Sendable, Equatable {
+enum LocalRuntimeError: LocalizedError, Sendable, Equatable {
     case unavailable(String)
     case generationNotImplemented(AssistantRuntimeKind)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Local runtime unavailable: no reason provided." : "Local runtime unavailable: \(trimmed)"
+        case .generationNotImplemented(let kind):
+            return "Local runtime generation is not implemented for \(kind.rawValue)."
+        }
+    }
 }
 
 

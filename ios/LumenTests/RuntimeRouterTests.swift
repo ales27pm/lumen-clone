@@ -23,10 +23,19 @@ final class RuntimeRouterTests: XCTestCase {
     func testChatFallsBackWhenHeavyRuntimeDisallowed() {
         let foundation = FoundationModelsRuntimeAdapter()
         let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(generateHandler: { _ in "ok" }))
-        let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: true, thermalState: .nominal)
+        let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal, allowHeavyRuntime: false)
         let selection = router.selection(for: context)
         XCTAssertEqual(selection.runtime, .deterministicFallback)
-        XCTAssertEqual(selection.reason, "heavy runtime disallowed")
+        XCTAssertEqual(selection.reason, "foregroundInteractive: heavyRuntime=false")
+    }
+
+    func testChatLowPowerStillUsesLlamaWhenForegroundAndAvailable() {
+        let foundation = FoundationModelsRuntimeAdapter()
+        let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(generateHandler: { _ in "ok" }))
+        let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: true, thermalState: .nominal)
+        let selection = router.selection(for: context)
+        XCTAssertEqual(selection.runtime, .llama)
+        XCTAssertEqual(selection.reason, "llama available")
     }
 
     func testChatDoesNotUseUnwiredFoundationModelsEvenWhenPreferred() {

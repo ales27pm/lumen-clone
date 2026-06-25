@@ -145,6 +145,14 @@ def test_sft_records_use_chat_format(compiled_fine_tuning: tuple) -> None:
             assert messages[2]["content"].strip()
 
 
+def test_sft_records_do_not_train_null_assistant_outputs(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    for agent in AGENTS:
+        for record in fine_tuning[agent].train_sft + fine_tuning[agent].val_sft:
+            content = record["messages"][2]["content"].strip().lower()
+            assert content not in {"", "null", "none"}, record["metadata"]
+
+
 def test_each_adapter_has_ultra_specific_dataset_records(compiled_fine_tuning: tuple) -> None:
     _, _, fine_tuning = compiled_fine_tuning
     minimum_records = {
@@ -192,7 +200,7 @@ def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: t
     assert CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY in fine_tuning["cortex"].dataset_card["sourceFamilies"]
     assert card_quality["cortexCodebaseSelfAwarenessSourceFamily"] == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
     assert card_quality["cortexCodebaseSelfAwarenessRecordCount"] == len(cortex_codebase)
-    assert card_quality["cortexCodebaseSelfAwarenessCoverage"] == "git_tracked_text_files_plus_selected_manifest_artifacts"
+    assert card_quality["cortexCodebaseSelfAwarenessCoverage"] == "git_tracked_text_files_excluding_generated_outputs"
     assert card_quality["cortexCodebaseChunkRecordCount"] == source_chunk_count
     assert any("sourceHash" in (record.get("metadata") or {}) for record in cortex_codebase)
     assert any((record.get("metadata") or {}).get("taskType") == "module_ownership_grounding" for record in cortex_codebase)
@@ -214,6 +222,35 @@ def test_executor_missing_argument_samples_require_required_arguments(compiled_f
         if metadata.get("taskType") != "ultra_specific_missing_argument_boundary":
             continue
         assert optional_only_tools.isdisjoint(metadata.get("toolIDs") or [])
+
+
+def test_agent_sft_tool_contracts_include_permission_kind_and_confirmation_mode(compiled_fine_tuning: tuple) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    tool = next(item for item in manifest.tools if item.id == "calendar.create")
+    expected_contract = {
+        "requiresApproval": tool.requiresApproval,
+        "permissionKey": tool.permissionKey,
+        "permissionKind": tool.permissionKind,
+        "confirmationMode": tool.confirmationMode,
+    }
+
+    for agent, task_type in (
+        ("cortex", "ultra_specific_intent_routing"),
+        ("executor", "ultra_specific_tool_call_generation"),
+        ("fleet", "ultra_specific_tool_boundary_awareness"),
+    ):
+        records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+        record = next(
+            item
+            for item in records
+            if item["metadata"].get("taskType") == task_type and tool.id in item["metadata"].get("toolIDs", [])
+        )
+        metadata_contract = record["metadata"]["toolContracts"][tool.id]
+        assistant = json.loads(record["messages"][2]["content"])
+
+        assert metadata_contract == expected_contract
+        assert assistant["permissionKind"] == tool.permissionKind
+        assert assistant["confirmationMode"] == tool.confirmationMode
 
 
 def test_dpo_records_have_prompt_chosen_rejected(compiled_fine_tuning: tuple) -> None:
@@ -273,6 +310,20 @@ def test_codebase_home_records_route_to_fleet_and_rem() -> None:
         records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
         assert any(record["metadata"]["sourceFamily"] == "codebase_home_sft" for record in records)
         assert any(record["metadata"]["sourceFamily"] == "codebase_home_chunk_sft" for record in records)
+
+
+def test_codebase_home_excludes_generated_manifest_outputs() -> None:
+    repo_root = _repo_root()
+    manifest = generate_manifest(repo_root)
+    datasets = generate_all_datasets(manifest, root=repo_root)
+    paths = {str(record.get("path") or "") for record in datasets["codebase_home_corpus"]}
+    overview = next(record for record in datasets["codebase_home_corpus"] if record.get("path") == ".")
+
+    assert "ios/Lumen/AgentBehaviorManifest.json" not in paths
+    assert not any(path.startswith("generated/agent_manifest/") for path in paths)
+    assert overview["metadata"]["coverage"] == "git_tracked_text_files_excluding_generated_outputs"
+    assert overview["metadata"]["selectedGeneratedFiles"] == []
+    assert "ios/Lumen/AgentBehaviorManifest.json" in overview["metadata"]["excludedRelpaths"]
 
 
 def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> None:

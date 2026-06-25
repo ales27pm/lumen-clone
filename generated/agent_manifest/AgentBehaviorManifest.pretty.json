@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+    "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -23,7 +23,7 @@
       },
       {
         "path": "ios/Lumen/Models/ToolDefinition.swift",
-        "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+        "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
       },
       {
         "path": "ios/Lumen/Models/Trigger.swift",
@@ -31,7 +31,7 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+        "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
@@ -39,7 +39,7 @@
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
-        "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+        "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
       },
       {
         "path": "ios/Lumen/Services/MimicryProfile.swift",
@@ -47,7 +47,7 @@
       },
       {
         "path": "ios/Lumen/Services/ModelFleet.swift",
-        "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+        "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
       },
       {
         "path": "ios/Lumen/Services/RemCycleService.swift",
@@ -59,7 +59,7 @@
       },
       {
         "path": "ios/Lumen/Views/ChatView.swift",
-        "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+        "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
       }
     ]
   },
@@ -341,19 +341,21 @@
       "description": "Add an event to your calendar. Args: title, startsInMinutes.",
       "requiresApproval": true,
       "permissionKey": "NSCalendarsFullAccessUsageDescription",
+      "permissionKind": "calendar",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "title",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, startsInMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "startsInMinutes",
           "type": "number",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, startsInMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -367,6 +369,8 @@
       "description": "Read upcoming calendar events. Args: none.",
       "requiresApproval": false,
       "permissionKey": "NSCalendarsFullAccessUsageDescription",
+      "permissionKind": "calendar",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -378,12 +382,14 @@
       "description": "Create a new reminder. Args: title.",
       "requiresApproval": true,
       "permissionKey": "NSRemindersFullAccessUsageDescription",
+      "permissionKind": "reminders",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "title",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -397,6 +403,8 @@
       "description": "Read pending reminders. Args: none.",
       "requiresApproval": false,
       "permissionKey": "NSRemindersFullAccessUsageDescription",
+      "permissionKind": "reminders",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -408,12 +416,14 @@
       "description": "Find a contact by name. Args: query. Only use for the user's address book, not web people search.",
       "requiresApproval": false,
       "permissionKey": "NSContactsUsageDescription",
+      "permissionKind": "contacts",
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "query",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: query",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -427,47 +437,49 @@
       "description": "Compose an iMessage/SMS draft. Args: to, body, optional recipient/number/message/text.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "to",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "body",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "recipient",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "number",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "message",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "text",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -481,54 +493,56 @@
       "description": "Compose an email draft using the system mail composer. Args: to, subject, body, optional recipient/email/message/text.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "to",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "subject",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "body",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "recipient",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "email",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "message",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "text",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -542,6 +556,8 @@
       "description": "Check whether the Microsoft Graph Outlook account is signed in. Args: none.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -553,12 +569,14 @@
       "description": "List Outlook/Hotmail mail folders with unread and total counts. Args: optional includeHidden true/false.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "includeHidden",
-          "type": "string",
+          "type": "bool",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional includeHidden true/false",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -572,33 +590,35 @@
       "description": "List recent Outlook messages. Args: optional folder or folderId, limit, unreadOnly.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "folder",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "folderId",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "limit",
           "type": "number",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "unreadOnly",
-          "type": "string",
+          "type": "bool",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -612,33 +632,35 @@
       "description": "Search Outlook mail with Microsoft Graph. Args: query, optional folder/folderId, limit.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "query",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "folder",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "folderId",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "limit",
           "type": "number",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -652,19 +674,21 @@
       "description": "Read one Outlook message body by id. Args: messageId, optional id.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -678,19 +702,21 @@
       "description": "List attachment metadata for one Outlook message. Args: messageId, optional id.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -704,26 +730,28 @@
       "description": "Create a saved Outlook draft through Microsoft Graph. Args: to, subject, body.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "to",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "subject",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "body",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -737,26 +765,28 @@
       "description": "Send an Outlook email through Microsoft Graph. Args: to, subject, body. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "to",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "subject",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "body",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -770,19 +800,21 @@
       "description": "Mark an Outlook message as read. Args: messageId, optional id. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -796,19 +828,21 @@
       "description": "Mark an Outlook message as unread. Args: messageId, optional id. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -822,33 +856,35 @@
       "description": "Move an Outlook message to a folder. Args: messageId, destination, optional id/destinationId. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "destination",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "destinationId",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -862,19 +898,21 @@
       "description": "Move an Outlook message to Archive. Args: messageId, optional id. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -888,19 +926,21 @@
       "description": "Delete an Outlook message. Args: messageId, optional id. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -914,33 +954,35 @@
       "description": "Reply to an Outlook message. Args: messageId, body, optional id/comment. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "body",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "comment",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -954,33 +996,35 @@
       "description": "Reply-all to an Outlook message. Args: messageId, body, optional id/comment. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "body",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "comment",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -994,40 +1038,42 @@
       "description": "Forward an Outlook message. Args: messageId, to, optional id/body/comment. Requires explicit approval.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "messageId",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "to",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "id",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "body",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "comment",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1041,12 +1087,14 @@
       "description": "Open the phone dialer for a number. Args: number. Never use for general lookup.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "number",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: number",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1060,6 +1108,8 @@
       "description": "Get the user's current GPS location. Args: none. Use before nearby/local map searches when location context is needed.",
       "requiresApproval": false,
       "permissionKey": "NSLocationWhenInUseUsageDescription",
+      "permissionKind": "location",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1071,19 +1121,21 @@
       "description": "Get current weather using GPS or a city. Args: optional location or city. Use when the user asks weather, temperature, rain, snow, wind, forecast now, or conditions.",
       "requiresApproval": false,
       "permissionKey": "NSLocationWhenInUseUsageDescription",
+      "permissionKind": "location",
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "location",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional location or city",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "city",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: optional location or city",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1097,12 +1149,14 @@
       "description": "Open Apple Maps directions to a real destination. Args: destination. Use only for navigation/route requests.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "destination",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: destination",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1116,12 +1170,14 @@
       "description": "Find nearby/local places in Apple Maps. Args: query. Use only for local places like coffee near me, pharmacy nearby, closest hardware store, addresses, or directions. Do not use for DIY, tutorials, research, articles, or general web search.",
       "requiresApproval": false,
       "permissionKey": "NSLocationWhenInUseUsageDescription",
+      "permissionKind": "location",
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "query",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: query",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1135,12 +1191,14 @@
       "description": "Search the user's photo library by date/category terms. Args: query. Not for web image search.",
       "requiresApproval": false,
       "permissionKey": "NSPhotoLibraryUsageDescription",
+      "permissionKind": "photos",
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "query",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: query",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1154,6 +1212,8 @@
       "description": "Take a photo with the device camera. Args: none.",
       "requiresApproval": true,
       "permissionKey": "NSCameraUsageDescription",
+      "permissionKind": "camera",
+      "confirmationMode": "userApproval",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1165,6 +1225,8 @@
       "description": "Read steps, sleep, heart rate, energy, and distance. Args: none.",
       "requiresApproval": false,
       "permissionKey": "NSHealthShareUsageDescription",
+      "permissionKind": "health",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1176,6 +1238,8 @@
       "description": "Detect recent device motion activity such as walking/running. Args: none.",
       "requiresApproval": false,
       "permissionKey": "NSMotionUsageDescription",
+      "permissionKind": "motion",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1187,12 +1251,14 @@
       "description": "Search the web for general knowledge, fresh information, tutorials, DIY guides, plans, research, articles, or documentation. Args: query. Use this for `search for ...` unless the user explicitly wants nearby/local places.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "query",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: query",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1206,12 +1272,14 @@
       "description": "Fetch and read a specific web page. Args: url. Use only when the user gives a URL or a prior web search returns one to inspect.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "url",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: url",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1225,12 +1293,14 @@
       "description": "Read a previously imported local document by name. Args: name. Do not use for attached files already visible in the current prompt.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "name",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: name",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1244,19 +1314,21 @@
       "description": "Store a user fact or preference for future recall. Args: content, kind.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "content",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: content, kind",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "kind",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: content, kind",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1270,12 +1342,14 @@
       "description": "Search stored memories about the user. Args: query. Not for web search.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "query",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: query",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1289,19 +1363,21 @@
       "description": "Semantic search across indexed local files, PDFs, notes, and photo metadata. Args: query, optional limit. Not for internet search.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "query",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: query, optional limit",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "limit",
           "type": "number",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: query, optional limit",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1315,6 +1391,8 @@
       "description": "Rebuild the index for imported files and PDFs. Args: none.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": null,
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1326,12 +1404,14 @@
       "description": "Rebuild the monthly photo metadata index. Args: months.",
       "requiresApproval": false,
       "permissionKey": "NSPhotoLibraryUsageDescription",
+      "permissionKind": "photos",
+      "confirmationMode": "none",
       "arguments": [
         {
           "name": "months",
           "type": "number",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: months",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1345,54 +1425,56 @@
       "description": "Schedule a background agent run. Args: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": "notifications",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "title",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "prompt",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "schedule",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "inMinutes",
           "type": "number",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "atTime",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "intervalSeconds",
           "type": "number",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "beforeMinutes",
           "type": "number",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1406,6 +1488,8 @@
       "description": "Show active scheduled agent runs. Args: none.",
       "requiresApproval": false,
       "permissionKey": null,
+      "permissionKind": "notifications",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1417,19 +1501,21 @@
       "description": "Cancel a scheduled agent run. Args: id, optional title.",
       "requiresApproval": true,
       "permissionKey": null,
+      "permissionKind": "notifications",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: id, optional title",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "title",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: id, optional title",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1443,6 +1529,8 @@
       "description": "Check AlarmKit authorization state. Args: none.",
       "requiresApproval": false,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1454,6 +1542,8 @@
       "description": "Request permission to use AlarmKit alarms. Args: none.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1465,40 +1555,42 @@
       "description": "Schedule an AlarmKit alarm. Args: title, inMinutes, optional timestamp/repeats/snoozeMinutes.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "title",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "inMinutes",
           "type": "number",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "timestamp",
           "type": "string",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "repeats",
           "type": "bool",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "snoozeMinutes",
           "type": "number",
           "required": false,
-          "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1512,19 +1604,21 @@
       "description": "Create a countdown alarm. Args: title, durationSeconds.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "title",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, durationSeconds",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "durationSeconds",
           "type": "number",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: title, durationSeconds",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1538,6 +1632,8 @@
       "description": "List active AlarmKit alarms. Args: none.",
       "requiresApproval": false,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "none",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1549,12 +1645,14 @@
       "description": "Pause an alarm. Args: id UUID.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: id UUID",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1568,12 +1666,14 @@
       "description": "Resume a paused alarm. Args: id UUID.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: id UUID",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1587,12 +1687,14 @@
       "description": "Stop an alerting alarm. Args: id UUID.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: id UUID",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1606,12 +1708,14 @@
       "description": "Snooze an alerting alarm. Args: id UUID.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: id UUID",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],
@@ -1625,12 +1729,14 @@
       "description": "Cancel a scheduled alarm. Args: id UUID.",
       "requiresApproval": true,
       "permissionKey": "NSAlarmKitUsageDescription",
+      "permissionKind": "alarms",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "id",
           "type": "string",
           "required": true,
-          "description": "Inferred from ToolDefinition description Args contract: id UUID",
+          "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
       ],

@@ -70,6 +70,21 @@ def test_embedding_corpus_contains_core_lumen_object_types() -> None:
     assert "source_code_map_entry" in object_types
 
 
+def test_embedding_tool_schema_carries_runtime_contract() -> None:
+    manifest = generate_manifest(_repo_root())
+    datasets = generate_all_datasets(manifest)
+    tool = next(item for item in manifest.tools if item.id == "calendar.create")
+    record = next(item for item in datasets["embedding_corpus"] if item["objectType"] == "tool_schema" and item["objectID"] == tool.id)
+    metadata = record["metadata"]
+
+    assert f"Permission kind: {tool.permissionKind}" in record["text"]
+    assert f"Confirmation mode: {tool.confirmationMode}" in record["text"]
+    assert metadata["requiresApproval"] is tool.requiresApproval
+    assert metadata["permissionKey"] == tool.permissionKey
+    assert metadata["permissionKind"] == tool.permissionKind
+    assert metadata["confirmationMode"] == tool.confirmationMode
+
+
 def test_embedding_corpus_contains_codebase_home_when_root_is_provided() -> None:
     repo_root = _repo_root()
     manifest = generate_manifest(repo_root)

@@ -55,7 +55,7 @@ actor SlotModelRuntimeCoordinator {
         candidates: [StoredModelLoadItem],
         preferredID: String?
     ) async -> String? {
-        guard await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else { return nil }
+        guard await MainActor.run(body: { ResourceBudgetGate.allowsWork(policy: .foregroundInteractive, reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else { return nil }
         let orderedCandidates = orderedCandidates(candidates: candidates, preferredID: preferredID)
         for (index, candidate) in orderedCandidates.enumerated() {
             await Task.yield()
@@ -104,7 +104,7 @@ actor SlotModelRuntimeCoordinator {
         candidates: [StoredModel],
         preferredID: String?
     ) async -> Bool {
-        guard await MainActor.run(body: { ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else { return false }
+        guard await MainActor.run(body: { ResourceBudgetGate.allowsWork(policy: .embedding, reason: ModelLoadIntent.userChat.rawValue) }), !Task.isCancelled else { return false }
         let orderedCandidates = orderedCandidates(candidates: candidates, preferredID: preferredID)
         for (index, candidate) in orderedCandidates.enumerated() {
             await Task.yield()
@@ -142,15 +142,23 @@ actor SlotModelRuntimeCoordinator {
         guard !Task.isCancelled else {
             throw LocalRuntimeError.unavailable("resource budget denied model load")
         }
-        let allowsModelLoad = await MainActor.run {
-            ResourceBudgetGate.allowsForegroundModelLoad(reason: ModelLoadIntent.userChat.rawValue)
+        let slotContract = LumenModelSlotContract.contract(for: slot)
+        let budgetPolicy = slotContract?.budgetPolicy ?? (slot == .embedding ? .embedding : .foregroundInteractive)
+        let budgetReason = "slot-runtime.\(slot.rawValue)"
+        let budgetSnapshot = await MainActor.run { ResourceBudgetGate.diagnosticSnapshot() }
+        let budgetDenial = await MainActor.run {
+            ResourceBudgetGate.budgetDenialReason(policy: budgetPolicy, snapshot: budgetSnapshot, reason: budgetReason)
         }
-        guard allowsModelLoad else {
-            if allowsLoadedMemoryPressureContinuation,
+        if let budgetDenial {
+            if budgetPolicy == .foregroundInteractive,
+               allowsLoadedMemoryPressureContinuation,
+               await MainActor.run(body: {
+                   ResourceBudgetGate.allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: budgetSnapshot, reason: budgetReason)
+               }),
                let loadedMetrics = await loadedContinuationMetricsIfReady(slot: slot, started: started) {
                 return loadedMetrics
             }
-            throw LocalRuntimeError.unavailable("resource budget denied model load")
+            throw LocalRuntimeError.unavailable("resource budget denied model load: \(budgetDenial)")
         }
         guard slot != .embedding else {
             return RuntimeReadinessMetrics(

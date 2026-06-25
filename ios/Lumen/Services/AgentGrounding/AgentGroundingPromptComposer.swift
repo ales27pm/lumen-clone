@@ -61,6 +61,7 @@ extension GenerateRequest {
             modelName: modelName,
             relevantMemories: relevantMemories,
             attachments: attachments,
+            responseFormat: responseFormat,
             seed: seed,
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,

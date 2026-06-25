@@ -17,6 +17,7 @@ nonisolated struct GenerateRequest: Sendable {
     let modelName: String
     let relevantMemories: [MemoryContextItem]
     let attachments: [ChatAttachment]
+    let responseFormat: LLMResponseFormat
     let seed: UInt32?
     let developerTraceModeEnabled: Bool
     let reasoningCaptureEnabled: Bool
@@ -36,6 +37,7 @@ nonisolated struct GenerateRequest: Sendable {
         modelName: String,
         relevantMemories: [MemoryContextItem],
         attachments: [ChatAttachment] = [],
+        responseFormat: LLMResponseFormat = .plainText,
         seed: UInt32? = nil,
         developerTraceModeEnabled: Bool = false,
         reasoningCaptureEnabled: Bool = false,
@@ -54,6 +56,7 @@ nonisolated struct GenerateRequest: Sendable {
         self.modelName = modelName
         self.relevantMemories = relevantMemories
         self.attachments = attachments
+        self.responseFormat = responseFormat
         self.seed = seed
         self.developerTraceModeEnabled = developerTraceModeEnabled
         self.reasoningCaptureEnabled = developerTraceModeEnabled && reasoningCaptureEnabled
@@ -74,6 +77,7 @@ nonisolated struct GenerateRequest: Sendable {
         modelName: String,
         legacyRelevantMemories: [String],
         attachments: [ChatAttachment] = [],
+        responseFormat: LLMResponseFormat = .plainText,
         seed: UInt32? = nil,
         developerTraceModeEnabled: Bool = false,
         reasoningCaptureEnabled: Bool = false,
@@ -93,6 +97,7 @@ nonisolated struct GenerateRequest: Sendable {
             modelName: modelName,
             relevantMemories: MemoryContextAdapter.fromLegacyStrings(legacyRelevantMemories),
             attachments: attachments,
+            responseFormat: responseFormat,
             seed: seed,
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
@@ -116,6 +121,7 @@ nonisolated struct GenerateRequest: Sendable {
             modelName: modelName,
             relevantMemories: relevantMemories,
             attachments: attachments,
+            responseFormat: responseFormat,
             seed: seed,
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
@@ -125,7 +131,18 @@ nonisolated struct GenerateRequest: Sendable {
     }
 
     var preservesRawStructuredAgentOutput: Bool {
-        modelName == "agent-json"
+        modelName == "agent-json" || responseFormat.requiresRawStructuredOutput
+    }
+}
+
+private extension LLMResponseFormat {
+    var requiresRawStructuredOutput: Bool {
+        switch self {
+        case .plainText:
+            return false
+        case .json, .toolCallJSON, .constrainedJSON:
+            return true
+        }
     }
 }
 
@@ -2103,6 +2120,10 @@ final actor AppLlamaService {
                 reasoningCaptureEnabled: req.reasoningCaptureEnabled,
                 modelName: req.modelName
             )
+        let formattedSystemPrompt = Self.systemPrompt(
+            req.systemPrompt,
+            responseFormat: req.responseFormat
+        )
         let budget: PromptBudget
         if req.preservesRawStructuredAgentOutput {
             budget = PromptBudget.agentJSON(
@@ -2117,7 +2138,7 @@ final actor AppLlamaService {
                 budget = PromptBudget.make(
                     contextSize: contextSize ?? 2048,
                     maxTokens: req.maxTokens,
-                    systemPromptChars: req.systemPrompt.count,
+                    systemPromptChars: formattedSystemPrompt.count,
                     userMessageChars: req.userMessage.count,
                     hasAttachments: !req.attachments.isEmpty,
                     hasMemories: !req.relevantMemories.isEmpty
@@ -2126,7 +2147,7 @@ final actor AppLlamaService {
         }
 
         let assembly = PromptAssembler.assemble(
-            systemPrompt: req.systemPrompt,
+            systemPrompt: formattedSystemPrompt,
             history: req.history,
             userMessage: req.userMessage,
             memories: req.relevantMemories,
@@ -2136,7 +2157,8 @@ final actor AppLlamaService {
             latencyClass: latencySelection.latencyClass
         )
         let useQwenDirective = currentChatModelLooksLikeQwen3(slot: slot)
-        let requireFinalAnswerOnly = !req.modelName.lowercased().contains("json")
+        let requireFinalAnswerOnly = !req.responseFormat.requiresRawStructuredOutput
+            && !req.modelName.lowercased().contains("json")
         let allowReasoningCapture = req.reasoningCaptureEnabled && requireFinalAnswerOnly
         let systemPrompt = ModelThinkingControl.systemPrompt(
             assembly.systemPrompt,
@@ -2176,6 +2198,29 @@ final actor AppLlamaService {
             estimatedPromptTokens: max(1, finalPromptChars / 4),
             latencySelection: latencySelection
         )
+    }
+
+    private nonisolated static func systemPrompt(_ base: String, responseFormat: LLMResponseFormat) -> String {
+        let instruction: String?
+        switch responseFormat {
+        case .plainText:
+            instruction = nil
+        case .json:
+            instruction = "Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning."
+        case .toolCallJSON:
+            instruction = #"Response format contract: output exactly one valid JSON object shaped as {"action":{"tool":"<tool id>","args":{...}}}. Do not include prose, markdown, code fences, or hidden reasoning."#
+        case .constrainedJSON(let schema):
+            instruction = """
+            Response format contract: output exactly one valid JSON object matching this schema. Do not include prose, markdown, code fences, or hidden reasoning.
+            JSON schema:
+            \(schema)
+            """
+        }
+        guard let instruction else { return base }
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.localizedCaseInsensitiveContains("Response format contract:") else { return base }
+        guard !trimmed.isEmpty else { return instruction }
+        return "\(trimmed)\n\n\(instruction)"
     }
 
     func buildMessagesForDiagnostics(req: GenerateRequest, contextSize: Int? = nil, slot: LumenModelSlot? = nil, forceFastBudget: Bool = false) -> PromptBuildResult {

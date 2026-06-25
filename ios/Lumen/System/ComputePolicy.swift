@@ -25,21 +25,38 @@ struct ComputePolicyInput: Sendable, Equatable {
 struct ComputeDecision: Sendable, Equatable {
     let maxTokens: Int
     let allowHeavyRuntime: Bool
+    let budgetPolicy: LumenSlotBudgetPolicy
+    let denialReason: String?
 }
 
 enum ComputePolicy {
     static func decide(for input: ComputePolicyInput) -> ComputeDecision {
-        let thermalLimited = input.thermalState == .serious || input.thermalState == .critical
+        let budgetPolicy = budgetPolicy(for: input.task)
+        let thermalLimited = input.thermalState == .serious || input.thermalState == .critical || input.thermalState == .unknown
         if !input.allowHeavyRuntime {
-            return ComputeDecision(maxTokens: 512, allowHeavyRuntime: false)
+            return ComputeDecision(maxTokens: 512, allowHeavyRuntime: false, budgetPolicy: budgetPolicy, denialReason: "\(budgetPolicy.rawValue): heavyRuntime=false")
         }
-        if !input.isForeground {
-            return ComputeDecision(maxTokens: 256, allowHeavyRuntime: false)
+        if thermalLimited {
+            return ComputeDecision(maxTokens: 512, allowHeavyRuntime: false, budgetPolicy: budgetPolicy, denialReason: "\(budgetPolicy.rawValue): thermalState=\(input.thermalState.rawValue)")
         }
-        if thermalLimited || input.lowPowerMode {
-            return ComputeDecision(maxTokens: 512, allowHeavyRuntime: false)
+
+        switch budgetPolicy {
+        case .foregroundInteractive:
+            guard input.isForeground else {
+                return ComputeDecision(maxTokens: 256, allowHeavyRuntime: false, budgetPolicy: budgetPolicy, denialReason: "\(budgetPolicy.rawValue): scenePhase=background")
+            }
+            return ComputeDecision(maxTokens: input.lowPowerMode ? 512 : 1024, allowHeavyRuntime: true, budgetPolicy: budgetPolicy, denialReason: nil)
+        case .maintenanceIdle:
+            guard !input.lowPowerMode else {
+                return ComputeDecision(maxTokens: 512, allowHeavyRuntime: false, budgetPolicy: budgetPolicy, denialReason: "\(budgetPolicy.rawValue): lowPowerMode=true")
+            }
+            return ComputeDecision(maxTokens: input.isForeground ? 768 : 512, allowHeavyRuntime: true, budgetPolicy: budgetPolicy, denialReason: nil)
+        case .embedding:
+            if input.lowPowerMode && !input.isForeground {
+                return ComputeDecision(maxTokens: 256, allowHeavyRuntime: false, budgetPolicy: budgetPolicy, denialReason: "\(budgetPolicy.rawValue): lowPowerMode=true")
+            }
+            return ComputeDecision(maxTokens: input.lowPowerMode ? 256 : 512, allowHeavyRuntime: true, budgetPolicy: budgetPolicy, denialReason: nil)
         }
-        return ComputeDecision(maxTokens: 1024, allowHeavyRuntime: true)
     }
 
     static func decide(for context: AssistantTurnContext) -> ComputeDecision {
@@ -51,5 +68,16 @@ enum ComputePolicy {
             allowHeavyRuntime: context.allowHeavyRuntime
         )
         return decide(for: input)
+    }
+
+    private static func budgetPolicy(for task: AssistantTaskKind) -> LumenSlotBudgetPolicy {
+        switch task {
+        case .embedding, .safetyClassification:
+            return .embedding
+        case .backgroundTrigger, .remConsolidation:
+            return .maintenanceIdle
+        case .chat, .agentPlan, .toolDecision, .summarization, .memoryExtraction, .speechCommandParsing:
+            return .foregroundInteractive
+        }
     }
 }

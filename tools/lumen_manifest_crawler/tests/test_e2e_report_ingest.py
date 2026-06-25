@@ -1135,6 +1135,149 @@ def test_agent_grounding_package_without_recent_traces_generates_export_quality_
     assert "AgentBehaviorTraceRecorder.record is not wired" in failures[0]["problem"]
 
 
+def test_in_app_package_uses_export_quality_failures_without_duplicate_empty_trace_failure(tmp_path: Path):
+    report_path = tmp_path / "lumen-agent-grounding-audit-export-quality.json"
+    import json
+
+    package = {
+        "schemaVersion": "1.3.0",
+        "generatedAt": "2026-06-24T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [],
+        "exportQualityFailures": [
+            {
+                "type": "agent_grounding_no_recent_model_traces",
+                "agent": "runtime",
+                "expected": ["recent traces"],
+                "actual": "recentTraces is empty",
+                "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+                "problem": "The Agent Grounding package exported no recent traces.",
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    report = load_runtime_audit_reports([report_path])[0]
+
+    failures = [
+        failure
+        for failure in report["failures"]
+        if failure["type"] == "agent_grounding_no_recent_model_traces"
+    ]
+    assert len(failures) == 1
+    assert failures[0]["sourceLayer"] == "agentGroundingRuntimeAudit.exportQuality"
+
+
+def test_in_app_package_preserves_incomplete_model_trace_export_quality_failure(tmp_path: Path):
+    report_path = tmp_path / "lumen-agent-grounding-audit-incomplete-trace.json"
+    import json
+
+    package = {
+        "schemaVersion": "1.3.0",
+        "generatedAt": "2026-06-24T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [
+            {
+                "event": "modelTurn",
+                "slot": "executor",
+                "stage": "agent-json-step-0",
+                "runtimePath": "agent-model",
+                "promptPrefix": "What is the weather here?",
+                "allowedToolIDs": ["weather"],
+            }
+        ],
+        "exportQualityFailures": [
+            {
+                "type": "agent_grounding_model_trace_incomplete",
+                "agent": "executor",
+                "expected": ["complete runtime evidence"],
+                "actual": "missing=selectedRuntime,modelLoaded,outputTokenCount,streamStarted",
+                "scenario": "What is the weather here?",
+                "problem": "A structured model-turn trace does not carry the minimum runtime evidence.",
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    report = load_runtime_audit_reports([report_path])[0]
+
+    failure = next(
+        failure
+        for failure in report["failures"]
+        if failure["type"] == "agent_grounding_model_trace_incomplete"
+    )
+    assert failure["sourceLayer"] == "agentGroundingRuntimeAudit.exportQuality"
+    assert "selectedRuntime" in failure["actual"]
+
+
+def test_in_app_package_v14_preserves_final_validator_replacement_quality_failure(tmp_path: Path):
+    report_path = tmp_path / "lumen-agent-grounding-audit-final-validator.json"
+    import json
+
+    package = {
+        "schemaVersion": "1.4.0",
+        "generatedAt": "2026-06-24T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [
+            {
+                "event": "finalAnswer",
+                "slot": "mouth",
+                "stage": "compatibility-final",
+                "runtimePath": "deterministic-compatibility",
+                "promptPrefix": "Search my calendar for tomorrow",
+                "rawOutputPrefix": "I could not safely complete the calendar request.",
+                "selectedToolID": "calendar.list",
+                "allowedToolIDs": ["calendar.list"],
+                "finalizerAccepted": False,
+                "finalizerRejectionReason": "intent-mismatch",
+                "finalValidatorAcceptedCandidate": False,
+                "finalValidatorReplacementSource": "safeMessage",
+                "finalValidatorRejectionReason": "tool-json-leak",
+            }
+        ],
+        "exportQualityFailures": [
+            {
+                "type": "agent_grounding_final_validator_replaced_candidate",
+                "agent": "mouth",
+                "expected": ["final validator accepted candidate"],
+                "actual": "replacementSource=safeMessage; rejectionReason=tool-json-leak",
+                "scenario": "Search my calendar for tomorrow",
+                "problem": "The final validator replaced the candidate response.",
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    report = load_runtime_audit_reports([report_path])[0]
+
+    failure = next(
+        failure
+        for failure in report["failures"]
+        if failure["type"] == "agent_grounding_final_validator_replaced_candidate"
+    )
+    assert report["_sourceFormat"] == "lumen_in_app_dataset_package"
+    assert failure["sourceLayer"] == "agentGroundingRuntimeAudit.exportQuality"
+    assert "tool-json-leak" in failure["actual"]
+
+
 def test_e2e_owned_package_can_ingest_live_scenario_results(tmp_path: Path):
     report_path = tmp_path / "lumen-e2e-owned-package.json"
     import json

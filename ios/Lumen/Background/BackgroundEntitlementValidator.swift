@@ -9,7 +9,7 @@ enum BackgroundEntitlementValidator {
     static let requiredTaskIDs: Set<String> = [
         TriggerScheduler.refreshIdentifier,
         TriggerScheduler.processIdentifier,
-        TriggerScheduler.continuedProcessingIdentifier
+        TriggerScheduler.continuedProcessingIdentifierPattern
     ]
 
     static func validate(infoDictionary: [String: Any]) -> [EntitlementAuditWarning] {

@@ -129,7 +129,9 @@ extension AssistantKernel: AgentKernelRunning {
                     maxTokens: request.options.maxTokens
                 )
 
-                let selectedRuntime = selectRuntime(for: turn)
+                let runtimeSelection = selectRuntimeSelection(for: turn)
+                let selectedRuntime = runtimeSelection.runtime
+                let computeDecision = ComputePolicy.decide(for: turn)
                 if request.options.diagnosticsEnabled {
                     continuation.yield(.diagnostic(.init(
                         stage: "runtime-selection",
@@ -139,9 +141,14 @@ extension AssistantKernel: AgentKernelRunning {
                             "task": String(describing: request.task),
                             "foreground": String(request.source.isForeground),
                             "allowHeavyRuntime": String(request.options.allowHeavyRuntime),
+                            "policyAllowHeavyRuntime": String(computeDecision.allowHeavyRuntime),
+                            "budgetPolicy": computeDecision.budgetPolicy.rawValue,
+                            "budgetDenialReason": computeDecision.denialReason ?? "none",
                             "runtime": selectedRuntime.rawValue,
+                            "selectionReason": runtimeSelection.reason,
                             "lowPowerMode": String(lowPowerMode),
-                            "thermalState": "\(thermalState.rawValue)"
+                            "thermalState": "\(thermalState.rawValue)",
+                            "maxTokens": String(min(request.options.maxTokens, computeDecision.maxTokens))
                         ]
                     )))
                 }

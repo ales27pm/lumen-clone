@@ -44,6 +44,29 @@ nonisolated enum LumenFleetRuntimeMode: String, Codable, Sendable {
     }
 }
 
+nonisolated enum LumenRuntimePathKind: String, Codable, Sendable, Hashable {
+    case llamaGGUF
+    case coreML
+    case foundationModels
+    case deterministicFallback
+    case embedding
+    case unknown
+}
+
+nonisolated enum LumenSlotOutputContract: String, Codable, Sendable, Hashable {
+    case decisionObject
+    case structuredJSON
+    case finalText
+    case diagnosticSummary
+    case embeddingVector
+}
+
+nonisolated enum LumenSlotBudgetPolicy: String, Codable, Sendable, Hashable {
+    case foregroundInteractive
+    case maintenanceIdle
+    case embedding
+}
+
 nonisolated struct LumenModelSlotContract: Sendable, Hashable {
     nonisolated static let fleetContractVersion = "2026.05.03-adapter-first"
     private nonisolated static let logger = Logger(subsystem: "ai.lumen.app", category: "model-fleet")
@@ -67,19 +90,43 @@ nonisolated struct LumenModelSlotContract: Sendable, Hashable {
     let defaultTemperature: Double
     let defaultTopP: Double
     let maxOutputTokens: Int
+    let outputContract: LumenSlotOutputContract
+    let budgetPolicy: LumenSlotBudgetPolicy
+    let acceptedRuntimePathKinds: Set<LumenRuntimePathKind>
 
-    static let cortex = LumenModelSlotContract(slot: .cortex, systemContract: "You are Lumen Cortex. Read the user intent and app state. Return a compact decision object describing the next model slot, whether a native capability is required, and a short rationale. Do not write the final user-facing answer.", defaultTemperature: 0.15, defaultTopP: 0.85, maxOutputTokens: 220)
-    static let executor = LumenModelSlotContract(slot: .executor, systemContract: "You are Lumen Executor. Convert a Cortex decision into one validated structured capability request. Return only valid JSON. Do not explain.", defaultTemperature: 0.0, defaultTopP: 0.1, maxOutputTokens: 180)
-    static let mouth = LumenModelSlotContract(slot: .mouth, systemContract: "You are Lumen Mouth. Write the final user-facing response from approved facts and results. Be concise and do not invent actions.", defaultTemperature: 0.55, defaultTopP: 0.9, maxOutputTokens: 420)
-    static let mimicry = LumenModelSlotContract(slot: .mimicry, systemContract: "You are Lumen Mimicry. Summarize the user's tone preference and rewrite assistant text without changing meaning.", defaultTemperature: 0.2, defaultTopP: 0.8, maxOutputTokens: 160)
-    static let rem = LumenModelSlotContract(slot: .rem, systemContract: "You are Lumen REM. During idle cycles, compress traces, find repeated failures, and produce training records for later review.", defaultTemperature: 0.35, defaultTopP: 0.9, maxOutputTokens: 900)
-    static let embedding = LumenModelSlotContract(slot: .embedding, systemContract: "Embedding model slot for semantic memory.", defaultTemperature: 0, defaultTopP: 1, maxOutputTokens: 0)
+    static let cortex = LumenModelSlotContract(slot: .cortex, systemContract: "You are Lumen Cortex. Read the user intent and app state. Return a compact decision object describing the next model slot, whether a native capability is required, and a short rationale. Do not write the final user-facing answer.", defaultTemperature: 0.15, defaultTopP: 0.85, maxOutputTokens: 220, outputContract: .decisionObject, budgetPolicy: .foregroundInteractive, acceptedRuntimePathKinds: [.llamaGGUF])
+    static let executor = LumenModelSlotContract(slot: .executor, systemContract: "You are Lumen Executor. Convert a Cortex decision into one validated structured capability request. Return only valid JSON. Do not explain.", defaultTemperature: 0.0, defaultTopP: 0.1, maxOutputTokens: 180, outputContract: .structuredJSON, budgetPolicy: .foregroundInteractive, acceptedRuntimePathKinds: [.llamaGGUF])
+    static let mouth = LumenModelSlotContract(slot: .mouth, systemContract: "You are Lumen Mouth. Write the final user-facing response from approved facts and results. Be concise and do not invent actions.", defaultTemperature: 0.55, defaultTopP: 0.9, maxOutputTokens: 420, outputContract: .finalText, budgetPolicy: .foregroundInteractive, acceptedRuntimePathKinds: [.llamaGGUF])
+    static let mimicry = LumenModelSlotContract(slot: .mimicry, systemContract: "You are Lumen Mimicry. Summarize the user's tone preference and rewrite assistant text without changing meaning.", defaultTemperature: 0.2, defaultTopP: 0.8, maxOutputTokens: 160, outputContract: .finalText, budgetPolicy: .foregroundInteractive, acceptedRuntimePathKinds: [.llamaGGUF])
+    static let rem = LumenModelSlotContract(slot: .rem, systemContract: "You are Lumen REM. During idle cycles, compress traces, find repeated failures, and produce training records for later review.", defaultTemperature: 0.35, defaultTopP: 0.9, maxOutputTokens: 900, outputContract: .diagnosticSummary, budgetPolicy: .maintenanceIdle, acceptedRuntimePathKinds: [.llamaGGUF])
+    static let embedding = LumenModelSlotContract(slot: .embedding, systemContract: "Embedding model slot for semantic memory.", defaultTemperature: 0, defaultTopP: 1, maxOutputTokens: 0, outputContract: .embeddingVector, budgetPolicy: .embedding, acceptedRuntimePathKinds: [.embedding, .coreML])
 
     static let all: [LumenModelSlotContract] = [.cortex, .executor, .mouth, .mimicry, .rem, .embedding]
 
     private static let contractsBySlot: [LumenModelSlot: LumenModelSlotContract] = [.cortex: .cortex, .executor: .executor, .mouth: .mouth, .mimicry: .mimicry, .rem: .rem, .embedding: .embedding]
 
     static func contract(for slot: LumenModelSlot) -> LumenModelSlotContract? { contractsBySlot[slot] }
+
+    func acceptsRuntimePath(_ runtimePath: String) -> Bool {
+        acceptedRuntimePathKinds.contains(Self.runtimePathKind(for: runtimePath))
+    }
+
+    static func runtimePathKind(for runtimePath: String) -> LumenRuntimePathKind {
+        switch runtimePath {
+        case "sharedAdapter", "sharedAdapterLoadedContinuation", "legacySlot", "legacySlotLoadedContinuation", "loadedChatFallback", "agent-model":
+            return .llamaGGUF
+        case "coreML":
+            return .coreML
+        case "foundationModels":
+            return .foundationModels
+        case "deterministic-compatibility", "deterministicFallback":
+            return .deterministicFallback
+        case "embedding":
+            return .embedding
+        default:
+            return .unknown
+        }
+    }
 
     static func requiredContract(for slot: LumenModelSlot) throws -> LumenModelSlotContract {
         try requiredContract(for: slot, using: contractsBySlot)
@@ -285,10 +332,11 @@ enum LumenModelFleetResolver {
 
     nonisolated private static func preferredModel(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
         let weights = hintWeights(for: slot)
+        let slotTokens = slotHintTokens(for: slot)
         return storedModels.map { model in (model: model, score: score(model, weights: weights)) }.filter { $0.score > 0 }.sorted { lhs, rhs in
             if lhs.score != rhs.score { return lhs.score > rhs.score }
             return lhs.model.downloadedAt > rhs.model.downloadedAt
-        }.first?.model
+        }.first { slot == .embedding || matchesSlotHint($0.model, slotTokens: slotTokens) }?.model
     }
 
     nonisolated private static func preferredFineTunedModel(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
@@ -397,10 +445,11 @@ enum LumenModelFleetResolver {
 
     private static func preferredModel(for slot: LumenModelSlot, storedModels: [StoredModel]) -> StoredModel? {
         let weights = hintWeights(for: slot)
+        let slotTokens = slotHintTokens(for: slot)
         return storedModels.map { model in (model: model, score: score(model, weights: weights)) }.filter { $0.score > 0 }.sorted { lhs, rhs in
             if lhs.score != rhs.score { return lhs.score > rhs.score }
             return lhs.model.downloadedAt > rhs.model.downloadedAt
-        }.first?.model
+        }.first { slot == .embedding || matchesSlotHint($0.model, slotTokens: slotTokens) }?.model
     }
 
     private static func preferredFineTunedModel(for slot: LumenModelSlot, storedModels: [StoredModel]) -> StoredModel? {
@@ -449,6 +498,18 @@ enum LumenModelFleetResolver {
             if secondary.contains(hint) { return partial + max(1, weight / 2) }
             return partial
         }
+    }
+
+    nonisolated private static func matchesSlotHint(_ model: StoredModelLoadItem, slotTokens: [String]) -> Bool {
+        let text = [model.name, model.repoId, model.fileName, model.localPath, model.parameters, model.quantization, model.role].joined(separator: " ").lowercased()
+        let tokens = tokenSet(text)
+        return slotTokens.contains { tokens.contains($0) }
+    }
+
+    private static func matchesSlotHint(_ model: StoredModel, slotTokens: [String]) -> Bool {
+        let text = [model.name, model.repoId, model.fileName, model.localPath, model.parameters, model.quantization, model.role].joined(separator: " ").lowercased()
+        let tokens = tokenSet(text)
+        return slotTokens.contains { tokens.contains($0) }
     }
 
     private static func fineTunedScore(_ model: StoredModel, slotTokens: [String]) -> Int {

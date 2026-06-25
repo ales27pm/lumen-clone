@@ -1,26 +1,53 @@
 import Foundation
 
+nonisolated struct FinalIntentValidationOutcome: Sendable, Equatable {
+    let text: String
+    let acceptedCandidate: Bool
+    let replacementSource: String
+    let rejectionReason: String?
+}
+
 nonisolated enum FinalIntentValidator {
     static func validate(_ text: String, routing: IntentRoutingDecision, fallback: String?) -> String {
+        validateWithOutcome(text, routing: routing, fallback: fallback).text
+    }
+
+    static func validateWithOutcome(_ text: String, routing: IntentRoutingDecision, fallback: String?) -> FinalIntentValidationOutcome {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = clean.lowercased()
 
         if isValid(clean, lower: lower, for: routing) || isSafeToolObservation(clean, lower: lower, for: routing) {
-            return clean
+            return FinalIntentValidationOutcome(
+                text: clean,
+                acceptedCandidate: true,
+                replacementSource: "candidate",
+                rejectionReason: nil
+            )
         }
 
+        let rejectionReason = replacementReason(for: clean, lower: lower, routing: routing)
         if let fallback {
             let fallbackClean = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
             let fallbackLower = fallbackClean.lowercased()
             if isValid(fallbackClean, lower: fallbackLower, for: routing) || isSafeToolObservation(fallbackClean, lower: fallbackLower, for: routing) {
-                emitReplacementDiagnostic(intent: routing.intent, candidateLength: clean.count, replacementSource: "fallback", reason: replacementReason(for: clean, lower: lower, routing: routing))
-                return fallbackClean
+                emitReplacementDiagnostic(intent: routing.intent, candidateLength: clean.count, replacementSource: "fallback", reason: rejectionReason)
+                return FinalIntentValidationOutcome(
+                    text: fallbackClean,
+                    acceptedCandidate: false,
+                    replacementSource: "fallback",
+                    rejectionReason: rejectionReason
+                )
             }
         }
 
         let safe = safeMessage(for: routing)
-        emitReplacementDiagnostic(intent: routing.intent, candidateLength: clean.count, replacementSource: "safeMessage", reason: replacementReason(for: clean, lower: lower, routing: routing))
-        return safe
+        emitReplacementDiagnostic(intent: routing.intent, candidateLength: clean.count, replacementSource: "safeMessage", reason: rejectionReason)
+        return FinalIntentValidationOutcome(
+            text: safe,
+            acceptedCandidate: false,
+            replacementSource: "safeMessage",
+            rejectionReason: rejectionReason
+        )
     }
 
     /// Determines whether the candidate text is valid for the given intent routing.
@@ -47,9 +74,9 @@ nonisolated enum FinalIntentValidator {
         case .messageDraft:
             return !looksLikeCalendarLeak(lower, unless: false) && !looksLikeWeatherLeak(lower, unless: false) && !looksLikeWebSearchLeak(lower, unless: false)
         case .phoneCall:
-            return containsAny(lower, ["call", "phone", "contact", "requires", "unavailable", "couldn’t", "couldn't"])
+            return containsAny(lower, ["call", "phone", "contact", "contact found", "contact search results", "requires", "unavailable", "couldn’t", "couldn't"])
         case .contactSearch:
-            return containsAny(lower, ["contact", "phone", "email", "found", "unavailable", "couldn’t", "couldn't"])
+            return containsAny(lower, ["contact", "contact found", "contact search results", "phone", "email", "found", "unavailable", "couldn’t", "couldn't"])
         case .calendar:
             return containsAny(lower, ["calendar", "event", "schedule", "meeting", "appointment", "requires explicit user approval", "did not create"])
         case .reminder:
@@ -160,6 +187,8 @@ nonisolated enum FinalIntentValidator {
                 "authentication expired", "authorization expired", "oauth expired", "oauth sign in",
                 "not connected", "no messages", "outlook attachments:", "outlook folders:", "outlook search results:", "outlook status:"
             ])
+        case .phoneCall, .contactSearch, .emailDraft, .messageDraft:
+            return containsAny(lower, ["contact found:", "contact search results:"])
         default:
             return false
         }

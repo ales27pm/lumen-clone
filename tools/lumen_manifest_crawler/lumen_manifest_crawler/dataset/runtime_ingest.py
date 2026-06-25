@@ -271,7 +271,7 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -637,8 +637,17 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
         package.get("recentTraces", []) or []
     )
     failures.extend(trace_failures)
+    export_quality_failures = _layered_failures(
+        package.get("exportQualityFailures", []) or [],
+        source_layer="agentGroundingRuntimeAudit.exportQuality",
+    )
+    failures.extend(export_quality_failures)
     empty_trace_failure = _empty_agent_grounding_trace_failure(package, export_policy)
-    if empty_trace_failure is not None:
+    has_empty_trace_failure = any(
+        failure.get("type") == "agent_grounding_no_recent_model_traces"
+        for failure in export_quality_failures
+    )
+    if empty_trace_failure is not None and not has_empty_trace_failure:
         failures.append(empty_trace_failure)
 
     return {

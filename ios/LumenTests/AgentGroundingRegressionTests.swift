@@ -33,6 +33,50 @@ struct AgentGroundingRegressionTests {
     }
 
     @MainActor
+    @Test func liveRuntimeSchemaPublishesPermissionKindAndConfirmationMode() async throws {
+        let tools = LiveRuntimeToolRegistryProvider().currentToolDefinitions()
+        let calendarCreate = try #require(tools.first(where: { $0.id == "calendar.create" }))
+        #expect(calendarCreate.permissionKind == "calendar")
+        #expect(calendarCreate.confirmationMode == "userApproval")
+
+        let triggerCreate = try #require(tools.first(where: { $0.id == "trigger.create" }))
+        #expect(triggerCreate.permissionKey == nil)
+        #expect(triggerCreate.permissionKind == "notifications")
+        #expect(triggerCreate.confirmationMode == "userApproval")
+
+        let weather = try #require(tools.first(where: { $0.id == "weather" }))
+        #expect(weather.confirmationMode == "none")
+    }
+
+    @MainActor
+    @Test func runtimeAuditorRejectsPermissionAndConfirmationDrift() async throws {
+        let manifestTools = [
+            RuntimeToolDefinition(
+                id: "camera.capture",
+                requiresApproval: true,
+                permissionKey: "NSCameraUsageDescription",
+                permissionKind: "photos",
+                confirmationMode: "none"
+            )
+        ]
+        let liveTools = [
+            RuntimeToolDefinition(
+                id: "camera.capture",
+                requiresApproval: true,
+                permissionKey: "NSCameraUsageDescription",
+                permissionKind: "camera",
+                confirmationMode: "userApproval"
+            )
+        ]
+        let manifest = makeManifest(tools: manifestTools, intent: "camera", allowed: ["camera.capture"])
+        let auditor = RuntimeManifestAuditor(registryProvider: StaticRuntimeToolRegistryProvider(tools: liveTools))
+        let report = auditor.audit(manifest: manifest)
+        #expect(!report.passed)
+        #expect(report.failures.contains(where: { $0.type == "permission_kind_mismatch" }))
+        #expect(report.failures.contains(where: { $0.type == "confirmation_mode_mismatch" }))
+    }
+
+    @MainActor
     @Test func liveRuntimeSchemaAlignsAliasAndPlusArgumentsWithManifest() async throws {
         let tools = LiveRuntimeToolRegistryProvider().currentToolDefinitions()
 
@@ -296,6 +340,36 @@ struct AgentGroundingRegressionTests {
         #expect(reminders?.lowercased().contains("buy foil") == true)
     }
 
+    @Test func toolObservationFinalizerReportsStructuredRejectionReasons() {
+        let intentMismatch = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .calendar,
+            toolID: "weather",
+            observation: "72°F, clear skies",
+            originalPrompt: "What is the weather?"
+        )
+        #expect(intentMismatch.accepted == false)
+        #expect(intentMismatch.text == nil)
+        #expect(intentMismatch.rejectionReason == "intent-mismatch")
+
+        let unsafe = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .weather,
+            toolID: "weather",
+            observation: #"{"kind":"tool-debug","value":"raw"}"#,
+            originalPrompt: "What is the weather?"
+        )
+        #expect(unsafe.accepted == false)
+        #expect(unsafe.rejectionReason == "unsafe-observation")
+
+        let deepSynthesis = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .webSearch,
+            toolID: "web.search",
+            observation: "Result 1\nResult 2",
+            originalPrompt: "Summarize and compare these sources."
+        )
+        #expect(deepSynthesis.accepted == false)
+        #expect(deepSynthesis.rejectionReason == "deep-synthesis-required")
+    }
+
     @Test func agentGroundingPackageDoesNotExportStaticScenarioResultsByDefault() throws {
         AgentBehaviorTraceRecorder.clear()
         let scenario = RuntimeScenario(
@@ -366,6 +440,149 @@ struct AgentGroundingRegressionTests {
         #expect(package.exportPolicy.includesDeterministicStaticScenarios == true)
         #expect(package.exportPolicy.deterministicScenarioPolicy.contains("not proof of live model execution"))
         #expect(package.scenarioResults.count == 1)
+    }
+
+    @Test func agentGroundingPackageCarriesExportQualityFailureWhenRecentTracesAreEmpty() throws {
+        AgentBehaviorTraceRecorder.clear()
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        let failure = try #require(package.exportQualityFailures?.first)
+        #expect(failure.type == "agent_grounding_no_recent_model_traces")
+        #expect(failure.sourceLayer == "agentGroundingRuntimeAudit.exportQuality")
+        #expect(failure.actual == "recentTraces is empty")
+    }
+
+    @Test func agentGroundingPackageFlagsIncompleteStructuredModelTraceProof() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            intent: "weather",
+            promptPrefix: "What is the weather here?",
+            rawOutputPrefix: "",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            runtimePath: "agent-model"
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        let failure = try #require(package.exportQualityFailures?.first(where: { $0.type == "agent_grounding_model_trace_incomplete" }))
+        #expect(failure.actual?.contains("selectedRuntime") == true)
+        #expect(failure.actual?.contains("modelLoaded") == true)
+        #expect(failure.actual?.contains("outputTokenCount") == true)
+        #expect(failure.actual?.contains("streamStarted") == true)
+    }
+
+    @Test func agentGroundingPackageAcceptsCompleteStructuredModelTraceProof() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            intent: "weather",
+            promptPrefix: "What is the weather here?",
+            rawOutputPrefix: #"{"action":{"tool":"weather","args":{}}}"#,
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            outputTokenCount: 12,
+            runtimePath: "agent-model",
+            emptyOutputReason: nil,
+            streamStarted: true,
+            selectedRuntime: "llama.cpp",
+            modelLoaded: true,
+            firstChunkReceived: true,
+            textChunkCount: 1,
+            finalChunkReceived: true,
+            streamTerminationReason: "stop"
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        #expect(package.exportQualityFailures?.isEmpty == true)
+    }
+
+    @Test func agentGroundingPackageFlagsFinalValidatorReplacementTrace() throws {
+        AgentBehaviorTraceRecorder.clear()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .finalAnswer,
+            slot: "mouth",
+            stage: "compatibility-final",
+            intent: "calendar",
+            promptPrefix: "Search my calendar for tomorrow",
+            rawOutputPrefix: "I couldn't safely complete the calendar event request.",
+            selectedToolID: "calendar.list",
+            toolArguments: [:],
+            allowedToolIDs: ["calendar.list"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: true,
+            runtimePath: "deterministic-compatibility",
+            finalizerAccepted: false,
+            finalizerRejectionReason: "intent-mismatch",
+            finalValidatorAcceptedCandidate: false,
+            finalValidatorReplacementSource: "safeMessage",
+            finalValidatorRejectionReason: "tool-json-leak"
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        let trace = try #require(package.recentTraces.first)
+        let failure = try #require(package.exportQualityFailures?.first(where: { $0.type == "agent_grounding_final_validator_replaced_candidate" }))
+        #expect(package.schemaVersion == "1.4.0")
+        #expect(trace.finalizerAccepted == false)
+        #expect(trace.finalizerRejectionReason == "intent-mismatch")
+        #expect(trace.finalValidatorAcceptedCandidate == false)
+        #expect(trace.finalValidatorReplacementSource == "safeMessage")
+        #expect(trace.finalValidatorRejectionReason == "tool-json-leak")
+        #expect(failure.actual?.contains("replacementSource=safeMessage") == true)
+        #expect(failure.actual?.contains("rejectionReason=tool-json-leak") == true)
     }
 
     @Test func agentGroundingPackageRedactsTraceExportWhilePreservingAdapterEvidence() throws {
@@ -727,7 +944,8 @@ extension AgentGroundingRegressionTests {
             repetitionPenalty: 1,
             maxTokens: 128,
             modelName: "agent-json",
-            relevantMemories: []
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema)
         )
         let chat = GenerateRequest(
             systemPrompt: "sys",
@@ -743,6 +961,30 @@ extension AgentGroundingRegressionTests {
 
         #expect(agentJSON.preservesRawStructuredAgentOutput)
         #expect(!chat.preservesRawStructuredAgentOutput)
+    }
+
+    @Test func agentJSONPromptCarriesConstrainedJSONContract() async {
+        let genReq = GenerateRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Return a tool action.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            modelName: "agent-json",
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema)
+        )
+
+        let result = await AppLlamaService.shared.buildMessagesForTesting(req: genReq, contextSize: 2048, slot: .executor)
+        let prompt = result.messages.map(\.content).joined(separator: "\n")
+
+        #expect(prompt.contains("Response format contract: output exactly one valid JSON object"))
+        #expect(prompt.contains(#""oneOf""#))
+        #expect(prompt.contains(#""action""#))
+        #expect(prompt.contains(#""final""#))
+        #expect(!prompt.contains("/think"))
     }
 
     @Test func agentJSONParsesEmptyQwenThinkWrapperBeforeActionJSON() throws {
@@ -809,6 +1051,91 @@ extension AgentGroundingRegressionTests {
         #expect(retryTurn.contains(#"{"action":{"tool":"<allowed tool id>","args":{...}}}"#))
         #expect(retryTurn.contains(#"{"final":"<concise user-facing answer>"}"#))
         #expect(retryTurn.contains("Start the response with {"))
+    }
+
+    @Test func agentJSONEmptyOutputRetryRequestKeepsSchemaVisible() async {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Find coffee near me.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 384,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let systemPrompt = await AgentService.shared.structuredSystemPromptForTests(req: req)
+        let userTurn = await AgentService.shared.structuredAgentUserTurnForTests(req: req)
+        let base = GenerateRequest(
+            systemPrompt: systemPrompt,
+            history: [],
+            userMessage: userTurn,
+            temperature: 0.2,
+            topP: 0.9,
+            repetitionPenalty: 1,
+            maxTokens: 512,
+            modelName: "agent-json",
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema)
+        )
+
+        let retry = AgentService.agentJSONEmptyOutputRetryRequestForTests(from: base, userTurn: base.userMessage)
+        let result = await AppLlamaService.shared.buildMessagesForTesting(req: retry, contextSize: 2048, slot: .executor)
+        let prompt = result.messages.map(\.content).joined(separator: "\n")
+
+        #expect(retry.responseFormat == base.responseFormat)
+        #expect(retry.temperature <= 0.05)
+        #expect(retry.topP <= 0.6)
+        #expect(prompt.contains("Previous live agent-json attempt emitted no tokens"))
+        #expect(prompt.contains("Response format contract: output exactly one valid JSON object"))
+        #expect(prompt.contains(#""oneOf""#))
+        #expect(prompt.contains(#""action""#))
+        #expect(prompt.contains(#""final""#))
+        #expect(prompt.contains("/no_think"))
+    }
+
+    @Test func agentJSONCompactionRequestKeepsSchemaVisibleUnderBudget() async {
+        let req = AgentRequest(
+            systemPrompt: String(repeating: "Verbose app context. ", count: 200),
+            history: [],
+            userMessage: String(repeating: "Search the web for SwiftData migration details. ", count: 80),
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 512,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let systemPrompt = await AgentService.shared.structuredSystemPromptForTests(req: req)
+        let userTurn = await AgentService.shared.structuredAgentUserTurnForTests(req: req)
+        let base = GenerateRequest(
+            systemPrompt: systemPrompt,
+            history: [],
+            userMessage: userTurn,
+            temperature: 0.1,
+            topP: 0.8,
+            repetitionPenalty: 1,
+            maxTokens: 512,
+            modelName: "agent-json",
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema)
+        )
+
+        let compact = AgentService.agentJSONContextCompactionRequestForTests(from: base)
+        let result = await AppLlamaService.shared.buildMessagesForTesting(req: compact, contextSize: 2048, slot: .executor)
+        let prompt = result.messages.map(\.content).joined(separator: "\n")
+
+        #expect(compact.responseFormat == base.responseFormat)
+        #expect(compact.maxTokens <= 224)
+        #expect(result.finalPromptChars <= PromptBudgetConstants.agentJSONTotalChars + 256)
+        #expect(prompt.contains("Response format contract: output exactly one valid JSON object"))
+        #expect(prompt.contains(#""oneOf""#))
+        #expect(prompt.contains(#""action""#))
+        #expect(prompt.contains(#""final""#))
+        #expect(prompt.contains("/no_think"))
     }
 
     @MainActor
@@ -930,7 +1257,8 @@ extension AgentGroundingRegressionTests {
                 maxTokens: 384,
                 modelName: "agent-json",
                 relevantMemories: [],
-                attachments: []
+                attachments: [],
+                responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema)
             )
             let result = await AppLlamaService.shared.buildMessagesForTesting(req: genReq, contextSize: 2048, slot: .executor)
             #expect(result.estimatedPromptTokens + genReq.maxTokens + PromptBudgetConstants.agentJSONSafetyTokens < 2048, "Prompt exceeded agent-json budget for \(prompt)")
@@ -1174,6 +1502,9 @@ extension AgentGroundingRegressionTests {
         let hasCompatibilityFinalTrace = traces.contains { trace in
             trace.event == AgentBehaviorTrace.Event.finalAnswer && trace.runtimePath == "deterministic-compatibility"
         }
+        let finalTrace = traces.first { trace in
+            trace.event == AgentBehaviorTrace.Event.finalAnswer && trace.runtimePath == "deterministic-compatibility"
+        }
 
         #expect(actionToolIDs == ["calendar.list"])
         #expect(response.text.lowercased().contains("event"))
@@ -1183,6 +1514,11 @@ extension AgentGroundingRegressionTests {
         #expect(parsedActionTrace.parseError == nil)
         #expect(parsedActionTrace.action?.tool == "calendar.list")
         #expect(hasCompatibilityFinalTrace)
+        #expect(finalTrace?.finalizerAccepted == true)
+        #expect(finalTrace?.finalizerRejectionReason == nil)
+        #expect(finalTrace?.finalValidatorAcceptedCandidate == true)
+        #expect(finalTrace?.finalValidatorReplacementSource == "candidate")
+        #expect(finalTrace?.finalValidatorRejectionReason == nil)
     }
 
     @Test func liveE2EModelEvidenceRequiresFreshModelTurnTrace() {

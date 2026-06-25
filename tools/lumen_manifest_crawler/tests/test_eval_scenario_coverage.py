@@ -1,4 +1,6 @@
-from lumen_manifest_crawler.dataset.compiler import DatasetCompilerConfig, _build_eval_records
+import json
+
+from lumen_manifest_crawler.dataset.compiler import DatasetCompilerConfig, _build_eval_records, _build_tool_schema_records
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolArgumentManifest, ToolManifest
 from lumen_manifest_crawler.validators import validate_manifest
 
@@ -54,6 +56,32 @@ def test_validator_fails_for_natural_tool_id_leak():
                 break
     report = validate_manifest(manifest, {"eval_scenarios": evals})
     assert any(f.code == "tool_id_leak_in_natural_eval" for f in report.failures)
+
+
+def test_tool_schema_cards_include_permission_kind_and_confirmation_mode():
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="calendar.create",
+                displayName="Create Event",
+                description="Create calendar event",
+                requiresApproval=True,
+                permissionKey="NSCalendarsFullAccessUsageDescription",
+                permissionKind="calendar",
+                confirmationMode="userApproval",
+                arguments=[ToolArgumentManifest(name="title", type="string", required=True)],
+            )
+        ]
+    )
+
+    records = _build_tool_schema_records(manifest, DatasetCompilerConfig())
+    schema_record = next(record for record in records if record["id"].startswith("schema-") and record["toolID"] == "calendar.create")
+    payload = json.loads(schema_record["messages"][-1]["content"])
+
+    assert payload["permissionKind"] == "calendar"
+    assert payload["confirmationMode"] == "userApproval"
+    assert schema_record["metadata"]["permissionKind"] == "calendar"
+    assert schema_record["metadata"]["confirmationMode"] == "userApproval"
 
 
 def test_validator_fails_for_missing_required_argument_coverage():

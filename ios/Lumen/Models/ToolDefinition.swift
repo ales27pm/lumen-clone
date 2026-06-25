@@ -1,6 +1,46 @@
 import Foundation
 import SwiftUI
 
+nonisolated enum ToolArgumentValueType: String, Sendable {
+    case string
+    case number
+    case bool
+}
+
+nonisolated struct ToolArgumentDefinition: Hashable, Sendable {
+    let name: String
+    let type: ToolArgumentValueType
+    let required: Bool
+
+    init(_ name: String, type: ToolArgumentValueType = .string, required: Bool = true) {
+        self.name = name
+        self.type = type
+        self.required = required
+    }
+
+    var runtimeArgument: RuntimeToolArgument {
+        RuntimeToolArgument(name: name, type: type.rawValue, required: required)
+    }
+}
+
+nonisolated enum ToolConfirmationMode: String, Sendable {
+    case none
+    case userApproval
+}
+
+nonisolated struct ToolCapabilityContract: Hashable, Sendable {
+    let toolID: String
+    let arguments: [ToolArgumentDefinition]
+    let requiresApproval: Bool
+    let permissionKey: String?
+    let permissionKind: PermissionKind?
+    let confirmationMode: ToolConfirmationMode
+
+    var runtimeArguments: [RuntimeToolArgument] {
+        arguments.map(\.runtimeArgument)
+    }
+}
+
 nonisolated struct ToolDefinition: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
@@ -37,6 +77,140 @@ nonisolated struct ToolDefinition: Identifiable, Hashable, Sendable {
             return .notifications
         default:
             return nil
+        }
+    }
+
+    var capabilityContract: ToolCapabilityContract {
+        ToolCapabilityContract(
+            toolID: id,
+            arguments: ToolArgumentContractCatalog.arguments(for: id),
+            requiresApproval: requiresApproval,
+            permissionKey: permissionKey,
+            permissionKind: permissionKind,
+            confirmationMode: requiresApproval ? .userApproval : .none
+        )
+    }
+}
+
+private nonisolated enum ToolArgumentContractCatalog {
+    static func arguments(for toolID: String) -> [ToolArgumentDefinition] {
+        switch ToolRouteGuard.canonicalToolID(toolID) {
+        case "calendar.create":
+            return [.init("title"), .init("startsInMinutes", type: .number)]
+        case "calendar.list", "reminders.list", "outlook.status", "location.current", "camera.capture",
+             "health.summary", "motion.activity", "rag.index_files", "trigger.list",
+             "alarm.authorization_status", "alarm.request_authorization", "alarm.list":
+            return []
+        case "reminders.create":
+            return [.init("title")]
+        case "contacts.search":
+            return [.init("query")]
+        case "messages.draft":
+            return [
+                .init("to"),
+                .init("body"),
+                .init("recipient", required: false),
+                .init("number", required: false),
+                .init("message", required: false),
+                .init("text", required: false)
+            ]
+        case "mail.draft":
+            return [
+                .init("to"),
+                .init("subject"),
+                .init("body"),
+                .init("recipient", required: false),
+                .init("email", required: false),
+                .init("message", required: false),
+                .init("text", required: false)
+            ]
+        case "outlook.folders.list":
+            return [.init("includeHidden", type: .bool, required: false)]
+        case "outlook.messages.list":
+            return [
+                .init("folder", required: false),
+                .init("folderId", required: false),
+                .init("limit", type: .number, required: false),
+                .init("unreadOnly", type: .bool, required: false)
+            ]
+        case "outlook.messages.search":
+            return [
+                .init("query"),
+                .init("folder", required: false),
+                .init("folderId", required: false),
+                .init("limit", type: .number, required: false)
+            ]
+        case "outlook.message.read", "outlook.attachments.list", "outlook.message.mark_read",
+             "outlook.message.mark_unread", "outlook.message.archive", "outlook.message.delete":
+            return [.init("messageId"), .init("id", required: false)]
+        case "outlook.draft.create", "outlook.mail.send":
+            return [.init("to"), .init("subject"), .init("body")]
+        case "outlook.message.move":
+            return [
+                .init("messageId"),
+                .init("destination"),
+                .init("id", required: false),
+                .init("destinationId", required: false)
+            ]
+        case "outlook.message.reply", "outlook.message.reply_all":
+            return [
+                .init("messageId"),
+                .init("body"),
+                .init("id", required: false),
+                .init("comment", required: false)
+            ]
+        case "outlook.message.forward":
+            return [
+                .init("messageId"),
+                .init("to"),
+                .init("id", required: false),
+                .init("body", required: false),
+                .init("comment", required: false)
+            ]
+        case "phone.call":
+            return [.init("number")]
+        case "weather":
+            return [.init("location", required: false), .init("city", required: false)]
+        case "maps.directions":
+            return [.init("destination")]
+        case "maps.search", "photos.search", "web.search", "memory.recall":
+            return [.init("query")]
+        case "web.fetch":
+            return [.init("url")]
+        case "files.read":
+            return [.init("name")]
+        case "memory.save":
+            return [.init("content"), .init("kind")]
+        case "rag.search":
+            return [.init("query"), .init("limit", type: .number, required: false)]
+        case "rag.index_photos":
+            return [.init("months", type: .number)]
+        case "trigger.create":
+            return [
+                .init("title"),
+                .init("prompt"),
+                .init("schedule"),
+                .init("inMinutes", type: .number, required: false),
+                .init("atTime", required: false),
+                .init("intervalSeconds", type: .number, required: false),
+                .init("beforeMinutes", type: .number, required: false)
+            ]
+        case "trigger.cancel":
+            return [.init("id"), .init("title", required: false)]
+        case "alarm.schedule":
+            return [
+                .init("title"),
+                .init("inMinutes", type: .number),
+                .init("timestamp", required: false),
+                .init("repeats", type: .bool, required: false),
+                .init("snoozeMinutes", type: .number, required: false)
+            ]
+        case "alarm.countdown":
+            return [.init("title"), .init("durationSeconds", type: .number)]
+        case "alarm.pause", "alarm.resume", "alarm.stop", "alarm.snooze", "alarm.cancel":
+            return [.init("id")]
+        default:
+            return []
         }
     }
 }

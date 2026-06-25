@@ -473,7 +473,44 @@ nonisolated enum E2ETestRunner {
     }
 
     static func runTrainingValidation(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
-        await run(scenarios: E2ETestScenario.trainingValidation, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
+        let started = Date()
+        let preflight = await ExecutorRuntimePreflight.run()
+        guard preflight.passed else {
+            let scenario = E2ETestScenario.trainingValidation[0]
+            let event = E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: "executor-runtime-preflight", phase: "executor-preflight", message: preflight.reason)
+            await onEvent?(event)
+            let result = E2ETestResult(
+                id: UUID(),
+                scenarioID: "executor-runtime-preflight",
+                kind: E2ETestKind.training.rawValue,
+                title: "Executor runtime preflight",
+                prompt: scenario.prompt,
+                expectedIntent: scenario.expectedIntent.rawValue,
+                actualIntent: "preflight",
+                requiresAgentRun: true,
+                passed: false,
+                failures: [preflight.reason],
+                finalText: "",
+                missingHints: [],
+                rewriteAttempted: false,
+                rewriteSuccess: false,
+                events: [event],
+                startedAt: started,
+                finishedAt: Date(),
+                rawFinalPrefix: "",
+                sanitizedFinalPrefix: "",
+                rawFinalHadUnsafeLeakage: false,
+                sanitizedFinalRemovedArtifacts: [],
+                outputHygieneFailures: [],
+                performanceMatrix: nil
+            )
+            E2ETestLogStore.append(result)
+            await onResult?(result)
+            let report = E2ETestReport(id: UUID(), startedAt: started, finishedAt: Date(), passed: 0, failed: 1, results: [result])
+            E2ETestLogStore.writeLatest(report)
+            return report
+        }
+        return await run(scenarios: E2ETestScenario.trainingValidation, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
     /// Executes end-to-end test scenarios sequentially and generates a report of results and metrics.
@@ -1109,6 +1146,12 @@ nonisolated enum E2ETestRunner {
                 if let emptyOutputReason = rejectedModelTrace.emptyOutputReason, !emptyOutputReason.isEmpty {
                     if emptyOutputReason == "agent-json-stream-completed-without-text" {
                         reasons.append("model stream returned no tokens")
+                    } else if emptyOutputReason == "adapterUnavailable" || emptyOutputReason == "resource-budget-denied-ensure-ready" {
+                        reasons.append("runtime readiness failure (\(emptyOutputReason))")
+                    } else if emptyOutputReason.contains("executor preflight failed") {
+                        reasons.append("runtime readiness failure (\(emptyOutputReason))")
+                    } else if emptyOutputReason == "resource-budget-denied-before-prompt-eval" {
+                        reasons.append("budget failure (\(emptyOutputReason))")
                     } else {
                         reasons.append("agent-json emitted empty output (\(emptyOutputReason))")
                     }
@@ -1117,7 +1160,10 @@ nonisolated enum E2ETestRunner {
                 }
             }
             if rejectedModelTrace.parseError != nil {
-                if rejectedModelTrace.parseError == AgentTurnParseError.contextWindowExceeded.rawValue {
+                let producedTextOrTokens = !rawIsEmpty || (rejectedModelTrace.outputTokenCount ?? 0) > 0 || rejectedModelTrace.firstChunkReceived == true || (rejectedModelTrace.textChunkCount ?? 0) > 0
+                if !producedTextOrTokens {
+                    reasons.append("parseError suppressed because no text/tokens were produced")
+                } else if rejectedModelTrace.parseError == AgentTurnParseError.contextWindowExceeded.rawValue {
                     reasons.append(AgentTurnParseError.contextWindowExceeded.rawValue)
                 } else {
                     reasons.append("parseError=\(parseError)")
@@ -1146,6 +1192,20 @@ nonisolated enum E2ETestRunner {
         }
         return base
     }
+
+    #if DEBUG
+    nonisolated static func modelRuntimeEvidenceFailureMessageForTests(
+        matchingTraces: [AgentBehaviorTrace],
+        acceptsPolicyFirstEvidence: Bool,
+        requiresPrimaryAgentJSON: Bool
+    ) -> String {
+        modelRuntimeEvidenceFailureMessage(
+            matchingTraces: matchingTraces,
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
+            requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
+        )
+    }
+    #endif
 
     private nonisolated static func isPrimaryAgentJSONTrace(_ trace: AgentBehaviorTrace) -> Bool {
         trace.event == .modelTurn
@@ -1296,6 +1356,7 @@ nonisolated enum E2ETestRunner {
                 modelName: "agent-json",
                 relevantMemories: [],
                 attachments: [],
+                responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema),
                 allowsMemoryPressureContinuation: true
             )
             let promptBuild = await AppLlamaService.shared.buildMessagesForTesting(req: genReq, contextSize: 2048, slot: .executor)

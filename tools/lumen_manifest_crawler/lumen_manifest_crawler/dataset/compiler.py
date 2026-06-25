@@ -818,6 +818,8 @@ def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetC
             "description": tool.description,
             "requiresApproval": tool.requiresApproval,
             "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "arguments": [arg.model_dump() for arg in tool.arguments],
         }
         required_args = [arg.name for arg in tool.arguments if arg.required]
@@ -836,6 +838,8 @@ def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetC
                 "generatedAt": config.generated_at,
                 "source": tool.source or "ToolRegistry",
                 "requiredArguments": required_args,
+                "permissionKind": tool.permissionKind,
+                "confirmationMode": tool.confirmationMode,
             },
         })
         if required_args:
@@ -863,6 +867,8 @@ def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetC
                     "source": tool.source or "ToolRegistry",
                     "requiredArguments": required_args,
                     "scenarioKind": "required_argument_coverage",
+                    "permissionKind": tool.permissionKind,
+                    "confirmationMode": tool.confirmationMode,
                 },
             })
     return records
@@ -1000,9 +1006,12 @@ def _runtime_failure_is_training_repairable(failure: dict[str, Any]) -> bool:
     source_layer = str(failure.get("sourceLayer") or "")
     if failure_type in {
         "agent_grounding_no_recent_model_traces",
+        "agent_grounding_model_trace_incomplete",
         "persistent_diagnostics_scenario_not_passed",
     }:
         return False
+    if failure_type == "agent_grounding_final_validator_replaced_candidate":
+        return True
     if source_layer.endswith(".exportQuality") or source_layer == "persistentRuntimeDiagnostics.records":
         return False
     return True
@@ -1048,6 +1057,23 @@ def _repair_for_runtime_failure(failure: dict[str, Any], known_tools: list[str])
     failure_type = str(failure.get("type", "unknown"))
     scenario = failure.get("scenario")
     actual = failure.get("actual")
+    if failure_type == "agent_grounding_final_validator_replaced_candidate":
+        return {
+            "action": "add_finalizer_validator_contract_samples",
+            "focus": scenario,
+            "failure": actual,
+            "expectedPlan": [
+                "preserve the typed tool observation as the candidate when ToolObservationFinalizer accepts it",
+                "emit finalizer accepted/rejectionReason and final validator accepted/replacementSource/rejectionReason in traces",
+                "treat validator replacement as runtime/finalization feedback instead of successful model final-answer proof",
+                "add a regression that proves the final user text is candidate-backed or carries a precise replacement reason",
+            ],
+            "alsoAdd": [
+                "tool_observation_finalizer_regression_eval",
+                "final_intent_validator_trace_eval",
+                "rem_repair_sample",
+            ],
+        }
     if failure_type in {"unmanifested_live_tool", "missing_live_tool", "duplicate_runtime_tool_id", "duplicate_manifest_tool_id"}:
         return {"action": "regenerate_manifest_and_schema_cards", "focusToolID": actual or scenario, "knownToolIDs": known_tools}
     if failure_type in {"argument_mismatch", "missing_live_argument", "unmanifested_live_argument", "missing_required_tool_argument"}:

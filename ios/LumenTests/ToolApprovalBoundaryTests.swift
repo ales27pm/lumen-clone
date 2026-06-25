@@ -15,5 +15,74 @@ struct ToolApprovalBoundaryTests {
         #expect(actual == expectedApprovalTools)
     }
 
+    @Test func capabilityContractsCoverRegistryArgumentsAndPolicy() {
+        let expectedArgumentlessTools: Set<String> = [
+            "calendar.list", "reminders.list", "outlook.status", "location.current", "camera.capture",
+            "health.summary", "motion.activity", "rag.index_files", "trigger.list",
+            "alarm.authorization_status", "alarm.request_authorization", "alarm.list"
+        ]
+        let runtimeTools = Dictionary(
+            uniqueKeysWithValues: LiveRuntimeToolRegistryProvider().currentToolDefinitions().map { ($0.id, $0) }
+        )
 
+        var missingContracts: [String] = []
+        for tool in ToolRegistry.all {
+            let contract = tool.capabilityContract
+            let runtimeTool = runtimeTools[tool.id]
+            #expect(runtimeTool != nil)
+            #expect(contract.toolID == tool.id)
+            #expect(contract.requiresApproval == tool.requiresApproval)
+            #expect(contract.confirmationMode == (tool.requiresApproval ? .userApproval : .none))
+            #expect(contract.permissionKey == tool.permissionKey)
+            #expect(contract.runtimeArguments == runtimeTool?.arguments)
+            if !expectedArgumentlessTools.contains(tool.id), contract.arguments.isEmpty {
+                missingContracts.append(tool.id)
+            }
+        }
+
+        #expect(missingContracts.isEmpty)
+    }
+
+    @Test func capabilityContractsUseTypedArgumentsForAmbiguousValues() {
+        let tools = Dictionary(
+            uniqueKeysWithValues: LiveRuntimeToolRegistryProvider().currentToolDefinitions().map { ($0.id, $0) }
+        )
+        let folderArgs = Dictionary(uniqueKeysWithValues: (tools["outlook.folders.list"]?.arguments ?? []).map { ($0.name, $0) })
+        let messageListArgs = Dictionary(uniqueKeysWithValues: (tools["outlook.messages.list"]?.arguments ?? []).map { ($0.name, $0) })
+        let alarmArgs = Dictionary(uniqueKeysWithValues: (tools["alarm.schedule"]?.arguments ?? []).map { ($0.name, $0) })
+        let triggerArgs = Dictionary(uniqueKeysWithValues: (tools["trigger.create"]?.arguments ?? []).map { ($0.name, $0) })
+
+        #expect(folderArgs["includeHidden"]?.type == "bool")
+        #expect(folderArgs["false"] == nil)
+        #expect(messageListArgs["unreadOnly"]?.type == "bool")
+        #expect(alarmArgs["repeats"]?.type == "bool")
+        #expect(triggerArgs["inMinutes"]?.type == "number")
+        #expect(triggerArgs["intervalSeconds"]?.type == "number")
+    }
+
+    @Test func finalizerRejectsApprovalToolObservationWithoutTrustedApproval() throws {
+        let trigger = try #require(ToolRegistry.find(id: "trigger.create"))
+        let blocked = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .trigger,
+            tool: trigger,
+            observation: "Runs tonight at 8 PM.",
+            originalPrompt: "Schedule a trigger tonight.",
+            trustedApprovalCaptured: false
+        )
+
+        #expect(blocked.accepted == false)
+        #expect(blocked.text == nil)
+        #expect(blocked.rejectionReason == "approval-required")
+        #expect(ToolObservationFinalizer.finalizerCoverageKind(for: trigger) == "action-only-approval-boundary")
+
+        let approved = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .trigger,
+            tool: trigger,
+            observation: "Runs tonight at 8 PM.",
+            originalPrompt: "Schedule a trigger tonight.",
+            trustedApprovalCaptured: true
+        )
+        #expect(approved.accepted == true)
+        #expect(approved.text?.lowercased().contains("trigger scheduled") == true)
+    }
 }

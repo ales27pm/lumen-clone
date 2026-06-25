@@ -1,7 +1,7 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Commit: `5b0ec022f8c9891dcc08d58101c52e6a53288087`
+- Commit: `cfbd43f39e358201cc3f805b2b13c0a3df370344`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol
@@ -120,7 +120,7 @@
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: id UUID Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.cancel` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.countdown`
@@ -131,8 +131,8 @@
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, durationSeconds Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `durationSeconds`: number, required. Inferred from ToolDefinition description Args contract: title, durationSeconds Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `durationSeconds`: number, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.countdown` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.list`
@@ -153,7 +153,7 @@
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: id UUID Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.pause` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.request_authorization`
@@ -174,7 +174,7 @@
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: id UUID Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.resume` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.schedule`
@@ -185,11 +185,11 @@
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `inMinutes`: number, required. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `timestamp`: string, optional. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `repeats`: bool, optional. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `snoozeMinutes`: number, optional. Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `inMinutes`: number, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `timestamp`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `repeats`: bool, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `snoozeMinutes`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.schedule` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.snooze`
@@ -200,7 +200,7 @@
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: id UUID Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.snooze` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `alarm.stop`
@@ -211,7 +211,7 @@
 - Requires approval: True
 - Permission key: NSAlarmKitUsageDescription
 - Arguments:
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: id UUID Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `alarm.stop` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `calendar.create`
@@ -222,8 +222,8 @@
 - Requires approval: True
 - Permission key: NSCalendarsFullAccessUsageDescription
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, startsInMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `startsInMinutes`: number, required. Inferred from ToolDefinition description Args contract: title, startsInMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `startsInMinutes`: number, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `calendar.create` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `calendar.list`
@@ -254,7 +254,7 @@
 - Requires approval: False
 - Permission key: NSContactsUsageDescription
 - Arguments:
-  - `query`: string, required. Inferred from ToolDefinition description Args contract: query Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `contacts.search` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `files.read`
@@ -265,7 +265,7 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `name`: string, required. Inferred from ToolDefinition description Args contract: name Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `name`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `files.read` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `health.summary`
@@ -296,13 +296,13 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `subject`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `recipient`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `email`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `message`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `text`: string, optional. Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `subject`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `recipient`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `email`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `message`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `text`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `mail.draft` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `maps.directions`
@@ -313,7 +313,7 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `destination`: string, required. Inferred from ToolDefinition description Args contract: destination Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `destination`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `maps.directions` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `maps.search`
@@ -324,7 +324,7 @@
 - Requires approval: False
 - Permission key: NSLocationWhenInUseUsageDescription
 - Arguments:
-  - `query`: string, required. Inferred from ToolDefinition description Args contract: query Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `maps.search` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `memory.recall`
@@ -335,7 +335,7 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `query`: string, required. Inferred from ToolDefinition description Args contract: query Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `memory.recall` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `memory.save`
@@ -346,8 +346,8 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `content`: string, required. Inferred from ToolDefinition description Args contract: content, kind Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `kind`: string, required. Inferred from ToolDefinition description Args contract: content, kind Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `content`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `kind`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `memory.save` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `messages.draft`
@@ -358,12 +358,12 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `recipient`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `number`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `message`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `text`: string, optional. Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `recipient`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `number`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `message`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `text`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `messages.draft` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `motion.activity`
@@ -384,8 +384,8 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.attachments.list` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.draft.create`
@@ -396,9 +396,9 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `subject`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `subject`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.draft.create` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.folders.list`
@@ -409,7 +409,7 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `includeHidden`: string, optional. Inferred from ToolDefinition description Args contract: optional includeHidden true/false Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `includeHidden`: bool, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.folders.list` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.mail.send`
@@ -420,9 +420,9 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `subject`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: to, subject, body Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `subject`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.mail.send` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.archive`
@@ -433,8 +433,8 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.archive` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.delete`
@@ -445,8 +445,8 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.delete` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.forward`
@@ -457,11 +457,11 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `to`: string, required. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, optional. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `comment`: string, optional. Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `to`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `comment`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.forward` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.mark_read`
@@ -472,8 +472,8 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.mark_read` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.mark_unread`
@@ -484,8 +484,8 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.mark_unread` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.move`
@@ -496,10 +496,10 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `destination`: string, required. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `destinationId`: string, optional. Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `destination`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `destinationId`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.move` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.read`
@@ -510,8 +510,8 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, optional id Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.read` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.reply`
@@ -522,10 +522,10 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `comment`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `comment`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.reply` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.message.reply_all`
@@ -536,10 +536,10 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `messageId`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `body`: string, required. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `id`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `comment`: string, optional. Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `messageId`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `body`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `comment`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.message.reply_all` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.messages.list`
@@ -550,10 +550,10 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `folder`: string, optional. Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `folderId`: string, optional. Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `limit`: number, optional. Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `unreadOnly`: string, optional. Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `folder`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `folderId`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `limit`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `unreadOnly`: bool, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.messages.list` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.messages.search`
@@ -564,10 +564,10 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `query`: string, required. Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `folder`: string, optional. Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `folderId`: string, optional. Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `limit`: number, optional. Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `folder`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `folderId`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `limit`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `outlook.messages.search` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `outlook.status`
@@ -588,7 +588,7 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `number`: string, required. Inferred from ToolDefinition description Args contract: number Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `number`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `phone.call` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `photos.search`
@@ -599,7 +599,7 @@
 - Requires approval: False
 - Permission key: NSPhotoLibraryUsageDescription
 - Arguments:
-  - `query`: string, required. Inferred from ToolDefinition description Args contract: query Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `photos.search` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `rag.index_files`
@@ -620,7 +620,7 @@
 - Requires approval: False
 - Permission key: NSPhotoLibraryUsageDescription
 - Arguments:
-  - `months`: number, required. Inferred from ToolDefinition description Args contract: months Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `months`: number, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `rag.index_photos` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `rag.search`
@@ -631,8 +631,8 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `query`: string, required. Inferred from ToolDefinition description Args contract: query, optional limit Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `limit`: number, optional. Inferred from ToolDefinition description Args contract: query, optional limit Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `limit`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `rag.search` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `reminders.create`
@@ -643,7 +643,7 @@
 - Requires approval: True
 - Permission key: NSRemindersFullAccessUsageDescription
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `reminders.create` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `reminders.list`
@@ -664,8 +664,8 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `id`: string, required. Inferred from ToolDefinition description Args contract: id, optional title Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `title`: string, optional. Inferred from ToolDefinition description Args contract: id, optional title Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `id`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `trigger.cancel` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `trigger.create`
@@ -676,13 +676,13 @@
 - Requires approval: True
 - Permission key: none
 - Arguments:
-  - `title`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `prompt`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `schedule`: string, required. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `inMinutes`: number, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `atTime`: string, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `intervalSeconds`: number, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `beforeMinutes`: number, optional. Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `prompt`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `schedule`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `inMinutes`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `atTime`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `intervalSeconds`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `beforeMinutes`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `trigger.create` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `trigger.list`
@@ -703,8 +703,8 @@
 - Requires approval: False
 - Permission key: NSLocationWhenInUseUsageDescription
 - Arguments:
-  - `location`: string, optional. Inferred from ToolDefinition description Args contract: optional location or city Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `city`: string, optional. Inferred from ToolDefinition description Args contract: optional location or city Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `location`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `city`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `weather` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `web.fetch`
@@ -715,7 +715,7 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `url`: string, required. Inferred from ToolDefinition description Args contract: url Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `url`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `web.fetch` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `web.search`
@@ -726,7 +726,7 @@
 - Requires approval: False
 - Permission key: none
 - Arguments:
-  - `query`: string, required. Inferred from ToolDefinition description Args contract: query Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `web.search` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ## UserIntents

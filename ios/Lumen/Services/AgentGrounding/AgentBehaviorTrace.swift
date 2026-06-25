@@ -66,9 +66,14 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
     let textChunkCount: Int?
     let finalChunkReceived: Bool?
     let streamTerminationReason: String?
+    let finalizerAccepted: Bool?
+    let finalizerRejectionReason: String?
+    let finalValidatorAcceptedCandidate: Bool?
+    let finalValidatorReplacementSource: String?
+    let finalValidatorRejectionReason: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, createdAt, event, slot, stage, scenarioID, e2eRunID, agentRunID, conversationID, turnID, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason, streamStarted, selectedRuntime, selectedAdapter, modelIdentifier, modelLoaded, stopSequences, temperature, topP, cancellationStateBeforeStream, firstChunkReceived, textChunkCount, finalChunkReceived, streamTerminationReason
+        case id, createdAt, event, slot, stage, scenarioID, e2eRunID, agentRunID, conversationID, turnID, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason, streamStarted, selectedRuntime, selectedAdapter, modelIdentifier, modelLoaded, stopSequences, temperature, topP, cancellationStateBeforeStream, firstChunkReceived, textChunkCount, finalChunkReceived, streamTerminationReason, finalizerAccepted, finalizerRejectionReason, finalValidatorAcceptedCandidate, finalValidatorReplacementSource, finalValidatorRejectionReason
         case promptTokenCount
         case promptEvalMs
     }
@@ -134,6 +139,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         textChunkCount = try container.decodeIfPresent(Int.self, forKey: .textChunkCount)
         finalChunkReceived = try container.decodeIfPresent(Bool.self, forKey: .finalChunkReceived)
         streamTerminationReason = try container.decodeIfPresent(String.self, forKey: .streamTerminationReason)
+        finalizerAccepted = try container.decodeIfPresent(Bool.self, forKey: .finalizerAccepted)
+        finalizerRejectionReason = try container.decodeIfPresent(String.self, forKey: .finalizerRejectionReason)
+        finalValidatorAcceptedCandidate = try container.decodeIfPresent(Bool.self, forKey: .finalValidatorAcceptedCandidate)
+        finalValidatorReplacementSource = try container.decodeIfPresent(String.self, forKey: .finalValidatorReplacementSource)
+        finalValidatorRejectionReason = try container.decodeIfPresent(String.self, forKey: .finalValidatorRejectionReason)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -197,6 +207,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         try container.encodeIfPresent(textChunkCount, forKey: .textChunkCount)
         try container.encodeIfPresent(finalChunkReceived, forKey: .finalChunkReceived)
         try container.encodeIfPresent(streamTerminationReason, forKey: .streamTerminationReason)
+        try container.encodeIfPresent(finalizerAccepted, forKey: .finalizerAccepted)
+        try container.encodeIfPresent(finalizerRejectionReason, forKey: .finalizerRejectionReason)
+        try container.encodeIfPresent(finalValidatorAcceptedCandidate, forKey: .finalValidatorAcceptedCandidate)
+        try container.encodeIfPresent(finalValidatorReplacementSource, forKey: .finalValidatorReplacementSource)
+        try container.encodeIfPresent(finalValidatorRejectionReason, forKey: .finalValidatorRejectionReason)
     }
 
     init(
@@ -258,7 +273,12 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         firstChunkReceived: Bool? = nil,
         textChunkCount: Int? = nil,
         finalChunkReceived: Bool? = nil,
-        streamTerminationReason: String? = nil
+        streamTerminationReason: String? = nil,
+        finalizerAccepted: Bool? = nil,
+        finalizerRejectionReason: String? = nil,
+        finalValidatorAcceptedCandidate: Bool? = nil,
+        finalValidatorReplacementSource: String? = nil,
+        finalValidatorRejectionReason: String? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -319,6 +339,11 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         self.textChunkCount = textChunkCount
         self.finalChunkReceived = finalChunkReceived
         self.streamTerminationReason = streamTerminationReason
+        self.finalizerAccepted = finalizerAccepted
+        self.finalizerRejectionReason = finalizerRejectionReason
+        self.finalValidatorAcceptedCandidate = finalValidatorAcceptedCandidate
+        self.finalValidatorReplacementSource = finalValidatorReplacementSource
+        self.finalValidatorRejectionReason = finalValidatorRejectionReason
     }
 }
 

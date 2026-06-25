@@ -3,6 +3,7 @@
 import json
 
 from lumen_manifest_crawler.dataset.compiler import compile_state_of_art_datasets
+from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 
 
@@ -28,6 +29,86 @@ def test_export_quality_failures_do_not_become_training_repairs() -> None:
     )
 
     assert compiled.records["runtime_audit_repairs"] == []
+
+
+def test_final_validator_replacement_quality_failure_becomes_rem_repair() -> None:
+    manifest = AgentBehaviorManifest(tools=[ToolManifest(id="calendar.list")])
+    compiled = compile_state_of_art_datasets(
+        manifest,
+        {},
+        runtime_audit_reports=[
+            {
+                "_source": "agent-grounding-export-v14.json",
+                "_sourceFormat": "lumen_in_app_dataset_package",
+                "failures": [
+                    {
+                        "type": "agent_grounding_model_trace_incomplete",
+                        "agent": "executor",
+                        "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+                        "scenario": "What is the weather here?",
+                        "actual": "missing=selectedRuntime,modelLoaded",
+                    },
+                    {
+                        "type": "agent_grounding_final_validator_replaced_candidate",
+                        "agent": "mouth",
+                        "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+                        "scenario": "Search my calendar for tomorrow",
+                        "actual": "replacementSource=safeMessage; rejectionReason=tool-json-leak",
+                        "problem": "The final validator replaced the candidate response.",
+                    },
+                ],
+            }
+        ],
+    )
+
+    repairs = compiled.records["runtime_audit_repairs"]
+    assert len(repairs) == 1
+    assert repairs[0]["metadata"]["sourceLayer"] == "agentGroundingRuntimeAudit.exportQuality"
+    payload = json.loads(repairs[0]["messages"][-1]["content"])
+    assert payload["failureType"] == "agent_grounding_final_validator_replaced_candidate"
+    assert payload["repair"]["action"] == "add_finalizer_validator_contract_samples"
+    assert "final_intent_validator_trace_eval" in payload["repair"]["alsoAdd"]
+
+
+def test_final_validator_replacement_repair_reaches_rem_sft() -> None:
+    manifest = AgentBehaviorManifest(tools=[ToolManifest(id="calendar.list")])
+    runtime_reports = [
+        {
+            "_source": "agent-grounding-export-v14.json",
+            "_sourceFormat": "lumen_in_app_dataset_package",
+            "failures": [
+                {
+                    "type": "agent_grounding_final_validator_replaced_candidate",
+                    "agent": "mouth",
+                    "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+                    "scenario": "Search my calendar for tomorrow",
+                    "actual": "replacementSource=safeMessage; rejectionReason=tool-json-leak",
+                    "problem": "The final validator replaced the candidate response.",
+                }
+            ],
+        }
+    ]
+    compiled = compile_state_of_art_datasets(
+        manifest,
+        {},
+        runtime_audit_reports=runtime_reports,
+    )
+
+    fine_tuning = compile_agent_fine_tuning_datasets(
+        manifest,
+        compiled.records,
+        runtime_audit_reports=runtime_reports,
+    )
+
+    rem_records = fine_tuning["rem"].train_sft + fine_tuning["rem"].val_sft
+    matching = [
+        record
+        for record in rem_records
+        if (record.get("metadata") or {}).get("sourceFamily") == "runtime_audit_repairs"
+        and "add_finalizer_validator_contract_samples" in record["messages"][-1]["content"]
+    ]
+    assert matching
+    assert all((record.get("metadata") or {}).get("taskType") == "runtime_manifest_drift_repair" for record in matching)
 
 
 def test_duplicate_runtime_failures_are_deduped_for_training_repairs() -> None:

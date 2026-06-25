@@ -5,14 +5,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, durationSeconds",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "title",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, durationSeconds",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "durationSeconds",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -31,14 +31,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, startsInMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "title",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, startsInMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "startsInMinutes",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -68,7 +68,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: query",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "query",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -98,49 +98,49 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "to",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "subject",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "body",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "recipient",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "email",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "message",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body, optional recipient/email/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "text",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -159,7 +159,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: destination",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "destination",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -178,7 +178,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: query",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "query",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -197,7 +197,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: query",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "query",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -216,14 +216,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: content, kind",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "content",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: content, kind",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "kind",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -242,21 +242,21 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "to",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "subject",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "body",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -275,21 +275,21 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "to",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "subject",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, subject, body",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "body",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -308,28 +308,28 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "query",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "folder",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "folderId",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: query, optional folder/folderId, limit",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "limit",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -348,7 +348,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: number",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "number",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -367,7 +367,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: query",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "query",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -386,14 +386,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: query, optional limit",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "query",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: query, optional limit",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "limit",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -412,7 +412,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: title",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "title",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -431,49 +431,49 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "title",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "prompt",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "schedule",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "inMinutes",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "number"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "atTime",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "intervalSeconds",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "number"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "beforeMinutes",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -492,7 +492,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: url",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "url",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -511,7 +511,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: query",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "query",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -1431,7 +1431,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+        "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -1471,7 +1471,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Models/ToolDefinition.swift",
-            "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+            "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
           },
           {
             "domains": [
@@ -1485,7 +1485,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+            "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
           },
           {
             "domains": [
@@ -1499,7 +1499,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+            "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
           },
           {
             "domains": [
@@ -1513,7 +1513,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+            "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
           },
           {
             "domains": [
@@ -1534,7 +1534,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+            "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
           }
         ],
         "sourceToSlots": {
@@ -2446,7 +2446,7 @@
     "slotID": "cortex",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+      "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -2486,7 +2486,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Models/ToolDefinition.swift",
-          "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+          "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
         },
         {
           "domains": [
@@ -2500,7 +2500,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+          "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
         },
         {
           "domains": [
@@ -2514,7 +2514,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+          "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
         },
         {
           "domains": [
@@ -2528,7 +2528,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+          "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
         },
         {
           "domains": [
@@ -2549,7 +2549,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+          "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
         }
       ],
       "sourceToSlots": {
@@ -3519,7 +3519,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+        "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -3559,7 +3559,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Models/ToolDefinition.swift",
-            "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+            "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
           },
           {
             "domains": [
@@ -3573,7 +3573,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+            "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
           },
           {
             "domains": [
@@ -3587,7 +3587,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+            "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
           },
           {
             "domains": [
@@ -3601,7 +3601,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+            "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
           },
           {
             "domains": [
@@ -3622,7 +3622,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+            "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
           }
         ],
         "sourceToSlots": {
@@ -4523,7 +4523,7 @@
     "slotID": "embedding",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+      "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -4563,7 +4563,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Models/ToolDefinition.swift",
-          "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+          "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
         },
         {
           "domains": [
@@ -4577,7 +4577,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+          "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
         },
         {
           "domains": [
@@ -4591,7 +4591,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+          "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
         },
         {
           "domains": [
@@ -4605,7 +4605,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+          "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
         },
         {
           "domains": [
@@ -4626,7 +4626,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+          "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
         }
       ],
       "sourceToSlots": {
@@ -4717,7 +4717,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: id UUID",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4747,7 +4747,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: id UUID",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4777,7 +4777,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: id UUID",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4796,35 +4796,35 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "title",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "inMinutes",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "number"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "timestamp",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "repeats",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "bool"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: title, inMinutes, optional timestamp/repeats/snoozeMinutes",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "snoozeMinutes",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4843,7 +4843,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: id UUID",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4862,7 +4862,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: id UUID",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4892,7 +4892,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: name",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "name",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4922,42 +4922,42 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "to",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "body",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "recipient",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "number",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "message",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: to, body, optional recipient/number/message/text",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "text",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -4987,14 +4987,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5013,11 +5013,11 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: optional includeHidden true/false",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "includeHidden",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
-              "type": "string"
+              "type": "bool"
             }
           ],
           "description": "List Outlook/Hotmail mail folders with unread and total counts. Args: optional includeHidden true/false.",
@@ -5032,14 +5032,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5058,14 +5058,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5084,35 +5084,35 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "to",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "body",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, to, optional id/body/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "comment",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5131,14 +5131,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5157,14 +5157,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5183,28 +5183,28 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "destination",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, destination, optional id/destinationId",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "destinationId",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5223,14 +5223,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, optional id",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5249,28 +5249,28 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "body",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "comment",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5289,28 +5289,28 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "messageId",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "body",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: messageId, body, optional id/comment",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "comment",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5329,32 +5329,32 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "folder",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "folderId",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "limit",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "number"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: optional folder or folderId, limit, unreadOnly",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "unreadOnly",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
-              "type": "string"
+              "type": "bool"
             }
           ],
           "description": "List recent Outlook messages. Args: optional folder or folderId, limit, unreadOnly.",
@@ -5391,7 +5391,7 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: months",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "months",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5421,14 +5421,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: id, optional title",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "id",
               "required": true,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: id, optional title",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "title",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -5458,14 +5458,14 @@
         {
           "arguments": [
             {
-              "description": "Inferred from ToolDefinition description Args contract: optional location or city",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "location",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
               "type": "string"
             },
             {
-              "description": "Inferred from ToolDefinition description Args contract: optional location or city",
+              "description": "Declared in ToolDefinition capability contract.",
               "name": "city",
               "required": false,
               "source": "ios/Lumen/Models/ToolDefinition.swift",
@@ -6383,7 +6383,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+        "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -6423,7 +6423,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Models/ToolDefinition.swift",
-            "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+            "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
           },
           {
             "domains": [
@@ -6437,7 +6437,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+            "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
           },
           {
             "domains": [
@@ -6451,7 +6451,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+            "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
           },
           {
             "domains": [
@@ -6465,7 +6465,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+            "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
           },
           {
             "domains": [
@@ -6486,7 +6486,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+            "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
           }
         ],
         "sourceToSlots": {
@@ -7395,7 +7395,7 @@
     "slotID": "executor",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+      "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -7435,7 +7435,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Models/ToolDefinition.swift",
-          "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+          "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
         },
         {
           "domains": [
@@ -7449,7 +7449,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+          "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
         },
         {
           "domains": [
@@ -7463,7 +7463,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+          "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
         },
         {
           "domains": [
@@ -7477,7 +7477,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+          "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
         },
         {
           "domains": [
@@ -7498,7 +7498,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+          "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
         }
       ],
       "sourceToSlots": {
@@ -8476,7 +8476,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+        "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -8516,7 +8516,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Models/ToolDefinition.swift",
-            "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+            "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
           },
           {
             "domains": [
@@ -8530,7 +8530,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+            "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
           },
           {
             "domains": [
@@ -8544,7 +8544,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+            "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
           },
           {
             "domains": [
@@ -8558,7 +8558,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+            "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
           },
           {
             "domains": [
@@ -8579,7 +8579,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+            "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
           }
         ],
         "sourceToSlots": {
@@ -9486,7 +9486,7 @@
     "slotID": "mimicry",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+      "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -9526,7 +9526,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Models/ToolDefinition.swift",
-          "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+          "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
         },
         {
           "domains": [
@@ -9540,7 +9540,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+          "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
         },
         {
           "domains": [
@@ -9554,7 +9554,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+          "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
         },
         {
           "domains": [
@@ -9568,7 +9568,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+          "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
         },
         {
           "domains": [
@@ -9589,7 +9589,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+          "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
         }
       ],
       "sourceToSlots": {
@@ -10567,7 +10567,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+        "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -10607,7 +10607,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Models/ToolDefinition.swift",
-            "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+            "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
           },
           {
             "domains": [
@@ -10621,7 +10621,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+            "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
           },
           {
             "domains": [
@@ -10635,7 +10635,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+            "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
           },
           {
             "domains": [
@@ -10649,7 +10649,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+            "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
           },
           {
             "domains": [
@@ -10670,7 +10670,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+            "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
           }
         ],
         "sourceToSlots": {
@@ -11577,7 +11577,7 @@
     "slotID": "mouth",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+      "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -11617,7 +11617,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Models/ToolDefinition.swift",
-          "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+          "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
         },
         {
           "domains": [
@@ -11631,7 +11631,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+          "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
         },
         {
           "domains": [
@@ -11645,7 +11645,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+          "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
         },
         {
           "domains": [
@@ -11659,7 +11659,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+          "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
         },
         {
           "domains": [
@@ -11680,7 +11680,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+          "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
         }
       ],
       "sourceToSlots": {
@@ -12660,7 +12660,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+        "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -12700,7 +12700,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Models/ToolDefinition.swift",
-            "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+            "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
           },
           {
             "domains": [
@@ -12714,7 +12714,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+            "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
           },
           {
             "domains": [
@@ -12728,7 +12728,7 @@
               "memory"
             ],
             "path": "ios/Lumen/Services/MemoryStore.swift",
-            "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+            "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
           },
           {
             "domains": [
@@ -12742,7 +12742,7 @@
               "fleet"
             ],
             "path": "ios/Lumen/Services/ModelFleet.swift",
-            "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+            "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
           },
           {
             "domains": [
@@ -12763,7 +12763,7 @@
               "chat"
             ],
             "path": "ios/Lumen/Views/ChatView.swift",
-            "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+            "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
           }
         ],
         "sourceToSlots": {
@@ -13673,7 +13673,7 @@
     "slotID": "rem",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "5b0ec022f8c9891dcc08d58101c52e6a53288087",
+      "commit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -13713,7 +13713,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Models/ToolDefinition.swift",
-          "sha256": "ce8ebfe727b2a38ddff37f250e41a5e4e47e5662e0488829276c311b896ff0e5"
+          "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
         },
         {
           "domains": [
@@ -13727,7 +13727,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "50c715f73659d64715ba5384e7b2803e474b0e7d37f5ce3b44735cd0c0e3de38"
+          "sha256": "769c2ec36cda48577f41d8cb91435f78e7610358f109f6d2641c5c152e717b70"
         },
         {
           "domains": [
@@ -13741,7 +13741,7 @@
             "memory"
           ],
           "path": "ios/Lumen/Services/MemoryStore.swift",
-          "sha256": "b312bf4996c8c7f3ed4c7a1dc0f3db239674fef782f04c890a45c9ec19ea1980"
+          "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
         },
         {
           "domains": [
@@ -13755,7 +13755,7 @@
             "fleet"
           ],
           "path": "ios/Lumen/Services/ModelFleet.swift",
-          "sha256": "fca42b2d354f18c0067653a2d5941fc168f59193fb90b9e6362a6b8d8e8ca4a1"
+          "sha256": "470c8f118d3253ece396426d5fa5384f27811d3a34cdfa863c9d710d46c504c7"
         },
         {
           "domains": [
@@ -13776,7 +13776,7 @@
             "chat"
           ],
           "path": "ios/Lumen/Views/ChatView.swift",
-          "sha256": "766daa34ff8e114ff407434c81f00d4585bd6d64a3cf9cc0d764ede0c3422a94"
+          "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
         }
       ],
       "sourceToSlots": {

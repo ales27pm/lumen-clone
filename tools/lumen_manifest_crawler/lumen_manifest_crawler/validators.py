@@ -14,9 +14,15 @@ from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ValidationFai
 
 DEFAULT_SUPPORTED_JSON_TYPES = {"string", "double", "int", "bool", "array", "object", "null", "number"}
 VAGUE_TYPES = {"any", "unknown", "dictionary", "dict"}
+SUPPORTED_PERMISSION_KINDS = {"calendar", "reminders", "contacts", "location", "microphone", "speech", "camera", "photos", "motion", "health", "notifications", "alarms"}
+SUPPORTED_CONFIRMATION_MODES = {"none", "userApproval"}
 STRICT_TOOL_ID_DATASET_FAMILIES = {"tool_schema_cards", "runtime_audit_repairs", "dpo_preference_pairs"}
 STRICT_WARNING_CODES = {"tool_missing_description", "vague_argument_type", "inferred_tool_definition", "ambiguous_intent_tools", "freshness_missing_ttl"}
 MIN_EVAL_SCENARIOS_PER_TOOL = 5
+INFERRED_TOOL_ARGUMENT_DESCRIPTION_PREFIX = "Inferred from ToolDefinition description"
+FORBIDDEN_ARGUMENT_NAMES = {"true", "false"}
+FORBIDDEN_CODEBASE_HOME_PATHS = {"ios/Lumen/AgentBehaviorManifest.json"}
+FORBIDDEN_CODEBASE_HOME_PREFIXES = ("generated/agent_manifest/",)
 FANOUT_INTENTS = {
     "alarm",
     "calendar",
@@ -67,7 +73,19 @@ def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str
             )
         if not tool.description:
             warnings.append(ValidationWarning(code="tool_missing_description", message=f"Tool {tool.id} has no description", path=f"tools.{tool.id}"))
+        if tool.permissionKind and tool.permissionKind not in SUPPORTED_PERMISSION_KINDS:
+            failures.append(ValidationFailure(code="unsupported_permission_kind", message=f"Tool {tool.id} uses unsupported permission kind {tool.permissionKind}", path=f"tools.{tool.id}.permissionKind"))
+        if tool.confirmationMode:
+            if tool.confirmationMode not in SUPPORTED_CONFIRMATION_MODES:
+                failures.append(ValidationFailure(code="unsupported_confirmation_mode", message=f"Tool {tool.id} uses unsupported confirmation mode {tool.confirmationMode}", path=f"tools.{tool.id}.confirmationMode"))
+            expected_confirmation = "userApproval" if tool.requiresApproval else "none"
+            if tool.confirmationMode != expected_confirmation:
+                failures.append(ValidationFailure(code="confirmation_mode_approval_mismatch", message=f"Tool {tool.id} confirmationMode={tool.confirmationMode} does not match requiresApproval={tool.requiresApproval}", path=f"tools.{tool.id}.confirmationMode"))
         for arg in tool.arguments:
+            if arg.name.strip().lower() in FORBIDDEN_ARGUMENT_NAMES:
+                failures.append(ValidationFailure(code="literal_value_argument_name", message=f"Tool {tool.id} declares literal value as argument name: {arg.name}", path=f"tools.{tool.id}.arguments.{arg.name}"))
+            if (arg.description or "").startswith(INFERRED_TOOL_ARGUMENT_DESCRIPTION_PREFIX):
+                failures.append(ValidationFailure(code="inferred_tool_argument_contract", message=f"Tool {tool.id}.{arg.name} argument contract is inferred from description text instead of a declared capability contract", path=f"tools.{tool.id}.arguments.{arg.name}"))
             arg_type = arg.type.lower()
             if arg_type in VAGUE_TYPES:
                 warnings.append(ValidationWarning(code="vague_argument_type", message=f"Tool {tool.id}.{arg.name} uses vague type {arg.type}", path=f"tools.{tool.id}.arguments.{arg.name}"))
@@ -142,6 +160,8 @@ def _validate_dataset_records(manifest: AgentBehaviorManifest, records: dict[str
                     elif record.get("taskType") == "tool_runtime_scenario_selection":
                         eval_scenarios_by_tool[tool_id] += 1
                         eval_tool_records.setdefault(tool_id, []).append(record)
+            if name in {"codebase_home_corpus", "codebase_home_sft", "codebase_home_chunks", "codebase_home_chunk_sft"}:
+                _validate_codebase_home_record(name, index, record, failures)
 
     for tool in manifest.tools:
         if any(arg.required for arg in tool.arguments) and tool.id not in covered_required_tools:
@@ -204,6 +224,41 @@ def _has_explicit_tool_id_reference(prompt_text: str, tool_id: str) -> bool:
     )
     lowered = prompt_text.lower()
     return any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in explicit_patterns)
+
+
+def _validate_codebase_home_record(name: str, index: int, record: dict[str, Any], failures: list[ValidationFailure]) -> None:
+    for path in _record_path_values(record):
+        if path in FORBIDDEN_CODEBASE_HOME_PATHS or any(path.startswith(prefix) for prefix in FORBIDDEN_CODEBASE_HOME_PREFIXES):
+            failures.append(
+                ValidationFailure(
+                    code="generated_output_in_codebase_home",
+                    message=f"{name}[{index}] ingests generated output path {path}; codebase-home records must not depend on generated manifest artifacts",
+                    path=f"dataset.{name}.{index}.path",
+                )
+            )
+
+
+def _record_path_values(record: dict[str, Any]) -> set[str]:
+    paths: set[str] = set()
+    for value in (record.get("path"), (record.get("metadata") or {}).get("path") if isinstance(record.get("metadata"), dict) else None):
+        if isinstance(value, str) and value:
+            paths.add(value)
+
+    for message in record.get("messages", []):
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            continue
+        path = payload.get("path") if isinstance(payload, dict) else None
+        if isinstance(path, str) and path:
+            paths.add(path)
+    return paths
+
 
 def _validate_compiled_record_shape(name: str, index: int, record: dict, failures: list[ValidationFailure], seen_ids: set[str]) -> None:  # NOSONAR
     if name == "dataset_manifest":
