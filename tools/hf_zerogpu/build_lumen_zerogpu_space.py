@@ -271,6 +271,15 @@ def upload_to_hub(
         "LUMEN_ZERO_GPU_DURATION_SECONDS": gpu_duration_seconds,
         "LUMEN_ZERO_GPU_MAX_DURATION_SECONDS": gpu_duration_seconds,
     }
+    for key in (
+        "LUMEN_ZERO_GPU_MAX_TRAIN_RECORDS",
+        "LUMEN_ZERO_GPU_MAX_VAL_RECORDS",
+        "LUMEN_ZERO_GPU_MAX_SEQ_LENGTH",
+        "LUMEN_ZERO_GPU_NUM_TRAIN_EPOCHS",
+    ):
+        value = os.environ.get(key)
+        if value:
+            variables[key] = value
     for key, value in variables.items():
         add_space_value(api, repo_id=space_repo, key=key, value=value, secret=False, token=token, dry_run=dry_run)
 
