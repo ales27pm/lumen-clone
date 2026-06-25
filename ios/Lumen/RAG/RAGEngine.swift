@@ -26,7 +26,7 @@ final class RAGEngine {
     }
 
     func buildContext(query: String, budget: Int, context: ModelContext) async -> RAGContextResult {
-        let r = await retrieve(query: query, limit: 12, context: context)
+        let r = await retrieve(query: query, limit: 20, context: context)
         return RAGContextBuilder.build(results: r, budgetChars: budget)
     }
 

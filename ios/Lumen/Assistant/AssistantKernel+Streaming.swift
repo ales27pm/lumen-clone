@@ -171,7 +171,11 @@ extension AssistantKernel: AgentKernelRunning {
                             "memoryCount": String(grounding.memoryCount),
                             "ragCount": String(grounding.ragCount),
                             "toolCount": String(grounding.toolCount),
-                            "estimatedChars": String(grounding.estimatedChars)
+                            "estimatedChars": String(grounding.estimatedChars),
+                            "estimatedTokens": String(grounding.estimatedTokens),
+                            "contextProfile": grounding.contextProfile ?? "unknown",
+                            "maxInputTokens": grounding.maxInputTokens.map(String.init) ?? "unknown",
+                            "ragConfidence": grounding.ragConfidence.map { String(format: "%.3f", $0) } ?? "unknown"
                         ]
                     )))
                 }
