@@ -21,6 +21,7 @@ AGENT_BATCH_SIZE="${LUMEN_ZERO_GPU_AGENT_BATCH_SIZE:-1}"
 BASE_MODEL="${LUMEN_ZERO_GPU_BASE_MODEL:-}"
 GPU_SIZE="${LUMEN_ZERO_GPU_SIZE:-large}"
 GPU_DURATION_SECONDS="${LUMEN_ZERO_GPU_DURATION_SECONDS:-1200}"
+TRIGGER_TIMEOUT_SECONDS="${LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS:-1800}"
 SEED="${LUMEN_ZERO_GPU_SEED:-42}"
 TRIGGER="${LUMEN_ZERO_GPU_TRIGGER:-1}"
 DRY_RUN="${LUMEN_ZERO_GPU_DRY_RUN:-0}"
@@ -70,6 +71,7 @@ run_training_batch() {
     --agents "$batch_agents"
     --gpu-size "$GPU_SIZE"
     --gpu-duration-seconds "$GPU_DURATION_SECONDS"
+    --trigger-timeout-seconds "$TRIGGER_TIMEOUT_SECONDS"
     --seed "$SEED"
   )
 
@@ -106,6 +108,8 @@ fi
 [[ -f "$DATASET_SOURCE/adapter_runtime_manifest.json" ]] || die "dataset source is missing adapter_runtime_manifest.json: $DATASET_SOURCE"
 [[ "$AGENT_BATCH_SIZE" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be a positive integer"
 (( AGENT_BATCH_SIZE > 0 )) || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be greater than zero"
+[[ "$TRIGGER_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS must be a positive integer"
+(( TRIGGER_TIMEOUT_SECONDS > 0 )) || die "LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS must be greater than zero"
 
 if [[ "$USE_ACTIVE_PYTHON" == "1" ]]; then
   TRAIN_PY="$PYTHON_BIN"
@@ -127,6 +131,7 @@ log "dataset repo: $DATASET_REPO"
 log "adapter repo: $ADAPTER_REPO"
 log "agents: $AGENTS"
 log "agent batch size: $AGENT_BATCH_SIZE"
+log "trigger timeout seconds: $TRIGGER_TIMEOUT_SECONDS"
 
 IFS=',' read -r -a AGENT_ARRAY <<< "$AGENTS"
 TOTAL_AGENTS="${#AGENT_ARRAY[@]}"
