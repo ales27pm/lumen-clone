@@ -39,6 +39,13 @@ nonisolated enum ReferenceResolver {
             }
         }
 
+        if looksLikeBarePersonReply(normalizedPrompt), recentAssistantAskedForCallTarget(history: history) {
+            rewritten = "call \(normalizedPrompt)"
+            mapping["bare_person_reply"] = normalizedPrompt
+            score += 0.65
+            diagnostics.append("resolved_bare_person_reply_from_call_clarification")
+        }
+
         if containsPreviousReference(normalizedPrompt) {
             if let tool = currentTurnLedger.last?.toolID {
                 rewritten = rewritePreviousReference(in: rewritten, replacement: "the previous \(tool) result")
@@ -69,6 +76,25 @@ nonisolated enum ReferenceResolver {
     private static func containsPreviousReference(_ text: String) -> Bool {
         let lower = text.lowercased()
         return ["previous one", "that one", "last one", "use previous"].contains { lower.contains($0) }
+    }
+
+    private static func looksLikeBarePersonReply(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.rangeOfCharacter(from: .newlines) == nil else { return false }
+        guard trimmed.split(separator: " ").count <= 4 else { return false }
+        guard trimmed.range(of: #"^[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+){0,3}$"#, options: .regularExpression) != nil else { return false }
+        let lower = trimmed.lowercased()
+        return !["yes", "no", "ok", "okay", "thanks", "hello", "hi"].contains(lower)
+    }
+
+    private static func recentAssistantAskedForCallTarget(history: [(role: MessageRole, content: String)]) -> Bool {
+        history.suffix(4).reversed().contains { item in
+            guard item.role == .assistant else { return false }
+            let lower = item.content.lowercased()
+            return lower.contains("which contact or phone number should i call")
+                || lower.contains("which one should i call")
+                || lower.contains("who should i call")
+        }
     }
 
     private static func rewritePronouns(in text: String, with referent: String) -> String {

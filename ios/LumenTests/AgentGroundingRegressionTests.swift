@@ -1421,6 +1421,53 @@ extension AgentGroundingRegressionTests {
         #expect(response.text.lowercased().contains("trigger"))
     }
 
+    @Test func compatibilityTriggerListShowPromptDoesNotCreateTrigger() async {
+        let tools = ToolRegistry.all.filter { ["trigger.create", "trigger.list", "trigger.cancel"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Show scheduled agent runs.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: true)
+
+        let response = await SlotAgentService.deterministicCompatibilityResponseForTests(original: req, effective: req, options: options)
+
+        #expect(response.steps.contains { $0.kind == .action && $0.toolID == "trigger.list" })
+        #expect(!response.steps.contains { $0.toolID == "trigger.create" })
+        #expect(!response.text.lowercased().contains("approval required for trigger.create"))
+    }
+
+    @Test func compatibilityTriggerCancelApprovalNamesCancelTool() async {
+        let tools = ToolRegistry.all.filter { ["trigger.create", "trigger.list", "trigger.cancel"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Cancel trigger named nightly summary.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: true)
+
+        let response = await SlotAgentService.deterministicCompatibilityResponseForTests(original: req, effective: req, options: options)
+
+        #expect(response.steps.first?.kind == .approvalBoundary)
+        #expect(response.steps.first?.toolID == "trigger.cancel")
+        #expect(response.text.lowercased().contains("approval required for trigger.cancel"))
+        #expect(!response.text.lowercased().contains("approval required for trigger.create"))
+    }
+
     @Test func compatibilityChatAnswersPrecisionRecallDirectly() async {
         let req = AgentRequest(
             systemPrompt: "sys",

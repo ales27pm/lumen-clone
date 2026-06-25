@@ -275,6 +275,52 @@ final class AssistantKernelRunContractTests: XCTestCase {
         XCTAssertNil(generatedRequest)
     }
 
+    func testForegroundToolBridgeResolvesRecentContactPronounBeforePlanning() async {
+        let capture = RequestCapture()
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { request in
+                await capture.record(request)
+                return "text runtime should not run"
+            })
+        )
+        let kernel = AssistantKernel(router: router)
+        let request = AgentKernelRequest(
+            userMessage: "Call him",
+            history: [
+                AgentKernelMessage(messageRole: .assistant, content: "Contact search results:\n• Alexis Boulet — 14504943059\n• Alexis Boulet — no phone")
+            ],
+            task: .chat,
+            source: .chat,
+            options: AgentKernelOptions(
+                allowHeavyRuntime: true,
+                allowDegradedMode: true,
+                requireUserVisibleFinal: true,
+                diagnosticsEnabled: true,
+                maxSteps: 2,
+                prefersFoundationModels: true
+            )
+        )
+
+        var doneSteps: [AgentStep] = []
+        var bridgeMetadata: [String: String]?
+        for await event in kernel.run(request, modelContext: nil) {
+            switch event {
+            case .diagnostic(let diagnostic) where diagnostic.stage == "tool-routing-bridge":
+                bridgeMetadata = diagnostic.metadata
+            case .done(_, let steps):
+                doneSteps = steps
+            default:
+                break
+            }
+        }
+
+        let contactAction = doneSteps.first { $0.kind == .action && $0.toolID == "contacts.search" }
+        XCTAssertEqual(bridgeMetadata?["referenceRewrite"], "true")
+        XCTAssertEqual(contactAction?.toolArgs?["query"], "Alexis Boulet")
+        let generatedRequest = await capture.snapshot()
+        XCTAssertNil(generatedRequest)
+    }
+
     func testAgentKernelOptionsClampMaxSteps() {
         let options = AgentKernelOptions(
             allowHeavyRuntime: true,

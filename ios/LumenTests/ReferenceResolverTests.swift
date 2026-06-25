@@ -48,4 +48,15 @@ struct ReferenceResolverTests {
         #expect(result.rewrittenPrompt == "use previous one")
         #expect(result.diagnostics.contains("deictic_detected_without_current_turn_toolledger"))
     }
+
+    @Test func bareContactReplyAfterCallClarificationBecomesCallRequest() async throws {
+        let history: [(role: MessageRole, content: String)] = [
+            (.assistant, "Contact search results:\nNo contacts match \"him\".\nWhich contact or phone number should I call?")
+        ]
+
+        let result = ReferenceResolver.resolve(prompt: "Alexis Boulet", history: history, relevantMemories: [])
+
+        #expect(result.rewrittenPrompt == "call Alexis Boulet")
+        #expect(result.diagnostics.contains("resolved_bare_person_reply_from_call_clarification"))
+    }
 }

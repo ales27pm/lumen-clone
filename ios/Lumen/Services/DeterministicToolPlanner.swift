@@ -295,7 +295,9 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .trigger:
-            if text.contains("list") { return action("trigger.list") }
+            if containsAny(text, ["list", "show", "scheduled agent runs", "scheduled runs", "active triggers", "active scheduled", "what triggers"]) {
+                return action("trigger.list")
+            }
             if text.contains("cancel") {
                 let token = extractTriggerCancelIdentifier(from: prompt)
                 guard !token.isEmpty else { return nil }

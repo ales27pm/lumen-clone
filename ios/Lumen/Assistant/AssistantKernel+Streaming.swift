@@ -15,15 +15,22 @@ extension AssistantKernel: AgentKernelRunning {
                 }
 
                 emitStep(.thought, "Agent Kernel accepted \(request.source.rawValue) turn for \(String(describing: request.task)).")
+                let historyTuples = request.history.map { (role: $0.role.messageRole, content: $0.content) }
+                let referenceResolution = ReferenceResolver.resolve(
+                    prompt: request.userMessage,
+                    history: historyTuples,
+                    relevantMemories: request.relevantMemories
+                )
+                let effectiveUserMessage = referenceResolution.rewrittenPrompt
 
                 if request.supportsDeterministicToolBridge {
-                    let routing = IntentRouter.classify(request.userMessage)
+                    let routing = IntentRouter.classify(effectiveUserMessage)
                     if IntentRouter.intentRequiresTool(routing) {
                         let backgroundAssessment: BackgroundToolBridgeAssessment?
                         let availableTools: [ToolDefinition]
                         if request.requiresBackgroundSafeToolBridge {
                             let assessment = await BackgroundToolBridgePolicy.assess(
-                                prompt: request.userMessage,
+                                prompt: effectiveUserMessage,
                                 routing: routing,
                                 modelContext: modelContext,
                                 toolRegistry: toolRegistry,
@@ -35,6 +42,7 @@ extension AssistantKernel: AgentKernelRunning {
                             backgroundAssessment = nil
                             availableTools = await toolBridgeAvailableTools(
                                 for: request,
+                                userMessage: effectiveUserMessage,
                                 routing: routing,
                                 modelContext: modelContext
                             )
@@ -67,15 +75,16 @@ extension AssistantKernel: AgentKernelRunning {
                                     "allowedToolIDs": routing.allowedToolIDs.sorted().joined(separator: ","),
                                     "availableToolIDs": availableTools.map(\.id).sorted().joined(separator: ","),
                                     "mode": request.requiresBackgroundSafeToolBridge ? "background-safe" : "foreground",
-                                    "source": request.source.rawValue
+                                    "source": request.source.rawValue,
+                                    "referenceRewrite": String(referenceResolution.hasRewrite)
                                 ]
                             )))
                         }
 
                         let legacyRequest = AgentRequest(
                             systemPrompt: request.systemPrompt,
-                            history: request.history.map { (role: $0.role.messageRole, content: $0.content) },
-                            userMessage: request.userMessage,
+                            history: historyTuples,
+                            userMessage: effectiveUserMessage,
                             temperature: request.options.temperature,
                             topP: request.options.topP,
                             repetitionPenalty: request.options.repetitionPenalty,
@@ -113,9 +122,9 @@ extension AssistantKernel: AgentKernelRunning {
                 let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
                 let turn = AssistantTurnContext(
                     task: request.task,
-                    input: request.userMessage,
+                    input: effectiveUserMessage,
                     systemPrompt: request.systemPrompt,
-                    history: request.history.map { (role: $0.role.messageRole, content: $0.content) },
+                    history: historyTuples,
                     relevantMemories: request.relevantMemories,
                     attachments: request.attachments,
                     isForeground: request.source.isForeground,
@@ -209,6 +218,7 @@ extension AssistantKernel: AgentKernelRunning {
 
     private func toolBridgeAvailableTools(
         for request: AgentKernelRequest,
+        userMessage: String,
         routing: IntentRoutingDecision,
         modelContext: ModelContext?
     ) async -> [ToolDefinition] {
@@ -218,7 +228,7 @@ extension AssistantKernel: AgentKernelRunning {
         }
 
         return await BackgroundToolBridgePolicy.availableTools(
-            for: request.userMessage,
+            for: userMessage,
             routing: routing,
             modelContext: modelContext,
             toolRegistry: toolRegistry,

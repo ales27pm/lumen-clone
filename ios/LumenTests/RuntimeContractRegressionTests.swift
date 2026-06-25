@@ -129,6 +129,40 @@ struct ContactObservationFinalizerTests {
         let routing = IntentRoutingDecision(intent: .contactSearch, allowedToolIDs: ["contacts.search"], requiresClarification: false, clarificationPrompt: nil)
         #expect(FinalIntentValidator.validate(final ?? "", routing: routing, fallback: "Contact search is unavailable in this build right now.") == final)
     }
+
+    @Test func filesAndPhotosAreFinalizerCovered() {
+        let fileFinal = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .files,
+            toolID: "files.read",
+            observation: "diagnostics.txt: runtime checks passed",
+            originalPrompt: "Open local document diagnostics.txt"
+        )
+        #expect(fileFinal.accepted)
+        #expect(fileFinal.rejectionReason == nil)
+        #expect(fileFinal.text?.contains("File result") == true)
+
+        let photoFinal = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .photos,
+            toolID: "photos.search",
+            observation: "Found 3 photos matching receipts.",
+            originalPrompt: "Search my photos for receipts"
+        )
+        #expect(photoFinal.accepted)
+        #expect(photoFinal.rejectionReason == nil)
+        #expect(photoFinal.text?.contains("Photo search results") == true)
+    }
+
+    @Test func triggerCancelFinalizerIsCovered() {
+        let final = ToolObservationFinalizer.immediateFinalOutcome(
+            intent: .trigger,
+            toolID: "trigger.cancel",
+            observation: "Cancelled scheduled run nightly summary.",
+            originalPrompt: "Cancel trigger named nightly summary."
+        )
+        #expect(final.accepted)
+        #expect(final.rejectionReason == nil)
+        #expect(final.text?.contains("Trigger cancellation") == true)
+    }
 }
 
 struct PhoneCallContinuationTests {

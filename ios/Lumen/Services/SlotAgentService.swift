@@ -1335,7 +1335,14 @@ final class SlotAgentService {
             let number = action.args.stringCoerced["number"] ?? "the selected number"
             return "Approval required for phone.call. Contact found; I can call \(number) after you approve it. I did not place the call yet."
         case .trigger:
-            return "Approval required for trigger.create. Trigger request prepared for: \(prompt). It will run the scheduled agent prompt after approval."
+            if toolID == "trigger.cancel" {
+                let identifier = action.args.stringCoerced["id"] ?? action.args.stringCoerced["title"] ?? "the scheduled agent run"
+                return "Approval required for trigger.cancel. I did not cancel \(identifier) yet."
+            }
+            if toolID == "trigger.create" {
+                return "Approval required for trigger.create. Trigger request prepared for: \(prompt). It will run the scheduled agent prompt after approval."
+            }
+            return "Approval required for \(toolID). I did not change scheduled agent runs yet."
         case .calendar:
             return "Approval required for calendar.create. I did not create an event yet."
         case .reminder:

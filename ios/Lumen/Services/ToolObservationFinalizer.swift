@@ -15,12 +15,11 @@ nonisolated enum ToolObservationFinalizer {
         "memory.save", "memory.recall", "maps.search", "maps.directions",
         "motion.activity", "health.summary", "rag.index_files", "rag.index_photos",
         "rag.search", "alarm.authorization_status", "alarm.list",
-        "trigger.create", "trigger.list"
-    ]
-
-    static let noFinalizerNeededToolIDs: Set<String> = [
+        "trigger.create", "trigger.list", "trigger.cancel",
         "files.read", "photos.search"
     ]
+
+    static let noFinalizerNeededToolIDs: Set<String> = []
 
     static let internalOnlyToolIDs: Set<String> = []
 
@@ -142,6 +141,14 @@ nonisolated enum ToolObservationFinalizer {
         case "rag.search":
             guard intent == .rag else { return rejected("intent-mismatch") }
             return accepted("RAG search results:\n\(groundedRAGObservation(plainObservation))\(payloadMarkers)")
+        case "files.read":
+            guard intent == .files || intent == .rag else { return rejected("intent-mismatch") }
+            let prefix = intent == .rag ? "RAG file result" : "File result"
+            return accepted("\(prefix):\n\(plainObservation)\(payloadMarkers)")
+        case "photos.search":
+            guard intent == .photos || intent == .rag else { return rejected("intent-mismatch") }
+            let prefix = intent == .rag ? "RAG photo search results" : "Photo search results"
+            return accepted("\(prefix):\n\(plainObservation)\(payloadMarkers)")
         case "alarm.authorization_status":
             guard intent == .alarm else { return rejected("intent-mismatch") }
             return accepted("Alarm authorization status: \(plainObservation)\(payloadMarkers)")
@@ -154,6 +161,9 @@ nonisolated enum ToolObservationFinalizer {
         case "trigger.list":
             guard intent == .trigger else { return rejected("intent-mismatch") }
             return accepted("Scheduled triggers:\n\(plainObservation)\(payloadMarkers)")
+        case "trigger.cancel":
+            guard intent == .trigger else { return rejected("intent-mismatch") }
+            return accepted("Trigger cancellation:\n\(plainObservation)\(payloadMarkers)")
         default:
             return rejected("unsupported-tool")
         }
