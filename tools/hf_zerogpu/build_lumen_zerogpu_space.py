@@ -321,6 +321,8 @@ def _is_terminal_space_trigger_error(exc: Exception) -> bool:
         "zerogpu quota exceeded",
         "quota exceeded",
         "zerogpu illegal duration",
+        "gpu task aborted",
+        "zerogpu worker error",
         "requested gpu duration",
         '"ok": false',
         "'ok': false",
