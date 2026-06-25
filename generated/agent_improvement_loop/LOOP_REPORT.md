@@ -1,18 +1,18 @@
 # Lumen Agent Improvement Loop Report
 
-- Passed: `False`
+- Passed: `True`
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `34936`
-- Runtime audit reports: `20`
-- Runtime failures: `38`
-- Raw runtime failures: `51`
-- Skipped live model generation: `13`
+- Dataset records: `34768`
+- Runtime audit reports: `2`
+- Runtime failures: `0`
+- Raw runtime failures: `8`
+- Skipped live model generation: `8`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `51`
-- Next action prompts: `51`
+- Gaps: `9`
+- Next action prompts: `9`
 
 ## TestFlight handoff
 
@@ -20,152 +20,47 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app datase
 
 ## Top gaps
 
-### ERROR — argument_mismatch
+### WARNING — Empty dataset family: runtime_audit_repairs
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `dataset_coverage`
+- Recommendation: Add generators or runtime inputs that produce runtime_audit_repairs records.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-### ERROR — argument_mismatch
+### WARNING — e2e_runtime_environment_deferred
 
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — argument_mismatch
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — missing_live_argument
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate executor schema cards and add missing-argument clarification examples.
-
-### ERROR — unmanifested_live_argument
-
-- Category: `manifest_mismatch`
-- Recommendation: Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.
-
-### ERROR — agent_grounding_no_recent_model_traces
-
-- Category: `runtime_drift`
-- Recommendation: Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence.
+- Category: `runtime_environment_deferred`
+- Recommendation: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.

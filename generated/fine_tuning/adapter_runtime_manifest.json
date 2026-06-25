@@ -12,9 +12,9 @@
       "recordCounts": {
         "eval": 558,
         "train_dpo": 15,
-        "train_sft": 8656,
+        "train_sft": 8789,
         "val_dpo": 3,
-        "val_sft": 1528
+        "val_sft": 1551
       },
       "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map."
     },
@@ -29,9 +29,9 @@
       "recordCounts": {
         "eval": 114,
         "train_dpo": 14,
-        "train_sft": 858,
+        "train_sft": 588,
         "val_dpo": 2,
-        "val_sft": 152
+        "val_sft": 104
       },
       "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments."
     },
@@ -46,9 +46,9 @@
       "recordCounts": {
         "eval": 86,
         "train_dpo": 15,
-        "train_sft": 4387,
+        "train_sft": 4340,
         "val_dpo": 3,
-        "val_sft": 774
+        "val_sft": 766
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -63,9 +63,9 @@
       "recordCounts": {
         "eval": 5,
         "train_dpo": 10,
-        "train_sft": 122,
+        "train_sft": 82,
         "val_dpo": 2,
-        "val_sft": 22
+        "val_sft": 14
       },
       "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."
     },
@@ -80,9 +80,9 @@
       "recordCounts": {
         "eval": 8,
         "train_dpo": 12,
-        "train_sft": 278,
+        "train_sft": 230,
         "val_dpo": 2,
-        "val_sft": 49
+        "val_sft": 40
       },
       "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels."
     },
@@ -97,9 +97,9 @@
       "recordCounts": {
         "eval": 6,
         "train_dpo": 8,
-        "train_sft": 3700,
+        "train_sft": 3718,
         "val_dpo": 2,
-        "val_sft": 653
+        "val_sft": 656
       },
       "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
     }

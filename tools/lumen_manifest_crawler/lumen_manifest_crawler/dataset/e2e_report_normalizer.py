@@ -21,6 +21,11 @@ AGENT_JSON_MODEL_ROOT_CAUSES = {
     "agent_json_context_overflow",
 }
 
+RUNTIME_ENVIRONMENT_ROOT_CAUSES = {
+    "runtime_environment_deferred",
+    "agent_json_resource_budget_denied_before_first_token",
+}
+
 
 def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     raw_scenarios = _coerce_e2e_scenarios(value)
@@ -108,17 +113,30 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
     final = str(scenario.get("final") or "").strip()
     intent = _scenario_intent(scenario)
     required_hint = _extract_required_hint(failure_text)
-    policy = e2e_failure_policy(intent, required_hint)
+    root_cause = sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None
+    if _is_runtime_environment_failure(failure_text, sidecar_diagnosis):
+        policy = e2e_failure_policy("runtime", None)
+        failure_type = "e2e_runtime_environment_deferred"
+        agent = "rem"
+        curriculum = "runtime_environment_diagnostics"
+        trainable = False
+    else:
+        policy = e2e_failure_policy(intent, required_hint)
+        failure_type = policy.failure_type
+        agent = policy.agent
+        curriculum = policy.curriculum
+        trainable = True
     expected = _expected_for_e2e_failure(scenario, required_hint, sidecar_diagnosis=sidecar_diagnosis)
     corrected = _corrected_output_for_e2e_failure(scenario, required_hint, sidecar_diagnosis=sidecar_diagnosis)
     return {
-        "type": policy.failure_type,
-        "agent": policy.agent,
+        "type": failure_type,
+        "agent": agent,
         "expected": [expected],
         "actual": final,
         "scenario": prompt,
         "problem": failure_text,
-        "rootCauseCategory": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None,
+        "rootCauseCategory": root_cause,
+        "trainable": trainable,
         "sourceLayer": source_layer,
         "e2eScenario": {
             "name": scenario.get("name"),
@@ -133,14 +151,15 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
             "modelEvidenceStatus": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else scenario.get("modelEvidenceStatus"),
         },
         "repairSample": {
-            "agent": policy.agent,
-            "violationCode": policy.failure_type,
+            "agent": agent,
+            "violationCode": failure_type,
             "promptPrefix": prompt[:500],
             "expected": expected,
             "badOutput": final[:1000],
             "correctedOutput": corrected,
             "lesson": _lesson_for_e2e_failure(scenario, required_hint, sidecar_diagnosis=sidecar_diagnosis),
-            "curriculum": policy.curriculum,
+            "curriculum": curriculum,
+            "trainable": trainable,
         },
     }
 
@@ -154,6 +173,8 @@ def _scenario_intent(scenario: dict[str, Any]) -> str:
 
 
 def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
+    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+        return "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
         if category == "deterministic_compatibility_not_training_evidence":
@@ -176,6 +197,8 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     final = str(scenario.get("final") or "").strip()
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
+    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+        return "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
         if category == "deterministic_compatibility_not_training_evidence":
@@ -361,6 +384,16 @@ def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis
 
 def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
     prompt = str(scenario.get("prompt") or "").strip()
+    scenario_text = "\n".join([
+        str(scenario.get("failures") or ""),
+        " ".join(str(event) for event in scenario.get("events", []) if isinstance(event, dict)),
+    ])
+    if _is_runtime_environment_failure(scenario_text, None):
+        return {
+            "rootCauseCategory": "runtime_environment_deferred",
+            "message": _runtime_environment_failure_message(scenario_text),
+            "trace": {"rawDiagnostic": scenario_text[:1000], "trainable": False},
+        }
     event_diagnosis = _diagnosis_from_model_evidence_events(scenario)
     if event_diagnosis and event_diagnosis.get("rootCauseCategory") in {
         "valid_model_backed_evidence",
@@ -408,6 +441,22 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
             root_cause = _agent_json_empty_stream_category(matching_trace)
             empty_reason = str(matching_trace.get("emptyOutputReason") or "unknown")
             stream_termination_reason = str(matching_trace.get("streamTerminationReason") or "unknown")
+            if root_cause in RUNTIME_ENVIRONMENT_ROOT_CAUSES or _is_runtime_environment_failure(f"{empty_reason}\n{stream_termination_reason}", None):
+                return {
+                    "rootCauseCategory": "runtime_environment_deferred",
+                    "message": f"runtime environment deferred model generation; emptyOutputReason={empty_reason}; streamTerminationReason={stream_termination_reason}; stage={stage}; runtimePath={runtime_path}",
+                    "trace": {
+                        "stage": stage,
+                        "runtimePath": runtime_path,
+                        "parseError": parse_error,
+                        "rawOutputEmpty": True,
+                        "rawOutputClassification": "runtime_environment_deferred",
+                        "emptyOutputReason": empty_reason,
+                        "streamTerminationReason": stream_termination_reason,
+                        "matchedBy": matched_by,
+                        "trainable": False,
+                    },
+                }
             return {
                 "rootCauseCategory": root_cause,
                 "message": f"agent-json emitted empty output; emptyOutputReason={empty_reason}; streamTerminationReason={stream_termination_reason}; parseError={parse_error}; stage={stage}; runtimePath={runtime_path}",
@@ -427,6 +476,30 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
                 },
             }
         if parse_error:
+            stream_termination_reason = str(matching_trace.get("streamTerminationReason") or "")
+            empty_reason = str(matching_trace.get("emptyOutputReason") or "")
+            runtime_diagnostic = "\n".join([
+                raw,
+                str(parse_error or ""),
+                empty_reason,
+                stream_termination_reason,
+            ])
+            if _is_runtime_environment_failure(runtime_diagnostic, None):
+                return {
+                    "rootCauseCategory": "runtime_environment_deferred",
+                    "message": f"runtime environment deferred model generation; parseError={parse_error}; emptyOutputReason={empty_reason or 'unknown'}; streamTerminationReason={stream_termination_reason or 'unknown'}; stage={stage}; runtimePath={runtime_path}",
+                    "trace": {
+                        "stage": stage,
+                        "runtimePath": runtime_path,
+                        "parseError": parse_error,
+                        "rawOutputEmpty": False,
+                        "rawOutputClassification": "runtime_environment_deferred",
+                        "emptyOutputReason": empty_reason or None,
+                        "streamTerminationReason": stream_termination_reason or None,
+                        "matchedBy": matched_by,
+                        "trainable": False,
+                    },
+                }
             category = "agent_json_parse_error" if str(parse_error) in {"noJSONObject", "multipleJSONObjects", "noisyOutput", "malformedEscapeSequence", "incompleteJSON", "invalidJSONObject", "invalidThoughtType", "invalidFinalType", "mixedTurn", "mixedActionShapes", "missingActionOrFinal", "missingActionTool", "invalidActionType", "invalidActionArgsType"} else "agent_model_parse_error"
             return {
                 "rootCauseCategory": category,
@@ -499,6 +572,12 @@ def _diagnosis_from_model_evidence_events(scenario: dict[str, Any]) -> dict[str,
         lowered = message.casefold()
         if phase != "model-evidence":
             continue
+        if _is_runtime_environment_failure(message, None):
+            return {
+                "rootCauseCategory": "runtime_environment_deferred",
+                "message": _runtime_environment_failure_message(message),
+                "trace": {"eventMessage": message, "trainable": False},
+            }
         values = _parse_model_evidence_values(message)
         runtime = str(values.get("runtime") or "").casefold()
         kind = str(values.get("kind") or "").casefold()
@@ -708,6 +787,29 @@ def _agent_json_empty_stream_category(trace: dict[str, Any]) -> str:
     return "agent_json_empty_stream"
 
 
+def _is_runtime_environment_failure(text: str, sidecar_diagnosis: dict[str, Any] | None) -> bool:
+    if sidecar_diagnosis and str(sidecar_diagnosis.get("rootCauseCategory") or "") in RUNTIME_ENVIRONMENT_ROOT_CAUSES:
+        return True
+    lowered = str(text or "").casefold()
+    return (
+        "resource-budget-denied-before-prompt-eval" in lowered
+        or "resource budget denied" in lowered
+        or "adapterunavailable" in lowered
+        or "adapter unavailable" in lowered
+        or "thermalstate=serious" in lowered
+        or "thermalstate=critical" in lowered
+        or "lowpowermode=true" in lowered
+        or "recent-memory-warning" in lowered
+    )
+
+
+def _runtime_environment_failure_message(text: str) -> str:
+    compact = " ".join(str(text or "").split())
+    if not compact:
+        return "runtime environment deferred model generation"
+    return f"runtime environment deferred model generation: {compact[:500]}"
+
+
 def _preferred_agent_json_trace(traces: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not traces:
         return None
@@ -800,6 +902,8 @@ def _clean_derived_fragment(value: str) -> str:
 
 def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     intent = _scenario_intent(scenario)
+    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+        return "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples."
     if sidecar_diagnosis:
         if sidecar_diagnosis.get("rootCauseCategory") == "agent_json_context_overflow":
             return f"For `{intent}` E2E evals, agent-json prompt budget overflow is an executor prompt-construction failure and must not be grouped as malformed model JSON."

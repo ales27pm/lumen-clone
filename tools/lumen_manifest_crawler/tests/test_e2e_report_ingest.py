@@ -338,6 +338,47 @@ def test_ingestion_flags_live_e2e_without_model_evidence_event(tmp_path: Path):
     assert "correlated model-backed AgentBehaviorTrace" in failure["expected"][0]
 
 
+def test_ingestion_keeps_resource_budget_preflight_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    import json
+
+    failure = (
+        "executor preflight failed: resource-budget-denied-before-prompt-eval; "
+        "slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious"
+    )
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "executor-runtime-preflight",
+                "kind": "training",
+                "title": "Executor runtime preflight",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "What is the weather here and should I carry an umbrella?",
+                "actualIntent": "preflight",
+                "expectedIntent": "weather",
+                "failures": [failure],
+                "finalText": "",
+                "events": [{"phase": "executor-preflight", "message": failure}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert len(normalized["failures"]) == 1
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_runtime_environment_deferred"
+    assert failure_record["rootCauseCategory"] == "runtime_environment_deferred"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert "must be exported as diagnostics" in failure_record["expected"][0]
+
+
 def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
     report_path = tmp_path / "e2e-with-model-evidence.json"
     import json
@@ -740,8 +781,56 @@ def test_ingestion_prefers_resource_budget_denied_over_cancelled_empty_reason(tm
     normalized = load_runtime_audit_reports([report_path])[0]
 
     failure = normalized["failures"][0]
-    assert failure["rootCauseCategory"] == "agent_json_resource_budget_denied_before_first_token"
+    assert failure["rootCauseCategory"] == "runtime_environment_deferred"
+    assert failure["type"] == "e2e_runtime_environment_deferred"
+    assert failure["trainable"] is False
+    assert failure["repairSample"]["trainable"] is False
     assert "resource-budget-denied-before-prompt-eval" in failure["problem"]
+
+
+def test_ingestion_keeps_adapter_unavailable_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    prompt = "What is the weather here and should I carry an umbrella?"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "name": "Training eval: weather stays grounded",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": prompt,
+                "intent": "weather",
+                "expectedIntent": "weather",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Weather tool output could not be validated. Try again or provide a city.",
+                "events": [{"phase": "model-evidence", "message": "found primary agent-json modelTurn but parseError=noJSONObject; streamTerminationReason=adapterUnavailable"}],
+            }
+        ],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": "noJSONObject",
+        "rawOutputPrefix": "Generation error: The operation couldn’t be completed. (Lumen.LocalRuntimeError error 0.)",
+        "promptPrefix": prompt,
+        "streamStarted": False,
+        "firstChunkReceived": False,
+        "textChunkCount": 0,
+        "finalChunkReceived": False,
+        "streamTerminationReason": "adapterUnavailable",
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "runtime_environment_deferred"
+    assert failure["type"] == "e2e_runtime_environment_deferred"
+    assert failure["trainable"] is False
+    assert failure["repairSample"]["trainable"] is False
+    assert "adapterUnavailable" in failure["problem"]
 
 
 def test_ingestion_prefers_primary_agent_json_trace_over_runtime_init_trace(tmp_path: Path):

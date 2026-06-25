@@ -1,6 +1,6 @@
 {
   "agent": "mouth",
-  "availableSFTRecords": 430,
+  "availableSFTRecords": 279,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -8,7 +8,7 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "0a3977dd04253a9ea274a45c2e659d3e67557c9e",
+  "manifestCommit": "084d488a7038dcf5dc8e698fd4a46b683c9b5604",
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
@@ -22,30 +22,24 @@
   "recordCounts": {
     "eval": 8,
     "train_dpo": 12,
-    "train_sft": 278,
+    "train_sft": 230,
     "val_dpo": 2,
-    "val_sft": 49
+    "val_sft": 40
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
     "codebase_home_chunk_sft",
-    "codebase_home_chunks",
-    "codebase_home_corpus",
     "codebase_home_sft",
     "cross_model_training",
-    "embedding_corpus",
     "fleet_system_prompts",
     "manifest_grounding_cards",
     "mouth_responses",
-    "runtime_audit_repairs",
     "train_sft"
   ],
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
   "taskTypes": [
     "codebase_home_grounding",
-    "codebase_source_chunk",
     "codebase_source_chunk_grounding",
-    "embedding_corpus",
     "fleet_delegation",
     "fleet_delegation_preference",
     "fleet_peer_knowledge",
@@ -56,7 +50,6 @@
     "manifest_grounding_cards",
     "mouth_responses",
     "role_directory",
-    "runtime_manifest_drift_repair",
     "source_code_self_knowledge",
     "source_routing_knowledge",
     "source_tool_registry_knowledge",

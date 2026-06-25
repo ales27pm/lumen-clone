@@ -1004,6 +1004,12 @@ def _build_runtime_audit_repair_records(  # NOSONAR
 def _runtime_failure_is_training_repairable(failure: dict[str, Any]) -> bool:
     failure_type = str(failure.get("type") or "")
     source_layer = str(failure.get("sourceLayer") or "")
+    root_cause = str(failure.get("rootCauseCategory") or "")
+    repair_sample = failure.get("repairSample") if isinstance(failure.get("repairSample"), dict) else {}
+    if failure.get("trainable") is False or repair_sample.get("trainable") is False:
+        return False
+    if failure_type == "e2e_runtime_environment_deferred" or root_cause == "runtime_environment_deferred":
+        return False
     if failure_type in {
         "agent_grounding_no_recent_model_traces",
         "agent_grounding_model_trace_incomplete",

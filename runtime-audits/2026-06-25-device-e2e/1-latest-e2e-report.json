@@ -1,0 +1,49 @@
+{
+  "failed" : 1,
+  "finishedAt" : "2026-06-25T15:16:06Z",
+  "id" : "585E1DA8-1873-496A-B55C-AED6D6213F2C",
+  "passed" : 0,
+  "results" : [
+    {
+      "actualIntent" : "preflight",
+      "events" : [
+        {
+          "createdAt" : "2026-06-25T15:16:06Z",
+          "id" : "6D29858D-A985-4DA8-B902-B264AA55368F",
+          "message" : "executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=\/var\/mobile\/Containers\/Data\/Application\/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9\/Documents\/Models\/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=\/var\/mobile\/Containers\/Data\/Application\/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9\/Documents\/Models\/lumen-executor-lora.gguf",
+          "phase" : "executor-preflight",
+          "scenarioID" : "executor-runtime-preflight"
+        }
+      ],
+      "expectedIntent" : "weather",
+      "failures" : [
+        "executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=\/var\/mobile\/Containers\/Data\/Application\/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9\/Documents\/Models\/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=\/var\/mobile\/Containers\/Data\/Application\/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9\/Documents\/Models\/lumen-executor-lora.gguf"
+      ],
+      "finalText" : "",
+      "finishedAt" : "2026-06-25T15:16:06Z",
+      "id" : "C8B8B600-01A1-4425-9E91-933ACE66982A",
+      "kind" : "training",
+      "missingHints" : [
+
+      ],
+      "outputHygieneFailures" : [
+
+      ],
+      "passed" : false,
+      "prompt" : "What is the weather here and should I carry an umbrella?",
+      "rawFinalHadUnsafeLeakage" : false,
+      "rawFinalPrefix" : "",
+      "requiresAgentRun" : true,
+      "rewriteAttempted" : false,
+      "rewriteSuccess" : false,
+      "sanitizedFinalPrefix" : "",
+      "sanitizedFinalRemovedArtifacts" : [
+
+      ],
+      "scenarioID" : "executor-runtime-preflight",
+      "startedAt" : "2026-06-25T15:16:06Z",
+      "title" : "Executor runtime preflight"
+    }
+  ],
+  "startedAt" : "2026-06-25T15:16:06Z"
+}

@@ -44,8 +44,11 @@
       "negative_samples",
       "rem_reflection"
     ],
-    "runtimeAuditFormats": [],
-    "runtimeAuditReports": 0,
+    "runtimeAuditFormats": [
+      "live-e2e-test-report-json",
+      "lumen_e2e_test_report"
+    ],
+    "runtimeAuditReports": 2,
     "staticSwiftSourceFiles": 13
   },
   "trainingPolicy": {

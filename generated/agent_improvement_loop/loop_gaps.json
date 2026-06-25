@@ -1,1286 +1,382 @@
 {
   "gaps": [
     {
-      "category": "manifest_mismatch",
+      "category": "dataset_coverage",
       "evidence": {
-        "actual": "recipient:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "recipient:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "messages.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
+        "family": "runtime_audit_repairs"
       },
-      "id": "cd4ae8c5bfca4a125c81f45d",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
+      "id": "4f0100442bae63332fd99a1f",
+      "recommendedAction": "Add generators or runtime inputs that produce runtime_audit_repairs records.",
+      "severity": "warning",
+      "title": "Empty dataset family: runtime_audit_repairs"
     },
     {
-      "category": "manifest_mismatch",
+      "category": "runtime_environment_deferred",
       "evidence": {
-        "actual": "message:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "message:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "messages.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "f6e1ce6b631683835ca303bd",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "text:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "text:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "messages.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "8cbdbc4dbfab5bcf38eaef64",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "number:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "number:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "messages.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "d299b10e5f32f0f5aa0c373f",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "text:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "text:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "mail.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "3989b69eff512d7a48f62f1e",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "message:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "message:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "mail.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "fe50620c1b829971c3d0055c",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "email:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "email:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "mail.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "9646ad27a7fb43671f23a057",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "recipient:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "recipient:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "mail.draft",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "02d0cb090f8cef9a74c16c77",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.read",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "0e38514f8c9c3aa544edd988",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.attachments.list",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "205832a73b5fc12cdaa43a71",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.mark_read",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "feb55ae3a94234499aa26a82",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.mark_unread",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "5ca78001b440679b6afc33a1",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.move",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "5351fd337215b1225fab8f5e",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "destinationId:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "destinationId:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.move",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "73346614b21834e0b5589405",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.archive",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "a1f68f3a900236b38e66d54e",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.delete",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "97e574691ce965033d769fdb",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.reply",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "b3131a12c4e0e1f4d22133d6",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "comment:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "comment:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.reply",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "437c86337884254b951aad54",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.reply_all",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "266d9b0643a1264a26cfc4bb",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "comment:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "comment:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.reply_all",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "cd18f827317bc32e11dd878d",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "outlook.message.forward",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "f255222cbf23113837577019",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "beforeMinutes:number:required=false",
-        "agent": "runtime",
-        "expected": [
-          "beforeMinutes:number:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "trigger.create",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "3765dd052789b6008564b060",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "atTime:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "atTime:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "trigger.create",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "1bb0355e99973866b1821b76",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "intervalSeconds:number:required=false",
-        "agent": "runtime",
-        "expected": [
-          "intervalSeconds:number:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "trigger.create",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "226185267c46f4073bc3fb05",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "id:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "id:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "trigger.cancel",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "aa77c08e0b428117211b31a3",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "timestamp:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "timestamp:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "alarm.schedule",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "d76d4c3a00cb17b44b9cfdc1",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "title:string:required=false",
-        "agent": "runtime",
-        "expected": [
-          "title:string:required=true"
-        ],
-        "problem": "Argument type or required flag differs between manifest and runtime.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "alarm.cancel",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "argument_mismatch"
-      },
-      "id": "a22d42b1ef93cd795da0eaf9",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "argument_mismatch"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "agent": "runtime",
-        "expected": [
-          "inMinutes"
-        ],
-        "problem": "Manifest argument is absent from runtime tool definition.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "trigger.create",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "missing_live_argument"
-      },
-      "id": "a620579042cf6ff3ee040ac1",
-      "recommendedAction": "Regenerate executor schema cards and add missing-argument clarification examples.",
-      "severity": "error",
-      "title": "missing_live_argument"
-    },
-    {
-      "category": "manifest_mismatch",
-      "evidence": {
-        "actual": "plus",
-        "agent": "runtime",
-        "expected": [
-          "atTime",
-          "beforeMinutes",
-          "inMinutes",
-          "intervalSeconds",
-          "prompt",
-          "schedule",
-          "title"
-        ],
-        "problem": "Runtime exposes an argument absent from the manifest.",
-        "rootCauseCategory": "manifest_mismatch",
-        "scenario": "trigger.create",
-        "sourceLayer": "runtimeManifestAudit",
-        "type": "unmanifested_live_argument"
-      },
-      "id": "b300559fb36aabfc77ede14d",
-      "recommendedAction": "Regenerate the manifest from Swift source, then add unknown-tool DPO contrast samples.",
-      "severity": "error",
-      "title": "unmanifested_live_argument"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "recentTraces is empty",
-        "agent": "runtime",
-        "expected": [
-          "Agent Grounding export should include recent model/tool traces captured from real in-app execution."
-        ],
-        "problem": "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
-        "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
-        "type": "agent_grounding_no_recent_model_traces"
-      },
-      "id": "4cdc765b745b87c8a53655f1",
-      "recommendedAction": "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence.",
-      "severity": "error",
-      "title": "agent_grounding_no_recent_model_traces"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "recentTraces is empty",
-        "agent": "runtime",
-        "expected": [
-          "Agent Grounding export should include recent model/tool traces captured from real in-app execution."
-        ],
-        "problem": "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
-        "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
-        "type": "agent_grounding_no_recent_model_traces"
-      },
-      "id": "4cdc765b745b87c8a53655f1",
-      "recommendedAction": "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence.",
-      "severity": "error",
-      "title": "agent_grounding_no_recent_model_traces"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
-        "agent": "mouth",
+        "actual": "",
+        "agent": "rem",
         "e2eScenario": {
-          "expectedIntent": "emailDraft",
-          "final": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
-          "intent": "emailDraft",
-          "name": "Training eval: communication drafting",
-          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
-          "requiredHint": null,
-          "skippedLiveModelRun": false
-        },
-        "expected": [
-          "Final answer must satisfy the `emailDraft` eval contract without violating tool boundaries."
-        ],
-        "problem": "Live agent produced no action step for tool-backed intent",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
-          "correctedOutput": "Who should I send it to, and what should it say?\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "Final answer must satisfy the `emailDraft` eval contract without violating tool boundaries.",
-          "lesson": "Use failed `emailDraft` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
-          "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
-          "violationCode": "e2e_response_quality_emaildraft"
-        },
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_emaildraft"
-      },
-      "id": "874f3fd7eae0396fb7e60e21",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
-      "title": "e2e_response_quality_emaildraft"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "rag",
-          "final": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
-          "intent": "rag",
-          "name": "Training eval: local knowledge grounding",
-          "prompt": "Search my files for architecture notes and summarize key modules.",
-          "requiredHint": null,
-          "skippedLiveModelRun": false
-        },
-        "expected": [
-          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
-        ],
-        "problem": "Live agent returned fallback/error text instead of completing the scenario",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
-          "correctedOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].",
-          "curriculum": "grounded_response_quality",
-          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
-          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
-          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
-          "violationCode": "e2e_response_quality_rag"
-        },
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "Search my files for architecture notes and summarize key modules.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_rag"
-      },
-      "id": "e858e730bc64fae527769e4c",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
-      "title": "e2e_response_quality_rag"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "trigger",
-          "final": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
-          "intent": "trigger",
-          "name": "Training eval: trigger scheduling quality",
-          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-          "requiredHint": null,
-          "skippedLiveModelRun": false
-        },
-        "expected": [
-          "Final answer must satisfy the `trigger` eval contract without violating tool boundaries."
-        ],
-        "problem": "Live agent produced no action step for tool-backed intent",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
-          "correctedOutput": "I couldn’t safely complete the scheduled-agent request.\n\ntrigger",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "Final answer must satisfy the `trigger` eval contract without violating tool boundaries.",
-          "lesson": "Use failed `trigger` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
-          "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-          "violationCode": "e2e_response_quality_trigger"
-        },
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_trigger"
-      },
-      "id": "645a9e2793e12778a7a6794d",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
-      "title": "e2e_response_quality_trigger"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "interrupted",
-        "agent": "runtime",
-        "diagnosticRecordID": "39E500A8-E65A-4BFA-A3DD-1D770D14153E",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "liveAgentStream",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "e16eb071049f0c4f887ade82",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "interrupted",
-        "agent": "runtime",
-        "diagnosticRecordID": "664EFBE3-58C6-4EB8-90B4-CE4FA7562EE5",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "liveAgentStream",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "5ed59c9a97bf06ee3ed2cba3",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "skipped",
-        "agent": "runtime",
-        "diagnosticRecordID": "8335577E-0921-483A-8EC3-67CEFD02693D",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "agentToolPrompt",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "e325ab3d138facf2c3b0f211",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "runtime_drift",
-      "evidence": {
-        "actual": "skipped",
-        "agent": "runtime",
-        "diagnosticRecordID": "5CCEB691-E3DE-4811-A129-5270BB62B219",
-        "expected": [
-          "Persistent diagnostics scenario should pass or be an explicitly expected cancellation."
-        ],
-        "problem": "A persistent runtime diagnostics scenario finished without a passing status.",
-        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-        "scenario": "liveAgentStream",
-        "sourceLayer": "persistentRuntimeDiagnostics.records",
-        "type": "persistent_diagnostics_scenario_not_passed"
-      },
-      "id": "86d56c2b0a631c53a8cc9db8",
-      "recommendedAction": "Fix the diagnostics scenario or app runtime path, then rerun persistent diagnostics before using the artifact.",
-      "severity": "error",
-      "title": "persistent_diagnostics_scenario_not_passed"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "chat",
-          "final": "I hit an internal response-format issue. Please try again.",
-          "intent": "chat",
-          "name": "Normal chat does not force tools",
-          "prompt": "Explain why a sharp chisel is safer than a dull one.",
+          "expectedIntent": "weather",
+          "final": "",
+          "intent": "preflight",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9/Documents/Models/lumen-executor-lora.gguf\n{'createdAt': '2026-06-25T15:16:06Z', 'id': '6D29858D-A985-4DA8-B902-B264AA55368F', 'message': 'executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4",
+            "trainable": false
+          },
+          "name": "Executor runtime preflight",
+          "prompt": "What is the weather here and should I carry an umbrella?",
           "requiredHint": null,
           "skippedLiveModelRun": true
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
+        "problem": "executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9/Documents/Models/lumen-executor-lora.gguf",
         "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Explain why a sharp chisel is safer than a dull one.",
-          "violationCode": "e2e_response_quality_chat"
+          "agent": "rem",
+          "badOutput": "",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "What is the weather here and should I carry an umbrella?",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
         },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Explain why a sharp chisel is safer than a dull one.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_chat"
+        "rootCauseCategory": "runtime_environment_deferred",
+        "scenario": "What is the weather here and should I carry an umbrella?",
+        "sourceLayer": "e2eTestReport.json",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
       },
-      "id": "e4ecf009693ef78994923043",
+      "id": "de8b0a7b4e863e0bdd564c41",
       "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
       "severity": "warning",
-      "title": "e2e_response_quality_chat"
+      "title": "e2e_runtime_environment_deferred"
     },
     {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "chat",
-          "final": "I hit an internal response-format issue. Please try again.",
-          "intent": "chat",
-          "name": "Carpentry chat stays direct",
-          "prompt": "Give me three tips for fitting a door hinge cleanly.",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Give me three tips for fitting a door hinge cleanly.",
-          "violationCode": "e2e_response_quality_chat"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Give me three tips for fitting a door hinge cleanly.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_chat"
-      },
-      "id": "b0c97b0bbc6d69a39823d017",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_chat"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "chat",
-          "final": "I hit an internal response-format issue. Please try again.",
-          "intent": "chat",
-          "name": "Code explanation stays chat",
-          "prompt": "Explain actor isolation in Swift in simple terms.",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Explain actor isolation in Swift in simple terms.",
-          "violationCode": "e2e_response_quality_chat"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Explain actor isolation in Swift in simple terms.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_chat"
-      },
-      "id": "b99363599b0c49d0671d32c6",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_chat"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "chat",
-          "final": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
-          "intent": "chat",
-          "name": "Training eval: pure chat quality",
-          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\n\nprecision\n\nIn plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `chat` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
-          "violationCode": "e2e_response_quality_chat"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_chat"
-      },
-      "id": "38ac5984776bcade54acd6cf",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_chat"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "emailDraft",
-          "final": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
-          "intent": "emailDraft",
-          "name": "Vague email draft asks clarification",
-          "prompt": "Draft a email",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\n\nwhat should\n\nwho should",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Draft a email",
-          "violationCode": "e2e_response_quality_emaildraft"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Draft a email",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_emaildraft"
-      },
-      "id": "2410ebc1f59b4286b17afa65",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_emaildraft"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "emailDraft",
-          "final": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
-          "intent": "emailDraft",
-          "name": "Training eval: communication drafting",
-          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Final output empty after sanitization; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\n\nOne clarifying question: what specific deadline, priority, or next step should I align this with?",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `emailDraft` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
-          "violationCode": "e2e_response_quality_emaildraft"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_emaildraft"
-      },
-      "id": "34cf3db25ca063c4df5bd801",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_emaildraft"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "memory",
-          "final": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
-          "intent": "memory",
-          "name": "Training eval: memory save/recall",
-          "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\n\nI remember that you prefer concise bullet points.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "grounded_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `memory` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
-          "violationCode": "e2e_response_quality_memory"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_memory"
-      },
-      "id": "881aefbfda1bcc42f7d374d1",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_memory"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "rag",
-          "final": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
-          "intent": "rag",
-          "name": "Training eval: local knowledge grounding",
-          "prompt": "Search my files for architecture notes and summarize key modules.",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\nKey modules: core module details were retrieved from local file snippets [1].\n\nKey modules: core module details were retrieved from local file snippets [1].",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "grounded_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `rag` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
-          "violationCode": "e2e_response_quality_rag"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Search my files for architecture notes and summarize key modules.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_rag"
-      },
-      "id": "ab6af3a8a60401b19a7637ec",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_rag"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\n\ntrigger",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "trigger",
-          "final": "I hit an internal response-format issue. Please try again.\n\ntrigger",
-          "intent": "trigger",
-          "name": "Training eval: trigger scheduling quality",
-          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\n\ntrigger",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `trigger` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-          "violationCode": "e2e_response_quality_trigger"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_trigger"
-      },
-      "id": "79a0ab0ac229965c59772df6",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_trigger"
-    },
-    {
-      "category": "skipped_live_model_generation",
+      "category": "runtime_environment_deferred",
       "evidence": {
         "actual": "Weather tool output could not be validated. Try again or provide a city.",
-        "agent": "mouth",
+        "agent": "rem",
         "e2eScenario": {
           "expectedIntent": "weather",
           "final": "Weather tool output could not be validated. Try again or provide a city.",
           "intent": "weather",
-          "name": "Weather here must not create events",
-          "prompt": "What is the weather here?",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "What is the weather here?",
-          "violationCode": "e2e_response_quality_weather"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "What is the weather here?",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_weather"
-      },
-      "id": "d31377ff0811359a0b50b694",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_weather"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "Weather tool output could not be validated. Try again or provide a city.",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "weather",
-          "final": "Weather tool output could not be validated. Try again or provide a city.",
-          "intent": "weather",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent\n{'createdAt': '2026-06-24T12:14:32Z', 'id': '216105F2-26AA-4CDA-87F8-AC4959536A76', 'message': 'What is the weather here and should I carry an umbrella?', 'phase': 'start', 'scenarioID': 'training-weather-grounded'} {'createdAt': '2026-06-24T12:14:32Z', 'id': 'F1050662-D2EF-454A-A821-F4D2FD6517B9', 'message': 'actual=weather, expected=weather', 'phase': 'intent', 'scenarioID': 'training-weather-grounded'} {'createdAt': '2026-06-24T12:14:32Z', 'id': '36A240E6-3A5F-4986-9522-A6AB504FFCA4', 'message': 'scenarioID=training-weather-grounded,e2eRunID=46AE37D3-2EDD-4CA2-89F7-6C7A11DFC3AA,agentRunID=6DC15CC8-E4F5-4D26-86E3-80C70B31EDB4,conversationID=3FBCA5AF-33AA-4A92-B29D-F560A38F5A83,turnID=1A85D68C-2401-4398-A048-D963334ECB92', 'phase': 'correlation', 'scenarioID': 'training-weather-grounded'} {'createdAt': '2026-06-24T12:14:32Z', 'id': 'A09CB8D0-04E1-4145-BC01-7B1DB",
+            "trainable": false
+          },
           "name": "Training eval: weather stays grounded",
           "prompt": "What is the weather here and should I carry an umbrella?",
           "requiredHint": null,
           "skippedLiveModelRun": true
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent",
+        "problem": "runtime environment deferred model generation: Live E2E scenario did not record model-backed generation evidence; Live agent produced no action step for tool-backed intent {'createdAt': '2026-06-24T12:14:32Z', 'id': '216105F2-26AA-4CDA-87F8-AC4959536A76', 'message': 'What is the weather here and should I carry an umbrella?', 'phase': 'start', 'scenarioID': 'training-weather-grounded'} {'createdAt': '2026-06-24T12:14:32Z', 'id': 'F1050662-D2EF-454A-A821-F4D2FD6517B9', 'message': 'actual=weather, expected=weather', 'phase': 'intent', 'scenario",
         "repairSample": {
-          "agent": "mouth",
+          "agent": "rem",
           "badOutput": "Weather tool output could not be validated. Try again or provide a city.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `weather` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
           "promptPrefix": "What is the weather here and should I carry an umbrella?",
-          "violationCode": "e2e_response_quality_weather"
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
         },
-        "rootCauseCategory": "skipped_live_model_generation",
+        "rootCauseCategory": "runtime_environment_deferred",
         "scenario": "What is the weather here and should I carry an umbrella?",
         "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_weather"
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
       },
-      "id": "c52c3932ab6cacf716b2aca1",
+      "id": "1aae199adbeadc412f6eeac4",
       "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
       "severity": "warning",
-      "title": "e2e_response_quality_weather"
+      "title": "e2e_runtime_environment_deferred"
     },
     {
-      "category": "skipped_live_model_generation",
+      "category": "runtime_environment_deferred",
       "evidence": {
         "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
-        "agent": "mouth",
+        "agent": "rem",
         "e2eScenario": {
           "expectedIntent": "webSearch",
           "final": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
           "intent": "webSearch",
-          "name": "Web search must not create calendar event",
-          "prompt": "Search web for diy underground shelter",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
-        ],
-        "problem": "Live E2E scenario did not record model-backed or policy-first execution evidence; Live agent produced no action step for tool-backed intent",
-        "repairSample": {
-          "agent": "mouth",
-          "badOutput": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
-          "promptPrefix": "Search web for diy underground shelter",
-          "violationCode": "e2e_response_quality_websearch"
-        },
-        "rootCauseCategory": "skipped_live_model_generation",
-        "scenario": "Search web for diy underground shelter",
-        "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_websearch"
-      },
-      "id": "a9bdebd31071510eb05bedad",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_response_quality_websearch"
-    },
-    {
-      "category": "skipped_live_model_generation",
-      "evidence": {
-        "actual": "I hit an internal response-format issue. Please try again.\n\nswift",
-        "agent": "mouth",
-        "e2eScenario": {
-          "expectedIntent": "webSearch",
-          "final": "I hit an internal response-format issue. Please try again.\n\nswift",
-          "intent": "webSearch",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: swift; Live agent produced no action step for tool-backed intent\n{'createdAt': '2026-06-24T12:14:50Z', 'id': '982F8498-246D-40BC-B06B-D5759C333A07', 'message': 'Search the web for two recent Swift concurrency best practices and summarize them.', 'phase': 'start', 'scenarioID': 'training-web-research'} {'createdAt': '2026-06-24T12:14:50Z', 'id': '4FC58A12-DE19-44C3-B754-F4F9C3E36C22', 'message': 'actual=webSearch, expected=webSearch', 'phase': 'intent', 'scenarioID': 'training-web-research'} {'createdAt': '2026-06-24T12:14:50Z', 'id': '7394F040-D3D4-482B-AB52-2C8B9220F3E7', 'message': 'scenarioID=training-web-research,e2eRunID=775CE7DF-5ECE-4DA0-9D6E-33FA8E60407B,agentRunID=1355BA13-B4FD-4930-840F-7F6B9FAE7FCF,conversationID=A23A8B5C-DB94-4A5D-8ADF-6C37A52ABC66,turnID=4E0CFB4A-0867-42E9-AAE0-EC5758A0792C', 'phase': 'correlation', 'scenarioID': 'training-web-research'} {'createdAt': '2026",
+            "trainable": false
+          },
           "name": "Training eval: web research synthesis",
           "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
           "requiredHint": null,
           "skippedLiveModelRun": true
         },
         "expected": [
-          "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
         ],
-        "problem": "Live E2E scenario did not record model-backed generation evidence; Live agent returned fallback/error text instead of completing the scenario; Live agent produced no action step for tool-backed intent",
+        "problem": "runtime environment deferred model generation: Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: swift; Live agent produced no action step for tool-backed intent {'createdAt': '2026-06-24T12:14:50Z', 'id': '982F8498-246D-40BC-B06B-D5759C333A07', 'message': 'Search the web for two recent Swift concurrency best practices and summarize them.', 'phase': 'start', 'scenarioID': 'training-web-research'} {'createdAt': '2026-06-24T12:14:50Z', 'id': '4FC58A12-DE19-44C3-B754-F4F9C3E36C22', 'message': '",
         "repairSample": {
-          "agent": "mouth",
-          "badOutput": "I hit an internal response-format issue. Please try again.\n\nswift",
-          "correctedOutput": "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence.",
-          "curriculum": "tool_boundary_response_quality",
-          "expected": "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence.",
-          "lesson": "For `webSearch` E2E evals, a scenario marked as requiring an agent/model run must fail closed unless fresh model-backed generation evidence is recorded.",
+          "agent": "rem",
+          "badOutput": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
           "promptPrefix": "Search the web for two recent Swift concurrency best practices and summarize them.",
-          "violationCode": "e2e_response_quality_websearch"
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
         },
-        "rootCauseCategory": "skipped_live_model_generation",
+        "rootCauseCategory": "runtime_environment_deferred",
         "scenario": "Search the web for two recent Swift concurrency best practices and summarize them.",
         "sourceLayer": "e2eTestReport.evidenceLayer",
-        "type": "e2e_response_quality_websearch"
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
       },
-      "id": "7408efb7326fb457841d5f07",
+      "id": "ba93580eb51e15eba1c845bf",
       "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
       "severity": "warning",
-      "title": "e2e_response_quality_websearch"
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_environment_deferred",
+      "evidence": {
+        "actual": "Memory tool output could not be validated.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "memory",
+          "final": "Memory tool output could not be validated.",
+          "intent": "memory",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: recalled preference text: \"prefer concise bullet points\"; Live final required hint missing: remember; Live agent produced no action step for tool-backed intent\n{'createdAt': '2026-06-24T12:15:08Z', 'id': '8092FEBC-008A-43AF-9C41-FB61A597269C', 'message': 'Remember that I prefer concise bullet points, then tell me what you remembered.', 'phase': 'start', 'scenarioID': 'training-memory-loop'} {'createdAt': '2026-06-24T12:15:08Z', 'id': '403A3AC2-3939-487F-A702-26E9949A1EA3', 'message': 'actual=memory, expected=memory', 'phase': 'intent', 'scenarioID': 'training-memory-loop'} {'createdAt': '2026-06-24T12:15:08Z', 'id': 'E3C6D18D-E20F-46E5-BB97-19743049FC33', 'message': 'scenarioID=training-memory-loop,e2eRunID=9327A1E2-DE10-4CE0-B547-4BE8492410EB,agentRunID=C020A1AB-C2AC-4C8E-B700-B5601DE02DA8,conversationID=37D6A098-628E-44CF-8049-E887FA610FD4,turnID=BC4177EA-DDE1-473C-84D8-6CBEB6BF8245',",
+            "trainable": false
+          },
+          "name": "Training eval: memory save/recall",
+          "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "runtime environment deferred model generation: Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: recalled preference text: \"prefer concise bullet points\"; Live final required hint missing: remember; Live agent produced no action step for tool-backed intent {'createdAt': '2026-06-24T12:15:08Z', 'id': '8092FEBC-008A-43AF-9C41-FB61A597269C', 'message': 'Remember that I prefer concise bullet points, then tell me what you remembered.', 'phase': 'start', 'scenarioID': 'training-memory-loop'} {'cre",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Memory tool output could not be validated.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "runtime_environment_deferred",
+        "scenario": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "e3717ddec027be04d88e6bc6",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_environment_deferred",
+      "evidence": {
+        "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "intent": "rag",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: [1]; Live final required hint missing: module; Live final required hint missing: module(s); Live agent produced no action step for tool-backed intent\n{'createdAt': '2026-06-24T12:15:18Z', 'id': '9212B670-D283-435D-A7E0-2C1FEDFDFA2F', 'message': 'Search my files for architecture notes and summarize key modules.', 'phase': 'start', 'scenarioID': 'training-rag-grounding'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '5EDEF0C4-6AD4-49B2-B216-FC4E99BA8DC1', 'message': 'actual=rag, expected=rag', 'phase': 'intent', 'scenarioID': 'training-rag-grounding'} {'createdAt': '2026-06-24T12:15:18Z', 'id': 'A407F0A2-56F2-425A-928F-BCA3A712117F', 'message': 'scenarioID=training-rag-grounding,e2eRunID=B7517B1A-74E2-4426-873D-D13734C25CA7,agentRunID=8C12967D-6B57-4C4F-8E1D-001871CDC572,conversationID=3CB2C108-AD6B-44DF-9EDC-45332C5DCBB3,turnID=3A0F2B2F-DD97-4D4F-B5B2-E7402A8D60B7', 'phase': 'correlation',",
+            "trainable": false
+          },
+          "name": "Training eval: local knowledge grounding",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "runtime environment deferred model generation: Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: [1]; Live final required hint missing: module; Live final required hint missing: module(s); Live agent produced no action step for tool-backed intent {'createdAt': '2026-06-24T12:15:18Z', 'id': '9212B670-D283-435D-A7E0-2C1FEDFDFA2F', 'message': 'Search my files for architecture notes and summarize key modules.', 'phase': 'start', 'scenarioID': 'training-rag-grounding'} {'createdAt': '2026-06-24T1",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "runtime_environment_deferred",
+        "scenario": "Search my files for architecture notes and summarize key modules.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "19c1332657ab448a33823a40",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_environment_deferred",
+      "evidence": {
+        "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "trigger",
+          "final": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "intent": "trigger",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: trigger; Live agent produced no action step for tool-backed intent\n{'createdAt': '2026-06-24T12:15:18Z', 'id': 'D8B37519-43ED-4A18-8AA2-B5F5D4F365B7', 'message': 'Schedule a trigger to summarize reminders tonight and confirm what will run.', 'phase': 'start', 'scenarioID': 'training-scheduler-agent'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '4C0E5E5D-1605-4428-B06E-50F006DB10EA', 'message': 'actual=trigger, expected=trigger', 'phase': 'intent', 'scenarioID': 'training-scheduler-agent'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '67332AD9-FE7B-4CC9-8C3D-4335551C1785', 'message': 'scenarioID=training-scheduler-agent,e2eRunID=255BD823-F61F-41AB-9FDE-985513C89D84,agentRunID=D8D5259B-2D4D-4102-A8DE-58DE7284439F,conversationID=F457B142-3204-4140-AC86-C998689E5CA0,turnID=5B2E1AB4-674C-4869-84DB-A93A9F8EA2CF', 'phase': 'correlation', 'scenarioID': 'training-scheduler-agent'} {'createdAt': '",
+            "trainable": false
+          },
+          "name": "Training eval: trigger scheduling quality",
+          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "runtime environment deferred model generation: Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: trigger; Live agent produced no action step for tool-backed intent {'createdAt': '2026-06-24T12:15:18Z', 'id': 'D8B37519-43ED-4A18-8AA2-B5F5D4F365B7', 'message': 'Schedule a trigger to summarize reminders tonight and confirm what will run.', 'phase': 'start', 'scenarioID': 'training-scheduler-agent'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '4C0E5E5D-1605-4428-B06E-50F006DB10EA', 'message': 'a",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "runtime_environment_deferred",
+        "scenario": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "386261154a59a0346feb572c",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_environment_deferred",
+      "evidence": {
+        "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "emailDraft",
+          "final": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "intent": "emailDraft",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: question; Live agent produced no action step for tool-backed intent\n{'createdAt': '2026-06-24T12:15:18Z', 'id': '47AAD1AF-7540-4499-B3A0-6CDF24109336', 'message': 'Draft an email to Alex with a professional update and ask one clarifying question.', 'phase': 'start', 'scenarioID': 'training-communication-draft'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '4A8D621C-1CB8-4504-8263-80ACFADC0F7F', 'message': 'actual=emailDraft, expected=emailDraft', 'phase': 'intent', 'scenarioID': 'training-communication-draft'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '3567AF41-B5AC-4E35-8E92-958127E7AC2D', 'message': 'scenarioID=training-communication-draft,e2eRunID=E790879D-B044-4588-B08F-8F6BDA51A508,agentRunID=AED68752-C063-40D7-96E4-44E4238C2385,conversationID=F7B6F2B1-1255-49D3-A1E0-91755A3AA11D,turnID=C1BADDBE-452A-4DC7-BB99-98094E3D8A70', 'phase': 'correlation', 'scenarioID': 'training-communic",
+            "trainable": false
+          },
+          "name": "Training eval: communication drafting",
+          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "runtime environment deferred model generation: Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: question; Live agent produced no action step for tool-backed intent {'createdAt': '2026-06-24T12:15:18Z', 'id': '47AAD1AF-7540-4499-B3A0-6CDF24109336', 'message': 'Draft an email to Alex with a professional update and ask one clarifying question.', 'phase': 'start', 'scenarioID': 'training-communication-draft'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '4A8D621C-1CB8-4504-8263-80ACFADC0F7F', 'm",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Draft an email to Alex with a professional update and ask one clarifying question.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "runtime_environment_deferred",
+        "scenario": "Draft an email to Alex with a professional update and ask one clarifying question.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "773ea4bc0da67bf30983a8dd",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_environment_deferred",
+      "evidence": {
+        "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "chat",
+          "final": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "intent": "chat",
+          "modelEvidenceRootCause": "runtime_environment_deferred",
+          "modelEvidenceStatus": "runtime_environment_deferred",
+          "modelEvidenceTrace": {
+            "rawDiagnostic": "Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: precision; Live final required hint missing: precision/recall plain-language explainer; Live final required hint missing: recall\n{'createdAt': '2026-06-24T12:15:18Z', 'id': '22CF090F-05AC-4657-827C-8F5D0F4A77E6', 'message': 'Explain tradeoffs between precision and recall in retrieval systems in plain English.', 'phase': 'start', 'scenarioID': 'training-general-chat'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '975A13CF-5420-495F-9097-298565E1DE45', 'message': 'actual=chat, expected=chat', 'phase': 'intent', 'scenarioID': 'training-general-chat'} {'createdAt': '2026-06-24T12:15:18Z', 'id': '8A6E2E09-D0AC-48D7-8969-5657B4DE1231', 'message': 'scenarioID=training-general-chat,e2eRunID=03234E9E-FBDE-4945-B0D5-7B5FBF48BD83,agentRunID=9252C0CE-3ED3-4694-AAEC-825828202C90,conversationID=62A91AEA-AE54-4ED1-9150-766E0A805F1B,turnID=AE4E303C-D590-4A2B-A200-90058381A9B3', 'phase': 'correlation', '",
+            "trainable": false
+          },
+          "name": "Training eval: pure chat quality",
+          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "requiredHint": null,
+          "skippedLiveModelRun": true
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "runtime environment deferred model generation: Live E2E scenario did not record model-backed generation evidence; Live final required hint missing: precision; Live final required hint missing: precision/recall plain-language explainer; Live final required hint missing: recall {'createdAt': '2026-06-24T12:15:18Z', 'id': '22CF090F-05AC-4657-827C-8F5D0F4A77E6', 'message': 'Explain tradeoffs between precision and recall in retrieval systems in plain English.', 'phase': 'start', 'scenarioID': 'training-general-chat'} {'createdAt': '2026-06-24T12:",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "runtime_environment_deferred",
+        "scenario": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "f5fa96c85db86cef211f8dcc",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "severity": "warning",
+      "title": "e2e_runtime_environment_deferred"
     }
   ]
 }

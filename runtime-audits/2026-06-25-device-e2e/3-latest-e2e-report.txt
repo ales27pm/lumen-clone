@@ -1,0 +1,13 @@
+E2E Test Report
+Passed: 0
+Failed: 1
+
+Training signals for next run:
+• other: 1 issues
+• Capture failed prompts + final outputs into next fine-tuning dataset.
+• Prioritize scenarios with repeated tool-boundary violations.
+
+❌ Executor runtime preflight
+Prompt: What is the weather here and should I carry an umbrella?
+Intent: preflight / expected weather
+Failures: executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=/var/mobile/Containers/Data/Application/CFFBE94B-45AA-4DE3-BD13-DDAC8E27E2D9/Documents/Models/lumen-executor-lora.gguf
