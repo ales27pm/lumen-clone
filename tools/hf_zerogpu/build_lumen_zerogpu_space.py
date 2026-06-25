@@ -313,6 +313,7 @@ def trigger_space_training(
                 seed=seed,
                 gpu_size=gpu_size,
                 token=token,
+                deadline=started + timeout_seconds,
             )
             return
         except Exception as exc:
@@ -348,6 +349,7 @@ def _trigger_space_training_via_gradio_api(
     seed: int,
     gpu_size: str,
     token: str | None,
+    deadline: float | None = None,
 ) -> None:
     import httpx
 
@@ -377,6 +379,8 @@ def _trigger_space_training_via_gradio_api(
         with client.stream("GET", f"{base_url}/gradio_api/call/train_lumen_adapters/{event_id}", headers=headers) as stream:
             stream.raise_for_status()
             for line in stream.iter_lines():
+                if deadline is not None and time.monotonic() > deadline:
+                    raise TimeoutError("Timed out while waiting for Space training event stream to complete")
                 if not line:
                     continue
                 print(line, flush=True)
