@@ -57,7 +57,16 @@ final class LegacyTurnGroundingCoordinator {
             let rendered = await Task.detached(priority: .userInitiated) {
                 PromptGroundingRenderer.renderForPrompt(sections, maxChars: 3200)
             }.value
-            let grounding = AssistantGroundingContext(memoryCount: bundle.grounding.memoryCount, ragCount: bundle.grounding.ragCount, toolCount: bundle.grounding.toolCount, estimatedChars: rendered.count)
+            let grounding = AssistantGroundingContext(
+                memoryCount: bundle.grounding.memoryCount,
+                ragCount: bundle.grounding.ragCount,
+                toolCount: bundle.grounding.toolCount,
+                estimatedChars: rendered.count,
+                estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: rendered.count),
+                contextProfile: bundle.grounding.contextProfile,
+                maxInputTokens: bundle.grounding.maxInputTokens,
+                ragConfidence: bundle.grounding.ragConfidence
+            )
             roleAwareBundle = .init(grounding: grounding, sections: sections, renderedPromptContext: rendered, secureTools: bundle.secureTools, metricsSummary: bundle.metricsSummary)
         }
         await cache.put(key, bundle: roleAwareBundle)

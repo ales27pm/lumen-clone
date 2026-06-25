@@ -36,12 +36,21 @@ final class AssistantKernel {
 
     func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?) async -> AssistantGroundingContext {
         guard let modelContext else { return .empty }
-        let budget = ContextBudgetAllocator.allocate(maxChars: 4000)
-        let mem = memoryEngine.buildContext(query: turn.input, budget: budget.memories, context: modelContext)
-        let rag = await ragEngine.buildContext(query: turn.input, budget: budget.rag, context: modelContext)
+        let budget = ContextBudgetAllocator.allocate(for: turn)
+        let mem = memoryEngine.buildContext(query: turn.input, budget: budget.charSections.memories, context: modelContext)
+        let rag = await ragEngine.buildContext(query: turn.input, budget: budget.charSections.rag, context: modelContext)
         let tctx = ToolExecutionContext(isForeground: turn.isForeground, appState: nil, modelContext: modelContext, permissionRegistry: .shared, metricsStore: metricsStore)
         let defs = await toolRegistry.availableDefinitions(context: tctx, source: turn.isForeground ? .modelProposed : .backgroundTrigger)
-        return .init(memoryCount: mem.selected.count, ragCount: rag.selected.count, toolCount: defs.count, estimatedChars: mem.totalChars + rag.totalChars)
+        return .init(
+            memoryCount: mem.selected.count,
+            ragCount: rag.selected.count,
+            toolCount: defs.count,
+            estimatedChars: mem.totalChars + rag.totalChars,
+            estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: mem.totalChars) + rag.totalTokens,
+            contextProfile: budget.profile.rawValue,
+            maxInputTokens: budget.maxInputTokens,
+            ragConfidence: rag.confidence
+        )
     }
 
     func runTextTurn(_ context: AssistantTurnContext) async throws -> String {
