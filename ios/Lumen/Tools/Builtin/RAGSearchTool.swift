@@ -25,11 +25,14 @@ struct RAGSearchTool: LocalTool {
             let (q, limitRaw, source, minScore) = try parse(invocation.arguments)
             let limit = context.isForeground ? limitRaw : min(limitRaw, 6)
             guard let mc = context.modelContext else { return .init(invocationID: invocation.id, status: .unavailable, displayText: "RAG storage unavailable.", modelText: "RAG unavailable.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "no_model_context", errorCode: "unavailable") }
-            let output = await Self.searchRows(query: q, limit: limit, source: source, minScore: minScore, modelContext: mc)
+            let output = await Self.searchRows(query: q, limit: limit, source: source, minScore: minScore, outputBudgetChars: definition.maxOutputCharacters, modelContext: mc)
             let rows = output.rows
             let mode = output.mode
             let txt = rows.isEmpty ? "No matching RAG chunks found." : rows.joined(separator: "\n")
-            return SafeToolOutputLimiter.limit(result: .init(invocationID: invocation.id, status: .success, displayText: txt, modelText: txt, structuredPayload: ["mode": mode, "count": "\(rows.count)"], privacyLevel: .moderate, metricsSummary: mode, errorCode: nil), maxOutput: definition.maxOutputCharacters)
+            var payload = output.diagnosticsPayload
+            payload["mode"] = mode
+            payload["count"] = "\(rows.count)"
+            return SafeToolOutputLimiter.limit(result: .init(invocationID: invocation.id, status: .success, displayText: txt, modelText: txt, structuredPayload: payload, privacyLevel: .moderate, metricsSummary: mode, errorCode: nil), maxOutput: definition.maxOutputCharacters)
         } catch {
             return .init(invocationID: invocation.id, status: .failed, displayText: "Invalid RAG query.", modelText: "RAG input invalid.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "invalid_args", errorCode: "invalid")
         }
@@ -38,7 +41,7 @@ struct RAGSearchTool: LocalTool {
     /// Searches local RAG chunks and returns ranked, deduplicated results.
     /// - Returns: A tuple containing formatted chunk rows and the search mode ("semantic" or "lexical").
     @MainActor
-    private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, modelContext: ModelContext) async -> (rows: [String], mode: String) {
+    private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, outputBudgetChars: Int, modelContext: ModelContext) async -> (rows: [String], mode: String, diagnosticsPayload: [String: String]) {
         var results = await RAGEngine().retrieve(query: query, limit: limit, context: modelContext)
         var mode = results.first?.retrievalMode ?? "empty"
         if let source {
@@ -73,17 +76,30 @@ struct RAGSearchTool: LocalTool {
         if let minScore { results = results.filter { $0.score >= minScore } }
 
         var seen = Set<String>()
-        let dedup = results.filter { item in
+        let deduped = results.filter { item in
             let keyData = Data((item.source.title + item.excerpt).utf8)
             let key = SHA256.hash(data: keyData).compactMap { String(format: "%02x", $0) }.joined()
             let inserted = !seen.contains(key)
             if inserted { seen.insert(key) }
             return inserted
-        }.prefix(limit)
+        }
+        let context = RAGContextBuilder.build(results: Array(deduped.prefix(limit)), budgetChars: outputBudgetChars)
 
-        let rows = dedup.map { e in
+        let rows = context.selected.map { e in
             return "- [\(e.chunkID.uuidString.prefix(8))] \(e.source.title) | score=\(String(format:"%.2f", e.score)) | \(e.excerpt)"
         }
-        return (rows, mode)
+        return (rows, mode, diagnosticsPayload(for: context, dedupedCount: deduped.count))
+    }
+
+    private static func diagnosticsPayload(for context: RAGContextResult, dedupedCount: Int) -> [String: String] {
+        [
+            "candidateCount": "\(context.candidateCount)",
+            "dedupedCount": "\(dedupedCount)",
+            "selectedSourceCount": "\(context.selectedSourceCount)",
+            "diversityPassApplied": context.diversityPassApplied ? "true" : "false",
+            "estimatedChars": "\(context.totalChars)",
+            "estimatedTokens": "\(context.totalTokens)",
+            "confidence": String(format: "%.2f", context.confidence)
+        ]
     }
 }

@@ -24,6 +24,11 @@ final class RAGSearchToolTests: XCTestCase {
         XCTAssertEqual(res.status, .success)
         XCTAssertEqual(res.structuredPayload?["mode"], "lexical_fallback+local_rerank")
         XCTAssertEqual(res.structuredPayload?["count"], "1")
+        XCTAssertEqual(res.structuredPayload?["dedupedCount"], "1")
+        XCTAssertEqual(res.structuredPayload?["selectedSourceCount"], "1")
+        XCTAssertEqual(res.structuredPayload?["diversityPassApplied"], "false")
+        XCTAssertNotNil(res.structuredPayload?["estimatedTokens"])
+        XCTAssertNotNil(res.structuredPayload?["confidence"])
         XCTAssertTrue(res.modelText.contains("swift memory search"))
     }
 
@@ -41,7 +46,38 @@ final class RAGSearchToolTests: XCTestCase {
 
         XCTAssertEqual(res.status, .success)
         XCTAssertTrue(res.structuredPayload?["mode"]?.contains("local_rerank") == true)
+        XCTAssertNotNil(res.structuredPayload?["estimatedChars"])
+        XCTAssertNotNil(res.structuredPayload?["estimatedTokens"])
+        XCTAssertNotNil(res.structuredPayload?["confidence"])
         XCTAssertTrue(res.modelText.contains("adapter contract"))
+    }
+
+    @MainActor func testToolPayloadReportsSourceDiversity() async {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let schema = Schema([RAGChunk.self])
+        let container = try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let ctx = ModelContext(container)
+        ctx.insert(RAGChunk(content: "adapter contract diagnostics alpha", sourceType: .file, sourceName: "runtime-a", sourceRef: "runtime-a"))
+        ctx.insert(RAGChunk(content: "adapter contract diagnostics beta", sourceType: .file, sourceName: "runtime-a", sourceRef: "runtime-a"))
+        ctx.insert(RAGChunk(content: "adapter contract diagnostics gamma", sourceType: .file, sourceName: "runtime-a", sourceRef: "runtime-a"))
+        ctx.insert(RAGChunk(content: "adapter contract diagnostics delta", sourceType: .file, sourceName: "runtime-b", sourceRef: "runtime-b"))
+        try! ctx.save()
+
+        let tool = RAGSearchTool()
+        let inv = ToolInvocation(id: UUID(), toolID: "rag.search.secure", arguments: ["query":"adapter contract diagnostics","limit":"4"], source: .system, conversationID: nil, turnID: nil, createdAt: Date())
+        let res = await tool.execute(invocation: inv, context: .init(isForeground: true, appState: nil, modelContext: ctx, permissionRegistry: .shared, metricsStore: .shared))
+
+        XCTAssertEqual(res.status, .success)
+        XCTAssertEqual(res.structuredPayload?["selectedSourceCount"], "2")
+        XCTAssertEqual(res.structuredPayload?["diversityPassApplied"], "true")
+        XCTAssertEqual(res.structuredPayload?["dedupedCount"], "4")
     }
 
     @MainActor func testRAGStoreFallsBackToLexicalWhenEmbeddingBudgetDenied() async {
