@@ -169,6 +169,30 @@ def request_zerogpu_hardware(api: Any, *, repo_id: str, hardware: str, token: st
         print("warning: select ZeroGPU manually in the Space settings if the Hub API rejected this hardware id", file=sys.stderr)
 
 
+def wait_for_space_revision(api: Any, *, repo_id: str, token: str | None, timeout_seconds: int, dry_run: bool) -> None:
+    if dry_run:
+        return
+    info = api.space_info(repo_id, files_metadata=False, token=token)
+    target_sha = getattr(info, "sha", None)
+    if not target_sha:
+        print("warning: could not determine Space target revision before trigger", file=sys.stderr)
+        return
+    print(f"Wait for Space runtime revision: {target_sha}")
+    started = time.monotonic()
+    last_status: dict[str, Any] = {}
+    while time.monotonic() - started < timeout_seconds:
+        runtime = api.get_space_runtime(repo_id)
+        raw = getattr(runtime, "raw", {}) or {}
+        runtime_sha = raw.get("sha")
+        stage = getattr(runtime, "stage", None)
+        last_status = {"stage": stage, "runtime_sha": runtime_sha, "target_sha": target_sha}
+        print(json.dumps(last_status, sort_keys=True))
+        if stage == "RUNNING" and runtime_sha == target_sha:
+            return
+        time.sleep(10)
+    raise RuntimeError(f"Timed out waiting for Space runtime revision: {last_status}")
+
+
 def upload_to_hub(
     *,
     build: SpaceBuild,
@@ -434,6 +458,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.trigger:
+        HfApi = import_hf_api()
+        wait_for_space_revision(
+            HfApi(token=token),
+            repo_id=args.space_repo,
+            token=token,
+            timeout_seconds=args.trigger_timeout_seconds,
+            dry_run=args.dry_run,
+        )
         trigger_space_training(
             space_repo=args.space_repo,
             run_id=args.run_id,

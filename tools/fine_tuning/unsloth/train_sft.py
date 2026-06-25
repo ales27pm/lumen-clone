@@ -372,6 +372,26 @@ def _package_version(name: str) -> str:
         return ""
 
 
+def _precision_flags(cfg: dict[str, Any]) -> tuple[bool, bool]:
+    has_bf16 = "bf16" in cfg
+    has_fp16 = "fp16" in cfg
+    if has_bf16 or has_fp16:
+        bf16 = bool(cfg.get("bf16", False))
+        fp16 = bool(cfg.get("fp16", not bf16))
+        if bf16 and fp16:
+            fp16 = False
+        return bf16, fp16
+
+    try:
+        import torch  # type: ignore
+
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            return True, False
+    except Exception:
+        pass
+    return False, True
+
+
 def main() -> None:
     args = parse_args()
     cfg_path = Path(args.config).resolve()
@@ -456,6 +476,7 @@ def main() -> None:
 
     train_dataset = Dataset.from_list(train_rows)
     eval_dataset = Dataset.from_list(val_rows) if val_rows else None
+    bf16, fp16 = _precision_flags(cfg)
 
     sft_kwargs: dict[str, Any] = dict(
         output_dir=str(output_dir),
@@ -470,8 +491,8 @@ def main() -> None:
         eval_steps=int(cfg.get("eval_steps", 50)),
         save_steps=int(cfg.get("save_steps", 100)),
         save_total_limit=int(cfg.get("save_total_limit", 2)),
-        bf16=bool(cfg.get("bf16", False)),
-        fp16=bool(cfg.get("fp16", True)),
+        bf16=bf16,
+        fp16=fp16,
         report_to="none",
         max_length=int(cfg["max_seq_length"]),
         packing=bool(cfg.get("packing", False)),
