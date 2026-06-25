@@ -2,8 +2,8 @@
 title: Lumen ZeroGPU Adapter Trainer
 sdk: gradio
 app_file: app.py
-python_version: 3.10
-suggested_hardware: zero-gpu
+python_version: "3.10"
+suggested_hardware: zero-a10g
 ---
 
 # Lumen ZeroGPU Adapter Trainer

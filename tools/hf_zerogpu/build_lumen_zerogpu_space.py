@@ -307,7 +307,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--base-model", default="", help="Optional base model override. Empty keeps generated per-agent config values.")
     parser.add_argument("--gpu-size", choices=("large", "xlarge"), default="large", help="ZeroGPU decorator size.")
     parser.add_argument("--gpu-duration-seconds", type=int, default=3600, help="ZeroGPU function duration budget.")
-    parser.add_argument("--zero-gpu-hardware", default=os.environ.get("LUMEN_ZERO_GPU_HARDWARE", "zero-gpu"), help="HF hardware id requested for the Space.")
+    parser.add_argument("--zero-gpu-hardware", default=os.environ.get("LUMEN_ZERO_GPU_HARDWARE", "zero-a10g"), help="HF hardware id requested for the Space.")
     parser.add_argument("--seed", type=int, default=42, help="Training seed.")
     parser.add_argument("--trigger", action="store_true", help="Trigger Space training after upload.")
     parser.add_argument("--trigger-timeout-seconds", type=int, default=900, help="Time to wait for Space readiness before triggering.")
