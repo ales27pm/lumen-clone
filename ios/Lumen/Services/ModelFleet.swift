@@ -178,7 +178,9 @@ nonisolated struct LumenModelAssignment: Sendable, Hashable {
     let adapterFileName: String?
     let adapterScale: Float
 
-    var usesRoleAdapter: Bool { artifactKind == .chat && adapterPath != nil }
+    var hasConfiguredRoleAdapter: Bool { adapterPath?.isEmpty == false }
+    var usesRoleAdapter: Bool { artifactKind == .chat && hasConfiguredRoleAdapter }
+    var requiresRoleAdapterForRuntime: Bool { usesRoleAdapter }
 }
 
 nonisolated struct LumenModelFleetSnapshot: Sendable, Hashable {

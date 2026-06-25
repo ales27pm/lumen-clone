@@ -238,6 +238,9 @@ struct LumenFleetTests {
         #expect(snapshot.isRunnableV1)
         #expect(snapshot.missingAdapterSlots == [.cortex, .executor, .mouth, .mimicry, .rem])
         #expect(!snapshot.isFullyAdapted)
+        #expect(snapshot.assignment(for: .executor)?.hasConfiguredRoleAdapter == false)
+        #expect(snapshot.assignment(for: .executor)?.usesRoleAdapter == false)
+        #expect(snapshot.assignment(for: .executor)?.requiresRoleAdapterForRuntime == false)
     }
 
     @Test @MainActor func qwen3ResolverPrefersContractAdapterArtifactOverLooseHints() async throws {
@@ -287,6 +290,9 @@ struct LumenFleetTests {
 
         #expect(snapshot.assignment(for: .executor)?.adapterID == exactExecutorAdapter.id)
         #expect(snapshot.assignment(for: .executor)?.adapterFileName == executorRole.adapterFileName)
+        #expect(snapshot.assignment(for: .executor)?.hasConfiguredRoleAdapter == true)
+        #expect(snapshot.assignment(for: .executor)?.usesRoleAdapter == true)
+        #expect(snapshot.assignment(for: .executor)?.requiresRoleAdapterForRuntime == true)
     }
 }
 

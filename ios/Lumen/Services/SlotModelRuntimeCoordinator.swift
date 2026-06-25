@@ -239,7 +239,7 @@ actor SlotModelRuntimeCoordinator {
         guard FileManager.default.fileExists(atPath: assignment.localPath) else { return nil }
 
         if assignment.usesRoleAdapter || assignment.modelFamily == .qwen3 {
-            let requiresRoleAdapter = requiresRoleAdapter(slot: slot, assignment: assignment)
+            let requiresRoleAdapter = requiresRoleAdapter(assignment: assignment)
             guard await AppLlamaService.shared.loadedChatPath == assignment.localPath else { return nil }
             let activeAdapterSlot = await AppLlamaService.shared.activeAdapterSlotValue
             if requiresRoleAdapter {
@@ -297,7 +297,7 @@ actor SlotModelRuntimeCoordinator {
 
     private func ensureAdapterRuntimeReady(slot: LumenModelSlot, assignment: LumenModelAssignment) async throws -> Int {
         let activationStart = Date()
-        let requiresRoleAdapter = requiresRoleAdapter(slot: slot, assignment: assignment)
+        let requiresRoleAdapter = requiresRoleAdapter(assignment: assignment)
         if await AppLlamaService.shared.loadedChatPath != assignment.localPath {
             do {
                 try await AppLlamaService.shared.loadSharedChatModel(path: assignment.localPath, contextSize: contextSize)
@@ -338,12 +338,8 @@ actor SlotModelRuntimeCoordinator {
         return Int(Date().timeIntervalSince(activationStart) * 1000)
     }
 
-    private func requiresRoleAdapter(slot: LumenModelSlot, assignment: LumenModelAssignment) -> Bool {
-        if assignment.usesRoleAdapter { return true }
-        guard assignment.modelFamily == .qwen3 else { return false }
-        return LumenTrainedModelRuntimeRegistry
-            .contract(for: .qwen3)
-            .adapterRole(for: slot) != nil
+    private func requiresRoleAdapter(assignment: LumenModelAssignment) -> Bool {
+        assignment.requiresRoleAdapterForRuntime
     }
 
     private func ensureLegacyRuntimeReady(slot: LumenModelSlot, assignment: LumenModelAssignment) async throws {
