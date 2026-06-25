@@ -22,9 +22,26 @@ final class RAGSearchToolTests: XCTestCase {
         let inv = ToolInvocation(id: UUID(), toolID: "rag.search.secure", arguments: ["query":"swift","limit":"6"], source: .system, conversationID: nil, turnID: nil, createdAt: Date())
         let res = await tool.execute(invocation: inv, context: .init(isForeground: true, appState: nil, modelContext: ctx, permissionRegistry: .shared, metricsStore: .shared))
         XCTAssertEqual(res.status, .success)
-        XCTAssertEqual(res.structuredPayload?["mode"], "lexical_fallback")
+        XCTAssertEqual(res.structuredPayload?["mode"], "lexical_fallback+local_rerank")
         XCTAssertEqual(res.structuredPayload?["count"], "1")
         XCTAssertTrue(res.modelText.contains("swift memory search"))
+    }
+
+    @MainActor func testToolUsesFocusedRerankedExcerpt() async {
+        let schema = Schema([RAGChunk.self])
+        let container = try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let ctx = ModelContext(container)
+        let prefix = String(repeating: "general notes ", count: 35)
+        ctx.insert(RAGChunk(content: "\(prefix) adapter contract diagnostics should remain visible", sourceType: .file, sourceName: "runtime"))
+        try! ctx.save()
+
+        let tool = RAGSearchTool()
+        let inv = ToolInvocation(id: UUID(), toolID: "rag.search.secure", arguments: ["query":"adapter contract","limit":"1"], source: .system, conversationID: nil, turnID: nil, createdAt: Date())
+        let res = await tool.execute(invocation: inv, context: .init(isForeground: true, appState: nil, modelContext: ctx, permissionRegistry: .shared, metricsStore: .shared))
+
+        XCTAssertEqual(res.status, .success)
+        XCTAssertTrue(res.structuredPayload?["mode"]?.contains("local_rerank") == true)
+        XCTAssertTrue(res.modelText.contains("adapter contract"))
     }
 
     @MainActor func testRAGStoreFallsBackToLexicalWhenEmbeddingBudgetDenied() async {

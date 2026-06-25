@@ -31,23 +31,19 @@ enum MemoryTools {
         guard let container = SharedContainer.shared else { return "RAG store unavailable." }
         let ctx = ModelContext(container)
         let expandedQuery = expandRAGQueryIfNeeded(trimmed)
-        let search = await RAGStore.searchWithDiagnostics(query: expandedQuery, context: ctx, limit: limit)
-        let results = search.matches
+        let results = await RAGEngine().retrieve(query: expandedQuery, limit: limit, context: ctx)
         if results.isEmpty {
             let counts = RAGStore.counts(context: ctx)
             let totalIndexed = counts.values.reduce(0, +)
             if totalIndexed == 0 {
                 return "No matching files found for '\(trimmed)'. Your local index appears empty. Import or create local files/notes, then run reindex files."
             }
-            if search.mode == "lexical_fallback" {
-                return "No matching files found for '\(trimmed)'. The semantic embedding runtime was unavailable, so Lumen searched the local lexical index only."
-            }
             return "No matching files found for '\(trimmed)'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again."
         }
         return results.enumerated().map { idx, r in
-            let src = "\(r.chunk.kind.label) · \(r.chunk.sourceName)"
-            let snippet = r.chunk.content.prefix(300)
-            return "[\(idx + 1)] \(src)\n\(snippet)"
+            let kind = RAGSourceType(rawValue: r.source.type)?.label ?? r.source.type
+            let src = "\(kind) · \(r.source.title)"
+            return "[\(idx + 1)] \(src) · score \(String(format: "%.2f", r.score))\n\(r.excerpt)"
         }.joined(separator: "\n\n")
     }
 
