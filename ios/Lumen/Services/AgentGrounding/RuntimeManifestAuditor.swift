@@ -193,6 +193,28 @@ public final class RuntimeManifestAuditor {
             ))
         }
 
+        if manifestTool.permissionKind != liveTool.permissionKind {
+            failures.append(RuntimeManifestFailure(
+                type: "permission_kind_mismatch",
+                agent: "runtime",
+                expected: [manifestTool.permissionKind ?? "nil"],
+                actual: liveTool.permissionKind ?? "nil",
+                scenario: manifestTool.id,
+                problem: "permissionKind differs between manifest and runtime registry."
+            ))
+        }
+
+        if manifestTool.confirmationMode != liveTool.confirmationMode {
+            failures.append(RuntimeManifestFailure(
+                type: "confirmation_mode_mismatch",
+                agent: "runtime",
+                expected: [manifestTool.confirmationMode],
+                actual: liveTool.confirmationMode,
+                scenario: manifestTool.id,
+                problem: "confirmationMode differs between manifest and runtime registry."
+            ))
+        }
+
         let manifestArgs = Self.uniqueArgumentMap(manifestTool.arguments, toolID: manifestTool.id, origin: "manifest", failures: &failures)
         let liveArgs = Self.uniqueArgumentMap(liveTool.arguments, toolID: liveTool.id, origin: "runtime", failures: &failures)
 
@@ -310,8 +332,10 @@ public final class RuntimeManifestAuditor {
             switch failure.type {
             case "unmanifested_live_tool", "missing_live_tool", "duplicate_manifest_tool_id", "duplicate_runtime_tool_id":
                 return "Regenerate AgentBehaviorManifest.json from the current Swift source and resolve duplicate tool IDs."
-            case "approval_mismatch":
+            case "approval_mismatch", "confirmation_mode_mismatch":
                 return "Regenerate approval-boundary dataset samples for changed tools."
+            case "permission_key_mismatch", "permission_kind_mismatch":
+                return "Regenerate permission-gating dataset samples for changed tools."
             case "argument_mismatch", "missing_live_argument", "unmanifested_live_argument", "duplicate_manifest_argument_name", "duplicate_runtime_argument_name":
                 return "Regenerate Tool Executor schema samples and resolve duplicate argument names."
             default:

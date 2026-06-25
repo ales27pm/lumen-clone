@@ -30,6 +30,8 @@ def test_tool_definition_extraction():
     assert tool.id == "calendar.create"
     assert tool.requiresApproval is True
     assert tool.permissionKey == "NSCalendarsFullAccessUsageDescription"
+    assert tool.permissionKind == "calendar"
+    assert tool.confirmationMode == "userApproval"
     assert {arg.name for arg in tool.arguments} == {"title", "startsInMinutes"}
 
 
@@ -65,6 +67,8 @@ def test_args_contract_derives_arguments_from_description():
     ToolDefinitionExtractor().extract(SwiftFile(Path("ToolDefinition.swift"), "ToolDefinition.swift", text), manifest)
     tool = manifest.tools[0]
     assert tool.permissionKey is None
+    assert tool.permissionKind == "notifications"
+    assert tool.confirmationMode == "userApproval"
     assert tool.description == "Schedule a background agent run. Args: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes."
     assert [arg.name for arg in tool.arguments] == ["title", "prompt", "schedule", "inMinutes", "atTime", "intervalSeconds", "beforeMinutes"]
     assert {arg.name: arg.required for arg in tool.arguments} == {
@@ -146,3 +150,62 @@ def test_args_contract_ignores_boolean_value_hint_alias():
     assert [(arg.name, arg.type, arg.required) for arg in tool.arguments] == [
         ("includeHidden", "string", False),
     ]
+
+
+def test_tool_argument_contract_catalog_overrides_description_inference():
+    text = '''
+    private nonisolated enum ToolArgumentContractCatalog {
+      static func arguments(for toolID: String) -> [ToolArgumentDefinition] {
+        switch ToolRouteGuard.canonicalToolID(toolID) {
+        case "outlook.folders.list":
+          return [.init("includeHidden", type: .bool, required: false)]
+        case "outlook.messages.list":
+          return [
+            .init("folder", required: false),
+            .init("folderId", required: false),
+            .init("limit", type: .number, required: false),
+            .init("unreadOnly", type: .bool, required: false)
+          ]
+        default:
+          return []
+        }
+      }
+    }
+
+    enum ToolRegistry {
+      static let all: [ToolDefinition] = [
+        ToolDefinition(
+          id: "outlook.folders.list",
+          name: "List Outlook Folders",
+          description: "List folders. Args: optional includeHidden true/false.",
+          requiresApproval: false,
+          permissionKey: nil
+        ),
+        ToolDefinition(
+          id: "outlook.messages.list",
+          name: "List Outlook Messages",
+          description: "List recent Outlook messages. Args: optional folder or folderId, limit, unreadOnly.",
+          requiresApproval: false,
+          permissionKey: nil
+        )
+      ]
+    }
+    '''
+    manifest = AgentBehaviorManifest()
+    ToolDefinitionExtractor().extract(SwiftFile(Path("ToolDefinition.swift"), "ToolDefinition.swift", text), manifest)
+
+    folders = next(tool for tool in manifest.tools if tool.id == "outlook.folders.list")
+    assert folders.confirmationMode == "none"
+    assert [(arg.name, arg.type, arg.required) for arg in folders.arguments] == [
+        ("includeHidden", "bool", False),
+    ]
+
+    messages = next(tool for tool in manifest.tools if tool.id == "outlook.messages.list")
+    assert [(arg.name, arg.type, arg.required) for arg in messages.arguments] == [
+        ("folder", "string", False),
+        ("folderId", "string", False),
+        ("limit", "number", False),
+        ("unreadOnly", "bool", False),
+    ]
+    assert "false" not in {arg.name for tool in manifest.tools for arg in tool.arguments}
+    assert all(not (arg.description or "").startswith("Inferred") for tool in manifest.tools for arg in tool.arguments)

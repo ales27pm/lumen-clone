@@ -1,0 +1,197 @@
+import Foundation
+import Testing
+import SwiftUI
+@testable import Lumen
+
+struct LocalRuntimeErrorDescriptionsTests {
+    @Test func unavailableHasPreciseLocalizedDescription() {
+        let error = LocalRuntimeError.unavailable("adapterUnavailable slot=.executor adapterPath=/tmp/executor.lora")
+        #expect(error.errorDescription == "Local runtime unavailable: adapterUnavailable slot=.executor adapterPath=/tmp/executor.lora")
+        #expect(!error.localizedDescription.contains("error 0"))
+    }
+
+    @Test func notImplementedNamesRuntimeKind() {
+        let error = LocalRuntimeError.generationNotImplemented(.foundationModels)
+        #expect(error.errorDescription?.contains("foundationModels") == true)
+        #expect(!error.localizedDescription.contains("error 0"))
+    }
+}
+
+@MainActor
+struct ExecutorPreflightTests {
+    @Test func budgetDenialReasonIsPrecise() {
+        let snapshot = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        let reason = ResourceBudgetGate.heavyModelWorkDenialReason(snapshot: snapshot, reason: "strict-live-training.executor-preflight")
+        #expect(reason == "strict-live-training.executor-preflight: scenePhase=background")
+    }
+}
+
+struct AgentJsonRuntimeClassificationTests {
+    @Test func zeroTokenBudgetFailureIsNotReportedAsParseFailure() async {
+        let trace = AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            scenarioID: "training-weather-grounded",
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID(),
+            intent: "weather",
+            promptPrefix: "weather",
+            rawOutputPrefix: "",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: "noJSONObject",
+            emittedFinalInActionTurn: false,
+            outputTokenCount: 0,
+            runtimePath: "agent-model",
+            emptyOutputReason: "resource-budget-denied-before-prompt-eval",
+            streamStarted: false,
+            firstChunkReceived: false,
+            textChunkCount: 0,
+            finalChunkReceived: false,
+            streamTerminationReason: "resource-budget-denied-before-prompt-eval"
+        )
+        let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(
+            matchingTraces: [trace],
+            acceptsPolicyFirstEvidence: false,
+            requiresPrimaryAgentJSON: true
+        )
+        #expect(message.contains("budget failure"))
+        #expect(message.contains("parseError suppressed because no text/tokens were produced"))
+    }
+
+    @Test func zeroTokenExecutorPreflightFailureIsClassifiedAsRuntimeReadiness() async {
+        let reason = "executor preflight failed: adapterUnavailable; slot=.executor; activeAdapterSlot=none"
+        let trace = AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            scenarioID: "training-weather-grounded",
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID(),
+            intent: "weather",
+            promptPrefix: "weather",
+            rawOutputPrefix: "",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: "empty",
+            emittedFinalInActionTurn: false,
+            outputTokenCount: 0,
+            runtimePath: "agent-model",
+            emptyOutputReason: reason,
+            streamStarted: false,
+            firstChunkReceived: false,
+            textChunkCount: 0,
+            finalChunkReceived: false,
+            streamTerminationReason: reason
+        )
+        let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(
+            matchingTraces: [trace],
+            acceptsPolicyFirstEvidence: false,
+            requiresPrimaryAgentJSON: true
+        )
+        #expect(message.contains("runtime readiness failure"))
+        #expect(message.contains("executor preflight failed"))
+        #expect(message.contains("parseError suppressed because no text/tokens were produced"))
+    }
+}
+
+struct ContactObservationFinalizerTests {
+    @Test func contactSearchSuccessFinalizesAndValidates() {
+        let observation = "• Julie Charlebois — +1 (514) 555-0101"
+        let final = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .contactSearch,
+            toolID: "contacts.search",
+            observation: observation,
+            originalPrompt: "Find Julie Charlebois"
+        )
+        #expect(final == "Contact found: Julie Charlebois — +1 (514) 555-0101")
+        let routing = IntentRoutingDecision(intent: .contactSearch, allowedToolIDs: ["contacts.search"], requiresClarification: false, clarificationPrompt: nil)
+        #expect(FinalIntentValidator.validate(final ?? "", routing: routing, fallback: "Contact search is unavailable in this build right now.") == final)
+    }
+}
+
+struct PhoneCallContinuationTests {
+    @Test func singleContactPhoneCreatesApprovalBoundary() {
+        let routing = IntentRoutingDecision(intent: .phoneCall, allowedToolIDs: ["contacts.search", "phone.call"], requiresClarification: false, clarificationPrompt: nil)
+        let continuation = SlotAgentService.phoneCallContinuationForTests(
+            observation: "• Julie Charlebois — +1 (514) 555-0101",
+            availableToolIDs: ["contacts.search", "phone.call"],
+            routing: routing
+        )
+        #expect(continuation?.step.kind == .approvalBoundary)
+        #expect(continuation?.step.toolID == "phone.call")
+        #expect(continuation?.step.toolArgs?["number"] == "+15145550101")
+        #expect(continuation?.text.contains("Approval required for phone.call") == true)
+    }
+
+    @Test func missingPhoneCallToolPreservesFoundContactReason() {
+        let routing = IntentRoutingDecision(intent: .phoneCall, allowedToolIDs: ["contacts.search"], requiresClarification: false, clarificationPrompt: nil)
+        let continuation = SlotAgentService.phoneCallContinuationForTests(
+            observation: "• Julie Charlebois — +1 (514) 555-0101",
+            availableToolIDs: ["contacts.search"],
+            routing: routing
+        )
+        #expect(continuation?.step.kind == .reflection)
+        #expect(continuation?.text.contains("Contact found: Julie Charlebois") == true)
+        #expect(continuation?.text.contains("phone.call is unavailable") == true)
+    }
+}
+
+struct ToolRegistryFinalizerCoverageTests {
+    @Test func userVisibleToolsHaveFinalizerCoverageOrExplicitExemption() {
+        let uncovered = ToolRegistry.all
+            .filter { ToolObservationFinalizer.finalizerCoverageKind(for: $0) == nil }
+            .map(\.id)
+            .sorted()
+        #expect(uncovered.isEmpty)
+    }
+}
+
+struct StrictVsProductionFallbackTests {
+    @Test func strictTrainingDisablesDeterministicCompatibility() {
+        let training = LegacyAgentRunOptions(
+            groundingMode: .slotAgent,
+            allowDegradedGrounding: false,
+            preventDoubleGrounding: true,
+            diagnosticsEnabled: false,
+            allowDeterministicCompatibility: false,
+            allowParseFailureDeterministicRecovery: false,
+            allowsMemoryPressureContinuation: true
+        )
+        let production = LegacyAgentRunOptions(
+            groundingMode: .slotAgent,
+            allowDegradedGrounding: true,
+            preventDoubleGrounding: true,
+            diagnosticsEnabled: false,
+            allowDeterministicCompatibility: true,
+            allowParseFailureDeterministicRecovery: true,
+            allowsMemoryPressureContinuation: false
+        )
+        #expect(!training.allowDeterministicCompatibility)
+        #expect(!training.allowParseFailureDeterministicRecovery)
+        #expect(training.allowsMemoryPressureContinuation)
+        #expect(production.allowDeterministicCompatibility)
+        #expect(production.allowParseFailureDeterministicRecovery)
+    }
+}

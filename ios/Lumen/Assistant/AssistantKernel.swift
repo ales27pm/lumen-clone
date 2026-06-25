@@ -27,7 +27,11 @@ final class AssistantKernel {
     }
 
     func selectRuntime(for context: AssistantTurnContext) -> AssistantRuntimeKind {
-        router.runtime(for: context)
+        selectRuntimeSelection(for: context).runtime
+    }
+
+    func selectRuntimeSelection(for context: AssistantTurnContext) -> AssistantRuntimeRouter.Selection {
+        router.selection(for: context)
     }
 
     func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?) async -> AssistantGroundingContext {
@@ -74,7 +78,9 @@ final class AssistantKernel {
                     "promptSHA256": RuntimeFallbackLogger.promptHash(context.input),
                     "promptChars": String(context.input.count),
                     "isForeground": String(context.isForeground),
-                    "allowHeavyRuntime": String(decision.allowHeavyRuntime)
+                    "allowHeavyRuntime": String(decision.allowHeavyRuntime),
+                    "budgetPolicy": decision.budgetPolicy.rawValue,
+                    "budgetDenialReason": decision.denialReason ?? "none"
                 ]
             )
         }
@@ -97,7 +103,9 @@ final class AssistantKernel {
                     "promptSHA256": RuntimeFallbackLogger.promptHash(context.input),
                     "promptChars": String(context.input.count),
                     "isForeground": String(context.isForeground),
-                    "allowHeavyRuntime": String(decision.allowHeavyRuntime)
+                    "allowHeavyRuntime": String(decision.allowHeavyRuntime),
+                    "budgetPolicy": decision.budgetPolicy.rawValue,
+                    "budgetDenialReason": decision.denialReason ?? "none"
                 ]
             )
             do {

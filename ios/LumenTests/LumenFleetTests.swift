@@ -40,6 +40,21 @@ struct LumenFleetTests {
         }
     }
 
+    @Test func slotContractsDeclareRuntimePolicyAndOutputContracts() {
+        let executor = LumenModelSlotContract.executor
+        #expect(executor.outputContract == .structuredJSON)
+        #expect(executor.budgetPolicy == .foregroundInteractive)
+        #expect(executor.acceptsRuntimePath("sharedAdapter"))
+        #expect(executor.acceptsRuntimePath("legacySlotLoadedContinuation"))
+        #expect(!executor.acceptsRuntimePath("deterministic-compatibility"))
+        #expect(!executor.acceptsRuntimePath("coreML"))
+
+        let embedding = LumenModelSlotContract.embedding
+        #expect(embedding.outputContract == .embeddingVector)
+        #expect(embedding.acceptsRuntimePath("embedding"))
+        #expect(embedding.acceptsRuntimePath("coreML"))
+    }
+
     @Test @MainActor func resolverAssignsAllTextSlotsFromSingleSharedAdapterFirstBase() async throws {
         let chat = StoredModel(
             name: "Fleet v1 Adapter Base — Qwen 2.5 1.5B",
@@ -78,8 +93,9 @@ struct LumenFleetTests {
         #expect(snapshot.assignment(for: .mimicry)?.modelID == chat.id)
         #expect(snapshot.assignment(for: .rem)?.modelID == chat.id)
         #expect(snapshot.assignment(for: .embedding)?.modelID == embedding.id)
-        #expect(snapshot.runtimeResidentSlots.contains(.cortex))
-        #expect(snapshot.runtimeResidentSlots.contains(.embedding))
+        #expect(snapshot.targetResidentSlots.contains(.cortex))
+        #expect(snapshot.targetResidentSlots.contains(.embedding))
+        #expect(snapshot.runtimeResidentSlots.isEmpty)
     }
 
     @Test @MainActor func fleetResolverKeepsEmbeddingAssignmentWhenHintsDoNotMatch() async throws {

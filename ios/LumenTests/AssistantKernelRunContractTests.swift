@@ -65,6 +65,7 @@ final class AssistantKernelRunContractTests: XCTestCase {
 
         var finalText: String?
         var selectedRuntime: String?
+        var runtimeMetadata: [String: String] = [:]
 
         for await event in kernel.run(request, modelContext: nil) {
             switch event {
@@ -72,6 +73,7 @@ final class AssistantKernelRunContractTests: XCTestCase {
                 finalText = text
             case .diagnostic(let diagnostic) where diagnostic.stage == "runtime-selection":
                 selectedRuntime = diagnostic.metadata["runtime"]
+                runtimeMetadata = diagnostic.metadata
             default:
                 break
             }
@@ -79,6 +81,9 @@ final class AssistantKernelRunContractTests: XCTestCase {
 
         XCTAssertEqual(finalText, "Lumen is running in limited local mode.")
         XCTAssertEqual(selectedRuntime, AssistantRuntimeKind.deterministicFallback.rawValue)
+        XCTAssertEqual(runtimeMetadata["budgetPolicy"], LumenSlotBudgetPolicy.foregroundInteractive.rawValue)
+        XCTAssertEqual(runtimeMetadata["budgetDenialReason"], "foregroundInteractive: heavyRuntime=false")
+        XCTAssertEqual(runtimeMetadata["selectionReason"], "foregroundInteractive: heavyRuntime=false")
     }
 
     func testKernelRunPreservesGroundingContextAndSamplingOptions() async {

@@ -23,6 +23,12 @@ enum ResourceBudgetGate {
         }
     }
 
+    struct PolicyDecision: Equatable {
+        let policy: LumenSlotBudgetPolicy
+        let allowed: Bool
+        let denialReason: String?
+    }
+
     #if DEBUG
     static var testSnapshotOverride: Snapshot?
 
@@ -50,12 +56,90 @@ enum ResourceBudgetGate {
     }
 
     static func allowsHeavyModelWork(snapshot: Snapshot, reason: String) -> Bool {
-        guard !hasRecentMemoryWarning(snapshot) else { return false }
-        guard snapshot.scenePhase == .active else { return false }
-        guard let thermal = snapshot.thermalState else { return false }
-        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return false }
-        guard snapshot.lowPowerModeEnabled != nil else { return false }
-        return true
+        budgetDenialReason(policy: .foregroundInteractive, snapshot: snapshot, reason: reason) == nil
+    }
+
+    static func heavyModelWorkDenialReason(reason: String) -> String? {
+        heavyModelWorkDenialReason(snapshot: currentSnapshot(), reason: reason)
+    }
+
+    static func heavyModelWorkDenialReason(snapshot: Snapshot, reason: String) -> String? {
+        budgetDenialReason(policy: .foregroundInteractive, snapshot: snapshot, reason: reason)
+    }
+
+    static func allowsWork(policy: LumenSlotBudgetPolicy, reason: String) -> Bool {
+        budgetDenialReason(policy: policy, snapshot: currentSnapshot(), reason: reason) == nil
+    }
+
+    static func allowsWork(policy: LumenSlotBudgetPolicy, snapshot: Snapshot, reason: String) -> Bool {
+        budgetDenialReason(policy: policy, snapshot: snapshot, reason: reason) == nil
+    }
+
+    static func decision(policy: LumenSlotBudgetPolicy, reason: String) -> PolicyDecision {
+        decision(policy: policy, snapshot: currentSnapshot(), reason: reason)
+    }
+
+    static func decision(policy: LumenSlotBudgetPolicy, snapshot: Snapshot, reason: String) -> PolicyDecision {
+        let denial = budgetDenialReason(policy: policy, snapshot: snapshot, reason: reason)
+        return PolicyDecision(policy: policy, allowed: denial == nil, denialReason: denial)
+    }
+
+    static func budgetDenialReason(policy: LumenSlotBudgetPolicy, reason: String) -> String? {
+        budgetDenialReason(policy: policy, snapshot: currentSnapshot(), reason: reason)
+    }
+
+    static func budgetDenialReason(policy: LumenSlotBudgetPolicy, snapshot: Snapshot, reason: String) -> String? {
+        switch policy {
+        case .foregroundInteractive:
+            return foregroundInteractiveDenialReason(snapshot: snapshot, reason: reason)
+        case .maintenanceIdle:
+            return maintenanceIdleDenialReason(snapshot: snapshot, reason: reason)
+        case .embedding:
+            return embeddingDenialReason(snapshot: snapshot, reason: reason)
+        }
+    }
+
+    private static func foregroundInteractiveDenialReason(snapshot: Snapshot, reason: String) -> String? {
+        if hasRecentMemoryWarning(snapshot) { return "\(reason): recent-memory-warning" }
+        guard snapshot.scenePhase == .active else { return "\(reason): scenePhase=\(scenePhaseDescription(snapshot.scenePhase))" }
+        guard let thermal = snapshot.thermalState else { return "\(reason): thermalState=nil" }
+        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return "\(reason): thermalState=\(thermal.rawValue)" }
+        guard snapshot.lowPowerModeEnabled != nil else { return "\(reason): lowPowerMode=nil" }
+        return nil
+    }
+
+    private static func maintenanceIdleDenialReason(snapshot: Snapshot, reason: String) -> String? {
+        if hasRecentMemoryWarning(snapshot) { return "\(reason): recent-memory-warning" }
+        guard let thermal = snapshot.thermalState else { return "\(reason): thermalState=nil" }
+        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return "\(reason): thermalState=\(thermal.rawValue)" }
+        guard let lowPower = snapshot.lowPowerModeEnabled else { return "\(reason): lowPowerMode=nil" }
+        guard !lowPower else { return "\(reason): lowPowerMode=true" }
+        return nil
+    }
+
+    private static func embeddingDenialReason(snapshot: Snapshot, reason: String) -> String? {
+        if hasRecentMemoryWarning(snapshot) { return "\(reason): recent-memory-warning" }
+        guard let thermal = snapshot.thermalState else { return "\(reason): thermalState=nil" }
+        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return "\(reason): thermalState=\(thermal.rawValue)" }
+        guard let lowPower = snapshot.lowPowerModeEnabled else { return "\(reason): lowPowerMode=nil" }
+        if lowPower && snapshot.scenePhase != .active {
+            return "\(reason): lowPowerMode=true"
+        }
+        return nil
+    }
+
+    private static func scenePhaseDescription(_ phase: ScenePhase?) -> String {
+        guard let phase else { return "nil" }
+        switch phase {
+        case .active:
+            return "active"
+        case .inactive:
+            return "inactive"
+        case .background:
+            return "background"
+        @unknown default:
+            return "unknown"
+        }
     }
 
     static func allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: Snapshot, reason: String) -> Bool {

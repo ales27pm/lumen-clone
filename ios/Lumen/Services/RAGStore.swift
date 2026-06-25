@@ -56,29 +56,64 @@ enum RAGStore {
     static let maxCandidatePool = 256
     static let minScore: Float = 0.12
 
+    struct SearchResult {
+        let matches: [(chunk: RAGChunk, score: Double)]
+        let mode: String
+        let diagnostic: String?
+    }
+
     static func search(
         query: String,
         context: ModelContext,
         limit: Int = 5,
         sourceTypes: Set<RAGSourceType>? = nil
     ) async -> [(chunk: RAGChunk, score: Double)] {
+        await searchWithDiagnostics(query: query, context: context, limit: limit, sourceTypes: sourceTypes).matches
+    }
+
+    static func searchWithDiagnostics(
+        query: String,
+        context: ModelContext,
+        limit: Int = 5,
+        sourceTypes: Set<RAGSourceType>? = nil
+    ) async -> SearchResult {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, limit > 0 else { return [] }
+        guard !trimmed.isEmpty, limit > 0 else {
+            return SearchResult(matches: [], mode: "empty_query", diagnostic: "empty_query")
+        }
+        let allowed: Set<String>? = sourceTypes.map { Set($0.map(\.rawValue)) }
+
+        if let budgetDenial = ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "rag.search") {
+            logger.error("rag_embedding_budget_denied op=search reason=\(budgetDenial, privacy: .public)")
+            return SearchResult(
+                matches: lexicalSearch(query: trimmed, context: context, allowed: allowed, limit: limit),
+                mode: "lexical_fallback",
+                diagnostic: budgetDenial
+            )
+        }
+
         let queryVec: [Double]
         do {
             queryVec = try await AppLlamaService.shared.embed(trimmed)
         } catch {
             logger.error("rag_embedding_failed op=search error=\(String(describing: error), privacy: .public)")
-            return []
+            return SearchResult(
+                matches: lexicalSearch(query: trimmed, context: context, allowed: allowed, limit: limit),
+                mode: "lexical_fallback",
+                diagnostic: "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            )
         }
         guard !queryVec.isEmpty else {
             logger.error("rag_embedding_empty op=search")
-            return []
+            return SearchResult(
+                matches: lexicalSearch(query: trimmed, context: context, allowed: allowed, limit: limit),
+                mode: "lexical_fallback",
+                diagnostic: "embedding_empty"
+            )
         }
 
         RAGVectorIndex.shared.ensureLoaded(context: context)
 
-        let allowed: Set<String>? = sourceTypes.map { Set($0.map(\.rawValue)) }
         let k = min(max(limit * candidatePoolMultiplier, limit + 4), maxCandidatePool)
 
         let vectorHits = RAGVectorIndex.shared.search(
@@ -89,6 +124,7 @@ enum RAGStore {
         )
 
         var candidates = resolvedVectorCandidates(vectorHits: vectorHits, context: context)
+        let vectorCandidateCount = candidates.count
 
         if candidates.count < limit {
             // Lexical backfill: keyword overlap as a rescue path when embeddings
@@ -98,10 +134,31 @@ enum RAGStore {
             candidates.append(contentsOf: lexical)
         }
 
-        return candidates
+        let sorted = candidates
             .sorted { $0.1 > $1.1 }
             .prefix(limit)
             .map { ($0.0, $0.1) }
+        let mode = candidates.count > vectorCandidateCount ? "semantic_with_lexical_backfill" : "semantic"
+        return SearchResult(matches: sorted, mode: mode, diagnostic: nil)
+    }
+
+    static func lexicalSearch(
+        query: String,
+        context: ModelContext,
+        sourceTypes: Set<RAGSourceType>? = nil,
+        limit: Int
+    ) -> [(RAGChunk, Double)] {
+        let allowed: Set<String>? = sourceTypes.map { Set($0.map(\.rawValue)) }
+        return lexicalSearch(query: query, context: context, allowed: allowed, limit: limit)
+    }
+
+    private static func lexicalSearch(
+        query: String,
+        context: ModelContext,
+        allowed: Set<String>?,
+        limit: Int
+    ) -> [(RAGChunk, Double)] {
+        lexicalScore(query: query, context: context, allowed: allowed, exclude: [], limit: limit)
     }
 
     private static func lexicalScore(

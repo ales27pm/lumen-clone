@@ -1448,6 +1448,7 @@ final class AgentService {
     private nonisolated static let structuredPromptPreflightSafetyTokens = 128
     private nonisolated static let contextWindowExceededRawOutputPrefix = "Prompt exceeded context window before generation"
     private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
+    nonisolated static let structuredAgentResponseSchema = #"{"type":"object","oneOf":[{"required":["action"],"properties":{"thought":{"type":"string"},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}},"additionalProperties":false},{"required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}]}"#
 
     private struct StructuredTurnGenerationDiagnostics: Sendable {
         let generationElapsedMs: Int
@@ -1543,6 +1544,7 @@ final class AgentService {
                 modelName: "agent-json",
                 relevantMemories: [],
                 attachments: [],
+                responseFormat: .constrainedJSON(schema: Self.structuredAgentResponseSchema),
                 allowsMemoryPressureContinuation: options.allowsMemoryPressureContinuation
             )
 
@@ -1559,6 +1561,7 @@ final class AgentService {
             var completedPayload: CompletedGenerationTracePayload?
             var preflight = await preflightAgentJSONPrompt(genReq)
             var forcedParseError: AgentTurnParseError?
+            var runtimePreflightFailureReason: String?
 
             if !preflight.fits {
                 let compactReq = Self.agentJSONContextCompactionRequest(from: genReq)
@@ -1575,37 +1578,45 @@ final class AgentService {
             }
 
             if forcedParseError == nil {
-                streamStarted = true
-                for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
-                    if Task.isCancelled { break }
-                    switch token {
-                    case .text(let s):
-                        if firstTokenLatencyMs == nil {
-                            firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
-                        }
-                        outputChunks += 1
-                        raw += s
-                        for event in scanner.feed(s) {
-                            switch event {
-                            case .thoughtDelta:
-                                let current = scanner.thought
-                                if !thoughtStepYielded {
-                                    continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
-                                    thoughtStepYielded = true
-                                } else {
-                                    continuation.yield(.stepDelta(id: thoughtStepID, text: current))
-                                }
-                            case .finalDelta(let delta):
-                                streamedFinalLen += delta.count
-                                continuation.yield(.finalDelta(delta))
+                let runtimePreflight = await ExecutorRuntimePreflight.checkReadiness(
+                    allowsLoadedMemoryPressureContinuation: options.allowsMemoryPressureContinuation
+                )
+                if !runtimePreflight.passed {
+                    runtimePreflightFailureReason = runtimePreflight.reason
+                    forcedParseError = .empty
+                } else {
+                    streamStarted = true
+                    for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
+                        if Task.isCancelled { break }
+                        switch token {
+                        case .text(let s):
+                            if firstTokenLatencyMs == nil {
+                                firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
                             }
+                            outputChunks += 1
+                            raw += s
+                            for event in scanner.feed(s) {
+                                switch event {
+                                case .thoughtDelta:
+                                    let current = scanner.thought
+                                    if !thoughtStepYielded {
+                                        continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
+                                        thoughtStepYielded = true
+                                    } else {
+                                        continuation.yield(.stepDelta(id: thoughtStepID, text: current))
+                                    }
+                                case .finalDelta(let delta):
+                                    streamedFinalLen += delta.count
+                                    continuation.yield(.finalDelta(delta))
+                                }
+                            }
+                        case .done:
+                            finalChunkReceived = true
+                            break
                         }
-                    case .done:
-                        finalChunkReceived = true
-                        break
                     }
+                    completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: genReq.id)
                 }
-                completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: genReq.id)
             }
 
             if !Task.isCancelled,
@@ -1673,7 +1684,7 @@ final class AgentService {
                 ?? AgentTurnParser.parse(raw)
             let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             let localEmptyReason = trimmedRaw.isEmpty
-                ? Self.agentJSONEmptyStreamReason(
+                ? runtimePreflightFailureReason ?? Self.agentJSONEmptyStreamReason(
                     streamStarted: streamStarted,
                     textChunkCount: outputChunks,
                     finalChunkReceived: finalChunkReceived,
@@ -1702,7 +1713,7 @@ final class AgentService {
                 firstChunkReceived: completedPayload?.firstChunkReceived ?? (outputChunks > 0),
                 textChunkCount: completedPayload?.textChunkCount ?? outputChunks,
                 finalChunkReceived: completedPayload?.finalChunkReceived ?? finalChunkReceived,
-                streamTerminationReason: completedPayload?.streamTerminationReason
+                streamTerminationReason: completedPayload?.streamTerminationReason ?? runtimePreflightFailureReason
             )
             recordAgentModelTurnTrace(
                 req: req,
@@ -1916,6 +1927,9 @@ final class AgentService {
         var sys = """
         You are Lumen's structured routing executor. Emit one raw JSON object only.
 
+        Response format contract: output exactly one valid JSON object matching this schema:
+        \(Self.structuredAgentResponseSchema)
+
         Schemas:
         {"thought":"short","action":{"tool":"tool.id","args":{}}}
         {"thought":"short","final":"user-facing answer"}
@@ -2074,6 +2088,7 @@ final class AgentService {
             modelName: request.modelName,
             relevantMemories: request.relevantMemories,
             attachments: request.attachments,
+            responseFormat: request.responseFormat,
             seed: request.seed.map { $0 &+ 1 },
             developerTraceModeEnabled: request.developerTraceModeEnabled,
             reasoningCaptureEnabled: request.reasoningCaptureEnabled,
@@ -2135,6 +2150,7 @@ final class AgentService {
             modelName: request.modelName,
             relevantMemories: [],
             attachments: [],
+            responseFormat: request.responseFormat,
             seed: request.seed,
             developerTraceModeEnabled: false,
             reasoningCaptureEnabled: false,
@@ -2621,6 +2637,17 @@ final class AgentService {
 
     nonisolated static func agentJSONEmptyOutputRetryUserTurnForTests(from userTurn: String) -> String {
         agentJSONEmptyOutputRetryUserTurn(from: userTurn)
+    }
+
+    nonisolated static func agentJSONEmptyOutputRetryRequestForTests(
+        from request: GenerateRequest,
+        userTurn: String
+    ) -> GenerateRequest {
+        agentJSONEmptyOutputRetryRequest(from: request, userTurn: userTurn)
+    }
+
+    nonisolated static func agentJSONContextCompactionRequestForTests(from request: GenerateRequest) -> GenerateRequest {
+        agentJSONContextCompactionRequest(from: request)
     }
 
     func recordAgentModelTurnTraceForTests(

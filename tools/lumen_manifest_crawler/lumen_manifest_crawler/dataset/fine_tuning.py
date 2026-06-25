@@ -261,7 +261,7 @@ def compile_agent_fine_tuning_datasets(
                 "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
                 "cortexCodebaseSelfAwarenessSourceFamily": CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY if agent == "cortex" else None,
                 "cortexCodebaseSelfAwarenessRecordCount": len(cortex_codebase_sft) if agent == "cortex" else 0,
-                "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_plus_selected_manifest_artifacts" if agent == "cortex" else None,
+                "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_excluding_generated_outputs" if agent == "cortex" else None,
                 "cortexCodebaseFileRecordCount": cortex_codebase_file_record_count if agent == "cortex" else 0,
                 "cortexCodebaseChunkRecordCount": cortex_codebase_chunk_record_count if agent == "cortex" else 0,
             },
@@ -337,7 +337,8 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
     messages = _normalize_messages(record)
     user = _first_role_content(messages, "user")
     assistant = _first_role_content(messages, "assistant")
-    if not assistant.strip():
+    normalized_assistant = assistant.strip()
+    if not normalized_assistant or normalized_assistant.lower() in {"null", "none"}:
         return None
     return {
         "messages": messages,
@@ -422,6 +423,7 @@ def _to_sft_record(
             "risk": normalized["risk"],
             "sourceFamily": normalized["sourceFamily"],
             "manifestCommit": manifest.sourceIntegrity.commit,
+            "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
         },
     }
 
@@ -827,6 +829,8 @@ def _ultra_specific_cortex_records(
             "rejectedToolIDs": rejected,
             "requiresApproval": tool.requiresApproval,
             "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "nextModel": "approval" if tool.requiresApproval else "executor",
             "actionStep": {
                 "type": "tool_call",
@@ -834,7 +838,7 @@ def _ultra_specific_cortex_records(
                 "mustPersistBeforeFinal": True,
             },
             "decisionBoundary": f"Use only tools allowed for intent `{entry.intent}`; do not substitute {rejected[0] if rejected else 'a forbidden tool'}.",
-            "reasoningSummary": f"The routing matrix allows {selected_tool_id} for {entry.intent}; approval={tool.requiresApproval}, permission={tool.permissionKey or 'none'}.",
+            "reasoningSummary": f"The routing matrix allows {selected_tool_id} for {entry.intent}; approval={tool.requiresApproval}, permission={tool.permissionKey or 'none'}, permissionKind={tool.permissionKind or 'none'}, confirmationMode={tool.confirmationMode or 'none'}.",
         }
         records.append(
             _adapter_sft_record(
@@ -894,6 +898,8 @@ def _ultra_specific_cortex_records(
             "selectedToolID": tool_id,
             "requiresApproval": tool.requiresApproval,
             "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "nextModel": "approval" if tool.requiresApproval else "executor",
             "actionStep": {"type": "tool_call", "toolID": tool_id, "mustPersistBeforeFinal": True},
             "repairLesson": lesson,
@@ -925,6 +931,10 @@ def _ultra_specific_executor_records(
             "status": status,
             "tool": tool.id,
             "arguments": args,
+            "requiresApproval": tool.requiresApproval,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "schemaLock": {
                 "requiredArguments": [arg.name for arg in tool.arguments if arg.required],
                 "optionalArguments": [arg.name for arg in tool.arguments if not arg.required],
@@ -933,8 +943,6 @@ def _ultra_specific_executor_records(
         }
         if tool.requiresApproval:
             assistant["approvalPrompt"] = _approval_prompt_for_tool(tool, args)
-        if tool.permissionKey:
-            assistant["permissionKey"] = tool.permissionKey
         records.append(
             _adapter_sft_record(
                 "executor",
@@ -961,6 +969,10 @@ def _ultra_specific_executor_records(
                         {
                             "status": "needs_clarification",
                             "tool": tool.id,
+                            "requiresApproval": tool.requiresApproval,
+                            "permissionKey": tool.permissionKey,
+                            "permissionKind": tool.permissionKind,
+                            "confirmationMode": tool.confirmationMode,
                             "missingArguments": [missing_arg],
                             "arguments": {key: value for key, value in args.items() if key != missing_arg},
                         },
@@ -981,6 +993,8 @@ def _ultra_specific_executor_records(
                         "status": "permission_unavailable",
                         "tool": tool.id,
                         "permissionKey": tool.permissionKey,
+                        "permissionKind": tool.permissionKind,
+                        "confirmationMode": tool.confirmationMode,
                         "arguments": args,
                     },
                     "ultra_specific_permission_boundary",
@@ -1317,6 +1331,8 @@ def _ultra_specific_fleet_records(
                     "delegateTo": target,
                     "requiresApproval": tool.requiresApproval,
                     "permissionKey": tool.permissionKey,
+                    "permissionKind": tool.permissionKind,
+                    "confirmationMode": tool.confirmationMode,
                     "boundary": "fleet identifies ownership; executor emits the concrete tool JSON; mouth summarizes after observation",
                 },
                 "ultra_specific_tool_boundary_awareness",
@@ -1357,6 +1373,7 @@ def _adapter_sft_record(
             "sourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
             "manifestCommit": manifest.sourceIntegrity.commit,
             "specificity": "ultra_specific",
+            "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
             **extra_metadata,
         },
     }
@@ -1482,9 +1499,9 @@ def _cortex_prompt_for_intent(intent: str, tool_id: str, tool: ToolManifest) -> 
 def _executor_prompt_for_tool(tool: ToolManifest, args: dict[str, Any]) -> str:
     arg_text = json.dumps(args, ensure_ascii=False, sort_keys=True)
     if tool.requiresApproval:
-        return f"Prepare strict executor JSON for `{tool.id}` using these concrete user details {arg_text}. Stop at approval; do not claim execution."
+        return f"Prepare strict executor JSON for `{tool.id}` using these concrete user details {arg_text}. Stop at approval; preserve confirmation mode `{tool.confirmationMode or 'none'}` and do not claim execution."
     if tool.permissionKey:
-        return f"Prepare strict executor JSON for `{tool.id}` using these concrete details {arg_text}, preserving the permission key `{tool.permissionKey}`."
+        return f"Prepare strict executor JSON for `{tool.id}` using these concrete details {arg_text}, preserving permission key `{tool.permissionKey}`, permission kind `{tool.permissionKind or 'none'}`, and confirmation mode `{tool.confirmationMode or 'none'}`."
     return f"Prepare strict executor JSON for `{tool.id}` using these concrete details {arg_text}. Return JSON only."
 
 
@@ -1610,6 +1627,8 @@ def _approval_request_response(tool: ToolManifest) -> str:
 
 
 def _permission_response(tool: ToolManifest) -> str:
+    if tool.permissionKind:
+        return f"I cannot run {tool.displayName or tool.id} until the {tool.permissionKind} device permission is available."
     return f"I cannot run {tool.displayName or tool.id} until the required device permission is available."
 
 
@@ -1630,6 +1649,22 @@ def _risk_for_tool(tool: ToolManifest) -> str:
     if tool.requiresApproval:
         return "approval_required"
     return "standard"
+
+
+def _tool_contracts_for_ids(manifest: AgentBehaviorManifest, tool_ids: list[str]) -> dict[str, dict[str, Any]]:
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    contracts: dict[str, dict[str, Any]] = {}
+    for tool_id in sorted(set(tool_ids)):
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        contracts[tool_id] = {
+            "requiresApproval": tool.requiresApproval,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
+        }
+    return contracts
 
 
 def _has_explicit_fleet_slot_metadata(record: dict[str, Any], slot_ids: set[str], slot_roles: set[str]) -> bool:

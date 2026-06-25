@@ -32,23 +32,55 @@ enum MemoryStore {
         let ttl: TimeInterval?
     }
 
+    struct RecallResult {
+        let items: [MemoryItem]
+        let mode: String
+        let diagnostic: String?
+    }
+
     static func recall(query: String, context: ModelContext, limit: Int = 5) async -> [MemoryItem] {
+        await recallWithDiagnostics(query: query, context: context, limit: limit).items
+    }
+
+    static func recallWithDiagnostics(query: String, context: ModelContext, limit: Int = 5) async -> RecallResult {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, limit > 0 else { return [] }
+        guard !trimmed.isEmpty, limit > 0 else {
+            return RecallResult(items: [], mode: "empty_query", diagnostic: "empty_query")
+        }
+
+        if let budgetDenial = ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.recall") {
+            logger.error("memory_embedding_budget_denied op=recall reason=\(budgetDenial, privacy: .public)")
+            return RecallResult(
+                items: lexicalRecall(query: trimmed, context: context, limit: limit),
+                mode: "lexical_fallback",
+                diagnostic: budgetDenial
+            )
+        }
+
         let queryVec: [Double]
         do {
             queryVec = try await AppLlamaService.shared.embed(trimmed)
         } catch {
             logger.error("memory_embedding_failed op=recall error=\(String(describing: error), privacy: .public)")
-            return []
+            return RecallResult(
+                items: lexicalRecall(query: trimmed, context: context, limit: limit),
+                mode: "lexical_fallback",
+                diagnostic: "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            )
         }
         guard !queryVec.isEmpty else {
             logger.error("memory_embedding_empty op=recall")
-            return []
+            return RecallResult(
+                items: lexicalRecall(query: trimmed, context: context, limit: limit),
+                mode: "lexical_fallback",
+                diagnostic: "embedding_empty"
+            )
         }
 
         let availableItems = (try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []
-        guard !availableItems.isEmpty else { return [] }
+        guard !availableItems.isEmpty else {
+            return RecallResult(items: [], mode: "semantic", diagnostic: "empty_store")
+        }
         let itemByID = Dictionary(uniqueKeysWithValues: availableItems.map { ($0.persistentModelID, $0) })
 
         MemoryVectorIndex.shared.ensureLoaded(context: context)
@@ -84,7 +116,55 @@ enum MemoryStore {
             MemoryVectorIndex.shared.invalidate()
             MemoryVectorIndex.shared.ensureLoaded(context: context)
         }
-        return results
+        if results.count < limit {
+            let existingIDs = Set(results.map(\.persistentModelID))
+            let backfill = lexicalRecall(query: trimmed, context: context, limit: limit - results.count, excluding: existingIDs)
+            results.append(contentsOf: backfill)
+            if !backfill.isEmpty {
+                return RecallResult(items: results, mode: "semantic_with_lexical_backfill", diagnostic: nil)
+            }
+        }
+        return RecallResult(items: results, mode: "semantic", diagnostic: nil)
+    }
+
+    static func lexicalRecall(
+        query: String,
+        context: ModelContext,
+        limit: Int,
+        excluding excludedIDs: Set<PersistentIdentifier> = []
+    ) -> [MemoryItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, limit > 0 else { return [] }
+        let queryLower = trimmed.lowercased()
+        let terms = queryLower
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 2 }
+        guard let availableItems = try? context.fetch(FetchDescriptor<MemoryItem>()) else { return [] }
+        let now = Date()
+        return availableItems.compactMap { item -> (MemoryItem, Double)? in
+            guard !excludedIDs.contains(item.persistentModelID), !isExpired(item, now: now) else { return nil }
+            let content = item.content.lowercased()
+            let topic = item.topic?.lowercased() ?? ""
+            var score = 0.0
+            if content == queryLower { score += 5.0 }
+            if content.hasPrefix(queryLower) { score += 2.0 }
+            if content.contains(queryLower) { score += 1.25 }
+            if topic.contains(queryLower) { score += 0.75 }
+            let hits = terms.reduce(0) { count, term in
+                count + ((content.contains(term) || topic.contains(term)) ? 1 : 0)
+            }
+            if !terms.isEmpty { score += Double(hits) / Double(terms.count) }
+            if item.isPinned { score += 0.5 }
+            guard score > 0 else { return nil }
+            score += max(0, 0.25 - now.timeIntervalSince(item.createdAt) / (60 * 60 * 24 * 365))
+            return (item, score)
+        }
+        .sorted {
+            if $0.1 != $1.1 { return $0.1 > $1.1 }
+            return $0.0.createdAt > $1.0.createdAt
+        }
+        .prefix(limit)
+        .map { $0.0 }
     }
 
     static func remember(_ content: String, kind: MemoryKind = .fact, source: String = "manual", topic: String? = nil, context: ModelContext) async throws {

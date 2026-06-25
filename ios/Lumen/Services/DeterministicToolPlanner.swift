@@ -244,7 +244,7 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .rag:
-            if containsAny(text, ["index photos", "reindex photos", "photo retrieval index"]) { return action("rag.index_photos") }
+            if containsAny(text, ["index photos", "index photo", "reindex photos", "reindex photo", "photo metadata", "photo retrieval index"]) { return action("rag.index_photos") }
             if containsAny(text, ["reindex", "index files", "file retrieval index", "refresh retrieval index"]) { return action("rag.index_files") }
             if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
                 let query = expandRAGQueryIfNeeded(originalPrompt: prompt)

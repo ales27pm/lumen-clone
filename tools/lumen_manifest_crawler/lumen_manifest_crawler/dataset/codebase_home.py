@@ -56,6 +56,7 @@ IGNORED_DIRS = {
 
 EXCLUDED_PREFIXES = (
     "generated/agent_improvement_loop/",
+    "generated/agent_manifest/",
     "generated/agent_manifest/cross_model_training/",
     "generated/agent_manifest/dataset/",
     "generated/agent_manifest/embedding/",
@@ -64,18 +65,11 @@ EXCLUDED_PREFIXES = (
     "generated/visual_improve_loop/",
 )
 
-SELECTED_GENERATED_FILES = {
-    "generated/agent_manifest/AgentBehaviorManifest.json",
-    "generated/agent_manifest/AgentBehaviorManifest.md",
-    "generated/agent_manifest/AgentBehaviorManifest.pretty.json",
-    "generated/agent_manifest/dataset_index.csv",
-    "generated/agent_manifest/dataset_manifest.json",
-    "generated/agent_manifest/fleet_system_prompts.json",
-    "generated/agent_manifest/routing_matrix.csv",
-    "generated/agent_manifest/runtime_grounding_bundle.json",
-    "generated/agent_manifest/runtime_grounding_prompt.md",
-    "generated/agent_manifest/tool_registry.csv",
+EXCLUDED_RELPATHS = {
+    "ios/Lumen/AgentBehaviorManifest.json",
 }
+
+SELECTED_GENERATED_FILES: set[str] = set()
 
 MAX_FILE_BYTES = 1_250_000
 MAX_RECORDS = 10_000
@@ -178,6 +172,8 @@ def _include_path(path: Path) -> bool:
 
 
 def _include_relpath(relpath: str) -> bool:
+    if relpath in EXCLUDED_RELPATHS:
+        return False
     if relpath in SELECTED_GENERATED_FILES:
         return True
     parts = Path(relpath).parts
@@ -245,7 +241,7 @@ def _overview_record(root: Path, corpus: list[dict[str, Any]], chunks: list[dict
         [
             "Lumen codebase home overview.",
             f"Root: {root.name}",
-            "Scanned deterministic git-tracked text source, tests, docs, scripts, configs, and selected generated manifest artifacts.",
+            "Scanned deterministic git-tracked text source, tests, docs, scripts, and configs. Generated outputs are excluded.",
             f"Files: {len(corpus)}",
             f"Source chunks: {len(chunks)}",
             f"Lines: {total_lines}",
@@ -274,8 +270,9 @@ def _overview_record(root: Path, corpus: list[dict[str, Any]], chunks: list[dict
             "lineCount": total_lines,
             "languages": dict(sorted(languages.items())),
             "modules": dict(sorted(modules.items())),
-            "coverage": "git_tracked_text_files_plus_selected_manifest_artifacts",
+            "coverage": "git_tracked_text_files_excluding_generated_outputs",
             "selectedGeneratedFiles": sorted(SELECTED_GENERATED_FILES),
+            "excludedRelpaths": sorted(EXCLUDED_RELPATHS),
             "excludedPrefixes": sorted(EXCLUDED_PREFIXES),
             "recordKind": "repo_overview",
         },

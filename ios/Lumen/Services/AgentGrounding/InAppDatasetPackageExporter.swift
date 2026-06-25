@@ -12,6 +12,7 @@ nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
     let recentTraces: [InAppDatasetTraceExport]
     let traceSelectedToolAllowedCount: Int
     let traceParseErrorCount: Int
+    let exportQualityFailures: [InAppDatasetExportQualityFailure]?
     let improveLoop: ImproveLoopDataset
     let exportPolicy: InAppDatasetExportPolicy
 }
@@ -71,6 +72,22 @@ nonisolated struct InAppDatasetTraceExport: Codable, Sendable, Hashable {
     let textChunkCount: Int?
     let finalChunkReceived: Bool?
     let streamTerminationReason: String?
+    let finalizerAccepted: Bool?
+    let finalizerRejectionReason: String?
+    let finalValidatorAcceptedCandidate: Bool?
+    let finalValidatorReplacementSource: String?
+    let finalValidatorRejectionReason: String?
+}
+
+nonisolated struct InAppDatasetExportQualityFailure: Codable, Sendable, Hashable, Identifiable {
+    var id: String { [type, agent ?? "", actual ?? "", problem].joined(separator: "|") }
+    let type: String
+    let agent: String?
+    let expected: [String]
+    let actual: String?
+    let scenario: String?
+    let problem: String
+    let sourceLayer: String
 }
 
 nonisolated struct InAppDatasetAppInfo: Codable, Sendable, Hashable {
@@ -98,7 +115,7 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.3.0"
+    static let schemaVersion = "1.4.0"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
@@ -121,13 +138,14 @@ nonisolated enum InAppDatasetPackageExporter {
         let traces = AgentBehaviorTraceRecorder.recent(limit: traceLimit)
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
         let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
+        let exportedTraces = traces.map(exportTrace)
+        let qualityFailures = exportQualityFailures(from: exportedTraces)
         let improveLoop = ImproveLoopSampleGate.buildDataset(
             behaviorAudit: exportedBehaviorAudit,
             traces: traces,
             scenarioResults: includeScenarioResults ? scenarioResults : [],
             sourceCommit: exportedBehaviorAudit?.sourceCommit
         )
-        let exportedTraces = traces.map(exportTrace)
         return LumenInAppDatasetPackage(
             schemaVersion: schemaVersion,
             generatedAt: Date(),
@@ -156,6 +174,7 @@ nonisolated enum InAppDatasetPackageExporter {
                     count += 1
                 }
             },
+            exportQualityFailures: qualityFailures,
             improveLoop: improveLoop,
             exportPolicy: InAppDatasetExportPolicy(
                 format: "agent-grounding-runtime-json-package",
@@ -171,6 +190,114 @@ nonisolated enum InAppDatasetPackageExporter {
                     : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results."
             )
         )
+    }
+
+    private static func exportQualityFailures(from traces: [InAppDatasetTraceExport]) -> [InAppDatasetExportQualityFailure] {
+        var failures: [InAppDatasetExportQualityFailure] = []
+        if traces.isEmpty {
+            failures.append(InAppDatasetExportQualityFailure(
+                type: "agent_grounding_no_recent_model_traces",
+                agent: "runtime",
+                expected: ["Agent Grounding export should include recent model/tool traces captured from real in-app execution."],
+                actual: "recentTraces is empty",
+                scenario: "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+                problem: "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
+                sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
+            ))
+        }
+
+        for trace in traces where requiresStructuredModelTraceCompleteness(trace) {
+            let missing = missingStructuredModelTraceFields(trace)
+            guard !missing.isEmpty else { continue }
+            failures.append(InAppDatasetExportQualityFailure(
+                type: "agent_grounding_model_trace_incomplete",
+                agent: trace.slot,
+                expected: [
+                    "Structured model-turn traces must include runtimePath, selectedRuntime, modelLoaded, outputTokenCount, stream state, and either text-chunk proof or a precise empty/failure reason."
+                ],
+                actual: [
+                    "missing=\(missing.joined(separator: ","))",
+                    "stage=\(trace.stage)",
+                    "runtimePath=\(trace.runtimePath ?? "nil")",
+                    "parseError=\(trace.parseError ?? "nil")",
+                    "emptyOutputReason=\(trace.emptyOutputReason ?? "nil")",
+                    "streamTerminationReason=\(trace.streamTerminationReason ?? "nil")"
+                ].joined(separator: "; "),
+                scenario: trace.promptPrefix,
+                problem: "A structured model-turn trace does not carry the minimum runtime evidence needed to distinguish real generation from deterministic fallback or pre-stream failure.",
+                sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
+            ))
+        }
+        for trace in traces where trace.event == .finalAnswer && trace.finalValidatorAcceptedCandidate == false {
+            failures.append(InAppDatasetExportQualityFailure(
+                type: "agent_grounding_final_validator_replaced_candidate",
+                agent: trace.slot,
+                expected: [
+                    "Final answer traces should preserve whether ToolObservationFinalizer and FinalIntentValidator accepted the observed candidate before it became user-visible output."
+                ],
+                actual: [
+                    "stage=\(trace.stage)",
+                    "selectedToolID=\(trace.selectedToolID ?? "nil")",
+                    "replacementSource=\(trace.finalValidatorReplacementSource ?? "nil")",
+                    "rejectionReason=\(trace.finalValidatorRejectionReason ?? "nil")",
+                    "finalizerAccepted=\(trace.finalizerAccepted.map { $0 ? "true" : "false" } ?? "nil")",
+                    "finalizerRejectionReason=\(trace.finalizerRejectionReason ?? "nil")"
+                ].joined(separator: "; "),
+                scenario: trace.promptPrefix,
+                problem: "The final validator replaced the candidate response. Treat this as runtime/finalization feedback, not as proof that the model produced a valid final answer.",
+                sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
+            ))
+        }
+        return failures
+    }
+
+    private static func requiresStructuredModelTraceCompleteness(_ trace: InAppDatasetTraceExport) -> Bool {
+        guard trace.event == .modelTurn else { return false }
+        if trace.runtimePath == "deterministic-compatibility" { return false }
+        let stage = trace.stage.lowercased()
+        if stage == "agent-json" || stage.hasPrefix("agent-json-") { return true }
+        return stage.contains("executor-json")
+    }
+
+    private static func missingStructuredModelTraceFields(_ trace: InAppDatasetTraceExport) -> [String] {
+        var missing: [String] = []
+        if (trace.runtimePath ?? "").isEmpty { missing.append("runtimePath") }
+        if (trace.selectedRuntime ?? "").isEmpty { missing.append("selectedRuntime") }
+        if trace.modelLoaded == nil { missing.append("modelLoaded") }
+        if trace.outputTokenCount == nil { missing.append("outputTokenCount") }
+
+        if trace.streamStarted == nil {
+            missing.append("streamStarted")
+            return missing
+        }
+
+        if trace.streamStarted == true {
+            if trace.firstChunkReceived == nil { missing.append("firstChunkReceived") }
+            if trace.textChunkCount == nil { missing.append("textChunkCount") }
+            if trace.finalChunkReceived == nil { missing.append("finalChunkReceived") }
+
+            let hasTextEvidence = trace.firstChunkReceived == true
+                || (trace.textChunkCount ?? 0) > 0
+                || (trace.outputTokenCount ?? 0) > 0
+                || !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !hasTextEvidence && !hasPreciseRuntimeFailureReason(trace) {
+                missing.append("emptyOutputReasonOrParseError")
+            }
+            if trace.finalChunkReceived == false && (trace.streamTerminationReason ?? "").isEmpty && !hasPreciseRuntimeFailureReason(trace) {
+                missing.append("streamTerminationReason")
+            }
+        } else if !hasPreciseRuntimeFailureReason(trace) {
+            missing.append("emptyOutputReasonOrParseError")
+        }
+        return missing
+    }
+
+    private static func hasPreciseRuntimeFailureReason(_ trace: InAppDatasetTraceExport) -> Bool {
+        if !(trace.emptyOutputReason ?? "").isEmpty { return true }
+        if !(trace.parseError ?? "").isEmpty { return true }
+        if !(trace.streamTerminationReason ?? "").isEmpty { return true }
+        if !(trace.cancellationStateBeforeStream ?? "").isEmpty { return true }
+        return false
     }
 
     private static func exportTrace(_ trace: AgentBehaviorTrace) -> InAppDatasetTraceExport {
@@ -228,7 +355,12 @@ nonisolated enum InAppDatasetPackageExporter {
             firstChunkReceived: trace.firstChunkReceived,
             textChunkCount: trace.textChunkCount,
             finalChunkReceived: trace.finalChunkReceived,
-            streamTerminationReason: trace.streamTerminationReason.map { sanitizedSnippet($0, limit: 160) }
+            streamTerminationReason: trace.streamTerminationReason.map { sanitizedSnippet($0, limit: 160) },
+            finalizerAccepted: trace.finalizerAccepted,
+            finalizerRejectionReason: trace.finalizerRejectionReason.map(safeCode),
+            finalValidatorAcceptedCandidate: trace.finalValidatorAcceptedCandidate,
+            finalValidatorReplacementSource: trace.finalValidatorReplacementSource.map(safeCode),
+            finalValidatorRejectionReason: trace.finalValidatorRejectionReason.map(safeCode)
         )
     }
 

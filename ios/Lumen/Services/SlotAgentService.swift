@@ -538,7 +538,9 @@ final class SlotAgentService {
         allowedToolIDs: Set<String>,
         requiresApproval: Bool? = nil,
         approvalMode: String? = nil,
-        emittedFinalInActionTurn: Bool = false
+        emittedFinalInActionTurn: Bool = false,
+        finalizerOutcome: ToolObservationFinalizationOutcome? = nil,
+        finalValidationOutcome: FinalIntentValidationOutcome? = nil
     ) {
         AgentBehaviorTraceRecorder.record(
             AgentBehaviorTrace(
@@ -565,7 +567,12 @@ final class SlotAgentService {
                 modelFamily: LumenModelFamily.persistedSelected.rawValue,
                 runtimePath: "deterministic-compatibility",
                 activeAdapterSlot: nil,
-                promptCharCount: req.userMessage.count
+                promptCharCount: req.userMessage.count,
+                finalizerAccepted: finalizerOutcome?.accepted,
+                finalizerRejectionReason: finalizerOutcome?.rejectionReason,
+                finalValidatorAcceptedCandidate: finalValidationOutcome?.acceptedCandidate,
+                finalValidatorReplacementSource: finalValidationOutcome?.replacementSource,
+                finalValidatorRejectionReason: finalValidationOutcome?.rejectionReason
             )
         )
     }
@@ -827,6 +834,35 @@ final class SlotAgentService {
                let messageID = extractOutlookMessageID(from: result) {
                 latestOutlookMessageID = messageID
             }
+            if routing.intent == .phoneCall, canonicalActionTool == "contacts.search" {
+                if let continuation = phoneCallContinuation(
+                    afterContactObservation: result,
+                    availableToolIDs: availableToolIDs,
+                    routing: routing
+                ) {
+                    steps.append(continuation.step)
+                    Self.emitChatTrace(req: original, phase: "phone_call_continuation", values: [
+                        "outcome": continuation.outcome,
+                        "finalChars": String(continuation.text.count),
+                        "finalSHA256": Self.sha256(continuation.text)
+                    ])
+                    Self.recordCompatibilityBehaviorTrace(
+                        req: original,
+                        routing: routing,
+                        event: continuation.selectedToolID == nil ? .finalAnswer : .toolAction,
+                        slot: continuation.selectedToolID == nil ? "mouth" : "executor",
+                        stage: continuation.stage,
+                        rawOutput: continuation.rawOutput,
+                        selectedToolID: continuation.selectedToolID,
+                        toolArguments: continuation.toolArguments,
+                        allowedToolIDs: availableToolIDs,
+                        requiresApproval: continuation.requiresApproval,
+                        approvalMode: continuation.requiresApproval == true ? "boundary" : nil,
+                        emittedFinalInActionTurn: true
+                    )
+                    return .init(text: continuation.text, steps: steps)
+                }
+            }
 
             if index < plannedActions.count - 1, shouldStopPlannedChain(after: result) {
                 let text = FinalIntentValidator.validate(result, routing: routing, fallback: IntentRouter.unavailableMessage(for: routing))
@@ -874,12 +910,29 @@ final class SlotAgentService {
             return .init(text: text, steps: steps)
         }
 
-        var candidate = ToolObservationFinalizer.immediateFinalIfSafe(
-            intent: routing.intent,
-            toolID: lastToolID,
-            observation: lastObservation,
-            originalPrompt: original.userMessage
-        ) ?? lastObservation
+        let finalizerOutcome: ToolObservationFinalizationOutcome
+        if let lastTool = ToolRegistry.find(id: lastToolID) {
+            finalizerOutcome = ToolObservationFinalizer.immediateFinalOutcome(
+                intent: routing.intent,
+                tool: lastTool,
+                observation: lastObservation,
+                originalPrompt: original.userMessage,
+                trustedApprovalCaptured: false
+            )
+        } else {
+            finalizerOutcome = ToolObservationFinalizer.immediateFinalOutcome(
+                intent: routing.intent,
+                toolID: lastToolID,
+                observation: lastObservation,
+                originalPrompt: original.userMessage
+            )
+        }
+        Self.emitChatTrace(req: original, phase: "tool_observation_finalizer", values: [
+            "toolID": lastToolID,
+            "accepted": finalizerOutcome.accepted ? "true" : "false",
+            "rejectionReason": finalizerOutcome.rejectionReason ?? "none"
+        ])
+        var candidate = finalizerOutcome.text ?? lastObservation
 
         if routing.intent == .calendar && lastToolID == "calendar.list" {
             let loweredCalendarCandidate = candidate.lowercased()
@@ -895,12 +948,24 @@ final class SlotAgentService {
         }
 
         let fallback = IntentRouter.unavailableMessage(for: routing)
-        let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: fallback)
+        let validationOutcome = FinalIntentValidator.validateWithOutcome(candidate, routing: routing, fallback: fallback)
+        let text = validationOutcome.text
+        Self.emitChatTrace(req: original, phase: "final_validation", values: [
+            "toolID": lastToolID,
+            "acceptedCandidate": validationOutcome.acceptedCandidate ? "true" : "false",
+            "replacementSource": validationOutcome.replacementSource,
+            "rejectionReason": validationOutcome.rejectionReason ?? "none"
+        ])
         Self.emitChatTrace(req: original, phase: "final", values: [
             "toolID": lastToolID,
             "finalChars": String(text.count),
             "finalSHA256": Self.sha256(text),
-            "stepCount": String(steps.count)
+            "stepCount": String(steps.count),
+            "finalizerAccepted": finalizerOutcome.accepted ? "true" : "false",
+            "finalizerRejectionReason": finalizerOutcome.rejectionReason ?? "none",
+            "finalValidatorAcceptedCandidate": validationOutcome.acceptedCandidate ? "true" : "false",
+            "finalValidatorReplacementSource": validationOutcome.replacementSource,
+            "finalValidatorRejectionReason": validationOutcome.rejectionReason ?? "none"
         ])
         Self.recordCompatibilityBehaviorTrace(
             req: original,
@@ -911,7 +976,9 @@ final class SlotAgentService {
             rawOutput: text,
             selectedToolID: lastToolID.isEmpty ? nil : lastToolID,
             allowedToolIDs: availableToolIDs,
-            emittedFinalInActionTurn: true
+            emittedFinalInActionTurn: true,
+            finalizerOutcome: finalizerOutcome,
+            finalValidationOutcome: validationOutcome
         )
         return .init(text: text, steps: steps)
     }
@@ -963,6 +1030,19 @@ final class SlotAgentService {
         await deterministicCompatibilityResponseForRecovery(original: original, effective: effective, options: options)
     }
 
+    nonisolated static func phoneCallContinuationForTests(
+        observation: String,
+        availableToolIDs: Set<String>,
+        routing: IntentRoutingDecision
+    ) -> (text: String, step: AgentStep)? {
+        guard let continuation = phoneCallContinuation(
+            afterContactObservation: observation,
+            availableToolIDs: availableToolIDs,
+            routing: routing
+        ) else { return nil }
+        return (continuation.text, continuation.step)
+    }
+
 
     private nonisolated static func shouldStopPlannedChain(after observation: String) -> Bool {
         let lower = observation.lowercased()
@@ -985,6 +1065,109 @@ final class SlotAgentService {
                 "no mail", "no email", "no emails", "empty inbox", "inbox is empty",
                 "mailbox is empty", "nothing to read", "nothing found"
             ])
+    }
+
+    private struct PhoneCallContinuation: Sendable {
+        let text: String
+        let step: AgentStep
+        let outcome: String
+        let stage: String
+        let rawOutput: String
+        let selectedToolID: String?
+        let toolArguments: [String: String]
+        let requiresApproval: Bool?
+    }
+
+    private nonisolated static func phoneCallContinuation(
+        afterContactObservation observation: String,
+        availableToolIDs: Set<String>,
+        routing: IntentRoutingDecision
+    ) -> PhoneCallContinuation? {
+        let matches = contactPhoneMatches(from: observation)
+        guard !matches.isEmpty else {
+            let final = FinalIntentValidator.validate(
+                "Contact search results:\n\(observation)\nWhich contact or phone number should I call?",
+                routing: routing,
+                fallback: nil
+            )
+            return PhoneCallContinuation(
+                text: final,
+                step: AgentStep(kind: .reflection, content: final, toolID: "contacts.search"),
+                outcome: "no_usable_phone_number",
+                stage: "compatibility-phone-call-clarification",
+                rawOutput: final,
+                selectedToolID: nil,
+                toolArguments: [:],
+                requiresApproval: nil
+            )
+        }
+        guard matches.count == 1 else {
+            let names = matches.map(\.name).joined(separator: ", ")
+            let final = FinalIntentValidator.validate(
+                "Contact search results:\n\(observation)\nI found multiple callable contacts: \(names). Which one should I call?",
+                routing: routing,
+                fallback: nil
+            )
+            return PhoneCallContinuation(
+                text: final,
+                step: AgentStep(kind: .reflection, content: final, toolID: "contacts.search"),
+                outcome: "multiple_usable_phone_numbers",
+                stage: "compatibility-phone-call-clarification",
+                rawOutput: final,
+                selectedToolID: nil,
+                toolArguments: [:],
+                requiresApproval: nil
+            )
+        }
+        let match = matches[0]
+        guard availableToolIDs.contains("phone.call"), ToolRegistry.find(id: "phone.call") != nil else {
+            let final = FinalIntentValidator.validate(
+                "Contact found: \(match.name) — \(match.phone). phone.call is unavailable, so I did not place the call.",
+                routing: routing,
+                fallback: nil
+            )
+            return PhoneCallContinuation(
+                text: final,
+                step: AgentStep(kind: .reflection, content: final, toolID: "contacts.search"),
+                outcome: "phone_call_unavailable",
+                stage: "compatibility-phone-call-unavailable",
+                rawOutput: final,
+                selectedToolID: nil,
+                toolArguments: [:],
+                requiresApproval: nil
+            )
+        }
+
+        let action = AgentAction(tool: "phone.call", args: ["number": .string(match.phone)])
+        let approval = approvalBoundaryFinal(for: "phone.call", action: action, routing: routing, prompt: match.name)
+        let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
+        return PhoneCallContinuation(
+            text: text,
+            step: AgentStep(kind: .approvalBoundary, content: approval, toolID: "phone.call", toolArgs: action.args.stringCoerced),
+            outcome: "approval_boundary",
+            stage: "compatibility-phone-call-approval-boundary",
+            rawOutput: action.structuredOutputJSON,
+            selectedToolID: "phone.call",
+            toolArguments: action.args.stringCoerced,
+            requiresApproval: true
+        )
+    }
+
+    private nonisolated static func contactPhoneMatches(from observation: String) -> [(name: String, phone: String)] {
+        observation
+            .split(whereSeparator: \.isNewline)
+            .compactMap { rawLine -> (name: String, phone: String)? in
+                let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: #"^\s*[•\-]\s*"#, with: "", options: .regularExpression)
+                let parts = line.components(separatedBy: "—")
+                guard parts.count >= 2 else { return nil }
+                let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                let rawPhone = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, !rawPhone.lowercased().contains("no phone") else { return nil }
+                let phone = rawPhone.replacingOccurrences(of: #"[^0-9+]"#, with: "", options: .regularExpression)
+                guard !phone.isEmpty else { return nil }
+                return (name, phone)
+            }
     }
 
     private nonisolated static func memorySaveRecallFinalIfApplicable(
@@ -1060,6 +1243,12 @@ final class SlotAgentService {
         switch canonicalTool {
         case "calendar.list":
             return "Calendar event: Diagnostic calendar access is unavailable, but the calendar.list action was selected correctly."
+        case "rag.search":
+            return "Local architecture notes [1]: core module, services module, and tool routing module are the key modules. Source: diagnostic architecture notes snippet."
+        case "rag.index_files":
+            return "File retrieval index diagnostics: rag.index_files action selected correctly."
+        case "rag.index_photos":
+            return "Photo metadata index diagnostics: rag.index_photos action selected correctly."
         default:
             return nil
         }
@@ -1142,6 +1331,9 @@ final class SlotAgentService {
             return "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?"
         case .messageDraft:
             return "Approval required for messages.draft. I can prepare the message after you approve it. What tone should I use?"
+        case .phoneCall:
+            let number = action.args.stringCoerced["number"] ?? "the selected number"
+            return "Approval required for phone.call. Contact found; I can call \(number) after you approve it. I did not place the call yet."
         case .trigger:
             return "Approval required for trigger.create. Trigger request prepared for: \(prompt). It will run the scheduled agent prompt after approval."
         case .calendar:

@@ -8,7 +8,15 @@ def generate_executor_records(manifest: AgentBehaviorManifest) -> list[dict]:
     for tool in manifest.tools:
         args = _sample_arguments(tool)
         status = "requires_user_approval" if tool.requiresApproval else "ready_to_execute"
-        content = {"status": status, "tool": tool.id, "arguments": args}
+        content = {
+            "status": status,
+            "tool": tool.id,
+            "arguments": args,
+            "requiresApproval": tool.requiresApproval,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
+        }
         if tool.requiresApproval:
             content["approvalPrompt"] = f"Run {tool.displayName or tool.id}?"
         records.append({
@@ -17,7 +25,7 @@ def generate_executor_records(manifest: AgentBehaviorManifest) -> list[dict]:
                 {"role": "user", "content": f"Prepare the tool call for {tool.displayName or tool.id}."},
                 {"role": "assistant", "content": content},
             ],
-            "grounding": {"toolID": tool.id, "requiresApproval": tool.requiresApproval, "permissionKey": tool.permissionKey},
+            "grounding": _tool_contract(tool),
         })
     return records
 
@@ -46,11 +54,18 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
             "scenario": "approval_required_tool",
             "tool": tool.id,
             "requiresApproval": True,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "phase": "before_approval",
             "expectedExecutorOutput": {
                 "status": "requires_user_approval",
                 "tool": tool.id,
                 "arguments": args,
+                "requiresApproval": True,
+                "permissionKey": tool.permissionKey,
+                "permissionKind": tool.permissionKind,
+                "confirmationMode": tool.confirmationMode,
                 "approvalPrompt": f"Run {tool.displayName or tool.id}?"
             }
         })
@@ -58,32 +73,53 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
             "scenario": "approval_granted",
             "tool": tool.id,
             "requiresApproval": True,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "phase": "after_approval",
             "expectedExecutorOutput": {
                 "status": "ready_to_execute",
                 "tool": tool.id,
                 "arguments": args,
+                "requiresApproval": True,
+                "permissionKey": tool.permissionKey,
+                "permissionKind": tool.permissionKind,
+                "confirmationMode": tool.confirmationMode,
             }
         })
         records.append({
             "scenario": "approval_rejected",
             "tool": tool.id,
             "requiresApproval": True,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "phase": "after_rejection",
             "expectedExecutorOutput": {
                 "status": "cancelled_by_user",
                 "tool": tool.id,
                 "arguments": args,
+                "requiresApproval": True,
+                "permissionKey": tool.permissionKey,
+                "permissionKind": tool.permissionKind,
+                "confirmationMode": tool.confirmationMode,
             }
         })
         records.append({
             "scenario": "ambiguous_request",
             "tool": tool.id,
             "requiresApproval": True,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
             "phase": "clarification_required",
             "expectedExecutorOutput": {
                 "status": "needs_clarification",
                 "tool": tool.id,
+                "requiresApproval": True,
+                "permissionKey": tool.permissionKey,
+                "permissionKind": tool.permissionKind,
+                "confirmationMode": tool.confirmationMode,
                 "missingArguments": [arg.name for arg in tool.arguments if arg.required],
             }
         })
@@ -92,11 +128,17 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
                 "scenario": "permission_unavailable",
                 "tool": tool.id,
                 "requiresApproval": True,
+                "permissionKey": tool.permissionKey,
+                "permissionKind": tool.permissionKind,
+                "confirmationMode": tool.confirmationMode,
                 "phase": "permission_blocked",
                 "expectedExecutorOutput": {
                     "status": "permission_unavailable",
                     "tool": tool.id,
+                    "requiresApproval": True,
                     "permissionKey": tool.permissionKey,
+                    "permissionKind": tool.permissionKind,
+                    "confirmationMode": tool.confirmationMode,
                     "arguments": args,
                 }
             })
@@ -105,6 +147,16 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
 
 def _sample_arguments(tool: ToolManifest) -> dict:
     return {arg.name: _sample_value(arg.type, arg.name) for arg in tool.arguments if arg.required}
+
+
+def _tool_contract(tool: ToolManifest) -> dict:
+    return {
+        "toolID": tool.id,
+        "requiresApproval": tool.requiresApproval,
+        "permissionKey": tool.permissionKey,
+        "permissionKind": tool.permissionKind,
+        "confirmationMode": tool.confirmationMode,
+    }
 
 
 def _sample_value(arg_type: str, name: str):

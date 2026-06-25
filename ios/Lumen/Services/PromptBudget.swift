@@ -20,7 +20,7 @@ nonisolated enum PromptBudgetConstants {
     static let fastInteractiveMaxUserChars: Int = 280
     static let fastInteractiveUserMessageChars: Int = 160
     static let agentJSONTotalChars: Int = 3_800
-    static let agentJSONSystemChars: Int = 1_500
+    static let agentJSONSystemChars: Int = 2_200
     static let agentJSONHistoryChars: Int = 420
     static let agentJSONUserChars: Int = 900
     static let agentJSONSafetyTokens: Int = 160
@@ -171,7 +171,7 @@ nonisolated struct PromptBudget: Sendable {
             memoriesShare: 0,
             historyShare: min(PromptBudgetConstants.agentJSONHistoryChars, totalChars / 5),
             maxUserChars: min(PromptBudgetConstants.agentJSONUserChars, totalChars / 3),
-            maxSystemPromptChars: min(PromptBudgetConstants.agentJSONSystemChars, totalChars / 2)
+            maxSystemPromptChars: min(PromptBudgetConstants.agentJSONSystemChars, (totalChars * 2) / 3)
         )
     }
 }

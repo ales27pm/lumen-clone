@@ -92,15 +92,66 @@ public struct RuntimeToolDefinition: Codable, Hashable, Sendable {
     public let description: String?
     public let requiresApproval: Bool
     public let permissionKey: String?
+    public let permissionKind: String?
+    public let confirmationMode: String
     public let arguments: [RuntimeToolArgument]
 
-    public init(id: String, displayName: String? = nil, description: String? = nil, requiresApproval: Bool = false, permissionKey: String? = nil, arguments: [RuntimeToolArgument] = []) {
+    public init(
+        id: String,
+        displayName: String? = nil,
+        description: String? = nil,
+        requiresApproval: Bool = false,
+        permissionKey: String? = nil,
+        permissionKind: String? = nil,
+        confirmationMode: String? = nil,
+        arguments: [RuntimeToolArgument] = []
+    ) {
         self.id = id
         self.displayName = displayName
         self.description = description
         self.requiresApproval = requiresApproval
         self.permissionKey = permissionKey
+        self.permissionKind = permissionKind ?? Self.inferredPermissionKind(id: id, permissionKey: permissionKey)
+        self.confirmationMode = confirmationMode ?? Self.defaultConfirmationMode(requiresApproval: requiresApproval)
         self.arguments = arguments
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, displayName, description, requiresApproval, permissionKey, permissionKind, confirmationMode, arguments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(String.self, forKey: .id)
+        let requiresApproval = try container.decodeIfPresent(Bool.self, forKey: .requiresApproval) ?? false
+        let permissionKey = try container.decodeIfPresent(String.self, forKey: .permissionKey)
+
+        self.id = id
+        self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+        self.description = try container.decodeIfPresent(String.self, forKey: .description)
+        self.requiresApproval = requiresApproval
+        self.permissionKey = permissionKey
+        self.permissionKind = try container.decodeIfPresent(String.self, forKey: .permissionKind)
+            ?? Self.inferredPermissionKind(id: id, permissionKey: permissionKey)
+        self.confirmationMode = try container.decodeIfPresent(String.self, forKey: .confirmationMode)
+            ?? Self.defaultConfirmationMode(requiresApproval: requiresApproval)
+        self.arguments = try container.decodeIfPresent([RuntimeToolArgument].self, forKey: .arguments) ?? []
+    }
+
+    private static func defaultConfirmationMode(requiresApproval: Bool) -> String {
+        requiresApproval ? "userApproval" : "none"
+    }
+
+    private static func inferredPermissionKind(id: String, permissionKey: String?) -> String? {
+        if let permissionKey, let kind = PermissionKind(usageDescriptionKey: permissionKey) {
+            return kind.rawValue
+        }
+        switch id {
+        case "trigger.create", "trigger.list", "trigger.cancel":
+            return PermissionKind.notifications.rawValue
+        default:
+            return nil
+        }
     }
 }
 

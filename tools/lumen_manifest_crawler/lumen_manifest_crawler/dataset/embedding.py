@@ -93,21 +93,31 @@ def compile_embedding_datasets(
             f"Description: {tool.description or 'No explicit description.'}",
             f"Requires approval: {tool.requiresApproval}",
             f"Permission key: {tool.permissionKey or 'none'}",
+            f"Permission kind: {tool.permissionKind or 'none'}",
+            f"Confirmation mode: {tool.confirmationMode or 'none'}",
             "Arguments:",
             *arg_lines,
             f"Source: {tool.source or tool.inferredSource or 'unknown'}",
         ])
+        tool_metadata = {
+            "toolID": tool.id,
+            "requiresApproval": tool.requiresApproval,
+            "permissionKey": tool.permissionKey,
+            "permissionKind": tool.permissionKind,
+            "confirmationMode": tool.confirmationMode,
+            "source": tool.source,
+        }
         doc_id = add_doc(
             "tool_schema",
             tool.id,
             f"Tool schema: {tool.id}",
             text,
-            {"requiresApproval": tool.requiresApproval, "permissionKey": tool.permissionKey, "source": tool.source},
+            tool_metadata,
         )
         tool_doc_ids[tool.id] = doc_id
-        add_pair(f"Which tool should handle {tool.displayName or tool.id}?", doc_id, "natural_query_to_tool_schema", {"toolID": tool.id})
-        add_pair(f"Find the schema and arguments for `{tool.id}`.", doc_id, "tool_id_to_tool_contract", {"toolID": tool.id})
-        add_pair(f"When is `{tool.id}` allowed and what arguments does it require?", doc_id, "tool_contract_query", {"toolID": tool.id})
+        add_pair(f"Which tool should handle {tool.displayName or tool.id}?", doc_id, "natural_query_to_tool_schema", tool_metadata)
+        add_pair(f"Find the schema and arguments for `{tool.id}`.", doc_id, "tool_id_to_tool_contract", tool_metadata)
+        add_pair(f"When is `{tool.id}` allowed and what arguments does it require?", doc_id, "tool_contract_query", tool_metadata)
 
     intent_doc_ids: dict[str, str] = {}
     for intent in sorted(manifest.intents, key=lambda item: item.id):

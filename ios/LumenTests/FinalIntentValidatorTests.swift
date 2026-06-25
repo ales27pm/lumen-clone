@@ -126,3 +126,34 @@ extension FinalIntentValidatorTests {
         #expect(!text.contains("abcd1234efgh5678"))
     }
 }
+
+
+extension FinalIntentValidatorTests {
+    @Test func reportsToolJSONLeakReplacementReason() async throws {
+        let routing = IntentRoutingDecision(intent: .weather, allowedToolIDs: ["weather"], requiresClarification: false, clarificationPrompt: nil)
+        let outcome = FinalIntentValidator.validateWithOutcome(
+            #"{"thought":"check weather","action":{"tool":"weather","args":{"city":"Montreal"}}}"#,
+            routing: routing,
+            fallback: nil
+        )
+
+        #expect(!outcome.acceptedCandidate)
+        #expect(outcome.replacementSource == "safeMessage")
+        #expect(outcome.rejectionReason == "tool-json-leak")
+        #expect(!outcome.text.contains(#""action""#))
+    }
+
+    @Test func reportsCrossIntentLeakWhenFallbackIsUsed() async throws {
+        let routing = IntentRoutingDecision(intent: .calendar, allowedToolIDs: ["calendar.list"], requiresClarification: false, clarificationPrompt: nil)
+        let outcome = FinalIntentValidator.validateWithOutcome(
+            "Weather for Montreal: clear sky, temperature 22 C.",
+            routing: routing,
+            fallback: "Calendar events:\nNo upcoming events"
+        )
+
+        #expect(!outcome.acceptedCandidate)
+        #expect(outcome.replacementSource == "fallback")
+        #expect(outcome.rejectionReason == "weather-leak")
+        #expect(outcome.text == "Calendar events:\nNo upcoming events")
+    }
+}

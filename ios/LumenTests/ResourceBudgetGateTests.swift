@@ -58,6 +58,7 @@ final class ResourceBudgetGateTests: XCTestCase {
             maxTokens: 999,
             modelName: "agent-json",
             relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema),
             developerTraceModeEnabled: true,
             reasoningCaptureEnabled: true,
             allowsMemoryPressureContinuation: true
@@ -67,6 +68,7 @@ final class ResourceBudgetGateTests: XCTestCase {
 
         XCTAssertEqual(capped.maxTokens, 768)
         XCTAssertTrue(capped.allowsMemoryPressureContinuation)
+        XCTAssertEqual(capped.responseFormat, request.responseFormat)
     }
 
     func testMemoryPressureMonitorAgesOutWarningCount() {
@@ -87,5 +89,67 @@ final class ResourceBudgetGateTests: XCTestCase {
         XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
         ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 1, lastMemoryWarningAt: Date())
         XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
+    }
+
+    func testSlotBudgetPolicyDecisionKeepsForegroundInteractiveStrict() {
+        let snapshot = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+
+        let decision = ResourceBudgetGate.decision(
+            policy: .foregroundInteractive,
+            snapshot: snapshot,
+            reason: "slot-runtime.executor"
+        )
+
+        XCTAssertFalse(decision.allowed)
+        XCTAssertEqual(decision.policy, .foregroundInteractive)
+        XCTAssertEqual(decision.denialReason, "slot-runtime.executor: scenePhase=background")
+    }
+
+    func testMaintenanceIdlePolicyDeniesLowPowerBackgroundWork() {
+        let snapshot = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+
+        let decision = ResourceBudgetGate.decision(
+            policy: .maintenanceIdle,
+            snapshot: snapshot,
+            reason: "slot-runtime.rem"
+        )
+
+        XCTAssertFalse(decision.allowed)
+        XCTAssertEqual(decision.denialReason, "slot-runtime.rem: lowPowerMode=true")
+    }
+
+    func testEmbeddingPolicyAllowsForegroundLowPowerButDeniesBackgroundLowPower() {
+        let foreground = ResourceBudgetGate.Snapshot(
+            scenePhase: .active,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        let background = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+
+        XCTAssertTrue(ResourceBudgetGate.allowsWork(policy: .embedding, snapshot: foreground, reason: "slot-runtime.embedding"))
+        XCTAssertEqual(
+            ResourceBudgetGate.budgetDenialReason(policy: .embedding, snapshot: background, reason: "slot-runtime.embedding"),
+            "slot-runtime.embedding: lowPowerMode=true"
+        )
     }
 }

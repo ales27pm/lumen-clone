@@ -213,7 +213,8 @@ final class PromptFastInteractiveBudgetTests: XCTestCase {
                     topic: nil
                 )
             ],
-            attachments: [ChatAttachment(name: "large.txt", kind: .text, path: url.path, byteSize: 8_000)]
+            attachments: [ChatAttachment(name: "large.txt", kind: .text, path: url.path, byteSize: 8_000)],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema)
         )
 
         let result = await AppLlamaService.shared.buildMessagesForTesting(req: request, contextSize: 2048, slot: .executor)

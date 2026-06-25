@@ -27,12 +27,15 @@ class ToolDefinitionExtractor(SwiftExtractor):
 
     def extract(self, file: SwiftFile, manifest) -> None:
         seen: set[str] = {tool.id for tool in manifest.tools}
+        contract_arguments = self._extract_contract_catalog(file.text, file.relpath)
         for block in balanced_call_blocks(file.text, "ToolDefinition"):
             tool_id = self._extract_tool_id(block)
             if not tool_id or tool_id in seen:
                 continue
             seen.add(tool_id)
             description = clean_swift_string(argument_value(block, "description"))
+            requires_approval = bool_value(argument_value(block, "requiresApproval"), False)
+            permission_key = clean_swift_string(argument_value(block, "permissionKey"))
             manifest.tools.append(
                 ToolManifest(
                     id=tool_id,
@@ -40,9 +43,11 @@ class ToolDefinitionExtractor(SwiftExtractor):
                     or clean_swift_string(argument_value(block, "name"))
                     or tool_id,
                     description=description,
-                    requiresApproval=bool_value(argument_value(block, "requiresApproval"), False),
-                    permissionKey=clean_swift_string(argument_value(block, "permissionKey")),
-                    arguments=self._extract_arguments(block, file.relpath, description),
+                    requiresApproval=requires_approval,
+                    permissionKey=permission_key,
+                    permissionKind=self._permission_kind_for(tool_id, permission_key),
+                    confirmationMode="userApproval" if requires_approval else "none",
+                    arguments=contract_arguments.get(tool_id) or self._extract_arguments(block, file.relpath, description),
                     source=file.relpath,
                 )
             )
@@ -56,12 +61,63 @@ class ToolDefinitionExtractor(SwiftExtractor):
                         id=literal,
                         displayName=literal,
                         requiresApproval=False,
+                        confirmationMode="none",
                         arguments=[],
                         source=file.relpath,
                         inferred=True,
                         inferredSource="literal",
                     )
                 )
+
+    def _extract_contract_catalog(self, text: str, source: str) -> dict[str, list[ToolArgumentManifest]]:
+        match = re.search(
+            r"enum\s+ToolArgumentContractCatalog\b.*?static\s+func\s+arguments\b.*?switch\b.*?\{(?P<body>.*?)\n\s*}\s*\n\s*}",
+            text,
+            flags=re.S,
+        )
+        if not match:
+            return {}
+
+        contracts: dict[str, list[ToolArgumentManifest]] = {}
+        body = match.group("body")
+        case_pattern = re.compile(r"(?P<label>case\s+.*?|default)\s*:\s*(?P<body>.*?)(?=\n\s*(?:case\s+|default\s*:)|\Z)", flags=re.S)
+        for case_match in case_pattern.finditer(body):
+            label = case_match.group("label")
+            if label.strip().startswith("default"):
+                continue
+            tool_ids = [tool_id for tool_id in string_literals(label) if self._looks_like_tool_id(tool_id)]
+            if not tool_ids:
+                continue
+            arguments = self._extract_contract_return_arguments(case_match.group("body"), source)
+            for tool_id in tool_ids:
+                contracts[tool_id] = arguments
+        return contracts
+
+    def _extract_contract_return_arguments(self, body: str, source: str) -> list[ToolArgumentManifest]:
+        return_match = re.search(r"\breturn\s+(?P<value>.*)", body, flags=re.S)
+        if not return_match:
+            return []
+        value = return_match.group("value").strip()
+        if value.startswith("[]"):
+            return []
+
+        args: list[ToolArgumentManifest] = []
+        for arg_block in balanced_call_blocks(value, ".init"):
+            name = self._first_string(arg_block)
+            if not name:
+                continue
+            arg_type = clean_swift_string(argument_value(arg_block, "type")) or "string"
+            required = bool_value(argument_value(arg_block, "required"), True)
+            args.append(
+                ToolArgumentManifest(
+                    name=name,
+                    type=self._normalize_type(arg_type),
+                    required=required,
+                    description="Declared in ToolDefinition capability contract.",
+                    source=source,
+                )
+            )
+        return args
 
     def _extract_tool_id(self, block: str) -> str | None:
         for label in ("id", "toolID", "toolId", "identifier"):
@@ -72,6 +128,33 @@ class ToolDefinitionExtractor(SwiftExtractor):
         for value in labelled:
             if self._looks_like_tool_id(value):
                 return value
+        return None
+
+    @staticmethod
+    def _permission_kind_for(tool_id: str, permission_key: str | None) -> str | None:
+        if permission_key:
+            mapped = {
+                "NSCalendarsFullAccessUsageDescription": "calendar",
+                "NSCalendarsWriteOnlyAccessUsageDescription": "calendar",
+                "NSCalendarsUsageDescription": "calendar",
+                "NSRemindersFullAccessUsageDescription": "reminders",
+                "NSRemindersUsageDescription": "reminders",
+                "NSContactsUsageDescription": "contacts",
+                "NSLocationWhenInUseUsageDescription": "location",
+                "NSLocationAlwaysAndWhenInUseUsageDescription": "location",
+                "NSLocationAlwaysUsageDescription": "location",
+                "NSMicrophoneUsageDescription": "microphone",
+                "NSSpeechRecognitionUsageDescription": "speech",
+                "NSCameraUsageDescription": "camera",
+                "NSPhotoLibraryUsageDescription": "photos",
+                "NSMotionUsageDescription": "motion",
+                "NSHealthShareUsageDescription": "health",
+                "NSAlarmKitUsageDescription": "alarms",
+            }.get(permission_key)
+            if mapped:
+                return mapped
+        if tool_id in {"trigger.create", "trigger.list", "trigger.cancel"}:
+            return "notifications"
         return None
 
     def _extract_arguments(self, block: str, source: str, description: str | None) -> list[ToolArgumentManifest]:

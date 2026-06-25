@@ -39,17 +39,11 @@ struct RAGSearchTool: LocalTool {
     /// - Returns: A tuple containing formatted chunk rows and the search mode ("semantic" or "lexical").
     @MainActor
     private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, modelContext: ModelContext) async -> (rows: [String], mode: String) {
-        let engine = RAGEngine()
-        let semanticResults = await engine.retrieve(query: query, limit: limit, context: modelContext)
-        var results: [(chunk: RAGChunk, score: Double)] = []
-        var mode = "semantic"
-        if !semanticResults.isEmpty {
-            let chunks = (try? modelContext.fetch(FetchDescriptor<RAGChunk>())) ?? []
-            let map = Dictionary(uniqueKeysWithValues: chunks.map { ($0.id, $0) })
-            results = semanticResults.compactMap { r in map[r.chunkID].map { (chunk: $0, score: r.score) } }
-            if let source {
-                results = results.filter { $0.chunk.sourceName.localizedCaseInsensitiveContains(source) || ($0.chunk.sourceRef?.localizedCaseInsensitiveContains(source) ?? false) }
-            }
+        let search = await RAGStore.searchWithDiagnostics(query: query, context: modelContext, limit: limit)
+        var results = search.matches
+        var mode = search.mode
+        if let source {
+            results = results.filter { $0.chunk.sourceName.localizedCaseInsensitiveContains(source) || ($0.chunk.sourceRef?.localizedCaseInsensitiveContains(source) ?? false) }
         }
         if results.isEmpty {
             mode = "lexical"

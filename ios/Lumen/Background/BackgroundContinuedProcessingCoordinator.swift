@@ -9,7 +9,7 @@ final class BackgroundContinuedProcessingCoordinator {
     private let logger = Logger(subsystem: "ai.lumen.app", category: "background")
     private var activeTasks: [String: BGTask] = [:]
     private var pendingCompletions: [String: Bool] = [:]
-    private var registered = false
+    private var registeredTaskIdentifiers: Set<String> = []
     private(set) var lastSubmissionStatus: String = "not_requested"
 
     private init() {}
@@ -19,28 +19,15 @@ final class BackgroundContinuedProcessingCoordinator {
         return BGTaskScheduler.supportedResources.contains(.gpu)
     }
 
-    func registerIfAvailable() {
-        guard #available(iOS 26.0, *), !registered else { return }
-        registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: TriggerScheduler.continuedProcessingIdentifier, using: nil) { task in
-            Task { @MainActor in
-                self.attach(task)
-            }
-        }
-        if !registered {
-            lastSubmissionStatus = "registration_failed"
-        }
-    }
-
     func begin(title: String, subtitle: String, prefersGPU: Bool = true) -> BackgroundContinuedProcessingLease? {
         guard #available(iOS 26.0, *) else {
             lastSubmissionStatus = "unavailable_before_ios_26"
             return nil
         }
-        registerIfAvailable()
-        guard registered else { return nil }
 
         let submissionToken = UUID().uuidString
         let identifier = TriggerScheduler.continuedProcessingIdentifier(for: submissionToken)
+        guard registerHandlerIfNeeded() else { return nil }
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
             title: title,
@@ -60,6 +47,23 @@ final class BackgroundContinuedProcessingCoordinator {
             logger.warning("continued_processing_submit_failed error=\(String(describing: error), privacy: .public)")
             return nil
         }
+    }
+
+    private func registerHandlerIfNeeded() -> Bool {
+        guard #available(iOS 26.0, *) else { return false }
+        let identifier = TriggerScheduler.continuedProcessingRegistrationIdentifier
+        guard !registeredTaskIdentifiers.contains(identifier) else { return true }
+        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+            Task { @MainActor in
+                self.attach(task)
+            }
+        }
+        if registered {
+            registeredTaskIdentifiers.insert(identifier)
+        } else {
+            lastSubmissionStatus = "registration_failed"
+        }
+        return registered
     }
 
     func complete(identifier: String, submissionToken: String, success: Bool) {

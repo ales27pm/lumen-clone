@@ -29,6 +29,81 @@ def test_unsupported_argument_type_failure():
     assert any(f.code == "unsupported_argument_type" for f in report.failures)
 
 
+def test_inferred_tool_argument_contract_is_hard_failure():
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="outlook.folders.list",
+                arguments=[
+                    ToolArgumentManifest(
+                        name="includeHidden",
+                        type="string",
+                        required=False,
+                        description="Inferred from ToolDefinition description Args contract: optional includeHidden true/false",
+                    )
+                ],
+            )
+        ]
+    )
+    report = validate_manifest(manifest)
+    assert any(f.code == "inferred_tool_argument_contract" for f in report.failures)
+
+
+def test_literal_boolean_value_cannot_be_argument_name():
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="outlook.folders.list",
+                arguments=[
+                    ToolArgumentManifest(name="includeHidden", type="bool", required=False),
+                    ToolArgumentManifest(name="false", type="string", required=False),
+                ],
+            )
+        ]
+    )
+    report = validate_manifest(manifest)
+    assert any(f.code == "literal_value_argument_name" for f in report.failures)
+
+
+def test_tool_capability_contract_rejects_bad_confirmation_and_permission_kind():
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="camera.capture",
+                requiresApproval=True,
+                permissionKind="cameraRoll",
+                confirmationMode="none",
+            )
+        ]
+    )
+    report = validate_manifest(manifest)
+    assert any(f.code == "unsupported_permission_kind" for f in report.failures)
+    assert any(f.code == "confirmation_mode_approval_mismatch" for f in report.failures)
+
+
+def test_codebase_home_rejects_generated_manifest_self_ingestion():
+    manifest = AgentBehaviorManifest()
+    dataset = {
+        "codebase_home_corpus": [
+            {"id": "generated-manifest", "path": "generated/agent_manifest/AgentBehaviorManifest.json"},
+            {"id": "ios-copy", "path": "ios/Lumen/AgentBehaviorManifest.json"},
+        ],
+        "codebase_home_sft": [
+            {
+                "id": "sft-generated-manifest",
+                "messages": [
+                    {"role": "system", "content": "sys"},
+                    {"role": "user", "content": "where"},
+                    {"role": "assistant", "content": "{\"path\":\"generated/agent_manifest/runtime_grounding_bundle.json\"}"},
+                ],
+            }
+        ],
+    }
+    report = validate_manifest(manifest, dataset)
+    failures = [f for f in report.failures if f.code == "generated_output_in_codebase_home"]
+    assert len(failures) == 3
+
+
 def test_runtime_repair_record_requires_provenance_and_repair_action():
     manifest = AgentBehaviorManifest(tools=[ToolManifest(id="web.search")])
     dataset = {

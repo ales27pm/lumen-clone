@@ -99,6 +99,8 @@ class ToolManifest(BaseModel):
     description: str | None = None
     requiresApproval: bool = False
     permissionKey: str | None = None
+    permissionKind: str | None = None
+    confirmationMode: str | None = None
     arguments: list[ToolArgumentManifest] = Field(default_factory=list)
     source: str | None = None
     inferred: bool = False

@@ -19,16 +19,30 @@ def generate_cortex_records(manifest: AgentBehaviorManifest) -> list[dict]:
                         "intent": intent.id,
                         "selectedToolID": tool_id,
                         "requiresApproval": tool.requiresApproval,
+                        "permissionKey": tool.permissionKey,
+                        "permissionKind": tool.permissionKind,
+                        "confirmationMode": tool.confirmationMode,
                         "nextModel": "approval" if tool.requiresApproval else "executor",
                         "reasoningSummary": f"Intent {intent.id} is allowed to use {tool_id} by the manifest routing matrix."
                     }}
                 ],
-                "grounding": {"source": "AgentBehaviorManifest.json", "intent": intent.id, "allowedToolIDs": intent.allowedToolIDs}
+                "grounding": {
+                    "source": "AgentBehaviorManifest.json",
+                    "intent": intent.id,
+                    "allowedToolIDs": intent.allowedToolIDs,
+                    "selectedToolID": tool_id,
+                    "requiresApproval": tool.requiresApproval,
+                    "permissionKey": tool.permissionKey,
+                    "permissionKind": tool.permissionKind,
+                    "confirmationMode": tool.confirmationMode,
+                }
             })
     for entry in manifest.routingMatrix:
         if entry.allowedTools and entry.forbiddenTools:
             selected_tool_id = entry.allowedTools[0]
-            requires_approval = _approval_for(selected_tool_id, manifest)
+            tool = tools_by_id.get(selected_tool_id)
+            if tool is None:
+                continue
             records.append({
                 "messages": [
                     {"role": "system", "content": "You are Cortex. Reject invalid tools even when they sound plausible."},
@@ -37,18 +51,25 @@ def generate_cortex_records(manifest: AgentBehaviorManifest) -> list[dict]:
                         "intent": entry.intent,
                         "selectedToolID": selected_tool_id,
                         "rejectedToolID": entry.forbiddenTools[0],
-                        "requiresApproval": requires_approval,
-                        "nextModel": "approval" if requires_approval else "executor",
+                        "requiresApproval": tool.requiresApproval,
+                        "permissionKey": tool.permissionKey,
+                        "permissionKind": tool.permissionKind,
+                        "confirmationMode": tool.confirmationMode,
+                        "nextModel": "approval" if tool.requiresApproval else "executor",
                         "reasoningSummary": f"{entry.forbiddenTools[0]} is not allowed for {entry.intent}; use {selected_tool_id}."
                     }}
                 ],
-                "grounding": {"source": "routingMatrix", "intent": entry.intent}
+                "grounding": {
+                    "source": "routingMatrix",
+                    "intent": entry.intent,
+                    "selectedToolID": selected_tool_id,
+                    "requiresApproval": tool.requiresApproval,
+                    "permissionKey": tool.permissionKey,
+                    "permissionKind": tool.permissionKind,
+                    "confirmationMode": tool.confirmationMode,
+                }
             })
     return records
-
-
-def _approval_for(tool_id: str, manifest: AgentBehaviorManifest) -> bool:
-    return next((tool.requiresApproval for tool in manifest.tools if tool.id == tool_id), False)
 
 
 def _prompt_for_intent(intent_id: str, tool_id: str) -> str:
