@@ -314,7 +314,9 @@ actor SlotModelRuntimeCoordinator {
         guard let adapterPath = assignment.adapterPath else {
             await AppLlamaService.shared.clearActiveRoleAdapter()
             if requiresRoleAdapter {
-                throw LocalRuntimeError.unavailable("role adapter missing for \(slot.rawValue)")
+                let expectedRepo = assignment.expectedRoleAdapterRepoID ?? "unknown"
+                let expectedFile = assignment.expectedRoleAdapterFileName ?? "unknown"
+                throw LocalRuntimeError.unavailable("role adapter missing for \(slot.rawValue): expectedAdapterRepo=\(expectedRepo); expectedAdapterFile=\(expectedFile)")
             }
             return Int(Date().timeIntervalSince(activationStart) * 1000)
         }

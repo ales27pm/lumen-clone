@@ -240,7 +240,9 @@ struct LumenFleetTests {
         #expect(!snapshot.isFullyAdapted)
         #expect(snapshot.assignment(for: .executor)?.hasConfiguredRoleAdapter == false)
         #expect(snapshot.assignment(for: .executor)?.usesRoleAdapter == false)
-        #expect(snapshot.assignment(for: .executor)?.requiresRoleAdapterForRuntime == false)
+        #expect(snapshot.assignment(for: .executor)?.requiresRoleAdapterForRuntime == true)
+        #expect(snapshot.assignment(for: .executor)?.expectedRoleAdapterRepoID == contract.adapterRepoID)
+        #expect(snapshot.assignment(for: .executor)?.expectedRoleAdapterFileName == contract.adapterRole(for: .executor)?.adapterFileName)
     }
 
     @Test @MainActor func qwen3ResolverPrefersContractAdapterArtifactOverLooseHints() async throws {
