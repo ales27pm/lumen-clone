@@ -42,10 +42,10 @@ nonisolated enum ExecutorRuntimePreflight {
         let adapterRequired = assignment.requiresRoleAdapterForRuntime
         if adapterRequired {
             guard let adapterPath = assignment.adapterPath, !adapterPath.isEmpty else {
-                return .init(passed: false, reason: "\(prefix): adapter required but adapter path missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath)")
+                return .init(passed: false, reason: "\(prefix): adapter required but adapter path missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")")
             }
             guard FileManager.default.fileExists(atPath: adapterPath) else {
-                return .init(passed: false, reason: "\(prefix): adapter required but file missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(adapterPath)")
+                return .init(passed: false, reason: "\(prefix): adapter required but file missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(adapterPath); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")")
             }
         } else if let adapterPath = assignment.adapterPath, !adapterPath.isEmpty, !FileManager.default.fileExists(atPath: adapterPath) {
             return .init(passed: false, reason: "\(prefix): adapter configured but file missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(adapterPath)")
@@ -77,7 +77,7 @@ nonisolated enum ExecutorRuntimePreflight {
         if adapterRequired {
             let activeAdapter = await AppLlamaService.shared.activeAdapterSlotValue?.rawValue
             guard activeAdapter == slot.rawValue else {
-                return .init(passed: false, reason: "\(prefix): adapterUnavailable; slot=.executor; activeAdapterSlot=\(activeAdapter ?? "none"); requiredAdapterSlot=.executor; adapterPath=\(assignment.adapterPath ?? "none")")
+                return .init(passed: false, reason: "\(prefix): adapterUnavailable; slot=.executor; activeAdapterSlot=\(activeAdapter ?? "none"); requiredAdapterSlot=.executor; adapterPath=\(assignment.adapterPath ?? "none"); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")")
             }
         }
         return .init(passed: true, reason: "executor readiness preflight passed; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(assignment.adapterPath ?? "none")")

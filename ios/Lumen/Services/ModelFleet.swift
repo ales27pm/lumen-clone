@@ -180,7 +180,17 @@ nonisolated struct LumenModelAssignment: Sendable, Hashable {
 
     var hasConfiguredRoleAdapter: Bool { adapterPath?.isEmpty == false }
     var usesRoleAdapter: Bool { artifactKind == .chat && hasConfiguredRoleAdapter }
-    var requiresRoleAdapterForRuntime: Bool { usesRoleAdapter }
+    var expectedRoleAdapterContract: LumenAdapterRoleContract? {
+        guard artifactKind == .chat, let modelFamily else { return nil }
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: modelFamily)
+        guard contract.selectAdapterByAgentSlot else { return nil }
+        return contract.adapterRole(for: slot)
+    }
+    var expectedRoleAdapterRepoID: String? { expectedRoleAdapterContract?.adapterRepoID }
+    var expectedRoleAdapterFileName: String? { expectedRoleAdapterContract?.adapterFileName }
+    var requiresRoleAdapterForRuntime: Bool {
+        usesRoleAdapter || expectedRoleAdapterContract != nil
+    }
 }
 
 nonisolated struct LumenModelFleetSnapshot: Sendable, Hashable {
