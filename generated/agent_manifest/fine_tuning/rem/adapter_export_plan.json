@@ -7,13 +7,13 @@
   "agent": "rem",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "cfbd43f39e358201cc3f805b2b13c0a3df370344",
+    "manifestCommit": "1c474e1d7876462cbeb4458b29846230ee43e538",
     "recordCounts": {
       "eval": 6,
       "train_dpo": 8,
-      "train_sft": 3676,
+      "train_sft": 3768,
       "val_dpo": 2,
-      "val_sft": 649
+      "val_sft": 665
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
