@@ -1806,6 +1806,61 @@ extension AgentGroundingRegressionTests {
         #expect(!lower.contains("failed to save memory"))
     }
 
+    @Test func structuredWeatherFinalRemovesUngroundedUmbrellaAdvice() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "What is the weather here and should I carry an umbrella?",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "Weather is overcast, 18°C. Carry an umbrella if you'll be outside.",
+            req: req,
+            observations: [("weather", "Weather at your location: overcast, 18°C, humidity 50%, wind 7 km/h.")],
+            steps: []
+        )
+        let lower = final.lowercased()
+
+        #expect(lower.contains("weather update"))
+        #expect(lower.contains("no precipitation was reported"))
+        #expect(!lower.contains("umbrella"))
+    }
+
+    @Test func structuredMemorySaveRecallFinalPreservesExactPreference() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let steps = [
+            AgentStep(kind: .action, content: "memory.save(content=...)", toolID: "memory.save", toolArgs: ["content": "Remember that I prefer concise bullet points, then tell me what you remembered."]),
+            AgentStep(kind: .observation, content: "Saved preference.", toolID: "memory.save"),
+            AgentStep(kind: .action, content: "memory.recall(query=...)", toolID: "memory.recall", toolArgs: ["query": "user preference"]),
+            AgentStep(kind: .observation, content: "I prefer concise bullet points.", toolID: "memory.recall")
+        ]
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "I remember your preference.",
+            req: req,
+            observations: [],
+            steps: steps
+        )
+
+        #expect(final == "I remember that you prefer concise bullet points.")
+    }
+
     @Test func diagnosticsRAGEmbeddingFailureStillProducesCitedModuleAnswer() {
         let action = AgentAction(tool: "rag.search", args: ["query": .string("Search my files for architecture notes and summarize key modules.")])
         let result = SlotAgentService.diagnosticsObservationOverrideForTests(

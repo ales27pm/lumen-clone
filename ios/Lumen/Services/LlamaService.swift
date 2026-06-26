@@ -1586,7 +1586,7 @@ final actor AppLlamaService {
                     PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaCancel, values: ["reason": cancelReason]))
                     streamTerminationReason = cancelReason
                     let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
-                    let emptyOutputReason = firstTokenMs == nil ? "cancelledBeforeFirstToken" : "completedWithoutText"
+                    let emptyOutputReason = firstTokenMs == nil ? cancelReason : "completedWithoutText"
                     let currentModelLoaded: Bool
                     if let modelLoaded {
                         currentModelLoaded = modelLoaded
@@ -2276,7 +2276,7 @@ final actor AppLlamaService {
             return "decodeBudgetZero"
         }
         if let cancellationReason, !cancellationReason.isEmpty {
-            return firstChunkReceived ? "completedWithoutText" : "cancelledBeforeFirstToken"
+            return firstChunkReceived ? "completedWithoutText" : cancellationReason
         }
         if !streamStarted {
             return "runtimeUnavailable"
