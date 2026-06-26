@@ -9,6 +9,8 @@ from typing import Any, Sequence
 EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 TEACHER_MODEL = "Qwen/Qwen3-Embedding-4B"
 FALLBACK_MODEL = "current-baseline-embedding-model"
+RERANKER_MODEL = "Qwen/Qwen3-Reranker-0.6B"
+RERANKER_TEACHER_MODEL = "Qwen/Qwen3-Reranker-4B"
 CURRENT_EXPECTED_EXPORT = "lumen-agent-grounding-audit-*.json or lumen-live-e2e-report-*.json"
 CURRENT_EXPORT_SOURCE = "Agent Grounding > Export Runtime Audit Package or End-to-end tests > Export Live E2E Report JSON"
 CURRENT_RECOMMENDED_ACTION = "Compile/distribute the TestFlight build, run Agent Grounding and E2E in the app, export the Runtime Audit Package and/or Live E2E Report JSON, then rerun improve-loop with --runtime-audit <json>."
@@ -20,6 +22,12 @@ JSONL_FILES = {
     "valTripletCount": "val_triplets.jsonl",
     "hardNegativeCount": "hard_negatives.jsonl",
     "evalCount": "eval_retrieval.jsonl",
+}
+RERANKER_JSONL_FILES = {
+    "trainPairCount": "train_pairs.jsonl",
+    "valPairCount": "val_pairs.jsonl",
+    "hardNegativePairCount": "hard_negative_pairs.jsonl",
+    "evalCount": "eval_reranking.jsonl",
 }
 TEXT_REPLACEMENTS = {
     "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package": f"{CURRENT_EXPECTED_EXPORT} from {CURRENT_EXPORT_SOURCE}",
@@ -84,10 +92,41 @@ def build_summary(embedding_dir: Path) -> dict[str, Any]:
     return summary
 
 
-def apply_embedding(payload: dict[str, Any], embedding: dict[str, Any]) -> dict[str, Any]:
+def build_reranker_summary(reranker_dir: Path) -> dict[str, Any]:
+    card = read_json(reranker_dir / "dataset_card.json")
+    summary: dict[str, Any] = {
+        "model": card.get("model") or RERANKER_MODEL,
+        "fallbackMode": "embedding-only",
+        "teacherModel": card.get("teacherModel") or RERANKER_TEACHER_MODEL,
+        "enabledByDefault": False,
+        "artifactDirectory": str(reranker_dir),
+        "metrics": {
+            "rerankedRecallAt1": 0.0,
+            "rerankedNdcgAt5": 0.0,
+            "hardNegativePairAccuracy": 0.0,
+            "top5ReorderWinRate": 0.0,
+            "p95RerankLatencyRegression": 0.0,
+        },
+    }
+    for key, filename in RERANKER_JSONL_FILES.items():
+        summary[key] = count_jsonl(reranker_dir / filename)
+    summary["pairCount"] = summary["trainPairCount"] + summary["valPairCount"]
+    summary["generated"] = any(summary[key] > 0 for key in RERANKER_JSONL_FILES)
+    summary["datasetCard"] = {
+        "schemaVersion": card.get("schemaVersion"),
+        "task": card.get("task"),
+        "promotionMetrics": card.get("promotionMetrics", {}),
+        "families": card.get("families", []),
+    }
+    return summary
+
+
+def apply_retrieval_summaries(payload: dict[str, Any], embedding: dict[str, Any], reranker: dict[str, Any]) -> dict[str, Any]:
     payload["embedding"] = embedding
+    payload["reranker"] = reranker
     dataset = payload.get("dataset") if isinstance(payload.get("dataset"), dict) else {}
     dataset["embedding"] = embedding
+    dataset["reranker"] = reranker
     payload["dataset"] = dataset
     return payload
 
@@ -145,18 +184,24 @@ def normalize_jsonl_text(path: Path) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def augment(loop_state_path: Path, embedding_dir: Path, visual_summary_path: Path | None = None) -> dict[str, Any]:
+def augment(
+    loop_state_path: Path,
+    embedding_dir: Path,
+    visual_summary_path: Path | None = None,
+    reranker_dir: Path | None = None,
+) -> dict[str, Any]:
     state = read_json(loop_state_path)
     if not state:
         state = {"schemaVersion": "1.1.0", "dataset": {}}
     embedding = build_summary(embedding_dir)
-    state = normalize_testflight_labels(apply_embedding(state, embedding))
+    reranker = build_reranker_summary(reranker_dir or (embedding_dir.parent / "reranker"))
+    state = normalize_testflight_labels(apply_retrieval_summaries(state, embedding, reranker))
     write_json(loop_state_path, state)
 
     if visual_summary_path is not None:
         visual_summary = read_json(visual_summary_path)
         if visual_summary:
-            write_json(visual_summary_path, normalize_testflight_labels(apply_embedding(visual_summary, embedding)))
+            write_json(visual_summary_path, normalize_testflight_labels(apply_retrieval_summaries(visual_summary, embedding, reranker)))
 
     loop_dir = loop_state_path.parent
     normalize_gap_file(loop_dir / "loop_gaps.json")
@@ -171,14 +216,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--loop-state", type=Path, default=Path("generated/agent_improvement_loop/loop_state.json"))
     parser.add_argument("--embedding-dir", type=Path, default=Path("generated/agent_manifest/embedding"))
+    parser.add_argument("--reranker-dir", type=Path, default=Path("generated/agent_manifest/reranker"))
     parser.add_argument("--visual-summary", type=Path, default=Path("generated/visual_improve_loop/visual_improve_loop_summary.json"))
     parser.add_argument("--no-visual-summary", action="store_true")
     parser.add_argument("--print-summary", action="store_true")
     args = parser.parse_args(argv)
     visual_summary = None if args.no_visual_summary else args.visual_summary
-    state = augment(args.loop_state, args.embedding_dir, visual_summary)
+    state = augment(args.loop_state, args.embedding_dir, visual_summary, args.reranker_dir)
     if args.print_summary:
-        print(json.dumps(state["embedding"], ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps({"embedding": state["embedding"], "reranker": state["reranker"]}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 

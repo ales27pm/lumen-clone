@@ -323,6 +323,12 @@ def _dataset_summary(datasets: dict[str, list[dict[str, Any]]], fine_tuning_data
         "recordCount": sum(families.values()),
         "families": families,
     }
+    embedding_summary = _embedding_dataset_summary(datasets)
+    if embedding_summary is not None:
+        out["embedding"] = embedding_summary
+    reranker_summary = _reranker_dataset_summary(datasets)
+    if reranker_summary is not None:
+        out["reranker"] = reranker_summary
     if fine_tuning_datasets:
         out["agentFineTuning"] = {
             agent: {
@@ -335,6 +341,87 @@ def _dataset_summary(datasets: dict[str, list[dict[str, Any]]], fine_tuning_data
             for agent, dataset in sorted(fine_tuning_datasets.items())
         }
     return out
+
+
+def _embedding_dataset_summary(datasets: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+    card = _first_dataset_card(datasets.get("embedding_dataset_card", []))
+    counts = {
+        "corpusCount": len(datasets.get("embedding_corpus", [])),
+        "trainPairCount": len(datasets.get("embedding_train_pairs", [])),
+        "valPairCount": len(datasets.get("embedding_val_pairs", [])),
+        "trainTripletCount": len(datasets.get("embedding_train_triplets", [])),
+        "valTripletCount": len(datasets.get("embedding_val_triplets", [])),
+        "hardNegativeCount": len(datasets.get("embedding_hard_negatives", [])),
+        "evalCount": len(datasets.get("embedding_eval_retrieval", [])),
+    }
+    if not any(counts.values()) and not card:
+        return None
+    return {
+        "model": card.get("model") or "Qwen/Qwen3-Embedding-0.6B",
+        "fallbackModel": "current-baseline-embedding-model",
+        "teacherModel": card.get("teacherModel") or "Qwen/Qwen3-Embedding-4B",
+        "usedFallback": False,
+        **counts,
+        "pairCount": counts["trainPairCount"] + counts["valPairCount"],
+        "tripletCount": counts["trainTripletCount"] + counts["valTripletCount"],
+        "generated": any(counts.values()),
+        "metrics": {
+            "recallAt1": 0.0,
+            "recallAt5": 0.0,
+            "mrr": 0.0,
+            "ndcgAt5": 0.0,
+            "hardNegativeAccuracy": 0.0,
+            "toolRetrievalAccuracy": 0.0,
+            "sourceMapRetrievalAccuracy": 0.0,
+            "runtimeRepairRetrievalAccuracy": 0.0,
+        },
+        "datasetCard": {
+            "schemaVersion": card.get("schemaVersion"),
+            "task": card.get("task"),
+            "promotionMetrics": card.get("promotionMetrics", {}),
+            "families": card.get("families", []),
+        },
+    }
+
+
+def _reranker_dataset_summary(datasets: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+    card = _first_dataset_card(datasets.get("reranker_dataset_card", []))
+    counts = {
+        "trainPairCount": len(datasets.get("reranker_train_pairs", [])),
+        "valPairCount": len(datasets.get("reranker_val_pairs", [])),
+        "hardNegativePairCount": len(datasets.get("reranker_hard_negative_pairs", [])),
+        "evalCount": len(datasets.get("reranker_eval_reranking", [])),
+    }
+    if not any(counts.values()) and not card:
+        return None
+    return {
+        "model": card.get("model") or "Qwen/Qwen3-Reranker-0.6B",
+        "fallbackMode": "embedding-only",
+        "teacherModel": card.get("teacherModel") or "Qwen/Qwen3-Reranker-4B",
+        "enabledByDefault": False,
+        **counts,
+        "pairCount": counts["trainPairCount"] + counts["valPairCount"],
+        "generated": any(counts.values()),
+        "metrics": {
+            "rerankedRecallAt1": 0.0,
+            "rerankedNdcgAt5": 0.0,
+            "hardNegativePairAccuracy": 0.0,
+            "top5ReorderWinRate": 0.0,
+            "p95RerankLatencyRegression": 0.0,
+        },
+        "datasetCard": {
+            "schemaVersion": card.get("schemaVersion"),
+            "task": card.get("task"),
+            "promotionMetrics": card.get("promotionMetrics", {}),
+            "families": card.get("families", []),
+        },
+    }
+
+
+def _first_dataset_card(records: list[dict[str, Any]]) -> dict[str, Any]:
+    if records and isinstance(records[0], dict):
+        return records[0]
+    return {}
 
 
 def _runtime_summary(runtime_reports: list[dict[str, Any]]) -> dict[str, Any]:

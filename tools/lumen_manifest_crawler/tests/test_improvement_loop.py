@@ -68,6 +68,10 @@ def test_improvement_loop_writes_state_gaps_prompts_and_testflight_artifacts(tmp
     assert result.state["schemaVersion"] == "1.1.0"
     assert result.state["manifest"]["toolCount"] >= 0
     assert result.state["dataset"]["recordCount"] > 0
+    assert result.state["dataset"]["embedding"]["pairCount"] > 0
+    assert result.state["dataset"]["reranker"]["pairCount"] > 0
+    assert result.state["dataset"]["reranker"]["hardNegativePairCount"] > 0
+    assert result.state["dataset"]["reranker"]["enabledByDefault"] is False
     assert result.state["dataset"]["agentFineTuning"]["cortex"]["trainSFT"] > 0
     assert result.state["testFlight"]["status"] == "awaiting-testflight-runtime-audit"
     assert result.state["testFlight"]["buildLabel"] == "1.0.0-build-99"

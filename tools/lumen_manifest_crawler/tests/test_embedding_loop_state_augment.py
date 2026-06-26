@@ -17,6 +17,7 @@ def test_augment_adds_embedding_summary_to_loop_and_visual_state(tmp_path: Path)
     loop_state = tmp_path / "generated" / "agent_improvement_loop" / "loop_state.json"
     visual_state = tmp_path / "generated" / "visual_improve_loop" / "visual_improve_loop_summary.json"
     embedding_dir = tmp_path / "generated" / "agent_manifest" / "embedding"
+    reranker_dir = tmp_path / "generated" / "agent_manifest" / "reranker"
 
     loop_state.parent.mkdir(parents=True, exist_ok=True)
     visual_state.parent.mkdir(parents=True, exist_ok=True)
@@ -34,8 +35,17 @@ def test_augment_adds_embedding_summary_to_loop_and_visual_state(tmp_path: Path)
     _write_jsonl(embedding_dir / "val_triplets.jsonl", 1)
     _write_jsonl(embedding_dir / "hard_negatives.jsonl", 5)
     _write_jsonl(embedding_dir / "eval_retrieval.jsonl", 6)
+    (reranker_dir).mkdir(parents=True, exist_ok=True)
+    (reranker_dir / "dataset_card.json").write_text(
+        json.dumps({"model": "Qwen/Qwen3-Reranker-0.6B", "teacherModel": "Qwen/Qwen3-Reranker-4B", "task": "candidate_reranking"}),
+        encoding="utf-8",
+    )
+    _write_jsonl(reranker_dir / "train_pairs.jsonl", 7)
+    _write_jsonl(reranker_dir / "val_pairs.jsonl", 2)
+    _write_jsonl(reranker_dir / "hard_negative_pairs.jsonl", 8)
+    _write_jsonl(reranker_dir / "eval_reranking.jsonl", 9)
 
-    state = augment(loop_state, embedding_dir, visual_state)
+    state = augment(loop_state, embedding_dir, visual_state, reranker_dir)
     visual = json.loads(visual_state.read_text(encoding="utf-8"))
 
     assert state["embedding"]["corpusCount"] == 3
@@ -47,3 +57,11 @@ def test_augment_adds_embedding_summary_to_loop_and_visual_state(tmp_path: Path)
     assert state["dataset"]["embedding"] == state["embedding"]
     assert visual["embedding"] == state["embedding"]
     assert visual["dataset"]["embedding"] == state["embedding"]
+    assert state["reranker"]["model"] == "Qwen/Qwen3-Reranker-0.6B"
+    assert state["reranker"]["pairCount"] == 9
+    assert state["reranker"]["hardNegativePairCount"] == 8
+    assert state["reranker"]["evalCount"] == 9
+    assert state["reranker"]["generated"] is True
+    assert state["dataset"]["reranker"] == state["reranker"]
+    assert visual["reranker"] == state["reranker"]
+    assert visual["dataset"]["reranker"] == state["reranker"]

@@ -31,221 +31,25 @@
     },
     {
       "categories": {
-        "runtime_environment_deferred": 1
+        "testflight_runtime_pending": 1
       },
       "count": 1,
       "examples": [
         {
-          "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
-          "category": "runtime_environment_deferred",
-          "prompt": "Explain tradeoffs between precision and recall in retrieval systems in plain English.",
-          "rootCauseCategory": "runtime_environment_deferred",
+          "actual": null,
+          "category": "testflight_runtime_pending",
+          "prompt": null,
+          "rootCauseCategory": "stale_audit_evidence",
           "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
+          "skippedLiveModelRun": null,
+          "title": "TestFlight in-app audit export has not been ingested yet"
         }
       ],
       "freshRuntimeFailureCount": 1,
-      "group": "chat",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "group": "TestFlight in-app audit export has not been ingested yet",
+      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the in-app dataset package JSON, then rerun improve-loop with --runtime-audit <json>.",
       "rootCauseCategories": {
-        "runtime_environment_deferred": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_environment_deferred": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
-          "category": "runtime_environment_deferred",
-          "prompt": "Draft an email to Alex with a professional update and ask one clarifying question.",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 1,
-      "group": "emailDraft",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "runtime_environment_deferred": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_environment_deferred": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "Memory tool output could not be validated.",
-          "category": "runtime_environment_deferred",
-          "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 1,
-      "group": "memory",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "runtime_environment_deferred": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_environment_deferred": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "",
-          "category": "runtime_environment_deferred",
-          "prompt": "What is the weather here and should I carry an umbrella?",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 1,
-      "group": "preflight",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "runtime_environment_deferred": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_environment_deferred": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
-          "category": "runtime_environment_deferred",
-          "prompt": "Search my files for architecture notes and summarize key modules.",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 1,
-      "group": "rag",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "runtime_environment_deferred": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_environment_deferred": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cancelledBeforeFirstToken.",
-          "category": "runtime_environment_deferred",
-          "prompt": "Schedule a trigger to summarize reminders tonight and confirm what will run.",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 1,
-      "group": "trigger",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "runtime_environment_deferred": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_environment_deferred": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "Weather tool output could not be validated. Try again or provide a city.",
-          "category": "runtime_environment_deferred",
-          "prompt": "What is the weather here and should I carry an umbrella?",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 1,
-      "group": "weather",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "runtime_environment_deferred": 1
-      },
-      "severities": {
-        "warning": 1
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_environment_deferred": 1
-      },
-      "count": 1,
-      "examples": [
-        {
-          "actual": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
-          "category": "runtime_environment_deferred",
-          "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 1,
-      "group": "webSearch",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "rootCauseCategories": {
-        "runtime_environment_deferred": 1
+        "stale_audit_evidence": 1
       },
       "severities": {
         "warning": 1
@@ -258,31 +62,24 @@
   "summary": {
     "categoryCounts": {
       "dataset_coverage": 1,
-      "runtime_environment_deferred": 8
+      "testflight_runtime_pending": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
     "freshRuntimeFailureCount": 0,
     "groupCounts": {
       "Empty dataset family: runtime_audit_repairs": 1,
-      "chat": 1,
-      "emailDraft": 1,
-      "memory": 1,
-      "preflight": 1,
-      "rag": 1,
-      "trigger": 1,
-      "weather": 1,
-      "webSearch": 1
+      "TestFlight in-app audit export has not been ingested yet": 1
     },
-    "rawRuntimeFailureCount": 8,
+    "rawRuntimeFailureCount": 0,
     "rootCauseCounts": {
-      "runtime_environment_deferred": 8,
+      "stale_audit_evidence": 1,
       "stale_or_unclassified_runtime_evidence": 1
     },
-    "runtimeAuditReports": 2,
+    "runtimeAuditReports": 0,
     "severityCounts": {
-      "warning": 9
+      "warning": 2
     },
-    "skippedLiveModelGenerationCount": 8,
-    "totalGaps": 9
+    "skippedLiveModelGenerationCount": 0,
+    "totalGaps": 2
   }
 }
