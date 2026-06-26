@@ -25,13 +25,20 @@ nonisolated enum GGUFPromptBuilder {
             || !request.tools.isEmpty
 
         if hasPromptContent {
+            let controlledSystem = ModelThinkingControl.systemPrompt(
+                request.systemPrompt ?? "",
+                reasoningCaptureEnabled: allowReasoningCapture,
+                requireFinalAnswerOnly: requireFinalAnswerOnly
+            )
+            let systemBody = [
+                nonEmpty(controlledSystem),
+                responseFormatInstruction(for: request.responseFormat)
+            ]
+                .compactMap { $0 }
+                .joined(separator: "\n\n")
             parts.append(section(
                 marker: "<|system|>",
-                body: ModelThinkingControl.systemPrompt(
-                    request.systemPrompt ?? "",
-                    reasoningCaptureEnabled: allowReasoningCapture,
-                    requireFinalAnswerOnly: requireFinalAnswerOnly
-                )
+                body: systemBody
             ))
         }
 
@@ -122,6 +129,24 @@ nonisolated enum GGUFPromptBuilder {
         return "Context:\n" + entries.enumerated().map { index, entry in
             "[\(index + 1)]\n\(entry)"
         }.joined(separator: "\n\n")
+    }
+
+    private static func responseFormatInstruction(for responseFormat: LLMResponseFormat) -> String? {
+        switch responseFormat {
+        case .plainText:
+            return nil
+        case .json:
+            return "Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning."
+        case .toolCallJSON:
+            return #"Response format contract: output exactly one valid JSON object shaped as {"action":{"tool":"<tool id>","args":{...}}}. Do not include prose, markdown, code fences, or hidden reasoning."#
+        case .constrainedJSON(let schema):
+            return """
+            Response format contract: output exactly one valid JSON object matching this schema. Do not include prose, markdown, code fences, or hidden reasoning.
+            Enforcement diagnostic: \(responseFormat.enforcementDiagnostic ?? "none"). TODO: wire llama.cpp grammar enforcement when GGUFBridgeGenerateConfig exposes grammar.
+            JSON schema:
+            \(schema)
+            """
+        }
     }
 
     private static func buildToolDefinitions(_ tools: [LLMToolDefinition]) -> String? {

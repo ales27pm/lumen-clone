@@ -305,6 +305,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     let sanitizedFinalRemovedArtifacts: [String]
     let outputHygieneFailures: [String]
     let performanceMatrix: E2EPerformanceMatrix?
+    let metadata: [String: String]
 
     init(
         id: UUID,
@@ -333,7 +334,8 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         rawFinalHadUnsafeLeakage: Bool,
         sanitizedFinalRemovedArtifacts: [String],
         outputHygieneFailures: [String],
-        performanceMatrix: E2EPerformanceMatrix? = nil
+        performanceMatrix: E2EPerformanceMatrix? = nil,
+        metadata: [String: String] = [:]
     ) {
         self.id = id
         self.scenarioID = scenarioID
@@ -362,6 +364,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         self.sanitizedFinalRemovedArtifacts = sanitizedFinalRemovedArtifacts
         self.outputHygieneFailures = outputHygieneFailures
         self.performanceMatrix = performanceMatrix
+        self.metadata = metadata
     }
 
     init(from decoder: Decoder) throws {
@@ -393,6 +396,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         sanitizedFinalRemovedArtifacts = try c.decodeIfPresent([String].self, forKey: .sanitizedFinalRemovedArtifacts) ?? []
         outputHygieneFailures = try c.decodeIfPresent([String].self, forKey: .outputHygieneFailures) ?? []
         performanceMatrix = try c.decodeIfPresent(E2EPerformanceMatrix.self, forKey: .performanceMatrix)
+        metadata = try c.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
     }
 }
 
@@ -485,8 +489,11 @@ nonisolated enum E2ETestRunner {
         let preflight = await ExecutorRuntimePreflight.run()
         guard preflight.passed else {
             let scenario = E2ETestScenario.trainingValidation[0]
-            let event = E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: "executor-runtime-preflight", phase: "executor-preflight", message: preflight.reason)
+            let event = E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: "executor-runtime-preflight", phase: "executor-preflight", message: "\(preflight.reason); \(preflight.diagnosticsSummary)")
             await onEvent?(event)
+            let finalText = preflight.budgetReason?.contains(ResourceBudgetGate.seriousThermalRetryHint) == true
+                ? ResourceBudgetGate.seriousThermalRetryHint
+                : ""
             let result = E2ETestResult(
                 id: UUID(),
                 scenarioID: "executor-runtime-preflight",
@@ -498,7 +505,7 @@ nonisolated enum E2ETestRunner {
                 requiresAgentRun: true,
                 passed: false,
                 failures: [preflight.reason],
-                finalText: "",
+                finalText: finalText,
                 missingHints: [],
                 rewriteAttempted: false,
                 rewriteSuccess: false,
@@ -510,7 +517,8 @@ nonisolated enum E2ETestRunner {
                 rawFinalHadUnsafeLeakage: false,
                 sanitizedFinalRemovedArtifacts: [],
                 outputHygieneFailures: [],
-                performanceMatrix: nil
+                performanceMatrix: nil,
+                metadata: preflight.diagnosticsMetadata
             )
             E2ETestLogStore.append(result)
             await onResult?(result)

@@ -1806,6 +1806,19 @@ final class AgentService {
                     scratchpad += "\nContext: \(locationObservation)"
                 }
 
+                if let phoneContinuation = Self.phoneCallContinuationAfterContactSearchIfNeeded(
+                    actionTool: action.tool,
+                    observation: result,
+                    prompt: req.userMessage,
+                    availableToolIDs: Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                ) {
+                    steps.append(phoneContinuation.step)
+                    continuation.yield(.step(phoneContinuation.step))
+                    finalAnswer = phoneContinuation.text
+                    continuation.yield(.finalDelta(finalAnswer))
+                    break stepsLoop
+                }
+
                 if stepIndex == maxSteps - 1 {
                     finalAnswer = await synthesizeFallback(req: req, observations: observations, reason: .maxSteps)
                     continuation.yield(.finalDelta(finalAnswer))
@@ -1931,6 +1944,18 @@ final class AgentService {
         let prompt = sanitizedStructuredUserMessage(req.userMessage)
         let routing = IntentRouter.classify(prompt)
 
+        if routing.intent == .phoneCall,
+           let contactObservation = observations.last(where: { ToolRouteGuard.canonicalToolID($0.tool) == "contacts.search" })?.result,
+           let phoneContinuation = phoneCallContinuationAfterContactSearchIfNeeded(
+                actionTool: "contacts.search",
+                observation: contactObservation,
+                prompt: prompt,
+                availableToolIDs: Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+           ),
+           structuredFinalContradictsContactPhoneContinuation(finalAnswer) {
+            return phoneContinuation.text
+        }
+
         if routing.intent == .weather,
            weatherFinalOverstatesPrecipitation(finalAnswer: finalAnswer, observations: observations) {
             let weatherObservation = observations
@@ -1951,6 +1976,50 @@ final class AgentService {
 
         return finalAnswer
     }
+
+    private nonisolated static func phoneCallContinuationAfterContactSearchIfNeeded(
+        actionTool: String,
+        observation: String,
+        prompt: String,
+        availableToolIDs: Set<String>
+    ) -> AgentPhoneCallContinuation? {
+        guard ToolRouteGuard.canonicalToolID(actionTool) == "contacts.search" else { return nil }
+        let cleanPrompt = sanitizedStructuredUserMessage(prompt)
+        let routing = IntentRouter.classify(cleanPrompt)
+        guard routing.intent == .phoneCall else { return nil }
+        return SlotAgentService.phoneCallContinuation(
+            afterContactObservation: observation,
+            availableToolIDs: availableToolIDs,
+            routing: routing
+        )
+    }
+
+    private nonisolated static func structuredFinalContradictsContactPhoneContinuation(_ finalAnswer: String) -> Bool {
+        let lower = finalAnswer.lowercased()
+        return lower.contains("contact search is unavailable")
+            || lower.contains("contacts are unavailable")
+            || lower.contains("phone call tools unavailable")
+            || lower.contains("phone call tools are unavailable")
+            || lower.contains("limited local mode")
+    }
+
+    #if DEBUG
+    nonisolated static func phoneCallContinuationAfterContactSearchForTests(
+        actionTool: String,
+        observation: String,
+        prompt: String,
+        availableToolIDs: Set<String>
+    ) -> (text: String, step: AgentStep)? {
+        guard let continuation = phoneCallContinuationAfterContactSearchIfNeeded(
+            actionTool: actionTool,
+            observation: observation,
+            prompt: prompt,
+            availableToolIDs: availableToolIDs
+        ) else { return nil }
+        return (continuation.text, continuation.step)
+    }
+
+    #endif
 
     private nonisolated static func weatherFinalOverstatesPrecipitation(
         finalAnswer: String,

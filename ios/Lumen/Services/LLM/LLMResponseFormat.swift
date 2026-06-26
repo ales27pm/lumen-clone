@@ -47,4 +47,13 @@ enum LLMResponseFormat: Sendable, Codable, Equatable {
             try container.encode(schema, forKey: .schema)
         }
     }
+
+    var enforcementDiagnostic: String? {
+        switch self {
+        case .constrainedJSON:
+            return "constrainedJSON=prompt_contract_only"
+        case .plainText, .json, .toolCallJSON:
+            return nil
+        }
+    }
 }

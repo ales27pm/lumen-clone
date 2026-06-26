@@ -37,6 +37,17 @@ private final class SlotAgentCancellationRegistration: @unchecked Sendable {
     }
 }
 
+nonisolated struct AgentPhoneCallContinuation: Sendable {
+    let text: String
+    let step: AgentStep
+    let outcome: String
+    let stage: String
+    let rawOutput: String
+    let selectedToolID: String?
+    let toolArguments: [String: String]
+    let requiresApproval: Bool?
+}
+
 @MainActor
 final class SlotAgentService {
     static let shared = SlotAgentService()
@@ -1094,22 +1105,11 @@ final class SlotAgentService {
             ])
     }
 
-    private struct PhoneCallContinuation: Sendable {
-        let text: String
-        let step: AgentStep
-        let outcome: String
-        let stage: String
-        let rawOutput: String
-        let selectedToolID: String?
-        let toolArguments: [String: String]
-        let requiresApproval: Bool?
-    }
-
-    private nonisolated static func phoneCallContinuation(
+    nonisolated static func phoneCallContinuation(
         afterContactObservation observation: String,
         availableToolIDs: Set<String>,
         routing: IntentRoutingDecision
-    ) -> PhoneCallContinuation? {
+    ) -> AgentPhoneCallContinuation? {
         let matches = contactPhoneMatches(from: observation)
         guard !matches.isEmpty else {
             let final = FinalIntentValidator.validate(
@@ -1117,7 +1117,7 @@ final class SlotAgentService {
                 routing: routing,
                 fallback: nil
             )
-            return PhoneCallContinuation(
+            return AgentPhoneCallContinuation(
                 text: final,
                 step: AgentStep(kind: .reflection, content: final, toolID: "contacts.search"),
                 outcome: "no_usable_phone_number",
@@ -1135,7 +1135,7 @@ final class SlotAgentService {
                 routing: routing,
                 fallback: nil
             )
-            return PhoneCallContinuation(
+            return AgentPhoneCallContinuation(
                 text: final,
                 step: AgentStep(kind: .reflection, content: final, toolID: "contacts.search"),
                 outcome: "multiple_usable_phone_numbers",
@@ -1153,7 +1153,7 @@ final class SlotAgentService {
                 routing: routing,
                 fallback: nil
             )
-            return PhoneCallContinuation(
+            return AgentPhoneCallContinuation(
                 text: final,
                 step: AgentStep(kind: .reflection, content: final, toolID: "contacts.search"),
                 outcome: "phone_call_unavailable",
@@ -1168,7 +1168,7 @@ final class SlotAgentService {
         let action = AgentAction(tool: "phone.call", args: ["number": .string(match.phone)])
         let approval = approvalBoundaryFinal(for: "phone.call", action: action, routing: routing, prompt: match.name)
         let text = FinalIntentValidator.validate(approval, routing: routing, fallback: nil)
-        return PhoneCallContinuation(
+        return AgentPhoneCallContinuation(
             text: text,
             step: AgentStep(kind: .approvalBoundary, content: approval, toolID: "phone.call", toolArgs: action.args.stringCoerced),
             outcome: "approval_boundary",

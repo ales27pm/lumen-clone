@@ -2212,6 +2212,7 @@ final actor AppLlamaService {
         case .constrainedJSON(let schema):
             instruction = """
             Response format contract: output exactly one valid JSON object matching this schema. Do not include prose, markdown, code fences, or hidden reasoning.
+            Enforcement diagnostic: \(responseFormat.enforcementDiagnostic ?? "none"). TODO: wire llama.cpp grammar enforcement when the native bridge exposes grammar.
             JSON schema:
             \(schema)
             """
