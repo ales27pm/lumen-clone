@@ -76,6 +76,7 @@ def write_outputs(
                 handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
     _write_embedding_outputs(output_dir / "embedding", datasets)
+    _write_reranker_outputs(output_dir / "reranker", datasets)
     _write_runtime_grounding_outputs(output_dir, manifest, datasets)
 
     if fine_tuning_datasets is not None:
@@ -201,6 +202,30 @@ def _write_embedding_outputs(root: Path, datasets: dict[str, list[dict[str, Any]
         "schemaVersion": "1.0.0",
         "model": "Qwen/Qwen3-Embedding-0.6B",
         "counts": {filename.removesuffix(".jsonl"): len(records) for filename, records in embedding_files.items()},
+    }
+    (root / "dataset_card.json").write_text(
+        json.dumps(card, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_reranker_outputs(root: Path, datasets: dict[str, list[dict[str, Any]]]) -> None:
+    reranker_files = {
+        "train_pairs.jsonl": datasets.get("reranker_train_pairs", []),
+        "val_pairs.jsonl": datasets.get("reranker_val_pairs", []),
+        "hard_negative_pairs.jsonl": datasets.get("reranker_hard_negative_pairs", []),
+        "eval_reranking.jsonl": datasets.get("reranker_eval_reranking", []),
+    }
+    if not any(reranker_files.values()) and not datasets.get("reranker_dataset_card"):
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    for filename, records in reranker_files.items():
+        _write_jsonl(root / filename, records)
+    card_records = datasets.get("reranker_dataset_card", [])
+    card = card_records[0] if card_records else {
+        "schemaVersion": "1.0.0",
+        "model": "Qwen/Qwen3-Reranker-0.6B",
+        "counts": {filename.removesuffix(".jsonl"): len(records) for filename, records in reranker_files.items()},
     }
     (root / "dataset_card.json").write_text(
         json.dumps(card, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

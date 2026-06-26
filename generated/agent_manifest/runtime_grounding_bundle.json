@@ -3,18 +3,18 @@
   "codebaseHome": {
     "languageCounts": {
       "csv": 5,
-      "json": 53,
+      "json": 55,
       "markdown": 65,
       "mixed": 1,
       "plist": 3,
       "python": 99,
-      "shell": 14,
-      "swift": 484,
-      "text": 7,
+      "shell": 15,
+      "swift": 486,
+      "text": 8,
       "toml": 1,
       "xcode_project": 1,
       "xml": 1,
-      "yaml": 1
+      "yaml": 2
     },
     "moduleCounts": {
       ".github/workflows": 1,
@@ -25,7 +25,7 @@
       "Assets.xcassets/LumenAssistantMark.imageset": 1,
       "Assets.xcassets/LumenVerticalLogo.imageset": 1,
       "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
-      "Assistant": 25,
+      "Assistant": 26,
       "Background": 6,
       "Brand": 2,
       "CarPlay": 1,
@@ -58,10 +58,11 @@
       "codebase_txt_chunks": 2,
       "docs": 54,
       "docs/stabilization": 1,
+      "evals": 1,
       "ios": 1,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 152,
+      "ios/LumenTests": 153,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 6,
@@ -69,7 +70,8 @@
       "runtime-audits/2026-06-08-first-improve-loop": 5,
       "runtime-audits/2026-06-08-second-improve-loop": 5,
       "runtime-audits/2026-06-09-third-improve-loop": 5,
-      "scripts": 18,
+      "runtime-audits/2026-06-25-device-e2e": 3,
+      "scripts": 19,
       "tools": 12,
       "tools/fine_tuning/unsloth": 19,
       "tools/hf_artifacts": 2,
@@ -84,7 +86,7 @@
       "tools/pipeline/tests": 2,
       "tools/security": 1
     },
-    "recordCount": 735,
+    "recordCount": 742,
     "selectedFiles": [
       {
         "imports": [
@@ -480,14 +482,20 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantGroundingContext.swift",
-        "responsibility": "`ios/Lumen/Assistant/AssistantGroundingContext.swift` owns AssistantGroundingContext behavior and defines: AssistantGroundingContext, memoryCount, ragCount, toolCount, estimatedChars, zeroCount, empty.",
-        "sha256": "1a5178e96f9c872c1f659617ecbfae356da34cdbe379f8465e847caadac172e5",
+        "responsibility": "`ios/Lumen/Assistant/AssistantGroundingContext.swift` owns AssistantGroundingContext behavior and defines: AssistantGroundingContext, memoryCount, ragCount, toolCount, estimatedChars, estimatedTokens, contextProfile, maxInputTokens, ragConfidence, memoryTierCounts.",
+        "sha256": "d1ecc7ba1f11539e4911089ccc723fd2494fc6d2173860474887d39a53f828eb",
         "symbols": [
           "AssistantGroundingContext",
           "memoryCount",
           "ragCount",
           "toolCount",
           "estimatedChars",
+          "estimatedTokens",
+          "contextProfile",
+          "maxInputTokens",
+          "ragConfidence",
+          "memoryTierCounts",
+          "contextQueryExpanded",
           "zeroCount",
           "empty"
         ]
@@ -501,7 +509,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel+Streaming.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantKernel+Streaming.swift` owns AssistantKernel+Streaming behavior and defines: AssistantKernel, AgentKernelRequest, run, emitStep, runLegacyAgentBridge, toolBridgeAvailableTools, task, start, emittedSteps, step.",
-        "sha256": "2166e8b482fa2727e186fb3f40b8e5d573a5cb299b55a0fa2f19e5c9a694c80a",
+        "sha256": "a36736105353221053730c858d326b5bf5e6a35f6ca92e259ed0552051e789e1",
         "symbols": [
           "AssistantKernel",
           "AgentKernelRequest",
@@ -513,12 +521,12 @@
           "start",
           "emittedSteps",
           "step",
+          "historyTuples",
+          "referenceResolution",
+          "effectiveUserMessage",
           "routing",
           "backgroundAssessment",
-          "availableTools",
-          "assessment",
-          "legacyRequest",
-          "groundingMode"
+          "availableTools"
         ]
       },
       {
@@ -530,7 +538,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, buildGroundingContext, runTextTurn, generateText, executeTool, shared, router.",
-        "sha256": "3131aafea8574e9bf8127ac2ea7efec84966095066ac16dc3baa3d67e0ce2c1f",
+        "sha256": "98a5cf5aea992f4ff575234b67ca750b6cc5a0bb2abf9b6769b8f640e052d2e0",
         "symbols": [
           "AssistantKernel",
           "KernelError",
@@ -547,7 +555,7 @@
           "memoryEngine",
           "ragEngine",
           "budget",
-          "mem"
+          "contextQuery"
         ]
       },
       {
@@ -693,19 +701,53 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/ContextBudgetAllocator.swift",
-        "responsibility": "`ios/Lumen/Assistant/ContextBudgetAllocator.swift` owns ContextBudgetAllocator behavior and defines: ContextBudgetSections, ContextBudgetAllocator, allocate, system, history, memories, rag, tools, runtime, bounded.",
-        "sha256": "c0fbd9b1cb8ed289c3d6f529c1aa7fec80500e1c9697953a4a663a32018c52ac",
+        "responsibility": "`ios/Lumen/Assistant/ContextBudgetAllocator.swift` owns ContextBudgetAllocator behavior and defines: ContextBudgetTokenSections, ContextBudgetSections, ContextPolicyProfile, ContextBudgetPlan, ContextBudgetAllocator, allocate, profile, estimateTokens, containsAny, system.",
+        "sha256": "332cbe0abcee49b24a23330c4adaf7de529b07339a70e7b882702a34171edc22",
         "symbols": [
+          "ContextBudgetTokenSections",
           "ContextBudgetSections",
+          "ContextPolicyProfile",
+          "ContextBudgetPlan",
           "ContextBudgetAllocator",
           "allocate",
+          "profile",
+          "estimateTokens",
+          "containsAny",
           "system",
           "history",
           "memories",
           "rag",
           "tools",
           "runtime",
-          "bounded"
+          "total"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/ContextQueryRewriter.swift",
+        "responsibility": "`ios/Lumen/Assistant/ContextQueryRewriter.swift` owns ContextQueryRewriter behavior and defines: ContextQueryRewriteResult, ContextQueryRewriter, rewrite, addTerms, normalized, salientTerms, bounded, query, addedTerms, expansionApplied.",
+        "sha256": "ce3e2531c4ca247d026036e09b2dc8291406e1cf10a5790c08edf98d1b8b1bd7",
+        "symbols": [
+          "ContextQueryRewriteResult",
+          "ContextQueryRewriter",
+          "rewrite",
+          "addTerms",
+          "normalized",
+          "salientTerms",
+          "bounded",
+          "query",
+          "addedTerms",
+          "expansionApplied",
+          "estimatedTokens",
+          "maxAddedTerms",
+          "maxQueryChars",
+          "minTermLength",
+          "base",
+          "seen"
         ]
       },
       {
@@ -793,12 +835,14 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyGroundingBridge.swift",
         "responsibility": "Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and degraded behavior stay centralized.",
-        "sha256": "8de6ce6a14f9646efd709d2951a8d949cc21c00c272810e6cfa7ae9d8683aab8",
+        "sha256": "920d367882628a5a99cc10bc8e50835a6dedb4e0ee0d4916a1ffeeafe0f38fac",
         "symbols": [
           "LegacyGroundingBundle",
           "LegacyGroundingBridge",
           "build",
+          "tierSummary",
           "grounding",
+          "budgetPlan",
           "sections",
           "renderedPromptContext",
           "secureTools",
@@ -808,9 +852,7 @@
           "toolRegistry",
           "metricsStore",
           "budget",
-          "mem",
-          "rag",
-          "tctx"
+          "contextQuery"
         ]
       },
       {
@@ -915,25 +957,25 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyPromptAssembler.swift",
-        "responsibility": "A single user-authored grounding-like header is ambiguous, not generated grounding. Preserve the user text and still inject the bounded generated appendix.",
-        "sha256": "fed9eb14d312a79c60032b1312e1e050fdba50817ff057c8c34e623979eb215c",
+        "responsibility": "`ios/Lumen/Assistant/LegacyPromptAssembler.swift` owns LegacyPromptAssembler behavior and defines: LegacyPromptAssembled, LegacyPromptAssembler, assemble, titled, sectionCaps, isMemorySection, isSourceSection, isToolSection, isRuntimeSection, systemPrompt.",
+        "sha256": "3f92f2d5ee3481f25ac9de943b234dc66a53f9efee8668e496a4933ed9c67ef4",
         "symbols": [
           "LegacyPromptAssembled",
           "LegacyPromptAssembler",
           "assemble",
           "titled",
+          "sectionCaps",
+          "isMemorySection",
+          "isSourceSection",
+          "isToolSection",
+          "isRuntimeSection",
           "systemPrompt",
           "userMessage",
           "groundingAppendix",
           "estimatedChars",
-          "truncationOccurred",
-          "memorySectionChars",
-          "ragSectionChars",
-          "toolSectionChars",
-          "mem",
-          "rag",
-          "tool",
-          "runtime"
+          "estimatedTokens",
+          "contextProfile",
+          "maxInputTokens"
         ]
       },
       {
@@ -968,8 +1010,8 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift",
-        "responsibility": "`ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, cancelledResult, grounding, sections.",
-        "sha256": "cc9765d8b4621d28fbcd1304d23e633a1b2b0e092c57cd558c199f49ed5f2c4e",
+        "responsibility": "`ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, budgetPlan, cancelledResult, grounding.",
+        "sha256": "6314092181cb0afc7c6096b8a8c056ada69d7d67d2e132a25d5523c04d309cda",
         "symbols": [
           "LegacyTurnGroundingOutput",
           "LegacyTurnGroundingCoordinator",
@@ -978,6 +1020,7 @@
           "runtimeSection",
           "build",
           "prepareGroundedRequest",
+          "budgetPlan",
           "cancelledResult",
           "grounding",
           "sections",
@@ -985,8 +1028,7 @@
           "promptInjection",
           "metricsSummary",
           "shared",
-          "bridge",
-          "cache"
+          "bridge"
         ]
       },
       {
@@ -1154,7 +1196,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer, StripResult, LeadingBlock.",
-        "sha256": "3edc5972ae0acb46b310b7df47faccdb1ed87ca4ef6bf4bafdceee4dcf950a91",
+        "sha256": "596f8ef49bfde1cd9c990405d3acd3ea92804fbe6dec57bb5c0681fa945b75b9",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -1384,7 +1426,7 @@
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/MemoryTools.swift",
         "responsibility": "`ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, save, recall, ragSearch, expandRAGQueryIfNeeded, ragIndexFiles, ragIndexPhotos, trimmed, k, container.",
-        "sha256": "c70d23ac3eceadb2cf153378cc1f597a4ad11a217334294661b4733ab35311b8",
+        "sha256": "d576469dcd0bd0be342de8c08a123a4115b7f143cc0b70c63c97b66d3b447522",
         "symbols": [
           "MemoryTools",
           "save",
@@ -1399,9 +1441,9 @@
           "ctx",
           "items",
           "expandedQuery",
-          "search",
           "results",
-          "counts"
+          "counts",
+          "totalIndexed"
         ]
       },
       {
@@ -1830,25 +1872,25 @@
         "language": "swift",
         "module": "Memory",
         "path": "ios/Lumen/Memory/MemoryContextBuilder.swift",
-        "responsibility": "`ios/Lumen/Memory/MemoryContextBuilder.swift` owns MemoryContextBuilder behavior and defines: MemoryContextResult, MemoryContextBuilder, build, score, selected, totalChars, reasons, sourceIDs, all, q.",
-        "sha256": "66faec9448e37777bb68f848540db2f519516a4f061106c9779fb61f056c8491",
+        "responsibility": "`ios/Lumen/Memory/MemoryContextBuilder.swift` owns MemoryContextBuilder behavior and defines: MemoryContextResult, MemoryContextBuilder, Tier, RankedMemory, build, canFit, pick, score, rank, tierPriority.",
+        "sha256": "ad3c17a334fa79e8b4cc6f39bc2ad30bcfb185a6c2427252c5672d90ec2dfed4",
         "symbols": [
           "MemoryContextResult",
           "MemoryContextBuilder",
+          "Tier",
+          "RankedMemory",
           "build",
+          "canFit",
+          "pick",
           "score",
-          "selected",
-          "totalChars",
-          "reasons",
-          "sourceIDs",
-          "all",
-          "q",
-          "hasQuery",
-          "now",
-          "ranked",
-          "picked",
-          "chars",
-          "c"
+          "rank",
+          "tierPriority",
+          "tier",
+          "contextChars",
+          "queryMatches",
+          "termCoverage",
+          "queryTerms",
+          "selected"
         ]
       },
       {
@@ -1986,19 +2028,25 @@
         "language": "swift",
         "module": "RAG",
         "path": "ios/Lumen/RAG/RAGContextBuilder.swift",
-        "responsibility": "`ios/Lumen/RAG/RAGContextBuilder.swift` owns RAGContextBuilder behavior and defines: RAGContextResult, RAGContextBuilder, build, selected, totalChars, picked, chars, seen, key, c.",
-        "sha256": "d881674f2432717faafd9a4af8f1a0243619e03e5665c58a97a2985bee34eb29",
+        "responsibility": "`ios/Lumen/RAG/RAGContextBuilder.swift` owns RAGContextBuilder behavior and defines: RAGContextResult, RAGContextBuilder, confidence, build, canFit, pick, sortByScoreThenExcerpt, selected, totalChars, totalTokens.",
+        "sha256": "3568c6fe5b583c95edd33441871b859918a824a6d08ae2b65fbadd0aa120aa1e",
         "symbols": [
           "RAGContextResult",
           "RAGContextBuilder",
+          "confidence",
           "build",
+          "canFit",
+          "pick",
+          "sortByScoreThenExcerpt",
           "selected",
           "totalChars",
-          "picked",
-          "chars",
-          "seen",
-          "key",
-          "c"
+          "totalTokens",
+          "candidateCount",
+          "selectedSourceCount",
+          "diversityPassApplied",
+          "topScore",
+          "primaryChunksPerSource",
+          "budgetChars"
         ]
       },
       {
@@ -2025,8 +2073,8 @@
         "language": "swift",
         "module": "RAG",
         "path": "ios/Lumen/RAG/RAGEngine.swift",
-        "responsibility": "`ios/Lumen/RAG/RAGEngine.swift` owns RAGEngine behavior and defines: RAGMaintenanceResult, RAGEngine, retrieve, buildContext, index, maintenance, success, metricSummary, indexer, semantic.",
-        "sha256": "ba66660c5d7139d93385923e304ce07ebd239f1f9194e46bd60201899dfa33e8",
+        "responsibility": "`ios/Lumen/RAG/RAGEngine.swift` owns RAGEngine behavior and defines: RAGMaintenanceResult, RAGEngine, retrieve, buildContext, index, maintenance, rerankedScore, focusedExcerpt, queryTerms, clamped.",
+        "sha256": "d9df99fcc9ff3525398ac8bb9e229e3f5b7c583c3bcfb6ccd8555f9be638ee7e",
         "symbols": [
           "RAGMaintenanceResult",
           "RAGEngine",
@@ -2034,16 +2082,16 @@
           "buildContext",
           "index",
           "maintenance",
+          "rerankedScore",
+          "focusedExcerpt",
+          "queryTerms",
+          "clamped",
           "success",
           "metricSummary",
           "indexer",
-          "semantic",
-          "mapped",
-          "ref",
-          "seen",
-          "key",
-          "r",
-          "descriptor"
+          "boundedLimit",
+          "candidateLimit",
+          "search"
         ]
       },
       {
@@ -2100,23 +2148,6 @@
           "offsetStart",
           "offsetEnd"
         ]
-      },
-      {
-        "imports": [
-          "Foundation"
-        ],
-        "language": "swift",
-        "module": "RAG",
-        "path": "ios/Lumen/RAG/RAGSource.swift",
-        "responsibility": "`ios/Lumen/RAG/RAGSource.swift` owns RAGSource behavior and defines: RAGSource, id, type, title, ref.",
-        "sha256": "d755858337c1de1ed3d04897f836030f79f8d853d9d4f804f7d30a3d130db080",
-        "symbols": [
-          "RAGSource",
-          "id",
-          "type",
-          "title",
-          "ref"
-        ]
       }
     ]
   },
@@ -2126,7 +2157,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "084d488a7038dcf5dc8e698fd4a46b683c9b5604",
+  "manifestCommit": "1c474e1d7876462cbeb4458b29846230ee43e538",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

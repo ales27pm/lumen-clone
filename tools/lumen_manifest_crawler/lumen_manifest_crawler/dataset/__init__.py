@@ -21,6 +21,7 @@ from lumen_manifest_crawler.dataset.executor import (
 from lumen_manifest_crawler.dataset.mimicry import generate_mimicry_records
 from lumen_manifest_crawler.dataset.mouth import generate_mouth_records
 from lumen_manifest_crawler.dataset.rem import generate_rem_records
+from lumen_manifest_crawler.dataset.reranker import compile_reranker_datasets
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest
 
@@ -61,8 +62,14 @@ def generate_all_datasets(
         **codebase_home_records,
     }
     embedding = compile_embedding_datasets(manifest, datasets)
+    embedding_families = embedding.as_dataset_families()
+    reranker = compile_reranker_datasets({
+        **datasets,
+        **embedding_families,
+    })
     return {
         **datasets,
-        **embedding.as_dataset_families(),
+        **embedding_families,
+        **reranker.as_dataset_families(),
         "dataset_manifest": [compiled.manifest],
     }
