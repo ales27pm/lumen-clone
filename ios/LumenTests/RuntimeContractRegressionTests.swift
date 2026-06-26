@@ -30,6 +30,41 @@ struct ExecutorPreflightTests {
         let reason = ResourceBudgetGate.heavyModelWorkDenialReason(snapshot: snapshot, reason: "strict-live-training.executor-preflight")
         #expect(reason == "strict-live-training.executor-preflight: scenePhase=background")
     }
+
+    @Test func preflightResultExportsStructuredDiagnosticsMetadata() {
+        let result = ExecutorRuntimePreflightResult(
+            passed: false,
+            reason: "executor preflight failed: adapter required but adapter path missing",
+            slot: "executor",
+            modelFamily: "qwen3",
+            runtimeKind: "adapter-first",
+            baseModelPath: "/tmp/lumen-qwen3.gguf",
+            baseModelExists: true,
+            adapterPath: nil,
+            adapterExists: false,
+            activeAdapterSlot: nil,
+            resourceGateAllowed: true,
+            budgetReason: nil,
+            ensureReadySucceeded: false,
+            smokeProbeSucceeded: false,
+            failureKind: "adapterPathMissing"
+        )
+
+        #expect(result.diagnosticsMetadata["slot"] == "executor")
+        #expect(result.diagnosticsMetadata["modelFamily"] == "qwen3")
+        #expect(result.diagnosticsMetadata["runtimeKind"] == "adapter-first")
+        #expect(result.diagnosticsMetadata["baseModelPath"] == "/tmp/lumen-qwen3.gguf")
+        #expect(result.diagnosticsMetadata["baseModelExists"] == "true")
+        #expect(result.diagnosticsMetadata["adapterPath"] == "none")
+        #expect(result.diagnosticsMetadata["adapterExists"] == "false")
+        #expect(result.diagnosticsMetadata["activeAdapterSlot"] == "none")
+        #expect(result.diagnosticsMetadata["resourceGateAllowed"] == "true")
+        #expect(result.diagnosticsMetadata["budgetReason"] == "none")
+        #expect(result.diagnosticsMetadata["ensureReadySucceeded"] == "false")
+        #expect(result.diagnosticsMetadata["smokeProbeSucceeded"] == "false")
+        #expect(result.diagnosticsMetadata["failureKind"] == "adapterPathMissing")
+        #expect(result.diagnosticsSummary.contains("failureKind=adapterPathMissing"))
+    }
 }
 
 struct AgentJsonRuntimeClassificationTests {
@@ -189,6 +224,47 @@ struct PhoneCallContinuationTests {
         #expect(continuation?.step.kind == .reflection)
         #expect(continuation?.text.contains("Contact found: Julie Charlebois") == true)
         #expect(continuation?.text.contains("phone.call is unavailable") == true)
+    }
+
+    @Test func liveAgentContactSearchObservationCreatesPhoneApprovalBoundary() {
+        let continuation = AgentService.phoneCallContinuationAfterContactSearchForTests(
+            actionTool: "contacts.search",
+            observation: "• Julie Charlebois — +1 (514) 555-0101",
+            prompt: "Call Julie Charlebois",
+            availableToolIDs: ["contacts.search", "phone.call"]
+        )
+
+        #expect(continuation?.step.kind == .approvalBoundary)
+        #expect(continuation?.step.toolID == "phone.call")
+        #expect(continuation?.step.toolArgs?["number"] == "+15145550101")
+        #expect(continuation?.text.contains("Approval required for phone.call") == true)
+        #expect(continuation?.text.contains("Phone call tools unavailable") == false)
+    }
+
+    @Test func liveAgentPostprocessRejectsUnavailableFinalAfterAcceptedContactObservation() {
+        let tools = ["contacts.search", "phone.call"].compactMap { ToolRegistry.find(id: $0) }
+        let request = AgentRequest(
+            systemPrompt: "",
+            history: [],
+            userMessage: "Call Julie Charlebois",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let repaired = AgentService.postprocessStructuredFinalAnswerForTests(
+            "Contact search is unavailable in this build right now. Phone call tools unavailable.",
+            req: request,
+            observations: [("contacts.search", "• Julie Charlebois — +1 (514) 555-0101")],
+            steps: []
+        )
+
+        #expect(repaired.contains("Approval required for phone.call"))
+        #expect(!repaired.contains("Contact search is unavailable"))
+        #expect(!repaired.contains("Phone call tools unavailable"))
     }
 }
 

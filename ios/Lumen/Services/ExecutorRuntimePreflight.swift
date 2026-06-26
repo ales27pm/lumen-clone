@@ -3,6 +3,117 @@ import Foundation
 nonisolated struct ExecutorRuntimePreflightResult: Sendable, Equatable {
     let passed: Bool
     let reason: String
+    let slot: String
+    let modelFamily: String
+    let runtimeKind: String
+    let baseModelPath: String?
+    let baseModelExists: Bool
+    let adapterPath: String?
+    let adapterExists: Bool
+    let activeAdapterSlot: String?
+    let resourceGateAllowed: Bool
+    let budgetReason: String?
+    let ensureReadySucceeded: Bool
+    let smokeProbeSucceeded: Bool
+    let failureKind: String?
+
+    init(
+        passed: Bool,
+        reason: String,
+        slot: String = LumenModelSlot.executor.rawValue,
+        modelFamily: String = LumenModelFamily.persistedSelected.rawValue,
+        runtimeKind: String = String(describing: LumenTrainedModelRuntimeRegistry.selected.mode),
+        baseModelPath: String? = nil,
+        baseModelExists: Bool = false,
+        adapterPath: String? = nil,
+        adapterExists: Bool = false,
+        activeAdapterSlot: String? = nil,
+        resourceGateAllowed: Bool = false,
+        budgetReason: String? = nil,
+        ensureReadySucceeded: Bool = false,
+        smokeProbeSucceeded: Bool = false,
+        failureKind: String? = nil
+    ) {
+        self.passed = passed
+        self.reason = reason
+        self.slot = slot
+        self.modelFamily = modelFamily
+        self.runtimeKind = runtimeKind
+        self.baseModelPath = baseModelPath
+        self.baseModelExists = baseModelExists
+        self.adapterPath = adapterPath
+        self.adapterExists = adapterExists
+        self.activeAdapterSlot = activeAdapterSlot
+        self.resourceGateAllowed = resourceGateAllowed
+        self.budgetReason = budgetReason
+        self.ensureReadySucceeded = ensureReadySucceeded
+        self.smokeProbeSucceeded = smokeProbeSucceeded
+        self.failureKind = failureKind
+    }
+
+    var diagnosticsMetadata: [String: String] {
+        [
+            "slot": slot,
+            "modelFamily": modelFamily,
+            "runtimeKind": runtimeKind,
+            "baseModelPath": baseModelPath ?? "none",
+            "baseModelExists": String(baseModelExists),
+            "adapterPath": adapterPath ?? "none",
+            "adapterExists": String(adapterExists),
+            "activeAdapterSlot": activeAdapterSlot ?? "none",
+            "resourceGateAllowed": String(resourceGateAllowed),
+            "budgetReason": budgetReason ?? "none",
+            "ensureReadySucceeded": String(ensureReadySucceeded),
+            "smokeProbeSucceeded": String(smokeProbeSucceeded),
+            "failureKind": failureKind ?? "none"
+        ]
+    }
+
+    var diagnosticsSummary: String {
+        diagnosticsMetadata
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: "; ")
+    }
+
+    func withSmokeProbeResult(_ probe: ExecutorRuntimePreflightResult) -> ExecutorRuntimePreflightResult {
+        if probe.passed {
+            return ExecutorRuntimePreflightResult(
+                passed: true,
+                reason: "\(reason); tiny JSON smoke probe passed",
+                slot: slot,
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: baseModelExists,
+                adapterPath: adapterPath,
+                adapterExists: adapterExists,
+                activeAdapterSlot: activeAdapterSlot,
+                resourceGateAllowed: resourceGateAllowed,
+                budgetReason: budgetReason,
+                ensureReadySucceeded: ensureReadySucceeded,
+                smokeProbeSucceeded: true,
+                failureKind: nil
+            )
+        }
+        return ExecutorRuntimePreflightResult(
+            passed: false,
+            reason: "executor preflight failed: tiny JSON smoke probe failed; slot=.executor; \(probe.reason)",
+            slot: slot,
+            modelFamily: modelFamily,
+            runtimeKind: runtimeKind,
+            baseModelPath: baseModelPath,
+            baseModelExists: baseModelExists,
+            adapterPath: adapterPath,
+            adapterExists: adapterExists,
+            activeAdapterSlot: activeAdapterSlot,
+            resourceGateAllowed: resourceGateAllowed,
+            budgetReason: budgetReason,
+            ensureReadySucceeded: ensureReadySucceeded,
+            smokeProbeSucceeded: false,
+            failureKind: probe.failureKind ?? "smokeProbeFailed"
+        )
+    }
 }
 
 nonisolated enum ExecutorRuntimePreflight {
@@ -11,44 +122,96 @@ nonisolated enum ExecutorRuntimePreflight {
         guard readiness.passed else { return readiness }
 
         let probe = await smokeProbe(slot: .executor)
-        guard probe.passed else {
-            return .init(passed: false, reason: "executor preflight failed: tiny JSON smoke probe failed; slot=.executor; \(probe.reason)")
-        }
-        return .init(passed: true, reason: "\(readiness.reason); tiny JSON smoke probe passed")
+        return readiness.withSmokeProbeResult(probe)
     }
 
     static func checkReadiness(allowsLoadedMemoryPressureContinuation: Bool) async -> ExecutorRuntimePreflightResult {
         let slot = LumenModelSlot.executor
         let family = LumenModelFamily.persistedSelected
-        let runtimeKind = LumenTrainedModelRuntimeRegistry.selected.mode
+        let runtimeKind = String(describing: LumenTrainedModelRuntimeRegistry.selected.mode)
         let prefix = "executor preflight failed"
         let slotContract: LumenModelSlotContract
         do {
             slotContract = try LumenModelSlotContract.requiredContract(for: slot)
         } catch {
-            return .init(passed: false, reason: "\(prefix): slot contract missing; slot=.executor; error=\(localizedRuntimeDescription(error))")
+            return .init(passed: false, reason: "\(prefix): slot contract missing; slot=.executor; error=\(localizedRuntimeDescription(error))", runtimeKind: runtimeKind, failureKind: "slotContractMissing")
         }
 
         guard let assignment = await SlotModelRuntimeCoordinator.shared.assignment(for: slot) else {
-            return .init(passed: false, reason: "\(prefix): slot=.executor assignment missing; modelFamily=\(family.rawValue); runtimeKind=\(runtimeKind)")
+            return .init(passed: false, reason: "\(prefix): slot=.executor assignment missing; modelFamily=\(family.rawValue); runtimeKind=\(runtimeKind)", modelFamily: family.rawValue, runtimeKind: runtimeKind, failureKind: "assignmentMissing")
         }
+        let modelFamily = assignment.modelFamily?.rawValue ?? family.rawValue
+        let baseModelPath = assignment.localPath
+        let baseModelExists = FileManager.default.fileExists(atPath: baseModelPath)
+        let adapterPath = assignment.adapterPath
+        let adapterExists = adapterPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
         guard slotContract.outputContract == .structuredJSON else {
-            return .init(passed: false, reason: "\(prefix): output contract mismatch; slot=.executor; expected=structuredJSON; actual=\(slotContract.outputContract.rawValue); modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind)")
+            return result(
+                passed: false,
+                reason: "\(prefix): output contract mismatch; slot=.executor; expected=structuredJSON; actual=\(slotContract.outputContract.rawValue); modelFamily=\(modelFamily); runtimeKind=\(runtimeKind)",
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: baseModelExists,
+                adapterPath: adapterPath,
+                adapterExists: adapterExists,
+                failureKind: "outputContractMismatch"
+            )
         }
-        guard FileManager.default.fileExists(atPath: assignment.localPath) else {
-            return .init(passed: false, reason: "\(prefix): base model missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath)")
+        guard baseModelExists else {
+            return result(
+                passed: false,
+                reason: "\(prefix): base model missing; slot=.executor; modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath)",
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: false,
+                adapterPath: adapterPath,
+                adapterExists: adapterExists,
+                failureKind: "baseModelMissing"
+            )
         }
 
         let adapterRequired = assignment.requiresRoleAdapterForRuntime
         if adapterRequired {
             guard let adapterPath = assignment.adapterPath, !adapterPath.isEmpty else {
-                return .init(passed: false, reason: "\(prefix): adapter required but adapter path missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")")
+                return result(
+                    passed: false,
+                    reason: "\(prefix): adapter required but adapter path missing; slot=.executor; modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")",
+                    modelFamily: modelFamily,
+                    runtimeKind: runtimeKind,
+                    baseModelPath: baseModelPath,
+                    baseModelExists: baseModelExists,
+                    adapterPath: nil,
+                    adapterExists: false,
+                    failureKind: "adapterPathMissing"
+                )
             }
             guard FileManager.default.fileExists(atPath: adapterPath) else {
-                return .init(passed: false, reason: "\(prefix): adapter required but file missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(adapterPath); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")")
+                return result(
+                    passed: false,
+                    reason: "\(prefix): adapter required but file missing; slot=.executor; modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")",
+                    modelFamily: modelFamily,
+                    runtimeKind: runtimeKind,
+                    baseModelPath: baseModelPath,
+                    baseModelExists: baseModelExists,
+                    adapterPath: adapterPath,
+                    adapterExists: false,
+                    failureKind: "adapterFileMissing"
+                )
             }
         } else if let adapterPath = assignment.adapterPath, !adapterPath.isEmpty, !FileManager.default.fileExists(atPath: adapterPath) {
-            return .init(passed: false, reason: "\(prefix): adapter configured but file missing; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(adapterPath)")
+            return result(
+                passed: false,
+                reason: "\(prefix): adapter configured but file missing; slot=.executor; modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath)",
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: baseModelExists,
+                adapterPath: adapterPath,
+                adapterExists: false,
+                failureKind: "adapterFileMissing"
+            )
         }
 
         let budget = await MainActor.run {
@@ -58,7 +221,19 @@ nonisolated enum ExecutorRuntimePreflight {
             )
         }
         if let budget {
-            return .init(passed: false, reason: "\(prefix): resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=\(budget); modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(assignment.adapterPath ?? "none")")
+            return result(
+                passed: false,
+                reason: "\(prefix): resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=\(budget); modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath ?? "none")",
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: baseModelExists,
+                adapterPath: adapterPath,
+                adapterExists: adapterExists,
+                resourceGateAllowed: false,
+                budgetReason: budget,
+                failureKind: "resourceBudgetDenied"
+            )
         }
 
         let readinessMetrics: RuntimeReadinessMetrics
@@ -68,19 +243,68 @@ nonisolated enum ExecutorRuntimePreflight {
                 allowsLoadedMemoryPressureContinuation: allowsLoadedMemoryPressureContinuation
             )
         } catch {
-            return .init(passed: false, reason: "\(prefix): ensureReady failed; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(assignment.adapterPath ?? "none"); error=\(localizedRuntimeDescription(error))")
+            return result(
+                passed: false,
+                reason: "\(prefix): ensureReady failed; slot=.executor; modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath ?? "none"); error=\(localizedRuntimeDescription(error))",
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: baseModelExists,
+                adapterPath: adapterPath,
+                adapterExists: adapterExists,
+                resourceGateAllowed: true,
+                ensureReadySucceeded: false,
+                failureKind: "ensureReadyFailed"
+            )
         }
         guard slotContract.acceptsRuntimePath(readinessMetrics.runtimePath) else {
-            return .init(passed: false, reason: "\(prefix): runtime policy rejected; slot=.executor; runtimePath=\(readinessMetrics.runtimePath); runtimePathKind=\(LumenModelSlotContract.runtimePathKind(for: readinessMetrics.runtimePath).rawValue); acceptedRuntimePathKinds=\(slotContract.acceptedRuntimePathKinds.map(\.rawValue).sorted().joined(separator: ",")); modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(assignment.adapterPath ?? "none")")
+            return result(
+                passed: false,
+                reason: "\(prefix): runtime policy rejected; slot=.executor; runtimePath=\(readinessMetrics.runtimePath); runtimePathKind=\(LumenModelSlotContract.runtimePathKind(for: readinessMetrics.runtimePath).rawValue); acceptedRuntimePathKinds=\(slotContract.acceptedRuntimePathKinds.map(\.rawValue).sorted().joined(separator: ",")); modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath ?? "none")",
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: baseModelExists,
+                adapterPath: adapterPath,
+                adapterExists: adapterExists,
+                resourceGateAllowed: true,
+                ensureReadySucceeded: true,
+                failureKind: "runtimePolicyRejected"
+            )
         }
 
+        let activeAdapter = await AppLlamaService.shared.activeAdapterSlotValue?.rawValue
         if adapterRequired {
-            let activeAdapter = await AppLlamaService.shared.activeAdapterSlotValue?.rawValue
             guard activeAdapter == slot.rawValue else {
-                return .init(passed: false, reason: "\(prefix): adapterUnavailable; slot=.executor; activeAdapterSlot=\(activeAdapter ?? "none"); requiredAdapterSlot=.executor; adapterPath=\(assignment.adapterPath ?? "none"); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")")
+                return result(
+                    passed: false,
+                    reason: "\(prefix): adapterUnavailable; slot=.executor; activeAdapterSlot=\(activeAdapter ?? "none"); requiredAdapterSlot=.executor; adapterPath=\(adapterPath ?? "none"); expectedAdapterRepo=\(assignment.expectedRoleAdapterRepoID ?? "unknown"); expectedAdapterFile=\(assignment.expectedRoleAdapterFileName ?? "unknown")",
+                    modelFamily: modelFamily,
+                    runtimeKind: runtimeKind,
+                    baseModelPath: baseModelPath,
+                    baseModelExists: baseModelExists,
+                    adapterPath: adapterPath,
+                    adapterExists: adapterExists,
+                    activeAdapterSlot: activeAdapter,
+                    resourceGateAllowed: true,
+                    ensureReadySucceeded: true,
+                    failureKind: "adapterUnavailable"
+                )
             }
         }
-        return .init(passed: true, reason: "executor readiness preflight passed; slot=.executor; modelFamily=\(assignment.modelFamily?.rawValue ?? family.rawValue); runtimeKind=\(runtimeKind); baseModelPath=\(assignment.localPath); adapterPath=\(assignment.adapterPath ?? "none")")
+        return result(
+            passed: true,
+            reason: "executor readiness preflight passed; slot=.executor; modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath ?? "none")",
+            modelFamily: modelFamily,
+            runtimeKind: runtimeKind,
+            baseModelPath: baseModelPath,
+            baseModelExists: baseModelExists,
+            adapterPath: adapterPath,
+            adapterExists: adapterExists,
+            activeAdapterSlot: activeAdapter,
+            resourceGateAllowed: true,
+            ensureReadySucceeded: true
+        )
     }
 
     private static func smokeProbe(slot: LumenModelSlot) async -> ExecutorRuntimePreflightResult {
@@ -115,13 +339,47 @@ nonisolated enum ExecutorRuntimePreflight {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             let reason = payload?.emptyOutputReason ?? "empty"
-            return .init(passed: false, reason: "emptyOutputReason=\(reason); outputTokens=0; streamStarted=\(payload?.streamStarted ?? streamStarted); firstChunkReceived=\(payload?.firstChunkReceived ?? firstChunkReceived)")
+            return .init(passed: false, reason: "emptyOutputReason=\(reason); outputTokens=0; streamStarted=\(payload?.streamStarted ?? streamStarted); firstChunkReceived=\(payload?.firstChunkReceived ?? firstChunkReceived)", failureKind: "smokeProbeEmptyOutput")
         }
         let parsed = AgentTurnParser.parse(text)
         guard parsed.parseError == nil else {
-            return .init(passed: false, reason: "parseError=\(parsed.parseError?.rawValue ?? "unknown"); outputPrefix=\(ModelOutputSanitizer.boundedPrefix(text, limit: 160))")
+            return .init(passed: false, reason: "parseError=\(parsed.parseError?.rawValue ?? "unknown"); outputPrefix=\(ModelOutputSanitizer.boundedPrefix(text, limit: 160))", failureKind: "smokeProbeParseError")
         }
-        return .init(passed: true, reason: "tiny JSON smoke probe passed")
+        return .init(passed: true, reason: "tiny JSON smoke probe passed", smokeProbeSucceeded: true)
+    }
+
+    private static func result(
+        passed: Bool,
+        reason: String,
+        modelFamily: String,
+        runtimeKind: String,
+        baseModelPath: String?,
+        baseModelExists: Bool,
+        adapterPath: String?,
+        adapterExists: Bool,
+        activeAdapterSlot: String? = nil,
+        resourceGateAllowed: Bool = false,
+        budgetReason: String? = nil,
+        ensureReadySucceeded: Bool = false,
+        failureKind: String? = nil
+    ) -> ExecutorRuntimePreflightResult {
+        ExecutorRuntimePreflightResult(
+            passed: passed,
+            reason: reason,
+            slot: LumenModelSlot.executor.rawValue,
+            modelFamily: modelFamily,
+            runtimeKind: runtimeKind,
+            baseModelPath: baseModelPath,
+            baseModelExists: baseModelExists,
+            adapterPath: adapterPath,
+            adapterExists: adapterExists,
+            activeAdapterSlot: activeAdapterSlot,
+            resourceGateAllowed: resourceGateAllowed,
+            budgetReason: budgetReason,
+            ensureReadySucceeded: ensureReadySucceeded,
+            smokeProbeSucceeded: false,
+            failureKind: failureKind
+        )
     }
 
     private static func localizedRuntimeDescription(_ error: Error) -> String {

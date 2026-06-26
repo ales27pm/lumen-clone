@@ -21,6 +21,26 @@ final class ResourceBudgetGateTests: XCTestCase {
         XCTAssertTrue(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))
     }
 
+    func testForegroundInteractiveBudgetReasonsCoverNominalSeriousBackgroundAndLowPower() {
+        let nominal = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertNil(ResourceBudgetGate.heavyModelWorkDenialReason(snapshot: nominal, reason: "strict-live-training.executor-preflight"))
+
+        let serious = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .serious, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertEqual(
+            ResourceBudgetGate.heavyModelWorkDenialReason(snapshot: serious, reason: "strict-live-training.executor-preflight"),
+            "strict-live-training.executor-preflight: thermalState=serious; device thermal state serious; cool device and retry"
+        )
+
+        let background = ResourceBudgetGate.Snapshot(scenePhase: .background, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertEqual(
+            ResourceBudgetGate.heavyModelWorkDenialReason(snapshot: background, reason: "strict-live-training.executor-preflight"),
+            "strict-live-training.executor-preflight: scenePhase=background"
+        )
+
+        let lowPower = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: true, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        XCTAssertNil(ResourceBudgetGate.heavyModelWorkDenialReason(snapshot: lowPower, reason: "strict-live-training.executor-preflight"))
+    }
+
     func testSeriousAndCriticalThermalDenyHeavyWork() {
         ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .serious, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
         XCTAssertFalse(ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.userChat.rawValue))

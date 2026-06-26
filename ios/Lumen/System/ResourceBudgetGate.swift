@@ -4,6 +4,8 @@ import UIKit
 
 @MainActor
 enum ResourceBudgetGate {
+    nonisolated static let seriousThermalRetryHint = "device thermal state serious; cool device and retry"
+
     struct Snapshot: Equatable {
         let scenePhase: ScenePhase?
         let lowPowerModeEnabled: Bool?
@@ -103,7 +105,7 @@ enum ResourceBudgetGate {
         if hasRecentMemoryWarning(snapshot) { return "\(reason): recent-memory-warning" }
         guard snapshot.scenePhase == .active else { return "\(reason): scenePhase=\(scenePhaseDescription(snapshot.scenePhase))" }
         guard let thermal = snapshot.thermalState else { return "\(reason): thermalState=nil" }
-        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return "\(reason): thermalState=\(thermal.rawValue)" }
+        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return thermalDenialReason(reason: reason, thermal: thermal) }
         guard snapshot.lowPowerModeEnabled != nil else { return "\(reason): lowPowerMode=nil" }
         return nil
     }
@@ -111,7 +113,7 @@ enum ResourceBudgetGate {
     private static func maintenanceIdleDenialReason(snapshot: Snapshot, reason: String) -> String? {
         if hasRecentMemoryWarning(snapshot) { return "\(reason): recent-memory-warning" }
         guard let thermal = snapshot.thermalState else { return "\(reason): thermalState=nil" }
-        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return "\(reason): thermalState=\(thermal.rawValue)" }
+        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return thermalDenialReason(reason: reason, thermal: thermal) }
         guard let lowPower = snapshot.lowPowerModeEnabled else { return "\(reason): lowPowerMode=nil" }
         guard !lowPower else { return "\(reason): lowPowerMode=true" }
         return nil
@@ -120,7 +122,7 @@ enum ResourceBudgetGate {
     private static func embeddingDenialReason(snapshot: Snapshot, reason: String) -> String? {
         if hasRecentMemoryWarning(snapshot) { return "\(reason): recent-memory-warning" }
         guard let thermal = snapshot.thermalState else { return "\(reason): thermalState=nil" }
-        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return "\(reason): thermalState=\(thermal.rawValue)" }
+        guard thermal != .serious, thermal != .critical, thermal != .unknown else { return thermalDenialReason(reason: reason, thermal: thermal) }
         guard let lowPower = snapshot.lowPowerModeEnabled else { return "\(reason): lowPowerMode=nil" }
         if lowPower && snapshot.scenePhase != .active {
             return "\(reason): lowPowerMode=true"
@@ -140,6 +142,12 @@ enum ResourceBudgetGate {
         @unknown default:
             return "unknown"
         }
+    }
+
+    private static func thermalDenialReason(reason: String, thermal: DeviceThermalState) -> String {
+        let base = "\(reason): thermalState=\(thermal.rawValue)"
+        guard thermal == .serious else { return base }
+        return "\(base); \(seriousThermalRetryHint)"
     }
 
     static func allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: Snapshot, reason: String) -> Bool {
