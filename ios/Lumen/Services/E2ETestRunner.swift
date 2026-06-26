@@ -1158,7 +1158,7 @@ nonisolated enum E2ETestRunner {
                         reasons.append("runtime readiness failure (\(emptyOutputReason))")
                     } else if emptyOutputReason.contains("executor preflight failed") {
                         reasons.append("runtime readiness failure (\(emptyOutputReason))")
-                    } else if emptyOutputReason == "resource-budget-denied-before-prompt-eval" {
+                    } else if emptyOutputReason.hasPrefix("resource-budget-denied-") {
                         reasons.append("budget failure (\(emptyOutputReason))")
                     } else {
                         reasons.append("agent-json emitted empty output (\(emptyOutputReason))")

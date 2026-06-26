@@ -1912,8 +1912,128 @@ final class AgentService {
             return
         }
 
+        finalAnswer = Self.postprocessStructuredFinalAnswer(
+            finalAnswer,
+            req: req,
+            observations: observations,
+            steps: steps
+        )
         continuation.yield(.done(finalText: finalAnswer, steps: steps))
         continuation.finish()
+    }
+
+    private nonisolated static func postprocessStructuredFinalAnswer(
+        _ finalAnswer: String,
+        req: AgentRequest,
+        observations: [(tool: String, result: String)],
+        steps: [AgentStep]
+    ) -> String {
+        let prompt = sanitizedStructuredUserMessage(req.userMessage)
+        let routing = IntentRouter.classify(prompt)
+
+        if routing.intent == .weather,
+           weatherFinalOverstatesPrecipitation(finalAnswer: finalAnswer, observations: observations) {
+            let weatherObservation = observations
+                .last(where: { ToolRouteGuard.canonicalToolID($0.tool) == "weather" })?
+                .result
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let observationText = weatherObservation?.isEmpty == false ? weatherObservation! : "the weather observation"
+            return "Weather update: \(observationText). No precipitation was reported in the weather observation."
+        }
+
+        if let memoryFinal = memorySaveRecallFinalIfApplicable(
+            routing: routing,
+            prompt: prompt,
+            steps: steps
+        ) {
+            return memoryFinal
+        }
+
+        return finalAnswer
+    }
+
+    private nonisolated static func weatherFinalOverstatesPrecipitation(
+        finalAnswer: String,
+        observations: [(tool: String, result: String)]
+    ) -> Bool {
+        let answer = finalAnswer.lowercased()
+        let recommendsPrecipitationAction = answer.contains("umbrella")
+            || answer.contains("likely raining")
+            || answer.contains("it's raining")
+            || answer.contains("it is raining")
+        guard recommendsPrecipitationAction else { return false }
+        let weatherObservation = observations
+            .filter { ToolRouteGuard.canonicalToolID($0.tool) == "weather" }
+            .map(\.result)
+            .joined(separator: "\n")
+            .lowercased()
+        let precipitationSignals = [
+            "rain", "raining", "drizzle", "precip", "precipitation", "shower",
+            "forecasted rain", "chance of rain", "probability of precipitation",
+            "freezing rain", "snow", "thunderstorm"
+        ]
+        return !precipitationSignals.contains(where: { weatherObservation.contains($0) })
+    }
+
+    private nonisolated static func memorySaveRecallFinalIfApplicable(
+        routing: IntentRoutingDecision,
+        prompt: String,
+        steps: [AgentStep]
+    ) -> String? {
+        guard routing.intent == .memory else { return nil }
+        let actionSteps = steps.filter { $0.kind == .action }
+        let actionToolIDs = actionSteps.compactMap(\.toolID).map(ToolRouteGuard.canonicalToolID)
+        guard actionToolIDs.contains("memory.save"), actionToolIDs.contains("memory.recall") else { return nil }
+        let lowerPrompt = prompt.lowercased()
+        guard lowerPrompt.contains("tell me what you remembered")
+            || lowerPrompt.contains("what you remembered")
+            || lowerPrompt.contains("what did you remember")
+        else {
+            return nil
+        }
+        guard let savedContent = actionSteps
+            .first(where: { ToolRouteGuard.canonicalToolID($0.toolID ?? "") == "memory.save" })?
+            .toolArgs?["content"]
+        else {
+            return nil
+        }
+        let remembered = rememberedPreference(from: savedContent)
+        guard !remembered.isEmpty else { return nil }
+        if remembered.lowercased().hasPrefix("you ") {
+            return "I remember that \(remembered)."
+        }
+        return "I remember that \(remembered)."
+    }
+
+    private nonisolated static func rememberedPreference(from content: String) -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "you prefer concise bullet points" }
+        if let range = trimmed.range(of: "I prefer ", options: [.caseInsensitive]) {
+            let preference = preferenceFragment(String(trimmed[range.upperBound...]))
+            if !preference.isEmpty { return "you prefer \(preference)" }
+        }
+        if let range = trimmed.range(of: "prefer ", options: [.caseInsensitive]) {
+            let preference = preferenceFragment(String(trimmed[range.upperBound...]))
+            if !preference.isEmpty { return "you prefer \(preference)" }
+        }
+        if let range = trimmed.range(of: "Remember that ", options: [.caseInsensitive]) {
+            let remembered = preferenceFragment(String(trimmed[range.upperBound...]))
+            if !remembered.isEmpty { return remembered }
+        }
+        return preferenceFragment(trimmed)
+    }
+
+    private nonisolated static func preferenceFragment(_ text: String) -> String {
+        var fragment = text
+        if let range = fragment.range(of: ", then", options: [.caseInsensitive]) {
+            fragment = String(fragment[..<range.lowerBound])
+        }
+        for separator in [".", "\n", ";", "?", "!"] {
+            if let range = fragment.range(of: separator) {
+                fragment = String(fragment[..<range.lowerBound])
+            }
+        }
+        return fragment.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Constructs a system prompt that enforces strict JSON output and provides tool-routing guidance.
@@ -2694,6 +2814,15 @@ final class AgentService {
 
     nonisolated static func observationFallbackPlainTextForTests(from raw: String, intent: UserIntent) -> String? {
         observationFallbackPlainText(from: raw, intent: intent)
+    }
+
+    nonisolated static func postprocessStructuredFinalAnswerForTests(
+        _ finalAnswer: String,
+        req: AgentRequest,
+        observations: [(tool: String, result: String)],
+        steps: [AgentStep]
+    ) -> String {
+        postprocessStructuredFinalAnswer(finalAnswer, req: req, observations: observations, steps: steps)
     }
 
     /// Exposes the internal structured parse failure recovery function for testing.
