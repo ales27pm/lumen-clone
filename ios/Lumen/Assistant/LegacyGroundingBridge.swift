@@ -31,9 +31,10 @@ final class LegacyGroundingBridge {
     func build(userMessage: String, conversationID: UUID?, turnID: UUID?, history: [(role: MessageRole, content: String)], modelContext: ModelContext, turn: AssistantTurnContext, cancellationToken: AgentGroundingCancellationToken? = nil) async throws -> LegacyGroundingBundle {
         try cancellationToken?.checkCancellation()
         let budget = ContextBudgetAllocator.allocate(for: turn, maxInputTokens: 800)
-        let mem = memoryEngine.buildContext(query: userMessage, budget: budget.charSections.memories, context: modelContext)
+        let contextQuery = ContextQueryRewriter.rewrite(userInput: userMessage, history: history, relevantMemories: turn.relevantMemories)
+        let mem = memoryEngine.buildContext(query: contextQuery.query, budget: budget.charSections.memories, context: modelContext)
         try cancellationToken?.checkCancellation()
-        let rag = await ragEngine.buildContext(query: userMessage, budget: budget.charSections.rag, context: modelContext)
+        let rag = await ragEngine.buildContext(query: contextQuery.query, budget: budget.charSections.rag, context: modelContext)
         try cancellationToken?.checkCancellation()
         let tctx = ToolExecutionContext(isForeground: turn.isForeground, appState: nil, modelContext: modelContext, permissionRegistry: .shared, metricsStore: metricsStore)
         let tools = await toolRegistry.availableDefinitions(context: tctx, source: turn.isForeground ? .modelProposed : .backgroundTrigger)
@@ -55,9 +56,19 @@ final class LegacyGroundingBridge {
             estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: rendered.count),
             contextProfile: budget.profile.rawValue,
             maxInputTokens: budget.maxInputTokens,
-            ragConfidence: rag.confidence
+            ragConfidence: rag.confidence,
+            memoryTierCounts: mem.tierCounts,
+            contextQueryExpanded: contextQuery.expansionApplied
         )
-        try? await metricsStore.appendMetric(.init(timestamp: Date(), runtimeName: "grounding", taskKind: "\(turn.task)", modelIDHash: nil, policySummary: "profile=\(budget.profile.rawValue),m=\(mem.selected.count),r=\(rag.selected.count),t=\(tools.count)", latencyMs: nil, success: true, errorCode: nil, thermalState: .from(processThermalState: turn.thermalState), lowPowerMode: turn.lowPowerMode, memoryWarningCount: 0))
+        try? await metricsStore.appendMetric(.init(timestamp: Date(), runtimeName: "grounding", taskKind: "\(turn.task)", modelIDHash: nil, policySummary: "profile=\(budget.profile.rawValue),m=\(mem.selected.count),r=\(rag.selected.count),t=\(tools.count),memTiers=\(Self.tierSummary(mem.tierCounts)),queryExpanded=\(contextQuery.expansionApplied),queryTerms=\(contextQuery.addedTerms.count)", latencyMs: nil, success: true, errorCode: nil, thermalState: .from(processThermalState: turn.thermalState), lowPowerMode: turn.lowPowerMode, memoryWarningCount: 0))
         return .init(grounding: grounding, budgetPlan: budget, sections: sections, renderedPromptContext: rendered, secureTools: tools, metricsSummary: "ok")
+    }
+
+    private static func tierSummary(_ counts: [String: Int]) -> String {
+        counts
+            .filter { $0.value > 0 }
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key):\($0.value)" }
+            .joined(separator: "|")
     }
 }

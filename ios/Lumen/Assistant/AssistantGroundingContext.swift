@@ -9,6 +9,8 @@ struct AssistantGroundingContext: Codable, Sendable {
     let contextProfile: String?
     let maxInputTokens: Int?
     let ragConfidence: Double?
+    let memoryTierCounts: [String: Int]?
+    let contextQueryExpanded: Bool?
 
     init(
         memoryCount: Int,
@@ -18,7 +20,9 @@ struct AssistantGroundingContext: Codable, Sendable {
         estimatedTokens: Int? = nil,
         contextProfile: String? = nil,
         maxInputTokens: Int? = nil,
-        ragConfidence: Double? = nil
+        ragConfidence: Double? = nil,
+        memoryTierCounts: [String: Int]? = nil,
+        contextQueryExpanded: Bool? = nil
     ) {
         self.memoryCount = memoryCount
         self.ragCount = ragCount
@@ -28,6 +32,8 @@ struct AssistantGroundingContext: Codable, Sendable {
         self.contextProfile = contextProfile
         self.maxInputTokens = maxInputTokens
         self.ragConfidence = ragConfidence
+        self.memoryTierCounts = memoryTierCounts
+        self.contextQueryExpanded = contextQueryExpanded
     }
 
     private static let zeroCount = 0

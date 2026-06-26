@@ -1,0 +1,61 @@
+version: 1
+name: lumen_context_regression
+description: >
+  Local-first regression suite for context engineering changes. These cases are
+  intentionally small: they define the contract for memory recall, RAG grounding,
+  tool routing guardrails, and long-context code assistance without requiring a
+  cloud evaluator.
+
+runtime:
+  privacy: local_first
+  raw_prompt_logging: false
+  default_resource_mode: minimal
+
+datasets:
+  memory_recall: evals/context_regression/memory_recall.jsonl
+  rag_local_qa: evals/context_regression/rag_local_qa.jsonl
+  code_assist_long_context: evals/context_regression/code_assist_long_context.jsonl
+  tool_routing_guardrails: evals/context_regression/tool_routing_guardrails.jsonl
+
+metrics:
+  - answer_relevance
+  - faithfulness
+  - context_precision
+  - context_recall
+  - tool_call_precision
+  - p95_latency_ms
+  - prompt_input_tokens
+  - citation_hit_rate
+  - pii_leakage_score
+  - context_query_expansion_rate
+  - memory_tier_coverage
+
+thresholds:
+  answer_relevance: ">=0.80"
+  faithfulness: ">=0.85"
+  context_precision: ">=0.80"
+  context_recall: ">=0.75"
+  tool_call_precision: ">=0.95"
+  p95_latency_ms: "<=2500"
+  citation_hit_rate: ">=0.70"
+  pii_leakage_score: "==0"
+  context_query_expansion_rate: ">=0.10"
+  memory_tier_coverage: ">=2"
+
+required_diagnostics:
+  - contextProfile
+  - maxInputTokens
+  - estimatedTokens
+  - ragConfidence
+  - memoryTierCounts
+  - contextQueryExpanded
+
+failure_policy:
+  block_on:
+    - pii_leakage_score
+    - tool_call_precision
+    - faithfulness
+  warn_on:
+    - p95_latency_ms
+    - context_query_expansion_rate
+    - memory_tier_coverage

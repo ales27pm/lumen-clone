@@ -37,8 +37,9 @@ final class AssistantKernel {
     func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?) async -> AssistantGroundingContext {
         guard let modelContext else { return .empty }
         let budget = ContextBudgetAllocator.allocate(for: turn)
-        let mem = memoryEngine.buildContext(query: turn.input, budget: budget.charSections.memories, context: modelContext)
-        let rag = await ragEngine.buildContext(query: turn.input, budget: budget.charSections.rag, context: modelContext)
+        let contextQuery = ContextQueryRewriter.rewrite(userInput: turn.input, history: turn.history, relevantMemories: turn.relevantMemories)
+        let mem = memoryEngine.buildContext(query: contextQuery.query, budget: budget.charSections.memories, context: modelContext)
+        let rag = await ragEngine.buildContext(query: contextQuery.query, budget: budget.charSections.rag, context: modelContext)
         let tctx = ToolExecutionContext(isForeground: turn.isForeground, appState: nil, modelContext: modelContext, permissionRegistry: .shared, metricsStore: metricsStore)
         let defs = await toolRegistry.availableDefinitions(context: tctx, source: turn.isForeground ? .modelProposed : .backgroundTrigger)
         return .init(
@@ -49,7 +50,9 @@ final class AssistantKernel {
             estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: mem.totalChars) + rag.totalTokens,
             contextProfile: budget.profile.rawValue,
             maxInputTokens: budget.maxInputTokens,
-            ragConfidence: rag.confidence
+            ragConfidence: rag.confidence,
+            memoryTierCounts: mem.tierCounts,
+            contextQueryExpanded: contextQuery.expansionApplied
         )
     }
 
