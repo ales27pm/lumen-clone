@@ -53,8 +53,10 @@ final class VoiceService: NSObject {
 
     @discardableResult
     func startListening(permissionsAlreadyGranted: Bool = false, onFinal: @escaping (String) -> Void) async -> Bool {
-        guard permissionsAlreadyGranted || await requestPermissions() else { return false }
-        stopListening()
+        if !permissionsAlreadyGranted {
+            guard await requestPermissions() else { return false }
+        }
+        resetListeningState()
         stopSpeaking()
         lastError = nil
 
@@ -77,6 +79,7 @@ final class VoiceService: NSObject {
 
         guard let recognizer, recognizer.isAvailable else {
             lastError = "Speech recognizer unavailable."
+            stopListening()
             return false
         }
 
@@ -91,14 +94,15 @@ final class VoiceService: NSObject {
                     self.liveTranscript = result.bestTranscription.formattedString
                     if result.isFinal {
                         let text = self.liveTranscript
-                        self.stopListening()
+                        let onFinal = self.onFinal
+                        self.resetListeningState()
                         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            self.onFinal?(text)
+                            onFinal?(text)
                         }
                     }
                 }
                 if error != nil {
-                    self.stopListening()
+                    self.resetListeningState()
                 }
             }
         }
@@ -117,16 +121,21 @@ final class VoiceService: NSObject {
             isListening = true
         } catch {
             lastError = "Audio engine failed: \(error.localizedDescription)"
+            stopListening()
             return false
         }
         return true
     }
 
     func stopListening() {
+        resetListeningState()
+    }
+
+    private func resetListeningState() {
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+        audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         if let cancellationID {
@@ -135,6 +144,7 @@ final class VoiceService: NSObject {
         }
         recognitionRequest = nil
         recognitionTask = nil
+        onFinal = nil
         isListening = false
         inputLevel = 0
     }
@@ -143,8 +153,8 @@ final class VoiceService: NSObject {
         recognitionRequest?.endAudio()
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+        audioEngine.inputNode.removeTap(onBus: 0)
     }
 
     private func updateLevel(from buffer: AVAudioPCMBuffer) {

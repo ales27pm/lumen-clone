@@ -48,7 +48,7 @@ final class AgentKernelBoundaryGuardTests: XCTestCase {
 
         XCTAssertTrue(bridge.contains("Removal condition: delete this bridge"))
         XCTAssertEqual(bridge.occurrenceCount(of: "for await event in AgentService.shared.run"), 1)
-        XCTAssertEqual(bridge.occurrenceCount(of: "SlotAgentService.shared.run(request, options: options)"), 1)
+        XCTAssertEqual(bridge.occurrenceCount(of: "SlotAgentService.shared.run(request, options: options)"), 2)
         XCTAssertTrue(guardPolicy.contains("\"ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift\""))
         XCTAssertTrue(guardPolicy.contains("\"AgentService.shared.run\""))
         XCTAssertTrue(guardPolicy.contains("\"SlotAgentService.shared.run\""))
