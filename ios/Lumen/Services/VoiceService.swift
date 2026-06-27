@@ -51,10 +51,12 @@ final class VoiceService: NSObject {
     /// - Parameters:
     ///   - onFinal: Called with the final transcript when speech ends.
 
-    func startListening(onFinal: @escaping (String) -> Void) async {
-        guard await requestPermissions() else { return }
+    @discardableResult
+    func startListening(permissionsAlreadyGranted: Bool = false, onFinal: @escaping (String) -> Void) async -> Bool {
+        guard permissionsAlreadyGranted || await requestPermissions() else { return false }
         stopListening()
         stopSpeaking()
+        lastError = nil
 
         do {
             let session = AVAudioSession.sharedInstance()
@@ -62,7 +64,7 @@ final class VoiceService: NSObject {
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             lastError = "Audio session error: \(error.localizedDescription)"
-            return
+            return false
         }
 
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -75,7 +77,7 @@ final class VoiceService: NSObject {
 
         guard let recognizer, recognizer.isAvailable else {
             lastError = "Speech recognizer unavailable."
-            return
+            return false
         }
 
         cancellationID = AppCancellationBus.shared.registerCancellation({ [weak self] in
@@ -115,7 +117,9 @@ final class VoiceService: NSObject {
             isListening = true
         } catch {
             lastError = "Audio engine failed: \(error.localizedDescription)"
+            return false
         }
+        return true
     }
 
     func stopListening() {
