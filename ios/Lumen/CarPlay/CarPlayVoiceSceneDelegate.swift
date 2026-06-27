@@ -1,5 +1,6 @@
 #if canImport(CarPlay)
 import CarPlay
+import SwiftData
 import UIKit
 
 @MainActor
@@ -14,6 +15,10 @@ final class CarPlayVoiceSceneDelegate: UIResponder, CPTemplateApplicationSceneDe
 
     private var interfaceController: CPInterfaceController?
     private var voiceTemplate: CPVoiceControlTemplate?
+    private var sessionState: CarPlayVoiceSessionState = .idle
+    private var currentCarPlayTask: Task<Void, Never>?
+    private var listeningTimeoutTask: Task<Void, Never>?
+    private var lastFailureReason: String?
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
@@ -22,15 +27,12 @@ final class CarPlayVoiceSceneDelegate: UIResponder, CPTemplateApplicationSceneDe
         self.interfaceController = interfaceController
         interfaceController.prefersDarkUserInterfaceStyle = true
 
-        let template = makeVoiceTemplate(scale: interfaceController.carTraitCollection.displayScale)
-        voiceTemplate = template
-
+        let template = makeRootTemplate()
         interfaceController.setRootTemplate(template, animated: false) { [weak self] success, error in
             guard success else {
                 self?.presentConnectionError(error)
                 return
             }
-            template.activateVoiceControlState(withIdentifier: VoiceStateID.ready)
         }
     }
 
@@ -39,6 +41,7 @@ final class CarPlayVoiceSceneDelegate: UIResponder, CPTemplateApplicationSceneDe
         didDisconnectInterfaceController interfaceController: CPInterfaceController
     ) {
         if self.interfaceController === interfaceController {
+            cancelCurrentSession(resetTemplate: false, popToRoot: false)
             self.interfaceController = nil
             voiceTemplate = nil
         }
@@ -46,6 +49,140 @@ final class CarPlayVoiceSceneDelegate: UIResponder, CPTemplateApplicationSceneDe
 }
 
 private extension CarPlayVoiceSceneDelegate {
+
+    func makeRootTemplate() -> CPListTemplate {
+        let askItem = CPListItem(text: "Ask Lumen", detailText: "Start voice assistant")
+        askItem.handler = { [weak self] _, completion in
+            Task { @MainActor in
+                await self?.startAskLumenSession()
+                completion()
+            }
+        }
+
+        let stopItem = CPListItem(text: "Stop / Cancel", detailText: "Stop listening or speaking")
+        stopItem.handler = { [weak self] _, completion in
+            Task { @MainActor in
+                self?.cancelCurrentSession(resetTemplate: true, popToRoot: true)
+                completion()
+            }
+        }
+
+        let phoneItem = CPListItem(text: "Open on iPhone", detailText: "Use Lumen on your phone")
+        phoneItem.handler = { [weak self] _, completion in
+            Task { @MainActor in
+                self?.presentAlert(title: "Open Lumen on iPhone", message: "Use your iPhone for full chat, settings, and permissions.")
+                completion()
+            }
+        }
+
+        let diagnosticsItem = CPListItem(text: "Diagnostics", detailText: "Check voice readiness")
+        diagnosticsItem.handler = { [weak self] _, completion in
+            Task { @MainActor in
+                self?.presentDiagnostics()
+                completion()
+            }
+        }
+
+        return CPListTemplate(title: "Lumen", sections: [
+            CPListSection(items: [askItem, stopItem, phoneItem, diagnosticsItem])
+        ])
+    }
+
+    func startAskLumenSession() async {
+        guard interfaceController != nil else { return }
+        guard CarPlayVoiceSessionPolicy.acceptsAsk(in: sessionState) else {
+            presentAlert(title: "Lumen busy", message: "Finish or cancel the current CarPlay voice session before starting another.")
+            return
+        }
+        guard !isThermalBlocked() else {
+            presentUnavailable(CarPlayVoiceSessionPolicy.thermalRetryMessage)
+            return
+        }
+
+        sessionState = .requestingPermission
+        guard await VoiceService.shared.requestPermissions() else {
+            let reason = VoiceService.shared.lastError ?? "Open Lumen on iPhone to allow microphone and speech recognition."
+            presentUnavailable(reason)
+            return
+        }
+        guard let interfaceController else { return }
+
+        let voice = makeVoiceTemplate(scale: interfaceController.carTraitCollection.displayScale)
+        voiceTemplate = voice
+        interfaceController.pushTemplate(voice, animated: true) { [weak self] success, error in
+            Task { @MainActor in
+                guard let self, self.interfaceController != nil else { return }
+                guard success else {
+                    self.presentConnectionError(error)
+                    return
+                }
+                self.sessionState = .listening
+                self.voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.listening)
+                let started = await VoiceService.shared.startListening(permissionsAlreadyGranted: true) { [weak self] transcript in
+                    Task { @MainActor in
+                        guard let self, self.interfaceController != nil else { return }
+                        self.listeningTimeoutTask?.cancel()
+                        self.listeningTimeoutTask = nil
+                        self.currentCarPlayTask?.cancel()
+                        self.currentCarPlayTask = Task { @MainActor [weak self] in
+                            await self?.runCarPlayPrompt(transcript)
+                        }
+                    }
+                }
+                guard started else {
+                    self.presentUnavailable(VoiceService.shared.lastError ?? "Voice listening could not start. Check your iPhone.")
+                    return
+                }
+                self.scheduleListeningTimeout()
+            }
+        }
+    }
+
+    func runCarPlayPrompt(_ prompt: String) async {
+        guard interfaceController != nil else { return }
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !Task.isCancelled else { return }
+        guard !trimmed.isEmpty else {
+            handleEmptyTranscript()
+            return
+        }
+        guard !isThermalBlocked() else {
+            presentUnavailable(CarPlayVoiceSessionPolicy.thermalRetryMessage)
+            return
+        }
+        guard let container = SharedContainer.shared else {
+            presentUnavailable("Lumen context is unavailable. Check your iPhone.")
+            return
+        }
+
+        sessionState = .thinking
+        voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.thinking)
+        let ctx = ModelContext(container)
+        let settings = SettingsSnapshot.loadFromDisk()
+        let result = await HeadlessAgentKernelRunner.run(
+            prompt: trimmed,
+            settings: settings,
+            context: ctx,
+            maxSteps: min(2, settings.maxAgentSteps),
+            source: .appIntent
+        )
+        guard !Task.isCancelled, interfaceController != nil else { return }
+        let answer = CarPlayVoiceSessionPolicy.spokenAnswer(from: result.text)
+        guard !answer.isEmpty else {
+            speakUnavailable("Lumen could not produce a response. Try again shortly.")
+            return
+        }
+
+        sessionState = .speaking
+        voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.speaking)
+        VoiceService.shared.speak(answer, voiceID: settings.voiceID, rate: settings.speakingRate) { [weak self] in
+            guard let self, self.interfaceController != nil else { return }
+            self.sessionState = .idle
+            self.currentCarPlayTask = nil
+            self.voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.ready)
+        }
+    }
+
     func makeVoiceTemplate(scale: CGFloat) -> CPVoiceControlTemplate {
         let states = [
             CPVoiceControlState(
@@ -102,17 +239,155 @@ private extension CarPlayVoiceSceneDelegate {
         return CPVoiceControlTemplate(voiceControlStates: states)
     }
 
-    func presentConnectionError(_ error: Error?) {
-        let action = CPAlertAction(title: "OK", style: .default) { [weak self] _ in
-            self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+    func scheduleListeningTimeout() {
+        listeningTimeoutTask?.cancel()
+        listeningTimeoutTask = Task { @MainActor [weak self] in
+            let nanoseconds = UInt64(CarPlayVoiceSessionPolicy.listeningTimeoutSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard let self, !Task.isCancelled, self.sessionState == .listening else { return }
+            self.handleEmptyTranscript()
         }
-        let alert = CPAlertTemplate(
-            titleVariants: [error.map { "Lumen CarPlay unavailable: \(RuntimeMetricErrorSanitizer.code(for: $0))" } ?? "Lumen CarPlay unavailable"],
-            actions: [action]
-        )
-        interfaceController?.presentTemplate(alert, animated: true, completion: nil)
-        voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.unavailable)
     }
+
+    func handleEmptyTranscript() {
+        listeningTimeoutTask?.cancel()
+        listeningTimeoutTask = nil
+        VoiceService.shared.stopListening()
+        sessionState = .speaking
+        voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.speaking)
+        VoiceService.shared.speak(CarPlayVoiceSessionPolicy.emptyTranscriptMessage, voiceID: nil, rate: 0.46) { [weak self] in
+            guard let self, self.interfaceController != nil else { return }
+            self.sessionState = .idle
+            self.voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.ready)
+        }
+    }
+
+    func cancelCurrentSession(resetTemplate: Bool, popToRoot: Bool) {
+        cancelHeadlessModelWorkIfNeeded()
+        currentCarPlayTask?.cancel()
+        currentCarPlayTask = nil
+        listeningTimeoutTask?.cancel()
+        listeningTimeoutTask = nil
+        VoiceService.shared.stopListening()
+        VoiceService.shared.stopSpeaking()
+        sessionState = .idle
+        if resetTemplate {
+            voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.ready)
+        }
+        if popToRoot {
+            popToRootTemplateSafely(animated: true)
+        }
+    }
+
+    func cancelHeadlessModelWorkIfNeeded() {
+        guard currentCarPlayTask != nil || sessionState == .thinking else { return }
+        let reason = "carplay-voice-session-cancelled"
+        AppCancellationBus.shared.markCancellationRequested(reason)
+        AppCancellationBus.shared.cancel(.chatGeneration)
+        Task {
+            await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
+        }
+    }
+
+    func isThermalBlocked() -> Bool {
+        CarPlayVoiceSessionPolicy.blocksModelRun(thermalState: ProcessInfo.processInfo.thermalState)
+    }
+
+    func presentUnavailable(_ message: String) {
+        lastFailureReason = message
+        sessionState = .unavailable
+        voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.unavailable)
+        presentAlert(title: "Lumen unavailable", message: message)
+        VoiceService.shared.speak(message, voiceID: nil, rate: 0.46) { [weak self] in
+            guard let self, self.interfaceController != nil else { return }
+            self.sessionState = .idle
+            self.voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.ready)
+        }
+    }
+
+    func speakUnavailable(_ message: String) {
+        lastFailureReason = message
+        sessionState = .unavailable
+        voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.unavailable)
+        VoiceService.shared.speak(message, voiceID: nil, rate: 0.46) { [weak self] in
+            guard let self, self.interfaceController != nil else { return }
+            self.sessionState = .idle
+            self.voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.ready)
+        }
+    }
+
+    func presentDiagnostics() {
+        let settings = SettingsSnapshot.loadFromDisk()
+        let rows: [(String, String)] = [
+            ("Session", sessionState.rawValue),
+            ("Voice", VoiceService.shared.lastError ?? (VoiceService.shared.isListening ? "Listening" : VoiceService.shared.isSpeaking ? "Speaking" : "Ready")),
+            ("Thermal", String(describing: ProcessInfo.processInfo.thermalState)),
+            ("Context", SharedContainer.shared == nil ? "Unavailable" : "Available"),
+            ("Model", settings.activeChatModelID ?? "Default"),
+            ("Steps", "max \(min(2, settings.maxAgentSteps))"),
+            ("Last failure", lastFailureReason ?? "None")
+        ]
+        let items = rows.map { CPListItem(text: $0.0, detailText: $0.1) }
+        let diagnostics = CPListTemplate(title: "Lumen Diagnostics", sections: [CPListSection(items: items)])
+        pushTemplateSafely(diagnostics, animated: true, operation: "diagnostics")
+    }
+
+    func presentAlert(title: String, message: String) {
+        let action = CPAlertAction(title: "OK", style: .default) { [weak self] _ in
+            self?.dismissTemplateSafely(animated: true)
+        }
+        let compactTitle = CarPlayVoiceSessionPolicy.compactAlertTitle(title: title, message: message)
+        let alert = CPAlertTemplate(titleVariants: [compactTitle], actions: [action])
+        presentTemplateSafely(alert, animated: true, operation: "alert")
+    }
+
+    func presentConnectionError(_ error: Error?) {
+        let message = error.map { "CarPlay connection failed: \(RuntimeMetricErrorSanitizer.code(for: $0))" } ?? "CarPlay connection failed."
+        lastFailureReason = message
+        sessionState = .unavailable
+        presentAlert(title: "Lumen CarPlay unavailable", message: message)
+        voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.unavailable)
+        sessionState = .idle
+    }
+
+    func pushTemplateSafely(_ template: CPTemplate, animated: Bool, operation: String) {
+        interfaceController?.pushTemplate(template, animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: operation, success: success, error: error)
+            }
+        }
+    }
+
+    func presentTemplateSafely(_ template: CPTemplate, animated: Bool, operation: String) {
+        interfaceController?.presentTemplate(template, animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: operation, success: success, error: error)
+            }
+        }
+    }
+
+    func dismissTemplateSafely(animated: Bool) {
+        interfaceController?.dismissTemplate(animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: "dismiss alert", success: success, error: error)
+            }
+        }
+    }
+
+    func popToRootTemplateSafely(animated: Bool) {
+        interfaceController?.popToRootTemplate(animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: "pop to root", success: success, error: error)
+            }
+        }
+    }
+
+    func recordTemplateOperationResult(operation: String, success: Bool, error: Error?) {
+        guard !success else { return }
+        let reason = error.map { RuntimeMetricErrorSanitizer.code(for: $0) } ?? "unknown"
+        lastFailureReason = "CarPlay \(operation) failed: \(reason)"
+    }
+
 }
 
 private enum CarPlayVoiceArtwork {
