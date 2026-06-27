@@ -57,13 +57,22 @@ enum HeadlessAgentKernelRunner {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return ("", []) }
 
+        let cancellationToken = HeadlessAgentCancellationToken()
+        let cancellationID = registerCancellation(token: cancellationToken)
+        defer {
+            AppCancellationBus.shared.unregister(cancellationID, category: .chatGeneration)
+        }
+
         let backgroundTask = BackgroundRuntimeContinuation.begin(name: "Lumen Headless Agent")
         defer { backgroundTask?.end() }
 
+        guard !cancellationToken.isCancelled, !Task.isCancelled else { return ("", []) }
         let cascade = await MemoryCascade.recall(query: trimmed, history: [], context: context)
+        guard !cancellationToken.isCancelled, !Task.isCancelled else { return ("", []) }
         let resolution = ReferenceResolver.resolve(prompt: trimmed, history: [], relevantMemories: cascade.promptFragments)
         let executionPrompt = resolution.rewrittenPrompt
         let routing = await IntentClassifierService.shared.route(executionPrompt)
+        guard !cancellationToken.isCancelled, !Task.isCancelled else { return ("", []) }
         let heavyModelAllowed = source != .trigger || ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue)
         let backgroundToolAssessment = source == .trigger
             ? await BackgroundToolBridgePolicy.assess(
@@ -72,8 +81,10 @@ enum HeadlessAgentKernelRunner {
                 modelContext: context
             )
             : nil
+        guard !cancellationToken.isCancelled, !Task.isCancelled else { return ("", []) }
         let canRunBackgroundToolOnly = backgroundToolAssessment?.canRunWithoutLoadedTextRuntime ?? false
         let chatRuntimeLoaded = source == .trigger ? await AppLlamaService.shared.isChatLoaded : true
+        guard !cancellationToken.isCancelled, !Task.isCancelled else { return ("", []) }
         if source == .trigger, !canRunBackgroundToolOnly {
             let toolSkipMessage = backgroundToolAssessment?.skipMessage
             if !heavyModelAllowed {
@@ -111,6 +122,10 @@ enum HeadlessAgentKernelRunner {
         var final = ""
         var steps: [AgentStep] = []
         for await event in AssistantKernel.shared.run(request, modelContext: context) {
+            if cancellationToken.isCancelled || Task.isCancelled {
+                await AppLlamaService.shared.cancelActiveGeneration(reason: cancellationToken.reason ?? "headless-agent-cancelled")
+                break
+            }
             switch event {
             case .step(let step):
                 if let idx = steps.firstIndex(where: { $0.id == step.id }) { steps[idx] = step }
@@ -130,7 +145,20 @@ enum HeadlessAgentKernelRunner {
                 break
             }
         }
+        guard !cancellationToken.isCancelled, !Task.isCancelled else {
+            return ("", steps)
+        }
         return (final.trimmingCharacters(in: .whitespacesAndNewlines), steps)
+    }
+
+    private static func registerCancellation(token: HeadlessAgentCancellationToken) -> UUID {
+        AppCancellationBus.shared.registerCancellation({
+            let reason = AppCancellationBus.shared.lastCancellationReason ?? "headless-agent-cancelled"
+            token.cancel(reason: reason)
+            Task.detached(priority: .userInitiated) {
+                await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
+            }
+        }, category: .chatGeneration)
     }
 
     private static func composedSystemPrompt(basePrompt: String, fleetSnapshot: LumenModelFleetSnapshot, mimicry: MimicryProfile) -> String {
@@ -199,5 +227,30 @@ enum HeadlessAgentKernelRunner {
             return "Background trigger skipped: \(fallback)"
         }
         return "\(toolReason) \(fallback)"
+    }
+}
+
+private final class HeadlessAgentCancellationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelledReason: String?
+
+    func cancel(reason: String) {
+        lock.lock()
+        if cancelledReason == nil {
+            cancelledReason = reason
+        }
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelledReason != nil
+    }
+
+    var reason: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelledReason
     }
 }

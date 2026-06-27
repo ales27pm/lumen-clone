@@ -263,6 +263,7 @@ private extension CarPlayVoiceSceneDelegate {
     }
 
     func cancelCurrentSession(resetTemplate: Bool, popToRoot: Bool) {
+        cancelHeadlessModelWorkIfNeeded()
         currentCarPlayTask?.cancel()
         currentCarPlayTask = nil
         listeningTimeoutTask?.cancel()
@@ -275,6 +276,16 @@ private extension CarPlayVoiceSceneDelegate {
         }
         if popToRoot {
             interfaceController?.popToRootTemplate(animated: true, completion: nil)
+        }
+    }
+
+    func cancelHeadlessModelWorkIfNeeded() {
+        guard currentCarPlayTask != nil || sessionState == .thinking else { return }
+        let reason = "carplay-voice-session-cancelled"
+        AppCancellationBus.shared.markCancellationRequested(reason)
+        AppCancellationBus.shared.cancel(.chatGeneration)
+        Task {
+            await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
         }
     }
 
