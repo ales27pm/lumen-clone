@@ -275,7 +275,7 @@ private extension CarPlayVoiceSceneDelegate {
             voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.ready)
         }
         if popToRoot {
-            interfaceController?.popToRootTemplate(animated: true, completion: nil)
+            popToRootTemplateSafely(animated: true)
         }
     }
 
@@ -329,16 +329,16 @@ private extension CarPlayVoiceSceneDelegate {
         ]
         let items = rows.map { CPListItem(text: $0.0, detailText: $0.1) }
         let diagnostics = CPListTemplate(title: "Lumen Diagnostics", sections: [CPListSection(items: items)])
-        interfaceController?.pushTemplate(diagnostics, animated: true, completion: nil)
+        pushTemplateSafely(diagnostics, animated: true, operation: "diagnostics")
     }
 
     func presentAlert(title: String, message: String) {
         let action = CPAlertAction(title: "OK", style: .default) { [weak self] _ in
-            self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+            self?.dismissTemplateSafely(animated: true)
         }
         let compactTitle = CarPlayVoiceSessionPolicy.compactAlertTitle(title: title, message: message)
         let alert = CPAlertTemplate(titleVariants: [compactTitle], actions: [action])
-        interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+        presentTemplateSafely(alert, animated: true, operation: "alert")
     }
 
     func presentConnectionError(_ error: Error?) {
@@ -347,6 +347,45 @@ private extension CarPlayVoiceSceneDelegate {
         sessionState = .unavailable
         presentAlert(title: "Lumen CarPlay unavailable", message: message)
         voiceTemplate?.activateVoiceControlState(withIdentifier: VoiceStateID.unavailable)
+        sessionState = .idle
+    }
+
+    func pushTemplateSafely(_ template: CPTemplate, animated: Bool, operation: String) {
+        interfaceController?.pushTemplate(template, animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: operation, success: success, error: error)
+            }
+        }
+    }
+
+    func presentTemplateSafely(_ template: CPTemplate, animated: Bool, operation: String) {
+        interfaceController?.presentTemplate(template, animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: operation, success: success, error: error)
+            }
+        }
+    }
+
+    func dismissTemplateSafely(animated: Bool) {
+        interfaceController?.dismissTemplate(animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: "dismiss alert", success: success, error: error)
+            }
+        }
+    }
+
+    func popToRootTemplateSafely(animated: Bool) {
+        interfaceController?.popToRootTemplate(animated: animated) { [weak self] success, error in
+            Task { @MainActor in
+                self?.recordTemplateOperationResult(operation: "pop to root", success: success, error: error)
+            }
+        }
+    }
+
+    func recordTemplateOperationResult(operation: String, success: Bool, error: Error?) {
+        guard !success else { return }
+        let reason = error.map { RuntimeMetricErrorSanitizer.code(for: $0) } ?? "unknown"
+        lastFailureReason = "CarPlay \(operation) failed: \(reason)"
     }
 
 }
