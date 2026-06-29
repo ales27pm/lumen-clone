@@ -13,13 +13,13 @@
     {
       "category": "testflight_runtime_pending",
       "evidence": {
-        "expectedExport": "lumen-agent-grounding-audit-*.json or lumen-live-e2e-report-*.json",
+        "expectedExport": "lumen-in-app-dataset-*.json",
         "runbook": "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
         "scenarioQueue": "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl",
-        "source": "Agent Grounding > Export Runtime Audit Package or End-to-end tests > Export Live E2E Report JSON"
+        "source": "Agent Grounding > Export In-App Dataset Package"
       },
       "id": "754c6a9e4c6dd055b22d57d3",
-      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding and E2E in the app, export the Runtime Audit Package and/or Live E2E Report JSON, then rerun improve-loop with --runtime-audit <json>.",
+      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the in-app dataset package JSON, then rerun improve-loop with --runtime-audit <json>.",
       "severity": "warning",
       "title": "TestFlight in-app audit export has not been ingested yet"
     }

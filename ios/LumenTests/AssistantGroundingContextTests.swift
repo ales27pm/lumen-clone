@@ -13,7 +13,12 @@ final class AssistantGroundingContextTests: XCTestCase {
             maxInputTokens: 2_048,
             ragConfidence: 0.82,
             memoryTierCounts: ["semantic": 1, "working": 2],
-            contextQueryExpanded: true
+            contextQueryExpanded: true,
+            selfModelIncluded: true,
+            selfModelSchemaVersion: "0.1.0",
+            selfModelEstimatedChars: 512,
+            selfModelSourceIDs: ["selfModelSnapshot/0.1.0"],
+            selfModelMode: "foreground"
         )
         let d = try JSONEncoder().encode(g)
         let decoded = try JSONDecoder().decode(AssistantGroundingContext.self, from: d)
@@ -25,5 +30,10 @@ final class AssistantGroundingContextTests: XCTestCase {
         XCTAssertEqual(decoded.memoryTierCounts?["semantic"], 1)
         XCTAssertEqual(decoded.memoryTierCounts?["working"], 2)
         XCTAssertEqual(decoded.contextQueryExpanded, true)
+        XCTAssertEqual(decoded.selfModelIncluded, true)
+        XCTAssertEqual(decoded.selfModelSchemaVersion, "0.1.0")
+        XCTAssertEqual(decoded.selfModelEstimatedChars, 512)
+        XCTAssertEqual(decoded.selfModelSourceIDs, ["selfModelSnapshot/0.1.0"])
+        XCTAssertEqual(decoded.selfModelMode, "foreground")
     }
 }

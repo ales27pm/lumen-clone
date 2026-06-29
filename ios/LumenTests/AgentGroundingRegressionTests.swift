@@ -538,6 +538,76 @@ struct AgentGroundingRegressionTests {
         #expect(package.exportQualityFailures?.isEmpty == true)
     }
 
+    @Test func agentGroundingPackageExportsSelfModelDecisionSummary() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let prompt = """
+        User request
+
+        __LUMEN_GROUNDING_V1__
+        [SELF MODEL]
+        schemaVersion=0.1.0
+        mode=foreground
+        activeSlot=executor
+        sourceLayer=agentGroundingRuntimeAudit
+        policy=mustNotInventToolIDs,mustNotBypassApproval,mustCiteRuntimeSourceWhenClaimingRuntimeState
+        """
+        let selfModel = try #require(AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
+            prompt,
+            selectedToolID: "calendar.create",
+            requiresApproval: true,
+            approvalMode: "userApproval"
+        ))
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            intent: "calendar",
+            promptPrefix: "Create a calendar event",
+            rawOutputPrefix: #"{"action":{"tool":"calendar.create","args":{}}}"#,
+            selectedToolID: "calendar.create",
+            toolArguments: [:],
+            allowedToolIDs: ["calendar.create"],
+            requiresApproval: true,
+            approvalMode: "userApproval",
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            outputTokenCount: 12,
+            runtimePath: "agent-model",
+            streamStarted: true,
+            selectedRuntime: "llama.cpp",
+            modelLoaded: true,
+            firstChunkReceived: true,
+            textChunkCount: 1,
+            finalChunkReceived: true,
+            streamTerminationReason: "stop",
+            selfModel: selfModel
+        ))
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 10
+        )
+
+        let exported = try #require(package.recentTraces.first?.selfModel)
+        #expect(exported.included)
+        #expect(exported.schemaVersion == "0.1.0")
+        #expect(exported.mode == "foreground")
+        #expect(exported.activeSlot == "executor")
+        #expect(exported.sourceIDs.contains("selfModelSnapshot/0.1.0"))
+        #expect(exported.sourceIDs.contains("slot/executor"))
+        #expect(exported.runtimeEvidenceSourceLayer == "agentGroundingRuntimeAudit")
+        #expect(exported.selectedToolID == "calendar.create")
+        #expect(exported.requiresApproval == true)
+        #expect(exported.approvalMode == "userApproval")
+    }
+
     @Test func agentGroundingPackageFlagsFinalValidatorReplacementTrace() throws {
         AgentBehaviorTraceRecorder.clear()
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(

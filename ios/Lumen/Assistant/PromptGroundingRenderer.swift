@@ -1,7 +1,7 @@
 import Foundation
 
 enum PromptGroundingRenderer {
-    static func render(memories: MemoryContextResult, rag: RAGContextResult, tools: [SecureToolDefinition], lowPower: Bool, thermal: DeviceThermalState) -> [PromptGroundingSection] {
+    static func render(memories: MemoryContextResult, rag: RAGContextResult, tools: [SecureToolDefinition], lowPower: Bool, thermal: DeviceThermalState, selfModel: PromptGroundingSection? = nil) -> [PromptGroundingSection] {
         let renderedMemories = Array(memories.selected.prefix(8))
         let memLines = renderedMemories.map { "- [\($0.id.uuidString.prefix(8))] \(String($0.content.prefix(120)))" }
         let renderedRAG = Array(rag.selected.prefix(8))
@@ -15,12 +15,15 @@ enum PromptGroundingRenderer {
         let memoryContent = memLines.joined(separator: "\n")
         let ragContent = ragLines.joined(separator: "\n")
         let toolContent = toolLines.joined(separator: "\n")
-        return [
-            .init(title: "Relevant memories", content: memoryContent, estimatedChars: memoryContent.count, sourceIDs: renderedMemories.map { $0.id.uuidString }, privacyLevel: .moderate),
-            .init(title: "Retrieved sources", content: ragContent, estimatedChars: ragContent.count, sourceIDs: renderedRAG.map { $0.chunkID.uuidString }, privacyLevel: .moderate),
-            .init(title: "Available tools", content: toolContent, estimatedChars: toolContent.count, sourceIDs: canonicalToolIDs, privacyLevel: .low),
-            .init(title: "Runtime policy", content: runtimePolicy, estimatedChars: runtimePolicy.count, sourceIDs: [], privacyLevel: .low)
-        ].filter { !$0.content.isEmpty }
+        let memorySection = PromptGroundingSection(title: "Relevant memories", content: memoryContent, estimatedChars: memoryContent.count, sourceIDs: renderedMemories.map { $0.id.uuidString }, privacyLevel: .moderate)
+        let ragSection = PromptGroundingSection(title: "Retrieved sources", content: ragContent, estimatedChars: ragContent.count, sourceIDs: renderedRAG.map { $0.chunkID.uuidString }, privacyLevel: .moderate)
+        let toolSection = PromptGroundingSection(title: "Available tools", content: toolContent, estimatedChars: toolContent.count, sourceIDs: canonicalToolIDs, privacyLevel: .low)
+        let runtimeSection = PromptGroundingSection(title: "Runtime policy", content: runtimePolicy, estimatedChars: runtimePolicy.count, sourceIDs: [], privacyLevel: .low)
+        var sections = [memorySection, ragSection, toolSection, runtimeSection].filter { !$0.content.isEmpty }
+        if let selfModel, !selfModel.content.isEmpty {
+            sections.append(selfModel)
+        }
+        return sections
     }
 
     static func renderForPrompt(_ sections: [PromptGroundingSection], maxChars: Int) -> String {

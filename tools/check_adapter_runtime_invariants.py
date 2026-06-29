@@ -212,8 +212,8 @@ def check_slot_coordinator() -> None:
     require("unloadAllChat" not in adapter_section, "Qwen3 adapter slot switch must not call unloadAllChat().")
     require("unloadRoleAdapter(slot: slot)" in adapter_section, "Failed role adapter activation must unload the failed adapter handle.")
     require(
-        "requiresRoleAdapter(slot: slot, assignment: assignment)" in adapter_section
-        and 'throw LocalRuntimeError.unavailable("role adapter missing for \\(slot.rawValue)")' in adapter_section,
+        "requiresRoleAdapter(assignment: assignment)" in adapter_section
+        and 'throw LocalRuntimeError.unavailable("role adapter missing for \\(slot.rawValue): expectedAdapterRepo=\\(expectedRepo); expectedAdapterFile=\\(expectedFile)")' in adapter_section,
         "Qwen3 adapter-required slots must fail hard when their role adapter is missing.",
     )
 

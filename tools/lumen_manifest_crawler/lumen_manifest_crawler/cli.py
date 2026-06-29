@@ -16,6 +16,7 @@ from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
+from lumen_manifest_crawler.dataset.self_model_eval import load_jsonl, score_self_model_eval_answers
 from lumen_manifest_crawler.developer_framework import (
     FrameworkEnvironment,
     UBUNTU_TRAINING_JOB_IDS,
@@ -220,6 +221,24 @@ def improve_loop(
     console.print(f"[bold]Next-action prompts:[/bold] {len(result.next_prompts)}")
     console.print(f"[green]Wrote loop outputs to {loop_output.resolve()}[/green]")
     if fail_on_validation and not result.passed:
+        raise typer.Exit(code=1)
+
+
+@app.command("score-self-model-eval")
+def score_self_model_eval(
+    eval_records: Path = typer.Option(Path("generated/agent_manifest/dataset/self_model_eval.jsonl"), "--eval-records", help="Generated self-model eval JSONL."),
+    answers: Path = typer.Option(..., "--answers", help="Model answer JSONL keyed by eval id, scenario id, or metadata name."),
+    output: Optional[Path] = typer.Option(None, "--output", help="Optional JSON report path."),
+    fail_on_validation: bool = typer.Option(False, "--fail-on-validation/--no-fail-on-validation", help="Exit non-zero when any scenario is missing or failed."),
+) -> None:
+    """Score exported answers against self-model eval expectations."""
+    report = score_self_model_eval_answers(load_jsonl(eval_records), load_jsonl(answers))
+    payload = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(payload + "\n", encoding="utf-8")
+    console.print(payload)
+    if fail_on_validation and not report["allPassed"]:
         raise typer.Exit(code=1)
 
 

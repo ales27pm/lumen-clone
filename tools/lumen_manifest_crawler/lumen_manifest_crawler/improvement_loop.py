@@ -550,6 +550,8 @@ def _build_testflight_scenario_queue(
     candidates.extend(_build_trace_export_scenarios(manifest))
     candidates.extend(_build_trace_integrity_scenarios())
 
+    for record in datasets.get("self_model_eval", []):
+        candidates.append(_scenario_from_eval_record(record, source_family="self_model_eval"))
     for record in datasets.get("eval_scenarios", []):
         candidates.append(_scenario_from_eval_record(record, source_family="eval_scenarios"))
 
@@ -828,6 +830,9 @@ def _build_gap_report(  # NOSONAR
         "dpo_preference_pairs",
         "tool_schema_cards",
         "manifest_grounding_cards",
+        "self_model_cards",
+        "self_model_sft",
+        "self_model_eval",
         "runtime_audit_repairs",
     }
     for family in sorted(required_families):

@@ -42,17 +42,30 @@ final class AssistantKernel {
         let rag = await ragEngine.buildContext(query: contextQuery.query, budget: budget.charSections.rag, context: modelContext)
         let tctx = ToolExecutionContext(isForeground: turn.isForeground, appState: nil, modelContext: modelContext, permissionRegistry: .shared, metricsStore: metricsStore)
         let defs = await toolRegistry.availableDefinitions(context: tctx, source: turn.isForeground ? .modelProposed : .backgroundTrigger)
+        let runtimeSelection = router.selection(for: turn)
+        let selfModelSnapshot = SelfModelSnapshotBuilder.build(
+            turn: turn,
+            budget: budget,
+            selectedRuntime: runtimeSelection,
+            tools: defs
+        )
+        let selfModelSection = SelfModelContextProvider.section(for: selfModelSnapshot, budget: budget)
         return .init(
             memoryCount: mem.selected.count,
             ragCount: rag.selected.count,
             toolCount: defs.count,
-            estimatedChars: mem.totalChars + rag.totalChars,
-            estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: mem.totalChars) + rag.totalTokens,
+            estimatedChars: mem.totalChars + rag.totalChars + selfModelSection.estimatedChars,
+            estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: mem.totalChars + selfModelSection.estimatedChars) + rag.totalTokens,
             contextProfile: budget.profile.rawValue,
             maxInputTokens: budget.maxInputTokens,
             ragConfidence: rag.confidence,
             memoryTierCounts: mem.tierCounts,
-            contextQueryExpanded: contextQuery.expansionApplied
+            contextQueryExpanded: contextQuery.expansionApplied,
+            selfModelIncluded: true,
+            selfModelSchemaVersion: selfModelSnapshot.schemaVersion,
+            selfModelEstimatedChars: selfModelSection.estimatedChars,
+            selfModelSourceIDs: selfModelSection.sourceIDs,
+            selfModelMode: selfModelSnapshot.app.mode
         )
     }
 

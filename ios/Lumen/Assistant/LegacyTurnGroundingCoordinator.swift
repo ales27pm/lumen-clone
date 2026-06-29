@@ -68,7 +68,12 @@ final class LegacyTurnGroundingCoordinator {
                 maxInputTokens: bundle.grounding.maxInputTokens,
                 ragConfidence: bundle.grounding.ragConfidence,
                 memoryTierCounts: bundle.grounding.memoryTierCounts,
-                contextQueryExpanded: bundle.grounding.contextQueryExpanded
+                contextQueryExpanded: bundle.grounding.contextQueryExpanded,
+                selfModelIncluded: bundle.grounding.selfModelIncluded,
+                selfModelSchemaVersion: bundle.grounding.selfModelSchemaVersion,
+                selfModelEstimatedChars: bundle.grounding.selfModelEstimatedChars,
+                selfModelSourceIDs: bundle.grounding.selfModelSourceIDs,
+                selfModelMode: bundle.grounding.selfModelMode
             )
             roleAwareBundle = .init(grounding: grounding, budgetPlan: bundle.budgetPlan, sections: sections, renderedPromptContext: rendered, secureTools: bundle.secureTools, metricsSummary: bundle.metricsSummary)
         }

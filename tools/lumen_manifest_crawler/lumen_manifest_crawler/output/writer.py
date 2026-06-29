@@ -74,6 +74,9 @@ def write_outputs(
         with (dataset_dir / f"{name}.jsonl").open("w", encoding="utf-8") as handle:
             for record in records:
                 handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    self_model_cards = datasets.get("self_model_cards", [])
+    if self_model_cards:
+        _write_jsonl(output_dir / "self_model_cards.jsonl", self_model_cards)
 
     _write_embedding_outputs(output_dir / "embedding", datasets)
     _write_reranker_outputs(output_dir / "reranker", datasets)

@@ -2,15 +2,15 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `061559da1f6a333ab484af13d4db245245212eac`
+- Manifest commit: `49b228a959c7a6e8b8c17e4a081598576b6ec997`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `744`
+- Codebase-home records: `747`
 
 ## Top Modules
-- `ios/LumenTests`: 153 files
+- `ios/LumenTests`: 154 files
 - `Services`: 58 files
-- `docs`: 54 files
+- `docs`: 55 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 38 files
 - `Views`: 31 files
 - `Assistant`: 26 files
@@ -35,7 +35,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 
 ## Key Files
 - `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` owns AgentBehaviorManifest behavior and defines: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, Man Symbols: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent, ManifestRoutingEntry.
-- `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` owns AgentBehaviorTrace behavior and defines: AgentBehaviorTrace, Event, CodingKeys, AgentBehaviorAuditReport, AgentBehaviorViolation, Severity, AgentBehaviorR Symbols: AgentBehaviorTrace, Event, CodingKeys, AgentBehaviorAuditReport, AgentBehaviorViolation, Severity, AgentBehaviorRepairSample, AgentBehaviorTraceMemoryCache.
+- `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` owns AgentBehaviorTrace behavior and defines: AgentBehaviorTrace, SelfModelDecisionSummary, Event, CodingKeys, AgentBehaviorAuditReport, AgentBehaviorViolation Symbols: AgentBehaviorTrace, SelfModelDecisionSummary, Event, CodingKeys, AgentBehaviorAuditReport, AgentBehaviorViolation, Severity, AgentBehaviorRepairSample.
 - `ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTrac Symbols: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage.
 - `ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift` owns AgentGroundingPromptComposer behavior and defines: AgentGroundingPromptComposer, GenerateRequest, composeSystemPrompt, groundingSystemPrompt, fa Symbols: AgentGroundingPromptComposer, GenerateRequest, composeSystemPrompt, groundingSystemPrompt, fallback, store, bundledPrompt, loadedRuntimeGrounding.
 - `ios/Lumen/Services/AgentGrounding/AgentManifestStore.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentManifestStore.swift` owns AgentManifestStore behavior and defines: AgentManifestStore, manifestDirectory, manifestURL, manifestHashURL, bundledManifestURL, bundledHashURL, load, pe Symbols: AgentManifestStore, manifestDirectory, manifestURL, manifestHashURL, bundledManifestURL, bundledHashURL, load, persist.
@@ -59,7 +59,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/BackgroundToolBridgePolicy.swift` (Assistant): `ios/Lumen/Assistant/BackgroundToolBridgePolicy.swift` owns BackgroundToolBridgePolicy behavior and defines: BackgroundToolBridgeAssessment, Status, BackgroundToolBridgePolicy, sortedCanonicalIDs, assess, availableTools, Symbols: BackgroundToolBridgeAssessment, Status, BackgroundToolBridgePolicy, sortedCanonicalIDs, assess, availableTools, canRunWithoutLoadedTextRuntime, status.
 - `ios/Lumen/Assistant/ContextBudgetAllocator.swift` (Assistant): `ios/Lumen/Assistant/ContextBudgetAllocator.swift` owns ContextBudgetAllocator behavior and defines: ContextBudgetTokenSections, ContextBudgetSections, ContextPolicyProfile, ContextBudgetPlan, ContextBudgetAllocator, all Symbols: ContextBudgetTokenSections, ContextBudgetSections, ContextPolicyProfile, ContextBudgetPlan, ContextBudgetAllocator, allocate, profile, estimateTokens.
 - `ios/Lumen/Assistant/ContextQueryRewriter.swift` (Assistant): `ios/Lumen/Assistant/ContextQueryRewriter.swift` owns ContextQueryRewriter behavior and defines: ContextQueryRewriteResult, ContextQueryRewriter, rewrite, addTerms, normalized, salientTerms, bounded, query, addedTerms, e Symbols: ContextQueryRewriteResult, ContextQueryRewriter, rewrite, addTerms, normalized, salientTerms, bounded, query.
-- `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` (Assistant): Headless compatibility runner for AppIntent and scheduled trigger entrypoints. Symbols: HeadlessAgentKernelRunner, run, composedSystemPrompt, backgroundSkipMessage, stored, fleet, trimmed, backgroundTask.
+- `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` (Assistant): Headless compatibility runner for AppIntent and scheduled trigger entrypoints. Symbols: HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, run, registerCancellation, composedSystemPrompt, backgroundSkipMessage, cancel, stored.
 - `ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift` (Assistant): Explicit Agent Kernel compatibility boundary for legacy agent services. Symbols: LegacyAgentCompatibilityBridge, AgentEvent, runLegacyAgentService, runSlotAgentKernelCompatibility, runSlotAgentCompatibility, task, agentKernelEvent.
 - `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` (Assistant): `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, scenarioID, e2eRunID, agentRunID, groundingMo Symbols: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, scenarioID, e2eRunID, agentRunID.
 - `ios/Lumen/Assistant/LegacyGroundingBridge.swift` (Assistant): Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and d Symbols: LegacyGroundingBundle, LegacyGroundingBridge, build, tierSummary, grounding, budgetPlan, sections, renderedPromptContext.

@@ -19,10 +19,12 @@ final class LegacyGroundingBridge {
     private let ragEngine = RAGEngine()
     private let toolRegistry: SecureToolRegistry
     private let metricsStore: RuntimeMetricsStore
+    private let runtimeRouter: AssistantRuntimeRouter
 
-    init(toolRegistry: SecureToolRegistry? = nil, metricsStore: RuntimeMetricsStore? = nil) {
+    init(toolRegistry: SecureToolRegistry? = nil, metricsStore: RuntimeMetricsStore? = nil, runtimeRouter: AssistantRuntimeRouter? = nil) {
         self.toolRegistry = toolRegistry ?? .shared
         self.metricsStore = metricsStore ?? .shared
+        self.runtimeRouter = runtimeRouter ?? AssistantRuntimeRouter()
     }
 
     /// Constructs a legacy grounding bundle with rendered prompt context for an assistant turn.
@@ -42,7 +44,15 @@ final class LegacyGroundingBridge {
         let lowPower = turn.lowPowerMode
         let thermal = DeviceThermalState.from(processThermalState: turn.thermalState)
         let maxChars = budget.charSections.memories + budget.charSections.rag + budget.charSections.tools + budget.charSections.runtime
-        let sections = PromptGroundingRenderer.render(memories: mem, rag: rag, tools: tools, lowPower: lowPower, thermal: thermal)
+        let runtimeSelection = runtimeRouter.selection(for: turn)
+        let selfModelSnapshot = SelfModelSnapshotBuilder.build(
+            turn: turn,
+            budget: budget,
+            selectedRuntime: runtimeSelection,
+            tools: tools
+        )
+        let selfModelSection = SelfModelContextProvider.section(for: selfModelSnapshot, budget: budget)
+        let sections = PromptGroundingRenderer.render(memories: mem, rag: rag, tools: tools, lowPower: lowPower, thermal: thermal, selfModel: selfModelSection)
         try cancellationToken?.checkCancellation()
         let rendered = await Task.detached(priority: .userInitiated) {
             PromptGroundingRenderer.renderForPrompt(sections, maxChars: maxChars)
@@ -58,9 +68,14 @@ final class LegacyGroundingBridge {
             maxInputTokens: budget.maxInputTokens,
             ragConfidence: rag.confidence,
             memoryTierCounts: mem.tierCounts,
-            contextQueryExpanded: contextQuery.expansionApplied
+            contextQueryExpanded: contextQuery.expansionApplied,
+            selfModelIncluded: true,
+            selfModelSchemaVersion: selfModelSnapshot.schemaVersion,
+            selfModelEstimatedChars: selfModelSection.estimatedChars,
+            selfModelSourceIDs: selfModelSection.sourceIDs,
+            selfModelMode: selfModelSnapshot.app.mode
         )
-        try? await metricsStore.appendMetric(.init(timestamp: Date(), runtimeName: "grounding", taskKind: "\(turn.task)", modelIDHash: nil, policySummary: "profile=\(budget.profile.rawValue),m=\(mem.selected.count),r=\(rag.selected.count),t=\(tools.count),memTiers=\(Self.tierSummary(mem.tierCounts)),queryExpanded=\(contextQuery.expansionApplied),queryTerms=\(contextQuery.addedTerms.count)", latencyMs: nil, success: true, errorCode: nil, thermalState: .from(processThermalState: turn.thermalState), lowPowerMode: turn.lowPowerMode, memoryWarningCount: 0))
+        try? await metricsStore.appendMetric(.init(timestamp: Date(), runtimeName: "grounding", taskKind: "\(turn.task)", modelIDHash: nil, policySummary: "profile=\(budget.profile.rawValue),m=\(mem.selected.count),r=\(rag.selected.count),t=\(tools.count),selfModel=\(selfModelSnapshot.schemaVersion),memTiers=\(Self.tierSummary(mem.tierCounts)),queryExpanded=\(contextQuery.expansionApplied),queryTerms=\(contextQuery.addedTerms.count)", latencyMs: nil, success: true, errorCode: nil, thermalState: .from(processThermalState: turn.thermalState), lowPowerMode: turn.lowPowerMode, memoryWarningCount: 0))
         return .init(grounding: grounding, budgetPlan: budget, sections: sections, renderedPromptContext: rendered, secureTools: tools, metricsSummary: "ok")
     }
 
