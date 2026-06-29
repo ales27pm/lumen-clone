@@ -84,7 +84,7 @@ The key object is a **SelfModelSnapshot**: a small, deterministic, serializable 
 
 ## Proposed data contract
 
-Create a compact JSON contract like this:
+Create a compact JSON contract like this. The example is a projection of existing runtime types; implementers should generate these values from Swift structures instead of copying literal arrays from this document.
 
 ```json
 {
@@ -92,7 +92,8 @@ Create a compact JSON contract like this:
   "generatedAt": "2026-06-29T00:00:00Z",
   "app": {
     "name": "Lumen",
-    "build": "unknown",
+    "buildNumber": "unknown",
+    "shortVersion": "unknown",
     "platform": "ios",
     "mode": "foreground"
   },
@@ -100,10 +101,12 @@ Create a compact JSON contract like this:
     "logicalIdentity": "lumen",
     "activeSlot": "cortex",
     "availableSlots": ["cortex", "executor", "embedding", "mimicry", "mouth", "rem"],
-    "manifestCommit": "unknown"
+    "manifestCommit": "unknown",
+    "fleetContractVersion": "2026.05.03-adapter-first"
   },
   "runtime": {
-    "llmBackendAvailable": true,
+    "selectedRuntimePathKind": "llamaGGUF",
+    "availableBackendKinds": ["llama"],
     "embeddingAvailable": true,
     "thermalState": "nominal",
     "powerState": "battery_or_unknown",
@@ -129,7 +132,11 @@ Create a compact JSON contract like this:
   "evidence": {
     "manifestFreshness": "bundled",
     "runtimeAuditPresent": false,
-    "liveE2EOwnsScenarioPassFail": true
+    "exportPolicy": {
+      "sourceLayer": "e2eTestReport",
+      "ownsLiveE2EScenarios": true,
+      "includesDeterministicStaticScenarios": false
+    }
   },
   "policy": {
     "mustNotInventToolIDs": true,
@@ -138,6 +145,65 @@ Create a compact JSON contract like this:
   }
 }
 ```
+
+### Swift source-of-truth mapping
+
+`SelfModelSnapshot` must be a Swift-generated projection over current app state. The roadmap must not become a second schema that drifts from runtime code.
+
+| Snapshot field | Runtime source of truth | Rule |
+|---|---|---|
+| `schemaVersion` | `SelfModelSnapshot.schemaVersion` | Version this contract independently, but keep it SemVer-like and machine-readable. |
+| `generatedAt` | snapshot builder clock | ISO-8601 timestamp generated when the snapshot is assembled. |
+| `app.name`, `app.shortVersion`, `app.buildNumber` | same bundle fields used by `InAppDatasetAppInfo` | Reuse the existing app metadata shape where possible. |
+| `app.mode` | `AssistantTurnContext.isForeground` | Encode only `foreground` or `background`; do not infer from prompt text. |
+| `agent.activeSlot`, `agent.availableSlots` | `LumenModelSlot.rawValue` and `LumenModelSlot.allCases` | Slot names must be generated from the enum, not duplicated literals. |
+| `agent.fleetContractVersion` | `LumenModelSlotContract.fleetContractVersion` | Allows the model to detect stale slot contracts. |
+| `runtime.selectedRuntimePathKind` | `LumenRuntimePathKind.rawValue` via runtime selection/fleet mapping | Use `unknown` when runtime selection cannot prove the active path. |
+| `runtime.availableBackendKinds` | `LLMEngineRouter.availableBackends()` or `AssistantRuntimeRouter.Selection` bridge | Report only installed/registered backends the app can prove. |
+| `contextBudget.profile` | `ContextPolicyProfile.rawValue` | Values must come from `ContextBudgetAllocator.profile(for:)`. |
+| `contextBudget.sections` | `ContextBudgetPlan.tokenSections` | Serialize generated token sections, not hand-tuned doc constants. |
+| `tools.available` | `SecureToolRegistry.availableDefinitions(...).map(\.id)` | The model sees only policy-filtered tools for this turn/source. |
+| `tools.requiresApproval` | `SecureToolDefinition.requiresUserApproval` plus `ToolApprovalPolicy` result | The app remains the enforcement layer; the model only receives the summary. |
+| `tools.backgroundSafe` | `SecureToolDefinition.supportsBackgroundExecution` after policy filtering | Background snapshots must not expose foreground-only tool affordances. |
+| `evidence.exportPolicy.ownsLiveE2EScenarios` | existing `EvidenceLayerExportPolicy` / `InAppDatasetExportPolicy` key | Keep this exact key; the ingester routes evidence by `sourceLayer` and `ownsLiveE2EScenarios`. |
+
+## Snapshot versioning and compatibility
+
+The snapshot is prompt context, runtime evidence, and future training data. Treat it like a stable app-facing contract.
+
+Rules:
+
+- `schemaVersion` is required in every snapshot.
+- Minor versions may add optional fields, enum cases, or nested objects.
+- Major versions may rename/remove fields, but must include a compatibility adapter or an explicit `unsupportedSnapshotSchema` repair signal.
+- Required v0.1 fields: `schemaVersion`, `generatedAt`, `app`, `agent`, `runtime`, `contextBudget`, `tools`, `evidence`, and `policy`.
+- Unknown fields must be ignored by older app builds and older adapters.
+- Unknown enum/string values must be preserved as strings and treated as `unknown`, not coerced into a nearby known value.
+- Missing optional fields must degrade to `unknown`, `false`, or an empty array depending on the field semantics.
+- Models must not treat a newer snapshot as proof of newer capability. They can only use capability/tool/runtime fields that are present and policy-filtered in the current snapshot.
+- Dataset generators should record the snapshot `schemaVersion` beside each SFT, retrieval, and repair sample so training/eval can filter incompatible records.
+
+Compatibility target for v0.x: older Lumen builds should be able to safely ignore new fields while still enforcing tool approval, evidence honesty, and no-invented-tool policies.
+
+## Ownership and integration points
+
+Suggested module ownership:
+
+- `ios/Lumen/Services/SelfModel/`: owns `SelfModelSnapshot`, schema versioning, snapshot serialization, privacy redaction, and size limits.
+- `ios/Lumen/Assistant/`: owns `SelfModelContextProvider` and injection into the turn-building pipeline.
+- `ios/Lumen/Tools/`: remains the source of truth for tool IDs, approval requirements, background safety, and permission-filtered availability.
+- `ios/Lumen/Services/AgentGrounding/` and `ios/Lumen/Services/Diagnostics/`: remain the source of truth for runtime evidence exports and `exportPolicy` fields.
+- `tools/lumen_manifest_crawler/`: owns generated self-model cards, eval records, repair samples, and compatibility checks against snapshot schemas.
+
+Invocation path:
+
+1. `AssistantTurnContext` is built with task kind, foreground/background state, power/thermal state, memories, attachments, and generation settings.
+2. `ContextBudgetAllocator.allocate(for:)` selects the profile and token sections.
+3. `AssistantKernel.buildGroundingContext(...)` already retrieves memory, RAG, and policy-filtered tool definitions; `SelfModelContextProvider` should be invoked from the same turn-preparation path so the self-model block uses the same budget/profile/tool source.
+4. `SelfModelSnapshotBuilder` gathers deterministic app/runtime/tool/evidence state and returns bounded JSON.
+5. `SelfModelContextProvider` renders a compact self-model prompt block inside the `runtime` budget section.
+6. `runTextTurn(...)` or the slot-agent path receives that block as part of the system/grounding context, while `SecureToolRegistry` and `ToolApprovalPolicy` still enforce actual execution.
+7. Runtime traces include the snapshot schema version, selected slot, selected evidence cards, selected tools, and refusal/approval state for improve-loop ingestion.
 
 ## Training strategy
 
