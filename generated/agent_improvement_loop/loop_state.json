@@ -7,7 +7,7 @@
       "cortex": {
         "eval": 558,
         "trainDPO": 15,
-        "trainSFT": 9230,
+        "trainSFT": 9232,
         "valDPO": 3,
         "valSFT": 1629
       },
@@ -21,7 +21,7 @@
       "fleet": {
         "eval": 86,
         "trainDPO": 15,
-        "trainSFT": 4615,
+        "trainSFT": 4616,
         "valDPO": 3,
         "valSFT": 814
       },
@@ -42,13 +42,13 @@
       "rem": {
         "eval": 6,
         "trainDPO": 8,
-        "trainSFT": 3982,
+        "trainSFT": 3983,
         "valDPO": 2,
         "valSFT": 703
       }
     },
     "embedding": {
-      "corpusCount": 5128,
+      "corpusCount": 5129,
       "datasetCard": {
         "families": [
           "agent_role_question_to_fleet_slot",
@@ -85,10 +85,10 @@
         "schemaVersion": "1.0.0",
         "task": "retrieval_similarity_ranking"
       },
-      "evalCount": 5297,
+      "evalCount": 5298,
       "fallbackModel": "current-baseline-embedding-model",
       "generated": true,
-      "hardNegativeCount": 5297,
+      "hardNegativeCount": 5298,
       "metrics": {
         "hardNegativeAccuracy": 0.0,
         "mrr": 0.0,
@@ -100,31 +100,31 @@
         "toolRetrievalAccuracy": 0.0
       },
       "model": "Qwen/Qwen3-Embedding-0.6B",
-      "pairCount": 5297,
+      "pairCount": 5298,
       "teacherModel": "Qwen/Qwen3-Embedding-4B",
-      "trainPairCount": 4807,
-      "trainTripletCount": 4765,
-      "tripletCount": 5297,
+      "trainPairCount": 4809,
+      "trainTripletCount": 4772,
+      "tripletCount": 5298,
       "usedFallback": false,
-      "valPairCount": 490,
-      "valTripletCount": 532
+      "valPairCount": 489,
+      "valTripletCount": 526
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_chunk_sft": 3700,
-      "codebase_home_chunks": 3700,
+      "codebase_home_chunk_sft": 3701,
+      "codebase_home_chunks": 3701,
       "codebase_home_corpus": 753,
       "codebase_home_sft": 753,
       "cortex_routing": 82,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 5128,
+      "embedding_corpus": 5129,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 5297,
-      "embedding_hard_negatives": 5297,
-      "embedding_train_pairs": 4807,
-      "embedding_train_triplets": 4765,
-      "embedding_val_pairs": 490,
-      "embedding_val_triplets": 532,
+      "embedding_eval_retrieval": 5298,
+      "embedding_hard_negatives": 5298,
+      "embedding_train_pairs": 4809,
+      "embedding_train_triplets": 4772,
+      "embedding_val_pairs": 489,
+      "embedding_val_triplets": 526,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -133,10 +133,10 @@
       "negative_samples": 53,
       "rem_reflection": 5,
       "reranker_dataset_card": 1,
-      "reranker_eval_reranking": 5297,
-      "reranker_hard_negative_pairs": 5297,
-      "reranker_train_pairs": 4807,
-      "reranker_val_pairs": 490,
+      "reranker_eval_reranking": 5298,
+      "reranker_hard_negative_pairs": 5298,
+      "reranker_train_pairs": 4809,
+      "reranker_val_pairs": 489,
       "runtime_audit_repairs": 148,
       "self_model_cards": 8,
       "self_model_eval": 24,
@@ -146,7 +146,7 @@
       "validation_sft": 55
     },
     "familyCount": 34,
-    "recordCount": 52725,
+    "recordCount": 52735,
     "reranker": {
       "datasetCard": {
         "families": [
@@ -182,10 +182,10 @@
         "task": "candidate_reranking"
       },
       "enabledByDefault": false,
-      "evalCount": 5297,
+      "evalCount": 5298,
       "fallbackMode": "embedding-only",
       "generated": true,
-      "hardNegativePairCount": 5297,
+      "hardNegativePairCount": 5298,
       "metrics": {
         "hardNegativePairAccuracy": 0.0,
         "p95RerankLatencyRegression": 0.0,
@@ -194,17 +194,17 @@
         "top5ReorderWinRate": 0.0
       },
       "model": "Qwen/Qwen3-Reranker-0.6B",
-      "pairCount": 5297,
+      "pairCount": 5298,
       "teacherModel": "Qwen/Qwen3-Reranker-4B",
-      "trainPairCount": 4807,
-      "valPairCount": 490
+      "trainPairCount": 4809,
+      "valPairCount": 489
     }
   },
   "errorGapCount": 165,
-  "gapCount": 167,
+  "gapCount": 166,
   "manifest": {
-    "commit": "8362be0d2cfd2993a16d71bd26ddbd8e0ef73b89",
-    "fingerprint": "c2671a22cc92809d485c322567a43210710ca3e9ff8243305df17db351649c66",
+    "commit": "09e3a8c46137152591dc5a0df7af29ac7f2e7b5b",
+    "fingerprint": "fcb5e23dfb57c4009c91809014f552bbcad5bef823312d65c0e58d654ecd4b82",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
@@ -236,7 +236,7 @@
       "e2e_response_quality_trigger": 9,
       "e2e_response_quality_weather": 4,
       "e2e_response_quality_websearch": 7,
-      "e2e_runtime_environment_deferred": 2
+      "e2e_runtime_environment_deferred": 1
     },
     "failureCount": 165,
     "failureTypes": {
@@ -261,12 +261,11 @@
       "e2e_response_quality_weather": 4,
       "e2e_response_quality_websearch": 7
     },
-    "rawFailureCount": 167,
-    "reportCount": 4,
-    "skippedLiveModelGenerationCount": 2,
+    "rawFailureCount": 166,
+    "reportCount": 3,
+    "skippedLiveModelGenerationCount": 1,
     "sourceLayers": {
-      "e2eTestReport.evidenceLayer": 166,
-      "e2eTestReport.json": 1
+      "e2eTestReport.evidenceLayer": 166
     }
   },
   "runtimeAuditInputs": [
@@ -277,7 +276,7 @@
   "testFlight": {
     "buildLabel": null,
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "c2671a22cc92809d485c322567a43210710ca3e9ff8243305df17db351649c66",
+    "manifestFingerprint": "fcb5e23dfb57c4009c91809014f552bbcad5bef823312d65c0e58d654ecd4b82",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
@@ -291,7 +290,7 @@
   "triage": {
     "categoryCounts": {
       "deterministic_compatibility_not_live_evidence": 165,
-      "runtime_environment_deferred": 2
+      "runtime_environment_deferred": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
     "freshRuntimeFailureCount": 165,
@@ -311,25 +310,25 @@
       "outlook": 48,
       "phonecall": 3,
       "photos": 3,
-      "preflight": 2,
+      "preflight": 1,
       "rag": 9,
       "reminder": 6,
       "trigger": 9,
       "weather": 4,
       "websearch": 7
     },
-    "rawRuntimeFailureCount": 167,
+    "rawRuntimeFailureCount": 166,
     "rootCauseCounts": {
       "deterministic_compatibility_not_live_evidence": 165,
-      "runtime_environment_deferred": 2
+      "runtime_environment_deferred": 1
     },
-    "runtimeAuditReports": 4,
+    "runtimeAuditReports": 3,
     "severityCounts": {
       "error": 165,
-      "warning": 2
+      "warning": 1
     },
-    "skippedLiveModelGenerationCount": 2,
-    "totalGaps": 167
+    "skippedLiveModelGenerationCount": 1,
+    "totalGaps": 166
   },
   "validation": {
     "failureCount": 0,

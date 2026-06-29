@@ -31,7 +31,27 @@ def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]
             if parent not in sidecar_cache:
                 sidecar_cache[parent] = _load_e2e_sidecars(parent)
             reports.extend(_load_report_text(text, source=str(candidate), sidecars=sidecar_cache[parent]))
-    return reports
+    return _dedupe_runtime_reports(reports)
+
+
+def _dedupe_runtime_reports(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen_report_ids: set[str] = set()
+    for report in reports:
+        report_id = _stable_report_id(report)
+        if report_id:
+            if report_id in seen_report_ids:
+                continue
+            seen_report_ids.add(report_id)
+        deduped.append(report)
+    return deduped
+
+
+def _stable_report_id(report: dict[str, Any]) -> str | None:
+    report_id = report.get("id") or report.get("reportID")
+    if report_id:
+        return str(report_id)
+    return None
 
 
 def _candidate_report_files(path: Path) -> list[Path]:
@@ -260,6 +280,7 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
             "finishedAt": result.get("finishedAt"),
         })
     return {
+        "id": payload.get("id"),
         "kind": "lumen_e2e_test_report",
         "passed": payload.get("passed"),
         "failed": payload.get("failed"),

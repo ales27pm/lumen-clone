@@ -1615,6 +1615,56 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
 
 
+def test_runtime_audit_ingest_deduplicates_same_e2e_report_id(tmp_path: Path):
+    import json
+
+    report_id = "66666666-6666-6666-6666-666666666666"
+    result = {
+        "id": "77777777-7777-7777-7777-777777777777",
+        "scenarioID": "executor-runtime-preflight",
+        "kind": "training",
+        "title": "Executor runtime preflight",
+        "prompt": "Preflight executor runtime",
+        "expectedIntent": "weather",
+        "actualIntent": "preflight",
+        "requiresAgentRun": True,
+        "passed": False,
+        "failures": [
+            "executor preflight failed: resource-budget-denied-before-prompt-eval; thermalState=serious"
+        ],
+        "events": [],
+    }
+    plain_report = {
+        "id": report_id,
+        "startedAt": "2026-06-29T00:00:00Z",
+        "finishedAt": "2026-06-29T00:00:20Z",
+        "passed": 0,
+        "failed": 1,
+        "results": [result],
+    }
+    envelope_report = {
+        "schemaVersion": "1.0.0",
+        "generatedAt": "2026-06-29T00:00:30Z",
+        "exportPolicy": {
+            "format": "live-e2e-test-report-json",
+            "sourceLayer": "e2eTestReport",
+            "ownsLiveE2EScenarios": True,
+            "includesDeterministicStaticScenarios": False,
+        },
+        "payload": plain_report,
+    }
+    envelope_path = tmp_path / "lumen-live-e2e-report.json"
+    latest_path = tmp_path / "latest-e2e-report.json"
+    envelope_path.write_text(json.dumps(envelope_report), encoding="utf-8")
+    latest_path.write_text(json.dumps(plain_report), encoding="utf-8")
+
+    reports = load_runtime_audit_reports([tmp_path])
+
+    e2e_reports = [report for report in reports if report.get("id") == report_id]
+    assert len(e2e_reports) == 1
+    assert e2e_reports[0]["failures"][0]["e2eScenario"]["name"] == "Executor runtime preflight"
+
+
 def test_in_app_package_ignores_plaintext_mouth_final_parse_errors(tmp_path: Path):
     report_path = tmp_path / "lumen-agent-grounding-audit-mouth-plaintext.json"
     import json

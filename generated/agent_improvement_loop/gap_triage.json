@@ -1103,19 +1103,10 @@
     },
     {
       "categories": {
-        "runtime_environment_deferred": 2
+        "runtime_environment_deferred": 1
       },
-      "count": 2,
+      "count": 1,
       "examples": [
-        {
-          "actual": "device thermal state serious; cool device and retry",
-          "category": "runtime_environment_deferred",
-          "prompt": "What is the weather here and should I carry an umbrella?",
-          "rootCauseCategory": "runtime_environment_deferred",
-          "severity": "warning",
-          "skippedLiveModelRun": true,
-          "title": "e2e_runtime_environment_deferred"
-        },
         {
           "actual": "device thermal state serious; cool device and retry",
           "category": "runtime_environment_deferred",
@@ -1126,14 +1117,14 @@
           "title": "e2e_runtime_environment_deferred"
         }
       ],
-      "freshRuntimeFailureCount": 2,
+      "freshRuntimeFailureCount": 1,
       "group": "preflight",
       "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
       "rootCauseCategories": {
-        "runtime_environment_deferred": 2
+        "runtime_environment_deferred": 1
       },
       "severities": {
-        "warning": 2
+        "warning": 1
       },
       "skippedLiveModelGenerationCount": 0,
       "status": "deferred"
@@ -1143,7 +1134,7 @@
   "summary": {
     "categoryCounts": {
       "deterministic_compatibility_not_live_evidence": 165,
-      "runtime_environment_deferred": 2
+      "runtime_environment_deferred": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
     "freshRuntimeFailureCount": 165,
@@ -1163,24 +1154,24 @@
       "outlook": 48,
       "phonecall": 3,
       "photos": 3,
-      "preflight": 2,
+      "preflight": 1,
       "rag": 9,
       "reminder": 6,
       "trigger": 9,
       "weather": 4,
       "websearch": 7
     },
-    "rawRuntimeFailureCount": 167,
+    "rawRuntimeFailureCount": 166,
     "rootCauseCounts": {
       "deterministic_compatibility_not_live_evidence": 165,
-      "runtime_environment_deferred": 2
+      "runtime_environment_deferred": 1
     },
-    "runtimeAuditReports": 4,
+    "runtimeAuditReports": 3,
     "severityCounts": {
       "error": 165,
-      "warning": 2
+      "warning": 1
     },
-    "skippedLiveModelGenerationCount": 2,
-    "totalGaps": 167
+    "skippedLiveModelGenerationCount": 1,
+    "totalGaps": 166
   }
 }
