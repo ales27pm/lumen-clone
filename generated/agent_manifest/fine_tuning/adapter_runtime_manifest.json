@@ -12,9 +12,9 @@
       "recordCounts": {
         "eval": 558,
         "train_dpo": 15,
-        "train_sft": 9227,
+        "train_sft": 9230,
         "val_dpo": 3,
-        "val_sft": 1628
+        "val_sft": 1629
       },
       "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map."
     },
@@ -46,7 +46,7 @@
       "recordCounts": {
         "eval": 86,
         "train_dpo": 15,
-        "train_sft": 4613,
+        "train_sft": 4615,
         "val_dpo": 3,
         "val_sft": 814
       },
@@ -97,9 +97,9 @@
       "recordCounts": {
         "eval": 6,
         "train_dpo": 8,
-        "train_sft": 3981,
+        "train_sft": 3982,
         "val_dpo": 2,
-        "val_sft": 702
+        "val_sft": 703
       },
       "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
     }

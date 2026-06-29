@@ -7,9 +7,9 @@
       "cortex": {
         "eval": 558,
         "trainDPO": 15,
-        "trainSFT": 9227,
+        "trainSFT": 9230,
         "valDPO": 3,
-        "valSFT": 1628
+        "valSFT": 1629
       },
       "executor": {
         "eval": 114,
@@ -21,7 +21,7 @@
       "fleet": {
         "eval": 86,
         "trainDPO": 15,
-        "trainSFT": 4613,
+        "trainSFT": 4615,
         "valDPO": 3,
         "valSFT": 814
       },
@@ -42,13 +42,13 @@
       "rem": {
         "eval": 6,
         "trainDPO": 8,
-        "trainSFT": 3981,
+        "trainSFT": 3982,
         "valDPO": 2,
-        "valSFT": 702
+        "valSFT": 703
       }
     },
     "embedding": {
-      "corpusCount": 5126,
+      "corpusCount": 5128,
       "datasetCard": {
         "families": [
           "agent_role_question_to_fleet_slot",
@@ -85,10 +85,10 @@
         "schemaVersion": "1.0.0",
         "task": "retrieval_similarity_ranking"
       },
-      "evalCount": 5295,
+      "evalCount": 5297,
       "fallbackModel": "current-baseline-embedding-model",
       "generated": true,
-      "hardNegativeCount": 5295,
+      "hardNegativeCount": 5297,
       "metrics": {
         "hardNegativeAccuracy": 0.0,
         "mrr": 0.0,
@@ -100,31 +100,31 @@
         "toolRetrievalAccuracy": 0.0
       },
       "model": "Qwen/Qwen3-Embedding-0.6B",
-      "pairCount": 5295,
+      "pairCount": 5297,
       "teacherModel": "Qwen/Qwen3-Embedding-4B",
-      "trainPairCount": 4803,
-      "trainTripletCount": 4764,
-      "tripletCount": 5295,
+      "trainPairCount": 4807,
+      "trainTripletCount": 4765,
+      "tripletCount": 5297,
       "usedFallback": false,
-      "valPairCount": 492,
-      "valTripletCount": 531
+      "valPairCount": 490,
+      "valTripletCount": 532
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_chunk_sft": 3698,
-      "codebase_home_chunks": 3698,
+      "codebase_home_chunk_sft": 3700,
+      "codebase_home_chunks": 3700,
       "codebase_home_corpus": 753,
       "codebase_home_sft": 753,
       "cortex_routing": 82,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 5126,
+      "embedding_corpus": 5128,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 5295,
-      "embedding_hard_negatives": 5295,
-      "embedding_train_pairs": 4803,
-      "embedding_train_triplets": 4764,
-      "embedding_val_pairs": 492,
-      "embedding_val_triplets": 531,
+      "embedding_eval_retrieval": 5297,
+      "embedding_hard_negatives": 5297,
+      "embedding_train_pairs": 4807,
+      "embedding_train_triplets": 4765,
+      "embedding_val_pairs": 490,
+      "embedding_val_triplets": 532,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -133,10 +133,10 @@
       "negative_samples": 53,
       "rem_reflection": 5,
       "reranker_dataset_card": 1,
-      "reranker_eval_reranking": 5295,
-      "reranker_hard_negative_pairs": 5295,
-      "reranker_train_pairs": 4803,
-      "reranker_val_pairs": 492,
+      "reranker_eval_reranking": 5297,
+      "reranker_hard_negative_pairs": 5297,
+      "reranker_train_pairs": 4807,
+      "reranker_val_pairs": 490,
       "runtime_audit_repairs": 148,
       "self_model_cards": 8,
       "self_model_eval": 24,
@@ -146,7 +146,7 @@
       "validation_sft": 55
     },
     "familyCount": 34,
-    "recordCount": 52705,
+    "recordCount": 52725,
     "reranker": {
       "datasetCard": {
         "families": [
@@ -182,10 +182,10 @@
         "task": "candidate_reranking"
       },
       "enabledByDefault": false,
-      "evalCount": 5295,
+      "evalCount": 5297,
       "fallbackMode": "embedding-only",
       "generated": true,
-      "hardNegativePairCount": 5295,
+      "hardNegativePairCount": 5297,
       "metrics": {
         "hardNegativePairAccuracy": 0.0,
         "p95RerankLatencyRegression": 0.0,
@@ -194,17 +194,17 @@
         "top5ReorderWinRate": 0.0
       },
       "model": "Qwen/Qwen3-Reranker-0.6B",
-      "pairCount": 5295,
+      "pairCount": 5297,
       "teacherModel": "Qwen/Qwen3-Reranker-4B",
-      "trainPairCount": 4803,
-      "valPairCount": 492
+      "trainPairCount": 4807,
+      "valPairCount": 490
     }
   },
   "errorGapCount": 165,
   "gapCount": 167,
   "manifest": {
-    "commit": "1e7460262525134cd85604998efc61ff8611bf93",
-    "fingerprint": "28e86708b84de85f50ce21a68b18b7b051b8dc4d6aaeb33210bd9d899bb8a97d",
+    "commit": "8362be0d2cfd2993a16d71bd26ddbd8e0ef73b89",
+    "fingerprint": "c2671a22cc92809d485c322567a43210710ca3e9ff8243305df17db351649c66",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
@@ -277,7 +277,7 @@
   "testFlight": {
     "buildLabel": null,
     "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
-    "manifestFingerprint": "28e86708b84de85f50ce21a68b18b7b051b8dc4d6aaeb33210bd9d899bb8a97d",
+    "manifestFingerprint": "c2671a22cc92809d485c322567a43210710ca3e9ff8243305df17db351649c66",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
