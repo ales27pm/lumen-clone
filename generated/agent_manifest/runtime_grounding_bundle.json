@@ -154,7 +154,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage, exportRuntimeRegistryAuditLayer, exportBehaviorAuditLayer.",
-        "sha256": "4e337646ddda4d9a69816fec2520ab5aabd55324e89849849cf61616bfa842eb",
+        "sha256": "d7378870cf18070b27ef25608648392d3bd066f03cbcaf8514a5f84a6da34c79",
         "symbols": [
           "AgentKernelBridgeSmokeTestExpectation",
           "AgentGroundingAuditView",
@@ -315,25 +315,25 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, liveE2EReportExport.",
-        "sha256": "10c04069575c9bdb31337663713ce3ef0d84bbec8ae0600b87c2e1a836efb117",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, TestFlightAgentGroundingExportInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage.",
+        "sha256": "fafe8edb22af07898a31112d68e996a033659f8a3c36c84286435347d4caafab",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetTraceExport",
           "InAppDatasetLiveE2EReportExport",
           "InAppDatasetExportQualityFailure",
           "InAppDatasetAppInfo",
+          "TestFlightAgentGroundingExportInfo",
           "InAppDatasetExportPolicy",
           "InAppDatasetPackageExportResult",
           "InAppDatasetPackageExporter",
           "makePackage",
           "liveE2EReportExport",
           "appInfo",
+          "testFlightExportInfo",
           "correlatedTraceCount",
           "modelBackedCorrelatedTraceCount",
-          "modelBackedCorrelatedScenarioCount",
-          "deterministicCompatibilityTraceCount",
-          "isModelBackedLiveEvidenceTrace"
+          "modelBackedCorrelatedScenarioCount"
         ]
       },
       {
@@ -2169,7 +2169,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "06e870a0d92d8cd90af470196c4ed493c646bfdc",
+  "manifestCommit": "cb190c87ed00d809e1773dc8c1ca4837b5bc42d3",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

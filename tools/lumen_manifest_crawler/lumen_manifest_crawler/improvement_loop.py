@@ -132,6 +132,7 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
 
     manifest = generate_manifest(root)
     runtime_reports = load_runtime_audit_reports(list(config.runtime_audit_paths))
+    current_runtime_reports = _current_runtime_reports(runtime_reports, config)
     datasets = generate_all_datasets(
         manifest,
         root=root,
@@ -147,12 +148,12 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
             manifest,
             datasets,
             fleet_artifacts=fleet_artifacts,
-            runtime_audit_reports=runtime_reports,
+            runtime_audit_reports=current_runtime_reports,
         )
         ft_failures = validate_agent_fine_tuning_datasets(
             manifest,
             fine_tuning_datasets,
-            runtime_audit_reports=runtime_reports,
+            runtime_audit_reports=current_runtime_reports,
         )
         existing_failures = list(getattr(validation_report, "failures", []))
         existing_failures.extend(ft_failures)
@@ -182,21 +183,28 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         fine_tuning_datasets=fine_tuning_datasets,
         limit=config.testflight_scenario_limit,
     )
-    testflight_plan = _build_testflight_plan(config, manifest, runtime_reports, testflight_scenarios)
+    testflight_plan = _build_testflight_plan(
+        config,
+        manifest,
+        runtime_reports,
+        testflight_scenarios,
+        current_runtime_reports=current_runtime_reports,
+    )
 
     dataset_summary = _dataset_summary(datasets, fine_tuning_datasets)
-    runtime_summary = _runtime_summary(runtime_reports)
+    runtime_summary = _runtime_summary(current_runtime_reports, all_runtime_reports=runtime_reports)
     command_summary = [result.output_dict() for result in command_results if result.command]
     gaps = _build_gap_report(
         manifest=manifest,
         validation_report=validation_report,
         datasets=datasets,
         fine_tuning_datasets=fine_tuning_datasets,
-        runtime_reports=runtime_reports,
+        runtime_reports=current_runtime_reports,
+        all_runtime_reports=runtime_reports,
         command_results=command_results,
         config=config,
     )
-    next_prompts = _build_next_action_prompts(gaps, runtime_reports, command_results, testflight_plan)
+    next_prompts = _build_next_action_prompts(gaps, current_runtime_reports, command_results, testflight_plan)
 
     source_integrity = getattr(manifest, "sourceIntegrity", None)
     fleet_manifest = getattr(manifest, "fleet", None)
@@ -232,7 +240,7 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         "nextActionPromptCount": len(next_prompts),
     }
 
-    triage = _build_gap_triage(gaps, runtime_reports, config)
+    triage = _build_gap_triage(gaps, current_runtime_reports, config)
     state["triage"] = triage["summary"]
 
     _write_json(loop_output / "loop_state.json", state)
@@ -425,10 +433,15 @@ def _first_dataset_card(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {}
 
 
-def _runtime_summary(runtime_reports: list[dict[str, Any]]) -> dict[str, Any]:
+def _runtime_summary(
+    runtime_reports: list[dict[str, Any]],
+    *,
+    all_runtime_reports: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     failures = [failure for report in runtime_reports for failure in report.get("failures", []) if isinstance(failure, dict)]
     executable_failures = [failure for failure in failures if not _is_skipped_live_model_generation(failure)]
     skipped_failures = [failure for failure in failures if _is_skipped_live_model_generation(failure)]
+    total_report_count = len(all_runtime_reports) if all_runtime_reports is not None else len(runtime_reports)
     by_type: dict[str, int] = {}
     by_all_type: dict[str, int] = {}
     by_layer: dict[str, int] = {}
@@ -439,6 +452,8 @@ def _runtime_summary(runtime_reports: list[dict[str, Any]]) -> dict[str, Any]:
         by_layer[str(failure.get("sourceLayer") or "unknown")] = by_layer.get(str(failure.get("sourceLayer") or "unknown"), 0) + 1
     return {
         "reportCount": len(runtime_reports),
+        "totalReportCount": total_report_count,
+        "staleReportCount": max(0, total_report_count - len(runtime_reports)),
         "failureCount": len(executable_failures),
         "rawFailureCount": len(failures),
         "skippedLiveModelGenerationCount": len(skipped_failures),
@@ -715,15 +730,30 @@ def _build_testflight_plan(
     manifest: Any,
     runtime_reports: list[dict[str, Any]],
     scenarios: list[dict[str, Any]],
+    *,
+    current_runtime_reports: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     has_runtime = bool(runtime_reports)
+    current_reports = current_runtime_reports if current_runtime_reports is not None else runtime_reports
+    has_current_runtime = bool(current_reports)
+    stale_report_count = max(0, len(runtime_reports) - len(current_reports))
+    if has_current_runtime:
+        status = "runtime-audit-ingested"
+    elif has_runtime:
+        status = "runtime-audit-stale"
+    else:
+        status = "awaiting-testflight-runtime-audit"
     return {
         "mode": config.app_run_mode,
         "buildLabel": config.testflight_build_label,
-        "status": "runtime-audit-ingested" if has_runtime else "awaiting-testflight-runtime-audit",
+        "status": status,
         "requiresTestFlightAppRun": config.app_run_mode.casefold() == "testflight",
         "requireRuntimeAuditForPass": config.require_testflight_runtime_audit,
         "runtimeAuditProvided": has_runtime,
+        "currentRuntimeAuditProvided": has_current_runtime,
+        "runtimeAuditReportCount": len(runtime_reports),
+        "currentRuntimeAuditReportCount": len(current_reports),
+        "staleRuntimeAuditReportCount": stale_report_count,
         "scenarioQueuePath": TESTFLIGHT_SCENARIOS_FILE,
         "runbookPath": TESTFLIGHT_RUNBOOK_FILE,
         "scenarioCount": len(scenarios),
@@ -753,12 +783,14 @@ def _build_gap_report(  # NOSONAR
     datasets: dict[str, list[dict[str, Any]]],
     fine_tuning_datasets: Any,
     runtime_reports: list[dict[str, Any]],
+    all_runtime_reports: list[dict[str, Any]] | None = None,
     command_results: list[LoopCommandResult],
     config: AgentImprovementLoopConfig,
 ) -> list[dict[str, Any]]:
     gaps: list[dict[str, Any]] = []
+    mismatch_runtime_reports = all_runtime_reports if all_runtime_reports is not None else runtime_reports
 
-    if config.app_run_mode.casefold() == "testflight" and not runtime_reports:
+    if config.app_run_mode.casefold() == "testflight" and not mismatch_runtime_reports:
         resolved_loop_output = config.loop_output.resolve()
         gaps.append({
             "id": _stable_id("testflight_runtime_pending", config.testflight_build_label or "unlabeled"),
@@ -774,7 +806,7 @@ def _build_gap_report(  # NOSONAR
             "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.",
         })
 
-    build_mismatch_gap = _testflight_runtime_build_mismatch_gap(runtime_reports, config)
+    build_mismatch_gap = _testflight_runtime_build_mismatch_gap(mismatch_runtime_reports, config)
     if build_mismatch_gap is not None:
         gaps.append(build_mismatch_gap)
 
@@ -938,6 +970,27 @@ def _testflight_runtime_build_mismatch_gap(
         "recommendedAction": "Install build "
         f"{expected_build}, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
     }
+
+
+def _current_runtime_reports(
+    runtime_reports: list[dict[str, Any]],
+    config: AgentImprovementLoopConfig,
+) -> list[dict[str, Any]]:
+    return [
+        report
+        for report in runtime_reports
+        if _runtime_report_matches_testflight_build(report, config)
+    ]
+
+
+def _runtime_report_matches_testflight_build(
+    report: dict[str, Any],
+    config: AgentImprovementLoopConfig,
+) -> bool:
+    expected_build = str(config.testflight_build_label or "").strip()
+    if config.app_run_mode.casefold() != "testflight" or not expected_build:
+        return True
+    return _runtime_report_app_build_number(report) == expected_build
 
 
 def _runtime_report_app_build_number(report: dict[str, Any]) -> str | None:

@@ -3,52 +3,8 @@
   "completedAt": "1970-01-01T00:00:00+00:00",
   "criticalGapCount": 0,
   "dataset": {
-    "agentFineTuning": {
-      "cortex": {
-        "eval": 558,
-        "trainDPO": 15,
-        "trainSFT": 9142,
-        "valDPO": 3,
-        "valSFT": 1613
-      },
-      "executor": {
-        "eval": 114,
-        "trainDPO": 14,
-        "trainSFT": 591,
-        "valDPO": 2,
-        "valSFT": 104
-      },
-      "fleet": {
-        "eval": 86,
-        "trainDPO": 15,
-        "trainSFT": 4508,
-        "valDPO": 3,
-        "valSFT": 796
-      },
-      "mimicry": {
-        "eval": 5,
-        "trainDPO": 10,
-        "trainSFT": 86,
-        "valDPO": 2,
-        "valSFT": 15
-      },
-      "mouth": {
-        "eval": 8,
-        "trainDPO": 12,
-        "trainSFT": 230,
-        "valDPO": 2,
-        "valSFT": 41
-      },
-      "rem": {
-        "eval": 6,
-        "trainDPO": 8,
-        "trainSFT": 3876,
-        "valDPO": 2,
-        "valSFT": 684
-      }
-    },
     "embedding": {
-      "corpusCount": 5003,
+      "corpusCount": 5151,
       "datasetCard": {
         "families": [
           "agent_role_question_to_fleet_slot",
@@ -85,10 +41,10 @@
         "schemaVersion": "1.0.0",
         "task": "retrieval_similarity_ranking"
       },
-      "evalCount": 5172,
+      "evalCount": 5320,
       "fallbackModel": "current-baseline-embedding-model",
       "generated": true,
-      "hardNegativeCount": 5172,
+      "hardNegativeCount": 5320,
       "metrics": {
         "hardNegativeAccuracy": 0.0,
         "mrr": 0.0,
@@ -100,31 +56,31 @@
         "toolRetrievalAccuracy": 0.0
       },
       "model": "Qwen/Qwen3-Embedding-0.6B",
-      "pairCount": 5172,
+      "pairCount": 5320,
       "teacherModel": "Qwen/Qwen3-Embedding-4B",
-      "trainPairCount": 4696,
-      "trainTripletCount": 4657,
-      "tripletCount": 5172,
+      "trainPairCount": 4832,
+      "trainTripletCount": 4785,
+      "tripletCount": 5320,
       "usedFallback": false,
-      "valPairCount": 476,
-      "valTripletCount": 515
+      "valPairCount": 488,
+      "valTripletCount": 535
     },
     "families": {
       "approval_boundary_samples": 115,
-      "codebase_home_chunk_sft": 3721,
-      "codebase_home_chunks": 3721,
+      "codebase_home_chunk_sft": 3726,
+      "codebase_home_chunks": 3726,
       "codebase_home_corpus": 753,
       "codebase_home_sft": 753,
       "cortex_routing": 82,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 5003,
+      "embedding_corpus": 5151,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 5172,
-      "embedding_hard_negatives": 5172,
-      "embedding_train_pairs": 4696,
-      "embedding_train_triplets": 4657,
-      "embedding_val_pairs": 476,
-      "embedding_val_triplets": 515,
+      "embedding_eval_retrieval": 5320,
+      "embedding_hard_negatives": 5320,
+      "embedding_train_pairs": 4832,
+      "embedding_train_triplets": 4785,
+      "embedding_val_pairs": 488,
+      "embedding_val_triplets": 535,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -133,11 +89,11 @@
       "negative_samples": 53,
       "rem_reflection": 5,
       "reranker_dataset_card": 1,
-      "reranker_eval_reranking": 5172,
-      "reranker_hard_negative_pairs": 5172,
-      "reranker_train_pairs": 4696,
-      "reranker_val_pairs": 476,
-      "runtime_audit_repairs": 2,
+      "reranker_eval_reranking": 5320,
+      "reranker_hard_negative_pairs": 5320,
+      "reranker_train_pairs": 4832,
+      "reranker_val_pairs": 488,
+      "runtime_audit_repairs": 145,
       "self_model_cards": 8,
       "self_model_eval": 24,
       "self_model_sft": 4,
@@ -146,7 +102,7 @@
       "validation_sft": 55
     },
     "familyCount": 34,
-    "recordCount": 51621,
+    "recordCount": 52958,
     "reranker": {
       "datasetCard": {
         "families": [
@@ -182,10 +138,10 @@
         "task": "candidate_reranking"
       },
       "enabledByDefault": false,
-      "evalCount": 5172,
+      "evalCount": 5320,
       "fallbackMode": "embedding-only",
       "generated": true,
-      "hardNegativePairCount": 5172,
+      "hardNegativePairCount": 5320,
       "metrics": {
         "hardNegativePairAccuracy": 0.0,
         "p95RerankLatencyRegression": 0.0,
@@ -194,82 +150,79 @@
         "top5ReorderWinRate": 0.0
       },
       "model": "Qwen/Qwen3-Reranker-0.6B",
-      "pairCount": 5172,
+      "pairCount": 5320,
       "teacherModel": "Qwen/Qwen3-Reranker-4B",
-      "trainPairCount": 4696,
-      "valPairCount": 476
+      "trainPairCount": 4832,
+      "valPairCount": 488
     }
   },
-  "errorGapCount": 2,
-  "gapCount": 2,
+  "errorGapCount": 1,
+  "gapCount": 1,
   "manifest": {
-    "commit": "31e0e1b662e0e7ca481ae283730ac04c761b1542",
-    "fingerprint": "81d98d784fcd336440e489e7631b20fad936bea96be7e6022fe6f743f9b2e258",
+    "commit": "cb190c87ed00d809e1773dc8c1ca4837b5bc42d3",
+    "fingerprint": "f0b611e1aca042f37a77e5fd60c20e857bded09e2a344ac19740ad6a5fd01c39",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
     "toolCount": 53
   },
-  "nextActionPromptCount": 2,
+  "nextActionPromptCount": 1,
   "output": "/Users/ales27pm/lumen-clone/generated/agent_manifest",
   "passed": false,
   "root": "/Users/ales27pm/lumen-clone",
   "runtime": {
-    "allFailureTypes": {
-      "e2e_response_quality_preflight": 1
-    },
-    "failureCount": 1,
-    "failureTypes": {
-      "e2e_response_quality_preflight": 1
-    },
-    "rawFailureCount": 1,
-    "reportCount": 2,
+    "allFailureTypes": {},
+    "failureCount": 0,
+    "failureTypes": {},
+    "rawFailureCount": 0,
+    "reportCount": 0,
     "skippedLiveModelGenerationCount": 0,
-    "sourceLayers": {
-      "e2eTestReport.json": 1
-    }
+    "sourceLayers": {},
+    "staleReportCount": 1,
+    "totalReportCount": 1
   },
   "runtimeAuditInputs": [
-    "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/56437FEC-BC8B-4CAF-A334-3DF7FDA51B60"
+    "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/5151B4D6-19BC-4CE8-B6C2-AF575B562746/1-lumen-live-e2e-report-2026-06-29T06-39-41Z-4649a00f-0fc3-4a38-bb77-39e642c3a78d.json"
   ],
   "schemaVersion": "1.1.0",
   "startedAt": "1970-01-01T00:00:00+00:00",
   "testFlight": {
-    "buildLabel": "20260629060414",
+    "buildLabel": "20260629064751",
+    "currentRuntimeAuditProvided": false,
+    "currentRuntimeAuditReportCount": 0,
     "expectedExport": "lumen-testflight-agent-grounding-*.json from Agent Grounding > Export TestFlight + Agent Grounding Package",
-    "manifestFingerprint": "81d98d784fcd336440e489e7631b20fad936bea96be7e6022fe6f743f9b2e258",
+    "manifestFingerprint": "f0b611e1aca042f37a77e5fd60c20e857bded09e2a344ac19740ad6a5fd01c39",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
     "requiresTestFlightAppRun": true,
     "runbookPath": "TESTFLIGHT_RUNBOOK.md",
     "runtimeAuditProvided": true,
+    "runtimeAuditReportCount": 1,
     "scenarioCount": 120,
     "scenarioQueuePath": "testflight_scenarios.jsonl",
-    "status": "runtime-audit-ingested"
+    "staleRuntimeAuditReportCount": 1,
+    "status": "runtime-audit-stale"
   },
   "triage": {
     "categoryCounts": {
-      "no_correlated_model_turn": 1,
       "testflight_runtime_build_mismatch": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
-    "freshRuntimeFailureCount": 1,
+    "freshRuntimeFailureCount": 0,
     "groupCounts": {
-      "Runtime audit export does not prove the current TestFlight build": 1,
-      "preflight": 1
+      "Runtime audit export does not prove the current TestFlight build": 1
     },
-    "rawRuntimeFailureCount": 1,
+    "rawRuntimeFailureCount": 0,
     "rootCauseCounts": {
-      "no_correlated_model_turn": 1,
       "stale_audit_evidence": 1
     },
-    "runtimeAuditReports": 2,
+    "runtimeAuditReports": 0,
     "severityCounts": {
-      "error": 2
+      "error": 1
     },
     "skippedLiveModelGenerationCount": 0,
-    "totalGaps": 2
+    "totalGaps": 1
   },
   "validation": {
     "failureCount": 0,
