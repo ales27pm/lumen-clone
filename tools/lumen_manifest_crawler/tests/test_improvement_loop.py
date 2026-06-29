@@ -102,6 +102,76 @@ def test_improvement_loop_can_require_testflight_runtime_audit(tmp_path: Path):
     assert result.passed is False
 
 
+def test_improvement_loop_flags_stale_testflight_runtime_audit_build(tmp_path: Path):
+    report = tmp_path / "lumen-live-e2e-report.json"
+    report.write_text(
+        json.dumps({
+            "schemaVersion": "1.0.0",
+            "generatedAt": "2026-06-29T00:00:00Z",
+            "app": {
+                "name": "Lumen",
+                "bundleIdentifier": "com.27pm.lumenclone",
+                "shortVersion": "1.0.0",
+                "buildNumber": "20260628223733",
+            },
+            "exportPolicy": {
+                "format": "live-e2e-test-report-json",
+                "sourceLayer": "e2eTestReport",
+                "ownsLiveE2EScenarios": True,
+                "includesDeterministicStaticScenarios": False,
+            },
+            "payload": {
+                "id": "66666666-6666-6666-6666-666666666666",
+                "startedAt": "2026-06-29T00:00:00Z",
+                "finishedAt": "2026-06-29T00:00:10Z",
+                "passed": 1,
+                "failed": 0,
+                "results": [
+                    {
+                        "id": "77777777-7777-7777-7777-777777777777",
+                        "scenarioID": "self-model-evidence",
+                        "kind": "standard",
+                        "title": "Self-model evidence",
+                        "prompt": "What evidence supports your claim?",
+                        "expectedIntent": "rag",
+                        "actualIntent": "rag",
+                        "requiresAgentRun": False,
+                        "passed": True,
+                        "failures": [],
+                        "finalText": "Bundled manifest evidence.",
+                        "events": [],
+                    }
+                ],
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(report,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+            testflight_build_label="20260629054657",
+        )
+    )
+
+    mismatch_gaps = [gap for gap in result.gaps if gap["category"] == "testflight_runtime_build_mismatch"]
+    assert len(mismatch_gaps) == 1
+    assert mismatch_gaps[0]["severity"] == "error"
+    assert mismatch_gaps[0]["evidence"]["expectedBuildLabel"] == "20260629054657"
+    assert mismatch_gaps[0]["evidence"]["mismatchedReportCount"] == 1
+    assert mismatch_gaps[0]["evidence"]["mismatchedReports"][0]["appBuildNumber"] == "20260628223733"
+    assert result.state["triage"]["rootCauseCounts"]["stale_audit_evidence"] == 1
+    assert result.passed is False
+
+
 def test_improvement_loop_records_failed_command_as_critical_gap(tmp_path: Path):
     result = run_agent_improvement_loop(
         AgentImprovementLoopConfig(

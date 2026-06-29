@@ -7,7 +7,7 @@
   "agent": "mouth",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "30f3aebdc969f6b9c4af4af0d8a7258992e03911",
+    "manifestCommit": "06e870a0d92d8cd90af470196c4ed493c646bfdc",
     "recordCounts": {
       "eval": 8,
       "train_dpo": 12,

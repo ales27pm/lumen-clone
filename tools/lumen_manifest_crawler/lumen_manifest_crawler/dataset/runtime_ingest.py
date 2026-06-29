@@ -182,15 +182,16 @@ def _flatten_evidence_layer_envelope(envelope: dict[str, Any], *, source: str, s
     if source_layer == "e2eTestReport" or owns_live_e2e:
         if isinstance(payload, dict):
             report = _swift_e2e_payload_to_normalized_report(payload)
-            return [
-                flatten_e2e_json_report(
-                    report,
-                    source=source,
-                    source_format=source_format,
-                    source_layer="e2eTestReport.evidenceLayer",
-                    sidecars=sidecars,
-                )
-            ]
+            flattened = flatten_e2e_json_report(
+                report,
+                source=source,
+                source_format=source_format,
+                source_layer="e2eTestReport.evidenceLayer",
+                sidecars=sidecars,
+            )
+            flattened.update(_app_metadata_fields(envelope.get("app")))
+            flattened["exportPolicy"] = export_policy
+            return [flattened]
         return []
 
     if source_layer == "runtimeManifestAudit" and isinstance(payload, dict):
@@ -894,6 +895,7 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
         "_sourceFormat": "lumen_in_app_dataset_package",
         "_sourceLayer": export_policy.get("sourceLayer") or "agentGroundingRuntimeAudit",
         "generatedAt": package.get("generatedAt"),
+        **_app_metadata_fields(package.get("app")),
         "manifestSource": package.get("manifestSource"),
         "usedRuntimeFallback": package.get("usedRuntimeFallback"),
         "traceSelectedToolAllowedCount": package.get(
@@ -909,6 +911,18 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
         "ownsLiveE2EScenarios": owns_live_e2e,
         "exportPolicy": export_policy,
         "failures": failures,
+    }
+
+
+def _app_metadata_fields(app: Any) -> dict[str, Any]:
+    if not isinstance(app, dict):
+        return {}
+    return {
+        "app": app,
+        "appName": app.get("name"),
+        "appBundleIdentifier": app.get("bundleIdentifier"),
+        "appShortVersion": app.get("shortVersion"),
+        "appBuildNumber": app.get("buildNumber"),
     }
 
 

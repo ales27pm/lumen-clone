@@ -1518,6 +1518,12 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     package = {
         "schemaVersion": "1.7.0",
         "generatedAt": "2026-06-29T00:00:00Z",
+        "app": {
+            "name": "Lumen",
+            "bundleIdentifier": "com.27pm.lumenclone",
+            "shortVersion": "1.0.0",
+            "buildNumber": "20260629054657",
+        },
         "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
         "usedRuntimeFallback": False,
         "exportPolicy": {
@@ -1555,6 +1561,12 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
         "liveE2EReport": {
             "schemaVersion": "1.0.0",
             "generatedAt": "2026-06-29T00:00:10Z",
+            "app": {
+                "name": "Lumen",
+                "bundleIdentifier": "com.27pm.lumenclone",
+                "shortVersion": "1.0.0",
+                "buildNumber": "20260629054657",
+            },
             "exportPolicy": {
                 "format": "live-e2e-test-report-json",
                 "sourceLayer": "e2eTestReport",
@@ -1613,12 +1625,14 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     live_report = next(report for report in reports if report["_sourceFormat"] == "live-e2e-test-report-json")
 
     assert package_report["_sourceLayer"] == "agentGroundingRuntimeAudit"
+    assert package_report["appBuildNumber"] == "20260629054657"
     assert package_report["ownsLiveE2EScenarios"] is False
     assert package_report["liveE2ECorrelatedTraceCount"] == 2
     assert package_report["liveE2EModelBackedCorrelatedTraceCount"] == 1
     assert package_report["liveE2EModelBackedCorrelatedScenarioCount"] == 1
     assert package_report["liveE2EDeterministicCompatibilityTraceCount"] == 1
     assert live_report["_sourceLayer"] == "e2eTestReport.evidenceLayer"
+    assert live_report["appBuildNumber"] == "20260629054657"
     assert live_report["failures"] == []
     assert live_report["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
     assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"

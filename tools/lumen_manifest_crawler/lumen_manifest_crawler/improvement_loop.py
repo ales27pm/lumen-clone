@@ -774,6 +774,10 @@ def _build_gap_report(  # NOSONAR
             "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the in-app dataset package JSON, then rerun improve-loop with --runtime-audit <json>.",
         })
 
+    build_mismatch_gap = _testflight_runtime_build_mismatch_gap(runtime_reports, config)
+    if build_mismatch_gap is not None:
+        gaps.append(build_mismatch_gap)
+
     for failure in validation_report.failures:
         dumped = _model_dump(failure)
         gaps.append({
@@ -881,6 +885,69 @@ def _build_gap_report(  # NOSONAR
         })
 
     return sorted(gaps, key=lambda gap: (str(gap.get("severity")), str(gap.get("category")), str(gap.get("title"))))
+
+
+def _testflight_runtime_build_mismatch_gap(
+    runtime_reports: list[dict[str, Any]],
+    config: AgentImprovementLoopConfig,
+) -> dict[str, Any] | None:
+    expected_build = str(config.testflight_build_label or "").strip()
+    if config.app_run_mode.casefold() != "testflight" or not expected_build or not runtime_reports:
+        return None
+
+    mismatched: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    matching = 0
+    for report in runtime_reports:
+        build_number = _runtime_report_app_build_number(report)
+        evidence = {
+            "source": report.get("_source"),
+            "sourceFormat": report.get("_sourceFormat"),
+            "sourceLayer": report.get("_sourceLayer"),
+            "appBuildNumber": build_number,
+            "generatedAt": report.get("generatedAt"),
+        }
+        if build_number == expected_build:
+            matching += 1
+        elif build_number:
+            mismatched.append(evidence)
+        else:
+            missing.append(evidence)
+
+    if not mismatched and not missing:
+        return None
+
+    return {
+        "id": _stable_id("testflight_runtime_build_mismatch", {
+            "expectedBuild": expected_build,
+            "mismatched": mismatched,
+            "missing": missing,
+        }),
+        "severity": "error",
+        "category": "testflight_runtime_build_mismatch",
+        "title": "Runtime audit export does not prove the current TestFlight build",
+        "evidence": {
+            "expectedBuildLabel": expected_build,
+            "matchingReportCount": matching,
+            "mismatchedReportCount": len(mismatched),
+            "missingBuildReportCount": len(missing),
+            "mismatchedReports": mismatched[:10],
+            "missingBuildReports": missing[:10],
+            "rootCauseCategory": "stale_audit_evidence",
+        },
+        "recommendedAction": "Install build "
+        f"{expected_build}, run Agent Grounding in that TestFlight app, export the in-app dataset package JSON, and ingest only that current-build package.",
+    }
+
+
+def _runtime_report_app_build_number(report: dict[str, Any]) -> str | None:
+    build_number = report.get("appBuildNumber")
+    if build_number:
+        return str(build_number)
+    app = report.get("app")
+    if isinstance(app, dict) and app.get("buildNumber"):
+        return str(app.get("buildNumber"))
+    return None
 
 
 def _runtime_recommendation(
@@ -1036,7 +1103,7 @@ def _gap_root_cause_category(gap: dict[str, Any]) -> str:
         return "manifest_mismatch"
     if category == "command_failure":
         return "permission_config_issue"
-    if category == "testflight_runtime_pending":
+    if category in {"testflight_runtime_pending", "testflight_runtime_build_mismatch"}:
         return "stale_audit_evidence"
     return "stale_or_unclassified_runtime_evidence"
 
