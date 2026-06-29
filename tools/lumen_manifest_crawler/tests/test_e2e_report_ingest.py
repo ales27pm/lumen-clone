@@ -1516,7 +1516,7 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     conversation_id = "33333333-3333-3333-3333-333333333333"
     turn_id = "44444444-4444-4444-4444-444444444444"
     package = {
-        "schemaVersion": "1.6.0",
+        "schemaVersion": "1.7.0",
         "generatedAt": "2026-06-29T00:00:00Z",
         "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
         "usedRuntimeFallback": False,
@@ -1620,6 +1620,108 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     assert live_report["failures"] == []
     assert live_report["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
     assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+
+
+def test_agent_grounding_package_synthesizes_live_e2e_model_backed_trace_gap(tmp_path: Path):
+    import json
+
+    e2e_run_id = "11111111-1111-1111-1111-111111111111"
+    agent_run_id = "22222222-2222-2222-2222-222222222222"
+    conversation_id = "33333333-3333-3333-3333-333333333333"
+    turn_id = "44444444-4444-4444-4444-444444444444"
+    package = {
+        "schemaVersion": "1.7.0",
+        "generatedAt": "2026-06-29T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [
+            {
+                "id": "55555555-5555-5555-5555-555555555555",
+                "createdAt": "2026-06-29T00:00:05Z",
+                "event": "finalAnswer",
+                "slot": "cortex",
+                "stage": "compatibility-clarification-final",
+                "scenarioID": "live-alarm-authorization-status",
+                "e2eRunID": e2e_run_id,
+                "agentRunID": agent_run_id,
+                "conversationID": conversation_id,
+                "turnID": turn_id,
+                "promptPrefix": "Show alarm permission status.",
+                "rawOutputPrefix": "I couldn't safely complete the alarm/timer request.",
+                "runtimePath": "deterministic-compatibility",
+                "allowedToolIDs": [],
+                "toolArguments": {},
+                "emittedFinalInActionTurn": True,
+            }
+        ],
+        "liveE2EReport": {
+            "schemaVersion": "1.0.0",
+            "generatedAt": "2026-06-29T00:00:10Z",
+            "exportPolicy": {
+                "format": "live-e2e-test-report-json",
+                "sourceLayer": "e2eTestReport",
+                "ownsLiveE2EScenarios": True,
+                "includesDeterministicStaticScenarios": False,
+            },
+            "payload": {
+                "id": "66666666-6666-6666-6666-666666666666",
+                "startedAt": "2026-06-29T00:00:00Z",
+                "finishedAt": "2026-06-29T00:00:20Z",
+                "passed": 0,
+                "failed": 1,
+                "results": [
+                    {
+                        "id": "77777777-7777-7777-7777-777777777777",
+                        "scenarioID": "live-alarm-authorization-status",
+                        "kind": "standard",
+                        "title": "Live alarm authorization status",
+                        "prompt": "Show alarm permission status.",
+                        "expectedIntent": "alarm",
+                        "actualIntent": "alarm",
+                        "e2eRunID": e2e_run_id,
+                        "agentRunID": agent_run_id,
+                        "conversationID": conversation_id,
+                        "turnID": turn_id,
+                        "requiresAgentRun": True,
+                        "passed": False,
+                        "failures": [
+                            "found deterministic-compatibility execution trace but policy-first evidence disabled for this scenario"
+                        ],
+                        "finalText": "I couldn't safely complete the alarm/timer request.",
+                        "events": [],
+                    }
+                ],
+            },
+            "correlatedTraceCount": 1,
+            "modelBackedCorrelatedTraceCount": 0,
+            "deterministicCompatibilityTraceCount": 1,
+            "traceSidecarField": "recentTraces",
+        },
+    }
+    report_path = tmp_path / "lumen-agent-grounding-testflight-gap-package.json"
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    package_report = next(
+        report
+        for report in load_runtime_audit_reports([report_path])
+        if report["_sourceFormat"] == "lumen_in_app_dataset_package"
+    )
+
+    failure = next(
+        failure
+        for failure in package_report["failures"]
+        if failure["type"] == "agent_grounding_live_e2e_model_backed_trace_gap"
+    )
+    assert package_report["liveE2EModelBackedCorrelatedTraceCount"] == 0
+    assert package_report["liveE2EDeterministicCompatibilityTraceCount"] == 1
+    assert failure["sourceLayer"] == "agentGroundingRuntimeAudit.exportQuality"
+    assert "requiredAgentRunScenarioCount=1" in failure["actual"]
+    assert "modelBackedCorrelatedTraceCount=0" in failure["actual"]
 
 
 def test_runtime_audit_ingest_deduplicates_same_e2e_report_id(tmp_path: Path):

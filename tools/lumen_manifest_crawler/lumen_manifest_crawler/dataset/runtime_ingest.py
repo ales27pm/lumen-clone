@@ -304,7 +304,7 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -604,6 +604,58 @@ def _empty_agent_grounding_trace_failure(package: dict[str, Any], export_policy:
     }
 
 
+def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[str, Any] | None:
+    live_e2e_report = package.get("liveE2EReport")
+    if not isinstance(live_e2e_report, dict):
+        return None
+    model_backed_count = _optional_int(live_e2e_report.get("modelBackedCorrelatedTraceCount"))
+    if model_backed_count is None:
+        return None
+    correlated_count = _optional_int(live_e2e_report.get("correlatedTraceCount")) or 0
+    deterministic_count = _optional_int(live_e2e_report.get("deterministicCompatibilityTraceCount")) or 0
+    payload = live_e2e_report.get("payload")
+    payload = payload if isinstance(payload, dict) else {}
+    required_agent_run_scenario_count = sum(
+        1
+        for result in _iter_dicts(payload.get("results", []) or [])
+        if result.get("requiresAgentRun") is True
+    )
+    if required_agent_run_scenario_count <= 0 or model_backed_count >= required_agent_run_scenario_count:
+        return None
+    return {
+        "type": "agent_grounding_live_e2e_model_backed_trace_gap",
+        "agent": "runtime",
+        "expected": [
+            "Every requiresAgentRun live E2E scenario should export correlated model-backed AgentBehaviorTrace modelTurn evidence."
+        ],
+        "actual": (
+            f"requiredAgentRunScenarioCount={required_agent_run_scenario_count}; "
+            f"modelBackedCorrelatedTraceCount={model_backed_count}; "
+            f"correlatedTraceCount={correlated_count}; "
+            f"deterministicCompatibilityTraceCount={deterministic_count}"
+        ),
+        "scenario": "Agent Grounding > E2E Test Runner > Export In-App Dataset Package",
+        "problem": (
+            "The embedded live E2E report does not have enough model-backed correlated traces. "
+            "Deterministic compatibility traces and uncorrelated traces are diagnostics only, not live model evidence."
+        ),
+        "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
+    }
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
 def _flatten_persistent_runtime_diagnostics(package: dict[str, Any], *, source: str) -> dict[str, Any]:
     state = package.get("state")
     state = state if isinstance(state, dict) else {}
@@ -824,6 +876,13 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
 
     live_e2e_report = package.get("liveE2EReport")
     live_e2e_summary = live_e2e_report if isinstance(live_e2e_report, dict) else {}
+    live_trace_gap_failure = _live_e2e_model_backed_trace_gap_failure(package)
+    has_live_trace_gap_failure = any(
+        failure.get("type") == "agent_grounding_live_e2e_model_backed_trace_gap"
+        for failure in export_quality_failures
+    )
+    if live_trace_gap_failure is not None and not has_live_trace_gap_failure:
+        failures.append(live_trace_gap_failure)
 
     return {
         "_source": source,

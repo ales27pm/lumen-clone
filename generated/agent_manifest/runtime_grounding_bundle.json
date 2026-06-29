@@ -154,7 +154,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage, exportRuntimeRegistryAuditLayer, exportBehaviorAuditLayer.",
-        "sha256": "d2d331c8df66a23d203a88e2b3406049bec4a28e93697e220e0e50318ad077ca",
+        "sha256": "7bd382d7e87cfad29a5c5b5a959e53ea44314ec0ed56169730229756b7d2b675",
         "symbols": [
           "AgentKernelBridgeSmokeTestExpectation",
           "AgentGroundingAuditView",
@@ -316,7 +316,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, liveE2EReportExport.",
-        "sha256": "19587db8c16d05c2fab843f89ca0163977d3387e359aa6cdc9a1121e903bc60b",
+        "sha256": "e5558a10dcff92bc6597024a158a02eb535d5e6aa03480446fc03bdb5e5b6c07",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetTraceExport",
@@ -2169,7 +2169,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "96a9e9ee08cf95a235f2668878e5ad74d13fc49e",
+  "manifestCommit": "63be24239c5a1c1f258b796db13d9804214cf471",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

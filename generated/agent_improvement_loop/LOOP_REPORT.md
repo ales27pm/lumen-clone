@@ -4,7 +4,7 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `52775`
+- Dataset records: `52825`
 - Runtime audit reports: `3`
 - Runtime failures: `165`
 - Raw runtime failures: `166`
