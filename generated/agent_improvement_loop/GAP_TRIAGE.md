@@ -12,14 +12,14 @@
 
 ## Failure Groups
 
-### Runtime audit export does not prove the current TestFlight build
+### TestFlight in-app audit export has not been ingested yet
 
 - Count: `1`
 - Status: `needs_fresh_runtime_evidence`
 - Root causes: `{"stale_audit_evidence": 1}`
-- Categories: `{"testflight_runtime_build_mismatch": 1}`
+- Categories: `{"testflight_runtime_pending": 1}`
 - Fresh runtime failures: `0`
 - Skipped live model generation: `0`
-- Recommended action: Install build 20260629074305, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.
+- Recommended action: Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.
 
   - `stale_audit_evidence` | skipped=`None` | prompt:  | actual:

@@ -1,12 +1,12 @@
 {
   "counts": {
-    "corpus": 5006,
-    "evalRetrieval": 5175,
-    "hardNegatives": 5175,
+    "corpus": 5008,
+    "evalRetrieval": 5177,
+    "hardNegatives": 5177,
     "trainPairs": 4707,
-    "trainTriplets": 4656,
-    "valPairs": 468,
-    "valTriplets": 519
+    "trainTriplets": 4662,
+    "valPairs": 470,
+    "valTriplets": 515
   },
   "families": [
     "agent_role_question_to_fleet_slot",
