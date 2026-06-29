@@ -97,6 +97,71 @@ enum ModelLaunchBootstrap {
         appState.runtime.updateBootStep(id: "models", detail: detail, state: startedDownloads > 0 ? .running : .complete)
     }
 
+    static func prepareLiveRuntimeArtifacts(appState: AppState, context: ModelContext, timeoutSeconds: TimeInterval = 300) async -> Bool {
+        let family = LumenModelFamily.persistedSelected
+        let models = liveRuntimeModelsForInstall(family: family)
+        guard !models.isEmpty else {
+            appState.runtime.updateBootStep(id: "models", detail: "No \(family.shortLabel) live runtime artifacts", state: .warning)
+            return false
+        }
+
+        guard appState.autoDownloadFleetModels else {
+            appState.runtime.updateBootStep(id: "models", detail: "Fleet auto-download disabled", state: .warning)
+            linkExistingFleetFiles(appState: appState, context: context)
+            return readyArtifactCount(for: models, context: context) >= models.count
+        }
+        guard !appState.confirmFleetDownloads else {
+            appState.runtime.updateBootStep(id: "models", detail: "Fleet download waiting for manual repair", state: .warning)
+            linkExistingFleetFiles(appState: appState, context: context)
+            return readyArtifactCount(for: models, context: context) >= models.count
+        }
+
+        let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        let missing = missingModels(from: models, allStored: allStored)
+        let missingBytes = missing.reduce(Int64(0)) { $0 + $1.sizeBytes }
+        let requiredBytes = max(0, missingBytes + (missing.isEmpty ? 0 : storageSafetyBufferBytes))
+        let availableBytes = availableStorageBytes()
+        if requiredBytes > 0, availableBytes < requiredBytes {
+            appState.runtime.updateBootStep(
+                id: "models",
+                detail: "\(family.shortLabel): need \(formatBytesForBoot(requiredBytes)); only \(formatBytesForBoot(availableBytes)) free",
+                state: .warning
+            )
+            linkExistingFleetFiles(appState: appState, context: context)
+            return readyArtifactCount(for: models, context: context) >= models.count
+        }
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        var startedDownloads = startMissingLiveRuntimeDownloads(models: models, appState: appState, context: context)
+        while !Task.isCancelled {
+            let readyCount = readyArtifactCount(for: models, context: context)
+            if readyCount >= models.count {
+                appState.runtime.updateBootStep(id: "models", detail: "\(family.shortLabel): \(readyCount) / \(models.count) live runtime artifacts ready", state: .complete)
+                return true
+            }
+
+            appState.runtime.updateBootStep(
+                id: "models",
+                detail: startedDownloads > 0
+                    ? "\(family.shortLabel): \(readyCount) / \(models.count) live runtime artifacts ready · \(startedDownloads) downloading"
+                    : "\(family.shortLabel): \(readyCount) / \(models.count) live runtime artifacts ready",
+                state: .running
+            )
+
+            if Date() >= deadline {
+                appState.runtime.updateBootStep(id: "models", detail: "\(family.shortLabel): timed out waiting for live runtime artifacts", state: .warning)
+                return false
+            }
+
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if !hasActiveDownloads(for: models) {
+                startedDownloads = startMissingLiveRuntimeDownloads(models: models, appState: appState, context: context)
+            }
+        }
+
+        return false
+    }
+
     static func switchFamily(_ family: LumenModelFamily, appState: AppState, context: ModelContext) async {
         LumenModelFamily.persistedSelected = family
         appState.activeChatModelID = nil
@@ -118,6 +183,42 @@ enum ModelLaunchBootstrap {
 
     private static func fleetModelsForInstall(family: LumenModelFamily = LumenModelFamily.persistedSelected) -> [CatalogModel] {
         uniqueByArtifact(LumenModelFleetCatalog.bootstrapModels(for: family))
+    }
+
+    static func liveRuntimeModelsForInstall(family: LumenModelFamily = LumenModelFamily.persistedSelected) -> [CatalogModel] {
+        let bootstrap = LumenModelFleetCatalog.bootstrapModels(for: family)
+        switch family {
+        case .qwen25:
+            return uniqueByArtifact(bootstrap.filter { $0.role == .chat })
+        case .qwen3:
+            let contract = LumenTrainedModelRuntimeRegistry.contract(for: family)
+            let requiredAdapterFiles = Set(contract.adapterRoles.compactMap { role in
+                role.slot == nil ? nil : role.adapterFileName
+            })
+            return uniqueByArtifact(bootstrap.filter { model in
+                if model.role == .chat {
+                    return contract.matchesSharedBase(repoID: model.repoId, fileName: model.fileName)
+                }
+                if model.role == .roleAdapter {
+                    return requiredAdapterFiles.contains(model.fileName)
+                }
+                return false
+            })
+        }
+    }
+
+    private static func startMissingLiveRuntimeDownloads(models: [CatalogModel], appState: AppState, context: ModelContext) -> Int {
+        let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        var started = 0
+        for model in missingModels(from: models, allStored: allStored) {
+            switch ensureModelPresent(model, expectedFleetCount: models.count, appState: appState, context: context, allStored: allStored) {
+            case .startedDownload:
+                started += 1
+            default:
+                break
+            }
+        }
+        return started
     }
 
     private static func ensureModelPresent(
@@ -198,8 +299,12 @@ enum ModelLaunchBootstrap {
         models.filter { model in
             let localURL = ModelDownloader.shared.localURL(for: model)
             if FileManager.default.fileExists(atPath: localURL.path) { return false }
-            return storedModel(for: model, in: allStored) == nil
+            return !(storedModel(for: model, in: allStored).map(storedModelFileExists) ?? false)
         }
+    }
+
+    private static func storedModelFileExists(_ stored: StoredModel) -> Bool {
+        FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: stored.localPath, fileName: stored.fileName).path)
     }
 
     private static func loadIfSelected(_ stored: StoredModel, appState: AppState, context: ModelContext) async {
@@ -227,13 +332,20 @@ enum ModelLaunchBootstrap {
     }
 
     private static func readyFleetArtifactCount(context: ModelContext) -> Int {
+        readyArtifactCount(for: fleetModelsForInstall(), context: context)
+    }
+
+    private static func readyArtifactCount(for models: [CatalogModel], context: ModelContext) -> Int {
         let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
-        let installedKeys = Set(stored.map { artifactKey(repoId: $0.repoId, fileName: $0.fileName) })
-        return fleetModelsForInstall().reduce(0) { count, model in
+        return models.reduce(0) { count, model in
             let localReady = FileManager.default.fileExists(atPath: ModelDownloader.shared.localURL(for: model).path)
-            let storedReady = installedKeys.contains(artifactKey(repoId: model.repoId, fileName: model.fileName))
+            let storedReady = storedModel(for: model, in: stored).map(storedModelFileExists) ?? false
             return localReady || storedReady ? count + 1 : count
         }
+    }
+
+    private static func hasActiveDownloads(for models: [CatalogModel]) -> Bool {
+        models.contains { ModelDownloader.shared.isDownloading($0) }
     }
 
     private static func storedModel(for catalog: CatalogModel, context: ModelContext) -> StoredModel? {

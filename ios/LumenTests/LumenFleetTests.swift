@@ -337,6 +337,23 @@ struct Qwen3AdapterRuntimeCatalogTests {
         #expect(models.contains { $0.role == .embedding })
     }
 
+    @MainActor
+    @Test func liveRuntimePreparationTargetsSharedBaseAndSlotAdaptersOnly() async throws {
+        let models = ModelLaunchBootstrap.liveRuntimeModelsForInstall(family: .qwen3)
+        #expect(models.filter { $0.role == .chat }.map(\.fileName) == ["lumen-qwen3-fast-shared-q4_k_m.gguf"])
+        #expect(models.contains { $0.fileName == "lumen-executor-lora.gguf" && $0.role == .roleAdapter })
+        #expect(!models.contains { $0.role == .embedding })
+        #expect(!models.contains { $0.fileName == "lumen-fleet-lora.gguf" })
+        #expect(Set(models.map(\.fileName)) == [
+            "lumen-qwen3-fast-shared-q4_k_m.gguf",
+            "lumen-cortex-lora.gguf",
+            "lumen-executor-lora.gguf",
+            "lumen-mouth-lora.gguf",
+            "lumen-mimicry-lora.gguf",
+            "lumen-rem-lora.gguf",
+        ])
+    }
+
     @Test func traceInitializerDefaultsAdapterMetadataForBackwardCompatibility() async throws {
         let trace = AgentBehaviorTrace(
             id: UUID(),
