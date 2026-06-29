@@ -798,20 +798,11 @@ nonisolated enum E2ETestRunner {
                     }
                 }
                 let modelEvidenceStartedAt = Date()
-                let runOptions = LegacyAgentRunOptions(
-                    modelContext: nil,
-                    conversationID: req.conversationID,
-                    turnID: req.turnID,
-                    scenarioID: scenario.id,
+                let runOptions = strictLiveAgentRunOptions(
+                    req: req,
+                    scenario: scenario,
                     e2eRunID: e2eRunID,
-                    agentRunID: agentRunID,
-                    groundingMode: .slotAgent,
-                    allowDegradedGrounding: false,
-                    preventDoubleGrounding: true,
-                    diagnosticsEnabled: false,
-                    allowDeterministicCompatibility: false,
-                    allowParseFailureDeterministicRecovery: false,
-                    allowsMemoryPressureContinuation: scenario.kind == .training
+                    agentRunID: agentRunID
                 )
                 let agentEvents = await MainActor.run {
                     AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
@@ -1010,6 +1001,29 @@ nonisolated enum E2ETestRunner {
         guard scenario.requiresAgentRun, routing.intent == .webSearch else { return false }
         let canonicalAvailable = Set(availableToolIDs.map(ToolRouteGuard.canonicalToolID))
         return canonicalAvailable.contains("web.search") || canonicalAvailable.contains("web.fetch")
+    }
+
+    private nonisolated static func strictLiveAgentRunOptions(
+        req: AgentRequest,
+        scenario: E2ETestScenario,
+        e2eRunID: UUID,
+        agentRunID: UUID
+    ) -> LegacyAgentRunOptions {
+        LegacyAgentRunOptions(
+            modelContext: nil,
+            conversationID: req.conversationID,
+            turnID: req.turnID,
+            scenarioID: scenario.id,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            groundingMode: .rolePipeline,
+            allowDegradedGrounding: false,
+            preventDoubleGrounding: true,
+            diagnosticsEnabled: false,
+            allowDeterministicCompatibility: false,
+            allowParseFailureDeterministicRecovery: false,
+            allowsMemoryPressureContinuation: scenario.kind == .training
+        )
     }
 
     private nonisolated static func modelRuntimeEvidence(
@@ -1279,6 +1293,20 @@ nonisolated enum E2ETestRunner {
         routing: IntentRoutingDecision
     ) -> Bool {
         acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
+    }
+
+    nonisolated static func strictLiveAgentRunOptionsForTests(
+        req: AgentRequest,
+        scenario: E2ETestScenario,
+        e2eRunID: UUID,
+        agentRunID: UUID
+    ) -> LegacyAgentRunOptions {
+        strictLiveAgentRunOptions(
+            req: req,
+            scenario: scenario,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID
+        )
     }
 
     nonisolated static func modelRuntimeEvidenceForTests(

@@ -188,6 +188,56 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func strictLiveAgentRunOptionsRequireModelBackedRolePipeline() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-weather",
+            title: "Live weather",
+            kind: .training,
+            prompt: "What is the weather here?",
+            expectedIntent: .weather,
+            requiredAllowedToolIDs: ["weather"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let request = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: scenario.prompt,
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all,
+            relevantMemories: [],
+            scenarioID: scenario.id
+        )
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+
+        let options = E2ETestRunner.strictLiveAgentRunOptionsForTests(
+            req: request,
+            scenario: scenario,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID
+        )
+
+        #expect(options.groundingMode == .rolePipeline)
+        #expect(!options.diagnosticsEnabled)
+        #expect(!options.allowDeterministicCompatibility)
+        #expect(!options.allowParseFailureDeterministicRecovery)
+        #expect(options.allowsMemoryPressureContinuation)
+        #expect(options.scenarioID == scenario.id)
+        #expect(options.e2eRunID == e2eRunID)
+        #expect(options.agentRunID == agentRunID)
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()

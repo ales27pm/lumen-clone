@@ -1495,7 +1495,7 @@ final class AgentService {
     }
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
-        if options.diagnosticsEnabled {
+        if options.diagnosticsEnabled, options.allowDeterministicCompatibility {
             return LegacyAgentCompatibilityBridge.runSlotAgentCompatibility(req, options: options)
         }
         if options.allowDeterministicCompatibility,
