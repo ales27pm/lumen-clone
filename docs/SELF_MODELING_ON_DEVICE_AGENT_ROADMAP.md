@@ -165,7 +165,9 @@ Create a compact JSON contract like this. The example is a projection of existin
 | `tools.available` | `SecureToolRegistry.availableDefinitions(...).map(\.id)` | The model sees only policy-filtered tools for this turn/source. |
 | `tools.requiresApproval` | `SecureToolDefinition.requiresUserApproval` plus `ToolApprovalPolicy` result | The app remains the enforcement layer; the model only receives the summary. |
 | `tools.backgroundSafe` | `SecureToolDefinition.supportsBackgroundExecution` after policy filtering | Background snapshots must not expose foreground-only tool affordances. |
-| `evidence.exportPolicy.ownsLiveE2EScenarios` | existing `EvidenceLayerExportPolicy` / `InAppDatasetExportPolicy` key | Keep this exact key; the ingester routes evidence by `sourceLayer` and `ownsLiveE2EScenarios`. |
+| `evidence.exportPolicy.sourceLayer` | existing `EvidenceLayerExportPolicy.sourceLayer` / `InAppDatasetExportPolicy.sourceLayer` key | Use the exporter-provided evidence layer identifier; the ingester routes payloads by `sourceLayer`, not by filename. |
+| `evidence.exportPolicy.ownsLiveE2EScenarios` | existing `EvidenceLayerExportPolicy.ownsLiveE2EScenarios` / `InAppDatasetExportPolicy.ownsLiveE2EScenarios` key | Keep this exact key; only true live E2E evidence may own scenario pass/fail. |
+| `evidence.exportPolicy.includesDeterministicStaticScenarios` | existing `EvidenceLayerExportPolicy.includesDeterministicStaticScenarios` / `InAppDatasetExportPolicy.includesDeterministicStaticScenarios` key | Keep this exact key so deterministic static checks cannot be mistaken for live E2E proof. |
 
 ## Snapshot versioning and compatibility
 
