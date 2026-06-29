@@ -3,7 +3,7 @@
     {
       "category": "testflight_runtime_build_mismatch",
       "evidence": {
-        "expectedBuildLabel": "20260629073410",
+        "expectedBuildLabel": "20260629074305",
         "matchingReportCount": 0,
         "mismatchedReportCount": 1,
         "mismatchedReports": [
@@ -19,8 +19,8 @@
         "missingBuildReports": [],
         "rootCauseCategory": "stale_audit_evidence"
       },
-      "id": "91e48577e16b843b66caa6fe",
-      "recommendedAction": "Install build 20260629073410, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
+      "id": "af51d8234d606fd88f6b0cd3",
+      "recommendedAction": "Install build 20260629074305, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
       "severity": "error",
       "title": "Runtime audit export does not prove the current TestFlight build"
     }

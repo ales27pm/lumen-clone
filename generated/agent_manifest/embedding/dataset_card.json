@@ -4,9 +4,9 @@
     "evalRetrieval": 5175,
     "hardNegatives": 5175,
     "trainPairs": 4707,
-    "trainTriplets": 4657,
+    "trainTriplets": 4656,
     "valPairs": 468,
-    "valTriplets": 518
+    "valTriplets": 519
   },
   "families": [
     "agent_role_question_to_fleet_slot",
