@@ -12,7 +12,7 @@
       "recordCounts": {
         "eval": 558,
         "train_dpo": 15,
-        "train_sft": 9232,
+        "train_sft": 9234,
         "val_dpo": 3,
         "val_sft": 1629
       },
@@ -48,7 +48,7 @@
         "train_dpo": 15,
         "train_sft": 4616,
         "val_dpo": 3,
-        "val_sft": 814
+        "val_sft": 815
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -97,7 +97,7 @@
       "recordCounts": {
         "eval": 6,
         "train_dpo": 8,
-        "train_sft": 3983,
+        "train_sft": 3984,
         "val_dpo": 2,
         "val_sft": 703
       },

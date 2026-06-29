@@ -353,6 +353,7 @@ struct E2ETestRunnerView: View {
     @State private var runStartedAt: Date?
     @State private var lastExportURL: URL?
     @State private var exportError: String?
+    @State private var resourceSnapshot: ResourceBudgetGate.Snapshot?
 
     init(initialRunMode: RunMode = .standard) {
         _runMode = State(initialValue: initialRunMode)
@@ -378,6 +379,17 @@ struct E2ETestRunnerView: View {
                     }
                 }
 
+                if runMode == .trainingValidation {
+                    LabeledContent("Thermal state", value: thermalStateForDisplay.rawValue)
+                        .font(.caption)
+
+                    if let blockedRunReason {
+                        Label(blockedRunReason, systemImage: "thermometer.high")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+
                 Button {
                     run()
                 } label: {
@@ -387,7 +399,7 @@ struct E2ETestRunnerView: View {
                         if isRunning { ProgressView() }
                     }
                 }
-                .disabled(isRunning)
+                .disabled(isRunning || blockedRunReason != nil)
 
                 Button {
                     reloadLatestReport()
@@ -492,6 +504,7 @@ struct E2ETestRunnerView: View {
         }
         .navigationTitle("E2E Tests")
         .onChange(of: runMode) { _, _ in
+            refreshResourceSnapshot()
             reportText = E2ETestLogStore.latestText()
             latestReport = nil
             liveResults = []
@@ -501,8 +514,17 @@ struct E2ETestRunnerView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            refreshResourceSnapshot()
             reloadLatestReport()
         }
+    }
+
+    private var thermalStateForDisplay: DeviceThermalState {
+        resourceSnapshot?.thermalState ?? DeviceThermalState.from(processThermalState: ProcessInfo.processInfo.thermalState)
+    }
+
+    private var blockedRunReason: String? {
+        Self.blockedRunReason(runMode: runMode, thermalState: thermalStateForDisplay)
     }
 
     private var dashboardResults: [E2ETestResult] {
@@ -532,6 +554,16 @@ struct E2ETestRunnerView: View {
     @MainActor
     private func run() {
         guard !isRunning else { return }
+        refreshResourceSnapshot()
+        if let blockedRunReason {
+            exportError = blockedRunReason
+            reportText = """
+            Training validation blocked
+            \(blockedRunReason)
+            """
+            return
+        }
+
         let mode = runMode
         let totalScenarioCount = mode.scenarios.count
         let config = E2ERunConfig(appState: appState)
@@ -581,6 +613,10 @@ struct E2ETestRunnerView: View {
         }
     }
 
+    @MainActor
+    private func refreshResourceSnapshot() {
+        resourceSnapshot = ResourceBudgetGate.diagnosticSnapshot()
+    }
 
     @MainActor
     private func makeModelLoadSnapshot() -> ModelLoadSnapshot {
@@ -913,6 +949,24 @@ private func durationText(_ seconds: Double) -> String {
 
 
 extension E2ETestRunnerView {
+    nonisolated static func blockedRunReason(runMode: RunMode, thermalState: DeviceThermalState?) -> String? {
+        guard runMode == .trainingValidation else { return nil }
+        guard let thermalState else {
+            return "thermal state unavailable; wait for device status and retry"
+        }
+
+        switch thermalState {
+        case .nominal, .fair:
+            return nil
+        case .serious:
+            return ResourceBudgetGate.seriousThermalRetryHint
+        case .critical:
+            return "device thermal state critical; cool device and retry"
+        case .unknown:
+            return "device thermal state unknown; wait for device status and retry"
+        }
+    }
+
     enum RunMode: CaseIterable {
         case standard
         case trainingValidation

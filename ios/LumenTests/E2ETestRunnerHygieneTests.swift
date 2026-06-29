@@ -238,6 +238,16 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func trainingValidationThermalGuardBlocksOnlyUnsafeThermalStates() {
+        #expect(E2ETestRunnerView.blockedRunReason(runMode: .standard, thermalState: .serious) == nil)
+        #expect(E2ETestRunnerView.blockedRunReason(runMode: .trainingValidation, thermalState: .nominal) == nil)
+        #expect(E2ETestRunnerView.blockedRunReason(runMode: .trainingValidation, thermalState: .fair) == nil)
+        #expect(E2ETestRunnerView.blockedRunReason(runMode: .trainingValidation, thermalState: .serious) == ResourceBudgetGate.seriousThermalRetryHint)
+        #expect(E2ETestRunnerView.blockedRunReason(runMode: .trainingValidation, thermalState: .critical)?.contains("critical") == true)
+        #expect(E2ETestRunnerView.blockedRunReason(runMode: .trainingValidation, thermalState: .unknown)?.contains("unknown") == true)
+        #expect(E2ETestRunnerView.blockedRunReason(runMode: .trainingValidation, thermalState: nil)?.contains("unavailable") == true)
+    }
+
     @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()
