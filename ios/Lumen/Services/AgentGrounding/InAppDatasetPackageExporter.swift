@@ -93,6 +93,8 @@ nonisolated struct InAppDatasetLiveE2EReportExport: Codable, Sendable {
     let exportPolicy: EvidenceLayerExportPolicy
     let payload: E2ETestReport
     let correlatedTraceCount: Int
+    let modelBackedCorrelatedTraceCount: Int
+    let deterministicCompatibilityTraceCount: Int
     let traceSidecarField: String
 }
 
@@ -132,7 +134,7 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.5.0"
+    static let schemaVersion = "1.6.0"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
@@ -236,6 +238,8 @@ nonisolated enum InAppDatasetPackageExporter {
             ),
             payload: report,
             correlatedTraceCount: correlatedTraceCount(report: report, traces: traces),
+            modelBackedCorrelatedTraceCount: modelBackedCorrelatedTraceCount(report: report, traces: traces),
+            deterministicCompatibilityTraceCount: deterministicCompatibilityTraceCount(report: report, traces: traces),
             traceSidecarField: "recentTraces"
         )
     }
@@ -256,6 +260,35 @@ nonisolated enum InAppDatasetPackageExporter {
             }) else { return }
             count += 1
         }
+    }
+
+    private static func modelBackedCorrelatedTraceCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
+        traces.reduce(into: 0) { count, trace in
+            guard isModelBackedLiveEvidenceTrace(trace),
+                  report.results.contains(where: { result in
+                      result.requiresAgentRun && traceMatches(result: result, trace: trace)
+                  }) else { return }
+            count += 1
+        }
+    }
+
+    private static func deterministicCompatibilityTraceCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
+        traces.reduce(into: 0) { count, trace in
+            guard trace.runtimePath == "deterministic-compatibility",
+                  report.results.contains(where: { result in
+                      result.requiresAgentRun && traceMatches(result: result, trace: trace)
+                  }) else { return }
+            count += 1
+        }
+    }
+
+    private static func isModelBackedLiveEvidenceTrace(_ trace: AgentBehaviorTrace) -> Bool {
+        guard trace.event == .modelTurn,
+              trace.runtimePath != "deterministic-compatibility",
+              trace.parseError == nil else {
+            return false
+        }
+        return !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private static func traceMatches(result: E2ETestResult, trace: AgentBehaviorTrace) -> Bool {

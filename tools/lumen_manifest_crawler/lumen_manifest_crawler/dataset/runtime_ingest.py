@@ -304,7 +304,7 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -822,6 +822,9 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
     if empty_trace_failure is not None and not has_empty_trace_failure:
         failures.append(empty_trace_failure)
 
+    live_e2e_report = package.get("liveE2EReport")
+    live_e2e_summary = live_e2e_report if isinstance(live_e2e_report, dict) else {}
+
     return {
         "_source": source,
         "_sourceFormat": "lumen_in_app_dataset_package",
@@ -834,6 +837,9 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
             selected_tool_allowed_count,
         ),
         "traceParseErrorCount": package.get("traceParseErrorCount", parse_error_count),
+        "liveE2ECorrelatedTraceCount": live_e2e_summary.get("correlatedTraceCount"),
+        "liveE2EModelBackedCorrelatedTraceCount": live_e2e_summary.get("modelBackedCorrelatedTraceCount"),
+        "liveE2EDeterministicCompatibilityTraceCount": live_e2e_summary.get("deterministicCompatibilityTraceCount"),
         "ignoredScenarioResultCount": 0 if owns_live_e2e else len(scenario_results),
         "ownsLiveE2EScenarios": owns_live_e2e,
         "exportPolicy": export_policy,

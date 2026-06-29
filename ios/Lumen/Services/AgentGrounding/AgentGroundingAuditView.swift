@@ -138,6 +138,8 @@ public struct AgentGroundingAuditView: View {
                         if let liveE2EReport = lastExportPackage.liveE2EReport {
                             LabeledContent("Live E2E scenarios", value: "\(liveE2EReport.payload.results.count)")
                             LabeledContent("Correlated E2E traces", value: "\(liveE2EReport.correlatedTraceCount)")
+                            LabeledContent("Model-backed E2E traces", value: "\(liveE2EReport.modelBackedCorrelatedTraceCount)")
+                            LabeledContent("Compatibility E2E traces", value: "\(liveE2EReport.deterministicCompatibilityTraceCount)")
                         }
                         LabeledContent("Allowed selections", value: "\(lastExportPackage.traceSelectedToolAllowedCount)")
                         LabeledContent("Trace parse errors", value: "\(lastExportPackage.traceParseErrorCount)")

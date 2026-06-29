@@ -459,6 +459,116 @@ struct AgentGroundingRegressionTests {
         #expect(failure.actual == "recentTraces is empty")
     }
 
+    @Test func liveE2EExportCountsModelBackedAndCompatibilityTracesSeparately() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let e2eRunID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        let agentRunID = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+        let conversationID = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+        let turnID = UUID(uuidString: "44444444-4444-4444-8444-444444444444")!
+        let scenarioID = "live-self-model"
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt.addingTimeInterval(1),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: "rag",
+            promptPrefix: "What evidence supports your claim?",
+            rawOutputPrefix: #"{"final":"Live E2E evidence."}"#,
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            outputTokenCount: 8,
+            runtimePath: "agent-model"
+        ))
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt.addingTimeInterval(2),
+            event: .finalAnswer,
+            slot: "cortex",
+            stage: "compatibility-final",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: "rag",
+            promptPrefix: "What evidence supports your claim?",
+            rawOutputPrefix: "Compatibility answer.",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: true,
+            runtimePath: "deterministic-compatibility"
+        ))
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: scenarioID,
+            kind: "standard",
+            title: "Live self-model evidence",
+            prompt: "What evidence supports your claim?",
+            expectedIntent: "rag",
+            actualIntent: "rag",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            requiresAgentRun: true,
+            passed: true,
+            failures: [],
+            finalText: "Live E2E evidence.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(3),
+            rawFinalPrefix: "Live E2E evidence.",
+            sanitizedFinalPrefix: "Live E2E evidence.",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: []
+        )
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(3),
+            passed: 1,
+            failed: 0,
+            results: [result]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+
+        let liveE2EReport = try #require(package.liveE2EReport)
+        #expect(package.schemaVersion == "1.6.0")
+        #expect(liveE2EReport.correlatedTraceCount == 2)
+        #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 1)
+        #expect(liveE2EReport.deterministicCompatibilityTraceCount == 1)
+    }
+
     @Test func agentGroundingPackageFlagsIncompleteStructuredModelTraceProof() throws {
         AgentBehaviorTraceRecorder.clear()
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
@@ -645,7 +755,7 @@ struct AgentGroundingRegressionTests {
 
         let trace = try #require(package.recentTraces.first)
         let failure = try #require(package.exportQualityFailures?.first(where: { $0.type == "agent_grounding_final_validator_replaced_candidate" }))
-        #expect(package.schemaVersion == "1.4.0")
+        #expect(package.schemaVersion == InAppDatasetPackageExporter.schemaVersion)
         #expect(trace.finalizerAccepted == false)
         #expect(trace.finalizerRejectionReason == "intent-mismatch")
         #expect(trace.finalValidatorAcceptedCandidate == false)

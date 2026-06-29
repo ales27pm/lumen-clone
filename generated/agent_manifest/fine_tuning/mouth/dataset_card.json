@@ -8,7 +8,7 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "35f3f938a319d495c80895d18df80fee6bb9bb19",
+  "manifestCommit": "96a9e9ee08cf95a235f2668878e5ad74d13fc49e",
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
