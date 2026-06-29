@@ -27,7 +27,7 @@ LOOP_SCHEMA_VERSION = "1.1.0"
 DEFAULT_LOOP_DIR = Path("generated/agent_improvement_loop")
 TESTFLIGHT_SCENARIOS_FILE = "testflight_scenarios.jsonl"
 TESTFLIGHT_RUNBOOK_FILE = "TESTFLIGHT_RUNBOOK.md"
-EXPORT_DATASET_INSTRUCTION = "Export the in-app dataset package JSON from Agent Grounding."
+EXPORT_DATASET_INSTRUCTION = "Export the TestFlight + Agent Grounding package JSON from Agent Grounding."
 EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
     "agent_json_empty_generation",
     "agent_json_parse_empty",
@@ -117,7 +117,7 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
     The live runtime stage is represented explicitly as a TestFlight handoff:
     this command writes a TestFlight runbook and scenario queue. The human or CI
     build system compiles/distributes the app, the tester runs Agent Grounding in
-    the TestFlight build, exports the in-app dataset package JSON, and the next
+    the TestFlight build, exports the TestFlight + Agent Grounding package JSON, and the next
     loop iteration ingests that JSON with --runtime-audit.
     """
     root = config.root.resolve()
@@ -580,7 +580,7 @@ def _build_testflight_scenario_queue(
                 "Use the normal chat/app surface, not a mocked harness.",
                 "Enter or adapt the prompt naturally.",
                 "Run Agent Grounding Audit after the interaction batch.",
-                "Export the in-app dataset package JSON.",
+                "Export the TestFlight + Agent Grounding package JSON.",
             ],
         })
 
@@ -727,7 +727,7 @@ def _build_testflight_plan(
         "scenarioQueuePath": TESTFLIGHT_SCENARIOS_FILE,
         "runbookPath": TESTFLIGHT_RUNBOOK_FILE,
         "scenarioCount": len(scenarios),
-        "expectedExport": "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package",
+        "expectedExport": "lumen-testflight-agent-grounding-*.json from Agent Grounding > Export TestFlight + Agent Grounding Package",
         "nextIngestCommand": shlex.join([
             "python",
             "-m",
@@ -766,12 +766,12 @@ def _build_gap_report(  # NOSONAR
             "category": "testflight_runtime_pending",
             "title": "TestFlight in-app audit export has not been ingested yet",
             "evidence": {
-                "expectedExport": "lumen-in-app-dataset-*.json",
-                "source": "Agent Grounding > Export In-App Dataset Package",
+                "expectedExport": "lumen-testflight-agent-grounding-*.json",
+                "source": "Agent Grounding > Export TestFlight + Agent Grounding Package",
                 "scenarioQueue": str(resolved_loop_output / "testflight_scenarios.jsonl"),
                 "runbook": str(resolved_loop_output / "TESTFLIGHT_RUNBOOK.md"),
             },
-            "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the in-app dataset package JSON, then rerun improve-loop with --runtime-audit <json>.",
+            "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.",
         })
 
     build_mismatch_gap = _testflight_runtime_build_mismatch_gap(runtime_reports, config)
@@ -936,7 +936,7 @@ def _testflight_runtime_build_mismatch_gap(
             "rootCauseCategory": "stale_audit_evidence",
         },
         "recommendedAction": "Install build "
-        f"{expected_build}, run Agent Grounding in that TestFlight app, export the in-app dataset package JSON, and ingest only that current-build package.",
+        f"{expected_build}, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
     }
 
 
@@ -1159,7 +1159,7 @@ def _build_next_action_prompts(
             "priority": "medium",
             "messages": [
                 {"role": "system", "content": "You are improving the Lumen agent dataset loop."},
-                {"role": "user", "content": "No blocking gaps were detected. Expand the next loop by adding one new TestFlight scenario family, one runtime trace field exported by the in-app dataset package, and one dataset quality gate while preserving deterministic output."},
+                {"role": "user", "content": "No blocking gaps were detected. Expand the next loop by adding one new TestFlight scenario family, one runtime trace field exported by the TestFlight + Agent Grounding package, and one dataset quality gate while preserving deterministic output."},
             ],
             "metadata": {"category": "continuous_expansion", "testFlightStatus": testflight_plan.get("status")},
         })
@@ -1234,7 +1234,7 @@ def _write_markdown_report(path: Path, state: dict[str, Any], gaps: list[dict[st
         "",
         "## TestFlight handoff",
         "",
-        "Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the in-app dataset package JSON, then rerun this command with `--runtime-audit <exported-json>`.",
+        "Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the TestFlight + Agent Grounding package JSON, then rerun this command with `--runtime-audit <exported-json>`.",
         "",
         "## Top gaps",
         "",
@@ -1319,8 +1319,8 @@ def _write_testflight_runbook(path: Path, state: dict[str, Any], scenarios: list
         "3. Use the normal app surface for scenario prompts. Do not use a mocked harness for this pass.",
         "4. Open the in-app Agent Grounding screen.",
         "5. Tap `Run Agent Grounding Audit`.",
-        "6. Tap `Export In-App Dataset Package`.",
-        "7. Share/save the produced `lumen-in-app-dataset-*.json` file.",
+        "6. Tap `Export TestFlight + Agent Grounding Package`.",
+        "7. Share/save the produced `lumen-testflight-agent-grounding-*.json` file.",
         "8. Feed it into the next loop:",
         "",
         "```bash",

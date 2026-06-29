@@ -110,7 +110,7 @@ def test_runtime_audit_discovery_accepts_realistic_export_and_rejects_loop_state
     runner = _load_runner()
     export_dir = tmp_path / "exports"
     export_dir.mkdir()
-    good = export_dir / "lumen-in-app-dataset-testflight.json"
+    good = export_dir / "lumen-testflight-agent-grounding-testflight.json"
     good.write_text(json.dumps({"runtime": {"build": "TestFlight"}, "traces": [{"id": "t1"}], "failures": []}), encoding="utf-8")
     bad = export_dir / "loop_state.json"
     bad.write_text(json.dumps({"runtime": {"build": "TestFlight"}, "traces": [{"id": "t2"}]}), encoding="utf-8")

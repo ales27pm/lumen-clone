@@ -404,7 +404,11 @@ struct AgentGroundingRegressionTests {
         )
 
         #expect(package.schemaVersion == InAppDatasetPackageExporter.schemaVersion)
+        #expect(package.exportKind == InAppDatasetPackageExporter.exportKind)
+        #expect(package.testFlight.sourceAction == InAppDatasetPackageExporter.sourceAction)
+        #expect(package.testFlight.filePrefix == InAppDatasetPackageExporter.filePrefix)
         #expect(package.exportPolicy.sourceLayer == "agentGroundingRuntimeAudit")
+        #expect(package.exportPolicy.format == "testflight-agent-grounding-runtime-json-package")
         #expect(package.exportPolicy.ownsLiveE2EScenarios == false)
         #expect(package.exportPolicy.includesDeterministicStaticScenarios == false)
         #expect(package.scenarioResults.isEmpty)
@@ -564,6 +568,7 @@ struct AgentGroundingRegressionTests {
 
         let liveE2EReport = try #require(package.liveE2EReport)
         #expect(package.schemaVersion == InAppDatasetPackageExporter.schemaVersion)
+        #expect(package.testFlight.liveE2EReportIncluded == true)
         #expect(liveE2EReport.correlatedTraceCount == 2)
         #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 1)
         #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 1)

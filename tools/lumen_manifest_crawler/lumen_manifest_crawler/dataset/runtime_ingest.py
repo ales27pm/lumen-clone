@@ -305,7 +305,7 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -585,7 +585,14 @@ def _trace_tool_failure(
 def _empty_agent_grounding_trace_failure(package: dict[str, Any], export_policy: dict[str, Any]) -> dict[str, Any] | None:
     source_layer = str(export_policy.get("sourceLayer") or "")
     package_format = str(export_policy.get("format") or "")
-    if source_layer != "agentGroundingRuntimeAudit" and package_format != "agent-grounding-runtime-json-package":
+    if (
+        source_layer != "agentGroundingRuntimeAudit"
+        and package_format
+        not in {
+            "agent-grounding-runtime-json-package",
+            "testflight-agent-grounding-runtime-json-package",
+        }
+    ):
         return None
     recent_traces = package.get("recentTraces")
     if isinstance(recent_traces, list) and recent_traces:
@@ -595,9 +602,9 @@ def _empty_agent_grounding_trace_failure(package: dict[str, Any], export_policy:
         "agent": "runtime",
         "expected": ["Agent Grounding export should include recent model/tool traces captured from real in-app execution."],
         "actual": "recentTraces is empty",
-        "scenario": "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
+        "scenario": "Agent Grounding > Run Agent Grounding Audit > Export TestFlight + Agent Grounding Package",
         "problem": (
-            "The Agent Grounding package exported no recent traces. This usually means "
+            "The TestFlight + Agent Grounding package exported no recent traces. This usually means "
             "AgentBehaviorTraceRecorder.record is not wired into the live model path, "
             "or the app audit was exported before exercising real model interactions."
         ),
@@ -640,7 +647,7 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
             f"correlatedTraceCount={correlated_count}; "
             f"deterministicCompatibilityTraceCount={deterministic_count}"
         ),
-        "scenario": "Agent Grounding > E2E Test Runner > Export In-App Dataset Package",
+        "scenario": "Agent Grounding > E2E Test Runner > Export TestFlight + Agent Grounding Package",
         "problem": (
             "The embedded live E2E report does not have enough model-backed correlated traces. "
             "Deterministic compatibility traces and uncorrelated traces are diagnostics only, not live model evidence."
@@ -852,6 +859,7 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
 
     export_policy = package.get("exportPolicy")
     export_policy = export_policy if isinstance(export_policy, dict) else {}
+    source_format = _in_app_package_source_format(export_policy)
     owns_live_e2e = export_policy.get("ownsLiveE2EScenarios") is True
     scenario_results = list(_iter_dicts(package.get("scenarioResults", []) or []))
     if owns_live_e2e:
@@ -892,10 +900,13 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
 
     return {
         "_source": source,
-        "_sourceFormat": "lumen_in_app_dataset_package",
+        "_sourceFormat": source_format,
         "_sourceLayer": export_policy.get("sourceLayer") or "agentGroundingRuntimeAudit",
         "generatedAt": package.get("generatedAt"),
         **_app_metadata_fields(package.get("app")),
+        "exportKind": package.get("exportKind"),
+        "testFlight": package.get("testFlight") if isinstance(package.get("testFlight"), dict) else None,
+        **_testflight_metadata_fields(package.get("testFlight")),
         "manifestSource": package.get("manifestSource"),
         "usedRuntimeFallback": package.get("usedRuntimeFallback"),
         "traceSelectedToolAllowedCount": package.get(
@@ -914,6 +925,13 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
     }
 
 
+def _in_app_package_source_format(export_policy: dict[str, Any]) -> str:
+    package_format = str(export_policy.get("format") or "")
+    if package_format == "testflight-agent-grounding-runtime-json-package":
+        return "testflight_agent_grounding_package"
+    return "lumen_in_app_dataset_package"
+
+
 def _app_metadata_fields(app: Any) -> dict[str, Any]:
     if not isinstance(app, dict):
         return {}
@@ -923,6 +941,19 @@ def _app_metadata_fields(app: Any) -> dict[str, Any]:
         "appBundleIdentifier": app.get("bundleIdentifier"),
         "appShortVersion": app.get("shortVersion"),
         "appBuildNumber": app.get("buildNumber"),
+    }
+
+
+def _testflight_metadata_fields(testflight: Any) -> dict[str, Any]:
+    if not isinstance(testflight, dict):
+        return {}
+    return {
+        "testFlightSourceAction": testflight.get("sourceAction"),
+        "testFlightDistributionChannel": testflight.get("distributionChannel"),
+        "testFlightSandboxReceipt": testflight.get("sandboxReceipt"),
+        "testFlightAppShortVersion": testflight.get("appShortVersion"),
+        "testFlightAppBuildNumber": testflight.get("appBuildNumber"),
+        "testFlightLiveE2EReportIncluded": testflight.get("liveE2EReportIncluded"),
     }
 
 
