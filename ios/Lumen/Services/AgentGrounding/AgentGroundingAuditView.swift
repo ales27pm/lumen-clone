@@ -83,7 +83,7 @@ public struct AgentGroundingAuditView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes an Agent Grounding runtime audit package for the offline loop: audit failures, behavior violations, bounded diagnostic traces, and the latest TestFlight/live E2E report when one exists. Static scenario checks stay visible here but are not exported as live E2E model results. \(AgentKernelBridgeSmokeTestExpectation.footerSentence)")
+                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes a TestFlight + Agent Grounding package for the offline loop: app build identity, audit failures, behavior violations, bounded diagnostic traces, and the latest TestFlight/live E2E report when one exists. Static scenario checks stay visible here but are not exported as live E2E model results. \(AgentKernelBridgeSmokeTestExpectation.footerSentence)")
             }
 
             Section {
@@ -130,7 +130,10 @@ public struct AgentGroundingAuditView: View {
                     LabeledContent("File", value: lastExportURL.lastPathComponent)
                         .font(.caption)
                     if let lastExportPackage {
+                        LabeledContent("Export kind", value: lastExportPackage.exportKind)
                         LabeledContent("Source layer", value: lastExportPackage.exportPolicy.sourceLayer)
+                        LabeledContent("App build", value: lastExportPackage.testFlight.appBuildNumber ?? "unknown")
+                        LabeledContent("Distribution", value: lastExportPackage.testFlight.distributionChannel)
                         LabeledContent("Owns live E2E", value: lastExportPackage.exportPolicy.ownsLiveE2EScenarios ? "yes" : "no")
                         LabeledContent("Static scenarios exported", value: lastExportPackage.exportPolicy.includesDeterministicStaticScenarios ? "yes" : "no")
                         LabeledContent("Traces", value: "\(lastExportPackage.recentTraces.count)")
@@ -156,7 +159,7 @@ public struct AgentGroundingAuditView: View {
                     ShareLink(item: lastExportURL) {
                         Label("Share TestFlight Audit JSON", systemImage: "square.and.arrow.up")
                     }
-                    Text("Feed this JSON into `python -m lumen_manifest_crawler improve-loop --runtime-audit <file>`. The parent Agent Grounding layer remains diagnostic; only the embedded `e2eTestReport` layer owns live E2E pass/fail.")
+                    Text("Feed this JSON into `python -m lumen_manifest_crawler improve-loop --runtime-audit <file>`. The parent TestFlight + Agent Grounding layer remains diagnostic; only the embedded `e2eTestReport` layer owns live E2E pass/fail.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

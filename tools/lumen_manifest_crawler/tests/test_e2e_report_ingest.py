@@ -1638,6 +1638,65 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
 
 
+def test_testflight_agent_grounding_package_preserves_export_metadata(tmp_path: Path):
+    import json
+
+    report_path = tmp_path / "lumen-testflight-agent-grounding-current.json"
+    package = {
+        "schemaVersion": "1.9.0",
+        "generatedAt": "2026-06-29T00:00:00Z",
+        "exportKind": "testflight-agent-grounding-runtime-export",
+        "app": {
+            "name": "Lumen",
+            "bundleIdentifier": "com.27pm.lumenclone",
+            "shortVersion": "1.0.0",
+            "buildNumber": "20260629060414",
+        },
+        "testFlight": {
+            "sourceAction": "Agent Grounding > Export TestFlight + Agent Grounding Package",
+            "filePrefix": "lumen-testflight-agent-grounding",
+            "distributionChannel": "testflight_or_development_sandbox",
+            "sandboxReceipt": True,
+            "appShortVersion": "1.0.0",
+            "appBuildNumber": "20260629060414",
+            "liveE2EReportIncluded": False,
+            "expectedIngestArgument": "--runtime-audit <exported-testflight-json>",
+        },
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "testflight-agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+            "includesDeterministicStaticScenarios": False,
+        },
+        "recentTraces": [],
+        "runtimeManifestAudit": None,
+        "behaviorAudit": None,
+        "scenarioResults": [],
+        "traceSelectedToolAllowedCount": 0,
+        "traceParseErrorCount": 0,
+        "improveLoop": {
+            "acceptedTraining": [],
+            "quarantinedSamples": [],
+            "regressionTests": [],
+        },
+    }
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    report = load_runtime_audit_reports([report_path])[0]
+
+    assert report["_sourceFormat"] == "testflight_agent_grounding_package"
+    assert report["_sourceLayer"] == "agentGroundingRuntimeAudit"
+    assert report["exportKind"] == "testflight-agent-grounding-runtime-export"
+    assert report["appBuildNumber"] == "20260629060414"
+    assert report["testFlightAppBuildNumber"] == "20260629060414"
+    assert report["testFlightSourceAction"] == "Agent Grounding > Export TestFlight + Agent Grounding Package"
+    assert report["testFlightDistributionChannel"] == "testflight_or_development_sandbox"
+    assert report["testFlightLiveE2EReportIncluded"] is False
+    assert report["failures"][0]["scenario"] == "Agent Grounding > Run Agent Grounding Audit > Export TestFlight + Agent Grounding Package"
+
+
 def test_agent_grounding_package_synthesizes_live_e2e_model_backed_trace_gap(tmp_path: Path):
     import json
 

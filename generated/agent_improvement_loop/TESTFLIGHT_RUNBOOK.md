@@ -4,10 +4,10 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 
 ## Build identity
 
-- Manifest fingerprint: `c4d70f6426a6acfe38124084f4471650550df6079cc4e2df42eb640a49a3156e`
-- Manifest commit: `06e870a0d92d8cd90af470196c4ed493c646bfdc`
-- Build label: `20260629054657`
-- Expected export: `lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package`
+- Manifest fingerprint: `81d98d784fcd336440e489e7631b20fad936bea96be7e6022fe6f743f9b2e258`
+- Manifest commit: `31e0e1b662e0e7ca481ae283730ac04c761b1542`
+- Build label: `20260629060414`
+- Expected export: `lumen-testflight-agent-grounding-*.json from Agent Grounding > Export TestFlight + Agent Grounding Package`
 
 ## Required app flow
 
@@ -16,8 +16,8 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 3. Use the normal app surface for scenario prompts. Do not use a mocked harness for this pass.
 4. Open the in-app Agent Grounding screen.
 5. Tap `Run Agent Grounding Audit`.
-6. Tap `Export In-App Dataset Package`.
-7. Share/save the produced `lumen-in-app-dataset-*.json` file.
+6. Tap `Export TestFlight + Agent Grounding Package`.
+7. Share/save the produced `lumen-testflight-agent-grounding-*.json` file.
 8. Feed it into the next loop:
 
 ```bash

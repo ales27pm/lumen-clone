@@ -11,9 +11,9 @@ TEACHER_MODEL = "Qwen/Qwen3-Embedding-4B"
 FALLBACK_MODEL = "current-baseline-embedding-model"
 RERANKER_MODEL = "Qwen/Qwen3-Reranker-0.6B"
 RERANKER_TEACHER_MODEL = "Qwen/Qwen3-Reranker-4B"
-CURRENT_EXPECTED_EXPORT = "lumen-agent-grounding-audit-*.json or lumen-live-e2e-report-*.json"
-CURRENT_EXPORT_SOURCE = "Agent Grounding > Export Runtime Audit Package or End-to-end tests > Export Live E2E Report JSON"
-CURRENT_RECOMMENDED_ACTION = "Compile/distribute the TestFlight build, run Agent Grounding and E2E in the app, export the Runtime Audit Package and/or Live E2E Report JSON, then rerun improve-loop with --runtime-audit <json>."
+CURRENT_EXPECTED_EXPORT = "lumen-testflight-agent-grounding-*.json or lumen-live-e2e-report-*.json"
+CURRENT_EXPORT_SOURCE = "Agent Grounding > Export TestFlight + Agent Grounding Package or End-to-end tests > Export Live E2E Report JSON"
+CURRENT_RECOMMENDED_ACTION = "Compile/distribute the TestFlight build, run Agent Grounding and E2E in the app, export the TestFlight + Agent Grounding package and/or Live E2E Report JSON, then rerun improve-loop with --runtime-audit <json>."
 JSONL_FILES = {
     "corpusCount": "corpus.jsonl",
     "trainPairCount": "train_pairs.jsonl",
@@ -32,10 +32,10 @@ RERANKER_JSONL_FILES = {
 TEXT_REPLACEMENTS = {
     "lumen-in-app-dataset-*.json from Agent Grounding > Export In-App Dataset Package": f"{CURRENT_EXPECTED_EXPORT} from {CURRENT_EXPORT_SOURCE}",
     "lumen-in-app-dataset-*.json": CURRENT_EXPECTED_EXPORT,
-    "Agent Grounding > Export In-App Dataset Package": "Agent Grounding > Export Runtime Audit Package",
-    "Export the in-app dataset package JSON from Agent Grounding.": "Export the Runtime Audit Package JSON from Agent Grounding and/or the Live E2E Report JSON from End-to-end tests.",
-    "export the in-app dataset package JSON": "export the Runtime Audit Package JSON and/or Live E2E Report JSON",
-    "exports the in-app dataset package JSON": "exports the Runtime Audit Package JSON and/or Live E2E Report JSON",
+    "Agent Grounding > Export In-App Dataset Package": "Agent Grounding > Export TestFlight + Agent Grounding Package",
+    "Export the in-app dataset package JSON from Agent Grounding.": "Export the TestFlight + Agent Grounding package JSON from Agent Grounding and/or the Live E2E Report JSON from End-to-end tests.",
+    "export the in-app dataset package JSON": "export the TestFlight + Agent Grounding package JSON and/or Live E2E Report JSON",
+    "exports the in-app dataset package JSON": "exports the TestFlight + Agent Grounding package JSON and/or Live E2E Report JSON",
 }
 
 

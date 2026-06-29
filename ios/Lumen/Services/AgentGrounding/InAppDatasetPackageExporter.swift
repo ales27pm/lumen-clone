@@ -3,7 +3,9 @@ import Foundation
 nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
     let schemaVersion: String
     let generatedAt: Date
+    let exportKind: String
     let app: InAppDatasetAppInfo
+    let testFlight: TestFlightAgentGroundingExportInfo
     let manifestSource: String
     let usedRuntimeFallback: Bool
     let runtimeManifestAudit: RuntimeAgentManifestAuditReport?
@@ -117,6 +119,17 @@ nonisolated struct InAppDatasetAppInfo: Codable, Sendable, Hashable {
     let buildNumber: String?
 }
 
+nonisolated struct TestFlightAgentGroundingExportInfo: Codable, Sendable, Hashable {
+    let sourceAction: String
+    let filePrefix: String
+    let distributionChannel: String
+    let sandboxReceipt: Bool
+    let appShortVersion: String?
+    let appBuildNumber: String?
+    let liveE2EReportIncluded: Bool
+    let expectedIngestArgument: String
+}
+
 nonisolated struct InAppDatasetExportPolicy: Codable, Sendable, Hashable {
     let format: String
     let privacy: String
@@ -135,13 +148,16 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.8.0"
+    static let schemaVersion = "1.9.0"
+    static let exportKind = "testflight-agent-grounding-runtime-export"
+    static let sourceAction = "Agent Grounding > Export TestFlight + Agent Grounding Package"
+    static let filePrefix = "lumen-testflight-agent-grounding"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
     private static let directoryName = "LumenDatasetExports"
 
-    /// Assembles a complete in-app dataset package incorporating audit reports and recent traces.
+    /// Assembles a complete TestFlight + Agent Grounding package incorporating audit reports and recent traces.
     /// - Parameters:
     ///   - manifestSource: Identifier for the manifest audit source.
     ///   - includeScenarioResults: If `true`, includes scenario results in the package; otherwise omits them.
@@ -160,6 +176,7 @@ nonisolated enum InAppDatasetPackageExporter {
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
         let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
         let exportedTraces = traces.map(exportTrace)
+        let app = appInfo()
         let liveReportExport = liveE2EReport.map { report in
             liveE2EReportExport(from: report, generatedAt: Date(), traces: traces)
         }
@@ -176,12 +193,9 @@ nonisolated enum InAppDatasetPackageExporter {
         return LumenInAppDatasetPackage(
             schemaVersion: schemaVersion,
             generatedAt: Date(),
-            app: InAppDatasetAppInfo(
-                name: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Lumen",
-                bundleIdentifier: Bundle.main.bundleIdentifier,
-                shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-                buildNumber: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-            ),
+            exportKind: exportKind,
+            app: app,
+            testFlight: testFlightExportInfo(app: app, liveE2EReportIncluded: liveReportExport != nil),
             manifestSource: manifestSource,
             usedRuntimeFallback: usedRuntimeFallback,
             runtimeManifestAudit: runtimeManifestAudit,
@@ -205,11 +219,11 @@ nonisolated enum InAppDatasetPackageExporter {
             exportQualityFailures: qualityFailures,
             improveLoop: improveLoop,
             exportPolicy: InAppDatasetExportPolicy(
-                format: "agent-grounding-runtime-json-package",
+                format: "testflight-agent-grounding-runtime-json-package",
                 privacy: "contains only manifest audit failures, behavior violations, redacted bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, trace identifiers, local paths, or tool payload bodies are exported",
                 promptPolicy: "promptPrefix and rawOutputPrefix fields are redacted, hidden-reasoning-stripped, bounded diagnostic snippets only",
                 traceLimit: traceLimit,
-                source: "RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
+                source: "TestFlight app runtime + RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
                 sourceLayer: "agentGroundingRuntimeAudit",
                 ownsLiveE2EScenarios: false,
                 includesDeterministicStaticScenarios: includeScenarioResults,
@@ -256,6 +270,22 @@ nonisolated enum InAppDatasetPackageExporter {
             bundleIdentifier: Bundle.main.bundleIdentifier,
             shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             buildNumber: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        )
+    }
+
+    private static func testFlightExportInfo(
+        app: InAppDatasetAppInfo,
+        liveE2EReportIncluded: Bool
+    ) -> TestFlightAgentGroundingExportInfo {
+        return TestFlightAgentGroundingExportInfo(
+            sourceAction: sourceAction,
+            filePrefix: filePrefix,
+            distributionChannel: "testflight_or_unknown",
+            sandboxReceipt: false,
+            appShortVersion: app.shortVersion,
+            appBuildNumber: app.buildNumber,
+            liveE2EReportIncluded: liveE2EReportIncluded,
+            expectedIngestArgument: "--runtime-audit <exported-testflight-json>"
         )
     }
 
@@ -335,8 +365,8 @@ nonisolated enum InAppDatasetPackageExporter {
                 agent: "runtime",
                 expected: ["Agent Grounding export should include recent model/tool traces captured from real in-app execution."],
                 actual: "recentTraces is empty",
-                scenario: "Agent Grounding > Run Agent Grounding Audit > Export In-App Dataset Package",
-                problem: "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
+                scenario: sourceAction,
+                problem: "The TestFlight + Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
                 sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
             ))
         }
@@ -412,7 +442,7 @@ nonisolated enum InAppDatasetPackageExporter {
                 "correlatedTraceCount=\(liveE2EReport.correlatedTraceCount)",
                 "deterministicCompatibilityTraceCount=\(liveE2EReport.deterministicCompatibilityTraceCount)"
             ].joined(separator: "; "),
-            scenario: "Agent Grounding > E2E Test Runner > Export In-App Dataset Package",
+            scenario: "Agent Grounding > E2E Test Runner > Export TestFlight + Agent Grounding Package",
             problem: "The embedded live E2E report does not have enough model-backed correlated traces. Deterministic compatibility traces and uncorrelated traces are diagnostics only, not live model evidence.",
             sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
         )
@@ -617,7 +647,7 @@ nonisolated enum InAppDatasetPackageExporter {
             includeScenarioResults: includeScenarioResults
         )
         let directory = try exportDirectory()
-        let fileName = "lumen-agent-grounding-audit-\(Self.safeTimestamp(package.generatedAt))-\(UUID().uuidString.lowercased()).json"
+        let fileName = "\(filePrefix)-\(Self.safeTimestamp(package.generatedAt))-\(UUID().uuidString.lowercased()).json"
         let url = directory.appendingPathComponent(fileName, isDirectory: false)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

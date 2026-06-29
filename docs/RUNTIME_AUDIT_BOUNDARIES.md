@@ -29,7 +29,7 @@ The developer UI now exposes exports for every layer, while keeping ownership ex
 
 | UI | Button | File prefix | `sourceLayer` | Owns live E2E scenarios |
 |---|---|---|---|---|
-| Agent Grounding | Export Runtime Audit Package | `lumen-agent-grounding-audit-*` | `agentGroundingRuntimeAudit` | `false` |
+| Agent Grounding | Export TestFlight + Agent Grounding Package | `lumen-testflight-agent-grounding-*` | `agentGroundingRuntimeAudit` | `false` |
 | Agent Grounding | Export Runtime Registry Audit | `lumen-runtime-registry-audit-*` | `runtimeManifestAudit` | `false` |
 | Agent Grounding | Export Model Behaviour Audit | `lumen-model-behaviour-audit-*` | `agentModelBehaviorAuditor` | `false` |
 | Agent Grounding | Export Static Scenario Checks | `lumen-static-scenario-checks-*` | `runtimeScenarioRunner.staticChecks` | `false` |
@@ -38,7 +38,7 @@ The developer UI now exposes exports for every layer, while keeping ownership ex
 
 Only the E2E export should be treated as the live model scenario result layer. The other exports are diagnostics, grounding evidence, static checks, or trace evidence.
 
-## 1. Agent Grounding runtime audit
+## 1. TestFlight + Agent Grounding runtime audit
 
 Owned by:
 
@@ -50,16 +50,21 @@ ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift
 Default export filename:
 
 ```text
-lumen-agent-grounding-audit-*.json
+lumen-testflight-agent-grounding-*.json
 ```
 
 Default schema:
 
 ```json
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.9.0",
+  "exportKind": "testflight-agent-grounding-runtime-export",
+  "testFlight": {
+    "sourceAction": "Agent Grounding > Export TestFlight + Agent Grounding Package",
+    "appBuildNumber": "..."
+  },
   "exportPolicy": {
-    "format": "agent-grounding-runtime-json-package",
+    "format": "testflight-agent-grounding-runtime-json-package",
     "sourceLayer": "agentGroundingRuntimeAudit",
     "ownsLiveE2EScenarios": false,
     "includesDeterministicStaticScenarios": false
@@ -165,7 +170,7 @@ tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/e2e_report_normalize
 
 Rules:
 
-1. `agent-grounding-runtime-json-package` is flattened as `lumen_in_app_dataset_package` with `_sourceLayer=agentGroundingRuntimeAudit`.
+1. `testflight-agent-grounding-runtime-json-package` is flattened as `testflight_agent_grounding_package` with `_sourceLayer=agentGroundingRuntimeAudit`; legacy `agent-grounding-runtime-json-package` exports remain accepted as `lumen_in_app_dataset_package`.
 2. Agent Grounding `scenarioResults` are ignored unless `exportPolicy.ownsLiveE2EScenarios=true`.
 3. Ignored Agent Grounding scenario results are counted as `ignoredScenarioResultCount`.
 4. E2E-owned scenario results may be ingested only when the package explicitly says `ownsLiveE2EScenarios=true`.

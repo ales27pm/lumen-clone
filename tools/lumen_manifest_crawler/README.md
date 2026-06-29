@@ -145,7 +145,7 @@ The `improve-loop` command performs one auditable cycle of the static/TestFlight
 
 1. optionally run a local validation command;
 2. scan Swift source and regenerate the manifest;
-3. ingest one or more in-app dataset package JSON files from a previous TestFlight run;
+3. ingest one or more TestFlight + Agent Grounding package JSON files from a previous TestFlight run;
 4. ingest one or more E2E evaluation reports from a previous runtime eval;
 5. compile base datasets, fleet artifacts, and per-agent fine-tuning datasets;
 6. optionally run build/archive/training commands;
@@ -175,7 +175,7 @@ generated/agent_improvement_loop/
 └── LOOP_REPORT.md
 ```
 
-Use `TESTFLIGHT_RUNBOOK.md` and `testflight_scenarios.jsonl` for the real in-app phase. Install the TestFlight build, run scenario prompts through the normal app UI, open Agent Grounding, run the audit, export the in-app dataset package JSON, then feed that JSON into the next loop with `--runtime-audit`.
+Use `TESTFLIGHT_RUNBOOK.md` and `testflight_scenarios.jsonl` for the real in-app phase. Install the TestFlight build, run scenario prompts through the normal app UI, open Agent Grounding, run the audit, export the TestFlight + Agent Grounding package JSON, then feed that JSON into the next loop with `--runtime-audit`.
 
 To force the loop to fail when a TestFlight export has not yet been ingested:
 
@@ -275,7 +275,7 @@ python -m lumen_manifest_crawler generate \
 
 ## Include in-app runtime audit data
 
-Export one or more in-app dataset package JSON files from the iPhone app, then pass each file or a directory containing JSON/text reports:
+Export one or more TestFlight + Agent Grounding package JSON files from the iPhone app, then pass each file or a directory containing JSON/text reports:
 
 ```bash
 python -m lumen_manifest_crawler generate \

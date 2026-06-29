@@ -91,7 +91,7 @@ Rollback behaviour:
 
 - if Qwen3 embedding evals regress below the migration gates, set `LUMEN_FORCE_BASELINE_EMBEDDING=1` for the next build/run;
 - if the Qwen3 model fails to load, produces invalid vector dimensions, or fails health checks, automatically fall back to `fallbackModelID` when `allowRuntimeFallback=true`;
-- if fallback happens, the in-app dataset export must include `embeddingModelID`, `embeddingFallbackModelID`, `usedEmbeddingFallback`, and the health-check failure reason;
+- if fallback happens, the TestFlight + Agent Grounding export must include `embeddingModelID`, `embeddingFallbackModelID`, `usedEmbeddingFallback`, and the health-check failure reason;
 - the next improvement-loop cycle must ingest that fallback signal and add a gap if Qwen3 fallback occurred in TestFlight.
 
 Required runtime export fields:
