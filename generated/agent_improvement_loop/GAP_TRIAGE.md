@@ -15,11 +15,11 @@
 ### Runtime audit export does not prove the current TestFlight build
 
 - Count: `1`
-- Status: `deferred`
+- Status: `needs_fresh_runtime_evidence`
 - Root causes: `{"stale_audit_evidence": 1}`
 - Categories: `{"testflight_runtime_build_mismatch": 1}`
-- Fresh runtime failures: `1`
+- Fresh runtime failures: `0`
 - Skipped live model generation: `0`
-- Recommended action: Install build 20260629071748, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.
+- Recommended action: Install build 20260629073410, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.
 
   - `stale_audit_evidence` | skipped=`None` | prompt:  | actual:

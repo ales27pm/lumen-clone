@@ -44,12 +44,17 @@ def generate_all_datasets(
     *,
     root: Path | None = None,
     runtime_audit_paths: list[Path] | None = None,
+    runtime_audit_reports: list[dict[str, Any]] | None = None,
     deterministic: bool = True,
 ) -> dict[str, list[dict[str, Any]]]:
     """Compile role datasets plus normalized runtime-audit-derived datasets."""
     role_records = generate_role_datasets(manifest)
     codebase_home_records = generate_codebase_home_records(root) if root is not None else {}
-    runtime_audit_reports = load_runtime_audit_reports(runtime_audit_paths)
+    runtime_audit_reports = (
+        runtime_audit_reports
+        if runtime_audit_reports is not None
+        else load_runtime_audit_reports(runtime_audit_paths)
+    )
     compiled = compile_state_of_art_datasets(
         manifest,
         role_records,

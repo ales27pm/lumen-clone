@@ -2,7 +2,7 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `fd758dcae6a0626d6424553cb148ff22e2a890cf`
+- Manifest commit: `db93eb4c734f524e8f7681f08145e395a03c0533`
 - Tools: `53`
 - Intents: `22`
 - Codebase-home records: `753`

@@ -17,9 +17,9 @@
           "title": "Runtime audit export does not prove the current TestFlight build"
         }
       ],
-      "freshRuntimeFailureCount": 1,
+      "freshRuntimeFailureCount": 0,
       "group": "Runtime audit export does not prove the current TestFlight build",
-      "recommendedAction": "Install build 20260629071748, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
+      "recommendedAction": "Install build 20260629073410, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
       "rootCauseCategories": {
         "stale_audit_evidence": 1
       },
@@ -27,7 +27,7 @@
         "error": 1
       },
       "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
+      "status": "needs_fresh_runtime_evidence"
     }
   ],
   "schemaVersion": "1.0.0",
