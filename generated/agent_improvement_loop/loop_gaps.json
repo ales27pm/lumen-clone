@@ -1,85 +1,26 @@
 {
   "gaps": [
     {
-      "category": "no_correlated_model_turn",
-      "evidence": {
-        "actual": "",
-        "agent": "cortex",
-        "e2eScenario": {
-          "expectedIntent": "weather",
-          "final": "",
-          "intent": "preflight",
-          "modelEvidenceRootCause": "no_correlated_model_turn",
-          "modelEvidenceStatus": "no_correlated_model_turn",
-          "modelEvidenceTrace": {
-            "checked": {
-              "agentRunID": null,
-              "conversationID": null,
-              "e2eRunID": null,
-              "scenarioID": "executor-runtime-preflight",
-              "turnID": null
-            },
-            "sidecarPresent": true
-          },
-          "name": "Executor runtime preflight",
-          "prompt": "What is the weather here and should I carry an umbrella?",
-          "requiredHint": null,
-          "skippedLiveModelRun": false
-        },
-        "expected": [
-          "Training scenarios that require an agent run must export a correlated model-backed AgentBehaviorTrace modelTurn or fail closed with the exact missing-path reason."
-        ],
-        "problem": "executor preflight failed: adapter required but adapter path missing; slot=.executor; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/2EF26027-F0E7-46B1-B8E4-3FCE55FB893F/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf; expectedAdapterRepo=ales27pm/lumen-qwen3-bootstrap-adapters-gguf; expectedAdapterFile=lumen-executor-lora.gguf",
-        "repairSample": {
-          "agent": "cortex",
-          "badOutput": "",
-          "correctedOutput": "Pass the E2E correlation IDs into AgentService and persist them on AgentBehaviorTrace modelTurn records, or keep the scenario failed with the precise missing-path diagnostic.",
-          "curriculum": "response_quality",
-          "expected": "Training scenarios that require an agent run must export a correlated model-backed AgentBehaviorTrace modelTurn or fail closed with the exact missing-path reason.",
-          "lesson": "For `preflight` E2E evals, empty agent-json output is a model-generation failure, not a skipped live run or a response-quality failure.",
-          "promptPrefix": "What is the weather here and should I carry an umbrella?",
-          "trainable": true,
-          "violationCode": "e2e_response_quality_preflight"
-        },
-        "rootCauseCategory": "no_correlated_model_turn",
-        "scenario": "What is the weather here and should I carry an umbrella?",
-        "sourceLayer": "e2eTestReport.json",
-        "trainable": true,
-        "type": "e2e_response_quality_preflight"
-      },
-      "id": "d3846c659e1cacfe92e1241b",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
-      "severity": "error",
-      "title": "e2e_response_quality_preflight"
-    },
-    {
       "category": "testflight_runtime_build_mismatch",
       "evidence": {
-        "expectedBuildLabel": "20260629060414",
+        "expectedBuildLabel": "20260629064751",
         "matchingReportCount": 0,
-        "mismatchedReportCount": 0,
-        "mismatchedReports": [],
-        "missingBuildReportCount": 2,
-        "missingBuildReports": [
+        "mismatchedReportCount": 1,
+        "mismatchedReports": [
           {
-            "appBuildNumber": null,
+            "appBuildNumber": "20260629062619",
             "generatedAt": null,
-            "source": "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/56437FEC-BC8B-4CAF-A334-3DF7FDA51B60/1-latest-e2e-report.json",
-            "sourceFormat": "lumen_e2e_test_report",
-            "sourceLayer": "e2eTestReport.json"
-          },
-          {
-            "appBuildNumber": null,
-            "generatedAt": null,
-            "source": "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/56437FEC-BC8B-4CAF-A334-3DF7FDA51B60/3-latest-e2e-report.txt",
-            "sourceFormat": "lumen_e2e_text_report",
-            "sourceLayer": "e2eTextReport"
+            "source": "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/5151B4D6-19BC-4CE8-B6C2-AF575B562746/1-lumen-live-e2e-report-2026-06-29T06-39-41Z-4649a00f-0fc3-4a38-bb77-39e642c3a78d.json",
+            "sourceFormat": "live-e2e-test-report-json",
+            "sourceLayer": "e2eTestReport.evidenceLayer"
           }
         ],
+        "missingBuildReportCount": 0,
+        "missingBuildReports": [],
         "rootCauseCategory": "stale_audit_evidence"
       },
-      "id": "6006d42997100e36a74a9300",
-      "recommendedAction": "Install build 20260629060414, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
+      "id": "ae830cd19bc0666e95bfc181",
+      "recommendedAction": "Install build 20260629064751, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
       "severity": "error",
       "title": "Runtime audit export does not prove the current TestFlight build"
     }

@@ -1,9 +1,9 @@
 {
   "counts": {
-    "evalReranking": 5316,
-    "hardNegativePairs": 5316,
-    "trainPairs": 4815,
-    "valPairs": 501
+    "evalReranking": 5320,
+    "hardNegativePairs": 5320,
+    "trainPairs": 4832,
+    "valPairs": 488
   },
   "families": [
     "agent_role_question_to_fleet_slot",
