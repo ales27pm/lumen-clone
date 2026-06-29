@@ -170,6 +170,7 @@ def test_improvement_loop_flags_stale_testflight_runtime_audit_build(tmp_path: P
     assert mismatch_gaps[0]["evidence"]["mismatchedReports"][0]["appBuildNumber"] == "20260628223733"
     assert not any(gap["category"] == "e2e_runtime_failure" for gap in result.gaps)
     assert not any(gap["category"] == "testflight_runtime_pending" for gap in result.gaps)
+    assert not any(gap["title"] == "Empty dataset family: runtime_audit_repairs" for gap in result.gaps)
     assert result.state["runtime"]["reportCount"] == 0
     assert result.state["runtime"]["totalReportCount"] == 1
     assert result.state["runtime"]["staleReportCount"] == 1
@@ -182,6 +183,11 @@ def test_improvement_loop_flags_stale_testflight_runtime_audit_build(tmp_path: P
     assert result.state["triage"]["rawRuntimeFailureCount"] == 0
     assert result.state["triage"]["freshRuntimeFailureCount"] == 0
     assert result.state["triage"]["rootCauseCounts"]["stale_audit_evidence"] == 1
+    assert result.state["triage"]["groupCounts"]["Runtime audit export does not prove the current TestFlight build"] == 1
+    assert result.state["triage"]["totalGaps"] == 1
+    repairs = tmp_path / "agent_manifest" / "dataset" / "runtime_audit_repairs.jsonl"
+    assert repairs.exists()
+    assert repairs.read_text(encoding="utf-8") == ""
     assert result.passed is False
 
 

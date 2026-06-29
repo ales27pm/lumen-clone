@@ -1,9 +1,9 @@
 {
   "counts": {
-    "evalReranking": 5320,
-    "hardNegativePairs": 5320,
-    "trainPairs": 4833,
-    "valPairs": 487
+    "evalReranking": 5175,
+    "hardNegativePairs": 5175,
+    "trainPairs": 4707,
+    "valPairs": 468
   },
   "families": [
     "agent_role_question_to_fleet_slot",
@@ -20,7 +20,6 @@
     "peer_boundary_query",
     "permission_boundary_query",
     "routing_rule_query",
-    "runtime_audit_repairs_retrieval",
     "source_file_name_query",
     "tool_contract_query",
     "tool_id_to_tool_contract",

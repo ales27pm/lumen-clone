@@ -136,7 +136,7 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
     datasets = generate_all_datasets(
         manifest,
         root=root,
-        runtime_audit_paths=list(config.runtime_audit_paths) if config.runtime_audit_paths else None,
+        runtime_audit_reports=current_runtime_reports,
         deterministic=config.deterministic,
     )
     validation_report = validate_manifest(manifest, datasets, strict=config.strict)
@@ -870,18 +870,26 @@ def _build_gap_report(  # NOSONAR
         "self_model_cards",
         "self_model_sft",
         "self_model_eval",
-        "runtime_audit_repairs",
     }
     for family in sorted(required_families):
         if len(datasets.get(family, [])) == 0:
             gaps.append({
                 "id": _stable_id("empty_family", family),
-                "severity": "error" if family != "runtime_audit_repairs" else "warning",
+                "severity": "error",
                 "category": "dataset_coverage",
                 "title": f"Empty dataset family: {family}",
                 "evidence": {"family": family},
                 "recommendedAction": f"Add generators or runtime inputs that produce {family} records.",
             })
+    if runtime_reports and len(datasets.get("runtime_audit_repairs", [])) == 0:
+        gaps.append({
+            "id": _stable_id("empty_family", "runtime_audit_repairs"),
+            "severity": "warning",
+            "category": "dataset_coverage",
+            "title": "Empty dataset family: runtime_audit_repairs",
+            "evidence": {"family": "runtime_audit_repairs"},
+            "recommendedAction": "Add current-build runtime inputs that produce runtime_audit_repairs records.",
+        })
 
     if fine_tuning_datasets:
         for agent, dataset in sorted(fine_tuning_datasets.items()):
@@ -1107,6 +1115,8 @@ def _build_gap_triage(
         bucket["rootCauseCategories"][root_cause] = bucket["rootCauseCategories"].get(root_cause, 0) + 1
         if root_cause == "skipped_live_model_generation":
             bucket["skippedLiveModelGenerationCount"] += 1
+            bucket["status"] = "needs_fresh_runtime_evidence"
+        elif root_cause == "stale_audit_evidence":
             bucket["status"] = "needs_fresh_runtime_evidence"
         else:
             bucket["freshRuntimeFailureCount"] += 1
