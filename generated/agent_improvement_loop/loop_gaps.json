@@ -1,28 +1,17 @@
 {
   "gaps": [
     {
-      "category": "testflight_runtime_build_mismatch",
+      "category": "testflight_runtime_pending",
       "evidence": {
-        "expectedBuildLabel": "20260629074305",
-        "matchingReportCount": 0,
-        "mismatchedReportCount": 1,
-        "mismatchedReports": [
-          {
-            "appBuildNumber": "20260629062619",
-            "generatedAt": null,
-            "source": "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/5151B4D6-19BC-4CE8-B6C2-AF575B562746/1-lumen-live-e2e-report-2026-06-29T06-39-41Z-4649a00f-0fc3-4a38-bb77-39e642c3a78d.json",
-            "sourceFormat": "live-e2e-test-report-json",
-            "sourceLayer": "e2eTestReport.evidenceLayer"
-          }
-        ],
-        "missingBuildReportCount": 0,
-        "missingBuildReports": [],
-        "rootCauseCategory": "stale_audit_evidence"
+        "expectedExport": "lumen-testflight-agent-grounding-*.json",
+        "runbook": "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+        "scenarioQueue": "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl",
+        "source": "Agent Grounding > Export TestFlight + Agent Grounding Package"
       },
-      "id": "af51d8234d606fd88f6b0cd3",
-      "recommendedAction": "Install build 20260629074305, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
-      "severity": "error",
-      "title": "Runtime audit export does not prove the current TestFlight build"
+      "id": "d00c683e5c2ed241b31ecfeb",
+      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.",
+      "severity": "warning",
+      "title": "TestFlight in-app audit export has not been ingested yet"
     }
   ]
 }

@@ -3,28 +3,28 @@
   "groups": [
     {
       "categories": {
-        "testflight_runtime_build_mismatch": 1
+        "testflight_runtime_pending": 1
       },
       "count": 1,
       "examples": [
         {
           "actual": null,
-          "category": "testflight_runtime_build_mismatch",
+          "category": "testflight_runtime_pending",
           "prompt": null,
           "rootCauseCategory": "stale_audit_evidence",
-          "severity": "error",
+          "severity": "warning",
           "skippedLiveModelRun": null,
-          "title": "Runtime audit export does not prove the current TestFlight build"
+          "title": "TestFlight in-app audit export has not been ingested yet"
         }
       ],
       "freshRuntimeFailureCount": 0,
-      "group": "Runtime audit export does not prove the current TestFlight build",
-      "recommendedAction": "Install build 20260629074305, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.",
+      "group": "TestFlight in-app audit export has not been ingested yet",
+      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.",
       "rootCauseCategories": {
         "stale_audit_evidence": 1
       },
       "severities": {
-        "error": 1
+        "warning": 1
       },
       "skippedLiveModelGenerationCount": 0,
       "status": "needs_fresh_runtime_evidence"
@@ -33,12 +33,12 @@
   "schemaVersion": "1.0.0",
   "summary": {
     "categoryCounts": {
-      "testflight_runtime_build_mismatch": 1
+      "testflight_runtime_pending": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
     "freshRuntimeFailureCount": 0,
     "groupCounts": {
-      "Runtime audit export does not prove the current TestFlight build": 1
+      "TestFlight in-app audit export has not been ingested yet": 1
     },
     "rawRuntimeFailureCount": 0,
     "rootCauseCounts": {
@@ -46,7 +46,7 @@
     },
     "runtimeAuditReports": 0,
     "severityCounts": {
-      "error": 1
+      "warning": 1
     },
     "skippedLiveModelGenerationCount": 0,
     "totalGaps": 1
