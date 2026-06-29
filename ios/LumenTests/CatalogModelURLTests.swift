@@ -27,7 +27,7 @@ struct CatalogModelURLTests {
         #expect(url.query?.contains("download=true") == true)
     }
 
-    @Test func buildsDownloadURLFromRemoteSourcePathWhileKeepingLocalFileName() {
+    @Test func buildsQwen3AdapterDownloadURLAtPublishedRootPath() {
         let model = CatalogModel(
             id: "adapter",
             name: "Adapter",
@@ -38,8 +38,7 @@ struct CatalogModelURLTests {
             sizeBytes: 1,
             role: .roleAdapter,
             description: "",
-            tags: [],
-            sourcePath: "models/lora/executor/lumen-executor-lora.gguf"
+            tags: []
         )
 
         guard case .success(let url) = model.downloadURLResult else {
@@ -48,7 +47,8 @@ struct CatalogModelURLTests {
         }
 
         #expect(model.fileName == "lumen-executor-lora.gguf")
-        #expect(url.path == "/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/resolve/main/models/lora/executor/lumen-executor-lora.gguf")
+        #expect(model.sourcePath == nil)
+        #expect(url.path == "/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/resolve/main/lumen-executor-lora.gguf")
         #expect(url.query?.contains("download=true") == true)
     }
 

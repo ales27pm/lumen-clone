@@ -191,3 +191,49 @@ def test_empty_trace_evidence_layer_envelope_generates_trace_gap(tmp_path: Path)
     assert report["_sourceLayer"] == "agentBehaviorTraceRecorder"
     assert report["traceCount"] == 0
     assert report["failures"][0]["type"] == "agent_grounding_no_recent_model_traces"
+
+
+def test_self_model_eval_score_report_ingests_as_non_live_runtime_audit(tmp_path: Path) -> None:
+    report_path = tmp_path / "self-model-eval-score.json"
+    score_report = {
+        "schemaVersion": "self_model_eval_score.v1",
+        "scenarioCount": 2,
+        "answeredCount": 1,
+        "passedCount": 0,
+        "failedCount": 1,
+        "missingCount": 1,
+        "allPassed": False,
+        "results": [
+            {
+                "id": "eval-live-proof",
+                "name": "self-model-testflight-proof",
+                "answered": True,
+                "passed": False,
+                "score": 0.5,
+                "checked": ["mustRequireLiveE2EEvidence"],
+                "failures": ["live_e2e_evidence_requirement_missing"],
+            },
+            {
+                "id": "eval-missing",
+                "name": "self-model-current-location",
+                "answered": False,
+                "passed": False,
+                "score": 0.0,
+                "checked": [],
+                "failures": ["missing_answer"],
+            },
+        ],
+    }
+    report_path.write_text(json.dumps(score_report), encoding="utf-8")
+
+    report = load_runtime_audit_reports([report_path])[0]
+
+    assert report["_sourceFormat"] == "self_model_eval_score_report"
+    assert report["_sourceLayer"] == "selfModelEvalScore"
+    assert report["ownsLiveE2EScenarios"] is False
+    assert report["scenarioCount"] == 2
+    assert report["failedCount"] == 1
+    assert report["missingCount"] == 1
+    failure_types = {failure["type"] for failure in report["failures"]}
+    assert "self_model_runtime_state_claim_without_evidence" in failure_types
+    assert "self_model_eval_answer_missing" in failure_types

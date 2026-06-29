@@ -2438,7 +2438,13 @@ final class AgentService {
                 firstChunkReceived: diagnostics.firstChunkReceived,
                 textChunkCount: diagnostics.textChunkCount,
                 finalChunkReceived: diagnostics.finalChunkReceived,
-                streamTerminationReason: diagnostics.streamTerminationReason
+                streamTerminationReason: diagnostics.streamTerminationReason,
+                selfModel: AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
+                    userTurn,
+                    selectedToolID: turn.action.map { ToolRouteGuard.canonicalToolID($0.tool) },
+                    requiresApproval: turn.action.map { ToolRouteGuard.requiresUserApproval(ToolRouteGuard.canonicalToolID($0.tool)) },
+                    approvalMode: nil
+                )
             )
         )
     }

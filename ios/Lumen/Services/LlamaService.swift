@@ -1974,7 +1974,13 @@ final actor AppLlamaService {
                 firstChunkReceived: firstChunkReceived,
                 textChunkCount: textChunkCount,
                 finalChunkReceived: finalChunkReceived,
-                streamTerminationReason: streamTerminationReason
+                streamTerminationReason: streamTerminationReason,
+                selfModel: AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
+                    request.userMessage,
+                    selectedToolID: AgentTurnParser.parse(output).action.map { ToolRouteGuard.canonicalToolID($0.tool) },
+                    requiresApproval: nil,
+                    approvalMode: nil
+                )
             )
         )
     }

@@ -370,6 +370,9 @@ final class SlotAgentService {
             values["groundingChars"] = String(grounded.userMessage.count + grounded.systemPrompt.count)
             values["sectionCount"] = String(grounded.sections.count)
             values["toolCount"] = String(grounded.bridgedTools.count)
+            values["selfModelIncluded"] = String(grounded.grounding?.selfModelIncluded ?? false)
+            values["selfModelSchemaVersion"] = grounded.grounding?.selfModelSchemaVersion ?? "unknown"
+            values["selfModelMode"] = grounded.grounding?.selfModelMode ?? "unknown"
         }
         if let toolCount { values["toolCount"] = String(toolCount) }
         if let elapsedMs { values["elapsedMs"] = String(elapsedMs) }
@@ -583,7 +586,13 @@ final class SlotAgentService {
                 finalizerRejectionReason: finalizerOutcome?.rejectionReason,
                 finalValidatorAcceptedCandidate: finalValidationOutcome?.acceptedCandidate,
                 finalValidatorReplacementSource: finalValidationOutcome?.replacementSource,
-                finalValidatorRejectionReason: finalValidationOutcome?.rejectionReason
+                finalValidatorRejectionReason: finalValidationOutcome?.rejectionReason,
+                selfModel: AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
+                    req.userMessage,
+                    selectedToolID: selectedToolID,
+                    requiresApproval: requiresApproval,
+                    approvalMode: approvalMode
+                )
             )
         )
     }

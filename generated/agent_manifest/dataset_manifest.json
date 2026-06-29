@@ -11,6 +11,9 @@
     "negative_samples": 53,
     "rem_reflection": 5,
     "runtime_audit_repairs": 0,
+    "self_model_cards": 8,
+    "self_model_eval": 24,
+    "self_model_sft": 4,
     "tool_schema_cards": 91,
     "train_sft": 309,
     "validation_sft": 55
@@ -22,6 +25,9 @@
     "eval_scenarios": "719a4dedd0dab84679efe032385d7994ecb6ad1b0e72cd835a95121243d55c5d",
     "manifest_grounding_cards": "1d0cef01d0db5365957b22d31f0ed18e24e713ec7b7494aea9d584189d308107",
     "runtime_audit_repairs": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "self_model_cards": "37da69d84061767bfcda744b3fbfd1e09182a752caf18f95be5297f1eda09a79",
+    "self_model_eval": "499bf7a5f7fc33c617d4029c087f9f32e9865ec48d0dffc571bcfac5f06355aa",
+    "self_model_sft": "09b7b0f9d07b0103055b38c8636090f469ddf8ddcd37e162b3e47d5891c0850d",
     "tool_schema_cards": "b37b9ae73160ea85155026e7fa82f132c68aa2057c74008c716d4b341e420d55",
     "train_sft": "f77fdc979a909930c1fb52d6a4205f9121108e9e589cd2fc44b3eec372afd9c2",
     "validation_sft": "ef1a6ae09a0918eec64d7c406938b2dbea7907fc2bc6a997c6bad9db762edf70"

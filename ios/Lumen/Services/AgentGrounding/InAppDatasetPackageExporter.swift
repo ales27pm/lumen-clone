@@ -77,6 +77,7 @@ nonisolated struct InAppDatasetTraceExport: Codable, Sendable, Hashable {
     let finalValidatorAcceptedCandidate: Bool?
     let finalValidatorReplacementSource: String?
     let finalValidatorRejectionReason: String?
+    let selfModel: AgentBehaviorTrace.SelfModelDecisionSummary?
 }
 
 nonisolated struct InAppDatasetExportQualityFailure: Codable, Sendable, Hashable, Identifiable {
@@ -360,7 +361,23 @@ nonisolated enum InAppDatasetPackageExporter {
             finalizerRejectionReason: trace.finalizerRejectionReason.map(safeCode),
             finalValidatorAcceptedCandidate: trace.finalValidatorAcceptedCandidate,
             finalValidatorReplacementSource: trace.finalValidatorReplacementSource.map(safeCode),
-            finalValidatorRejectionReason: trace.finalValidatorRejectionReason.map(safeCode)
+            finalValidatorRejectionReason: trace.finalValidatorRejectionReason.map(safeCode),
+            selfModel: redactedSelfModelSummary(trace.selfModel)
+        )
+    }
+
+    private static func redactedSelfModelSummary(_ summary: AgentBehaviorTrace.SelfModelDecisionSummary?) -> AgentBehaviorTrace.SelfModelDecisionSummary? {
+        guard let summary else { return nil }
+        return AgentBehaviorTrace.SelfModelDecisionSummary(
+            included: summary.included,
+            schemaVersion: summary.schemaVersion.map(safeCode),
+            mode: summary.mode.map(safeCode),
+            activeSlot: summary.activeSlot.map(safeCode),
+            sourceIDs: summary.sourceIDs.map { sanitizedSnippet($0, limit: 120) },
+            runtimeEvidenceSourceLayer: summary.runtimeEvidenceSourceLayer.map(safeCode),
+            selectedToolID: summary.selectedToolID.map(ToolRouteGuard.canonicalToolID),
+            requiresApproval: summary.requiresApproval,
+            approvalMode: summary.approvalMode.map(safeCode)
         )
     }
 

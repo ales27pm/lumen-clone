@@ -16,9 +16,20 @@ DEFAULT_SUPPORTED_JSON_TYPES = {"string", "double", "int", "bool", "array", "obj
 VAGUE_TYPES = {"any", "unknown", "dictionary", "dict"}
 SUPPORTED_PERMISSION_KINDS = {"calendar", "reminders", "contacts", "location", "microphone", "speech", "camera", "photos", "motion", "health", "notifications", "alarms"}
 SUPPORTED_CONFIRMATION_MODES = {"none", "userApproval"}
-STRICT_TOOL_ID_DATASET_FAMILIES = {"tool_schema_cards", "runtime_audit_repairs", "dpo_preference_pairs"}
+STRICT_TOOL_ID_DATASET_FAMILIES = {"tool_schema_cards", "runtime_audit_repairs", "dpo_preference_pairs", "self_model_cards", "self_model_sft", "self_model_eval"}
 STRICT_WARNING_CODES = {"tool_missing_description", "vague_argument_type", "inferred_tool_definition", "ambiguous_intent_tools", "freshness_missing_ttl"}
 MIN_EVAL_SCENARIOS_PER_TOOL = 5
+MIN_SELF_MODEL_EVAL_SCENARIOS = 20
+REQUIRED_SELF_MODEL_CARD_TYPES = {
+    "slot_contract",
+    "tool_boundary",
+    "permission_boundary",
+    "context_budget_profile",
+    "runtime_evidence_policy",
+    "artifact_policy",
+    "known_gap",
+    "repair_sample",
+}
 INFERRED_TOOL_ARGUMENT_DESCRIPTION_PREFIX = "Inferred from ToolDefinition description"
 FORBIDDEN_ARGUMENT_NAMES = {"true", "false"}
 FORBIDDEN_CODEBASE_HOME_PATHS = {"ios/Lumen/AgentBehaviorManifest.json"}
@@ -132,7 +143,7 @@ def _validate_dataset_records(manifest: AgentBehaviorManifest, records: dict[str
     for name, dataset in records.items():
         for index, record in enumerate(dataset):
             _validate_compiled_record_shape(name, index, record, failures, compiled_ids)
-            if name in {"mouth_responses", "mimicry_style", "train_sft", "validation_sft", "tool_schema_cards", "runtime_audit_repairs", "dpo_preference_pairs"}:
+            if name in {"mouth_responses", "mimicry_style", "train_sft", "validation_sft", "tool_schema_cards", "runtime_audit_repairs", "dpo_preference_pairs", "self_model_cards", "self_model_sft", "self_model_eval"}:
                 for sentinel in forbidden:
                     if sentinel and _record_model_visible_text_contains(record, sentinel):
                         failures.append(ValidationFailure(code="sentinel_leak", message=f"Sentinel {sentinel} leaked in {name}[{index}]", path=f"dataset.{name}.{index}"))
@@ -162,6 +173,16 @@ def _validate_dataset_records(manifest: AgentBehaviorManifest, records: dict[str
                         eval_tool_records.setdefault(tool_id, []).append(record)
             if name in {"codebase_home_corpus", "codebase_home_sft", "codebase_home_chunks", "codebase_home_chunk_sft"}:
                 _validate_codebase_home_record(name, index, record, failures)
+
+    self_model_cards = records.get("self_model_cards", [])
+    self_model_eval = records.get("self_model_eval", [])
+    if self_model_cards:
+        card_types = {str(record.get("cardType") or ((record.get("metadata") or {}).get("cardType") if isinstance(record.get("metadata"), dict) else "")) for record in self_model_cards}
+        missing = sorted(REQUIRED_SELF_MODEL_CARD_TYPES - card_types)
+        if missing:
+            failures.append(ValidationFailure(code="missing_self_model_card_types", message=f"Self-model cards missing required card types: {', '.join(missing)}", path="dataset.self_model_cards"))
+    if self_model_eval and len(self_model_eval) < MIN_SELF_MODEL_EVAL_SCENARIOS:
+        failures.append(ValidationFailure(code="missing_self_model_eval_scenarios", message=f"Self-model eval family has {len(self_model_eval)} scenarios; expected at least {MIN_SELF_MODEL_EVAL_SCENARIOS}", path="dataset.self_model_eval"))
 
     for tool in manifest.tools:
         if any(arg.required for arg in tool.arguments) and tool.id not in covered_required_tools:
@@ -263,7 +284,7 @@ def _record_path_values(record: dict[str, Any]) -> set[str]:
 def _validate_compiled_record_shape(name: str, index: int, record: dict, failures: list[ValidationFailure], seen_ids: set[str]) -> None:  # NOSONAR
     if name == "dataset_manifest":
         return
-    if name in {"train_sft", "validation_sft", "eval_scenarios", "tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs", "dpo_preference_pairs"}:
+    if name in {"train_sft", "validation_sft", "eval_scenarios", "tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs", "dpo_preference_pairs", "self_model_cards", "self_model_sft", "self_model_eval"}:
         record_id = record.get("id")
         if not isinstance(record_id, str) or not record_id:
             failures.append(ValidationFailure(code="compiled_record_missing_id", message=f"{name}[{index}] has no stable id", path=f"dataset.{name}.{index}"))
@@ -271,7 +292,7 @@ def _validate_compiled_record_shape(name: str, index: int, record: dict, failure
             failures.append(ValidationFailure(code="duplicate_compiled_record_id", message=f"Duplicate compiled dataset id {record_id}", path=f"dataset.{name}.{index}"))
         else:
             seen_ids.add(record_id)
-    if name in {"train_sft", "validation_sft", "eval_scenarios", "tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs"}:
+    if name in {"train_sft", "validation_sft", "eval_scenarios", "tool_schema_cards", "manifest_grounding_cards", "runtime_audit_repairs", "self_model_cards", "self_model_sft", "self_model_eval"}:
         messages = record.get("messages")
         if not isinstance(messages, list) or not messages:
             failures.append(ValidationFailure(code="compiled_record_missing_messages", message=f"{name}[{index}] has no messages array", path=f"dataset.{name}.{index}"))
@@ -279,6 +300,14 @@ def _validate_compiled_record_shape(name: str, index: int, record: dict, failure
             for message_index, message in enumerate(messages):
                 if not isinstance(message, dict) or message.get("role") not in {"system", "user", "assistant", "tool"} or not isinstance(message.get("content"), str):
                     failures.append(ValidationFailure(code="invalid_chat_message", message=f"{name}[{index}].messages[{message_index}] is not canonical chat format", path=f"dataset.{name}.{index}.messages.{message_index}"))
+    if name == "self_model_cards":
+        card_type = record.get("cardType") or ((record.get("metadata") or {}).get("cardType") if isinstance(record.get("metadata"), dict) else None)
+        if card_type not in REQUIRED_SELF_MODEL_CARD_TYPES:
+            failures.append(ValidationFailure(code="invalid_self_model_card_type", message=f"self_model_cards record has invalid cardType {card_type}", path=f"dataset.{name}.{index}.cardType"))
+        if record.get("sourceFamily") != "self_model_cards":
+            failures.append(ValidationFailure(code="self_model_card_missing_source_family", message="self_model_cards record missing sourceFamily marker", path=f"dataset.{name}.{index}.sourceFamily"))
+    if name in {"self_model_sft", "self_model_eval"} and record.get("sourceFamily") != name:
+        failures.append(ValidationFailure(code="self_model_record_missing_source_family", message=f"{name} record missing sourceFamily marker", path=f"dataset.{name}.{index}.sourceFamily"))
     if name == "runtime_audit_repairs":
         if record.get("sourceFamily") != "runtime_audit_repairs":
             failures.append(ValidationFailure(code="runtime_repair_missing_source_family", message="runtime_audit_repairs record missing sourceFamily marker", path=f"dataset.{name}.{index}.sourceFamily"))

@@ -1,6 +1,6 @@
 {
   "agent": "fleet",
-  "availableSFTRecords": 5289,
+  "availableSFTRecords": 5354,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -8,7 +8,7 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "061559da1f6a333ab484af13d4db245245212eac",
+  "manifestCommit": "49b228a959c7a6e8b8c17e4a081598576b6ec997",
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
@@ -22,9 +22,9 @@
   "recordCounts": {
     "eval": 86,
     "train_dpo": 15,
-    "train_sft": 4401,
+    "train_sft": 4457,
     "val_dpo": 3,
-    "val_sft": 777
+    "val_sft": 786
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
@@ -40,6 +40,8 @@
     "mimicry_style",
     "mouth_responses",
     "rem_reflection",
+    "self_model_cards",
+    "self_model_sft",
     "tool_schema_cards",
     "train_sft",
     "validation_sft"
@@ -72,6 +74,8 @@
     "reflection_and_memory_policy",
     "rem_reflection",
     "role_directory",
+    "self_model_card_grounding",
+    "self_model_grounded_answer",
     "source_code_self_knowledge",
     "source_routing_knowledge",
     "source_tool_registry_knowledge",

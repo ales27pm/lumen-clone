@@ -1,6 +1,75 @@
 import Foundation
 
 nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable {
+    nonisolated struct SelfModelDecisionSummary: Codable, Sendable, Hashable {
+        let included: Bool
+        let schemaVersion: String?
+        let mode: String?
+        let activeSlot: String?
+        let sourceIDs: [String]
+        let runtimeEvidenceSourceLayer: String?
+        let selectedToolID: String?
+        let requiresApproval: Bool?
+        let approvalMode: String?
+
+        static func fromPrompt(
+            _ prompt: String,
+            selectedToolID: String?,
+            requiresApproval: Bool?,
+            approvalMode: String?
+        ) -> SelfModelDecisionSummary? {
+            guard let block = Self.selfModelBlock(in: prompt) else { return nil }
+            let schemaVersion = Self.value(for: "schemaVersion", in: block)
+            let mode = Self.value(for: "mode", in: block) ?? Self.jsonStringValue(for: "mode", in: block)
+            let activeSlot = Self.value(for: "activeSlot", in: block) ?? Self.jsonStringValue(for: "activeSlot", in: block)
+            let sourceLayer = Self.value(for: "sourceLayer", in: block) ?? Self.jsonStringValue(for: "sourceLayer", in: block)
+            let sourceIDs = [
+                schemaVersion.map { "selfModelSnapshot/\($0)" },
+                activeSlot.map { "slot/\($0)" },
+                sourceLayer.map { "evidence/\($0)" }
+            ].compactMap(\.self)
+            return .init(
+                included: true,
+                schemaVersion: schemaVersion,
+                mode: mode,
+                activeSlot: activeSlot,
+                sourceIDs: sourceIDs,
+                runtimeEvidenceSourceLayer: sourceLayer,
+                selectedToolID: selectedToolID.map(ToolRouteGuard.canonicalToolID),
+                requiresApproval: requiresApproval,
+                approvalMode: approvalMode
+            )
+        }
+
+        private static func selfModelBlock(in prompt: String) -> String? {
+            guard let range = prompt.range(of: "[SELF MODEL]") else { return nil }
+            let tail = prompt[range.upperBound...]
+            if let nextHeader = tail.range(of: "\n[") {
+                return String(tail[..<nextHeader.lowerBound])
+            }
+            return String(tail)
+        }
+
+        private static func value(for key: String, in block: String) -> String? {
+            for line in block.split(whereSeparator: \.isNewline) {
+                let prefix = "\(key)="
+                guard line.hasPrefix(prefix) else { continue }
+                let value = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+                return value.isEmpty ? nil : value
+            }
+            return nil
+        }
+
+        private static func jsonStringValue(for key: String, in block: String) -> String? {
+            let pattern = #""# + NSRegularExpression.escapedPattern(for: key) + #"":"([^"]+)""#
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+            let range = NSRange(block.startIndex..<block.endIndex, in: block)
+            guard let match = regex.firstMatch(in: block, range: range), match.numberOfRanges > 1 else { return nil }
+            guard let valueRange = Range(match.range(at: 1), in: block) else { return nil }
+            return String(block[valueRange])
+        }
+    }
+
     enum Event: String, Codable, Sendable {
         case modelTurn
         case toolAction
@@ -71,9 +140,10 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
     let finalValidatorAcceptedCandidate: Bool?
     let finalValidatorReplacementSource: String?
     let finalValidatorRejectionReason: String?
+    let selfModel: SelfModelDecisionSummary?
 
     enum CodingKeys: String, CodingKey {
-        case id, createdAt, event, slot, stage, scenarioID, e2eRunID, agentRunID, conversationID, turnID, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason, streamStarted, selectedRuntime, selectedAdapter, modelIdentifier, modelLoaded, stopSequences, temperature, topP, cancellationStateBeforeStream, firstChunkReceived, textChunkCount, finalChunkReceived, streamTerminationReason, finalizerAccepted, finalizerRejectionReason, finalValidatorAcceptedCandidate, finalValidatorReplacementSource, finalValidatorRejectionReason
+        case id, createdAt, event, slot, stage, scenarioID, e2eRunID, agentRunID, conversationID, turnID, intent, promptPrefix, rawOutputPrefix, selectedToolID, toolArguments, allowedToolIDs, requiresApproval, approvalMode, parseError, emittedFinalInActionTurn, modelFamily, baseModelPath, adapterID, adapterSlot, adapterPath, adapterApplied, adapterScale, adapterFailureReason, generationElapsedMs, firstTokenLatencyMs, outputTokenCount, estimatedPromptTokenCount, preFirstTokenMs, messageBuildMs, decodeMs, tokensPerSecond, ensureReadyMs, adapterActivationMs, runtimePath, activeAdapterSlot, maxTokensRequested, maxTokensEffective, promptCharCount, accelerationDiagnostic, accelerationDiagnostics, emptyOutputReason, streamStarted, selectedRuntime, selectedAdapter, modelIdentifier, modelLoaded, stopSequences, temperature, topP, cancellationStateBeforeStream, firstChunkReceived, textChunkCount, finalChunkReceived, streamTerminationReason, finalizerAccepted, finalizerRejectionReason, finalValidatorAcceptedCandidate, finalValidatorReplacementSource, finalValidatorRejectionReason, selfModel
         case promptTokenCount
         case promptEvalMs
     }
@@ -144,6 +214,7 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         finalValidatorAcceptedCandidate = try container.decodeIfPresent(Bool.self, forKey: .finalValidatorAcceptedCandidate)
         finalValidatorReplacementSource = try container.decodeIfPresent(String.self, forKey: .finalValidatorReplacementSource)
         finalValidatorRejectionReason = try container.decodeIfPresent(String.self, forKey: .finalValidatorRejectionReason)
+        selfModel = try container.decodeIfPresent(SelfModelDecisionSummary.self, forKey: .selfModel)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -212,6 +283,7 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         try container.encodeIfPresent(finalValidatorAcceptedCandidate, forKey: .finalValidatorAcceptedCandidate)
         try container.encodeIfPresent(finalValidatorReplacementSource, forKey: .finalValidatorReplacementSource)
         try container.encodeIfPresent(finalValidatorRejectionReason, forKey: .finalValidatorRejectionReason)
+        try container.encodeIfPresent(selfModel, forKey: .selfModel)
     }
 
     init(
@@ -278,7 +350,8 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         finalizerRejectionReason: String? = nil,
         finalValidatorAcceptedCandidate: Bool? = nil,
         finalValidatorReplacementSource: String? = nil,
-        finalValidatorRejectionReason: String? = nil
+        finalValidatorRejectionReason: String? = nil,
+        selfModel: SelfModelDecisionSummary? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -344,6 +417,7 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         self.finalValidatorAcceptedCandidate = finalValidatorAcceptedCandidate
         self.finalValidatorReplacementSource = finalValidatorReplacementSource
         self.finalValidatorRejectionReason = finalValidatorRejectionReason
+        self.selfModel = selfModel
     }
 }
 

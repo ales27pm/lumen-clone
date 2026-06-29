@@ -30,18 +30,21 @@ enum LegacyPromptAssembler {
         let rag = sections.first(where: { isSourceSection($0.title) && (policy.allowSensitiveSections || $0.privacyLevel != .sensitive) })?.content ?? ""
         let tool = sections.first(where: { isToolSection($0.title) })?.content ?? ""
         let runtime = sections.first(where: { isRuntimeSection($0.title) })?.content ?? ""
+        let selfModel = sections.first(where: { isSelfModelSection($0.title) })?.content ?? ""
 
         let caps = sectionCaps(policy: policy, budgetPlan: budgetPlan)
         let memC = String(mem.prefix(caps.memories))
         let ragC = String(rag.prefix(caps.rag))
         let toolC = String(tool.prefix(caps.tools))
         let runC = String(runtime.prefix(caps.runtime))
+        let selfModelC = String(selfModel.prefix(max(0, caps.runtime - runC.count)))
         let roleC = roleMetadata.map { String($0.prefix(180)) } ?? ""
         var appendix = PromptGroundingIdempotencyGuard.marker + "\n"
         appendix += titled("LOCAL MEMORY", memC)
         appendix += titled("LOCAL SOURCES", ragC)
         appendix += titled("AVAILABLE LOCAL TOOLS", toolC)
         appendix += titled("RUNTIME POLICY", runC)
+        appendix += titled("SELF MODEL", selfModelC)
         if !roleC.isEmpty { appendix += titled("ROLE STAGE", roleC) }
         let normalizedBase: String
         if preventDoubleGrounding {
@@ -53,7 +56,7 @@ enum LegacyPromptAssembler {
             normalizedBase = baseUserMessage
         }
         let finalUser = normalizedBase + (appendix.isEmpty ? "" : "\n\n" + appendix)
-        let trunc = mem.count > memC.count || rag.count > ragC.count || tool.count > toolC.count || runtime.count > runC.count || (roleMetadata?.count ?? 0) > roleC.count
+        let trunc = mem.count > memC.count || rag.count > ragC.count || tool.count > toolC.count || runtime.count > runC.count || selfModel.count > selfModelC.count || (roleMetadata?.count ?? 0) > roleC.count
         let estimatedChars = finalUser.count + baseSystemPrompt.count
         return .init(
             systemPrompt: baseSystemPrompt,
@@ -67,7 +70,7 @@ enum LegacyPromptAssembler {
             memorySectionChars: memC.count,
             ragSectionChars: ragC.count,
             toolSectionChars: toolC.count,
-            runtimeSectionChars: runC.count
+            runtimeSectionChars: runC.count + selfModelC.count
         )
     }
 
@@ -99,5 +102,10 @@ enum LegacyPromptAssembler {
 
     private static func isRuntimeSection(_ title: String) -> Bool {
         title.lowercased().contains("runtime")
+    }
+
+    private static func isSelfModelSection(_ title: String) -> Bool {
+        let normalized = title.lowercased()
+        return normalized.contains("self model") || normalized.contains("self-model")
     }
 }
