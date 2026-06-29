@@ -577,7 +577,23 @@ struct E2ETestRunnerView: View {
         reportText = "Preparing live runtime artifacts…"
 
         Task { @MainActor in
-            _ = await ModelLaunchBootstrap.prepareLiveRuntimeArtifacts(appState: appState, context: modelContext)
+            let artifactsReady = await ModelLaunchBootstrap.prepareLiveRuntimeArtifacts(appState: appState, context: modelContext)
+            guard artifactsReady else {
+                let readiness = ModelLaunchBootstrap.liveRuntimeArtifactReadiness(context: modelContext)
+                let report = E2ETestRunner.liveRuntimeArtifactsBlockedReport(
+                    startedAt: runStartedAt ?? Date(),
+                    finishedAt: Date(),
+                    readyArtifactCount: readiness.ready,
+                    requiredArtifactCount: readiness.required
+                )
+                E2ETestLogStore.writeLatest(report)
+                latestReport = report
+                reportText = report.summaryText
+                isRunning = false
+                runStartedAt = nil
+                exportError = "Live runtime artifacts are not ready. Keep the app open until model downloads complete, then rerun E2E."
+                return
+            }
             let modelLoadSnapshot = makeModelLoadSnapshot()
             reportText = mode.runningLabel
 

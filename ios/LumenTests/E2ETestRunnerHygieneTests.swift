@@ -248,6 +248,28 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunnerView.blockedRunReason(runMode: .trainingValidation, thermalState: nil)?.contains("unavailable") == true)
     }
 
+    @Test func liveRuntimeArtifactPreflightReportIsSingleActionableFailure() {
+        let started = Date(timeIntervalSince1970: 10)
+        let finished = Date(timeIntervalSince1970: 20)
+        let report = E2ETestRunner.liveRuntimeArtifactsBlockedReport(
+            startedAt: started,
+            finishedAt: finished,
+            readyArtifactCount: 1,
+            requiredArtifactCount: 6
+        )
+
+        #expect(report.passed == 0)
+        #expect(report.failed == 1)
+        #expect(report.results.count == 1)
+        let result = report.results[0]
+        #expect(result.scenarioID == "live-runtime-artifact-preflight")
+        #expect(result.metadata["failureKind"] == "liveRuntimeArtifactsNotReady")
+        #expect(result.metadata["readyArtifactCount"] == "1")
+        #expect(result.metadata["requiredArtifactCount"] == "6")
+        #expect(result.failures[0].contains("role adapters"))
+        #expect(result.finalText == "1 / 6 live runtime artifacts ready")
+    }
+
     @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()
