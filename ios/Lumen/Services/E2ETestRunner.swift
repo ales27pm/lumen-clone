@@ -529,6 +529,54 @@ nonisolated enum E2ETestRunner {
         return await run(scenarios: E2ETestScenario.trainingValidation, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
+    static func liveRuntimeArtifactsBlockedReport(
+        startedAt: Date = Date(),
+        finishedAt: Date = Date(),
+        readyArtifactCount: Int,
+        requiredArtifactCount: Int
+    ) -> E2ETestReport {
+        let reason = "Live runtime artifact preparation did not complete; required Qwen3 shared base and role adapters must be downloaded before live E2E scenarios run."
+        let detail = "\(readyArtifactCount) / \(requiredArtifactCount) live runtime artifacts ready"
+        let event = E2ETestEvent(
+            id: UUID(),
+            createdAt: finishedAt,
+            scenarioID: "live-runtime-artifact-preflight",
+            phase: "runtime-artifacts",
+            message: "\(reason) \(detail)."
+        )
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: "live-runtime-artifact-preflight",
+            kind: E2ETestKind.training.rawValue,
+            title: "Live runtime artifact preflight",
+            prompt: "Prepare live runtime artifacts before running E2E scenarios.",
+            expectedIntent: UserIntent.unknown.rawValue,
+            actualIntent: "preflight",
+            requiresAgentRun: true,
+            passed: false,
+            failures: [reason],
+            finalText: detail,
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [event],
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: detail,
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil,
+            metadata: [
+                "failureKind": "liveRuntimeArtifactsNotReady",
+                "readyArtifactCount": "\(readyArtifactCount)",
+                "requiredArtifactCount": "\(requiredArtifactCount)"
+            ]
+        )
+        return E2ETestReport(id: UUID(), startedAt: startedAt, finishedAt: finishedAt, passed: 0, failed: 1, results: [result])
+    }
+
     /// Executes end-to-end test scenarios sequentially and generates a report of results and metrics.
     /// - Parameters:
     ///   - scenarios: The test scenarios to execute.

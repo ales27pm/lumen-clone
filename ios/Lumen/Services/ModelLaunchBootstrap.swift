@@ -207,6 +207,11 @@ enum ModelLaunchBootstrap {
         }
     }
 
+    static func liveRuntimeArtifactReadiness(context: ModelContext, family: LumenModelFamily = LumenModelFamily.persistedSelected) -> (ready: Int, required: Int) {
+        let models = liveRuntimeModelsForInstall(family: family)
+        return (readyArtifactCount(for: models, context: context), models.count)
+    }
+
     private static func startMissingLiveRuntimeDownloads(models: [CatalogModel], appState: AppState, context: ModelContext) -> Int {
         let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
         var started = 0
