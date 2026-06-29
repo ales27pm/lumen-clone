@@ -7,9 +7,9 @@
       "markdown": 66,
       "mixed": 1,
       "plist": 3,
-      "python": 101,
+      "python": 104,
       "shell": 15,
-      "swift": 488,
+      "swift": 491,
       "text": 8,
       "toml": 1,
       "xcode_project": 1,
@@ -25,7 +25,7 @@
       "Assets.xcassets/LumenAssistantMark.imageset": 1,
       "Assets.xcassets/LumenVerticalLogo.imageset": 1,
       "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
-      "Assistant": 26,
+      "Assistant": 27,
       "Background": 6,
       "Brand": 2,
       "CarPlay": 2,
@@ -47,6 +47,7 @@
       "Services/LLM/Models": 9,
       "Services/LLM/Policy": 9,
       "Services/MicrosoftGraph": 6,
+      "Services/SelfModel": 1,
       "Services/Tools": 14,
       "State": 3,
       "System": 16,
@@ -62,7 +63,7 @@
       "ios": 1,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 154,
+      "ios/LumenTests": 155,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 6,
@@ -80,13 +81,13 @@
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 2,
       "tools/lumen_manifest_crawler/generated": 23,
-      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 38,
-      "tools/lumen_manifest_crawler/tests": 22,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 39,
+      "tools/lumen_manifest_crawler/tests": 24,
       "tools/pipeline": 7,
       "tools/pipeline/tests": 2,
       "tools/security": 1
     },
-    "recordCount": 747,
+    "recordCount": 753,
     "selectedFiles": [
       {
         "imports": [
@@ -153,7 +154,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage, exportRuntimeRegistryAuditLayer, exportBehaviorAuditLayer.",
-        "sha256": "b1f2666da2e3e378a4dfd406d846484554a6589380a642338917883cadb78c62",
+        "sha256": "10c26fd171f9a3965bb6f280ab309d539def8f3c517a3e86109fb82e78005bc9",
         "symbols": [
           "AgentKernelBridgeSmokeTestExpectation",
           "AgentGroundingAuditView",
@@ -314,25 +315,25 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, exportQualityFailures, requiresStructuredModelTraceCompleteness.",
-        "sha256": "ecc40b0b0f7f9bf6e55a6507fc71ccd55b62fedd3db9d6c6a749c4fb371fd071",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, liveE2EReportExport.",
+        "sha256": "846a1cbb773ad7b5209b168e5802735de424dae8ba4e3be470ba88ade04a188d",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetTraceExport",
+          "InAppDatasetLiveE2EReportExport",
           "InAppDatasetExportQualityFailure",
           "InAppDatasetAppInfo",
           "InAppDatasetExportPolicy",
           "InAppDatasetPackageExportResult",
           "InAppDatasetPackageExporter",
           "makePackage",
+          "liveE2EReportExport",
+          "appInfo",
+          "correlatedTraceCount",
+          "traceMatches",
           "exportQualityFailures",
           "requiresStructuredModelTraceCompleteness",
-          "missingStructuredModelTraceFields",
-          "hasPreciseRuntimeFailureReason",
-          "exportTrace",
-          "redactedSelfModelSummary",
-          "redactedBehaviorAudit",
-          "redactedViolation"
+          "missingStructuredModelTraceFields"
         ]
       },
       {
@@ -1104,6 +1105,34 @@
           "estimatedChars",
           "sourceIDs",
           "privacyLevel"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/SelfModelContextProvider.swift",
+        "responsibility": "`ios/Lumen/Assistant/SelfModelContextProvider.swift` owns SelfModelContextProvider behavior and defines: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars, backgroundMaxChars, content.",
+        "sha256": "8d6c7fd8b3cff7dda7ecaca2d73c1438f6cd0a5103fb2352ae5fd0825a675334",
+        "symbols": [
+          "SelfModelContextProvider",
+          "section",
+          "render",
+          "maxChars",
+          "sourceIDs",
+          "compactLines",
+          "sectionTitle",
+          "foregroundMaxChars",
+          "backgroundMaxChars",
+          "content",
+          "boundedMax",
+          "encoder",
+          "data",
+          "json",
+          "compact",
+          "cap"
         ]
       },
       {
@@ -2131,26 +2160,6 @@
           "RAGMaintenancePolicy",
           "allowEmbeddings"
         ]
-      },
-      {
-        "imports": [
-          "Foundation"
-        ],
-        "language": "swift",
-        "module": "RAG",
-        "path": "ios/Lumen/RAG/RAGRetrievalResult.swift",
-        "responsibility": "`ios/Lumen/RAG/RAGRetrievalResult.swift` owns RAGRetrievalResult behavior and defines: RAGRetrievalResult, chunkID, source, excerpt, score, retrievalMode, offsetStart, offsetEnd.",
-        "sha256": "57a9affda49a881bd2d557f82dd49f31ef4f76f2f496c42b5b796d50ab081e1c",
-        "symbols": [
-          "RAGRetrievalResult",
-          "chunkID",
-          "source",
-          "excerpt",
-          "score",
-          "retrievalMode",
-          "offsetStart",
-          "offsetEnd"
-        ]
       }
     ]
   },
@@ -2160,7 +2169,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "49b228a959c7a6e8b8c17e4a081598576b6ec997",
+  "manifestCommit": "1e7460262525134cd85604998efc61ff8611bf93",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

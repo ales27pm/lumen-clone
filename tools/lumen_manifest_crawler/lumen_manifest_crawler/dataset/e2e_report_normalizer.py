@@ -55,6 +55,7 @@ def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format
     return {
         "_source": source,
         "_sourceFormat": source_format,
+        "_sourceLayer": source_layer,
         "passed": value.get("passed"),
         "failed": value.get("failed"),
         "trainingSignals": value.get("trainingSignals") or value.get("training_signals") or [],
@@ -177,8 +178,8 @@ def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | Non
         return "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
-        if category == "deterministic_compatibility_not_training_evidence":
-            return "Training scenarios must record fresh model-backed AgentBehaviorTrace modelTurn evidence; deterministic compatibility or policy-first traces are not training evidence."
+        if category in {"deterministic_compatibility_not_training_evidence", "deterministic_compatibility_not_live_evidence"}:
+            return "Live E2E scenarios must record fresh model-backed AgentBehaviorTrace modelTurn evidence; deterministic compatibility or policy-first traces are diagnostics only."
         if category in {"no_correlated_model_turn", "agent_service_not_entered", "missing_sidecar_trace_export"}:
             return "Training scenarios that require an agent run must export a correlated model-backed AgentBehaviorTrace modelTurn or fail closed with the exact missing-path reason."
         if category == "agent_json_context_overflow":
@@ -201,8 +202,8 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
         return "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
-        if category == "deterministic_compatibility_not_training_evidence":
-            return "Route this training scenario through AgentService's model-backed agent-json path and keep deterministic compatibility traces as diagnostics only."
+        if category in {"deterministic_compatibility_not_training_evidence", "deterministic_compatibility_not_live_evidence"}:
+            return "Route this live E2E scenario through AgentService's model-backed agent-json path and keep deterministic compatibility traces as diagnostics only."
         if category == "missing_sidecar_trace_export":
             return "Export the AgentBehaviorTrace sidecar or include correlated model-evidence events in the live E2E report before using this artifact as training evidence."
         if category in {"no_correlated_model_turn", "agent_service_not_entered"}:
@@ -343,6 +344,7 @@ _EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
     "agent_model_empty_output",
     "agent_model_parse_error",
     "deterministic_compatibility_not_training_evidence",
+    "deterministic_compatibility_not_live_evidence",
     "agent_service_not_entered",
     "missing_sidecar_trace_export",
     # Backward-compatible names produced by older sidecar diagnostics.
@@ -607,6 +609,12 @@ def _diagnosis_from_model_evidence_events(scenario: dict[str, Any]) -> dict[str,
                 return {
                     "rootCauseCategory": "deterministic_compatibility_not_training_evidence",
                     "message": f"deterministic compatibility trace is not training model evidence; {message}",
+                    "trace": {"eventMessage": message, "runtimePath": runtime or "deterministic-compatibility", "stage": values.get("stage")},
+                }
+            if scenario.get("requiresAgentRun") is True:
+                return {
+                    "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+                    "message": f"deterministic compatibility trace is not live model evidence; {message}",
                     "trace": {"eventMessage": message, "runtimePath": runtime or "deterministic-compatibility", "stage": values.get("stage")},
                 }
             continue

@@ -161,6 +161,33 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func liveScenarioDoesNotAcceptPolicyFirstCompatibilityEvidence() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-weather",
+            title: "weather",
+            kind: .regression,
+            prompt: "What is the weather here?",
+            expectedIntent: .weather,
+            requiredAllowedToolIDs: ["weather"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let routing = IntentRoutingDecision(
+            intent: .weather,
+            allowedToolIDs: ["weather"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        #expect(!E2ETestRunner.acceptsPolicyFirstExecutionEvidenceForTests(scenario, routing: routing))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()

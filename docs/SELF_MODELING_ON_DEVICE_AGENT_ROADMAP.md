@@ -63,6 +63,13 @@ Still open before calling the feature useful:
 - Ingest the resulting score report in a real improvement-loop run using `--runtime-audit <score-report.json>` and confirm the generated repair samples improve the next local/TestFlight pass.
 - Keep generated static reports separate from live runtime evidence; generated self-model eval records are coverage inputs, not proof that the model answered correctly.
 
+Latest attached runtime evidence, `2026-06-29T03:06Z`, keeps those gates open:
+
+- `lumen-live-e2e-report-2026-06-29T03-06-12Z-5d412a05-2991-48d2-bf0c-17d4e5b307fe.json` reports `165` passed `requiresAgentRun` scenarios, but corrected offline ingestion classifies all `165` as `deterministic_compatibility_not_live_evidence`: the attached traces are correlated, but they are not model-backed `modelTurn` evidence.
+- The attached trace sidecar contains `1577` traces, all with `runtimePath: deterministic-compatibility`, and `0` traces with a `selfModel` decision summary. This is not proof of the self-model runtime export gate.
+- `lumen-live-e2e-report-2026-06-29T03-06-46Z-b43c01cd-2eec-4922-801f-b18b05c12a72.json` and `latest-e2e-report.json` show the executor preflight deferred by `thermalState=serious`, which is runtime environment evidence, not a model-quality failure.
+- Running `lumen_manifest_crawler improve-loop --runtime-audit <attached-directory>` currently fails with `167` gaps: `165` deterministic-compatibility live-evidence failures and `2` runtime-environment deferred warnings.
+
 ## Capability target
 
 The agent should be able to answer and act on the following questions with grounded evidence:

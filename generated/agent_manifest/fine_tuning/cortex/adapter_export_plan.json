@@ -7,13 +7,13 @@
   "agent": "cortex",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "49b228a959c7a6e8b8c17e4a081598576b6ec997",
+    "manifestCommit": "1e7460262525134cd85604998efc61ff8611bf93",
     "recordCounts": {
       "eval": 558,
       "train_dpo": 15,
-      "train_sft": 9030,
+      "train_sft": 9227,
       "val_dpo": 3,
-      "val_sft": 1593
+      "val_sft": 1628
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -24,6 +24,7 @@
       "cross_model_training",
       "fleet_system_prompts",
       "manifest_grounding_cards",
+      "runtime_audit_repairs",
       "self_model_cards",
       "self_model_sft",
       "train_sft"
@@ -45,6 +46,7 @@
       "manifest_grounding_cards",
       "module_ownership_grounding",
       "role_directory",
+      "runtime_manifest_drift_repair",
       "self_model_card_grounding",
       "self_model_grounded_answer",
       "source_code_self_knowledge",

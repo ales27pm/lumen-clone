@@ -36,6 +36,7 @@ EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
     "agent_model_parse_error",
     "no_correlated_model_turn",
     "deterministic_compatibility_not_training_evidence",
+    "deterministic_compatibility_not_live_evidence",
     "agent_service_not_entered",
     "missing_sidecar_trace_export",
 }
