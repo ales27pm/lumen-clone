@@ -1,15 +1,15 @@
 # Agent Improvement Gap Triage
 
-- Total gaps: `167`
-- Raw runtime failures: `167`
+- Total gaps: `166`
+- Raw runtime failures: `166`
 - Fresh runtime failures: `165`
-- Skipped live model generation: `2`
+- Skipped live model generation: `1`
 - Classification rule: skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.
 
 ## Root Cause Counts
 
 - `deterministic_compatibility_not_live_evidence`: `165`
-- `runtime_environment_deferred`: `2`
+- `runtime_environment_deferred`: `1`
 
 ## Failure Groups
 
@@ -295,13 +295,12 @@
 
 ### preflight
 
-- Count: `2`
+- Count: `1`
 - Status: `deferred`
-- Root causes: `{"runtime_environment_deferred": 2}`
-- Categories: `{"runtime_environment_deferred": 2}`
-- Fresh runtime failures: `2`
+- Root causes: `{"runtime_environment_deferred": 1}`
+- Categories: `{"runtime_environment_deferred": 1}`
+- Fresh runtime failures: `1`
 - Skipped live model generation: `0`
 - Recommended action: Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.
 
-  - `runtime_environment_deferred` | skipped=`True` | prompt: What is the weather here and should I carry an umbrella? | actual: device thermal state serious; cool device and retry
   - `runtime_environment_deferred` | skipped=`True` | prompt: What is the weather here and should I carry an umbrella? | actual: device thermal state serious; cool device and retry

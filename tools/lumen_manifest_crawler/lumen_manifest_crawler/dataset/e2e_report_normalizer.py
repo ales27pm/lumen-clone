@@ -56,6 +56,7 @@ def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format
         "_source": source,
         "_sourceFormat": source_format,
         "_sourceLayer": source_layer,
+        "id": value.get("id"),
         "passed": value.get("passed"),
         "failed": value.get("failed"),
         "trainingSignals": value.get("trainingSignals") or value.get("training_signals") or [],

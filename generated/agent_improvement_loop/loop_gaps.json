@@ -7800,52 +7800,6 @@
       "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
       "severity": "warning",
       "title": "e2e_runtime_environment_deferred"
-    },
-    {
-      "category": "runtime_environment_deferred",
-      "evidence": {
-        "actual": "device thermal state serious; cool device and retry",
-        "agent": "rem",
-        "e2eScenario": {
-          "expectedIntent": "weather",
-          "final": "device thermal state serious; cool device and retry",
-          "intent": "preflight",
-          "modelEvidenceRootCause": "runtime_environment_deferred",
-          "modelEvidenceStatus": "runtime_environment_deferred",
-          "modelEvidenceTrace": {
-            "rawDiagnostic": "executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; device thermal state serious; cool device and retry; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/121CB8AF-FCAB-4504-A508-898CB3F6E524/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=/var/mobile/Containers/Data/Application/121CB8AF-FCAB-4504-A508-898CB3F6E524/Documents/Models/lumen-executor-lora.gguf\n{'createdAt': '2026-06-29T03:06:45Z', 'id': '0A760B93-2E08-4C93-A352-4CBFEC3BDE58', 'message': 'executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; device thermal state serious; cool device and retry; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/121CB8AF-FCAB-4504-A508-898CB3F6E524/Documents/Model",
-            "trainable": false
-          },
-          "name": "Executor runtime preflight",
-          "prompt": "What is the weather here and should I carry an umbrella?",
-          "requiredHint": null,
-          "skippedLiveModelRun": true
-        },
-        "expected": [
-          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
-        ],
-        "problem": "executor preflight failed: resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=strict-live-training.executor-preflight: thermalState=serious; device thermal state serious; cool device and retry; modelFamily=qwen3; runtimeKind=adapter-first; baseModelPath=/var/mobile/Containers/Data/Application/121CB8AF-FCAB-4504-A508-898CB3F6E524/Documents/Models/lumen-qwen3-fast-shared-q4_k_m.gguf; adapterPath=/var/mobile/Containers/Data/Application/121CB8AF-FCAB-4504-A508-898CB3F6E524/Documents/Models/lumen-executor-lora.gguf",
-        "repairSample": {
-          "agent": "rem",
-          "badOutput": "device thermal state serious; cool device and retry",
-          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
-          "curriculum": "runtime_environment_diagnostics",
-          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
-          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
-          "promptPrefix": "What is the weather here and should I carry an umbrella?",
-          "trainable": false,
-          "violationCode": "e2e_runtime_environment_deferred"
-        },
-        "rootCauseCategory": "runtime_environment_deferred",
-        "scenario": "What is the weather here and should I carry an umbrella?",
-        "sourceLayer": "e2eTestReport.json",
-        "trainable": false,
-        "type": "e2e_runtime_environment_deferred"
-      },
-      "id": "c43813d275b759c65d5355e7",
-      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
-      "severity": "warning",
-      "title": "e2e_runtime_environment_deferred"
     }
   ]
 }
