@@ -23,4 +23,4 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the TestFlight + 
 ### ERROR — Runtime audit export does not prove the current TestFlight build
 
 - Category: `testflight_runtime_build_mismatch`
-- Recommendation: Install build 20260629064751, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.
+- Recommendation: Install build 20260629071748, run Agent Grounding in that TestFlight app, export the TestFlight + Agent Grounding package JSON, and ingest only that current-build package.

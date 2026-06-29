@@ -3,10 +3,10 @@
     "corpus": 5151,
     "evalRetrieval": 5320,
     "hardNegatives": 5320,
-    "trainPairs": 4832,
-    "trainTriplets": 4785,
-    "valPairs": 488,
-    "valTriplets": 535
+    "trainPairs": 4833,
+    "trainTriplets": 4786,
+    "valPairs": 487,
+    "valTriplets": 534
   },
   "families": [
     "agent_role_question_to_fleet_slot",
