@@ -1516,7 +1516,7 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     conversation_id = "33333333-3333-3333-3333-333333333333"
     turn_id = "44444444-4444-4444-4444-444444444444"
     package = {
-        "schemaVersion": "1.5.0",
+        "schemaVersion": "1.6.0",
         "generatedAt": "2026-06-29T00:00:00Z",
         "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
         "usedRuntimeFallback": False,
@@ -1599,6 +1599,10 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
                     }
                 ],
             },
+            "correlatedTraceCount": 2,
+            "modelBackedCorrelatedTraceCount": 1,
+            "deterministicCompatibilityTraceCount": 1,
+            "traceSidecarField": "recentTraces",
         },
     }
     report_path.write_text(json.dumps(package), encoding="utf-8")
@@ -1609,6 +1613,9 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
 
     assert package_report["_sourceLayer"] == "agentGroundingRuntimeAudit"
     assert package_report["ownsLiveE2EScenarios"] is False
+    assert package_report["liveE2ECorrelatedTraceCount"] == 2
+    assert package_report["liveE2EModelBackedCorrelatedTraceCount"] == 1
+    assert package_report["liveE2EDeterministicCompatibilityTraceCount"] == 1
     assert live_report["_sourceLayer"] == "e2eTestReport.evidenceLayer"
     assert live_report["failures"] == []
     assert live_report["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
