@@ -10,9 +10,9 @@ embedding_corpus,5143,,,
 embedding_dataset_card,1,,,
 embedding_eval_retrieval,5312,,,
 embedding_hard_negatives,5312,,,
-embedding_train_pairs,4820,train,,
+embedding_train_pairs,4817,train,,
 embedding_train_triplets,4781,train,,
-embedding_val_pairs,492,validation,,
+embedding_val_pairs,495,validation,,
 embedding_val_triplets,531,validation,,
 eval_scenarios,550,eval,,hallucinated_tool_rejection;routing_matrix_adherence;tool_runtime_scenario_selection;tool_schema_adherence;user_output_safety
 executor_tool_calls,53,,,
@@ -24,8 +24,8 @@ rem_reflection,5,,,
 reranker_dataset_card,1,,,
 reranker_eval_reranking,5312,,,
 reranker_hard_negative_pairs,5312,,,
-reranker_train_pairs,4820,train,,
-reranker_val_pairs,492,validation,,
+reranker_train_pairs,4817,train,,
+reranker_val_pairs,495,validation,,
 runtime_audit_repairs,148,train,cortex;mouth;rem,runtime_manifest_drift_repair
 self_model_cards,8,train,fleet,self_model_card_grounding
 self_model_eval,24,eval,fleet,self_model_grounding

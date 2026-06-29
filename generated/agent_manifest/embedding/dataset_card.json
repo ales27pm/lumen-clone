@@ -3,9 +3,9 @@
     "corpus": 5143,
     "evalRetrieval": 5312,
     "hardNegatives": 5312,
-    "trainPairs": 4820,
+    "trainPairs": 4817,
     "trainTriplets": 4781,
-    "valPairs": 492,
+    "valPairs": 495,
     "valTriplets": 531
   },
   "families": [
