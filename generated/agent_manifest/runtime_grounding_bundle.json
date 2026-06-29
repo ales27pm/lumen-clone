@@ -2169,7 +2169,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "1e67c4c2d2333641bef197cb8daa28a3724d6f5c",
+  "manifestCommit": "35f3f938a319d495c80895d18df80fee6bb9bb19",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",
