@@ -1,6 +1,6 @@
 # Agent Improvement Gap Triage
 
-- Total gaps: `166`
+- Total gaps: `167`
 - Raw runtime failures: `166`
 - Fresh runtime failures: `165`
 - Skipped live model generation: `1`
@@ -10,6 +10,7 @@
 
 - `deterministic_compatibility_not_live_evidence`: `165`
 - `runtime_environment_deferred`: `1`
+- `stale_audit_evidence`: `1`
 
 ## Failure Groups
 
@@ -292,6 +293,18 @@
   - `deterministic_compatibility_not_live_evidence` | skipped=`False` | prompt: Find receipt pictures in my photo library. | actual: Photo search results: Found 500 photos matching "my photo library.". Recent dates: Jun 28, 2026 at 2:50 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM.
   - `deterministic_compatibility_not_live_evidence` | skipped=`False` | prompt: Search my photos for receipts. | actual: Photo search results: Found 500 photos matching "receipts.". Recent dates: Jun 28, 2026 at 2:50 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM.
   - `deterministic_compatibility_not_live_evidence` | skipped=`False` | prompt: Use Search Photos, but ask for clarification if required details are missing. | actual: Photo search results: Found 500 photos matching "clarification if required details are missing.". Recent dates: Jun 28, 2026 at 2:50 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM.
+
+### Runtime audit export does not prove the current TestFlight build
+
+- Count: `1`
+- Status: `deferred`
+- Root causes: `{"stale_audit_evidence": 1}`
+- Categories: `{"testflight_runtime_build_mismatch": 1}`
+- Fresh runtime failures: `1`
+- Skipped live model generation: `0`
+- Recommended action: Install build 20260629054657, run Agent Grounding in that TestFlight app, export the in-app dataset package JSON, and ingest only that current-build package.
+
+  - `stale_audit_evidence` | skipped=`None` | prompt:  | actual:
 
 ### preflight
 

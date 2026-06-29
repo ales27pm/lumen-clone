@@ -1103,6 +1103,34 @@
     },
     {
       "categories": {
+        "testflight_runtime_build_mismatch": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": null,
+          "category": "testflight_runtime_build_mismatch",
+          "prompt": null,
+          "rootCauseCategory": "stale_audit_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": null,
+          "title": "Runtime audit export does not prove the current TestFlight build"
+        }
+      ],
+      "freshRuntimeFailureCount": 1,
+      "group": "Runtime audit export does not prove the current TestFlight build",
+      "recommendedAction": "Install build 20260629054657, run Agent Grounding in that TestFlight app, export the in-app dataset package JSON, and ingest only that current-build package.",
+      "rootCauseCategories": {
+        "stale_audit_evidence": 1
+      },
+      "severities": {
+        "error": 1
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
         "runtime_environment_deferred": 1
       },
       "count": 1,
@@ -1134,11 +1162,13 @@
   "summary": {
     "categoryCounts": {
       "deterministic_compatibility_not_live_evidence": 165,
-      "runtime_environment_deferred": 1
+      "runtime_environment_deferred": 1,
+      "testflight_runtime_build_mismatch": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
     "freshRuntimeFailureCount": 165,
     "groupCounts": {
+      "Runtime audit export does not prove the current TestFlight build": 1,
       "alarm": 30,
       "calendar": 6,
       "camera": 3,
@@ -1164,14 +1194,15 @@
     "rawRuntimeFailureCount": 166,
     "rootCauseCounts": {
       "deterministic_compatibility_not_live_evidence": 165,
-      "runtime_environment_deferred": 1
+      "runtime_environment_deferred": 1,
+      "stale_audit_evidence": 1
     },
     "runtimeAuditReports": 3,
     "severityCounts": {
-      "error": 165,
+      "error": 166,
       "warning": 1
     },
     "skippedLiveModelGenerationCount": 1,
-    "totalGaps": 166
+    "totalGaps": 167
   }
 }

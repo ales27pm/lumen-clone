@@ -7756,6 +7756,45 @@
       "title": "e2e_response_quality_websearch"
     },
     {
+      "category": "testflight_runtime_build_mismatch",
+      "evidence": {
+        "expectedBuildLabel": "20260629054657",
+        "matchingReportCount": 0,
+        "mismatchedReportCount": 2,
+        "mismatchedReports": [
+          {
+            "appBuildNumber": "20260628223733",
+            "generatedAt": null,
+            "source": "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/D6008A40-A9FC-4816-B422-F56221D485FE/1-lumen-live-e2e-report-2026-06-29T03-06-46Z-b43c01cd-2eec-4922-801f-b18b05c12a72.json",
+            "sourceFormat": "live-e2e-test-report-json",
+            "sourceLayer": "e2eTestReport.evidenceLayer"
+          },
+          {
+            "appBuildNumber": "20260628223733",
+            "generatedAt": null,
+            "source": "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/D6008A40-A9FC-4816-B422-F56221D485FE/2-lumen-live-e2e-report-2026-06-29T03-06-12Z-5d412a05-2991-48d2-bf0c-17d4e5b307fe.json",
+            "sourceFormat": "live-e2e-test-report-json",
+            "sourceLayer": "e2eTestReport.evidenceLayer"
+          }
+        ],
+        "missingBuildReportCount": 1,
+        "missingBuildReports": [
+          {
+            "appBuildNumber": null,
+            "generatedAt": null,
+            "source": "/tmp/codex-remote-attachments/019f10d8-c641-72e2-8d0d-19365e04bd99/D6008A40-A9FC-4816-B422-F56221D485FE/5-latest-e2e-report.txt",
+            "sourceFormat": "lumen_e2e_text_report",
+            "sourceLayer": "e2eTextReport"
+          }
+        ],
+        "rootCauseCategory": "stale_audit_evidence"
+      },
+      "id": "2a7a77a3a26f33d614eade68",
+      "recommendedAction": "Install build 20260629054657, run Agent Grounding in that TestFlight app, export the in-app dataset package JSON, and ingest only that current-build package.",
+      "severity": "error",
+      "title": "Runtime audit export does not prove the current TestFlight build"
+    },
+    {
       "category": "runtime_environment_deferred",
       "evidence": {
         "actual": "device thermal state serious; cool device and retry",

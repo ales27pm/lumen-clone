@@ -1,6 +1,6 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 4736,
+  "availableSFTRecords": 4740,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -8,7 +8,7 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "30f3aebdc969f6b9c4af4af0d8a7258992e03911",
+  "manifestCommit": "06e870a0d92d8cd90af470196c4ed493c646bfdc",
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
@@ -22,9 +22,9 @@
   "recordCounts": {
     "eval": 6,
     "train_dpo": 8,
-    "train_sft": 3995,
+    "train_sft": 3998,
     "val_dpo": 2,
-    "val_sft": 705
+    "val_sft": 706
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
