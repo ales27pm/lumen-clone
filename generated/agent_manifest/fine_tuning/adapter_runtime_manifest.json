@@ -12,9 +12,9 @@
       "recordCounts": {
         "eval": 558,
         "train_dpo": 15,
-        "train_sft": 9239,
+        "train_sft": 9247,
         "val_dpo": 3,
-        "val_sft": 1630
+        "val_sft": 1632
       },
       "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map."
     },
@@ -46,9 +46,9 @@
       "recordCounts": {
         "eval": 86,
         "train_dpo": 15,
-        "train_sft": 4619,
+        "train_sft": 4623,
         "val_dpo": 3,
-        "val_sft": 815
+        "val_sft": 816
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -97,7 +97,7 @@
       "recordCounts": {
         "eval": 6,
         "train_dpo": 8,
-        "train_sft": 3986,
+        "train_sft": 3991,
         "val_dpo": 2,
         "val_sft": 704
       },

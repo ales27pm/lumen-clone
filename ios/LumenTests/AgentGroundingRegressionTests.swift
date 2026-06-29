@@ -563,10 +563,99 @@ struct AgentGroundingRegressionTests {
         )
 
         let liveE2EReport = try #require(package.liveE2EReport)
-        #expect(package.schemaVersion == "1.6.0")
+        #expect(package.schemaVersion == InAppDatasetPackageExporter.schemaVersion)
         #expect(liveE2EReport.correlatedTraceCount == 2)
         #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 1)
         #expect(liveE2EReport.deterministicCompatibilityTraceCount == 1)
+    }
+
+    @Test func liveE2EExportFlagsMissingModelBackedTraceCoverage() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_100)
+        let e2eRunID = UUID(uuidString: "11111111-1111-4111-8111-111111111112")!
+        let agentRunID = UUID(uuidString: "22222222-2222-4222-8222-222222222223")!
+        let conversationID = UUID(uuidString: "33333333-3333-4333-8333-333333333334")!
+        let turnID = UUID(uuidString: "44444444-4444-4444-8444-444444444445")!
+        let scenarioID = "live-alarm-authorization-status"
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt.addingTimeInterval(1),
+            event: .finalAnswer,
+            slot: "cortex",
+            stage: "compatibility-clarification-final",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: "alarm",
+            promptPrefix: "Show alarm permission status.",
+            rawOutputPrefix: "I couldn't safely complete the alarm/timer request.",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: true,
+            runtimePath: "deterministic-compatibility"
+        ))
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: scenarioID,
+            kind: "standard",
+            title: "Live alarm authorization status",
+            prompt: "Show alarm permission status.",
+            expectedIntent: "alarm",
+            actualIntent: "alarm",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            requiresAgentRun: true,
+            passed: false,
+            failures: ["found deterministic-compatibility execution trace but policy-first evidence disabled for this scenario"],
+            finalText: "I couldn't safely complete the alarm/timer request.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(2),
+            rawFinalPrefix: "I couldn't safely complete the alarm/timer request.",
+            sanitizedFinalPrefix: "I couldn't safely complete the alarm/timer request.",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: []
+        )
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(2),
+            passed: 0,
+            failed: 1,
+            results: [result]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+
+        let liveE2EReport = try #require(package.liveE2EReport)
+        let failure = try #require(package.exportQualityFailures?.first(where: { $0.type == "agent_grounding_live_e2e_model_backed_trace_gap" }))
+        #expect(liveE2EReport.correlatedTraceCount == 1)
+        #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 0)
+        #expect(liveE2EReport.deterministicCompatibilityTraceCount == 1)
+        #expect(failure.actual?.contains("requiredAgentRunScenarioCount=1") == true)
+        #expect(failure.actual?.contains("modelBackedCorrelatedTraceCount=0") == true)
+        #expect(failure.problem.contains("Deterministic compatibility traces") == true)
     }
 
     @Test func agentGroundingPackageFlagsIncompleteStructuredModelTraceProof() throws {

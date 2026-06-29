@@ -134,7 +134,7 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.6.0"
+    static let schemaVersion = "1.7.0"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
@@ -159,7 +159,13 @@ nonisolated enum InAppDatasetPackageExporter {
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
         let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
         let exportedTraces = traces.map(exportTrace)
-        let qualityFailures = exportQualityFailures(from: exportedTraces)
+        let liveReportExport = liveE2EReport.map { report in
+            liveE2EReportExport(from: report, generatedAt: Date(), traces: traces)
+        }
+        let qualityFailures = exportQualityFailures(
+            from: exportedTraces,
+            liveE2EReport: liveReportExport
+        )
         let improveLoop = ImproveLoopSampleGate.buildDataset(
             behaviorAudit: exportedBehaviorAudit,
             traces: traces,
@@ -181,9 +187,7 @@ nonisolated enum InAppDatasetPackageExporter {
             behaviorAudit: exportedBehaviorAudit,
             scenarioResults: includeScenarioResults ? scenarioResults : [],
             recentTraces: exportedTraces,
-            liveE2EReport: liveE2EReport.map { report in
-                liveE2EReportExport(from: report, generatedAt: Date(), traces: traces)
-            },
+            liveE2EReport: liveReportExport,
             traceSelectedToolAllowedCount: traces.reduce(into: 0) { count, trace in
                 guard let selectedToolID = trace.selectedToolID else { return }
                 let selected = ToolRouteGuard.canonicalToolID(selectedToolID)
@@ -306,7 +310,10 @@ nonisolated enum InAppDatasetPackageExporter {
         return trace.scenarioID == result.scenarioID
     }
 
-    private static func exportQualityFailures(from traces: [InAppDatasetTraceExport]) -> [InAppDatasetExportQualityFailure] {
+    private static func exportQualityFailures(
+        from traces: [InAppDatasetTraceExport],
+        liveE2EReport: InAppDatasetLiveE2EReportExport?
+    ) -> [InAppDatasetExportQualityFailure] {
         var failures: [InAppDatasetExportQualityFailure] = []
         if traces.isEmpty {
             failures.append(InAppDatasetExportQualityFailure(
@@ -318,6 +325,11 @@ nonisolated enum InAppDatasetPackageExporter {
                 problem: "The Agent Grounding package exported no recent traces. This usually means AgentBehaviorTraceRecorder.record is not wired into the live model path, or the app audit was exported before exercising real model interactions.",
                 sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
             ))
+        }
+
+        if let liveE2EReport,
+           let failure = liveE2EModelBackedTraceGapFailure(liveE2EReport) {
+            failures.append(failure)
         }
 
         for trace in traces where requiresStructuredModelTraceCompleteness(trace) {
@@ -363,6 +375,32 @@ nonisolated enum InAppDatasetPackageExporter {
             ))
         }
         return failures
+    }
+
+    private static func liveE2EModelBackedTraceGapFailure(
+        _ liveE2EReport: InAppDatasetLiveE2EReportExport
+    ) -> InAppDatasetExportQualityFailure? {
+        let requiredAgentRunScenarioCount = liveE2EReport.payload.results.filter(\.requiresAgentRun).count
+        guard requiredAgentRunScenarioCount > 0,
+              liveE2EReport.modelBackedCorrelatedTraceCount < requiredAgentRunScenarioCount else {
+            return nil
+        }
+        return InAppDatasetExportQualityFailure(
+            type: "agent_grounding_live_e2e_model_backed_trace_gap",
+            agent: "runtime",
+            expected: [
+                "Every requiresAgentRun live E2E scenario should export correlated model-backed AgentBehaviorTrace modelTurn evidence."
+            ],
+            actual: [
+                "requiredAgentRunScenarioCount=\(requiredAgentRunScenarioCount)",
+                "modelBackedCorrelatedTraceCount=\(liveE2EReport.modelBackedCorrelatedTraceCount)",
+                "correlatedTraceCount=\(liveE2EReport.correlatedTraceCount)",
+                "deterministicCompatibilityTraceCount=\(liveE2EReport.deterministicCompatibilityTraceCount)"
+            ].joined(separator: "; "),
+            scenario: "Agent Grounding > E2E Test Runner > Export In-App Dataset Package",
+            problem: "The embedded live E2E report does not have enough model-backed correlated traces. Deterministic compatibility traces and uncorrelated traces are diagnostics only, not live model evidence.",
+            sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
+        )
     }
 
     private static func requiresStructuredModelTraceCompleteness(_ trace: InAppDatasetTraceExport) -> Bool {
