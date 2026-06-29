@@ -566,7 +566,134 @@ struct AgentGroundingRegressionTests {
         #expect(package.schemaVersion == InAppDatasetPackageExporter.schemaVersion)
         #expect(liveE2EReport.correlatedTraceCount == 2)
         #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 1)
+        #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 1)
         #expect(liveE2EReport.deterministicCompatibilityTraceCount == 1)
+    }
+
+    @Test func liveE2EExportRequiresDistinctModelBackedScenarioCoverage() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_050)
+        let coveredE2ERunID = UUID(uuidString: "11111111-1111-4111-8111-111111111113")!
+        let coveredAgentRunID = UUID(uuidString: "22222222-2222-4222-8222-222222222224")!
+        let coveredConversationID = UUID(uuidString: "33333333-3333-4333-8333-333333333335")!
+        let coveredTurnID = UUID(uuidString: "44444444-4444-4444-8444-444444444446")!
+        let missingE2ERunID = UUID(uuidString: "11111111-1111-4111-8111-111111111114")!
+        let missingAgentRunID = UUID(uuidString: "22222222-2222-4222-8222-222222222225")!
+        let missingConversationID = UUID(uuidString: "33333333-3333-4333-8333-333333333336")!
+        let missingTurnID = UUID(uuidString: "44444444-4444-4444-8444-444444444447")!
+
+        for offset in 1...2 {
+            AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: startedAt.addingTimeInterval(TimeInterval(offset)),
+                event: .modelTurn,
+                slot: "executor",
+                stage: "agent-json-step-\(offset)",
+                scenarioID: "covered-live-scenario",
+                e2eRunID: coveredE2ERunID,
+                agentRunID: coveredAgentRunID,
+                conversationID: coveredConversationID,
+                turnID: coveredTurnID,
+                intent: "rag",
+                promptPrefix: "What evidence supports your claim?",
+                rawOutputPrefix: #"{"final":"Live E2E evidence."}"#,
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: nil,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: false,
+                outputTokenCount: 8,
+                runtimePath: "agent-model"
+            ))
+        }
+
+        func result(
+            scenarioID: String,
+            title: String,
+            prompt: String,
+            e2eRunID: UUID,
+            agentRunID: UUID,
+            conversationID: UUID,
+            turnID: UUID
+        ) -> E2ETestResult {
+            E2ETestResult(
+                id: UUID(),
+                scenarioID: scenarioID,
+                kind: "standard",
+                title: title,
+                prompt: prompt,
+                expectedIntent: "rag",
+                actualIntent: "rag",
+                e2eRunID: e2eRunID,
+                agentRunID: agentRunID,
+                conversationID: conversationID,
+                turnID: turnID,
+                requiresAgentRun: true,
+                passed: true,
+                failures: [],
+                finalText: "Live E2E evidence.",
+                missingHints: [],
+                rewriteAttempted: false,
+                rewriteSuccess: false,
+                events: [],
+                startedAt: startedAt,
+                finishedAt: startedAt.addingTimeInterval(3),
+                rawFinalPrefix: "Live E2E evidence.",
+                sanitizedFinalPrefix: "Live E2E evidence.",
+                rawFinalHadUnsafeLeakage: false,
+                sanitizedFinalRemovedArtifacts: [],
+                outputHygieneFailures: []
+            )
+        }
+
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(3),
+            passed: 2,
+            failed: 0,
+            results: [
+                result(
+                    scenarioID: "covered-live-scenario",
+                    title: "Covered live scenario",
+                    prompt: "What evidence supports your claim?",
+                    e2eRunID: coveredE2ERunID,
+                    agentRunID: coveredAgentRunID,
+                    conversationID: coveredConversationID,
+                    turnID: coveredTurnID
+                ),
+                result(
+                    scenarioID: "missing-live-scenario",
+                    title: "Missing live scenario",
+                    prompt: "What source proves the runtime state?",
+                    e2eRunID: missingE2ERunID,
+                    agentRunID: missingAgentRunID,
+                    conversationID: missingConversationID,
+                    turnID: missingTurnID
+                )
+            ]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+
+        let liveE2EReport = try #require(package.liveE2EReport)
+        let failure = try #require(package.exportQualityFailures?.first(where: { $0.type == "agent_grounding_live_e2e_model_backed_trace_gap" }))
+        #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 2)
+        #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 1)
+        #expect(failure.actual?.contains("requiredAgentRunScenarioCount=2") == true)
+        #expect(failure.actual?.contains("modelBackedCorrelatedTraceCount=2") == true)
+        #expect(failure.actual?.contains("modelBackedCorrelatedScenarioCount=1") == true)
     }
 
     @Test func liveE2EExportFlagsMissingModelBackedTraceCoverage() throws {
@@ -652,9 +779,11 @@ struct AgentGroundingRegressionTests {
         let failure = try #require(package.exportQualityFailures?.first(where: { $0.type == "agent_grounding_live_e2e_model_backed_trace_gap" }))
         #expect(liveE2EReport.correlatedTraceCount == 1)
         #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 0)
+        #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 0)
         #expect(liveE2EReport.deterministicCompatibilityTraceCount == 1)
         #expect(failure.actual?.contains("requiredAgentRunScenarioCount=1") == true)
         #expect(failure.actual?.contains("modelBackedCorrelatedTraceCount=0") == true)
+        #expect(failure.actual?.contains("modelBackedCorrelatedScenarioCount=0") == true)
         #expect(failure.problem.contains("Deterministic compatibility traces") == true)
     }
 

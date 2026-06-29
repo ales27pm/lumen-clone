@@ -154,7 +154,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage, exportRuntimeRegistryAuditLayer, exportBehaviorAuditLayer.",
-        "sha256": "7bd382d7e87cfad29a5c5b5a959e53ea44314ec0ed56169730229756b7d2b675",
+        "sha256": "4e337646ddda4d9a69816fec2520ab5aabd55324e89849849cf61616bfa842eb",
         "symbols": [
           "AgentKernelBridgeSmokeTestExpectation",
           "AgentGroundingAuditView",
@@ -316,7 +316,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage, liveE2EReportExport.",
-        "sha256": "e5558a10dcff92bc6597024a158a02eb535d5e6aa03480446fc03bdb5e5b6c07",
+        "sha256": "10c04069575c9bdb31337663713ce3ef0d84bbec8ae0600b87c2e1a836efb117",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetTraceExport",
@@ -331,9 +331,9 @@
           "appInfo",
           "correlatedTraceCount",
           "modelBackedCorrelatedTraceCount",
+          "modelBackedCorrelatedScenarioCount",
           "deterministicCompatibilityTraceCount",
-          "isModelBackedLiveEvidenceTrace",
-          "traceMatches"
+          "isModelBackedLiveEvidenceTrace"
         ]
       },
       {
@@ -2169,7 +2169,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "63be24239c5a1c1f258b796db13d9804214cf471",
+  "manifestCommit": "82de4295778c9f01230c4563ba1c71e8c61edc6c",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

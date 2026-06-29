@@ -1601,6 +1601,7 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
             },
             "correlatedTraceCount": 2,
             "modelBackedCorrelatedTraceCount": 1,
+            "modelBackedCorrelatedScenarioCount": 1,
             "deterministicCompatibilityTraceCount": 1,
             "traceSidecarField": "recentTraces",
         },
@@ -1615,6 +1616,7 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     assert package_report["ownsLiveE2EScenarios"] is False
     assert package_report["liveE2ECorrelatedTraceCount"] == 2
     assert package_report["liveE2EModelBackedCorrelatedTraceCount"] == 1
+    assert package_report["liveE2EModelBackedCorrelatedScenarioCount"] == 1
     assert package_report["liveE2EDeterministicCompatibilityTraceCount"] == 1
     assert live_report["_sourceLayer"] == "e2eTestReport.evidenceLayer"
     assert live_report["failures"] == []
@@ -1630,7 +1632,7 @@ def test_agent_grounding_package_synthesizes_live_e2e_model_backed_trace_gap(tmp
     conversation_id = "33333333-3333-3333-3333-333333333333"
     turn_id = "44444444-4444-4444-4444-444444444444"
     package = {
-        "schemaVersion": "1.7.0",
+        "schemaVersion": "1.8.0",
         "generatedAt": "2026-06-29T00:00:00Z",
         "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
         "usedRuntimeFallback": False,
@@ -1699,6 +1701,7 @@ def test_agent_grounding_package_synthesizes_live_e2e_model_backed_trace_gap(tmp
             },
             "correlatedTraceCount": 1,
             "modelBackedCorrelatedTraceCount": 0,
+            "modelBackedCorrelatedScenarioCount": 0,
             "deterministicCompatibilityTraceCount": 1,
             "traceSidecarField": "recentTraces",
         },
@@ -1718,10 +1721,100 @@ def test_agent_grounding_package_synthesizes_live_e2e_model_backed_trace_gap(tmp
         if failure["type"] == "agent_grounding_live_e2e_model_backed_trace_gap"
     )
     assert package_report["liveE2EModelBackedCorrelatedTraceCount"] == 0
+    assert package_report["liveE2EModelBackedCorrelatedScenarioCount"] == 0
     assert package_report["liveE2EDeterministicCompatibilityTraceCount"] == 1
     assert failure["sourceLayer"] == "agentGroundingRuntimeAudit.exportQuality"
     assert "requiredAgentRunScenarioCount=1" in failure["actual"]
     assert "modelBackedCorrelatedTraceCount=0" in failure["actual"]
+    assert "modelBackedCorrelatedScenarioCount=0" in failure["actual"]
+
+
+def test_agent_grounding_package_synthesizes_live_e2e_scenario_coverage_gap_when_trace_count_matches(tmp_path: Path):
+    import json
+
+    package = {
+        "schemaVersion": "1.8.0",
+        "generatedAt": "2026-06-29T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [],
+        "liveE2EReport": {
+            "schemaVersion": "1.0.0",
+            "generatedAt": "2026-06-29T00:00:10Z",
+            "exportPolicy": {
+                "format": "live-e2e-test-report-json",
+                "sourceLayer": "e2eTestReport",
+                "ownsLiveE2EScenarios": True,
+                "includesDeterministicStaticScenarios": False,
+            },
+            "payload": {
+                "id": "66666666-6666-6666-6666-666666666666",
+                "startedAt": "2026-06-29T00:00:00Z",
+                "finishedAt": "2026-06-29T00:00:20Z",
+                "passed": 1,
+                "failed": 1,
+                "results": [
+                    {
+                        "id": "77777777-7777-7777-7777-777777777777",
+                        "scenarioID": "covered-live-scenario",
+                        "kind": "standard",
+                        "title": "Covered live scenario",
+                        "prompt": "What evidence supports your claim?",
+                        "expectedIntent": "rag",
+                        "actualIntent": "rag",
+                        "requiresAgentRun": True,
+                        "passed": True,
+                        "failures": [],
+                        "finalText": "Live E2E evidence.",
+                        "events": [],
+                    },
+                    {
+                        "id": "88888888-8888-8888-8888-888888888888",
+                        "scenarioID": "missing-live-scenario",
+                        "kind": "standard",
+                        "title": "Missing live scenario",
+                        "prompt": "What source proves the runtime state?",
+                        "expectedIntent": "rag",
+                        "actualIntent": "rag",
+                        "requiresAgentRun": True,
+                        "passed": False,
+                        "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                        "finalText": "Missing model-backed evidence.",
+                        "events": [],
+                    },
+                ],
+            },
+            "correlatedTraceCount": 2,
+            "modelBackedCorrelatedTraceCount": 2,
+            "modelBackedCorrelatedScenarioCount": 1,
+            "deterministicCompatibilityTraceCount": 0,
+            "traceSidecarField": "recentTraces",
+        },
+    }
+    report_path = tmp_path / "lumen-agent-grounding-testflight-scenario-gap-package.json"
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    package_report = next(
+        report
+        for report in load_runtime_audit_reports([report_path])
+        if report["_sourceFormat"] == "lumen_in_app_dataset_package"
+    )
+
+    failure = next(
+        failure
+        for failure in package_report["failures"]
+        if failure["type"] == "agent_grounding_live_e2e_model_backed_trace_gap"
+    )
+    assert package_report["liveE2EModelBackedCorrelatedTraceCount"] == 2
+    assert package_report["liveE2EModelBackedCorrelatedScenarioCount"] == 1
+    assert "requiredAgentRunScenarioCount=2" in failure["actual"]
+    assert "modelBackedCorrelatedTraceCount=2" in failure["actual"]
+    assert "modelBackedCorrelatedScenarioCount=1" in failure["actual"]
 
 
 def test_runtime_audit_ingest_deduplicates_same_e2e_report_id(tmp_path: Path):

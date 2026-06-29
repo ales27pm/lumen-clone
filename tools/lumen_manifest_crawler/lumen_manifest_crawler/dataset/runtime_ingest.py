@@ -304,7 +304,7 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -608,8 +608,12 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
     live_e2e_report = package.get("liveE2EReport")
     if not isinstance(live_e2e_report, dict):
         return None
-    model_backed_count = _optional_int(live_e2e_report.get("modelBackedCorrelatedTraceCount"))
-    if model_backed_count is None:
+    model_backed_trace_count = _optional_int(live_e2e_report.get("modelBackedCorrelatedTraceCount")) or 0
+    model_backed_scenario_count = _optional_int(live_e2e_report.get("modelBackedCorrelatedScenarioCount"))
+    coverage_count = model_backed_scenario_count
+    if coverage_count is None:
+        coverage_count = _optional_int(live_e2e_report.get("modelBackedCorrelatedTraceCount"))
+    if coverage_count is None:
         return None
     correlated_count = _optional_int(live_e2e_report.get("correlatedTraceCount")) or 0
     deterministic_count = _optional_int(live_e2e_report.get("deterministicCompatibilityTraceCount")) or 0
@@ -620,7 +624,7 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
         for result in _iter_dicts(payload.get("results", []) or [])
         if result.get("requiresAgentRun") is True
     )
-    if required_agent_run_scenario_count <= 0 or model_backed_count >= required_agent_run_scenario_count:
+    if required_agent_run_scenario_count <= 0 or coverage_count >= required_agent_run_scenario_count:
         return None
     return {
         "type": "agent_grounding_live_e2e_model_backed_trace_gap",
@@ -630,7 +634,8 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
         ],
         "actual": (
             f"requiredAgentRunScenarioCount={required_agent_run_scenario_count}; "
-            f"modelBackedCorrelatedTraceCount={model_backed_count}; "
+            f"modelBackedCorrelatedTraceCount={model_backed_trace_count}; "
+            f"modelBackedCorrelatedScenarioCount={coverage_count}; "
             f"correlatedTraceCount={correlated_count}; "
             f"deterministicCompatibilityTraceCount={deterministic_count}"
         ),
@@ -898,6 +903,7 @@ def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str
         "traceParseErrorCount": package.get("traceParseErrorCount", parse_error_count),
         "liveE2ECorrelatedTraceCount": live_e2e_summary.get("correlatedTraceCount"),
         "liveE2EModelBackedCorrelatedTraceCount": live_e2e_summary.get("modelBackedCorrelatedTraceCount"),
+        "liveE2EModelBackedCorrelatedScenarioCount": live_e2e_summary.get("modelBackedCorrelatedScenarioCount"),
         "liveE2EDeterministicCompatibilityTraceCount": live_e2e_summary.get("deterministicCompatibilityTraceCount"),
         "ignoredScenarioResultCount": 0 if owns_live_e2e else len(scenario_results),
         "ownsLiveE2EScenarios": owns_live_e2e,
