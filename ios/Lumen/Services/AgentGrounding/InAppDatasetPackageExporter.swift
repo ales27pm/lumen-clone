@@ -10,6 +10,7 @@ nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
     let behaviorAudit: AgentBehaviorAuditReport?
     let scenarioResults: [RuntimeScenarioResult]
     let recentTraces: [InAppDatasetTraceExport]
+    let liveE2EReport: InAppDatasetLiveE2EReportExport?
     let traceSelectedToolAllowedCount: Int
     let traceParseErrorCount: Int
     let exportQualityFailures: [InAppDatasetExportQualityFailure]?
@@ -18,11 +19,16 @@ nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
 }
 
 nonisolated struct InAppDatasetTraceExport: Codable, Sendable, Hashable {
+    let id: UUID
     let createdAt: Date
     let event: AgentBehaviorTrace.Event
     let slot: String
     let stage: String
     let scenarioID: String?
+    let e2eRunID: UUID?
+    let agentRunID: UUID?
+    let conversationID: UUID?
+    let turnID: UUID?
     let intent: String?
     let promptPrefix: String
     let rawOutputPrefix: String
@@ -80,6 +86,16 @@ nonisolated struct InAppDatasetTraceExport: Codable, Sendable, Hashable {
     let selfModel: AgentBehaviorTrace.SelfModelDecisionSummary?
 }
 
+nonisolated struct InAppDatasetLiveE2EReportExport: Codable, Sendable {
+    let schemaVersion: String
+    let generatedAt: Date
+    let app: InAppDatasetAppInfo
+    let exportPolicy: EvidenceLayerExportPolicy
+    let payload: E2ETestReport
+    let correlatedTraceCount: Int
+    let traceSidecarField: String
+}
+
 nonisolated struct InAppDatasetExportQualityFailure: Codable, Sendable, Hashable, Identifiable {
     var id: String { [type, agent ?? "", actual ?? "", problem].joined(separator: "|") }
     let type: String
@@ -116,7 +132,7 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.4.0"
+    static let schemaVersion = "1.5.0"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
@@ -133,6 +149,7 @@ nonisolated enum InAppDatasetPackageExporter {
         runtimeManifestAudit: RuntimeAgentManifestAuditReport?,
         behaviorAudit: AgentBehaviorAuditReport?,
         scenarioResults: [RuntimeScenarioResult],
+        liveE2EReport: E2ETestReport? = nil,
         traceLimit: Int = 200,
         includeScenarioResults: Bool = defaultIncludesScenarioResults
     ) -> LumenInAppDatasetPackage {
@@ -162,6 +179,9 @@ nonisolated enum InAppDatasetPackageExporter {
             behaviorAudit: exportedBehaviorAudit,
             scenarioResults: includeScenarioResults ? scenarioResults : [],
             recentTraces: exportedTraces,
+            liveE2EReport: liveE2EReport.map { report in
+                liveE2EReportExport(from: report, generatedAt: Date(), traces: traces)
+            },
             traceSelectedToolAllowedCount: traces.reduce(into: 0) { count, trace in
                 guard let selectedToolID = trace.selectedToolID else { return }
                 let selected = ToolRouteGuard.canonicalToolID(selectedToolID)
@@ -187,10 +207,70 @@ nonisolated enum InAppDatasetPackageExporter {
                 ownsLiveE2EScenarios: false,
                 includesDeterministicStaticScenarios: includeScenarioResults,
                 deterministicScenarioPolicy: includeScenarioResults
-                    ? "Static manifest scenario checks were explicitly included; they are not proof of live model execution and must not be treated as E2E model runs."
-                    : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results."
+                    ? "Static manifest scenario checks were explicitly included; they are not proof of live model execution and must not be treated as E2E model runs. If liveE2EReport is present, its embedded e2eTestReport envelope is the only layer that owns live scenario pass/fail."
+                    : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results through the embedded liveE2EReport envelope when available."
             )
         )
+    }
+
+    private static func liveE2EReportExport(
+        from report: E2ETestReport,
+        generatedAt: Date,
+        traces: [AgentBehaviorTrace]
+    ) -> InAppDatasetLiveE2EReportExport {
+        InAppDatasetLiveE2EReportExport(
+            schemaVersion: EvidenceLayerExporter.schemaVersion,
+            generatedAt: generatedAt,
+            app: appInfo(),
+            exportPolicy: EvidenceLayerExportPolicy(
+                format: "live-e2e-test-report-json",
+                sourceLayer: "e2eTestReport",
+                ownsLiveE2EScenarios: true,
+                includesDeterministicStaticScenarios: report.results.contains { !$0.requiresAgentRun },
+                privacy: "Contains prompts, final outputs, failures, and event logs from the current local E2E run plus bounded correlated AgentBehaviorTrace sidecars from recentTraces. Review before sharing outside the improve-loop.",
+                notes: [
+                    "Embedded TestFlight/live E2E layer exported from the app.",
+                    "The parent Agent Grounding package does not own live E2E pass/fail.",
+                    "Offline ingestion must validate requiresAgentRun=true scenarios against correlated recentTraces modelTurn sidecar evidence."
+                ]
+            ),
+            payload: report,
+            correlatedTraceCount: correlatedTraceCount(report: report, traces: traces),
+            traceSidecarField: "recentTraces"
+        )
+    }
+
+    private static func appInfo() -> InAppDatasetAppInfo {
+        InAppDatasetAppInfo(
+            name: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Lumen",
+            bundleIdentifier: Bundle.main.bundleIdentifier,
+            shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+            buildNumber: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        )
+    }
+
+    private static func correlatedTraceCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
+        traces.reduce(into: 0) { count, trace in
+            guard report.results.contains(where: { result in
+                traceMatches(result: result, trace: trace)
+            }) else { return }
+            count += 1
+        }
+    }
+
+    private static func traceMatches(result: E2ETestResult, trace: AgentBehaviorTrace) -> Bool {
+        if let e2eRunID = result.e2eRunID, let traceE2ERunID = trace.e2eRunID, e2eRunID != traceE2ERunID { return false }
+        if let agentRunID = result.agentRunID, let traceAgentRunID = trace.agentRunID, agentRunID != traceAgentRunID { return false }
+        if let conversationID = result.conversationID, let traceConversationID = trace.conversationID, conversationID != traceConversationID { return false }
+        if let turnID = result.turnID, let traceTurnID = trace.turnID, turnID != traceTurnID { return false }
+        if let scenarioID = trace.scenarioID, !scenarioID.isEmpty, scenarioID != result.scenarioID { return false }
+
+        let hasStrongIdentifier = result.e2eRunID != nil && trace.e2eRunID != nil
+            || result.agentRunID != nil && trace.agentRunID != nil
+            || result.conversationID != nil && trace.conversationID != nil
+            || result.turnID != nil && trace.turnID != nil
+        if hasStrongIdentifier { return true }
+        return trace.scenarioID == result.scenarioID
     }
 
     private static func exportQualityFailures(from traces: [InAppDatasetTraceExport]) -> [InAppDatasetExportQualityFailure] {
@@ -303,11 +383,16 @@ nonisolated enum InAppDatasetPackageExporter {
 
     private static func exportTrace(_ trace: AgentBehaviorTrace) -> InAppDatasetTraceExport {
         InAppDatasetTraceExport(
+            id: trace.id,
             createdAt: trace.createdAt,
             event: trace.event,
             slot: safeCode(trace.slot),
             stage: safeCode(trace.stage),
             scenarioID: trace.scenarioID.map { sanitizedSnippet($0, limit: 160) },
+            e2eRunID: trace.e2eRunID,
+            agentRunID: trace.agentRunID,
+            conversationID: trace.conversationID,
+            turnID: trace.turnID,
             intent: trace.intent.map(safeCode),
             promptPrefix: sanitizedSnippet(trace.promptPrefix),
             rawOutputPrefix: sanitizedSnippet(trace.rawOutputPrefix),
@@ -431,6 +516,7 @@ nonisolated enum InAppDatasetPackageExporter {
         runtimeManifestAudit: RuntimeAgentManifestAuditReport?,
         behaviorAudit: AgentBehaviorAuditReport?,
         scenarioResults: [RuntimeScenarioResult],
+        liveE2EReport: E2ETestReport? = E2ETestLogStore.latestReport(),
         traceLimit: Int = 200,
         includeScenarioResults: Bool = defaultIncludesScenarioResults
     ) throws -> InAppDatasetPackageExportResult {
@@ -440,6 +526,7 @@ nonisolated enum InAppDatasetPackageExporter {
             runtimeManifestAudit: runtimeManifestAudit,
             behaviorAudit: behaviorAudit,
             scenarioResults: scenarioResults,
+            liveE2EReport: liveE2EReport,
             traceLimit: traceLimit,
             includeScenarioResults: includeScenarioResults
         )

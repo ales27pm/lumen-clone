@@ -7,13 +7,13 @@
   "agent": "mouth",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "49b228a959c7a6e8b8c17e4a081598576b6ec997",
+    "manifestCommit": "1e7460262525134cd85604998efc61ff8611bf93",
     "recordCounts": {
       "eval": 8,
       "train_dpo": 12,
-      "train_sft": 230,
+      "train_sft": 264,
       "val_dpo": 2,
-      "val_sft": 41
+      "val_sft": 47
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -23,6 +23,7 @@
       "fleet_system_prompts",
       "manifest_grounding_cards",
       "mouth_responses",
+      "runtime_audit_repairs",
       "self_model_cards",
       "train_sft"
     ],
@@ -39,6 +40,7 @@
       "manifest_grounding_cards",
       "mouth_responses",
       "role_directory",
+      "runtime_manifest_drift_repair",
       "self_model_card_grounding",
       "source_code_self_knowledge",
       "source_routing_knowledge",

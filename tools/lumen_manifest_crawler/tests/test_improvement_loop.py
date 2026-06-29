@@ -174,6 +174,60 @@ def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Pat
     assert result.state["triage"]["rootCauseCounts"]["skipped_live_model_generation"] == 1
 
 
+def test_improvement_loop_treats_deterministic_live_evidence_as_runtime_failure(tmp_path: Path):
+    report = tmp_path / "live-e2e.json"
+    report.write_text(
+        json.dumps({
+            "kind": "lumen_e2e_test_report",
+            "passed": 1,
+            "failed": 0,
+            "scenarios": [
+                {
+                    "name": "Weather here must not create events",
+                    "kind": "regression",
+                    "passed": True,
+                    "prompt": "What is the weather here?",
+                    "intent": "weather",
+                    "expectedIntent": "weather",
+                    "requiresAgentRun": True,
+                    "failures": [],
+                    "final": "Weather summary.",
+                    "events": [
+                        {
+                            "phase": "model-evidence",
+                            "message": "runtime=deterministic-compatibility, kind=policy-first-deterministic, stage=compatibility-final",
+                        }
+                    ],
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(tmp_path,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+        )
+    )
+
+    runtime_gaps = [gap for gap in result.gaps if gap["category"] == "deterministic_compatibility_not_live_evidence"]
+    assert len(runtime_gaps) == 1
+    assert runtime_gaps[0]["severity"] == "error"
+    assert runtime_gaps[0]["evidence"]["rootCauseCategory"] == "deterministic_compatibility_not_live_evidence"
+    assert result.state["runtime"]["rawFailureCount"] == 1
+    assert result.state["runtime"]["failureCount"] == 1
+    assert result.state["runtime"]["skippedLiveModelGenerationCount"] == 0
+    assert result.state["triage"]["rootCauseCounts"]["deterministic_compatibility_not_live_evidence"] == 1
+
+
 def test_improvement_loop_uses_persistent_diagnostic_remediation_action(tmp_path: Path):
     report = tmp_path / "persistent-runtime-diagnostics-export.json"
     report.write_text(

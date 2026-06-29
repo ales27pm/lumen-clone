@@ -72,7 +72,7 @@ public struct AgentGroundingAuditView: View {
                 }
                 .disabled(isRunningLiveTraceSmokeTest)
 
-                Button("Export Runtime Audit Package") {
+                Button("Export TestFlight + Agent Grounding Package") {
                     exportRuntimeAuditPackage()
                 }
                 .disabled(report == nil && behaviorReport == nil && scenarioResults.isEmpty)
@@ -83,7 +83,7 @@ public struct AgentGroundingAuditView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes an Agent Grounding runtime audit package for the offline loop: audit failures, behavior violations, and bounded diagnostic traces. Static scenario checks stay visible here but are not exported as live E2E model results. \(AgentKernelBridgeSmokeTestExpectation.footerSentence)")
+                Text("Compares the static crawler manifest against live runtime tools and recent model behaviour. Export writes an Agent Grounding runtime audit package for the offline loop: audit failures, behavior violations, bounded diagnostic traces, and the latest TestFlight/live E2E report when one exists. Static scenario checks stay visible here but are not exported as live E2E model results. \(AgentKernelBridgeSmokeTestExpectation.footerSentence)")
             }
 
             Section {
@@ -134,6 +134,11 @@ public struct AgentGroundingAuditView: View {
                         LabeledContent("Owns live E2E", value: lastExportPackage.exportPolicy.ownsLiveE2EScenarios ? "yes" : "no")
                         LabeledContent("Static scenarios exported", value: lastExportPackage.exportPolicy.includesDeterministicStaticScenarios ? "yes" : "no")
                         LabeledContent("Traces", value: "\(lastExportPackage.recentTraces.count)")
+                        LabeledContent("Live E2E layer", value: lastExportPackage.liveE2EReport == nil ? "not included" : "included")
+                        if let liveE2EReport = lastExportPackage.liveE2EReport {
+                            LabeledContent("Live E2E scenarios", value: "\(liveE2EReport.payload.results.count)")
+                            LabeledContent("Correlated E2E traces", value: "\(liveE2EReport.correlatedTraceCount)")
+                        }
                         LabeledContent("Allowed selections", value: "\(lastExportPackage.traceSelectedToolAllowedCount)")
                         LabeledContent("Trace parse errors", value: "\(lastExportPackage.traceParseErrorCount)")
                         LabeledContent("Runtime failures", value: "\(lastExportPackage.runtimeManifestAudit?.failures.count ?? 0)")
@@ -145,9 +150,9 @@ public struct AgentGroundingAuditView: View {
                         }
                     }
                     ShareLink(item: lastExportURL) {
-                        Label("Share Runtime Audit JSON", systemImage: "square.and.arrow.up")
+                        Label("Share TestFlight Audit JSON", systemImage: "square.and.arrow.up")
                     }
-                    Text("Feed this JSON into `python -m lumen_manifest_crawler improve-loop --runtime-audit <file>`. Live E2E scenario reports should come from End-to-end tests, not from Agent Grounding static scenario checks.")
+                    Text("Feed this JSON into `python -m lumen_manifest_crawler improve-loop --runtime-audit <file>`. The parent Agent Grounding layer remains diagnostic; only the embedded `e2eTestReport` layer owns live E2E pass/fail.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

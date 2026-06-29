@@ -76,9 +76,9 @@ def _normalize_payload(value: Any, *, source: str, sidecars: dict[str, list[dict
     if not isinstance(value, dict):
         return []
     if _is_evidence_layer_envelope(value):
-        return _flatten_evidence_layer_envelope(value, source=source)
+        return _flatten_evidence_layer_envelope(value, source=source, sidecars=sidecars)
     if _is_in_app_package(value):
-        return [_flatten_in_app_package(value, source=source)]
+        return _flatten_in_app_package_reports(value, source=source, sidecars=sidecars)
     if _is_self_model_eval_score_report(value):
         return [_flatten_self_model_eval_score_report(value, source=source)]
     if _is_persistent_runtime_diagnostics_export(value):
@@ -151,7 +151,7 @@ def _is_evidence_layer_envelope(value: dict[str, Any]) -> bool:
     return isinstance(value.get("exportPolicy"), dict) and "payload" in value
 
 
-def _flatten_evidence_layer_envelope(envelope: dict[str, Any], *, source: str) -> list[dict[str, Any]]:
+def _flatten_evidence_layer_envelope(envelope: dict[str, Any], *, source: str, sidecars: dict[str, list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
     export_policy = envelope.get("exportPolicy")
     export_policy = export_policy if isinstance(export_policy, dict) else {}
     payload = envelope.get("payload")
@@ -168,6 +168,7 @@ def _flatten_evidence_layer_envelope(envelope: dict[str, Any], *, source: str) -
                     source=source,
                     source_format=source_format,
                     source_layer="e2eTestReport.evidenceLayer",
+                    sidecars=sidecars,
                 )
             ]
         return []
@@ -239,7 +240,14 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
     scenarios: list[dict[str, Any]] = []
     for result in _iter_dicts(results):
         scenarios.append({
+            "id": result.get("scenarioID") or result.get("id"),
+            "scenarioID": result.get("scenarioID"),
+            "e2eRunID": result.get("e2eRunID"),
+            "agentRunID": result.get("agentRunID"),
+            "conversationID": result.get("conversationID"),
+            "turnID": result.get("turnID"),
             "name": result.get("title"),
+            "kind": result.get("kind"),
             "passed": result.get("passed") is True,
             "prompt": result.get("prompt"),
             "intent": result.get("actualIntent") or result.get("expectedIntent"),
@@ -248,6 +256,8 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
             "failures": "; ".join(str(item) for item in result.get("failures", []) if item) if isinstance(result.get("failures"), list) else result.get("failures"),
             "final": result.get("finalText"),
             "events": result.get("events") or [],
+            "startedAt": result.get("startedAt"),
+            "finishedAt": result.get("finishedAt"),
         })
     return {
         "kind": "lumen_e2e_test_report",
@@ -273,7 +283,7 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -282,6 +292,7 @@ def _is_in_app_package(value: dict[str, Any]) -> bool:
                 "behaviorAudit",
                 "scenarioResults",
                 "recentTraces",
+                "liveE2EReport",
             )
         )
     )
@@ -695,6 +706,53 @@ def _collect_trace_failures(
         if tool_failure is not None:
             failures.append(tool_failure)
     return failures, selected_tool_allowed_count, parse_error_count
+
+
+def _flatten_in_app_package_reports(
+    package: dict[str, Any],
+    *,
+    source: str,
+    sidecars: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
+    reports = [_flatten_in_app_package(package, source=source)]
+    live_e2e_report = package.get("liveE2EReport")
+    if isinstance(live_e2e_report, dict):
+        embedded_sidecars = _sidecars_with_in_app_traces(package, sidecars=sidecars)
+        reports.extend(
+            _flatten_evidence_layer_envelope(
+                live_e2e_report,
+                source=f"{source}#liveE2EReport",
+                sidecars=embedded_sidecars,
+            )
+        )
+    return reports
+
+
+def _sidecars_with_in_app_traces(
+    package: dict[str, Any],
+    *,
+    sidecars: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    merged: dict[str, list[dict[str, Any]]] = {
+        key: list(value)
+        for key, value in (sidecars or {}).items()
+        if isinstance(value, list)
+    }
+    embedded_traces = list(_iter_dicts(package.get("recentTraces", []) or []))
+    if embedded_traces:
+        merged["agent_behavior_traces"] = embedded_traces + merged.get("agent_behavior_traces", [])
+
+    presence: dict[str, Any] = {}
+    existing_presence = merged.get("_sidecar_presence") or []
+    if existing_presence and isinstance(existing_presence[0], dict):
+        presence.update(existing_presence[0])
+    if embedded_traces:
+        presence["agent_behavior_traces"] = True
+    if "agent_behavior_traces" in merged:
+        presence.setdefault("agent_behavior_traces", bool(merged["agent_behavior_traces"]))
+    if presence:
+        merged["_sidecar_presence"] = [presence]
+    return merged
 
 
 def _flatten_in_app_package(package: dict[str, Any], *, source: str) -> dict[str, Any]:

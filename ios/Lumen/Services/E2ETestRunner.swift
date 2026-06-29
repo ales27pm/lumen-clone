@@ -809,8 +809,8 @@ nonisolated enum E2ETestRunner {
                     allowDegradedGrounding: false,
                     preventDoubleGrounding: true,
                     diagnosticsEnabled: false,
-                    allowDeterministicCompatibility: scenario.kind != .training,
-                    allowParseFailureDeterministicRecovery: scenario.kind != .training,
+                    allowDeterministicCompatibility: false,
+                    allowParseFailureDeterministicRecovery: false,
                     allowsMemoryPressureContinuation: scenario.kind == .training
                 )
                 let agentEvents = await MainActor.run {
@@ -996,17 +996,10 @@ nonisolated enum E2ETestRunner {
     /// - Returns: `true` if the scenario accepts such traces, `false` otherwise.
     private nonisolated static func acceptsPolicyFirstExecutionEvidence(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
         guard scenario.requiresAgentRun else { return false }
-        // Training scenarios are adapter/model promotion evals. They must still
-        // prove a fresh modelTurn and must not pass on deterministic policy traces.
-        guard scenario.kind != .training else { return false }
-        if scenario.kind == .chat, routing.intent == .chat {
-            return true
-        }
-        // Regression/routing scenarios may be intentionally satisfied by the
-        // policy-first deterministic compatibility path. Those traces are valid
-        // execution evidence when the routed intent is tool-scoped or needs a
-        // clarification before tool execution.
-        return IntentRouter.intentRequiresTool(routing) || routing.requiresClarification
+        // A scenario marked as live training/evidence must prove the loaded
+        // model path. Deterministic compatibility traces are diagnostics only;
+        // static routing coverage should use requiresAgentRun=false.
+        return false
     }
 
     private nonisolated static func shouldTemporarilyEnableNetworkAccess(
@@ -1279,6 +1272,13 @@ nonisolated enum E2ETestRunner {
         availableToolIDs: [String]
     ) -> Bool {
         shouldTemporarilyEnableNetworkAccess(scenario: scenario, routing: routing, availableToolIDs: availableToolIDs)
+    }
+
+    nonisolated static func acceptsPolicyFirstExecutionEvidenceForTests(
+        _ scenario: E2ETestScenario,
+        routing: IntentRoutingDecision
+    ) -> Bool {
+        acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
     }
 
     nonisolated static func modelRuntimeEvidenceForTests(

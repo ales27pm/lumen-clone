@@ -556,6 +556,104 @@ def test_training_deterministic_model_evidence_is_not_model_backed(tmp_path: Pat
     assert "deterministic compatibility" in failure["problem"]
 
 
+def test_live_deterministic_model_evidence_is_not_model_backed(tmp_path: Path):
+    report_path = tmp_path / "e2e-live-deterministic.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "scenarios": [
+            {
+                "id": "weather-here-no-calendar",
+                "name": "Weather here must not create events",
+                "kind": "regression",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "What is the weather here?",
+                "intent": "weather",
+                "expectedIntent": "weather",
+                "failures": [],
+                "final": "Weather summary.",
+                "events": [{"phase": "model-evidence", "message": "runtime=deterministic-compatibility, kind=policy-first-deterministic, stage=compatibility-final"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "deterministic_compatibility_not_live_evidence"
+    assert failure["e2eScenario"]["skippedLiveModelRun"] is False
+    assert "deterministic compatibility" in failure["problem"]
+
+
+def test_evidence_layer_envelope_preserves_sidecar_correlation(tmp_path: Path):
+    report_path = tmp_path / "1-lumen-live-e2e-report.json"
+    import json
+
+    envelope = {
+        "schemaVersion": "1.0.0",
+        "generatedAt": "2026-06-29T03:06:12Z",
+        "exportPolicy": {
+            "sourceLayer": "e2eTestReport",
+            "format": "lumen-evidence-layer-json",
+            "ownsLiveE2EScenarios": True,
+        },
+        "payload": {
+            "passed": 1,
+            "failed": 0,
+            "results": [
+                {
+                    "scenarioID": "training-general-chat",
+                    "title": "Training eval: pure chat quality",
+                    "kind": "training",
+                    "passed": True,
+                    "e2eRunID": "11111111-1111-1111-1111-111111111111",
+                    "agentRunID": "22222222-2222-2222-2222-222222222222",
+                    "conversationID": "33333333-3333-3333-3333-333333333333",
+                    "turnID": "44444444-4444-4444-4444-444444444444",
+                    "requiresAgentRun": True,
+                    "prompt": "Explain precision and recall.",
+                    "expectedIntent": "chat",
+                    "actualIntent": "chat",
+                    "failures": [],
+                    "finalText": "Precision is exactness; recall is coverage.",
+                    "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+                    "startedAt": "2026-06-29T03:06:00Z",
+                    "finishedAt": "2026-06-29T03:06:20Z",
+                }
+            ],
+        },
+    }
+    report_path.write_text(json.dumps(envelope), encoding="utf-8")
+    (tmp_path / "6-agent-behavior-traces.jsonl").write_text(
+        json.dumps({
+            "createdAt": "2026-06-29T03:06:10Z",
+            "event": "modelTurn",
+            "stage": "agent-json-step-0",
+            "runtimePath": "agent-model",
+            "scenarioID": "training-general-chat",
+            "e2eRunID": "11111111-1111-1111-1111-111111111111",
+            "agentRunID": "22222222-2222-2222-2222-222222222222",
+            "conversationID": "33333333-3333-3333-3333-333333333333",
+            "turnID": "44444444-4444-4444-4444-444444444444",
+            "promptPrefix": "redacted structured prompt",
+            "rawOutputPrefix": "{\"final\":\"Precision is exactness; recall is coverage.\"}",
+            "parseError": None,
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"] == []
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
+    assert normalized["scenarios"][0]["scenarioID"] == "training-general-chat"
+
+
 def test_missing_sidecar_trace_export_is_distinguishable(tmp_path: Path):
     report_path = tmp_path / "e2e-missing-sidecar.json"
     import json
@@ -1099,7 +1197,7 @@ def test_ingestion_distinguishes_missing_empty_parse_valid_and_policy_first_evid
     assert failures_by_prompt["Empty output prompt."]["rootCauseCategory"] == "agent_json_completed_without_text"
     assert failures_by_prompt["Parse error prompt."]["rootCauseCategory"] == "agent_json_parse_error"
     assert "Valid model prompt." not in failures_by_prompt
-    assert "Policy first prompt." not in failures_by_prompt
+    assert failures_by_prompt["Policy first prompt."]["rootCauseCategory"] == "deterministic_compatibility_not_live_evidence"
 
 
 def test_in_app_package_preserves_trace_selected_tool_allowed_count(tmp_path: Path):
@@ -1407,6 +1505,114 @@ def test_e2e_owned_package_can_ingest_live_scenario_results(tmp_path: Path):
     assert report["ignoredScenarioResultCount"] == 0
     assert len(report["failures"]) == 1
     assert report["failures"][0]["sourceLayer"] == "e2eTestReport.scenarioResults"
+
+
+def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_path: Path):
+    report_path = tmp_path / "lumen-agent-grounding-testflight-package.json"
+    import json
+
+    e2e_run_id = "11111111-1111-1111-1111-111111111111"
+    agent_run_id = "22222222-2222-2222-2222-222222222222"
+    conversation_id = "33333333-3333-3333-3333-333333333333"
+    turn_id = "44444444-4444-4444-4444-444444444444"
+    package = {
+        "schemaVersion": "1.5.0",
+        "generatedAt": "2026-06-29T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [
+            {
+                "id": "55555555-5555-5555-5555-555555555555",
+                "createdAt": "2026-06-29T00:00:05Z",
+                "event": "modelTurn",
+                "slot": "executor",
+                "stage": "agent-json-step-0",
+                "scenarioID": "live-self-model",
+                "e2eRunID": e2e_run_id,
+                "agentRunID": agent_run_id,
+                "conversationID": conversation_id,
+                "turnID": turn_id,
+                "promptPrefix": "What evidence supports your claim?",
+                "rawOutputPrefix": '{"final":"The answer is supported by live E2E evidence."}',
+                "runtimePath": "agent-model",
+                "selectedRuntime": "llama",
+                "modelLoaded": True,
+                "outputTokenCount": 12,
+                "streamStarted": True,
+                "firstChunkReceived": True,
+                "textChunkCount": 1,
+                "finalChunkReceived": True,
+                "allowedToolIDs": [],
+                "toolArguments": {},
+                "emittedFinalInActionTurn": False,
+            }
+        ],
+        "liveE2EReport": {
+            "schemaVersion": "1.0.0",
+            "generatedAt": "2026-06-29T00:00:10Z",
+            "exportPolicy": {
+                "format": "live-e2e-test-report-json",
+                "sourceLayer": "e2eTestReport",
+                "ownsLiveE2EScenarios": True,
+                "includesDeterministicStaticScenarios": False,
+            },
+            "payload": {
+                "id": "66666666-6666-6666-6666-666666666666",
+                "startedAt": "2026-06-29T00:00:00Z",
+                "finishedAt": "2026-06-29T00:00:20Z",
+                "passed": 1,
+                "failed": 0,
+                "results": [
+                    {
+                        "id": "77777777-7777-7777-7777-777777777777",
+                        "scenarioID": "live-self-model",
+                        "kind": "standard",
+                        "title": "Live self-model evidence",
+                        "prompt": "What evidence supports your claim?",
+                        "expectedIntent": "rag",
+                        "actualIntent": "rag",
+                        "e2eRunID": e2e_run_id,
+                        "agentRunID": agent_run_id,
+                        "conversationID": conversation_id,
+                        "turnID": turn_id,
+                        "requiresAgentRun": True,
+                        "passed": True,
+                        "failures": [],
+                        "finalText": "The answer is supported by live E2E evidence.",
+                        "missingHints": [],
+                        "rewriteAttempted": False,
+                        "rewriteSuccess": False,
+                        "events": [],
+                        "startedAt": "2026-06-29T00:00:00Z",
+                        "finishedAt": "2026-06-29T00:00:20Z",
+                        "rawFinalPrefix": "The answer is supported by live E2E evidence.",
+                        "sanitizedFinalPrefix": "The answer is supported by live E2E evidence.",
+                        "rawFinalHadUnsafeLeakage": False,
+                        "sanitizedFinalRemovedArtifacts": [],
+                        "outputHygieneFailures": [],
+                        "metadata": {},
+                    }
+                ],
+            },
+        },
+    }
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    reports = load_runtime_audit_reports([report_path])
+    package_report = next(report for report in reports if report["_sourceFormat"] == "lumen_in_app_dataset_package")
+    live_report = next(report for report in reports if report["_sourceFormat"] == "live-e2e-test-report-json")
+
+    assert package_report["_sourceLayer"] == "agentGroundingRuntimeAudit"
+    assert package_report["ownsLiveE2EScenarios"] is False
+    assert live_report["_sourceLayer"] == "e2eTestReport.evidenceLayer"
+    assert live_report["failures"] == []
+    assert live_report["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
+    assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
 
 
 def test_in_app_package_ignores_plaintext_mouth_final_parse_errors(tmp_path: Path):

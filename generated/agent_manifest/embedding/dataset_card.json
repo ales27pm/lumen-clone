@@ -1,12 +1,12 @@
 {
   "counts": {
-    "corpus": 4942,
-    "evalRetrieval": 5111,
-    "hardNegatives": 5111,
-    "trainPairs": 4640,
-    "trainTriplets": 4612,
-    "valPairs": 471,
-    "valTriplets": 499
+    "corpus": 5126,
+    "evalRetrieval": 5295,
+    "hardNegatives": 5295,
+    "trainPairs": 4803,
+    "trainTriplets": 4764,
+    "valPairs": 492,
+    "valTriplets": 531
   },
   "families": [
     "agent_role_question_to_fleet_slot",
@@ -23,6 +23,7 @@
     "peer_boundary_query",
     "permission_boundary_query",
     "routing_rule_query",
+    "runtime_audit_repairs_retrieval",
     "source_file_name_query",
     "tool_contract_query",
     "tool_id_to_tool_contract",

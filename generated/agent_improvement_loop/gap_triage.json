@@ -3,56 +3,1137 @@
   "groups": [
     {
       "categories": {
-        "dataset_coverage": 1
+        "deterministic_compatibility_not_live_evidence": 48
       },
-      "count": 1,
+      "count": 48,
       "examples": [
         {
-          "actual": null,
-          "category": "dataset_coverage",
-          "prompt": null,
-          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-          "severity": "warning",
-          "skippedLiveModelRun": null,
-          "title": "Empty dataset family: runtime_audit_repairs"
+          "actual": "Outlook attachments:\nNo attachments found for message AQMkADAwATZiZmYAZC1mN2E5LTMwOWUtMDACLTAwCgBGAAADrd0FawXuTEmw3Fyok-zgwwcA7r1XmTxuJkam7HO44tJDmgAAAgEMAAAA7r1XmTxuJkam7HO44tJDmgAIG7kimgAAAA==.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Show attachments on the latest Outlook email.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Outlook attachments:\nNo attachments found for message AQMkADAwATZiZmYAZC1mN2E5LTMwOWUtMDACLTAwCgBGAAADrd0FawXuTEmw3Fyok-zgwwcA7r1XmTxuJkam7HO44tJDmgAAAgEMAAAA7r1XmTxuJkam7HO44tJDmgAIG7kimgAAAA==.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "List attachments for my latest Outlook email.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Outlook attachments:\nNo attachments found for message AQMkADAwATZiZmYAZC1mN2E5LTMwOWUtMDACLTAwCgBGAAADrd0FawXuTEmw3Fyok-zgwwcA7r1XmTxuJkam7HO44tJDmgAAAgEMAAAA7r1XmTxuJkam7HO44tJDmgAIG7kimgAAAA==.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use List Outlook Attachments, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Approval required for outlook.draft.create. I can prepare the Outlook draft after you approve it.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Compose an Outlook draft to alex@example.com subject Update body Done.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_outlook"
+        },
+        {
+          "actual": "Approval required for outlook.draft.create. I can prepare the Outlook draft after you approve it.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Create an Outlook draft to alex@example.com with subject Approval and body Boundary.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_outlook"
         }
       ],
-      "freshRuntimeFailureCount": 1,
-      "group": "Empty dataset family: runtime_audit_repairs",
-      "recommendedAction": "Add generators or runtime inputs that produce runtime_audit_repairs records.",
+      "freshRuntimeFailureCount": 48,
+      "group": "outlook",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "rootCauseCategories": {
-        "stale_or_unclassified_runtime_evidence": 1
+        "deterministic_compatibility_not_live_evidence": 48
       },
       "severities": {
-        "warning": 1
+        "error": 48
       },
       "skippedLiveModelGenerationCount": 0,
       "status": "deferred"
     },
     {
       "categories": {
-        "testflight_runtime_pending": 1
+        "deterministic_compatibility_not_live_evidence": 30
       },
-      "count": 1,
+      "count": 30,
       "examples": [
         {
-          "actual": null,
-          "category": "testflight_runtime_pending",
-          "prompt": null,
-          "rootCauseCategory": "stale_audit_evidence",
-          "severity": "warning",
-          "skippedLiveModelRun": null,
-          "title": "TestFlight in-app audit export has not been ingested yet"
+          "actual": "I couldn’t safely complete the alarm/timer request.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Show alarm permission status.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_alarm"
+        },
+        {
+          "actual": "I couldn’t safely complete the alarm/timer request.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Check alarm authorization status.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_alarm"
+        },
+        {
+          "actual": "I couldn’t safely complete the alarm/timer request.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Alarm Auth Status, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_alarm"
+        },
+        {
+          "actual": "I couldn’t safely complete the alarm/timer request.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Delete alarm 00000000-0000-0000-0000-000000000000.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_alarm"
+        },
+        {
+          "actual": "I couldn’t safely complete the alarm/timer request.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Cancel alarm 00000000-0000-0000-0000-000000000000.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_alarm"
         }
       ],
-      "freshRuntimeFailureCount": 1,
-      "group": "TestFlight in-app audit export has not been ingested yet",
-      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the in-app dataset package JSON, then rerun improve-loop with --runtime-audit <json>.",
+      "freshRuntimeFailureCount": 30,
+      "group": "alarm",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
       "rootCauseCategories": {
-        "stale_audit_evidence": 1
+        "deterministic_compatibility_not_live_evidence": 30
       },
       "severities": {
-        "warning": 1
+        "error": 30
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 9
+      },
+      "count": 9,
+      "examples": [
+        {
+          "actual": "Current location: Current location: 46.0062, -73.1650 (±10m)",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Where am I right now?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "Current location: Current location: 46.0062, -73.1650 (±10m)",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Where are we?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "Current location: Current location: 46.0062, -73.1650 (±10m)",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Current Location, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "Maps directions:\nOpening Maps with directions to the nearest hardware store..",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Navigate to the nearest hardware store.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_maps"
+        },
+        {
+          "actual": "Maps directions:\nOpening Maps with directions to the nearest hardware store..",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Give me directions to the nearest hardware store.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_maps"
+        }
+      ],
+      "freshRuntimeFailureCount": 9,
+      "group": "maps",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 9
+      },
+      "severities": {
+        "error": 9
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 9
+      },
+      "count": 9,
+      "examples": [
+        {
+          "actual": "Local file index updated: Indexed 23 chunks from imported files.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Refresh the file retrieval index.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_rag"
+        },
+        {
+          "actual": "Local file index updated: RAG indexing failed: no chunks were indexed. Check embedding model readiness and imported file contents.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Reindex my imported files.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_rag"
+        },
+        {
+          "actual": "Local file index updated: RAG indexing failed: no chunks were indexed. Check embedding model readiness and imported file contents.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Reindex Files, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_rag"
+        },
+        {
+          "actual": "Photo index updated: Couldn't index photos (permission denied, empty library, or embedding failure).",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Refresh the photo retrieval index.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_rag"
+        },
+        {
+          "actual": "Photo index updated: Couldn't index photos (permission denied, empty library, or embedding failure).",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Reindex photo metadata for the last 3 months.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_rag"
+        }
+      ],
+      "freshRuntimeFailureCount": 9,
+      "group": "rag",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 9
+      },
+      "severities": {
+        "error": 9
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 9
+      },
+      "count": 9,
+      "examples": [
+        {
+          "actual": "Approval required for trigger.cancel. I did not cancel nightly summary yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Cancel trigger named nightly summary.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_trigger"
+        },
+        {
+          "actual": "Approval required for trigger.cancel. I did not cancel nightly summary yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Cancel trigger named nightly summary.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_trigger"
+        },
+        {
+          "actual": "Approval required for trigger.cancel. I did not cancel nightly summary yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Cancel the trigger called nightly summary.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_trigger"
+        },
+        {
+          "actual": "Approval required for trigger.create. Trigger request prepared for: Run an agent reminder summary tonight in the background.. It will run the scheduled agent prompt after approval.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Run an agent reminder summary tonight in the background.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_trigger"
+        },
+        {
+          "actual": "Approval required for trigger.create. Trigger request prepared for: Schedule an agent run to summarize reminders tonight.. It will run the scheduled agent prompt after approval.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Schedule an agent run to summarize reminders tonight.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_trigger"
+        }
+      ],
+      "freshRuntimeFailureCount": 9,
+      "group": "trigger",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 9
+      },
+      "severities": {
+        "error": 9
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 7
+      },
+      "count": 7,
+      "examples": [
+        {
+          "actual": "Web search results:\nSearch results for: Search web for diy underground shelter\n1. 10 Steps to Build a DIY Underground Bushcraft Survival Shelter\nhttps://www.bushcraftbasecamp.com/10-steps-to-build-a-diy-underground-bushcraft-survival-shelter/\n2. How To Build An Underground Shelter - Battlbox.com\nhttps://www.battlbox.com/blogs/outdoors/how-to-build-an-underground-shelter-a-comprehensive-guide\n3. Underground Survival Shelters: How to Build, Live, and Thrive Safely\nhttps://prepperswill.com/underground-survival-shelters-how-to-live-store-and-thrive-below-the-surface/\n4. Complete DIY Underground Shelter Build | Step by Step.\nhttps://m.youtube.com/watch?v=C3U7XW_V8SI\n5. \"How to Build Underground Shelter at Home | Full Tutorial\"\nhttps://m.youtube.com/watch?v=2S5TD2PJsDw\n6. How to Build a Underground Survival Shelter: Expert Tips",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Search web for diy underground shelter",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_websearch"
+        },
+        {
+          "actual": "Fetched page summary:\nExample Domain\nhttps://example.com\n\nExample Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Read this URL: https://example.com.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_websearch"
+        },
+        {
+          "actual": "Example Domain\nhttps://example.com\n\nExample Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Fetch https://example.com and summarize the page.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_websearch"
+        },
+        {
+          "actual": "Fetched page summary:\nExample Domain\nhttps://example.com\n\nExample Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Fetch the page at https://example.com.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_websearch"
+        },
+        {
+          "actual": "Web search results:\nSearch results for: recent Swift concurrency best practices online.\n1. Concurrency Best Practices in Swift: Mastering Safe and Efficient Code\nhttps://softwarepatternslexicon.com/swift/concurrency-patterns-in-swift/concurrency-best-practices-in-swift/\n2. Swift Concurrency Deep Dive: From GCD to Async/Await Best Practices\nhttps://medium.com/techtrends-digest/swift-concurrency-deep-dive-from-gcd-to-async-await-best-practices-0d63333e72d5\n3. Concurrency | Apple Developer Documentation\nhttps://developer.apple.com/documentation/swift/concurrency\n4. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n5. Concurrency Best Practices in Swift: Mastering Safe and Efficient Code\nhttps://softwarepatternslexicon.com/patterns-swift/9/12/\n6. Swift Concurrency: A Practical Guide to async/await and Actors",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Look up recent Swift concurrency best practices online.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_websearch"
+        }
+      ],
+      "freshRuntimeFailureCount": 7,
+      "group": "websearch",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 7
+      },
+      "severities": {
+        "error": 7
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 6
+      },
+      "count": 6,
+      "examples": [
+        {
+          "actual": "Approval required for calendar.create. I did not create an event yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Set an appointment for tomorrow morning at nine in my calendar.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Approval required for calendar.create. I did not create an event yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Create a calendar event called Approval Test in 10 minutes.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Approval required for calendar.create. I did not create an event yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Create a calendar event called Test tomorrow in 30 minutes.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Calendar events:\n- monGARS E2E 08531D83 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 099440A4 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 09C29501 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 232B9816 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 2581F1A4 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 4438EB12 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 4CBEC3E5 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 5870AF61 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 8E6A54B9 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 9D007B21 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "What's on my schedule today?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        },
+        {
+          "actual": "Calendar events:\n- monGARS E2E 08531D83 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 099440A4 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 09C29501 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 232B9816 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 2581F1A4 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 4438EB12 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 4CBEC3E5 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 5870AF61 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 8E6A54B9 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier\n- monGARS E2E 9D007B21 tomorrow | 2026-06-29T13:00:00Z to 2026-06-29T14:00:00Z | Calendrier",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Show my next calendar events.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_calendar"
+        }
+      ],
+      "freshRuntimeFailureCount": 6,
+      "group": "calendar",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 6
+      },
+      "severities": {
+        "error": 6
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 6
+      },
+      "count": 6,
+      "examples": [
+        {
+          "actual": "Memory recall:\n• I prefer concise bullet points\n• Use Save Memory, but ask for clarification if required details are missing\n• Keep in mind that I like short answers\n• User asked: Show. Assistant: Le résultat de la géolocalisation est : 45.7833° N, 6.2015° E.\n• User asked: Show map. Assistant: Le résultat de la géolocalisation est : 45.7833° N, 6.2015° E.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Tell me what style I asked you to use.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Memory recall:\n• Keep in mind that I like short answers\n• I prefer concise bullet points\n• Use Save Memory, but ask for clarification if required details are missing\n• User asked: Show. Assistant: Le résultat de la géolocalisation est : 45.7833° N, 6.2015° E.\n• User asked: Affiche sur la carte. Assistant: Le résultat de la géolocalisation est : 45.7833° N, 6.2015° E.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "What do you remember about my response style preference?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Memory recall:\n• Use Save Memory, but ask for clarification if required details are missing\n• I prefer concise bullet points\n• Keep in mind that I like short answers\n• User asked: Show itinerary on map. Assistant: Le résultat de la géolocalisation est : 45.7833° N, 6.2015° E.\n• User asked: Show. Assistant: Le résultat de la géolocalisation est : 45.7833° N, 6.2015° E.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Recall Memory, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Saved to memory: Saved: Keep in mind that I like short answers",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Keep in mind that I like short answers.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_memory"
+        },
+        {
+          "actual": "Saved to memory: Saved: I prefer concise bullet points",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Remember that I prefer concise bullet points.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_memory"
+        }
+      ],
+      "freshRuntimeFailureCount": 6,
+      "group": "memory",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 6
+      },
+      "severities": {
+        "error": 6
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 6
+      },
+      "count": 6,
+      "examples": [
+        {
+          "actual": "Approval required for reminders.create. I did not create a reminder yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Create a reminder to review logs.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_reminder"
+        },
+        {
+          "actual": "Approval required for reminders.create. I did not create a reminder yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Remind me to check approval boundary.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_reminder"
+        },
+        {
+          "actual": "Approval required for reminders.create. I did not create a reminder yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Remind me to check Lumen logs.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_reminder"
+        },
+        {
+          "actual": "Reminders:\n• Faire les étagères pour Julie\n• Faire le ménage de l'auto\n• Ménage du sous-sol\n• Papier aluminium\n• Crème 35 %",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "List pending reminders.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_reminder"
+        },
+        {
+          "actual": "Reminders:\n• Faire les étagères pour Julie\n• Faire le ménage de l'auto\n• Ménage du sous-sol\n• Papier aluminium\n• Crème 35 %",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Show my reminders.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_reminder"
+        }
+      ],
+      "freshRuntimeFailureCount": 6,
+      "group": "reminder",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 6
+      },
+      "severities": {
+        "error": 6
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 4
+      },
+      "count": 4,
+      "examples": [
+        {
+          "actual": "Who should I send it to, and what should it say?",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Draft a email",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_emaildraft"
+        },
+        {
+          "actual": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Write a quick email to alex@example.com saying I will send it tonight.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_emaildraft"
+        },
+        {
+          "actual": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Draft an email to alex@example.com saying approval boundary works.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_emaildraft"
+        },
+        {
+          "actual": "Approval required for mail.draft. I can prepare the email draft after you approve it. One clarifying question: should the update emphasize timeline, blockers, or next steps?",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Draft an email to alex@example.com saying I will send the report tonight.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_emaildraft"
+        }
+      ],
+      "freshRuntimeFailureCount": 4,
+      "group": "emaildraft",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 4
+      },
+      "severities": {
+        "error": 4
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 4
+      },
+      "count": 4,
+      "examples": [
+        {
+          "actual": "Weather update: Weather at your location: · clear sky · 17°C · feels like 18°C · humidity 86% · wind 5 km/h · gusts 12 km/h · cloud cover 5% · updated 2026-06-28T23:00",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "What is the weather here?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_weather"
+        },
+        {
+          "actual": "Weather update: Weather at your location: · clear sky · 17°C · feels like 18°C · humidity 86% · wind 5 km/h · gusts 12 km/h · cloud cover 5% · updated 2026-06-28T23:00",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Will it rain here today?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_weather"
+        },
+        {
+          "actual": "Weather update: Weather at your location: · clear sky · 17°C · feels like 18°C · humidity 86% · wind 5 km/h · gusts 12 km/h · cloud cover 5% · updated 2026-06-28T23:00",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "What is the weather here right now?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_weather"
+        },
+        {
+          "actual": "Weather update: Couldn't find weather coordinates for \"clarification if required details are missing.\". Try a more specific city, region, or address.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Current Weather, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_weather"
+        }
+      ],
+      "freshRuntimeFailureCount": 4,
+      "group": "weather",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 4
+      },
+      "severities": {
+        "error": 4
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "Approval required for camera.capture. I did not open the camera yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Take a photo now.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_camera"
+        },
+        {
+          "actual": "Approval required for camera.capture. I did not open the camera yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Take a picture now.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_camera"
+        },
+        {
+          "actual": "Approval required for camera.capture. I did not open the camera yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Open the camera to take a picture.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_camera"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "camera",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "A sharp chisel is safer because it needs less force, follows the cut more predictably, and is less likely to slip. A dull edge makes you push harder, which reduces control.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Explain why a sharp chisel is safer than a dull one.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_chat"
+        },
+        {
+          "actual": "Three hinge-fitting tips: mark the leaf with a sharp knife, pare to the line in thin passes, and test-fit often so the hinge sits flush without deep gaps.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Give me three tips for fitting a door hinge cleanly.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_chat"
+        },
+        {
+          "actual": "Actor isolation means Swift protects data owned by an actor so only that actor can touch it directly. Other code has to await access, which helps prevent races.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Explain actor isolation in Swift in simple terms.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_chat"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "chat",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "Contact search results:\nNo contacts match \"my contacts.\".",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Find Alex in my contacts.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_contactsearch"
+        },
+        {
+          "actual": "Contact search results:\n• Alexandre Tremblay — (514) 779-9054\n• Alexis Boulet — 14504943059\n• Alexis Boulet — no phone\n• Alexandre Thivierge — 1 (418) 559-7084\n• Alexandra Boulet — +14505614086",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Search my contacts for Alex.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_contactsearch"
+        },
+        {
+          "actual": "Contact search results:\nNo contacts match \"clarification if required details are missing.\".",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Search Contacts, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_contactsearch"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "contactsearch",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "File result:\nFile not found. Available: Dogme_et_rituel_de_la_[...]Constant_Alphonse_bpt6k205564w.pdf, Dogme_et_rituel_de_la_[...]Constant_Alphonse_bpt6k2055658.pdf",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Open local document diagnostics.txt.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_files"
+        },
+        {
+          "actual": "File result:\nFile not found. Available: Dogme_et_rituel_de_la_[...]Constant_Alphonse_bpt6k205564w.pdf, Dogme_et_rituel_de_la_[...]Constant_Alphonse_bpt6k2055658.pdf",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Read document diagnostics.txt from imported files.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_files"
+        },
+        {
+          "actual": "File result:\nImported files:\n• Dogme_et_rituel_de_la_[...]Constant_Alphonse_bpt6k205564w.pdf\n• Dogme_et_rituel_de_la_[...]Constant_Alphonse_bpt6k2055658.pdf",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Read File, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_files"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "files",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "Health summary:\nToday's Health: 2,485 steps · 1.72 km",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Read my steps and sleep summary.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_health"
+        },
+        {
+          "actual": "Health summary:\nToday's Health: 2,485 steps · 1.72 km",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Show my health summary.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_health"
+        },
+        {
+          "actual": "Health summary:\nToday's Health: 2,485 steps · 1.72 km",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Health Summary, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_health"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "health",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "Approval required for messages.draft. I can prepare the message after you approve it. What tone should I use?",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Text 5551234567 that I am late.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_messagedraft"
+        },
+        {
+          "actual": "Approval required for messages.draft. I can prepare the message after you approve it. What tone should I use?",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Text 5551234567 that approval boundary works.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_messagedraft"
+        },
+        {
+          "actual": "Approval required for messages.draft. I can prepare the message after you approve it. What tone should I use?",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Draft a message to 5551234567 saying I am running late.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_messagedraft"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "messagedraft",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "Motion activity:\nToday's motion — 2485 steps · 1.72 km · 1 floors · activity: 698m stationary, 190m driving, 20m walking, 2m cycling",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Am I walking or stationary right now?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_motion"
+        },
+        {
+          "actual": "Motion activity:\nToday's motion — 2485 steps · 1.72 km · 1 floors · activity: 698m stationary, 190m driving, 20m walking, 2m cycling",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "What motion activity is detected right now?",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_motion"
+        },
+        {
+          "actual": "Motion activity:\nToday's motion — 2485 steps · 1.72 km · 1 floors · activity: 698m stationary, 190m driving, 20m walking, 2m cycling",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Motion Activity, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_motion"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "motion",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "Approval required for phone.call. Contact found; I can call 5551234567 after you approve it. I did not place the call yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Dial 5551234567.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_phonecall"
+        },
+        {
+          "actual": "Approval required for phone.call. Contact found; I can call 5551234567 after you approve it. I did not place the call yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Call 5551234567 now.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_phonecall"
+        },
+        {
+          "actual": "Approval required for phone.call. Contact found; I can call 5551234567 after you approve it. I did not place the call yet.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Call 5551234567.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_phonecall"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "phonecall",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "count": 3,
+      "examples": [
+        {
+          "actual": "Photo search results:\nFound 500 photos matching \"my photo library.\". Recent dates: Jun 28, 2026 at 2:50 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Find receipt pictures in my photo library.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_photos"
+        },
+        {
+          "actual": "Photo search results:\nFound 500 photos matching \"receipts.\". Recent dates: Jun 28, 2026 at 2:50 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Search my photos for receipts.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_photos"
+        },
+        {
+          "actual": "Photo search results:\nFound 500 photos matching \"clarification if required details are missing.\". Recent dates: Jun 28, 2026 at 2:50 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM, Jun 28, 2026 at 12:14 AM.",
+          "category": "deterministic_compatibility_not_live_evidence",
+          "prompt": "Use Search Photos, but ask for clarification if required details are missing.",
+          "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+          "severity": "error",
+          "skippedLiveModelRun": false,
+          "title": "e2e_response_quality_photos"
+        }
+      ],
+      "freshRuntimeFailureCount": 3,
+      "group": "photos",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "rootCauseCategories": {
+        "deterministic_compatibility_not_live_evidence": 3
+      },
+      "severities": {
+        "error": 3
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "deferred"
+    },
+    {
+      "categories": {
+        "runtime_environment_deferred": 2
+      },
+      "count": 2,
+      "examples": [
+        {
+          "actual": "device thermal state serious; cool device and retry",
+          "category": "runtime_environment_deferred",
+          "prompt": "What is the weather here and should I carry an umbrella?",
+          "rootCauseCategory": "runtime_environment_deferred",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_runtime_environment_deferred"
+        },
+        {
+          "actual": "device thermal state serious; cool device and retry",
+          "category": "runtime_environment_deferred",
+          "prompt": "What is the weather here and should I carry an umbrella?",
+          "rootCauseCategory": "runtime_environment_deferred",
+          "severity": "warning",
+          "skippedLiveModelRun": true,
+          "title": "e2e_runtime_environment_deferred"
+        }
+      ],
+      "freshRuntimeFailureCount": 2,
+      "group": "preflight",
+      "recommendedAction": "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure.",
+      "rootCauseCategories": {
+        "runtime_environment_deferred": 2
+      },
+      "severities": {
+        "warning": 2
       },
       "skippedLiveModelGenerationCount": 0,
       "status": "deferred"
@@ -61,25 +1142,45 @@
   "schemaVersion": "1.0.0",
   "summary": {
     "categoryCounts": {
-      "dataset_coverage": 1,
-      "testflight_runtime_pending": 1
+      "deterministic_compatibility_not_live_evidence": 165,
+      "runtime_environment_deferred": 2
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
-    "freshRuntimeFailureCount": 0,
+    "freshRuntimeFailureCount": 165,
     "groupCounts": {
-      "Empty dataset family: runtime_audit_repairs": 1,
-      "TestFlight in-app audit export has not been ingested yet": 1
+      "alarm": 30,
+      "calendar": 6,
+      "camera": 3,
+      "chat": 3,
+      "contactsearch": 3,
+      "emaildraft": 4,
+      "files": 3,
+      "health": 3,
+      "maps": 9,
+      "memory": 6,
+      "messagedraft": 3,
+      "motion": 3,
+      "outlook": 48,
+      "phonecall": 3,
+      "photos": 3,
+      "preflight": 2,
+      "rag": 9,
+      "reminder": 6,
+      "trigger": 9,
+      "weather": 4,
+      "websearch": 7
     },
-    "rawRuntimeFailureCount": 0,
+    "rawRuntimeFailureCount": 167,
     "rootCauseCounts": {
-      "stale_audit_evidence": 1,
-      "stale_or_unclassified_runtime_evidence": 1
+      "deterministic_compatibility_not_live_evidence": 165,
+      "runtime_environment_deferred": 2
     },
-    "runtimeAuditReports": 0,
+    "runtimeAuditReports": 4,
     "severityCounts": {
+      "error": 165,
       "warning": 2
     },
-    "skippedLiveModelGenerationCount": 0,
-    "totalGaps": 2
+    "skippedLiveModelGenerationCount": 2,
+    "totalGaps": 167
   }
 }

@@ -7,13 +7,13 @@
   "agent": "fleet",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "49b228a959c7a6e8b8c17e4a081598576b6ec997",
+    "manifestCommit": "1e7460262525134cd85604998efc61ff8611bf93",
     "recordCounts": {
       "eval": 86,
       "train_dpo": 15,
-      "train_sft": 4457,
+      "train_sft": 4613,
       "val_dpo": 3,
-      "val_sft": 786
+      "val_sft": 814
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -29,6 +29,7 @@
       "mimicry_style",
       "mouth_responses",
       "rem_reflection",
+      "runtime_audit_repairs",
       "self_model_cards",
       "self_model_sft",
       "tool_schema_cards",
@@ -62,6 +63,7 @@
       "reflection_and_memory_policy",
       "rem_reflection",
       "role_directory",
+      "runtime_manifest_drift_repair",
       "self_model_card_grounding",
       "self_model_grounded_answer",
       "source_code_self_knowledge",

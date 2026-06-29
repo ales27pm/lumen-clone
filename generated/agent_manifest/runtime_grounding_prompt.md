@@ -2,20 +2,20 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `49b228a959c7a6e8b8c17e4a081598576b6ec997`
+- Manifest commit: `1e7460262525134cd85604998efc61ff8611bf93`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `747`
+- Codebase-home records: `753`
 
 ## Top Modules
-- `ios/LumenTests`: 154 files
+- `ios/LumenTests`: 155 files
 - `Services`: 58 files
 - `docs`: 55 files
-- `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 38 files
+- `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 39 files
 - `Views`: 31 files
-- `Assistant`: 26 files
+- `Assistant`: 27 files
+- `tools/lumen_manifest_crawler/tests`: 24 files
 - `tools/lumen_manifest_crawler/generated`: 23 files
-- `tools/lumen_manifest_crawler/tests`: 22 files
 - `Services/LLM`: 21 files
 - `Diagnostics`: 20 files
 - `scripts`: 19 files
@@ -42,7 +42,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/AgentGrounding/AgentModelBehaviorAuditor.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentModelBehaviorAuditor.swift` owns AgentModelBehaviorAuditor behavior and defines: AgentModelBehaviorAuditor, audit, previousUserPrompt, allowedToolsByIntent, containsSentinel, isRes Symbols: AgentModelBehaviorAuditor, audit, previousUserPrompt, allowedToolsByIntent, containsSentinel, isResourceBudgetFallbackFinal, hasTrustedUIApproval, isApprovalBoundaryStep.
 - `ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/BundledAgentGroundingStore.swift` owns BundledAgentGroundingStore behavior and defines: BundledFleetSystemPrompt, RuntimeGroundingBundle, RuntimeCodebaseHome, RuntimeGroundingFile, Runt Symbols: BundledFleetSystemPrompt, RuntimeGroundingBundle, RuntimeCodebaseHome, RuntimeGroundingFile, RuntimeGroundingInjectionPolicy, BundledAgentGroundingStoreError, for, GroundingResourceLoader.
 - `ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` owns ImproveLoopSampleGate behavior and defines: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, I Symbols: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, ImproveLoopTrainingSample, ImproveLoopDatasetCounters, ImproveLoopDataset, ImproveLoopSampleGate.
-- `ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetExportQualityFailure, InAppDatas Symbols: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, makePackage.
+- `ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatase Symbols: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter.
 - `ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/LiveRuntimeToolRegistryProvider.swift` owns LiveRuntimeToolRegistryProvider behavior and defines: LiveRuntimeToolRegistryProvider, currentToolDefinitions, contract. Symbols: LiveRuntimeToolRegistryProvider, currentToolDefinitions, contract.
 - `ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` owns RuntimeManifestAuditor behavior and defines: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAudito Symbols: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAuditor, RuntimeManifestAuditError, loadBundledManifest, loadManifestFromStoreBundleOrRuntimeFallback, loadBundledManifestOrRuntimeFallback.
 - `ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` owns RuntimeScenarioRunner behavior and defines: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt,  Symbols: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt, id, intent.
@@ -73,6 +73,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/PromptGroundingIdempotencyGuard.swift` (Assistant): `ios/Lumen/Assistant/PromptGroundingIdempotencyGuard.swift` owns PromptGroundingIdempotencyGuard behavior and defines: PromptGroundingIdempotencyGuard, sectionOccurrenceCounts, containsGrounding, stripExistingGrounding,  Symbols: PromptGroundingIdempotencyGuard, sectionOccurrenceCounts, containsGrounding, stripExistingGrounding, marker, sectionHeaders, out, range.
 - `ios/Lumen/Assistant/PromptGroundingRenderer.swift` (Assistant): `ios/Lumen/Assistant/PromptGroundingRenderer.swift` owns PromptGroundingRenderer behavior and defines: PromptGroundingRenderer, render, renderForPrompt, renderedMemories, memLines, renderedRAG, ragLines, renderedTools, c Symbols: PromptGroundingRenderer, render, renderForPrompt, renderedMemories, memLines, renderedRAG, ragLines, renderedTools.
 - `ios/Lumen/Assistant/PromptGroundingSection.swift` (Assistant): `ios/Lumen/Assistant/PromptGroundingSection.swift` owns PromptGroundingSection behavior and defines: GroundingPrivacyLevel, PromptGroundingSection, title, content, estimatedChars, sourceIDs, privacyLevel. Symbols: GroundingPrivacyLevel, PromptGroundingSection, title, content, estimatedChars, sourceIDs, privacyLevel.
+- `ios/Lumen/Assistant/SelfModelContextProvider.swift` (Assistant): `ios/Lumen/Assistant/SelfModelContextProvider.swift` owns SelfModelContextProvider behavior and defines: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars, bac Symbols: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars.
 - `ios/Lumen/Services/AgentEventContinuationYield.swift` (Services): `ios/Lumen/Services/AgentEventContinuationYield.swift` is static Lumen source for the `Services` module.
 - `ios/Lumen/Services/AgentGroundingInstrumentation.swift` (Services): `ios/Lumen/Services/AgentGroundingInstrumentation.swift` owns AgentGroundingInstrumentation behavior and defines: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancel Symbols: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancellation, mark, elapsedMs, sceneText.
 - `ios/Lumen/Services/AgentIntentRouter.swift` (Services): Compatibility facade for older agent-routing tests/call sites. Symbols: AgentIntentRouter, Decision, decide, decideSemantic, decision, filteredTools, routingSystemNote, allowedToolIDs.
@@ -93,4 +94,3 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/Tools/WeatherTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/WeatherTools.swift` owns WeatherTools behavior and defines: WeatherTools, WeatherCoordinateResolution, currentWeather, isCurrentLocationRequest, weatherLocationFailureMessage, weatherGeocodingFa Symbols: WeatherTools, WeatherCoordinateResolution, currentWeather, isCurrentLocationRequest, weatherLocationFailureMessage, weatherGeocodingFailureMessage, executeRequest, geocode.
 - `ios/Lumen/Services/Tools/WebTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/WebTools.swift` owns WebTools behavior and defines: WebTools, SearchOutput, SearchResult, String, webSearch, webFetch, pageOutput, duckDuckGoInstantAnswer, duckDuckGoHTMLSearch, collectRelatedTo Symbols: WebTools, SearchOutput, SearchResult, String, webSearch, webFetch, pageOutput, duckDuckGoInstantAnswer.
 - `ios/Lumen/Services/IntentClassification/BundledIntentClassifier.swift` (Services/IntentClassification): `ios/Lumen/Services/IntentClassification/BundledIntentClassifier.swift` owns BundledIntentClassifier behavior and defines: BundledIntentClassifier, classify, resetPredictionMainThreadViolationCountForTesting, predictionM Symbols: BundledIntentClassifier, classify, resetPredictionMainThreadViolationCountForTesting, predictionMainThreadViolationCountForTesting, loadNLModel, loadCoreMLModel, inferWithCoreML, predictedLabel.
-- `ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift` (Services/IntentClassification): `ios/Lumen/Services/IntentClassification/DeterministicIntentFallback.swift` owns DeterministicIntentFallback behavior and defines: DeterministicIntentFallback, classify, ambiguityClarification, clarification, isAmbiguous Symbols: DeterministicIntentFallback, classify, ambiguityClarification, clarification, isAmbiguousMeetingLookup, isAmbiguousReferenceAction, normalized, containsAny.
