@@ -117,6 +117,8 @@ nonisolated struct ExecutorRuntimePreflightResult: Sendable, Equatable {
 }
 
 nonisolated enum ExecutorRuntimePreflight {
+    private static let budgetReason = "strict-live-training.executor-preflight"
+
     static func run() async -> ExecutorRuntimePreflightResult {
         let readiness = await checkReadiness(allowsLoadedMemoryPressureContinuation: true)
         guard readiness.passed else { return readiness }
@@ -214,26 +216,42 @@ nonisolated enum ExecutorRuntimePreflight {
             )
         }
 
+        let budgetSnapshot = await MainActor.run { ResourceBudgetGate.diagnosticSnapshot() }
         let budget = await MainActor.run {
             ResourceBudgetGate.budgetDenialReason(
                 policy: slotContract.budgetPolicy,
-                reason: "strict-live-training.executor-preflight"
+                snapshot: budgetSnapshot,
+                reason: budgetReason
             )
         }
+        let deferredBudgetReason: String?
         if let budget {
-            return result(
-                passed: false,
-                reason: "\(prefix): resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=\(budget); modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath ?? "none")",
-                modelFamily: modelFamily,
-                runtimeKind: runtimeKind,
-                baseModelPath: baseModelPath,
-                baseModelExists: baseModelExists,
-                adapterPath: adapterPath,
-                adapterExists: adapterExists,
-                resourceGateAllowed: false,
-                budgetReason: budget,
-                failureKind: "resourceBudgetDenied"
-            )
+            let shouldDeferToLoadedContinuation = await MainActor.run {
+                shouldDeferResourceBudgetDenialToLoadedContinuation(
+                    policy: slotContract.budgetPolicy,
+                    snapshot: budgetSnapshot,
+                    denialReason: budget,
+                    allowsLoadedMemoryPressureContinuation: allowsLoadedMemoryPressureContinuation
+                )
+            }
+            guard shouldDeferToLoadedContinuation else {
+                return result(
+                    passed: false,
+                    reason: "\(prefix): resource-budget-denied-before-prompt-eval; slot=.executor; budgetReason=\(budget); modelFamily=\(modelFamily); runtimeKind=\(runtimeKind); baseModelPath=\(baseModelPath); adapterPath=\(adapterPath ?? "none")",
+                    modelFamily: modelFamily,
+                    runtimeKind: runtimeKind,
+                    baseModelPath: baseModelPath,
+                    baseModelExists: baseModelExists,
+                    adapterPath: adapterPath,
+                    adapterExists: adapterExists,
+                    resourceGateAllowed: false,
+                    budgetReason: budget,
+                    failureKind: "resourceBudgetDenied"
+                )
+            }
+            deferredBudgetReason = budget
+        } else {
+            deferredBudgetReason = nil
         }
 
         let readinessMetrics: RuntimeReadinessMetrics
@@ -252,7 +270,8 @@ nonisolated enum ExecutorRuntimePreflight {
                 baseModelExists: baseModelExists,
                 adapterPath: adapterPath,
                 adapterExists: adapterExists,
-                resourceGateAllowed: true,
+                resourceGateAllowed: deferredBudgetReason == nil,
+                budgetReason: deferredBudgetReason,
                 ensureReadySucceeded: false,
                 failureKind: "ensureReadyFailed"
             )
@@ -303,9 +322,45 @@ nonisolated enum ExecutorRuntimePreflight {
             adapterExists: adapterExists,
             activeAdapterSlot: activeAdapter,
             resourceGateAllowed: true,
+            budgetReason: deferredBudgetReason,
             ensureReadySucceeded: true
         )
     }
+
+    @MainActor
+    private static func shouldDeferResourceBudgetDenialToLoadedContinuation(
+        policy: LumenSlotBudgetPolicy,
+        snapshot: ResourceBudgetGate.Snapshot,
+        denialReason: String,
+        allowsLoadedMemoryPressureContinuation: Bool
+    ) -> Bool {
+        guard allowsLoadedMemoryPressureContinuation,
+              policy == .foregroundInteractive,
+              denialReason.contains("recent-memory-warning") else {
+            return false
+        }
+        return ResourceBudgetGate.allowsLoadedForegroundContinuationAfterMemoryPressure(
+            snapshot: snapshot,
+            reason: budgetReason
+        )
+    }
+
+    #if DEBUG
+    @MainActor
+    static func shouldDeferResourceBudgetDenialToLoadedContinuationForTests(
+        policy: LumenSlotBudgetPolicy,
+        snapshot: ResourceBudgetGate.Snapshot,
+        denialReason: String,
+        allowsLoadedMemoryPressureContinuation: Bool
+    ) -> Bool {
+        shouldDeferResourceBudgetDenialToLoadedContinuation(
+            policy: policy,
+            snapshot: snapshot,
+            denialReason: denialReason,
+            allowsLoadedMemoryPressureContinuation: allowsLoadedMemoryPressureContinuation
+        )
+    }
+    #endif
 
     private static func smokeProbe(slot: LumenModelSlot) async -> ExecutorRuntimePreflightResult {
         let request = GenerateRequest(

@@ -188,6 +188,180 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func clarificationScenarioAcceptsPolicyFirstClarificationEvidence() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "vague-email-clarifies",
+            title: "Vague email draft asks clarification",
+            kind: .routing,
+            prompt: "Draft a email",
+            expectedIntent: .emailDraft,
+            requiredAllowedToolIDs: ["mail.draft", "contacts.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["who should", "what should"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let routing = IntentRoutingDecision(
+            intent: .emailDraft,
+            allowedToolIDs: ["contacts.search", "mail.draft"],
+            requiresClarification: true,
+            clarificationPrompt: "Who should I send it to, and what should it say?"
+        )
+
+        #expect(E2ETestRunner.acceptsPolicyFirstExecutionEvidenceForTests(scenario, routing: routing))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func chatOnlyScenarioUsesPlainTextTurnInsteadOfStructuredAgentJson() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "normal-chat-no-forced-tool",
+            title: "Normal chat does not force tools",
+            kind: .chat,
+            prompt: "Explain why a sharp chisel is safer than a dull one.",
+            expectedIntent: .chat,
+            requiredAllowedToolIDs: [],
+            forbiddenToolIDs: ["weather"],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let routing = IntentRoutingDecision(
+            intent: .chat,
+            allowedToolIDs: [],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        #expect(E2ETestRunner.shouldRunAsPlainTextTurnForTests(scenario, routing: routing))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func liveRunStopsAfterThermalOrBudgetFailure() {
+        #if DEBUG
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: "live-alarm-stop-direct",
+            kind: E2ETestKind.toolGuard.rawValue,
+            title: "Live alarm stop",
+            prompt: "Stop alarm 00000000-0000-0000-0000-000000000000",
+            expectedIntent: UserIntent.alarm.rawValue,
+            actualIntent: UserIntent.alarm.rawValue,
+            requiresAgentRun: true,
+            passed: false,
+            failures: ["Live E2E scenario did not record model-backed generation evidence"],
+            finalText: "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: executor preflight failed: resource-budget-denied-before-prompt-eval; budgetReason=strict-live-training.executor-preflight: thermalState=serious; device thermal state serious; cool device and retry.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: Date(),
+            finishedAt: Date(),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: "",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil
+        )
+
+        #expect(E2ETestRunner.liveRuntimeShouldStopAfterForTests(result))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func liveRuntimePreflightBlockedResultIsSingleThermalFailure() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-alarm-stop-direct",
+            title: "Live alarm stop",
+            kind: .toolGuard,
+            prompt: "Stop alarm 00000000-0000-0000-0000-000000000000",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.stop"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let denial = "live-e2e.pre-scenario: thermalState=serious; \(ResourceBudgetGate.seriousThermalRetryHint)"
+
+        let result = await E2ETestRunner.liveRuntimePreflightBlockedResultForTests(
+            scenario,
+            denialReason: denial
+        )
+
+        #expect(!result.passed)
+        #expect(result.scenarioID == scenario.id)
+        #expect(result.actualIntent == "preflight")
+        #expect(result.failures.count == 1)
+        #expect(result.failures[0].contains("before prompt evaluation"))
+        #expect(result.finalText == ResourceBudgetGate.seriousThermalRetryHint)
+        #expect(result.metadata["failureKind"] == "liveRuntimeThermalCooldownRequired")
+        #expect(result.metadata["budgetDenialReason"] == denial)
+        #expect(result.events.map(\.phase) == ["live-runtime-preflight"])
+        #expect(E2ETestRunner.liveRuntimeShouldStopAfterForTests(result))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func liveRuntimePacingAdaptsToThermalAndPowerState() {
+        #if DEBUG
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: "normal-chat-no-forced-tool",
+            kind: E2ETestKind.chat.rawValue,
+            title: "Normal chat",
+            prompt: "Explain why a sharp chisel is safer than a dull one.",
+            expectedIntent: UserIntent.chat.rawValue,
+            actualIntent: UserIntent.chat.rawValue,
+            requiresAgentRun: true,
+            passed: true,
+            failures: [],
+            finalText: "A sharp chisel is safer because it needs less force.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: Date(),
+            finishedAt: Date(),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: "",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil
+        )
+
+        #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .nominal) == 1_500_000_000)
+        #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .nominal, lowPowerModeEnabled: true) == 3_000_000_000)
+        #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .fair) == 5_000_000_000)
+        #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .fair, lowPowerModeEnabled: true) == 8_000_000_000)
+        #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .serious) == 0)
+        #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .critical) == 0)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func liveRuntimeBudgetFailureKindNamesLowestLevelCause() {
+        #if DEBUG
+        #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: thermalState=serious") == "liveRuntimeThermalCooldownRequired")
+        #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: thermalState=critical") == "liveRuntimeThermalCritical")
+        #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: recent-memory-warning") == "liveRuntimeRecentMemoryWarning")
+        #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: scenePhase=background") == "liveRuntimeScenePhaseUnavailable")
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func strictLiveAgentRunOptionsRequireModelBackedRolePipeline() {
         #if DEBUG
         let scenario = E2ETestScenario(

@@ -9,6 +9,7 @@ enum MemoryPressureUnloadPolicy {
 final class MemoryPressureMonitor {
     static let shared = MemoryPressureMonitor()
     static let modelLoadSuppressionInterval: TimeInterval = 120
+    private static let duplicateWarningCoalescingInterval: TimeInterval = 1
     private(set) var warningCount: Int = 0
     private(set) var lastWarningAt: Date?
     private let metricsStore: RuntimeMetricsStore
@@ -56,17 +57,21 @@ final class MemoryPressureMonitor {
     }
     #endif
 
-    func handleWarning() async {
+    func handleWarning(now: Date = Date()) async {
+        if let lastWarningAt, now.timeIntervalSince(lastWarningAt) < Self.duplicateWarningCoalescingInterval {
+            return
+        }
         warningCount += 1
-        lastWarningAt = Date()
+        lastWarningAt = now
         ModelLoader.cancelActiveLoads()
-        FleetRuntimeCleanup.unloadOptionalChatSlots()
+        await AppLlamaService.shared.cancelActiveGeneration(reason: "memory-warning")
+        let cleanup = await FleetRuntimeCleanup.unloadNonCoreChatSlotsNow()
         let metric = RuntimeMetric(
-            timestamp: Date(),
+            timestamp: now,
             runtimeName: "system",
             taskKind: "memoryPressure",
             modelIDHash: nil,
-            policySummary: "optional slot cleanup",
+            policySummary: "non-core slot cleanup unloaded=\(cleanup.unloadedSlotSummary)",
             latencyMs: nil,
             success: true,
             errorCode: nil,

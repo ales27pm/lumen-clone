@@ -61,6 +61,36 @@ final class ResourceBudgetGateTests: XCTestCase {
         XCTAssertTrue(ResourceBudgetGate.allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: snapshot, reason: ModelLoadIntent.userChat.rawValue))
     }
 
+    func testExecutorPreflightDefersOnlySafeLoadedMemoryPressureContinuation() {
+        let snapshot = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 1, lastMemoryWarningAt: Date())
+        let denial = "strict-live-training.executor-preflight: recent-memory-warning"
+
+        XCTAssertTrue(ExecutorRuntimePreflight.shouldDeferResourceBudgetDenialToLoadedContinuationForTests(
+            policy: .foregroundInteractive,
+            snapshot: snapshot,
+            denialReason: denial,
+            allowsLoadedMemoryPressureContinuation: true
+        ))
+        XCTAssertFalse(ExecutorRuntimePreflight.shouldDeferResourceBudgetDenialToLoadedContinuationForTests(
+            policy: .foregroundInteractive,
+            snapshot: snapshot,
+            denialReason: denial,
+            allowsLoadedMemoryPressureContinuation: false
+        ))
+        XCTAssertFalse(ExecutorRuntimePreflight.shouldDeferResourceBudgetDenialToLoadedContinuationForTests(
+            policy: .maintenanceIdle,
+            snapshot: snapshot,
+            denialReason: denial,
+            allowsLoadedMemoryPressureContinuation: true
+        ))
+        XCTAssertFalse(ExecutorRuntimePreflight.shouldDeferResourceBudgetDenialToLoadedContinuationForTests(
+            policy: .foregroundInteractive,
+            snapshot: snapshot,
+            denialReason: "strict-live-training.executor-preflight: thermalState=serious",
+            allowsLoadedMemoryPressureContinuation: true
+        ))
+    }
+
     func testMemoryPressureContinuationStillDeniesUnsafeThermalState() {
         let snapshot = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .serious, recentMemoryWarningCount: 1, lastMemoryWarningAt: Date())
 
@@ -100,6 +130,23 @@ final class ResourceBudgetGateTests: XCTestCase {
         XCTAssertEqual(monitor.recentWarningCount(), 0)
         XCTAssertEqual(monitor.warningCount, 0)
         XCTAssertNil(monitor.lastWarningAt)
+    }
+
+    func testMemoryPressureMonitorCoalescesDuplicateWarningCallbacks() async {
+        let metricsURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let monitor = MemoryPressureMonitor(metricsStore: RuntimeMetricsStore(fileURL: metricsURL), notificationCenter: NotificationCenter())
+        let firstWarning = Date(timeIntervalSince1970: 1_800_000_000)
+
+        await monitor.handleWarning(now: firstWarning)
+        await monitor.handleWarning(now: firstWarning.addingTimeInterval(0.25))
+
+        XCTAssertEqual(monitor.warningCount, 1)
+        XCTAssertEqual(monitor.lastWarningAt, firstWarning)
+
+        await monitor.handleWarning(now: firstWarning.addingTimeInterval(2))
+
+        XCTAssertEqual(monitor.warningCount, 2)
+        XCTAssertEqual(monitor.lastWarningAt, firstWarning.addingTimeInterval(2))
     }
 
     func testUnknownAndMemoryWarningDenyHeavyWork() {

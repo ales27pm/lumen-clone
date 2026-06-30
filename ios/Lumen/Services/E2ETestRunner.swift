@@ -484,6 +484,16 @@ nonisolated enum E2ETestRunner {
         return await run(scenarios: scenarios, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
+    private static func appendResult(
+        _ result: E2ETestResult,
+        to results: inout [E2ETestResult],
+        onResult: ResultCallback?
+    ) async {
+        results.append(result)
+        E2ETestLogStore.append(result)
+        await onResult?(result)
+    }
+
     static func runTrainingValidation(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
         let started = Date()
         let preflight = await ExecutorRuntimePreflight.run()
@@ -601,21 +611,27 @@ nonisolated enum E2ETestRunner {
             do {
                 try Task.checkCancellation()
                 await Task.yield()
+                if let blocked = await liveRuntimePreflightBlockedResultIfNeeded(for: scenario, onEvent: onEvent) {
+                    await appendResult(blocked, to: &results, onResult: onResult)
+                    break
+                }
                 let result = try await runScenario(scenario, config: config, ensureChatLoaded: ensureChatLoaded, onEvent: onEvent)
-                results.append(result)
                 try Task.checkCancellation()
                 await Task.yield()
-                E2ETestLogStore.append(result)
-                try Task.checkCancellation()
-                await Task.yield()
-                await onResult?(result)
+                await appendResult(result, to: &results, onResult: onResult)
+                if liveRuntimeShouldStopAfter(result) {
+                    break
+                }
+                await paceAfterLiveRuntimeScenario(result)
             } catch is CancellationError {
                 break
             } catch {
                 let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", requiresAgentRun: scenario.requiresAgentRun, passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
-                results.append(result)
-                E2ETestLogStore.append(result)
-                await onResult?(result)
+                await appendResult(result, to: &results, onResult: onResult)
+                if liveRuntimeShouldStopAfter(result) {
+                    break
+                }
+                await paceAfterLiveRuntimeScenario(result)
             }
         }
         let passed = results.filter(\.passed).count
@@ -823,65 +839,110 @@ nonisolated enum E2ETestRunner {
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
                 await Task.yield()
-                let shouldEnableNetworkAccess = shouldTemporarilyEnableNetworkAccess(
-                    scenario: scenario,
-                    routing: routing,
-                    availableToolIDs: req.availableTools.map(\.id)
-                )
-                let previousNetworkAccessGranted: Bool
-                if shouldEnableNetworkAccess {
-                    previousNetworkAccessGranted = await PermissionRegistry.shared.currentStatus(for: .networkAccess) == .granted
-                    await MainActor.run {
-                        PermissionRegistry.shared.setNetworkAccessEnabled(true)
-                    }
-                    await event("permissions", "networkAccess=temporarily-enabled-for-live-e2e")
-                } else {
-                    previousNetworkAccessGranted = false
-                }
-                defer {
-                    if shouldEnableNetworkAccess {
-                        Task { @MainActor in
-                            PermissionRegistry.shared.setNetworkAccessEnabled(previousNetworkAccessGranted)
-                        }
-                    }
-                }
                 let modelEvidenceStartedAt = Date()
-                let runOptions = strictLiveAgentRunOptions(
-                    req: req,
-                    scenario: scenario,
-                    e2eRunID: e2eRunID,
-                    agentRunID: agentRunID
-                )
-                let agentEvents = await MainActor.run {
-                    AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
-                }
-                for await agentEvent in agentEvents {
-                    try Task.checkCancellation()
-                    await Task.yield()
-                    switch agentEvent {
-                    case .step(let step):
-                        collectPerformanceSample()
-                        steps.append(step)
-                        await event("step", "\(step.kind.rawValue): \(step.content)")
-                        if let toolID = step.toolID,
-                           forbiddenCanonicalToolIDs.contains(ToolRouteGuard.canonicalToolID(toolID)) {
-                            failures.append("Forbidden tool selected by agent: \(toolID)")
-                        }
-                    case .stepDelta, .toolInvocation, .toolResult, .diagnostic:
-                        break
-                    case .token(let chunk), .finalDelta(let chunk):
-                        rawFinalText += chunk
-                        collectPerformanceSample()
-                    case .final(let text):
-                        collectPerformanceSample(force: true)
-                        if !text.isEmpty { rawFinalText = text }
-                    case .done(let text, let allSteps):
-                        collectPerformanceSample(force: true)
-                        if !text.isEmpty { rawFinalText = text }
-                        steps = allSteps.isEmpty ? steps : allSteps
-                    case .error(let message):
-                        collectPerformanceSample(force: true)
+                if routing.requiresClarification, let clarification = routing.clarificationPrompt, !clarification.isEmpty {
+                    let step = AgentStep(kind: .reflection, content: "Clarification required before tool execution.")
+                    steps.append(step)
+                    await event("step", "\(step.kind.rawValue): \(step.content)")
+                    rawFinalText = clarification
+                    recordPolicyFirstClarificationTrace(
+                        scenario: scenario,
+                        routing: routing,
+                        clarification: clarification,
+                        correlation: traceCorrelation,
+                        startedAt: modelEvidenceStartedAt
+                    )
+                } else if shouldRunAsPlainTextTurn(scenario: scenario, routing: routing) {
+                    let turn = AssistantTurnContext(
+                        task: .chat,
+                        input: scenario.prompt,
+                        systemPrompt: config.systemPrompt,
+                        isForeground: true,
+                        lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                        thermalState: ProcessInfo.processInfo.thermalState,
+                        prefersFoundationModels: false,
+                        allowHeavyRuntime: true,
+                        temperature: min(config.temperature, 0.3),
+                        topP: config.topP,
+                        repetitionPenalty: config.repetitionPenalty,
+                        maxTokens: min(config.maxTokens, 512)
+                    )
+                    let textTurnStartedAt = Date()
+                    do {
+                        rawFinalText = try await AssistantKernel.shared.runTextTurn(turn)
+                        recordTextTurnModelTrace(
+                            scenario: scenario,
+                            routing: routing,
+                            output: rawFinalText,
+                            correlation: traceCorrelation,
+                            startedAt: textTurnStartedAt,
+                            maxTokens: turn.maxTokens
+                        )
+                    } catch {
+                        let message = RuntimeMetricErrorSanitizer.code(for: error)
                         failures.append("Agent error: \(message)")
+                        rawFinalText = "I couldn't complete the chat turn because the local model failed: \(message)."
+                    }
+                } else {
+                    let shouldEnableNetworkAccess = shouldTemporarilyEnableNetworkAccess(
+                        scenario: scenario,
+                        routing: routing,
+                        availableToolIDs: req.availableTools.map(\.id)
+                    )
+                    let previousNetworkAccessGranted: Bool
+                    if shouldEnableNetworkAccess {
+                        previousNetworkAccessGranted = await PermissionRegistry.shared.currentStatus(for: .networkAccess) == .granted
+                        await MainActor.run {
+                            PermissionRegistry.shared.setNetworkAccessEnabled(true)
+                        }
+                        await event("permissions", "networkAccess=temporarily-enabled-for-live-e2e")
+                    } else {
+                        previousNetworkAccessGranted = false
+                    }
+                    defer {
+                        if shouldEnableNetworkAccess {
+                            Task { @MainActor in
+                                PermissionRegistry.shared.setNetworkAccessEnabled(previousNetworkAccessGranted)
+                            }
+                        }
+                    }
+                    let runOptions = strictLiveAgentRunOptions(
+                        req: req,
+                        scenario: scenario,
+                        e2eRunID: e2eRunID,
+                        agentRunID: agentRunID
+                    )
+                    let agentEvents = await MainActor.run {
+                        AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
+                    }
+                    for await agentEvent in agentEvents {
+                        try Task.checkCancellation()
+                        await Task.yield()
+                        switch agentEvent {
+                        case .step(let step):
+                            collectPerformanceSample()
+                            steps.append(step)
+                            await event("step", "\(step.kind.rawValue): \(step.content)")
+                            if let toolID = step.toolID,
+                               forbiddenCanonicalToolIDs.contains(ToolRouteGuard.canonicalToolID(toolID)) {
+                                failures.append("Forbidden tool selected by agent: \(toolID)")
+                            }
+                        case .stepDelta, .toolInvocation, .toolResult, .diagnostic:
+                            break
+                        case .token(let chunk), .finalDelta(let chunk):
+                            rawFinalText += chunk
+                            collectPerformanceSample()
+                        case .final(let text):
+                            collectPerformanceSample(force: true)
+                            if !text.isEmpty { rawFinalText = text }
+                        case .done(let text, let allSteps):
+                            collectPerformanceSample(force: true)
+                            if !text.isEmpty { rawFinalText = text }
+                            steps = allSteps.isEmpty ? steps : allSteps
+                        case .error(let message):
+                            collectPerformanceSample(force: true)
+                            failures.append("Agent error: \(message)")
+                        }
                     }
                 }
                 let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
@@ -1035,10 +1096,248 @@ nonisolated enum E2ETestRunner {
     /// - Returns: `true` if the scenario accepts such traces, `false` otherwise.
     private nonisolated static func acceptsPolicyFirstExecutionEvidence(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
         guard scenario.requiresAgentRun else { return false }
+        if routing.requiresClarification {
+            return true
+        }
         // A scenario marked as live training/evidence must prove the loaded
         // model path. Deterministic compatibility traces are diagnostics only;
         // static routing coverage should use requiresAgentRun=false.
         return false
+    }
+
+    private nonisolated static func shouldRunAsPlainTextTurn(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
+        scenario.requiresAgentRun
+            && scenario.kind == .chat
+            && routing.intent == .chat
+            && scenario.requiredAllowedToolIDs.isEmpty
+            && routing.allowedToolIDs.isEmpty
+    }
+
+    private nonisolated static func liveRuntimeShouldStopAfter(_ result: E2ETestResult) -> Bool {
+        guard result.requiresAgentRun, !result.passed else { return false }
+        let evidence = ([result.finalText] + result.failures + result.events.map(\.message) + Array(result.metadata.values))
+            .joined(separator: "\n")
+            .lowercased()
+        return evidence.contains("thermalstate=serious")
+            || evidence.contains("thermal state serious")
+            || evidence.contains(ResourceBudgetGate.seriousThermalRetryHint.lowercased())
+            || evidence.contains("resource-budget-denied-before-prompt-eval")
+            || evidence.contains("cpu-watchdog-degraded")
+    }
+
+    private static func liveRuntimePreflightBlockedResultIfNeeded(
+        for scenario: E2ETestScenario,
+        onEvent: EventCallback?
+    ) async -> E2ETestResult? {
+        guard scenario.requiresAgentRun else { return nil }
+        let decision = await MainActor.run {
+            ResourceBudgetGate.decision(
+                policy: .foregroundInteractive,
+                reason: "live-e2e.pre-scenario"
+            )
+        }
+        guard !decision.allowed, let denial = decision.denialReason else { return nil }
+        return await liveRuntimePreflightBlockedResult(
+            for: scenario,
+            denialReason: denial,
+            onEvent: onEvent
+        )
+    }
+
+    private static func liveRuntimePreflightBlockedResult(
+        for scenario: E2ETestScenario,
+        denialReason: String,
+        onEvent: EventCallback?
+    ) async -> E2ETestResult {
+        let started = Date()
+        let failureKind = liveRuntimeBudgetFailureKind(denialReason)
+        let finalText = denialReason.contains(ResourceBudgetGate.seriousThermalRetryHint)
+            ? ResourceBudgetGate.seriousThermalRetryHint
+            : "Live E2E paused before starting this scenario: \(denialReason)."
+        let event = E2ETestEvent(
+            id: UUID(),
+            createdAt: started,
+            scenarioID: scenario.id,
+            phase: "live-runtime-preflight",
+            message: "blocked before model prompt evaluation; reason=\(denialReason)"
+        )
+        await onEvent?(event)
+        return E2ETestResult(
+            id: UUID(),
+            scenarioID: scenario.id,
+            kind: scenario.kind.rawValue,
+            title: scenario.title,
+            prompt: scenario.prompt,
+            expectedIntent: scenario.expectedIntent.rawValue,
+            actualIntent: "preflight",
+            requiresAgentRun: true,
+            passed: false,
+            failures: ["Live E2E preflight blocked model-backed generation before prompt evaluation: \(denialReason)"],
+            finalText: finalText,
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [event],
+            startedAt: started,
+            finishedAt: Date(),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: finalText,
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil,
+            metadata: [
+                "failureKind": failureKind,
+                "budgetPolicy": LumenSlotBudgetPolicy.foregroundInteractive.rawValue,
+                "budgetDenialReason": denialReason
+            ]
+        )
+    }
+
+    private nonisolated static func liveRuntimeBudgetFailureKind(_ denialReason: String) -> String {
+        let lower = denialReason.lowercased()
+        if lower.contains("thermalstate=serious") || lower.contains("thermal state serious") {
+            return "liveRuntimeThermalCooldownRequired"
+        }
+        if lower.contains("thermalstate=critical") {
+            return "liveRuntimeThermalCritical"
+        }
+        if lower.contains("thermalstate=unknown") || lower.contains("thermalstate=nil") {
+            return "liveRuntimeThermalStateUnavailable"
+        }
+        if lower.contains("recent-memory-warning") {
+            return "liveRuntimeRecentMemoryWarning"
+        }
+        if lower.contains("scenephase=") {
+            return "liveRuntimeScenePhaseUnavailable"
+        }
+        if lower.contains("lowpowermode=") {
+            return "liveRuntimePowerStateUnavailable"
+        }
+        return "liveRuntimeResourceBudgetDenied"
+    }
+
+    private static func paceAfterLiveRuntimeScenario(_ result: E2ETestResult) async {
+        let delay = liveRuntimePacingNanoseconds(
+            after: result,
+            thermalState: ProcessInfo.processInfo.thermalState,
+            lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
+        )
+        guard delay > 0 else { return }
+        try? await Task.sleep(nanoseconds: delay)
+    }
+
+    private nonisolated static func liveRuntimePacingNanoseconds(
+        after result: E2ETestResult,
+        thermalState: ProcessInfo.ThermalState,
+        lowPowerModeEnabled: Bool
+    ) -> UInt64 {
+        guard result.requiresAgentRun else { return 0 }
+        guard !liveRuntimeShouldStopAfter(result) else { return 0 }
+        switch thermalState {
+        case .nominal:
+            return lowPowerModeEnabled ? 3_000_000_000 : 1_500_000_000
+        case .fair:
+            return lowPowerModeEnabled ? 8_000_000_000 : 5_000_000_000
+        case .serious, .critical:
+            return 0
+        @unknown default:
+            return 3_000_000_000
+        }
+    }
+
+    private static func recordPolicyFirstClarificationTrace(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        clarification: String,
+        correlation: E2ETraceCorrelation,
+        startedAt: Date
+    ) {
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .finalAnswer,
+                slot: "executor",
+                stage: "compatibility-clarification-final",
+                scenarioID: correlation.scenarioID,
+                e2eRunID: correlation.e2eRunID,
+                agentRunID: correlation.agentRunID,
+                conversationID: correlation.conversationID,
+                turnID: correlation.turnID,
+                intent: routing.intent.rawValue,
+                promptPrefix: scenario.prompt,
+                rawOutputPrefix: clarification,
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: routing.allowedToolIDs.sorted(),
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: true,
+                modelFamily: "policy-first",
+                generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
+                outputTokenCount: clarification.split(whereSeparator: \.isWhitespace).count,
+                runtimePath: "deterministic-compatibility",
+                streamStarted: false,
+                selectedRuntime: "deterministic-compatibility",
+                modelLoaded: true,
+                firstChunkReceived: false,
+                textChunkCount: 0,
+                finalChunkReceived: true,
+                streamTerminationReason: "clarification-required"
+            )
+        )
+    }
+
+    private static func recordTextTurnModelTrace(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        output: String,
+        correlation: E2ETraceCorrelation,
+        startedAt: Date,
+        maxTokens: Int
+    ) {
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "mouth",
+                stage: "chat-text-turn",
+                scenarioID: correlation.scenarioID,
+                e2eRunID: correlation.e2eRunID,
+                agentRunID: correlation.agentRunID,
+                conversationID: correlation.conversationID,
+                turnID: correlation.turnID,
+                intent: routing.intent.rawValue,
+                promptPrefix: scenario.prompt,
+                rawOutputPrefix: output,
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: true,
+                modelFamily: "qwen3",
+                generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
+                outputTokenCount: output.split(whereSeparator: \.isWhitespace).count,
+                runtimePath: "agent-model",
+                activeAdapterSlot: "mouth",
+                maxTokensRequested: maxTokens,
+                maxTokensEffective: maxTokens,
+                promptCharCount: scenario.prompt.count,
+                streamStarted: true,
+                selectedRuntime: "agent-model",
+                selectedAdapter: "mouth",
+                modelLoaded: true,
+                firstChunkReceived: !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                textChunkCount: output.isEmpty ? 0 : 1,
+                finalChunkReceived: true,
+                streamTerminationReason: "stop"
+            )
+        )
     }
 
     private nonisolated static func shouldTemporarilyEnableNetworkAccess(
@@ -1415,6 +1714,44 @@ nonisolated enum E2ETestRunner {
             scenario: scenario,
             hasAcceptedModelEvidence: hasAcceptedModelEvidence
         )
+    }
+
+    nonisolated static func liveRuntimeShouldStopAfterForTests(_ result: E2ETestResult) -> Bool {
+        liveRuntimeShouldStopAfter(result)
+    }
+
+    static func liveRuntimePreflightBlockedResultForTests(
+        _ scenario: E2ETestScenario,
+        denialReason: String
+    ) async -> E2ETestResult {
+        await liveRuntimePreflightBlockedResult(
+            for: scenario,
+            denialReason: denialReason,
+            onEvent: nil
+        )
+    }
+
+    nonisolated static func liveRuntimeBudgetFailureKindForTests(_ denialReason: String) -> String {
+        liveRuntimeBudgetFailureKind(denialReason)
+    }
+
+    nonisolated static func liveRuntimePacingNanosecondsForTests(
+        after result: E2ETestResult,
+        thermalState: ProcessInfo.ThermalState,
+        lowPowerModeEnabled: Bool = false
+    ) -> UInt64 {
+        liveRuntimePacingNanoseconds(
+            after: result,
+            thermalState: thermalState,
+            lowPowerModeEnabled: lowPowerModeEnabled
+        )
+    }
+
+    nonisolated static func shouldRunAsPlainTextTurnForTests(
+        _ scenario: E2ETestScenario,
+        routing: IntentRoutingDecision
+    ) -> Bool {
+        shouldRunAsPlainTextTurn(scenario: scenario, routing: routing)
     }
 
     static func agentJSONTrainingProbeForTests() async -> [AgentJSONTrainingProbeResult] {
