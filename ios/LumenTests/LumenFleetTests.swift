@@ -292,9 +292,61 @@ struct LumenFleetTests {
 
         #expect(snapshot.assignment(for: .executor)?.adapterID == exactExecutorAdapter.id)
         #expect(snapshot.assignment(for: .executor)?.adapterFileName == executorRole.adapterFileName)
+        #expect(snapshot.assignment(for: .executor)?.adapterPath == exactExecutorAdapter.localPath)
         #expect(snapshot.assignment(for: .executor)?.hasConfiguredRoleAdapter == true)
         #expect(snapshot.assignment(for: .executor)?.usesRoleAdapter == true)
         #expect(snapshot.assignment(for: .executor)?.requiresRoleAdapterForRuntime == true)
+    }
+
+    @Test @MainActor func modelLoaderRegistersQwen3AdaptersBeforeStartupLoadGate() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen3
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-model-loader-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+        let executorRole = try #require(contract.adapterRole(for: .executor))
+        let sharedBase = StoredModel(
+            name: "Qwen3 Fast Shared Chat Base",
+            repoId: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: 1,
+            quantization: "Q4_K_M",
+            parameters: "1.7B",
+            role: .chat,
+            localPath: root.appendingPathComponent(contract.sharedBaseFileName).path
+        )
+        let exactExecutorAdapter = StoredModel(
+            name: "Executor role adapter",
+            repoId: executorRole.adapterRepoID,
+            fileName: executorRole.adapterFileName,
+            sizeBytes: 1,
+            quantization: "GGUF",
+            parameters: "LoRA",
+            role: .roleAdapter,
+            localPath: root.appendingPathComponent(executorRole.adapterFileName).path
+        )
+        try materializeModelFiles(sharedBase, exactExecutorAdapter)
+
+        let appState = AppState()
+        appState.activeChatModelID = sharedBase.id.uuidString
+        appState.contextSize = 2048
+        await SlotModelRuntimeCoordinator.shared.configure(assignments: [:], contextSize: 2048, preferExclusiveChatRuntime: true)
+
+        _ = await ModelLoader.ensureChatLoaded(
+            snapshot: ModelLoadSnapshot(appState: appState, stored: [sharedBase, exactExecutorAdapter]),
+            intent: .appStartup
+        )
+
+        let assignment = await SlotModelRuntimeCoordinator.shared.assignment(for: .executor)
+        #expect(assignment?.adapterPath == exactExecutorAdapter.localPath)
+        #expect(assignment?.hasConfiguredRoleAdapter == true)
+        #expect(assignment?.requiresRoleAdapterForRuntime == true)
+
+        await SlotModelRuntimeCoordinator.shared.configure(assignments: [:], contextSize: 2048, preferExclusiveChatRuntime: true)
     }
 }
 

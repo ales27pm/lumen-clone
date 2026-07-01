@@ -465,6 +465,7 @@ nonisolated enum E2ETestRunner {
     @TaskLocal static var debugStandardScenariosOverride: [E2ETestScenario]?
     @TaskLocal static var debugAssertScenarioLoopOffMainThread = false
     @TaskLocal static var debugScenarioLoopThreadRecorder: (@Sendable (Bool) -> Void)?
+    @TaskLocal static var debugExecutorRuntimePreflightOverride: (@Sendable () async -> ExecutorRuntimePreflightResult)?
 
     private static func debugIsRunningOnMainThread() -> Bool {
         #if canImport(Darwin)
@@ -474,6 +475,15 @@ nonisolated enum E2ETestRunner {
         #endif
     }
     #endif
+
+    private static func executorRuntimePreflight() async -> ExecutorRuntimePreflightResult {
+        #if DEBUG
+        if let override = debugExecutorRuntimePreflightOverride {
+            return await override()
+        }
+        #endif
+        return await ExecutorRuntimePreflight.run()
+    }
 
     static func runStandard(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
         #if DEBUG
@@ -496,7 +506,48 @@ nonisolated enum E2ETestRunner {
 
     static func runTrainingValidation(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
         let started = Date()
-        let preflight = await ExecutorRuntimePreflight.run()
+        if let ensureChatLoaded {
+            let setupSucceeded = await ensureChatLoaded()
+            guard setupSucceeded else {
+                let scenario = E2ETestScenario.trainingValidation[0]
+                let reason = "Training validation could not prepare the chat fleet before executor preflight."
+                let event = E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: "executor-runtime-preflight", phase: "model-setup", message: reason)
+                await onEvent?(event)
+                let result = E2ETestResult(
+                    id: UUID(),
+                    scenarioID: "executor-runtime-preflight",
+                    kind: E2ETestKind.training.rawValue,
+                    title: "Executor runtime preflight",
+                    prompt: scenario.prompt,
+                    expectedIntent: scenario.expectedIntent.rawValue,
+                    actualIntent: "preflight",
+                    requiresAgentRun: true,
+                    passed: false,
+                    failures: [reason],
+                    finalText: "",
+                    missingHints: [],
+                    rewriteAttempted: false,
+                    rewriteSuccess: false,
+                    events: [event],
+                    startedAt: started,
+                    finishedAt: Date(),
+                    rawFinalPrefix: "",
+                    sanitizedFinalPrefix: "",
+                    rawFinalHadUnsafeLeakage: false,
+                    sanitizedFinalRemovedArtifacts: [],
+                    outputHygieneFailures: [],
+                    performanceMatrix: nil,
+                    metadata: ["failureKind": "trainingValidationModelSetupFailed"]
+                )
+                E2ETestLogStore.append(result)
+                await onResult?(result)
+                let report = E2ETestReport(id: UUID(), startedAt: started, finishedAt: Date(), passed: 0, failed: 1, results: [result])
+                E2ETestLogStore.writeLatest(report)
+                return report
+            }
+        }
+
+        let preflight = await executorRuntimePreflight()
         guard preflight.passed else {
             let scenario = E2ETestScenario.trainingValidation[0]
             let event = E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: "executor-runtime-preflight", phase: "executor-preflight", message: "\(preflight.reason); \(preflight.diagnosticsSummary)")
