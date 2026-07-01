@@ -466,6 +466,47 @@ def test_ingestion_keeps_alarmkit_unavailable_out_of_training_repairs(tmp_path: 
     assert failure_record["e2eScenario"]["metadata"]["failureKind"] == "liveRuntimeAlarmKitUnavailable"
 
 
+def test_ingestion_keeps_cpu_watchdog_degraded_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "cpu-watchdog-e2e-report.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "training-rag-grounding",
+                "kind": "training",
+                "title": "Training eval: RAG grounding",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Search local docs and summarize modules.",
+                "actualIntent": "rag",
+                "expectedIntent": "rag",
+                "failures": ["Live runtime CPU watchdog degraded before completing model-backed scenario."],
+                "finalText": "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cpu-watchdog-degraded.",
+                "events": [{"phase": "agent-runtime", "message": "cpu-watchdog-degraded"}],
+                "metadata": {
+                    "failureKind": "liveRuntimeCPUWatchdogDegraded",
+                    "actionable": "false",
+                    "trainingSignal": "false",
+                },
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_runtime_environment_deferred"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert failure_record["e2eScenario"]["metadata"]["failureKind"] == "liveRuntimeCPUWatchdogDegraded"
+    assert normalized.get("trainingSignals") in (None, [])
+
+
 def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
     report_path = tmp_path / "e2e-with-model-evidence.json"
     import json

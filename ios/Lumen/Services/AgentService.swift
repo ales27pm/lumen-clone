@@ -2009,6 +2009,13 @@ final class AgentService {
             return memoryFinal
         }
 
+        if routing.intent == .webSearch,
+           webPromptRequiresSynthesis(prompt),
+           webFinalRequiresObservationFallback(finalAnswer),
+           let deterministic = deterministicWebSummaryFallback(observations: observations) {
+            return deterministic
+        }
+
         return finalAnswer
     }
 
@@ -3219,6 +3226,36 @@ final class AgentService {
         let bullets = lines.prefix(2).map { "- \(compactObservationResult($0, limit: 220))" }
         guard bullets.count >= 2 else { return nil }
         return "Summary:\n\(bullets.joined(separator: "\n"))"
+    }
+
+    private nonisolated static func webPromptRequiresSynthesis(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        return lower.contains("summarize")
+            || lower.contains("synthesize")
+            || lower.contains("compare")
+    }
+
+    private nonisolated static func webFinalRequiresObservationFallback(_ finalAnswer: String) -> Bool {
+        let text = finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = text.lowercased()
+        if text.isEmpty { return true }
+        if lower.contains("no direct answer from web search") { return true }
+        if lower.hasPrefix("search results for:") || lower.hasPrefix("web search results:") { return true }
+        if lower.contains("search results for:") && (lower.contains("\nhttp") || lower.contains("\n- http")) { return true }
+        if lower.contains("\"intent\"")
+            && lower.contains("\"nextmodel\"")
+            && lower.contains("\"reasoningsummary\"")
+            && lower.contains("\"requiresapproval\"")
+            && lower.contains("\"sourcefile\"") {
+            return true
+        }
+        if text.range(of: #"(?is)^\s*(https?://\S+)\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        if text.range(of: #"(?is)^\s*see\s+the\s+full\s+(tutorial|article|guide|post|result)\s+at\s+https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        return false
     }
 
     private nonisolated static func compactObservationResult(_ result: String, limit: Int) -> String {

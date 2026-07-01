@@ -5,6 +5,7 @@ final class DiagnosticsProvider {
     private(set) var explicitCollectionCount = 0
 
     func cachedSnapshot() -> DiagnosticsSnapshot {
+        let build = BuildDiagnosticsSnapshot.current()
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
@@ -33,7 +34,7 @@ final class DiagnosticsProvider {
         )
         let grounding = GroundingDiagnosticsSnapshot(contextSource: "cached", degradedReasons: [], sectionCounts: [:], doubleGroundingNormalized: true)
         let privacy = PrivacyReportSnapshot(localOnlyMode: true, networkAccessState: "cached", recentToolCategories: Array(Set(tools.tools.map(\.category))).sorted(), appIntentLimitations: ["Expensive diagnostics require explicit refresh"])
-        return DiagnosticsSnapshot(runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
+        return DiagnosticsSnapshot(build: build, runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
     }
 
     func collect() async -> DiagnosticsSnapshot {
@@ -43,6 +44,8 @@ final class DiagnosticsProvider {
         guard !CPUWatchdogGuard.shared.shouldDegrade(category: .diagnostics), ResourceBudgetGate.allowsMaintenance(reason: "diagnostics.collect") else {
             return cachedSnapshot()
         }
+        let info = Bundle.main.infoDictionary ?? [:]
+        let build = BuildDiagnosticsSnapshot.current(infoDictionary: info)
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let metrics = (try? await RuntimeMetricsStore.shared.recentMetrics(limit: 10)) ?? []
         let runtime = RuntimeDiagnosticsSnapshot(
@@ -65,7 +68,6 @@ final class DiagnosticsProvider {
         }
         let tools = ToolSecuritySnapshot(tools: toolRows)
 
-        let info = Bundle.main.infoDictionary ?? [:]
         let warnings = BackgroundEntitlementValidator.validate(infoDictionary: info)
         let permitted: [String]
         if let values = info["BGTaskSchedulerPermittedIdentifiers"] as? [String] { permitted = values }
@@ -89,6 +91,6 @@ final class DiagnosticsProvider {
         let networkState = (permStates[.networkAccess] ?? .unknown).rawValue
         let privacy = PrivacyReportSnapshot(localOnlyMode: networkState != AssistantPermissionState.granted.rawValue, networkAccessState: networkState, recentToolCategories: Array(Set(toolRows.map(\.category))).sorted(), appIntentLimitations: ["Sensitive actions require open-app approval", "No external network by default"])
 
-        return DiagnosticsSnapshot(runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
+        return DiagnosticsSnapshot(build: build, runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
     }
 }

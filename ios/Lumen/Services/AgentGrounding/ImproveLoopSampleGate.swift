@@ -404,6 +404,8 @@ nonisolated enum ImproveLoopSampleGate {
             || lower.contains("can't safely start the full agent pipeline")
             || lower.contains("device has cooled down")
             || lower.contains("resource-budget-denied-before-prompt-eval")
+            || lower.contains("cpu-watchdog-degraded")
+            || lower.contains("liveruntimecpuwatchdogdegraded")
             || lower.contains("live e2e preflight blocked model-backed generation before prompt evaluation")
             || lower.contains("alarmkit runtime unavailable")
             || lower.contains("alarmkit availability: unavailable")
