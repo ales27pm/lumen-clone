@@ -1524,6 +1524,7 @@ final class AgentService {
         var executedActionKeys: Set<String> = []
         var scratchpad = ""
         var finalAnswer = ""
+        let memoryCommandPlan = MemoryCommandPlan.saveThenRecall(from: Self.sanitizedStructuredUserMessage(req.userMessage))
 
         let sys = buildSystemPrompt(req: req)
         let maxSteps = max(1, req.maxSteps)
@@ -1756,10 +1757,34 @@ final class AgentService {
                 scratchpad += "\nThought: \(partial)"
             }
 
+            var actionToExecute: AgentAction?
+            if let parsedAction = turn.action {
+                let repair = Self.repairedMemoryActionIfNeeded(
+                    modelAction: parsedAction,
+                    memoryPlan: memoryCommandPlan,
+                    steps: steps
+                )
+                if let reflection = repair.reflection {
+                    steps.append(reflection)
+                    continuation.yield(.step(reflection))
+                }
+                actionToExecute = repair.action
+            } else if turn.final?.isEmpty == false,
+                      let requiredMemoryAction = Self.nextRequiredMemoryAction(memoryPlan: memoryCommandPlan, steps: steps) {
+                let reflection = AgentStep(
+                    kind: .reflection,
+                    content: "Memory save-then-recall invariant repaired a premature final before required memory actions completed."
+                )
+                steps.append(reflection)
+                continuation.yield(.step(reflection))
+                actionToExecute = requiredMemoryAction
+            }
+
             // Action path
-            if let action = turn.action {
-                guard let _ = ToolRegistry.find(id: action.tool) else {
-                    let obs = AgentStep(kind: .observation, content: "Unknown tool: \(action.tool). Emit a final turn instead.", toolID: action.tool)
+            if let action = actionToExecute {
+                let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
+                guard let _ = ToolRegistry.find(id: canonicalActionTool) else {
+                    let obs = AgentStep(kind: .observation, content: "Unknown tool: \(action.tool). Emit a final turn instead.", toolID: canonicalActionTool)
                     steps.append(obs)
                     continuation.yield(.step(obs))
                     observations.append((action.tool, obs.content))
@@ -1779,17 +1804,27 @@ final class AgentService {
                 }
                 executedActionKeys.insert(action.dedupeKey)
 
-                let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: action.tool, toolArgs: action.args.stringCoerced)
+                if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
+                    let approval = Self.approvalBoundaryFinal(for: canonicalActionTool, action: action)
+                    let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+                    steps.append(step)
+                    continuation.yield(.step(step))
+                    finalAnswer = approval
+                    continuation.yield(.finalDelta(finalAnswer))
+                    break stepsLoop
+                }
+
+                let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
                 steps.append(actionStep)
                 continuation.yield(.step(actionStep))
 
-                let isEnabled = req.availableTools.contains { $0.id == action.tool }
+                let isEnabled = req.availableTools.contains { ToolRouteGuard.canonicalToolID($0.id) == canonicalActionTool }
                 let result: String
                 if !isEnabled {
-                    result = "Tool \(action.tool) is disabled. Enable it in Tools."
+                    result = "Tool \(canonicalActionTool) is disabled. Enable it in Tools."
                 } else {
                     result = await SecureToolRegistry.shared.executeLegacyTool(
-                        action.tool,
+                        canonicalActionTool,
                         arguments: action.args,
                         approval: .autonomous,
                         conversationID: req.conversationID,
@@ -1797,10 +1832,10 @@ final class AgentService {
                     )
                 }
 
-                let obs = AgentStep(kind: .observation, content: result, toolID: action.tool)
+                let obs = AgentStep(kind: .observation, content: result, toolID: canonicalActionTool)
                 steps.append(obs)
                 continuation.yield(.step(obs))
-                observations.append((action.tool, result))
+                observations.append((canonicalActionTool, result))
                 scratchpad += "\nAction: \(action.displayContent)\nObservation: \(compactScratchpadObservation(result))"
                 if let locationObservation = currentLocationScratchpadContext(from: result) {
                     scratchpad += "\nContext: \(locationObservation)"
@@ -1992,6 +2027,75 @@ final class AgentService {
             availableToolIDs: availableToolIDs,
             routing: routing
         )
+    }
+
+    private nonisolated static func repairedMemoryActionIfNeeded(
+        modelAction: AgentAction,
+        memoryPlan: MemoryCommandPlan?,
+        steps: [AgentStep]
+    ) -> (action: AgentAction, reflection: AgentStep?) {
+        guard let required = nextRequiredMemoryAction(memoryPlan: memoryPlan, steps: steps) else {
+            return (modelAction, nil)
+        }
+        let modelTool = ToolRouteGuard.canonicalToolID(modelAction.tool)
+        let requiredTool = ToolRouteGuard.canonicalToolID(required.tool)
+        if modelTool == requiredTool, memoryActionArgumentsMatch(modelAction, required: required) {
+            return (modelAction, nil)
+        }
+        let reflection = AgentStep(
+            kind: .reflection,
+            content: "Memory save-then-recall invariant repaired \(modelTool) into \(requiredTool) before tool execution."
+        )
+        return (required, reflection)
+    }
+
+    private nonisolated static func memoryActionArgumentsMatch(_ action: AgentAction, required: AgentAction) -> Bool {
+        let requiredKeys = Set(required.args.keys)
+        guard Set(action.args.keys).isSuperset(of: requiredKeys) else { return false }
+        for key in requiredKeys {
+            guard action.args[key]?.stringValue == required.args[key]?.stringValue else { return false }
+        }
+        return true
+    }
+
+    private nonisolated static func nextRequiredMemoryAction(
+        memoryPlan: MemoryCommandPlan?,
+        steps: [AgentStep]
+    ) -> AgentAction? {
+        guard let memoryPlan else { return nil }
+        let actionToolIDs = steps
+            .filter { $0.kind == .action }
+            .compactMap(\.toolID)
+            .map(ToolRouteGuard.canonicalToolID)
+        if !actionToolIDs.contains("memory.save") {
+            return AgentAction(tool: "memory.save", args: [
+                "content": .string(memoryPlan.saveContent),
+                "kind": .string("fact")
+            ])
+        }
+        if !actionToolIDs.contains("memory.recall") {
+            return AgentAction(tool: "memory.recall", args: ["query": .string(memoryPlan.recallQuery)])
+        }
+        return nil
+    }
+
+    private nonisolated static func approvalBoundaryFinal(for toolID: String, action: AgentAction) -> String {
+        switch toolID {
+        case "alarm.request_authorization":
+            return "Approval required for alarm.request_authorization. I did not request alarm authorization yet."
+        case "alarm.schedule", "alarm.countdown", "alarm.pause", "alarm.resume", "alarm.stop", "alarm.snooze", "alarm.cancel":
+            return "Approval required for \(toolID). I did not change alarms yet."
+        case "calendar.create":
+            return "Approval required for calendar.create. I did not create an event yet."
+        case "reminders.create":
+            return "Approval required for reminders.create. I did not create a reminder yet."
+        case "phone.call":
+            return "Approval required for phone.call. I did not place the call yet."
+        case "camera.capture":
+            return "Approval required for camera.capture. I did not open the camera yet."
+        default:
+            return "Approval required for \(action.displayContent). I did not run it yet."
+        }
     }
 
     private nonisolated static func structuredFinalContradictsContactPhoneContinuation(_ finalAnswer: String) -> Bool {
@@ -2900,6 +3004,28 @@ final class AgentService {
         postprocessStructuredFinalAnswer(finalAnswer, req: req, observations: observations, steps: steps)
     }
 
+    nonisolated static func repairedMemoryActionForTests(
+        modelAction: AgentAction,
+        prompt: String,
+        steps: [AgentStep]
+    ) -> (action: AgentAction, reflection: AgentStep?) {
+        repairedMemoryActionIfNeeded(
+            modelAction: modelAction,
+            memoryPlan: MemoryCommandPlan.saveThenRecall(from: prompt),
+            steps: steps
+        )
+    }
+
+    nonisolated static func nextRequiredMemoryActionForTests(
+        prompt: String,
+        steps: [AgentStep]
+    ) -> AgentAction? {
+        nextRequiredMemoryAction(
+            memoryPlan: MemoryCommandPlan.saveThenRecall(from: prompt),
+            steps: steps
+        )
+    }
+
     /// Exposes the internal structured parse failure recovery function for testing.
     /// - Returns: A tuple of recovery text and steps if recovery succeeds, otherwise `nil`.
     nonisolated static func structuredParseFailureRecoveryForTests(
@@ -3063,9 +3189,36 @@ final class AgentService {
             }
             return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nUse the cited observations above for concrete modules when available."
         }
+        if intent == .webSearch, let summary = deterministicWebSummaryFallback(observations: observations) {
+            return summary
+        }
         guard let last = observations.last else { return nil }
         let compact = compactObservationResult(last.result, limit: 1_200)
         return compact.isEmpty ? nil : compact
+    }
+
+    private nonisolated static func deterministicWebSummaryFallback(observations: [(tool: String, result: String)]) -> String? {
+        let joined = observations
+            .filter {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                return tool == "web.search" || tool == "web.fetch"
+            }
+            .map(\.result)
+            .joined(separator: "\n")
+        let lines = joined
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { line in
+                let lower = line.lowercased()
+                return line.count >= 24
+                    && !lower.hasPrefix("search results for:")
+                    && !lower.hasPrefix("http")
+                    && !lower.contains("<lumen_web_payload")
+                    && !lower.contains("\"mediakind\"")
+            }
+        let bullets = lines.prefix(2).map { "- \(compactObservationResult($0, limit: 220))" }
+        guard bullets.count >= 2 else { return nil }
+        return "Summary:\n\(bullets.joined(separator: "\n"))"
     }
 
     private nonisolated static func compactObservationResult(_ result: String, limit: Int) -> String {

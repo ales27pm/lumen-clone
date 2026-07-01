@@ -194,6 +194,47 @@ struct IntentClassifierPolicyTests {
         #expect(!alarm.requiresClarification)
     }
 
+    @Test func alarmReadAndPermissionCommandsDoNotAskForTimeClarification() async {
+        let prompts = [
+            "Show alarm permission status.",
+            "Check alarm authorization status.",
+            "Use Alarm Auth Status, but ask for clarification if required details are missing.",
+            "List active alarms.",
+            "Show active alarms.",
+            "Use List Alarms, but ask for clarification if required details are missing.",
+            "Request permission to use alarms.",
+            "Ask for alarm authorization.",
+            "Cancel alarm 00000000-0000-0000-0000-000000000000.",
+            "Pause alarm 00000000-0000-0000-0000-000000000000.",
+            "Resume alarm 00000000-0000-0000-0000-000000000000.",
+            "Stop alarm 00000000-0000-0000-0000-000000000000.",
+            "Snooze alarm 00000000-0000-0000-0000-000000000000."
+        ]
+
+        for prompt in prompts {
+            let routing = await IntentClassifierService.shared.route(prompt)
+            #expect(routing.intent == .alarm, "Prompt \(prompt) routed as \(routing.intent.rawValue)")
+            #expect(!routing.requiresClarification, "Prompt \(prompt) incorrectly asked \(routing.clarificationPrompt ?? "nil")")
+        }
+    }
+
+    @Test func alarmBareCommandsAskForOperationSpecificMissingDetails() async {
+        let alarm = await IntentClassifierService.shared.classify("Set alarm.")
+        #expect(alarm.intent == .alarm)
+        #expect(alarm.requiresClarification)
+        #expect(alarm.clarificationPrompt?.lowercased().contains("time") == true)
+
+        let timer = await IntentClassifierService.shared.classify("Start a timer.")
+        #expect(timer.intent == .alarm)
+        #expect(timer.requiresClarification)
+        #expect(timer.clarificationPrompt?.lowercased().contains("duration") == true)
+
+        let cancel = await IntentClassifierService.shared.classify("Cancel my alarm.")
+        #expect(cancel.intent == .alarm)
+        #expect(cancel.requiresClarification)
+        #expect(cancel.clarificationPrompt == "Which alarm should I cancel?")
+    }
+
     @Test func liveE2ERoutingRegressionsUsePriorityOverrides() async {
         let cases: [(String, UserIntent)] = [
             ("Draft a quick email update to Taylor about the delay and ask one question.", .emailDraft),

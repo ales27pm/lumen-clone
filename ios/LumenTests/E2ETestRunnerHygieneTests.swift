@@ -105,6 +105,35 @@ struct E2ETestRunnerHygieneTests {
         #expect(failures.contains("Live agent returned fallback/error text instead of completing the scenario"))
     }
 
+    @Test func evalRewriteSkipsInvalidFallbackFinals() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-memory-loop",
+            title: "memory",
+            kind: .training,
+            prompt: "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            expectedIntent: .memory,
+            requiredAllowedToolIDs: ["memory.save", "memory.recall"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["remember"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let routing = IntentRoutingDecision(intent: .memory, allowedToolIDs: ["memory.save", "memory.recall"], requiresClarification: false, clarificationPrompt: nil)
+        let outcome = await E2ETestRunner.validateAndRewriteFinalTextIfNeededForTests(
+            scenario: scenario,
+            routing: routing,
+            originalFinal: "Memory tool output could not be validated."
+        )
+        #expect(outcome.finalText == "Memory tool output could not be validated.")
+        #expect(!outcome.rewriteAttempted)
+        #expect(!outcome.rewriteSuccess)
+        #expect(outcome.missingHints.contains(where: { $0.contains("prefer concise bullet points") }))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func routingOnlyScenarioDoesNotApplyLiveAgentQualityGate() {
         let scenario = E2ETestScenario(
             id: "routing",
@@ -292,6 +321,210 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func toolGuardRejectsClarificationWithoutExpectedAlarmAction() {
+        #if DEBUG
+        let auth = E2ETestScenario(
+            id: "live-alarm-authorization-status-direct",
+            title: "Alarm auth",
+            kind: .toolGuard,
+            prompt: "Check alarm authorization status.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.authorization_status"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: "alarm.authorization_status",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.direct.rawValue
+        )
+        let routing = IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.authorization_status"], requiresClarification: true, clarificationPrompt: "What time or duration should I use?")
+        let failures = E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: auth,
+            routing: routing,
+            agentSteps: [AgentStep(kind: .reflection, content: "Clarification required before tool execution.")],
+            finalText: "I couldn’t safely complete the alarm/timer request."
+        )
+        #expect(failures.contains(where: { $0.contains("incorrectly stopped at clarification") }))
+
+        let list = E2ETestScenario(
+            id: "live-alarm-list-direct",
+            title: "Alarm list",
+            kind: .toolGuard,
+            prompt: "List active alarms.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.list"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: "alarm.list",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.direct.rawValue
+        )
+        let listFailures = E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: list,
+            routing: routing,
+            agentSteps: [],
+            finalText: "I couldn’t safely complete the alarm/timer request."
+        )
+        #expect(listFailures.contains(where: { $0.contains("expected tool alarm.list") }))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func toolGuardApprovalAndMissingArgumentSemanticsAreStrict() {
+        #if DEBUG
+        let countdown = E2ETestScenario(
+            id: "live-alarm-countdown-approvalboundary",
+            title: "Alarm countdown",
+            kind: .toolGuard,
+            prompt: "Start a countdown called Approval for 5 minutes.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.countdown"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: "alarm.countdown",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.approvalBoundary.rawValue
+        )
+        let routing = IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.countdown"], requiresClarification: false, clarificationPrompt: nil)
+        #expect(E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: countdown,
+            routing: routing,
+            agentSteps: [AgentStep(kind: .approvalBoundary, content: "Approval required", toolID: "alarm.countdown")],
+            finalText: "Approval required for alarm.countdown."
+        ).isEmpty)
+
+        let cancel = E2ETestScenario(
+            id: "live-alarm-cancel-approvalboundary",
+            title: "Alarm cancel",
+            kind: .toolGuard,
+            prompt: "Cancel alarm 00000000-0000-0000-0000-000000000000.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.cancel"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: "alarm.cancel",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.approvalBoundary.rawValue
+        )
+        #expect(E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: cancel,
+            routing: IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.cancel"], requiresClarification: false, clarificationPrompt: nil),
+            agentSteps: [AgentStep(kind: .action, content: "alarm.cancel", toolID: "alarm.cancel")],
+            finalText: "Cancelled."
+        ).contains(where: { $0.contains("missing approval boundary") }))
+
+        let missingCancel = E2ETestScenario(
+            id: "live-alarm-cancel-missingargument",
+            title: "Alarm cancel missing",
+            kind: .toolGuard,
+            prompt: "Cancel my alarm.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.cancel"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: "alarm.cancel",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.missingArgument.rawValue
+        )
+        #expect(E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: missingCancel,
+            routing: IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.cancel"], requiresClarification: true, clarificationPrompt: "Which alarm should I cancel?"),
+            agentSteps: [],
+            finalText: "Which alarm should I cancel?"
+        ).isEmpty)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func genericAlarmFallbackIsNotToolObservationEvidence() {
+        #if DEBUG
+        #expect(!E2ETestRunner.isSafeToolObservationFinalForTests("I couldn’t safely complete the alarm/timer request.", expectedToolID: "alarm.authorization_status"))
+        #expect(E2ETestRunner.isSafeToolObservationFinalForTests("Alarm authorization status: authorized", expectedToolID: "alarm.authorization_status"))
+        #expect(E2ETestRunner.isSafeToolObservationFinalForTests("No active alarms", expectedToolID: "alarm.list"))
+        #expect(E2ETestRunner.isSafeToolObservationFinalForTests(AlarmTools.unavailableMessage, expectedToolID: "alarm.authorization_status"))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func alarmKitUnavailableEvidenceIsRuntimeNonActionable() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-alarm-status-direct",
+            title: "Live alarm status",
+            kind: .toolGuard,
+            prompt: "Check alarm authorization status.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.authorization_status"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            expectedToolID: "alarm.authorization_status",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.direct.rawValue
+        )
+        let failure = E2ETestRunner.alarmRuntimeUnavailableEvidenceFailureForTests(
+            scenario: scenario,
+            agentSteps: [
+                AgentStep(kind: .action, content: "alarm.authorization_status()", toolID: "alarm.authorization_status"),
+                AgentStep(kind: .observation, content: AlarmTools.unavailableMessage, toolID: "alarm.authorization_status")
+            ],
+            finalText: AlarmTools.unavailableMessage
+        )
+        #expect(failure == "AlarmKit runtime unavailable for expected tool alarm.authorization_status; device-runtime evidence required.")
+
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: scenario.id,
+            kind: scenario.kind.rawValue,
+            title: scenario.title,
+            prompt: scenario.prompt,
+            expectedIntent: scenario.expectedIntent.rawValue,
+            actualIntent: UserIntent.alarm.rawValue,
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID(),
+            requiresAgentRun: true,
+            evidenceMode: E2EEvidenceMode.modelBackedRequired.rawValue,
+            passed: false,
+            failures: [failure ?? ""],
+            finalText: AlarmTools.unavailableMessage,
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: Date(),
+            finishedAt: Date(),
+            rawFinalPrefix: AlarmTools.unavailableMessage,
+            sanitizedFinalPrefix: AlarmTools.unavailableMessage,
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil,
+            metadata: [
+                "failureKind": "liveRuntimeAlarmKitUnavailable",
+                "actionable": "false",
+                "trainingSignal": "false"
+            ]
+        )
+        #expect(E2ETestReport(id: UUID(), startedAt: Date(), finishedAt: Date(), passed: 0, failed: 1, results: [result]).summaryText.contains("runtime-preflight/non-actionable"))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func clarificationScenarioAcceptsPolicyFirstClarificationEvidence() {
         #if DEBUG
         let scenario = E2ETestScenario(
@@ -409,8 +642,40 @@ struct E2ETestRunnerHygieneTests {
         #expect(result.finalText == ResourceBudgetGate.seriousThermalRetryHint)
         #expect(result.metadata["failureKind"] == "liveRuntimeThermalCooldownRequired")
         #expect(result.metadata["budgetDenialReason"] == denial)
+        #expect(result.metadata["actionable"] == "false")
+        #expect(result.metadata["trainingSignal"] == "false")
         #expect(result.events.map(\.phase) == ["live-runtime-preflight"])
         #expect(E2ETestRunner.liveRuntimeShouldStopAfterForTests(result))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func liveRuntimeScenePhasePreflightIsNonActionable() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-alarm-countdown-direct",
+            title: "Live alarm countdown",
+            kind: .toolGuard,
+            prompt: "Start a timer for 10 minutes.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.countdown"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let denial = "live-e2e.pre-scenario: scenePhase=inactive"
+        let result = await E2ETestRunner.liveRuntimePreflightBlockedResultForTests(
+            scenario,
+            denialReason: denial
+        )
+        #expect(!result.passed)
+        #expect(result.metadata["failureKind"] == "liveRuntimeScenePhaseUnavailable")
+        #expect(result.metadata["budgetDenialReason"] == denial)
+        #expect(result.metadata["actionable"] == "false")
+        #expect(result.metadata["trainingSignal"] == "false")
+        #expect(E2ETestReport(id: UUID(), startedAt: Date(), finishedAt: Date(), passed: 0, failed: 1, results: [result]).summaryText.contains("runtime-preflight/non-actionable"))
         #else
         #expect(true)
         #endif
@@ -461,6 +726,29 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: thermalState=critical") == "liveRuntimeThermalCritical")
         #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: recent-memory-warning") == "liveRuntimeRecentMemoryWarning")
         #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: scenePhase=background") == "liveRuntimeScenePhaseUnavailable")
+        #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: scenePhase=inactive") == "liveRuntimeScenePhaseUnavailable")
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func webSearchSummarizeRejectsRawResultsOrSingleURL() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-web-research",
+            title: "Training eval: web research synthesis",
+            kind: .training,
+            prompt: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            expectedIntent: .webSearch,
+            requiredAllowedToolIDs: ["web.search", "web.fetch"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["swift"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "Search results for: Swift concurrency\nhttps://example.com", scenario: scenario))
+        #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "https://example.com/swift", scenario: scenario))
+        #expect(!E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "- Prefer structured cancellation so child tasks stop cleanly.\n- Keep MainActor UI updates explicit to avoid accidental data races.", scenario: scenario))
         #else
         #expect(true)
         #endif

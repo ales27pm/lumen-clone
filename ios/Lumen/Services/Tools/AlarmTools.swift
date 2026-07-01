@@ -2,17 +2,32 @@ import Foundation
 
 #if canImport(AlarmKit)
 import AlarmKit
+import SwiftUI
+
+private struct LumenAlarmMetadata: AlarmMetadata {
+    let title: String
+}
 #endif
 
 @MainActor
 enum AlarmTools {
+    nonisolated static let unavailableMessage = "AlarmKit availability: unavailable (requires iOS 26.0+ and an AlarmKit-capable device runtime)."
+
+    nonisolated static func isRuntimeUnavailableText(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("alarmkit availability: unavailable")
+            || lower.contains("alarmkit requires")
+            || lower.contains("alarmkit-capable")
+            || lower.contains("alarmkit capable")
+    }
+
     static func authorizationStatus() async -> String {
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
-            return "Alarm authorization: \(String(describing: AlarmManager.shared.authorizationState))."
+            return "Alarm authorization status: \(String(describing: AlarmManager.shared.authorizationState))."
         }
 #endif
-        return "AlarmKit requires iOS 26.0+ and an AlarmKit-capable runtime."
+        return unavailableMessage
     }
 
     static func requestAuthorization() async -> String {
@@ -26,7 +41,7 @@ enum AlarmTools {
             }
         }
 #endif
-        return "AlarmKit requires iOS 26.0+ and an AlarmKit-capable runtime."
+        return unavailableMessage
     }
 
     static func schedule(args: [String: String]) async -> String {
@@ -35,6 +50,9 @@ enum AlarmTools {
             : "Alarm"
         let snoozeMinutes = Int(args["snoozeMinutes"] ?? "5") ?? 5
         let repeats = (args["repeats"] ?? "false").lowercased() == "true"
+        if repeats {
+            return "Alarm scheduling failed: repeating alarms are not supported by this tool path yet."
+        }
 
         if let inMinutes = Int(args["inMinutes"] ?? "") {
             let fireDate = Date().addingTimeInterval(TimeInterval(max(1, inMinutes) * 60))
@@ -67,8 +85,7 @@ enum AlarmTools {
         guard duration > 0 else {
             return "Missing duration. Provide `durationSeconds` greater than 0."
         }
-        let fireDate = Date().addingTimeInterval(TimeInterval(duration))
-        return await scheduleAlarm(title: title, fireDate: fireDate, repeats: false, snoozeMinutes: 1)
+        return await scheduleCountdown(title: title, durationSeconds: duration)
     }
 
     static func list() async -> String {
@@ -77,13 +94,13 @@ enum AlarmTools {
             do {
                 let alarms = try AlarmManager.shared.alarms
                 if alarms.isEmpty { return "No active alarms." }
-                return alarms.map { "• \(String(describing: $0))" }.joined(separator: "\n")
+                return "Active alarms:\n" + alarms.map { "• \(String(describing: $0))" }.joined(separator: "\n")
             } catch {
                 return "Unable to read alarms: \(error.localizedDescription)"
             }
         }
 #endif
-        return "AlarmKit requires iOS 26.0+ and an AlarmKit-capable runtime."
+        return unavailableMessage
     }
 
     static func cancel(id: String) async -> String {
@@ -154,18 +171,82 @@ enum AlarmTools {
             }
         }
 #endif
-        return "AlarmKit requires iOS 26.0+ and an AlarmKit-capable runtime."
+        return unavailableMessage
     }
 
     private static func scheduleAlarm(title: String, fireDate: Date, repeats: Bool, snoozeMinutes: Int) async -> String {
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
-            return "AlarmKit scheduling entry created for \"\(title)\" at \(fireDate.formatted(date: .abbreviated, time: .shortened)). Repeats: \(repeats ? "yes" : "no"), snooze: \(snoozeMinutes)m."
+            do {
+                let id = UUID()
+                let configuration = AlarmManager.AlarmConfiguration<LumenAlarmMetadata>(
+                    countdownDuration: Alarm.CountdownDuration(
+                        preAlert: nil,
+                        postAlert: TimeInterval(max(1, snoozeMinutes) * 60)
+                    ),
+                    schedule: .fixed(fireDate),
+                    attributes: alarmAttributes(title: title)
+                )
+                let alarm = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
+                return "Alarm scheduled: id=\(alarm.id.uuidString); title=\"\(title)\"; fireDate=\(fireDate.formatted(date: .abbreviated, time: .shortened)); state=\(String(describing: alarm.state))."
+            } catch {
+                return "Alarm scheduling failed: \(error.localizedDescription)"
+            }
         }
 #endif
         _ = repeats
         _ = snoozeMinutes
-        return "AlarmKit requires iOS 26.0+ and an AlarmKit-capable runtime. Requested \"\(title)\" for \(fireDate.formatted(date: .abbreviated, time: .shortened))."
+        return "\(unavailableMessage) Requested \"\(title)\" for \(fireDate.formatted(date: .abbreviated, time: .shortened))."
     }
 
+    private static func scheduleCountdown(title: String, durationSeconds: Int) async -> String {
+#if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            do {
+                let id = UUID()
+                let configuration = AlarmManager.AlarmConfiguration<LumenAlarmMetadata>.timer(
+                    duration: TimeInterval(durationSeconds),
+                    attributes: alarmAttributes(title: title)
+                )
+                let alarm = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
+                return "Alarm countdown scheduled: id=\(alarm.id.uuidString); title=\"\(title)\"; durationSeconds=\(durationSeconds); state=\(String(describing: alarm.state))."
+            } catch {
+                return "Alarm countdown failed: \(error.localizedDescription)"
+            }
+        }
+#endif
+        return "\(unavailableMessage) Requested countdown \"\(title)\" for \(durationSeconds) seconds."
+    }
+
+#if canImport(AlarmKit)
+    @available(iOS 26.0, *)
+    private static func alarmAttributes(title: String) -> AlarmAttributes<LumenAlarmMetadata> {
+        AlarmAttributes(
+            presentation: alarmPresentation(),
+            metadata: LumenAlarmMetadata(title: title),
+            tintColor: .orange
+        )
+    }
+
+    @available(iOS 26.0, *)
+    private static func alarmPresentation() -> AlarmPresentation {
+        let pauseButton = AlarmButton(text: "Pause", textColor: .orange, systemImageName: "pause.fill")
+        let resumeButton = AlarmButton(text: "Resume", textColor: .orange, systemImageName: "play.fill")
+        if #available(iOS 26.1, *) {
+            let secondaryButton = AlarmButton(text: "Snooze", textColor: .orange, systemImageName: "zzz")
+            return AlarmPresentation(
+                alert: .init(title: "Lumen Alarm", secondaryButton: secondaryButton, secondaryButtonBehavior: .countdown),
+                countdown: .init(title: "Lumen Countdown", pauseButton: pauseButton),
+                paused: .init(title: "Lumen Paused", resumeButton: resumeButton)
+            )
+        } else {
+            let stopButton = AlarmButton(text: "Stop", textColor: .orange, systemImageName: "stop.fill")
+            return AlarmPresentation(
+                alert: .init(title: "Lumen Alarm", stopButton: stopButton),
+                countdown: .init(title: "Lumen Countdown", pauseButton: pauseButton),
+                paused: .init(title: "Lumen Paused", resumeButton: resumeButton)
+            )
+        }
+    }
+#endif
 }

@@ -140,6 +140,74 @@ struct DeterministicToolPlannerTests {
         #expect(steps.last?.args["query"]?.stringValue == "the nearest free tax clinic tomorrow near me")
     }
 
+    @Test func alarmOperationsPlanExpectedToolsAndArguments() async throws {
+        let uuid = "00000000-0000-0000-0000-000000000000"
+        let cases: [(String, String, String?)] = [
+            ("Check alarm authorization status.", "alarm.authorization_status", nil),
+            ("List active alarms.", "alarm.list", nil),
+            ("Request permission to use alarms.", "alarm.request_authorization", nil),
+            ("Cancel alarm \(uuid).", "alarm.cancel", uuid),
+            ("Pause alarm \(uuid).", "alarm.pause", uuid),
+            ("Resume alarm \(uuid).", "alarm.resume", uuid),
+            ("Stop alarm \(uuid).", "alarm.stop", uuid),
+            ("Snooze alarm \(uuid).", "alarm.snooze", uuid)
+        ]
+
+        for (prompt, expectedTool, expectedID) in cases {
+            let routing = IntentRouter.classify(prompt)
+            let steps = DeterministicToolPlanner.planSteps(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(steps.map(\.tool) == [expectedTool], "Prompt \(prompt) planned \(steps.map(\.tool))")
+            if let expectedID {
+                #expect(steps.first?.args["id"]?.stringValue == expectedID)
+            } else {
+                #expect(steps.first?.args.isEmpty == true)
+            }
+        }
+    }
+
+    @Test func alarmScheduleAndCountdownPlanDurations() async throws {
+        let countdownPrompt = "Start a countdown called Focus for 5 minutes."
+        let countdownRouting = IntentRouter.classify(countdownPrompt)
+        let countdown = DeterministicToolPlanner.planSteps(
+            routing: countdownRouting,
+            prompt: countdownPrompt,
+            availableToolIDs: countdownRouting.allowedToolIDs
+        )
+        #expect(countdown.map(\.tool) == ["alarm.countdown"])
+        #expect(countdown.first?.args["title"]?.stringValue == "Focus")
+        #expect(countdown.first?.args["durationSeconds"]?.stringValue == "300")
+
+        let schedulePrompt = "Schedule an alarm called Test in 10 minutes."
+        let scheduleRouting = IntentRouter.classify(schedulePrompt)
+        let schedule = DeterministicToolPlanner.planSteps(
+            routing: scheduleRouting,
+            prompt: schedulePrompt,
+            availableToolIDs: scheduleRouting.allowedToolIDs
+        )
+        #expect(schedule.map(\.tool) == ["alarm.schedule"])
+        #expect(schedule.first?.args["title"]?.stringValue == "Test")
+        #expect(schedule.first?.args["inMinutes"]?.stringValue == "10")
+    }
+
+    @Test func memorySaveThenRecallExtractsFactAndOrdersActions() async throws {
+        let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."
+        #expect(DeterministicToolPlanner.extractMemoryFact(from: prompt) == "I prefer concise bullet points")
+        let routing = IntentRouter.classify(prompt)
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(steps.map(\.tool) == ["memory.save", "memory.recall"])
+        #expect(steps.first?.args["content"]?.stringValue == "I prefer concise bullet points")
+        #expect(steps.first?.args["kind"]?.stringValue == "fact")
+        #expect(steps.last?.args["query"]?.stringValue == "prefer concise bullet points")
+    }
+
     @Test func moveIntentIncludesDestination() async throws {
         let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.message.move"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "move latest email to inbox", availableToolIDs: ["outlook.message.move"])

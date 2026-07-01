@@ -148,6 +148,18 @@ struct ProductivityLocalTool: LocalTool {
             text = "Unsupported native productivity tool: \(toolID)."
         }
 
+        if toolID.hasPrefix("alarm.") {
+            let status = ToolResultStatusClassifier.status(from: text)
+            return result(
+                invocation: invocation,
+                text: text,
+                status: status,
+                metricsSummary: "native_alarm_tool",
+                structuredPayload: Self.alarmStructuredPayload(toolID: toolID, text: text, status: status),
+                errorCode: Self.alarmErrorCode(text: text, status: status)
+            )
+        }
+
         return result(
             invocation: invocation,
             text: text,
@@ -189,6 +201,32 @@ struct ProductivityLocalTool: LocalTool {
             "toolID": toolID,
             "implementation": "ProductivityLocalTool"
         ].merging(structuredPayload ?? [:]) { canonicalValue, _ in canonicalValue }
+    }
+
+    static func alarmStructuredPayload(toolID: String, text: String, status: ToolResultStatus) -> [String: String] {
+        let availability: String
+        let evidence: String
+        if AlarmTools.isRuntimeUnavailableText(text) {
+            availability = "unavailable"
+            evidence = "device-runtime-required"
+        } else if status == .success {
+            availability = "available"
+            evidence = "alarmkit-runtime-observed"
+        } else {
+            availability = "unknown"
+            evidence = "alarmkit-runtime-attempted"
+        }
+        return [
+            "availability": availability,
+            "runtimeEvidence": evidence,
+            "alarmKitStatus": status.rawValue
+        ]
+    }
+
+    static func alarmErrorCode(text: String, status: ToolResultStatus) -> String? {
+        if status == .success { return nil }
+        if AlarmTools.isRuntimeUnavailableText(text) { return "alarmkit_runtime_unavailable" }
+        return "alarmkit_\(status.rawValue)"
     }
 
     static func shouldRequestCalendarPermission(toolID: String, isForeground: Bool) -> Bool {

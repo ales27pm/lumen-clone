@@ -60,6 +60,7 @@ enum ToolSchemaBridge {
         case .camera: return "NSCameraUsageDescription"
         case .microphone: return "NSMicrophoneUsageDescription"
         case .speechRecognition: return "NSSpeechRecognitionUsageDescription"
+        case .alarms: return "NSAlarmKitUsageDescription"
         default: return nil
         }
     }

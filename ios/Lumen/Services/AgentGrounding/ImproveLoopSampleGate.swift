@@ -403,6 +403,15 @@ nonisolated enum ImproveLoopSampleGate {
         return lower.contains("can’t safely start the full agent pipeline")
             || lower.contains("can't safely start the full agent pipeline")
             || lower.contains("device has cooled down")
+            || lower.contains("resource-budget-denied-before-prompt-eval")
+            || lower.contains("live e2e preflight blocked model-backed generation before prompt evaluation")
+            || lower.contains("alarmkit runtime unavailable")
+            || lower.contains("alarmkit availability: unavailable")
+            || lower.contains("device-runtime evidence required")
+            || lower.contains("scenephase=inactive")
+            || lower.contains("scenephase=background")
+            || lower.contains("thermalstate=serious")
+            || lower.contains("thermalstate=critical")
     }
 
     private static let legacyToolAliasMap: [String: String] = [

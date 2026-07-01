@@ -103,6 +103,7 @@ def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
             "failures": failure_text,
             "final": result.get("finalText"),
             "events": result.get("events") or [],
+            "metadata": result.get("metadata") or {},
             "startedAt": result.get("startedAt"),
             "finishedAt": result.get("finishedAt"),
         })
@@ -120,7 +121,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
     intent = _scenario_intent(scenario)
     required_hint = _extract_required_hint(failure_text)
     root_cause = sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None
-    if _is_runtime_environment_failure(failure_text, sidecar_diagnosis):
+    if _is_runtime_environment_failure(failure_text, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         policy = e2e_failure_policy("runtime", None)
         failure_type = "e2e_runtime_environment_deferred"
         agent = "rem"
@@ -155,6 +156,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
             "modelEvidenceRootCause": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None,
             "modelEvidenceTrace": sidecar_diagnosis.get("trace") if sidecar_diagnosis else None,
             "modelEvidenceStatus": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else scenario.get("modelEvidenceStatus"),
+            "metadata": scenario.get("metadata") or {},
         },
         "repairSample": {
             "agent": agent,
@@ -179,7 +181,7 @@ def _scenario_intent(scenario: dict[str, Any]) -> str:
 
 
 def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
@@ -205,7 +207,7 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     final = str(scenario.get("final") or "").strip()
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
@@ -859,8 +861,23 @@ def _is_runtime_environment_failure(text: str, sidecar_diagnosis: dict[str, Any]
         or "thermalstate=serious" in lowered
         or "thermalstate=critical" in lowered
         or "scenephase=background" in lowered
+        or "scenephase=inactive" in lowered
+        or "alarmkit runtime unavailable" in lowered
+        or "alarmkit availability: unavailable" in lowered
+        or "device-runtime evidence required" in lowered
         or "lowpowermode=true" in lowered
         or "recent-memory-warning" in lowered
+    )
+
+
+def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
+    metadata = scenario.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    failure_kind = str(metadata.get("failureKind") or "")
+    return (
+        str(metadata.get("trainingSignal") or "").casefold() == "false"
+        and failure_kind.startswith("liveRuntime")
     )
 
 
@@ -968,7 +985,7 @@ def _clean_derived_fragment(value: str) -> str:
 
 def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     intent = _scenario_intent(scenario)
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples."
     if sidecar_diagnosis:
         if sidecar_diagnosis.get("rootCauseCategory") == "agent_json_context_overflow":
