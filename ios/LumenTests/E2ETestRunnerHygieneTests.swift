@@ -977,6 +977,45 @@ struct E2ETestRunnerHygieneTests {
         #expect(true)
         #endif
     }
+
+    @Test func trainingValidationRunsModelSetupBeforeExecutorPreflight() async {
+        #if DEBUG
+        let config = E2ERunConfig(
+            systemPrompt: "",
+            temperature: 0.1,
+            topP: 1.0,
+            repetitionPenalty: 1.0,
+            maxTokens: 64,
+            maxAgentSteps: 1,
+            enabledToolIDs: []
+        )
+        let recorder = OrderedEventRecorder()
+
+        let report = await E2ETestRunner.$debugExecutorRuntimePreflightOverride.withValue({
+            recorder.record("preflight")
+            return ExecutorRuntimePreflightResult(
+                passed: false,
+                reason: "forced executor preflight failure",
+                runtimeKind: "adapter-first",
+                failureKind: "forced"
+            )
+        }) {
+            await E2ETestRunner.runTrainingValidation(
+                config: config,
+                ensureChatLoaded: {
+                    recorder.record("model-setup")
+                    return true
+                }
+            )
+        }
+
+        #expect(recorder.values == ["model-setup", "preflight"])
+        #expect(report.failed == 1)
+        #expect(report.results.first?.failures == ["forced executor preflight failure"])
+        #else
+        #expect(true)
+        #endif
+    }
 }
 
 struct E2ETestResultExplicitInitializerTests {
@@ -1024,6 +1063,23 @@ private final class ScenarioLoopThreadRecorder: @unchecked Sendable {
     func record(isMainThread: Bool) {
         lock.lock()
         recordedValues.append(isMainThread)
+        lock.unlock()
+    }
+}
+
+private final class OrderedEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedValues: [String] = []
+
+    var values: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedValues
+    }
+
+    func record(_ value: String) {
+        lock.lock()
+        recordedValues.append(value)
         lock.unlock()
     }
 }

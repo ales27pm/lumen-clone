@@ -146,10 +146,12 @@ enum ModelLoader {
     @discardableResult
     private static func ensureFleetChatLoaded(snapshot: ModelLoadSnapshot, appState: AppState?, intent: ModelLoadIntent) async -> Bool {
         await Task.yield()
+        _ = await configureFleetRuntime(snapshot: snapshot)
         if await hasLoadedChatRuntime(snapshot: snapshot) { return true }
         guard canStartModelLoad(intent: intent) else { return false }
         if let chatLoadTask {
             let result = await finishChatLoad(chatLoadTask)
+            _ = await configureFleetRuntime(snapshot: snapshot)
             if let selectedChatModelID = result.selectedChatModelID {
                 appState?.activeChatModelID = selectedChatModelID
             }
@@ -160,6 +162,7 @@ enum ModelLoader {
         })
         chatLoadTask = pending
         let result = await finishChatLoad(pending)
+        _ = await configureFleetRuntime(snapshot: snapshot)
         if let selectedChatModelID = result.selectedChatModelID {
             appState?.activeChatModelID = selectedChatModelID
         }
@@ -167,15 +170,21 @@ enum ModelLoader {
     }
 
     @discardableResult
-    nonisolated private static func performEnsureFleetChatLoaded(snapshot loadSnapshot: ModelLoadSnapshot, intent: ModelLoadIntent) async -> ChatLoadResult {
-        guard !Task.isCancelled, await MainActor.run(body: { canStartModelLoad(intent: intent) }) else { return ChatLoadResult(loaded: false, selectedChatModelID: nil) }
-        await Task.yield()
+    nonisolated private static func configureFleetRuntime(snapshot loadSnapshot: ModelLoadSnapshot) async -> LumenModelFleetSnapshot {
         let snapshot = LumenModelFleetResolver.resolveV1(snapshot: loadSnapshot)
         await SlotModelRuntimeCoordinator.shared.configure(
             assignments: snapshot.assignments,
             contextSize: loadSnapshot.contextSize,
             preferExclusiveChatRuntime: true
         )
+        return snapshot
+    }
+
+    @discardableResult
+    nonisolated private static func performEnsureFleetChatLoaded(snapshot loadSnapshot: ModelLoadSnapshot, intent: ModelLoadIntent) async -> ChatLoadResult {
+        guard !Task.isCancelled, await MainActor.run(body: { canStartModelLoad(intent: intent) }) else { return ChatLoadResult(loaded: false, selectedChatModelID: nil) }
+        await Task.yield()
+        let snapshot = await configureFleetRuntime(snapshot: loadSnapshot)
 
         let runnableSlots = [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem]
             .filter { snapshot.assignment(for: $0) != nil }

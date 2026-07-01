@@ -31,6 +31,10 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
         Task { @MainActor in SceneTransitionCoordinator.shared.handleWillResignActive() }
     }
 
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        Task { @MainActor in SceneTransitionCoordinator.shared.requestForegroundActivation() }
+    }
+
     func applicationDidEnterBackground(_ application: UIApplication) {
         Task { @MainActor in SceneTransitionCoordinator.shared.handleDidEnterBackground() }
     }

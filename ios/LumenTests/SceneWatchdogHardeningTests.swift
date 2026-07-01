@@ -65,6 +65,17 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         AppCancellationBus.shared.unregister(id, category: .chatGeneration)
     }
 
+    func testApplicationDidBecomeActiveRefreshesResourceBudgetGate() async {
+        let delegate = LumenAppDelegate()
+        delegate.applicationWillResignActive(UIApplication.shared)
+        await Task.yield()
+        XCTAssertEqual(ResourceBudgetGate.diagnosticSnapshot().scenePhase, .inactive)
+
+        delegate.applicationDidBecomeActive(UIApplication.shared)
+        await Task.yield()
+        XCTAssertEqual(ResourceBudgetGate.diagnosticSnapshot().scenePhase, .active)
+    }
+
     func testDeferredMaintenanceQueueDoesNotRunWhileBackgrounded() async throws {
         let queue = DeferredMaintenanceQueue.shared
         queue.updateScenePhase(.background)
