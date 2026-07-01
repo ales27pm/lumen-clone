@@ -59,7 +59,10 @@ enum SchemaPlaceholderDetector {
 
 struct ChatView: View {
     @Bindable var conversation: Conversation
+    var initialDraft: String? = nil
+    var onInitialDraftConsumed: (() -> Void)? = nil
     @Environment(AppState.self) private var appState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Query private var storedModels: [StoredModel]
@@ -71,6 +74,7 @@ struct ChatView: View {
     @State private var streamingCancellationID: UUID?
     @State private var activeTurnID: UUID?
     @State private var generationController = GenerationTaskController<UUID>()
+    @State private var didApplyInitialDraft = false
     @State private var showVoiceMode = false
     @State private var showFilePicker = false
     @State private var attachments: [ChatAttachment] = []
@@ -78,60 +82,76 @@ struct ChatView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 14) {
-                        ForEach(displayedMessages) { message in
-                            MessageBubble(message: message).id(message.id)
-                        }
-                        if !streamingSteps.isEmpty {
-                            AgentStepsPanel(steps: streamingSteps, expanded: true).id("steps")
-                        }
-                        if !streamingText.isEmpty {
-                            MessageBubble.streaming(text: streamingText).id("streaming")
-                        }
-                        Color.clear.frame(height: 8).id("bottom")
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                }
-                .scrollDismissesKeyboard(.immediately)
-                .contentShape(Rectangle())
-                .onTapGesture { isFocused = false }
-                .onChange(of: conversation.messages.count) { _, _ in withAnimation(.spring) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                .onChange(of: streamingText) { _, _ in withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                .onChange(of: streamingSteps.count) { _, _ in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) } }
-            }
+        ZStack {
+            LumenBrandAsset(kind: .mark)
+                .frame(maxWidth: 560)
+                .opacity(displayedMessages.isEmpty ? 0.18 : 0.075)
+                .offset(y: -28)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
-            Divider().background(Theme.border)
+            VStack(spacing: 0) {
+                conversationHeader
 
-            if !attachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(attachments) { a in
-                            AttachmentChip(attachment: a, state: attachmentPreview[a.id]) {
-                                attachments.removeAll { $0.id == a.id }
-                                recomputeAttachmentPreview()
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            ForEach(displayedMessages) { message in
+                                MessageBubble(message: message).id(message.id)
                             }
+                            if !streamingSteps.isEmpty {
+                                AgentStepsPanel(steps: streamingSteps, expanded: true).id("steps")
+                            }
+                            if !streamingText.isEmpty {
+                                MessageBubble.streaming(text: streamingText).id("streaming")
+                            }
+                            Color.clear.frame(height: 8).id("bottom")
                         }
-                    }.padding(.horizontal, 12)
-                }.padding(.top, 6)
-            }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                    }
+                    .scrollDismissesKeyboard(.immediately)
+                    .contentShape(Rectangle())
+                    .onTapGesture { isFocused = false }
+                    .onChange(of: conversation.messages.count) { _, _ in withAnimation(.spring) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    .onChange(of: streamingText) { _, _ in withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    .onChange(of: streamingSteps.count) { _, _ in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                }
 
-            ChatInputBar(
-                draft: $draft,
-                isFocused: _isFocused,
-                isGenerating: appState.isGenerating,
-                onSend: { send(text: nil) },
-                onStop: stop,
-                onVoice: { showVoiceMode = true },
-                onAttach: { showFilePicker = true },
-                onDismissKeyboard: { isFocused = false }
-            )
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Theme.background.opacity(0.86))
+                Divider().background(Theme.border)
+
+                if !attachments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(attachments) { a in
+                                AttachmentChip(attachment: a, state: attachmentPreview[a.id]) {
+                                    attachments.removeAll { $0.id == a.id }
+                                    recomputeAttachmentPreview()
+                                }
+                            }
+                        }.padding(.horizontal, 12)
+                    }.padding(.top, 6)
+                }
+
+                ChatInputBar(
+                    draft: $draft,
+                    isFocused: _isFocused,
+                    isGenerating: appState.isGenerating,
+                    onSend: { send(text: nil) },
+                    onStop: stop,
+                    onVoice: { showVoiceMode = true },
+                    onAttach: { showFilePicker = true },
+                    onDismissKeyboard: { isFocused = false }
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Theme.background.opacity(0.70))
+                        .ignoresSafeArea(edges: .bottom)
+                }
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -163,7 +183,78 @@ struct ChatView: View {
         .onChange(of: scenePhase) { _, phase in
             SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
         }
+        .onAppear(perform: applyInitialDraftIfNeeded)
         .onDisappear { stopForSceneTransition() }
+    }
+
+    private var conversationHeader: some View {
+        HStack(spacing: 12) {
+            LumenBrandAsset(kind: .assistantMark, accessibilityLabel: "Lumen")
+                .frame(width: 42, height: 42)
+                .clipShape(.rect(cornerRadius: 12))
+                .shadow(color: LumenBrand.lumen.opacity(0.22), radius: 12, y: 6)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(conversation.title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                Text(activeModelSummary)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if horizontalSizeClass != .compact {
+                HStack(spacing: 6) {
+                    LumenStatusChip(
+                        title: appState.agentModeEnabled ? "Agent" : "Chat",
+                        systemImage: appState.agentModeEnabled ? "wand.and.stars" : "text.bubble",
+                        tint: appState.agentModeEnabled ? Theme.accent : LumenBrand.corona
+                    )
+                    if appState.autoMemory {
+                        LumenStatusChip(title: "Memory", systemImage: "brain", tint: LumenBrand.violet)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Theme.background.opacity(0.48))
+                .ignoresSafeArea(edges: .top)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.border)
+                .frame(height: 1)
+        }
+    }
+
+    private var activeModelSummary: String {
+        if appState.isGenerating {
+            return "Streaming from \(activeModelName)"
+        }
+        return activeModelName
+    }
+
+    private var activeModelName: String {
+        storedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name
+            ?? conversation.modelName
+            ?? "No active model"
+    }
+
+    private func applyInitialDraftIfNeeded() {
+        guard !didApplyInitialDraft, draft.isEmpty, let initialDraft else { return }
+        didApplyInitialDraft = true
+        draft = initialDraft
+        isFocused = true
+        onInitialDraftConsumed?()
     }
 
     private var displayedMessages: [ChatMessage] {
@@ -804,13 +895,21 @@ struct AttachmentChip: View {
                 Text(attachment.name).font(.caption).foregroundStyle(Theme.textPrimary).lineLimit(1).truncationMode(.middle)
                 if let state, state.truncated { Text(truncationLabel(state)).font(.caption2).foregroundStyle(.orange) }
             }
-            Button(action: onRemove) { Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(Theme.textTertiary) }.buttonStyle(.plain)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(attachment.name)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Theme.surface)
-        .clipShape(.rect(cornerRadius: 8))
-        .overlay { RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder((state?.truncated ?? false) ? Color.orange.opacity(0.6) : Theme.border, lineWidth: 1) }
+        .frame(minHeight: 44)
+        .background(Theme.surfaceHigh)
+        .clipShape(.rect(cornerRadius: 12))
+        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder((state?.truncated ?? false) ? Color.orange.opacity(0.6) : Theme.border, lineWidth: 1) }
         .frame(maxWidth: 240)
     }
 
@@ -833,49 +932,70 @@ struct ChatInputBar: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            if isFocused {
-                Button(action: onDismissKeyboard) { Image(systemName: "keyboard.chevron.compact.down").font(.body).foregroundStyle(Theme.textSecondary).frame(width: 36, height: 36) }.buttonStyle(.plain)
-            } else {
-                Button(action: onAttach) { Image(systemName: "paperclip").font(.body).foregroundStyle(Theme.textSecondary).frame(width: 36, height: 36) }.buttonStyle(.plain)
-            }
+            LumenIconControl(
+                systemImage: isFocused ? "keyboard.chevron.compact.down" : "paperclip",
+                accessibilityLabel: isFocused ? "Dismiss keyboard" : "Attach file",
+                action: isFocused ? onDismissKeyboard : onAttach
+            )
 
             HStack(alignment: .bottom, spacing: 4) {
-                TextField("Message Lumen", text: $draft, axis: .vertical)
+                TextField("Ask Lumen", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($isFocused)
                     .font(.body)
                     .foregroundStyle(Theme.textPrimary)
                     .tint(Theme.accent)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
+                    .padding(.vertical, 11)
+                    .frame(minHeight: 44)
                 if !draft.isEmpty {
-                    Button { draft = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textTertiary) }.padding(.trailing, 8)
+                    Button { draft = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Theme.textTertiary)
+                            .frame(width: 34, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear message")
+                    .padding(.trailing, 6)
                 }
             }
-            .background(Theme.surface)
-            .clipShape(.rect(cornerRadius: 10))
-            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1) }
+            .background(Theme.surfaceHigh)
+            .clipShape(.rect(cornerRadius: 14))
+            .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border, lineWidth: 1) }
 
             if draft.trimmingCharacters(in: .whitespaces).isEmpty && !isGenerating {
-                Button(action: onVoice) {
-                    Image(systemName: "waveform")
-                        .font(.body)
-                        .foregroundStyle(Theme.textPrimary)
-                        .frame(width: 36, height: 36)
-                        .background(Theme.surface)
-                        .clipShape(.rect(cornerRadius: 10))
-                        .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border, lineWidth: 1) }
-                }.buttonStyle(.plain)
+                LumenIconControl(
+                    systemImage: "waveform",
+                    accessibilityLabel: "Start voice mode",
+                    tint: Theme.textPrimary,
+                    action: onVoice
+                )
             } else {
                 Button { isGenerating ? onStop() : onSend() } label: {
                     Image(systemName: isGenerating ? "stop.fill" : "arrow.up")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
+                        .foregroundStyle(isGenerating ? .white : LumenBrand.midnight)
+                        .frame(width: 44, height: 44)
                         .background(isGenerating ? Color.red.opacity(0.85) : Theme.accent)
-                        .clipShape(.rect(cornerRadius: 10))
-                }.buttonStyle(.plain)
+                        .clipShape(.rect(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(isGenerating ? Color.red.opacity(0.32) : Theme.accent.opacity(0.35), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isGenerating ? "Stop generating" : "Send message")
             }
+        }
+        .padding(8)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(Theme.surface)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Theme.border, lineWidth: 1)
         }
     }
 }

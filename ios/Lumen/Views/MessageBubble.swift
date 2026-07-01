@@ -58,11 +58,22 @@ struct MessageBubble: View {
             Spacer(minLength: 48)
             Text(MessageRenderBudget.preview(message.content))
                 .font(.body)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(Theme.accent)
-                .clipShape(.rect(cornerRadius: 12))
+                .foregroundStyle(LumenBrand.midnight)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [Theme.accent, LumenBrand.corona.opacity(0.92)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.32), lineWidth: 1)
+                }
+                .textSelection(.enabled)
         }
     }
 
@@ -73,6 +84,8 @@ struct MessageBubble: View {
         let copyContent = sanitizedContent
         let richPayloads = assistantRichPayloads
         return HStack(alignment: .top, spacing: 10) {
+            LumenAssistantAvatar()
+
             VStack(alignment: .leading, spacing: 8) {
                 if !steps.isEmpty {
                     AgentStepsPanel(steps: steps, expanded: false)
@@ -138,6 +151,16 @@ struct MessageBubble: View {
                     }
                     #endif
                 }
+            }
+            .padding(12)
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(Theme.surface)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Theme.border, lineWidth: 1)
             }
             Spacer(minLength: 32)
         }
@@ -232,6 +255,15 @@ struct MessageBubble: View {
         Task { @MainActor in
             try? await MemoryStore.remember(snippet, kind: .fact, source: "bookmark", context: ctx)
         }
+    }
+}
+
+private struct LumenAssistantAvatar: View {
+    var body: some View {
+        LumenBrandAsset(kind: .assistantMark, accessibilityLabel: "Lumen")
+            .frame(width: 32, height: 32)
+            .clipShape(.rect(cornerRadius: 9))
+            .shadow(color: LumenBrand.lumen.opacity(0.18), radius: 8, y: 3)
     }
 }
 
