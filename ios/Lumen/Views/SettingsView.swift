@@ -579,12 +579,14 @@ struct E2ETestRunnerView: View {
         Task { @MainActor in
             let artifactsReady = await ModelLaunchBootstrap.prepareLiveRuntimeArtifacts(appState: appState, context: modelContext)
             guard artifactsReady else {
-                let readiness = ModelLaunchBootstrap.liveRuntimeArtifactReadiness(context: modelContext)
+                let readiness = ModelLaunchBootstrap.liveRuntimeArtifactReadinessDetails(context: modelContext)
                 let report = E2ETestRunner.liveRuntimeArtifactsBlockedReport(
                     startedAt: runStartedAt ?? Date(),
                     finishedAt: Date(),
                     readyArtifactCount: readiness.ready,
-                    requiredArtifactCount: readiness.required
+                    requiredArtifactCount: readiness.required,
+                    missingAdapterSlots: readiness.missingAdapterSlots,
+                    missingArtifactFileNames: readiness.missingArtifactFileNames
                 )
                 E2ETestLogStore.writeLatest(report)
                 latestReport = report

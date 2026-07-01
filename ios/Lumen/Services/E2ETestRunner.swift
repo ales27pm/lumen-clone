@@ -11,6 +11,12 @@ nonisolated enum E2ETestKind: String, Codable, Sendable, CaseIterable {
     case training
 }
 
+nonisolated enum E2EEvidenceMode: String, Codable, Sendable, Hashable {
+    case modelBackedRequired
+    case policyFirstAllowed
+    case routingOnly
+}
+
 nonisolated struct E2ERunConfig: Sendable {
     nonisolated struct Snapshot: Sendable {
         let systemPrompt: String
@@ -110,6 +116,7 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
     let requiredTextHints: [String]
     let forbiddenTextHints: [String]
     let requiresAgentRun: Bool
+    let evidenceMode: E2EEvidenceMode
 
     init(
         id: String,
@@ -121,7 +128,8 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
         forbiddenToolIDs: [String],
         requiredTextHints: [String],
         forbiddenTextHints: [String],
-        requiresAgentRun: Bool
+        requiresAgentRun: Bool,
+        evidenceMode: E2EEvidenceMode? = nil
     ) {
         self.id = id
         self.title = title
@@ -133,6 +141,7 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
         self.requiredTextHints = requiredTextHints
         self.forbiddenTextHints = forbiddenTextHints
         self.requiresAgentRun = requiresAgentRun
+        self.evidenceMode = evidenceMode ?? (requiresAgentRun ? .modelBackedRequired : .routingOnly)
     }
 
     static let standard: [E2ETestScenario] = regression + allToolCoverage + chatCoverage
@@ -180,7 +189,8 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
             forbiddenToolIDs: forbiddenToolIDs(for: expectedIntent),
             requiredTextHints: [],
             forbiddenTextHints: forbiddenTextHints(for: toolID),
-            requiresAgentRun: true
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed
         )
     }
 
@@ -290,6 +300,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     let conversationID: UUID?
     let turnID: UUID?
     let requiresAgentRun: Bool
+    let evidenceMode: String
     let passed: Bool
     let failures: [String]
     let finalText: String
@@ -320,6 +331,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         conversationID: UUID? = nil,
         turnID: UUID? = nil,
         requiresAgentRun: Bool = false,
+        evidenceMode: String = E2EEvidenceMode.modelBackedRequired.rawValue,
         passed: Bool,
         failures: [String],
         finalText: String,
@@ -349,6 +361,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         self.conversationID = conversationID
         self.turnID = turnID
         self.requiresAgentRun = requiresAgentRun
+        self.evidenceMode = evidenceMode
         self.passed = passed
         self.failures = failures
         self.finalText = finalText
@@ -381,6 +394,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         conversationID = try c.decodeIfPresent(UUID.self, forKey: .conversationID)
         turnID = try c.decodeIfPresent(UUID.self, forKey: .turnID)
         requiresAgentRun = try c.decodeIfPresent(Bool.self, forKey: .requiresAgentRun) ?? false
+        evidenceMode = try c.decodeIfPresent(String.self, forKey: .evidenceMode) ?? (requiresAgentRun ? E2EEvidenceMode.modelBackedRequired.rawValue : E2EEvidenceMode.routingOnly.rawValue)
         passed = try c.decode(Bool.self, forKey: .passed)
         failures = try c.decode([String].self, forKey: .failures)
         finalText = try c.decode(String.self, forKey: .finalText)
@@ -413,6 +427,14 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
         lines.append("E2E Test Report")
         lines.append("Passed: \(passed)")
         lines.append("Failed: \(failed)")
+        let modelBackedPassed = results.filter { $0.passed && $0.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue }.count
+        let policyFirstPassed = results.filter { $0.passed && $0.evidenceMode == E2EEvidenceMode.policyFirstAllowed.rawValue }.count
+        let routingOnlyPassed = results.filter { $0.passed && $0.evidenceMode == E2EEvidenceMode.routingOnly.rawValue }.count
+        if policyFirstPassed > 0 || routingOnlyPassed > 0 {
+            lines.append("Model-backed passed: \(modelBackedPassed)")
+            lines.append("Policy-first passed: \(policyFirstPassed)")
+            lines.append("Routing-only passed: \(routingOnlyPassed)")
+        }
         lines.append("")
 
         let failureBuckets = Dictionary(grouping: results.flatMap(\.failures)) { failure in
@@ -587,17 +609,21 @@ nonisolated enum E2ETestRunner {
             E2ETestLogStore.writeLatest(report)
             return report
         }
-        return await run(scenarios: E2ETestScenario.trainingValidation, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
+        return await run(scenarios: E2ETestScenario.trainingValidation, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent, performExecutorPreflight: false)
     }
 
     static func liveRuntimeArtifactsBlockedReport(
         startedAt: Date = Date(),
         finishedAt: Date = Date(),
         readyArtifactCount: Int,
-        requiredArtifactCount: Int
+        requiredArtifactCount: Int,
+        missingAdapterSlots: [String] = [],
+        missingArtifactFileNames: [String] = []
     ) -> E2ETestReport {
         let reason = "Live runtime artifact preparation did not complete; required Qwen3 shared base and role adapters must be downloaded before live E2E scenarios run."
-        let detail = "\(readyArtifactCount) / \(requiredArtifactCount) live runtime artifacts ready"
+        let missingAdapters = missingAdapterSlots.isEmpty ? "" : " Missing adapter slots: \(missingAdapterSlots.joined(separator: ", "))."
+        let missingFiles = missingArtifactFileNames.isEmpty ? "" : " Missing artifacts: \(missingArtifactFileNames.joined(separator: ", "))."
+        let detail = "\(readyArtifactCount) / \(requiredArtifactCount) live runtime artifacts ready.\(missingAdapters)\(missingFiles)"
         let event = E2ETestEvent(
             id: UUID(),
             createdAt: finishedAt,
@@ -632,7 +658,9 @@ nonisolated enum E2ETestRunner {
             metadata: [
                 "failureKind": "liveRuntimeArtifactsNotReady",
                 "readyArtifactCount": "\(readyArtifactCount)",
-                "requiredArtifactCount": "\(requiredArtifactCount)"
+                "requiredArtifactCount": "\(requiredArtifactCount)",
+                "missingAdapterSlots": missingAdapterSlots.joined(separator: ","),
+                "missingArtifactFileNames": missingArtifactFileNames.joined(separator: ",")
             ]
         )
         return E2ETestReport(id: UUID(), startedAt: startedAt, finishedAt: finishedAt, passed: 0, failed: 1, results: [result])
@@ -646,9 +674,25 @@ nonisolated enum E2ETestRunner {
     ///   - onResult: Optional callback invoked when each scenario completes.
     ///   - onEvent: Optional callback invoked during scenario execution.
     /// - Returns: A report containing all results, pass/fail counts, and performance metrics.
-    static func run(scenarios: [E2ETestScenario], config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
+    static func run(scenarios: [E2ETestScenario], config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil, performExecutorPreflight: Bool = true) async -> E2ETestReport {
         let started = Date()
         var results: [E2ETestResult] = []
+        if performExecutorPreflight,
+           let preflightScenario = scenarios.first(where: requiresExecutorPreflight) {
+            let preflight = await executorRuntimePreflight()
+            guard preflight.passed else {
+                let result = await executorRuntimePreflightBlockedResult(
+                    startedAt: started,
+                    scenario: preflightScenario,
+                    preflight: preflight,
+                    onEvent: onEvent
+                )
+                await appendResult(result, to: &results, onResult: onResult)
+                let report = E2ETestReport(id: UUID(), startedAt: started, finishedAt: Date(), passed: 0, failed: 1, results: results)
+                E2ETestLogStore.writeLatest(report)
+                return report
+            }
+        }
         for scenario in scenarios {
             #if DEBUG
             let isOnMainThread = debugIsRunningOnMainThread()
@@ -677,7 +721,7 @@ nonisolated enum E2ETestRunner {
             } catch is CancellationError {
                 break
             } catch {
-                let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", requiresAgentRun: scenario.requiresAgentRun, passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
+                let result = E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: "error", requiresAgentRun: scenario.requiresAgentRun, evidenceMode: scenario.evidenceMode.rawValue, passed: false, failures: ["E2E runner error: \(error.localizedDescription)"], finalText: "", missingHints: [], rewriteAttempted: false, rewriteSuccess: false, events: [], startedAt: Date(), finishedAt: Date(), rawFinalPrefix: "", sanitizedFinalPrefix: "", rawFinalHadUnsafeLeakage: false, sanitizedFinalRemovedArtifacts: [], outputHygieneFailures: [], performanceMatrix: nil)
                 await appendResult(result, to: &results, onResult: onResult)
                 if liveRuntimeShouldStopAfter(result) {
                     break
@@ -1142,17 +1186,20 @@ nonisolated enum E2ETestRunner {
         try Task.checkCancellation()
         await Task.yield()
         let matrix = await performanceMatrix(from: performanceSamples, startedAt: started, finishedAt: endedAt)
-        return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
+        return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, evidenceMode: scenario.evidenceMode.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
     }
 
     /// Determines whether a scenario accepts policy-first deterministic execution traces as valid evidence.
     /// - Returns: `true` if the scenario accepts such traces, `false` otherwise.
     private nonisolated static func acceptsPolicyFirstExecutionEvidence(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
         guard scenario.requiresAgentRun else { return false }
-        if routing.requiresClarification {
+        if scenario.evidenceMode == .routingOnly {
+            return false
+        }
+        if scenario.evidenceMode == .policyFirstAllowed {
             return true
         }
-        if scenario.kind == .toolGuard, IntentRouter.intentRequiresTool(routing) {
+        if routing.requiresClarification {
             return true
         }
         // A scenario marked as live training/evidence must prove the loaded
@@ -1179,6 +1226,60 @@ nonisolated enum E2ETestRunner {
             || evidence.contains(ResourceBudgetGate.seriousThermalRetryHint.lowercased())
             || evidence.contains("resource-budget-denied-before-prompt-eval")
             || evidence.contains("cpu-watchdog-degraded")
+            || evidence.contains("adapter required but adapter path missing")
+            || evidence.contains("adapterpathmissing")
+    }
+
+    private nonisolated static func requiresExecutorPreflight(_ scenario: E2ETestScenario) -> Bool {
+        scenario.requiresAgentRun
+            && scenario.evidenceMode == .modelBackedRequired
+            && scenario.kind != .chat
+    }
+
+    private static func executorRuntimePreflightBlockedResult(
+        startedAt: Date,
+        scenario: E2ETestScenario,
+        preflight: ExecutorRuntimePreflightResult,
+        onEvent: EventCallback?
+    ) async -> E2ETestResult {
+        let event = E2ETestEvent(
+            id: UUID(),
+            createdAt: Date(),
+            scenarioID: "executor-runtime-preflight",
+            phase: "executor-preflight",
+            message: "\(preflight.reason); \(preflight.diagnosticsSummary)"
+        )
+        await onEvent?(event)
+        let finalText = preflight.budgetReason?.contains(ResourceBudgetGate.seriousThermalRetryHint) == true
+            ? ResourceBudgetGate.seriousThermalRetryHint
+            : preflight.diagnosticsSummary
+        return E2ETestResult(
+            id: UUID(),
+            scenarioID: "executor-runtime-preflight",
+            kind: scenario.kind.rawValue,
+            title: "Executor runtime preflight",
+            prompt: scenario.prompt,
+            expectedIntent: scenario.expectedIntent.rawValue,
+            actualIntent: "preflight",
+            requiresAgentRun: true,
+            evidenceMode: E2EEvidenceMode.modelBackedRequired.rawValue,
+            passed: false,
+            failures: [preflight.reason],
+            finalText: finalText,
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [event],
+            startedAt: startedAt,
+            finishedAt: Date(),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: finalText,
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil,
+            metadata: preflight.diagnosticsMetadata
+        )
     }
 
     private static func liveRuntimePreflightBlockedResultIfNeeded(
@@ -1227,6 +1328,7 @@ nonisolated enum E2ETestRunner {
             expectedIntent: scenario.expectedIntent.rawValue,
             actualIntent: "preflight",
             requiresAgentRun: true,
+            evidenceMode: scenario.evidenceMode.rawValue,
             passed: false,
             failures: ["Live E2E preflight blocked model-backed generation before prompt evaluation: \(denialReason)"],
             finalText: finalText,
@@ -2026,12 +2128,18 @@ nonisolated enum E2ETestRunner {
             "tool unavailable",
             "tool denied by legacy secure policy",
             "tool is disabled",
+            "tool output could not be validated",
+            "could not be validated",
             "i hit an internal response-format issue",
             "only internal reasoning and no final answer",
             "no model loaded; routing-only checks completed",
             "routing-only checks completed",
             "full local model pipeline is temporarily running in compatibility mode",
             "full agent pipeline",
+            "\"reasoningsummary\"",
+            "\"rewrittenfinalanswer\"",
+            "\"requiresapprovaldecision\"",
+            "\"requiresapprovalreasoningsummary\"",
             "please try again with thinking disabled",
             "please ask again or tell me what you'd like to do next"
         ]

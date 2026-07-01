@@ -80,6 +80,31 @@ struct E2ETestRunnerHygieneTests {
         #expect(!failures.contains(where: { $0.contains("required hint") }))
     }
 
+    @Test func liveValidationFallbackJSONCannotPassAsFinalAnswer() {
+        let scenario = E2ETestScenario(
+            id: "training-memory-loop",
+            title: "memory",
+            kind: .training,
+            prompt: "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            expectedIntent: .memory,
+            requiredAllowedToolIDs: ["memory.save", "memory.recall"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["remember"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let raw = #"{"reasoningSummary":"Memory tool output could not be validated.","rewrittenFinalAnswer":"Memory tool output could not be validated.","requiresApprovalDecision":"deny"}"#
+        let final = raw + "\n\nI remember that you prefer concise bullet points."
+
+        let failures = E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: raw,
+            finalText: final,
+            scenario: scenario
+        )
+
+        #expect(failures.contains("Live agent returned fallback/error text instead of completing the scenario"))
+    }
+
     @Test func routingOnlyScenarioDoesNotApplyLiveAgentQualityGate() {
         let scenario = E2ETestScenario(
             id: "routing",
@@ -200,7 +225,8 @@ struct E2ETestRunnerHygieneTests {
             forbiddenToolIDs: [],
             requiredTextHints: [],
             forbiddenTextHints: [],
-            requiresAgentRun: true
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed
         )
         let routing = IntentRoutingDecision(
             intent: .alarm,
@@ -234,6 +260,33 @@ struct E2ETestRunnerHygieneTests {
         #expect(options.allowDeterministicCompatibility)
         #expect(!options.allowParseFailureDeterministicRecovery)
         #expect(!options.allowsMemoryPressureContinuation)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func modelBackedToolGuardDoesNotAcceptPolicyFirstEvidenceByDefault() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-alarm-countdown-direct",
+            title: "Live alarm countdown",
+            kind: .toolGuard,
+            prompt: "Start a timer for 10 minutes.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.countdown"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let routing = IntentRoutingDecision(
+            intent: .alarm,
+            allowedToolIDs: ["alarm.countdown"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        #expect(!E2ETestRunner.acceptsPolicyFirstExecutionEvidenceForTests(scenario, routing: routing))
         #else
         #expect(true)
         #endif
@@ -480,7 +533,9 @@ struct E2ETestRunnerHygieneTests {
             startedAt: started,
             finishedAt: finished,
             readyArtifactCount: 1,
-            requiredArtifactCount: 6
+            requiredArtifactCount: 6,
+            missingAdapterSlots: ["executor"],
+            missingArtifactFileNames: ["lumen-executor-lora.gguf"]
         )
 
         #expect(report.passed == 0)
@@ -491,8 +546,10 @@ struct E2ETestRunnerHygieneTests {
         #expect(result.metadata["failureKind"] == "liveRuntimeArtifactsNotReady")
         #expect(result.metadata["readyArtifactCount"] == "1")
         #expect(result.metadata["requiredArtifactCount"] == "6")
+        #expect(result.metadata["missingAdapterSlots"] == "executor")
         #expect(result.failures[0].contains("role adapters"))
-        #expect(result.finalText == "1 / 6 live runtime artifacts ready")
+        #expect(result.finalText.contains("1 / 6 live runtime artifacts ready"))
+        #expect(result.finalText.contains("Missing adapter slots: executor"))
     }
 
     @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
@@ -1012,6 +1069,64 @@ struct E2ETestRunnerHygieneTests {
         #expect(recorder.values == ["model-setup", "preflight"])
         #expect(report.failed == 1)
         #expect(report.results.first?.failures == ["forced executor preflight failure"])
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func standardRunBlocksBeforeScenarioWhenExecutorAdapterPreflightFails() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "weather-here-no-calendar",
+            title: "weather",
+            kind: .regression,
+            prompt: "What is the weather here?",
+            expectedIntent: .weather,
+            requiredAllowedToolIDs: ["weather"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let config = E2ERunConfig(
+            systemPrompt: "",
+            temperature: 0.1,
+            topP: 1.0,
+            repetitionPenalty: 1.0,
+            maxTokens: 64,
+            maxAgentSteps: 1,
+            enabledToolIDs: ["weather"]
+        )
+
+        let report = await E2ETestRunner.$debugStandardScenariosOverride.withValue([scenario]) {
+            await E2ETestRunner.$debugExecutorRuntimePreflightOverride.withValue({
+                ExecutorRuntimePreflightResult(
+                    passed: false,
+                    reason: "executor preflight failed: adapter required but adapter path missing",
+                    slot: "executor",
+                    modelFamily: "qwen3",
+                    runtimeKind: "adapter-first",
+                    baseModelPath: "/tmp/lumen-qwen3.gguf",
+                    baseModelExists: true,
+                    adapterPath: nil,
+                    adapterExists: false,
+                    activeAdapterSlot: nil,
+                    resourceGateAllowed: true,
+                    budgetReason: nil,
+                    ensureReadySucceeded: false,
+                    smokeProbeSucceeded: false,
+                    failureKind: "adapterPathMissing"
+                )
+            }) {
+                await E2ETestRunner.runStandard(config: config, ensureChatLoaded: { true })
+            }
+        }
+
+        #expect(report.passed == 0)
+        #expect(report.failed == 1)
+        #expect(report.results.first?.scenarioID == "executor-runtime-preflight")
+        #expect(report.results.first?.metadata["failureKind"] == "adapterPathMissing")
+        #expect(report.results.first?.finalText.contains("adapterExists=false") == true)
         #else
         #expect(true)
         #endif

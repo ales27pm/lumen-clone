@@ -2,6 +2,13 @@ import Foundation
 import SwiftData
 import OSLog
 
+nonisolated struct LiveRuntimeArtifactReadiness: Sendable, Equatable {
+    let ready: Int
+    let required: Int
+    let missingAdapterSlots: [String]
+    let missingArtifactFileNames: [String]
+}
+
 @MainActor
 enum ModelLaunchBootstrap {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
@@ -208,8 +215,31 @@ enum ModelLaunchBootstrap {
     }
 
     static func liveRuntimeArtifactReadiness(context: ModelContext, family: LumenModelFamily = LumenModelFamily.persistedSelected) -> (ready: Int, required: Int) {
+        let details = liveRuntimeArtifactReadinessDetails(context: context, family: family)
+        return (details.ready, details.required)
+    }
+
+    static func liveRuntimeArtifactReadinessDetails(context: ModelContext, family: LumenModelFamily = LumenModelFamily.persistedSelected) -> LiveRuntimeArtifactReadiness {
         let models = liveRuntimeModelsForInstall(family: family)
-        return (readyArtifactCount(for: models, context: context), models.count)
+        let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        let missingFiles = missingModels(from: models, allStored: stored).map(\.fileName).sorted()
+        var missingAdapterSlots: [String] = []
+        if family == .qwen3 {
+            let contract = LumenTrainedModelRuntimeRegistry.contract(for: family)
+            missingAdapterSlots = contract.adapterRoles.compactMap { role -> String? in
+                guard let slot = role.slot else { return nil }
+                let storedReady = stored.first { stored in
+                    artifactKey(repoId: stored.repoId, fileName: stored.fileName) == artifactKey(repoId: role.adapterRepoID, fileName: role.adapterFileName)
+                }.map(storedModelFileExists) ?? false
+                return storedReady ? nil : slot.rawValue
+            }.sorted()
+        }
+        return LiveRuntimeArtifactReadiness(
+            ready: readyArtifactCount(for: models, context: context),
+            required: models.count,
+            missingAdapterSlots: missingAdapterSlots,
+            missingArtifactFileNames: missingFiles
+        )
     }
 
     private static func startMissingLiveRuntimeDownloads(models: [CatalogModel], appState: AppState, context: ModelContext) -> Int {
