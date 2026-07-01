@@ -27,6 +27,7 @@ struct E2EScenarioGenerationTests {
         for scenario in E2ETestScenario.allToolCoverage {
             #expect(scenario.requiresAgentRun)
             #expect(scenario.kind == .toolGuard)
+            #expect(scenario.evidenceMode == .policyFirstAllowed)
             #expect(!scenario.prompt.isEmpty)
             #expect(scenario.requiredAllowedToolIDs.count == 1)
             if let toolID = scenario.requiredAllowedToolIDs.first {
@@ -92,5 +93,6 @@ struct E2EBackwardCompatibilityTests {
         decoder.dateDecodingStrategy = .iso8601
         let result = try decoder.decode(E2ETestResult.self, from: Data(json.utf8))
         #expect(result.performanceMatrix == nil)
+        #expect(result.evidenceMode == E2EEvidenceMode.routingOnly.rawValue)
     }
 }

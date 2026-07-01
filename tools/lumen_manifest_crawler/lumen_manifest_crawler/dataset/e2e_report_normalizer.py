@@ -38,13 +38,16 @@ def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format
         if diagnosis:
             scenario["modelEvidenceStatus"] = diagnosis.get("rootCauseCategory")
             scenario["modelEvidenceTrace"] = diagnosis.get("trace")
+        final_diagnosis = _final_artifact_diagnosis_for_scenario(scenario)
+        if final_diagnosis:
+            scenario["outputQualityStatus"] = final_diagnosis.get("rootCauseCategory")
         scenarios.append(scenario)
         evidence_requires_failure = _scenario_model_evidence_requires_failure(scenario, diagnosis)
-        failure_diagnosis = diagnosis if evidence_requires_failure or _has_generic_missing_model_evidence(scenario) else None
+        failure_diagnosis = diagnosis if evidence_requires_failure or _has_generic_missing_model_evidence(scenario) else final_diagnosis
         if scenario.get("passed") is not True or evidence_requires_failure or _scenario_skipped_live_model_run(
             scenario,
             sidecar_diagnosis=diagnosis,
-        ):
+        ) or final_diagnosis:
             failures.append(
                 e2e_failure_from_scenario(
                     scenario,
@@ -87,6 +90,7 @@ def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
             "name": result.get("title") or result.get("scenarioID"),
             "passed": result.get("passed") is True,
             "requiresAgentRun": result.get("requiresAgentRun") is True,
+            "evidenceMode": result.get("evidenceMode"),
             "kind": result.get("kind"),
             "scenarioID": result.get("scenarioID"),
             "e2eRunID": result.get("e2eRunID"),
@@ -185,6 +189,8 @@ def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | Non
             return "Training scenarios that require an agent run must export a correlated model-backed AgentBehaviorTrace modelTurn or fail closed with the exact missing-path reason."
         if category == "agent_json_context_overflow":
             return "Agent-json prompt construction must fit the executor/shared chat context window before generation starts."
+        if category == "live_final_validation_artifact":
+            return "Final answers must not expose internal validation JSON, approval-decision fields, or tool-output validation fallback text as a passing user response."
         return "Agent-json turns must produce non-empty model output that parses as structured JSON before deterministic recovery or final-answer validation can count."
     if _scenario_skipped_live_model_run(scenario):
         return "E2E scenarios that require an agent run must execute an actual loaded chat model; routing-only fallback is not valid E2E evidence."
@@ -211,6 +217,8 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
             return "Pass the E2E correlation IDs into AgentService and persist them on AgentBehaviorTrace modelTurn records, or keep the scenario failed with the precise missing-path diagnostic."
         if category == "agent_json_context_overflow":
             return "Compact the agent-json system prompt, tool list, history, scratchpad, memories, and attachments so the primary structured executor request fits the shared chat context window."
+        if category == "live_final_validation_artifact":
+            return "Keep the scenario failed until the tool output is validated and the final answer contains only the user-facing response, without validation fallback JSON or approval-decision fields."
         return "Fix the executor-slot agent-json generation path so it emits non-empty structured JSON, or keep this scenario failed with the precise agent-json empty-output parse diagnostic."
     if _scenario_skipped_live_model_run(scenario):
         return "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence."
@@ -339,6 +347,26 @@ def _is_useful_final(final: str, *, intent: str) -> bool:
     return len(stripped.split()) >= 3
 
 
+def _final_artifact_diagnosis_for_scenario(scenario: dict[str, Any]) -> dict[str, Any] | None:
+    final = str(scenario.get("final") or scenario.get("finalText") or "")
+    lowered = final.casefold()
+    artifact_markers = [
+        "tool output could not be validated",
+        "could not be validated",
+        '"reasoningsummary"',
+        '"rewrittenfinalanswer"',
+        '"requiresapprovaldecision"',
+        '"requiresapprovalreasoningsummary"',
+    ]
+    if not any(marker in lowered for marker in artifact_markers):
+        return None
+    return {
+        "rootCauseCategory": "live_final_validation_artifact",
+        "message": "final answer contains validation fallback text or internal validation JSON",
+        "trace": {"finalPrefix": final[:500]},
+    }
+
+
 _EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
     "valid_model_backed_evidence",
     "no_correlated_model_turn",
@@ -422,12 +450,25 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
                 "message": f"valid model-backed AgentBehaviorTrace modelTurn found; stage={stage}; runtimePath={runtime_path}; matchedBy={matched_by}",
                 "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=False),
             }
-        if runtime_path == "deterministic-compatibility" and _is_training_scenario(scenario):
-            return {
-                "rootCauseCategory": "deterministic_compatibility_not_training_evidence",
-                "message": f"deterministic compatibility trace is not training model evidence; stage={stage}; runtimePath={runtime_path}",
-                "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=not raw.strip()),
-            }
+        if runtime_path == "deterministic-compatibility":
+            if _scenario_allows_policy_first_evidence(scenario):
+                return {
+                    "rootCauseCategory": "valid_policy_first_evidence",
+                    "message": f"valid policy-first deterministic evidence found; stage={stage}; runtimePath={runtime_path}; matchedBy={matched_by}",
+                    "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=not raw.strip()),
+                }
+            if _is_training_scenario(scenario):
+                return {
+                    "rootCauseCategory": "deterministic_compatibility_not_training_evidence",
+                    "message": f"deterministic compatibility trace is not training model evidence; stage={stage}; runtimePath={runtime_path}",
+                    "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=not raw.strip()),
+                }
+            if scenario.get("requiresAgentRun") is True:
+                return {
+                    "rootCauseCategory": "deterministic_compatibility_not_live_evidence",
+                    "message": f"deterministic compatibility trace is not live model evidence; stage={stage}; runtimePath={runtime_path}",
+                    "trace": _trace_summary(matching_trace, matched_by=matched_by, raw_output_empty=not raw.strip()),
+                }
         if _is_agent_json_context_overflow(raw, parse_error):
             return {
                 "rootCauseCategory": "agent_json_context_overflow",
@@ -606,6 +647,12 @@ def _diagnosis_from_model_evidence_events(scenario: dict[str, Any]) -> dict[str,
                 "trace": {"eventMessage": message, "sidecarPresent": False},
             }
         if "deterministic-compatibility" in runtime or "policy-first-deterministic" in kind or "deterministic-compatibility execution trace" in lowered:
+            if _scenario_allows_policy_first_evidence(scenario):
+                return {
+                    "rootCauseCategory": "valid_policy_first_evidence",
+                    "message": f"valid policy-first deterministic evidence found; {message}",
+                    "trace": {"eventMessage": message, "runtimePath": runtime or "deterministic-compatibility", "stage": values.get("stage")},
+                }
             if _is_training_scenario(scenario):
                 return {
                     "rootCauseCategory": "deterministic_compatibility_not_training_evidence",
@@ -805,8 +852,13 @@ def _is_runtime_environment_failure(text: str, sidecar_diagnosis: dict[str, Any]
         or "resource budget denied" in lowered
         or "adapterunavailable" in lowered
         or "adapter unavailable" in lowered
+        or "adapter required but adapter path missing" in lowered
+        or "adapter path missing" in lowered
+        or "adapter file missing" in lowered
+        or "cpu-watchdog-degraded" in lowered
         or "thermalstate=serious" in lowered
         or "thermalstate=critical" in lowered
+        or "scenephase=background" in lowered
         or "lowpowermode=true" in lowered
         or "recent-memory-warning" in lowered
     )
@@ -891,12 +943,17 @@ def _scenario_has_model_evidence_event(events: list[Any], *, scenario: dict[str,
             continue
         is_deterministic = "deterministic-compatibility" in message or "policy-first-deterministic" in message
         if is_deterministic:
-            if scenario and _is_training_scenario(scenario):
-                continue
-            return True
+            return bool(scenario and _scenario_allows_policy_first_evidence(scenario))
         if "kind=model-backed" in message or "deterministic-compatibility" not in message:
             return True
     return False
+
+
+def _scenario_allows_policy_first_evidence(scenario: dict[str, Any] | None) -> bool:
+    if not scenario:
+        return False
+    mode = str(scenario.get("evidenceMode") or "").casefold()
+    return mode == "policyfirstallowed"
 
 
 def _clean_prompt(prompt: str) -> str:

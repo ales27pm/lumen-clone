@@ -590,6 +590,117 @@ def test_live_deterministic_model_evidence_is_not_model_backed(tmp_path: Path):
     assert "deterministic compatibility" in failure["problem"]
 
 
+def test_policy_first_evidence_mode_accepts_deterministic_trace(tmp_path: Path):
+    report_path = tmp_path / "e2e-policy-first.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "scenarios": [
+            {
+                "id": "live-alarm-countdown-direct",
+                "name": "Live alarm countdown direct",
+                "kind": "toolGuard",
+                "passed": True,
+                "requiresAgentRun": True,
+                "evidenceMode": "policyFirstAllowed",
+                "prompt": "Start a timer for 10 minutes.",
+                "intent": "alarm",
+                "expectedIntent": "alarm",
+                "failures": [],
+                "final": "Approval required.",
+                "events": [{"phase": "model-evidence", "message": "runtime=deterministic-compatibility, kind=policy-first-deterministic, stage=compatibility-approval-boundary"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"] == []
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_policy_first_evidence"
+
+
+def test_passed_final_with_validation_json_is_false_success(tmp_path: Path):
+    report_path = tmp_path / "e2e-final-artifact.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "scenarios": [
+            {
+                "id": "training-memory-loop",
+                "name": "Training eval: memory save/recall",
+                "kind": "training",
+                "passed": True,
+                "requiresAgentRun": True,
+                "prompt": "Remember that I prefer concise bullet points, then tell me what you remembered.",
+                "intent": "memory",
+                "expectedIntent": "memory",
+                "failures": [],
+                "final": "{\"reasoningSummary\":\"Memory tool output could not be validated.\",\"rewrittenFinalAnswer\":\"Memory tool output could not be validated.\",\"requiresApprovalDecision\":\"deny\"}\n\nI remember that you prefer concise bullet points.",
+                "events": [{"phase": "model-evidence", "message": "runtime=agent-model, kind=model-backed, stage=agent-json-step-0, parseError=none"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "live_final_validation_artifact"
+    assert normalized["scenarios"][0]["outputQualityStatus"] == "live_final_validation_artifact"
+    assert "validation fallback" in failure["problem"]
+
+
+def test_adapter_missing_empty_agent_json_is_runtime_environment_deferred(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    import json
+
+    prompt = "What is the weather here?"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "scenarios": [
+            {
+                "id": "weather-here-no-calendar",
+                "name": "Weather here must not create events",
+                "kind": "regression",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": prompt,
+                "intent": "weather",
+                "expectedIntent": "weather",
+                "failures": ["Live E2E scenario did not record model-backed generation evidence"],
+                "final": "Weather tool output could not be validated.",
+                "events": [{"phase": "model-evidence", "message": "found primary agent-json modelTurn but runtime readiness failure (executor preflight failed: adapter required but adapter path missing)"}],
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "agent-model",
+        "parseError": "empty",
+        "rawOutputPrefix": "",
+        "emptyOutputReason": "executor preflight failed: adapter required but adapter path missing",
+        "streamTerminationReason": "executor preflight failed: adapter required but adapter path missing",
+        "promptPrefix": prompt,
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([tmp_path])[0]
+
+    failure = normalized["failures"][0]
+    assert failure["rootCauseCategory"] == "runtime_environment_deferred"
+    assert failure["trainable"] is False
+
+
 def test_evidence_layer_envelope_preserves_sidecar_correlation(tmp_path: Path):
     report_path = tmp_path / "1-lumen-live-e2e-report.json"
     import json
