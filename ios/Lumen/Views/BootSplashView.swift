@@ -34,7 +34,10 @@ struct BootSplashView: View {
                 Spacer(minLength: 24)
 
                 VStack(spacing: 8) {
-                    LumenAssistantMark(showsWordmark: true, size: 104)
+                    LumenBrandAsset(kind: .wordmarkLockup, accessibilityLabel: "Lumen")
+                        .frame(maxWidth: 340)
+                        .clipShape(.rect(cornerRadius: 18))
+                        .shadow(color: LumenBrand.lumen.opacity(0.24), radius: 28, y: 12)
                     Text(appState.runtime.bootHeadline)
                         .font(.subheadline)
                         .foregroundStyle(Theme.textSecondary)
