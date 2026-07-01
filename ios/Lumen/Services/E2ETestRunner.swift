@@ -117,6 +117,9 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
     let forbiddenTextHints: [String]
     let requiresAgentRun: Bool
     let evidenceMode: E2EEvidenceMode
+    let expectedToolID: String?
+    let scenarioBankKind: String?
+    let requiredSlotIDs: [String]?
 
     init(
         id: String,
@@ -129,7 +132,10 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
         requiredTextHints: [String],
         forbiddenTextHints: [String],
         requiresAgentRun: Bool,
-        evidenceMode: E2EEvidenceMode? = nil
+        evidenceMode: E2EEvidenceMode? = nil,
+        expectedToolID: String? = nil,
+        scenarioBankKind: String? = nil,
+        requiredSlotIDs: [String]? = nil
     ) {
         self.id = id
         self.title = title
@@ -142,6 +148,9 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
         self.forbiddenTextHints = forbiddenTextHints
         self.requiresAgentRun = requiresAgentRun
         self.evidenceMode = evidenceMode ?? (requiresAgentRun ? .modelBackedRequired : .routingOnly)
+        self.expectedToolID = expectedToolID.map(ToolRouteGuard.canonicalToolID)
+        self.scenarioBankKind = scenarioBankKind
+        self.requiredSlotIDs = requiredSlotIDs
     }
 
     static let standard: [E2ETestScenario] = regression + allToolCoverage + chatCoverage
@@ -190,7 +199,10 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
             requiredTextHints: [],
             forbiddenTextHints: forbiddenTextHints(for: toolID),
             requiresAgentRun: true,
-            evidenceMode: .policyFirstAllowed
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: toolID,
+            scenarioBankKind: entry.kind.rawValue,
+            requiredSlotIDs: entry.requiredSlots.map(\.rawValue)
         )
     }
 
@@ -438,6 +450,10 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
         lines.append("")
 
         let failureBuckets = Dictionary(grouping: results.flatMap(\.failures)) { failure in
+            if failure.contains("Live E2E preflight blocked model-backed generation before prompt evaluation")
+                || failure.contains("AlarmKit runtime unavailable") {
+                return "runtime-preflight/non-actionable"
+            }
             if failure.contains("Intent mismatch") { return "intent" }
             if failure.contains("Forbidden tool") || failure.contains("Required tool not allowed") || failure.contains("Forbidden tool selected by agent") { return "tool-boundary" }
             if failure.contains("Required final hint") || failure.contains("Forbidden final hint") { return "response-quality" }
@@ -446,11 +462,14 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
         }
         if !failureBuckets.isEmpty {
             lines.append("Training signals for next run:")
-            for key in ["intent", "tool-boundary", "response-quality", "runtime", "other"] where failureBuckets[key] != nil {
+            for key in ["intent", "tool-boundary", "response-quality", "runtime", "runtime-preflight/non-actionable", "other"] where failureBuckets[key] != nil {
                 lines.append("• \(key): \(failureBuckets[key]?.count ?? 0) issues")
             }
-            lines.append("• Capture failed prompts + final outputs into next fine-tuning dataset.")
-            lines.append("• Prioritize scenarios with repeated tool-boundary violations.")
+            let actionableFailureBuckets = failureBuckets.keys.filter { $0 != "runtime-preflight/non-actionable" }
+            if !actionableFailureBuckets.isEmpty {
+                lines.append("• Capture failed prompts + final outputs into next fine-tuning dataset.")
+                lines.append("• Prioritize scenarios with repeated tool-boundary violations.")
+            }
             lines.append("")
         }
 
@@ -1147,6 +1166,23 @@ nonisolated enum E2ETestRunner {
                 failures.append("Live agent selected no manifest-allowed action tool")
             }
         }
+        failures = mergedStrings(
+            failures,
+            toolCoverageEvidenceFailures(
+                scenario: scenario,
+                routing: routing,
+                agentSteps: agentSteps,
+                finalText: finalText
+            )
+        )
+        let alarmRuntimeUnavailableFailure = alarmRuntimeUnavailableEvidenceFailure(
+            scenario: scenario,
+            agentSteps: agentSteps,
+            finalText: finalText
+        )
+        if let alarmRuntimeUnavailableFailure {
+            failures.append(alarmRuntimeUnavailableFailure)
+        }
         if shouldValidateFinalContentHints(
             scenario: scenario,
             hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario
@@ -1186,7 +1222,14 @@ nonisolated enum E2ETestRunner {
         try Task.checkCancellation()
         await Task.yield()
         let matrix = await performanceMatrix(from: performanceSamples, startedAt: started, finishedAt: endedAt)
-        return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, evidenceMode: scenario.evidenceMode.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix)
+        var metadata = scenarioMetadata(scenario)
+        if alarmRuntimeUnavailableFailure != nil {
+            metadata["failureKind"] = "liveRuntimeAlarmKitUnavailable"
+            metadata["actionable"] = "false"
+            metadata["trainingSignal"] = "false"
+            metadata["runtimeEvidence"] = "device-runtime-required"
+        }
+        return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, evidenceMode: scenario.evidenceMode.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix, metadata: metadata)
     }
 
     /// Determines whether a scenario accepts policy-first deterministic execution traces as valid evidence.
@@ -1347,7 +1390,9 @@ nonisolated enum E2ETestRunner {
             metadata: [
                 "failureKind": failureKind,
                 "budgetPolicy": LumenSlotBudgetPolicy.foregroundInteractive.rawValue,
-                "budgetDenialReason": denialReason
+                "budgetDenialReason": denialReason,
+                "actionable": "false",
+                "trainingSignal": "false"
             ]
         )
     }
@@ -1785,6 +1830,113 @@ nonisolated enum E2ETestRunner {
         }
     }
 
+    nonisolated private static func scenarioMetadata(_ scenario: E2ETestScenario) -> [String: String] {
+        var metadata: [String: String] = [:]
+        if let expectedToolID = scenario.expectedToolID {
+            metadata["expectedToolID"] = expectedToolID
+        }
+        if let scenarioBankKind = scenario.scenarioBankKind {
+            metadata["scenarioBankKind"] = scenarioBankKind
+        }
+        if let requiredSlotIDs = scenario.requiredSlotIDs, !requiredSlotIDs.isEmpty {
+            metadata["requiredSlots"] = requiredSlotIDs.joined(separator: ",")
+        }
+        return metadata
+    }
+
+    nonisolated private static func toolCoverageEvidenceFailures(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        agentSteps: [AgentStep],
+        finalText: String
+    ) -> [String] {
+        guard scenario.kind == .toolGuard,
+              let expectedTool = scenario.expectedToolID.map(ToolRouteGuard.canonicalToolID),
+              !expectedTool.isEmpty else {
+            return []
+        }
+
+        let bankKind = scenario.scenarioBankKind ?? ""
+        let requiredArgs = ToolRegistry.find(id: expectedTool)?
+            .capabilityContract
+            .arguments
+            .filter(\.required)
+            .map(\.name) ?? []
+        let expectedSteps = agentSteps.filter { ToolRouteGuard.canonicalToolID($0.toolID ?? "") == expectedTool }
+        let hasAction = expectedSteps.contains { $0.kind == .action }
+        let hasApprovalBoundary = expectedSteps.contains { $0.kind == .approvalBoundary }
+        let hasObservation = expectedSteps.contains { $0.kind == .observation }
+        let requiresApproval = ToolRouteGuard.requiresUserApproval(expectedTool)
+
+        if bankKind == ToolScenarioBankEntry.ScenarioKind.missingArgument.rawValue {
+            if routing.requiresClarification {
+                return requiredArgs.isEmpty
+                    ? ["Tool coverage missing-argument scenario cannot pass by clarification for no-arg tool \(expectedTool)"]
+                    : []
+            }
+            if expectedSteps.isEmpty {
+                return ["Tool coverage missing-argument scenario neither clarified nor selected expected tool \(expectedTool)"]
+            }
+            return []
+        }
+
+        if routing.requiresClarification {
+            return ["Tool coverage scenario \(bankKind.isEmpty ? "direct" : bankKind) incorrectly stopped at clarification for expected tool \(expectedTool)"]
+        }
+
+        if bankKind == ToolScenarioBankEntry.ScenarioKind.approvalBoundary.rawValue || requiresApproval {
+            return hasApprovalBoundary ? [] : ["Tool coverage scenario missing approval boundary for expected tool \(expectedTool)"]
+        }
+
+        guard hasAction else {
+            return ["Tool coverage scenario missing action step for expected tool \(expectedTool)"]
+        }
+
+        if requiredArgs.isEmpty,
+           !hasObservation,
+           !isSafeToolObservationFinal(finalText, expectedToolID: expectedTool) {
+            return ["Tool coverage read-only no-arg scenario missing observation/finalizer evidence for expected tool \(expectedTool)"]
+        }
+
+        return []
+    }
+
+    nonisolated private static func isSafeToolObservationFinal(_ finalText: String, expectedToolID: String) -> Bool {
+        let lower = finalText.lowercased()
+        switch expectedToolID {
+        case "alarm.authorization_status":
+            return lower.contains("alarm authorization status:")
+                || AlarmTools.isRuntimeUnavailableText(finalText)
+        case "alarm.list":
+            return lower.contains("active alarms:")
+                || lower.contains("no active alarms")
+                || AlarmTools.isRuntimeUnavailableText(finalText)
+        default:
+            return !lower.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    nonisolated private static func alarmRuntimeUnavailableEvidenceFailure(
+        scenario: E2ETestScenario,
+        agentSteps: [AgentStep],
+        finalText: String
+    ) -> String? {
+        guard scenario.kind == .toolGuard,
+              let expectedTool = scenario.expectedToolID.map(ToolRouteGuard.canonicalToolID),
+              expectedTool.hasPrefix("alarm.") else {
+            return nil
+        }
+        let unavailableObservation = agentSteps.contains { step in
+            ToolRouteGuard.canonicalToolID(step.toolID ?? "") == expectedTool
+                && step.kind == .observation
+                && AlarmTools.isRuntimeUnavailableText(step.content)
+        }
+        guard unavailableObservation || AlarmTools.isRuntimeUnavailableText(finalText) else {
+            return nil
+        }
+        return "AlarmKit runtime unavailable for expected tool \(expectedTool); device-runtime evidence required."
+    }
+
 #if DEBUG
     nonisolated static func scenarioTemporarilyEnablesNetworkAccessForTests(
         _ scenario: E2ETestScenario,
@@ -1878,6 +2030,19 @@ nonisolated enum E2ETestRunner {
         )
     }
 
+    static func validateAndRewriteFinalTextIfNeededForTests(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        originalFinal: String
+    ) async -> (finalText: String, missingHints: [String], rewriteAttempted: Bool, rewriteSuccess: Bool) {
+        let outcome = await validateAndRewriteFinalTextIfNeeded(
+            scenario: scenario,
+            routing: routing,
+            originalFinal: originalFinal
+        )
+        return (outcome.finalText, outcome.missingHints, outcome.rewriteAttempted, outcome.rewriteSuccess)
+    }
+
     nonisolated static func liveRuntimeShouldStopAfterForTests(_ result: E2ETestResult) -> Bool {
         liveRuntimeShouldStopAfter(result)
     }
@@ -1914,6 +2079,40 @@ nonisolated enum E2ETestRunner {
         routing: IntentRoutingDecision
     ) -> Bool {
         shouldRunAsPlainTextTurn(scenario: scenario, routing: routing)
+    }
+
+    nonisolated static func toolCoverageEvidenceFailuresForTests(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        agentSteps: [AgentStep],
+        finalText: String
+    ) -> [String] {
+        toolCoverageEvidenceFailures(
+            scenario: scenario,
+            routing: routing,
+            agentSteps: agentSteps,
+            finalText: finalText
+        )
+    }
+
+    nonisolated static func isSafeToolObservationFinalForTests(_ finalText: String, expectedToolID: String) -> Bool {
+        isSafeToolObservationFinal(finalText, expectedToolID: expectedToolID)
+    }
+
+    nonisolated static func alarmRuntimeUnavailableEvidenceFailureForTests(
+        scenario: E2ETestScenario,
+        agentSteps: [AgentStep],
+        finalText: String
+    ) -> String? {
+        alarmRuntimeUnavailableEvidenceFailure(
+            scenario: scenario,
+            agentSteps: agentSteps,
+            finalText: finalText
+        )
+    }
+
+    nonisolated static func webSearchSummaryQualityFailureForTests(finalText: String, scenario: E2ETestScenario) -> Bool {
+        webSearchSummaryQualityFailure(finalText: finalText, scenario: scenario)
     }
 
     static func agentJSONTrainingProbeForTests() async -> [AgentJSONTrainingProbeResult] {
@@ -2110,6 +2309,9 @@ nonisolated enum E2ETestRunner {
         if let reason = liveAgentInvalidFinalReason(lowerRaw: lowerRaw, lowerFinal: lowerFinal) {
             failures.append(reason)
         }
+        if webSearchSummaryQualityFailure(finalText: finalText, scenario: scenario) {
+            failures.append("Web search summarize scenario returned raw results or URL instead of a concise summary")
+        }
 
         let rawMissingHints = Set(requiredHintsMissing(in: rawFinalText, scenario: scenario))
         let finalMissingHints = Set(requiredHintsMissing(in: finalText, scenario: scenario))
@@ -2146,6 +2348,29 @@ nonisolated enum E2ETestRunner {
         return invalidSignals.contains(where: { combined.contains($0) })
             ? "Live agent returned fallback/error text instead of completing the scenario"
             : nil
+    }
+
+    nonisolated private static func webSearchSummaryQualityFailure(finalText: String, scenario: E2ETestScenario) -> Bool {
+        guard scenario.expectedIntent == .webSearch,
+              scenario.prompt.lowercased().contains("summarize") else {
+            return false
+        }
+        let text = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = text.lowercased()
+        if text.isEmpty { return true }
+        if lower.hasPrefix("search results for:") || lower.hasPrefix("web search results:") {
+            return true
+        }
+        if text.range(of: #"(?is)^\s*(https?://\S+)\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        let meaningfulLines = text
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.lowercased().hasPrefix("http") }
+        let sentenceCount = text.split { ".!?".contains($0) }.filter { $0.trimmingCharacters(in: .whitespacesAndNewlines).count > 20 }.count
+        let bulletCount = meaningfulLines.filter { $0.hasPrefix("-") || $0.hasPrefix("•") || $0.range(of: #"^\d+\."#, options: .regularExpression) != nil }.count
+        return sentenceCount < 2 && bulletCount < 2
     }
 
     nonisolated private static func weatherGroundingOverreach(finalText: String, observations: String) -> Bool {
@@ -2197,6 +2422,9 @@ nonisolated enum E2ETestRunner {
         let firstMissing = requiredHintsMissing(in: originalFinal, scenario: scenario)
         guard !firstMissing.isEmpty else {
             return EvalRewriteOutcome(finalText: originalFinal, missingHints: [], rewriteAttempted: false, rewriteSuccess: true)
+        }
+        if liveAgentInvalidFinalReason(lowerRaw: originalFinal.lowercased(), lowerFinal: originalFinal.lowercased()) != nil {
+            return EvalRewriteOutcome(finalText: originalFinal, missingHints: firstMissing, rewriteAttempted: false, rewriteSuccess: false)
         }
 
         let rewritten = await rewriteFinalTextForEvalHints(

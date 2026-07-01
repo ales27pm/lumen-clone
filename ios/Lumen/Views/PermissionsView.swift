@@ -11,7 +11,7 @@ struct PermissionsView: View {
                     row(for: kind)
                 }
             } footer: {
-                Text("Lumen requests permissions on demand when you use a feature. You can also pre-grant them here. Denied permissions must be changed in the iOS Settings app. AlarmKit also requires the AlarmKit entitlement in the signed provisioning profile.")
+                Text("Lumen requests permissions on demand when you use a feature. You can also pre-grant them here. Denied permissions must be changed in the iOS Settings app. AlarmKit requires iOS 26 or later and the app's AlarmKit usage description.")
             }
 
             Section {

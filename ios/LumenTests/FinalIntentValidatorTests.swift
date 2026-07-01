@@ -34,6 +34,13 @@ struct FinalIntentValidatorTests {
         let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: "Local search/indexing tools are unavailable in this build right now.")
         #expect(text == candidate)
     }
+
+    @Test func alarmSafeFallbackRemainsUserSafeButNotExecutionEvidence() async throws {
+        let routing = IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.authorization_status", "alarm.list"], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate("Created a calendar event instead.", routing: routing, fallback: nil)
+        #expect(text == "I couldn’t safely complete the alarm/timer request.")
+        #expect(!E2ETestRunner.isSafeToolObservationFinalForTests(text, expectedToolID: "alarm.authorization_status"))
+    }
 }
 
 

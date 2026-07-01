@@ -7,6 +7,9 @@ import EventKit
 import Contacts
 import UserNotifications
 import CoreMotion
+#if canImport(AlarmKit)
+import AlarmKit
+#endif
 
 @MainActor
 final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
@@ -74,6 +77,8 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
             return Bundle.main.object(forInfoDictionaryKey: "NSLocalNetworkUsageDescription") == nil ? .unavailable : .unknown
         case .motion:
             return CMMotionActivityManager.isActivityAvailable() ? .unknown : .unavailable
+        case .alarms:
+            return alarmStatus()
         case .appIntents, .filesUserSelected:
             return .granted
         case .networkAccess:
@@ -122,6 +127,9 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
         case .notifications:
             let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
             return .init(domain: domain, state: granted ? .granted : .denied, message: granted ? "Granted" : "Denied")
+        case .alarms:
+            let message = await AlarmTools.requestAuthorization()
+            return .init(domain: domain, state: await currentStatus(for: domain), message: message)
         case .networkAccess:
             return .init(domain: domain, state: await currentStatus(for: domain), message: "Controlled by in-app setting")
         default:
@@ -144,8 +152,26 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
         case .reminders: return ["NSRemindersUsageDescription", "NSRemindersFullAccessUsageDescription"]
         case .contacts: return ["NSContactsUsageDescription"]
         case .localNetwork: return ["NSLocalNetworkUsageDescription"]
+        case .alarms: return ["NSAlarmKitUsageDescription"]
         default: return [String]()
         }
+    }
+
+    private func alarmStatus() -> AssistantPermissionState {
+        guard Bundle.main.object(forInfoDictionaryKey: "NSAlarmKitUsageDescription") != nil else {
+            return .unavailable
+        }
+#if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            switch AlarmManager.shared.authorizationState {
+            case .notDetermined: return .notDetermined
+            case .authorized: return .granted
+            case .denied: return .denied
+            @unknown default: return .unknown
+            }
+        }
+#endif
+        return .unavailable
     }
 
     func diagnostics() async -> [PermissionDomain: AssistantPermissionState] {

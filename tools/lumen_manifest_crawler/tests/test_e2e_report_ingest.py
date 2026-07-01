@@ -379,6 +379,93 @@ def test_ingestion_keeps_resource_budget_preflight_out_of_training_repairs(tmp_p
     assert "must be exported as diagnostics" in failure_record["expected"][0]
 
 
+def test_ingestion_keeps_scene_phase_preflight_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "latest-e2e-report.json"
+    import json
+
+    failure = "Live E2E preflight blocked model-backed generation before prompt evaluation: live-e2e.pre-scenario: scenePhase=inactive"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "live-alarm-countdown-direct",
+                "kind": "toolGuard",
+                "title": "Live alarm countdown",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Start a timer for 10 minutes.",
+                "actualIntent": "preflight",
+                "expectedIntent": "alarm",
+                "failures": [failure],
+                "finalText": "Live E2E paused before starting this scenario: live-e2e.pre-scenario: scenePhase=inactive.",
+                "events": [{"phase": "live-runtime-preflight", "message": "blocked before model prompt evaluation; reason=live-e2e.pre-scenario: scenePhase=inactive"}],
+                "metadata": {
+                    "failureKind": "liveRuntimeScenePhaseUnavailable",
+                    "budgetPolicy": "foregroundInteractive",
+                    "budgetDenialReason": "live-e2e.pre-scenario: scenePhase=inactive",
+                    "actionable": "false",
+                    "trainingSignal": "false",
+                },
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_runtime_environment_deferred"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert failure_record["e2eScenario"]["metadata"]["trainingSignal"] == "false"
+
+
+def test_ingestion_keeps_alarmkit_unavailable_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "alarmkit-unavailable-e2e-report.json"
+    import json
+
+    failure = "AlarmKit runtime unavailable for expected tool alarm.authorization_status; device-runtime evidence required."
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "live-alarm-status-direct",
+                "kind": "toolGuard",
+                "title": "Live alarm status",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Check alarm authorization status.",
+                "actualIntent": "alarm",
+                "expectedIntent": "alarm",
+                "failures": [failure],
+                "finalText": "AlarmKit availability: unavailable (requires iOS 26.0+ and an AlarmKit-capable device runtime).",
+                "events": [{"phase": "step", "message": "observation alarm.authorization_status: AlarmKit availability: unavailable"}],
+                "metadata": {
+                    "expectedToolID": "alarm.authorization_status",
+                    "scenarioBankKind": "direct",
+                    "failureKind": "liveRuntimeAlarmKitUnavailable",
+                    "actionable": "false",
+                    "trainingSignal": "false",
+                    "runtimeEvidence": "device-runtime-required",
+                },
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_runtime_environment_deferred"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert failure_record["e2eScenario"]["metadata"]["failureKind"] == "liveRuntimeAlarmKitUnavailable"
+
+
 def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
     report_path = tmp_path / "e2e-with-model-evidence.json"
     import json

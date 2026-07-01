@@ -340,6 +340,75 @@ struct AgentGroundingRegressionTests {
         #expect(reminders?.lowercased().contains("buy foil") == true)
     }
 
+    @Test func agentServiceRepairsMemoryRecallBeforeSaveInvariant() {
+        #if DEBUG
+        let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."
+        let recallFirst = AgentAction(tool: "memory.recall", args: ["query": .string("user preference")])
+        let repaired = AgentService.repairedMemoryActionForTests(
+            modelAction: recallFirst,
+            prompt: prompt,
+            steps: []
+        )
+        #expect(repaired.action.tool == "memory.save")
+        #expect(repaired.action.args["content"]?.stringValue == "I prefer concise bullet points")
+        #expect(repaired.action.args["kind"]?.stringValue == "fact")
+        #expect(repaired.reflection?.content.contains("memory.recall into memory.save") == true)
+
+        let contaminatedSave = AgentAction(tool: "memory.save", args: [
+            "content": .string("I prefer concise bullet points, then tell me what you remembered."),
+            "kind": .string("note")
+        ])
+        let normalized = AgentService.repairedMemoryActionForTests(
+            modelAction: contaminatedSave,
+            prompt: prompt,
+            steps: []
+        )
+        #expect(normalized.action.tool == "memory.save")
+        #expect(normalized.action.args["content"]?.stringValue == "I prefer concise bullet points")
+        #expect(normalized.action.args["kind"]?.stringValue == "fact")
+        #expect(normalized.reflection != nil)
+
+        let savedStep = AgentStep(kind: .action, content: "memory.save", toolID: "memory.save", toolArgs: [
+            "content": "I prefer concise bullet points",
+            "kind": "fact"
+        ])
+        let next = AgentService.nextRequiredMemoryActionForTests(prompt: prompt, steps: [savedStep])
+        #expect(next?.tool == "memory.recall")
+        #expect(next?.args["query"]?.stringValue == "prefer concise bullet points")
+
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: prompt,
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { ["memory.save", "memory.recall"].contains(ToolRouteGuard.canonicalToolID($0.id)) },
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "Memory tool output could not be validated.",
+            req: req,
+            observations: [
+                ("memory.save", "Saved."),
+                ("memory.recall", "I prefer concise bullet points")
+            ],
+            steps: [
+                savedStep,
+                AgentStep(kind: .action, content: "memory.recall", toolID: "memory.recall", toolArgs: ["query": "prefer concise bullet points"])
+            ]
+        )
+        #expect(final == "I remember that you prefer concise bullet points.")
+        #expect(!final.contains("I'm ready"))
+        #expect(!final.contains("Please ask again"))
+        #expect(!final.contains("Memory tool output could not be validated"))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func toolObservationFinalizerReportsStructuredRejectionReasons() {
         let intentMismatch = ToolObservationFinalizer.immediateFinalOutcome(
             intent: .calendar,
