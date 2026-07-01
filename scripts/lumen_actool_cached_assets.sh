@@ -38,6 +38,17 @@ value_after() {
   return 1
 }
 
+first_asset_catalog() {
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" == *.xcassets ]] && {
+      printf '%s\n' "$arg"
+      return 0
+    }
+  done
+  return 1
+}
+
 if has_arg "--version" "$@" || has_arg "--generate-swift-asset-symbols" "$@"; then
   exec "$REAL_ACTOOL" "$@"
 fi
@@ -101,7 +112,17 @@ fi
 dependency_info="$(value_after "--export-dependency-info" "$@" || true)"
 if [[ -n "$dependency_info" ]]; then
   mkdir -p "$(dirname "$dependency_info")"
-  : > "$dependency_info"
+  asset_catalog="$(first_asset_catalog "$@" || true)"
+  {
+    printf '\0actool-cached-assets\0'
+    [[ -z "$asset_catalog" ]] || printf '\020%s\0' "$asset_catalog"
+    [[ -z "$partial_info" ]] || printf '@%s\0' "$partial_info"
+    find "$compile_dir" -maxdepth 1 -type f \( -name 'Assets.car' -o -name 'AppIcon*.png' \) -print \
+      | sort \
+      | while IFS= read -r output_file; do
+          printf '@%s\0' "$output_file"
+        done
+  } > "$dependency_info"
 fi
 
 printf '/* com.apple.actool.compilation-results */\n'
