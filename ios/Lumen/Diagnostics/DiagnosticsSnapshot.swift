@@ -1,6 +1,7 @@
 import Foundation
 
 struct DiagnosticsSnapshot: Sendable {
+    let build: BuildDiagnosticsSnapshot
     let runtime: RuntimeDiagnosticsSnapshot
     let permissions: PermissionDiagnosticsSnapshot
     let tools: ToolSecuritySnapshot

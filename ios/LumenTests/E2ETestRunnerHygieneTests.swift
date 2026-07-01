@@ -374,6 +374,35 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func toolGuardMissingExpectedToolMetadataFailsClosed() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-alarm-status-direct",
+            title: "Alarm status",
+            kind: .toolGuard,
+            prompt: "Show alarm permission status.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.authorization_status"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: nil,
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.direct.rawValue
+        )
+        let failures = E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: scenario,
+            routing: IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.authorization_status"], requiresClarification: false, clarificationPrompt: nil),
+            agentSteps: [],
+            finalText: "I couldn’t safely complete the alarm/timer request."
+        )
+        #expect(failures == ["Tool coverage scenario missing expectedToolID metadata."])
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func toolGuardApprovalAndMissingArgumentSemanticsAreStrict() {
         #if DEBUG
         let countdown = E2ETestScenario(
@@ -420,6 +449,12 @@ struct E2ETestRunnerHygieneTests {
             agentSteps: [AgentStep(kind: .action, content: "alarm.cancel", toolID: "alarm.cancel")],
             finalText: "Cancelled."
         ).contains(where: { $0.contains("missing approval boundary") }))
+        #expect(E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: cancel,
+            routing: IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.cancel"], requiresClarification: true, clarificationPrompt: "What time or duration should I use?"),
+            agentSteps: [AgentStep(kind: .reflection, content: "Clarification required before tool execution.")],
+            finalText: "I couldn’t safely complete the alarm/timer request."
+        ).contains(where: { $0.contains("incorrectly stopped at clarification") }))
 
         let missingCancel = E2ETestScenario(
             id: "live-alarm-cancel-missingargument",
@@ -748,10 +783,54 @@ struct E2ETestRunnerHygieneTests {
         )
         #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "Search results for: Swift concurrency\nhttps://example.com", scenario: scenario))
         #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "https://example.com/swift", scenario: scenario))
+        #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "See the full tutorial at https://example.com/swift-concurrency", scenario: scenario))
+        #expect(E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search.","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
+            finalText: #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search.","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
+            scenario: scenario
+        ).contains("Live agent returned fallback/error text instead of completing the scenario"))
         #expect(!E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "- Prefer structured cancellation so child tasks stop cleanly.\n- Keep MainActor UI updates explicit to avoid accidental data races.", scenario: scenario))
         #else
         #expect(true)
         #endif
+    }
+
+    @Test func cpuWatchdogDegradedReportIsRuntimePreflightNonActionable() {
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: "training-rag-grounding",
+            kind: E2ETestKind.training.rawValue,
+            title: "Training eval: RAG grounding",
+            prompt: "Use local docs to answer.",
+            expectedIntent: UserIntent.rag.rawValue,
+            actualIntent: UserIntent.rag.rawValue,
+            requiresAgentRun: true,
+            evidenceMode: E2EEvidenceMode.modelBackedRequired.rawValue,
+            passed: false,
+            failures: ["Live runtime CPU watchdog degraded before completing model-backed scenario."],
+            finalText: "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cpu-watchdog-degraded.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: "training-rag-grounding", phase: "agent-runtime", message: "cpu-watchdog-degraded")],
+            startedAt: Date(),
+            finishedAt: Date(),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: "",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            metadata: [
+                "failureKind": "liveRuntimeCPUWatchdogDegraded",
+                "actionable": "false",
+                "trainingSignal": "false"
+            ]
+        )
+
+        let report = E2ETestReport(id: UUID(), startedAt: Date(), finishedAt: Date(), passed: 0, failed: 1, results: [result])
+        #expect(report.summaryText.contains("runtime-preflight/non-actionable"))
+        #expect(!report.summaryText.contains("other:"))
+        #expect(!report.summaryText.contains("Capture failed prompts + final outputs into next fine-tuning dataset."))
     }
 
     @Test func strictLiveAgentRunOptionsRequireModelBackedRolePipeline() {

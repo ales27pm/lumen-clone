@@ -106,6 +106,43 @@ final class ImproveLoopSampleGateTests: XCTestCase {
         XCTAssertEqual(dataset.regressionTests.first?.sampleType, .cortexJSONContract)
     }
 
+    func testCPUWatchdogDegradedIsRuntimeResourceFallbackNotTraining() {
+        let repair = AgentBehaviorRepairSample(
+            id: UUID(),
+            createdAt: Date(),
+            agent: "cortex",
+            violationCode: "rag_grounding",
+            promptPrefix: "Search local docs and summarize modules.",
+            expected: "grounded RAG final",
+            badOutput: "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cpu-watchdog-degraded.",
+            correctedOutput: "Mention modules and sources.",
+            lesson: "RAG should ground answers.",
+            curriculum: "rag"
+        )
+        let audit = AgentBehaviorAuditReport(
+            passed: false,
+            score: 0.2,
+            generatedAt: Date(),
+            traceCount: 1,
+            violationCount: 1,
+            sourceCommit: "test",
+            violations: [],
+            recommendations: [],
+            repairSamples: [repair]
+        )
+
+        let dataset = ImproveLoopSampleGate.buildDataset(
+            behaviorAudit: audit,
+            traces: [],
+            scenarioResults: [],
+            sourceCommit: "test"
+        )
+
+        XCTAssertTrue(dataset.acceptedTraining.isEmpty)
+        XCTAssertEqual(dataset.quarantinedSamples.first?.sampleType, .rejectedResourceFallback)
+        XCTAssertEqual(dataset.counters.resourceFallbackRejected, 1)
+    }
+
     func testCanonicalizesTraceAllowedToolComparison() {
         let trace = AgentBehaviorTrace(
             id: UUID(),

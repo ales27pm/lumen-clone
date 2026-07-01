@@ -2304,6 +2304,39 @@ extension AgentGroundingRegressionTests {
         #expect(!lower.contains("umbrella"))
     }
 
+    @Test func structuredWebSummaryInvalidFinalFallsBackToSearchObservations() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search.","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
+            req: req,
+            observations: [
+                ("web.search", """
+                Search results for: Swift concurrency best practices
+                Prefer structured concurrency with TaskGroup or async let so cancellation and errors propagate through child tasks.
+                Keep UI mutations isolated to MainActor and move long-running work off the main actor to avoid responsiveness and data-race issues.
+                """)
+            ],
+            steps: [AgentStep(kind: .observation, content: "Search results", toolID: "web.search")]
+        )
+
+        #expect(final.contains("Summary:"))
+        #expect(final.contains("structured concurrency"))
+        #expect(final.contains("MainActor"))
+        #expect(!final.contains("\"intent\""))
+        #expect(!final.contains("sourceFile"))
+    }
+
     @Test func structuredMemorySaveRecallFinalPreservesExactPreference() {
         let req = AgentRequest(
             systemPrompt: "sys",

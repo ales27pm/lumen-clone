@@ -277,6 +277,7 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
             "failures": "; ".join(str(item) for item in result.get("failures", []) if item) if isinstance(result.get("failures"), list) else result.get("failures"),
             "final": result.get("finalText"),
             "events": result.get("events") or [],
+            "metadata": result.get("metadata") or {},
             "startedAt": result.get("startedAt"),
             "finishedAt": result.get("finishedAt"),
         })
@@ -292,7 +293,11 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
 
 
 def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
-    failed = [scenario for scenario in scenarios if scenario.get("passed") is not True]
+    failed = [
+        scenario
+        for scenario in scenarios
+        if scenario.get("passed") is not True and not _scenario_marked_non_trainable_preflight(scenario)
+    ]
     if not failed:
         return []
     return [
@@ -300,6 +305,23 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
         "Capture failed prompts + final outputs into next fine-tuning dataset.",
         "Prioritize repeated tool-boundary, response-quality, and no-model execution failures.",
     ]
+
+
+def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
+    metadata = scenario.get("metadata")
+    if isinstance(metadata, dict):
+        failure_kind = str(metadata.get("failureKind") or "")
+        if str(metadata.get("trainingSignal") or "").casefold() == "false" and failure_kind.startswith("liveRuntime"):
+            return True
+    evidence = "\n".join(
+        str(part or "")
+        for part in [
+            scenario.get("failures"),
+            scenario.get("final"),
+            " ".join(str(event.get("message") or "") for event in scenario.get("events") or [] if isinstance(event, dict)),
+        ]
+    ).casefold()
+    return "cpu-watchdog-degraded" in evidence
 
 
 def _is_in_app_package(value: dict[str, Any]) -> bool:

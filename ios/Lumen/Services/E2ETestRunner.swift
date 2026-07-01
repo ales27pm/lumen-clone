@@ -449,9 +449,11 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
         }
         lines.append("")
 
-        let failureBuckets = Dictionary(grouping: results.flatMap(\.failures)) { failure in
+        let bucketForFailure: (String) -> String = { failure in
             if failure.contains("Live E2E preflight blocked model-backed generation before prompt evaluation")
-                || failure.contains("AlarmKit runtime unavailable") {
+                || failure.contains("AlarmKit runtime unavailable")
+                || failure.contains("CPU watchdog degraded")
+                || failure.contains("cpu-watchdog-degraded") {
                 return "runtime-preflight/non-actionable"
             }
             if failure.contains("Intent mismatch") { return "intent" }
@@ -460,10 +462,30 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
             if failure.contains("Agent error") { return "runtime" }
             return "other"
         }
+        var failureBuckets: [String: Int] = [:]
+        for result in results where !result.failures.isEmpty {
+            let forcedBucket: String? = {
+                if result.metadata["trainingSignal"]?.lowercased() == "false",
+                   result.metadata["failureKind"]?.hasPrefix("liveRuntime") == true {
+                    return "runtime-preflight/non-actionable"
+                }
+                let evidence = ([result.finalText] + result.failures + result.events.map(\.message) + Array(result.metadata.values))
+                    .joined(separator: "\n")
+                    .lowercased()
+                if evidence.contains("cpu-watchdog-degraded") || evidence.contains("alarmkit runtime unavailable") {
+                    return "runtime-preflight/non-actionable"
+                }
+                return nil
+            }()
+            for failure in result.failures {
+                let bucket = forcedBucket ?? bucketForFailure(failure)
+                failureBuckets[bucket, default: 0] += 1
+            }
+        }
         if !failureBuckets.isEmpty {
             lines.append("Training signals for next run:")
             for key in ["intent", "tool-boundary", "response-quality", "runtime", "runtime-preflight/non-actionable", "other"] where failureBuckets[key] != nil {
-                lines.append("• \(key): \(failureBuckets[key]?.count ?? 0) issues")
+                lines.append("• \(key): \(failureBuckets[key] ?? 0) issues")
             }
             let actionableFailureBuckets = failureBuckets.keys.filter { $0 != "runtime-preflight/non-actionable" }
             if !actionableFailureBuckets.isEmpty {
@@ -1183,7 +1205,17 @@ nonisolated enum E2ETestRunner {
         if let alarmRuntimeUnavailableFailure {
             failures.append(alarmRuntimeUnavailableFailure)
         }
-        if shouldValidateFinalContentHints(
+        let cpuWatchdogDegraded = cpuWatchdogDegradedEvidence(
+            finalText: finalText,
+            failures: failures,
+            events: events
+        )
+        if cpuWatchdogDegraded,
+           !failures.contains(where: { $0.contains("CPU watchdog degraded") }) {
+            failures.append("Live runtime CPU watchdog degraded before completing model-backed scenario.")
+        }
+        if !cpuWatchdogDegraded,
+           shouldValidateFinalContentHints(
             scenario: scenario,
             hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario
         ) {
@@ -1228,6 +1260,12 @@ nonisolated enum E2ETestRunner {
             metadata["actionable"] = "false"
             metadata["trainingSignal"] = "false"
             metadata["runtimeEvidence"] = "device-runtime-required"
+        }
+        if cpuWatchdogDegraded {
+            metadata["failureKind"] = "liveRuntimeCPUWatchdogDegraded"
+            metadata["actionable"] = "false"
+            metadata["trainingSignal"] = "false"
+            metadata["runtimeEvidence"] = "runtime-preflight"
         }
         return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, evidenceMode: scenario.evidenceMode.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix, metadata: metadata)
     }
@@ -1838,6 +1876,10 @@ nonisolated enum E2ETestRunner {
         if let scenarioBankKind = scenario.scenarioBankKind {
             metadata["scenarioBankKind"] = scenarioBankKind
         }
+        if scenario.kind == .toolGuard {
+            metadata["expectedToolID"] = scenario.expectedToolID ?? ""
+            metadata["scenarioBankKind"] = scenario.scenarioBankKind ?? ""
+        }
         if let requiredSlotIDs = scenario.requiredSlotIDs, !requiredSlotIDs.isEmpty {
             metadata["requiredSlots"] = requiredSlotIDs.joined(separator: ",")
         }
@@ -1850,10 +1892,12 @@ nonisolated enum E2ETestRunner {
         agentSteps: [AgentStep],
         finalText: String
     ) -> [String] {
-        guard scenario.kind == .toolGuard,
-              let expectedTool = scenario.expectedToolID.map(ToolRouteGuard.canonicalToolID),
-              !expectedTool.isEmpty else {
+        guard scenario.kind == .toolGuard else {
             return []
+        }
+        guard let expectedTool = scenario.expectedToolID.map(ToolRouteGuard.canonicalToolID),
+              !expectedTool.isEmpty else {
+            return ["Tool coverage scenario missing expectedToolID metadata."]
         }
 
         let bankKind = scenario.scenarioBankKind ?? ""
@@ -1935,6 +1979,17 @@ nonisolated enum E2ETestRunner {
             return nil
         }
         return "AlarmKit runtime unavailable for expected tool \(expectedTool); device-runtime evidence required."
+    }
+
+    nonisolated private static func cpuWatchdogDegradedEvidence(
+        finalText: String,
+        failures: [String],
+        events: [E2ETestEvent]
+    ) -> Bool {
+        let evidence = ([finalText] + failures + events.map(\.message))
+            .joined(separator: "\n")
+            .lowercased()
+        return evidence.contains("cpu-watchdog-degraded")
     }
 
 #if DEBUG
@@ -2338,7 +2393,13 @@ nonisolated enum E2ETestRunner {
             "routing-only checks completed",
             "full local model pipeline is temporarily running in compatibility mode",
             "full agent pipeline",
+            "no direct answer from web search",
+            "cpu-watchdog-degraded",
+            "\"intent\"",
+            "\"nextmodel\"",
             "\"reasoningsummary\"",
+            "\"requiresapproval\"",
+            "\"sourcefile\"",
             "\"rewrittenfinalanswer\"",
             "\"requiresapprovaldecision\"",
             "\"requiresapprovalreasoningsummary\"",
@@ -2352,7 +2413,7 @@ nonisolated enum E2ETestRunner {
 
     nonisolated private static func webSearchSummaryQualityFailure(finalText: String, scenario: E2ETestScenario) -> Bool {
         guard scenario.expectedIntent == .webSearch,
-              scenario.prompt.lowercased().contains("summarize") else {
+              webPromptRequiresSynthesis(scenario.prompt) else {
             return false
         }
         let text = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2361,7 +2422,13 @@ nonisolated enum E2ETestRunner {
         if lower.hasPrefix("search results for:") || lower.hasPrefix("web search results:") {
             return true
         }
+        if lower.contains("search results for:") && (lower.contains("\nhttp") || lower.contains("\n- http")) {
+            return true
+        }
         if text.range(of: #"(?is)^\s*(https?://\S+)\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        if text.range(of: #"(?is)^\s*see\s+the\s+full\s+(tutorial|article|guide|post|result)\s+at\s+https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
             return true
         }
         let meaningfulLines = text
@@ -2371,6 +2438,13 @@ nonisolated enum E2ETestRunner {
         let sentenceCount = text.split { ".!?".contains($0) }.filter { $0.trimmingCharacters(in: .whitespacesAndNewlines).count > 20 }.count
         let bulletCount = meaningfulLines.filter { $0.hasPrefix("-") || $0.hasPrefix("•") || $0.range(of: #"^\d+\."#, options: .regularExpression) != nil }.count
         return sentenceCount < 2 && bulletCount < 2
+    }
+
+    nonisolated private static func webPromptRequiresSynthesis(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        return lower.contains("summarize")
+            || lower.contains("synthesize")
+            || lower.contains("compare")
     }
 
     nonisolated private static func weatherGroundingOverreach(finalText: String, observations: String) -> Bool {
