@@ -188,6 +188,57 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func toolGuardScenarioAcceptsPolicyFirstToolEvidence() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-alarm-countdown-alternatephrasing-start-a-timer-for-10-minutes",
+            title: "Live alarm countdown",
+            kind: .toolGuard,
+            prompt: "Start a timer for 10 minutes.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.countdown"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let routing = IntentRoutingDecision(
+            intent: .alarm,
+            allowedToolIDs: ["alarm.countdown"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let request = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: scenario.prompt,
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all,
+            relevantMemories: [],
+            scenarioID: scenario.id
+        )
+
+        let options = E2ETestRunner.strictLiveAgentRunOptionsForTests(
+            req: request,
+            scenario: scenario,
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            routing: routing
+        )
+
+        #expect(E2ETestRunner.acceptsPolicyFirstExecutionEvidenceForTests(scenario, routing: routing))
+        #expect(options.allowDeterministicCompatibility)
+        #expect(!options.allowParseFailureDeterministicRecovery)
+        #expect(!options.allowsMemoryPressureContinuation)
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func clarificationScenarioAcceptsPolicyFirstClarificationEvidence() {
         #if DEBUG
         let scenario = E2ETestScenario(
