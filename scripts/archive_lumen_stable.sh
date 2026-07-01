@@ -22,6 +22,8 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 ARCHIVE_PATH="${LUMEN_ARCHIVE_PATH:-$REPO_ROOT/build/Lumen-$TIMESTAMP.xcarchive}"
 LOG_DIR="$REPO_ROOT/build/logs"
 LOG_PATH="$LOG_DIR/archive-stable-$TIMESTAMP.log"
+ACTOOL_SHIM_DIR="$REPO_ROOT/build/actool-shim"
+ACTOOL_SHIM_PATH="$ACTOOL_SHIM_DIR/actool"
 SANITIZED_ENTITLEMENTS_PATH="$REPO_ROOT/build/LumenArchive.entitlements"
 SIGNING_XCCONFIG_PATH="$REPO_ROOT/build/LumenArchiveSigningOverrides.xcconfig"
 LOCK_DIR="$REPO_ROOT/build/archive_lumen_stable.lock"
@@ -281,7 +283,8 @@ info "Resolving Swift package dependencies"
 resolve_package_dependencies
 
 info "Archiving with linker-safe Swift settings"
-mkdir -p "$DERIVED_DATA_PATH" "$CLONED_SOURCE_PACKAGES_DIR" "$PACKAGE_CACHE_PATH"
+mkdir -p "$DERIVED_DATA_PATH" "$CLONED_SOURCE_PACKAGES_DIR" "$PACKAGE_CACHE_PATH" "$ACTOOL_SHIM_DIR"
+ln -sf "$REPO_ROOT/scripts/lumen_actool_cached_assets.sh" "$ACTOOL_SHIM_PATH"
 ARCHIVE_COMMAND=(
   xcodebuild
   "${PROJECT_SELECTOR[@]}"
@@ -312,7 +315,7 @@ ARCHIVE_COMMAND+=(
   ASSETCATALOG_COMPILER_COMPRESS_PNGS=NO
   ASSETCATALOG_COMPILER_OPTIMIZATION=time
   ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR=none
-  "ASSETCATALOG_EXEC=$REPO_ROOT/scripts/lumen_actool_cached_assets.sh"
+  "ASSETCATALOG_EXEC=$ACTOOL_SHIM_PATH"
   DEAD_CODE_STRIPPING=NO
   SWIFT_COMPILATION_MODE=singlefile
   SWIFT_WHOLE_MODULE_OPTIMIZATION=NO
