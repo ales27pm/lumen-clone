@@ -906,11 +906,13 @@ nonisolated enum E2ETestRunner {
                             }
                         }
                     }
+                    let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
                     let runOptions = strictLiveAgentRunOptions(
                         req: req,
                         scenario: scenario,
                         e2eRunID: e2eRunID,
-                        agentRunID: agentRunID
+                        agentRunID: agentRunID,
+                        acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
                     )
                     let agentEvents = await MainActor.run {
                         AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
@@ -1097,6 +1099,9 @@ nonisolated enum E2ETestRunner {
     private nonisolated static func acceptsPolicyFirstExecutionEvidence(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
         guard scenario.requiresAgentRun else { return false }
         if routing.requiresClarification {
+            return true
+        }
+        if scenario.kind == .toolGuard, IntentRouter.intentRequiresTool(routing) {
             return true
         }
         // A scenario marked as live training/evidence must prove the loaded
@@ -1354,7 +1359,8 @@ nonisolated enum E2ETestRunner {
         req: AgentRequest,
         scenario: E2ETestScenario,
         e2eRunID: UUID,
-        agentRunID: UUID
+        agentRunID: UUID,
+        acceptsPolicyFirstEvidence: Bool
     ) -> LegacyAgentRunOptions {
         LegacyAgentRunOptions(
             modelContext: nil,
@@ -1367,7 +1373,7 @@ nonisolated enum E2ETestRunner {
             allowDegradedGrounding: false,
             preventDoubleGrounding: true,
             diagnosticsEnabled: false,
-            allowDeterministicCompatibility: false,
+            allowDeterministicCompatibility: acceptsPolicyFirstEvidence,
             allowParseFailureDeterministicRecovery: false,
             allowsMemoryPressureContinuation: scenario.kind == .training
         )
@@ -1646,13 +1652,16 @@ nonisolated enum E2ETestRunner {
         req: AgentRequest,
         scenario: E2ETestScenario,
         e2eRunID: UUID,
-        agentRunID: UUID
+        agentRunID: UUID,
+        routing: IntentRoutingDecision? = nil
     ) -> LegacyAgentRunOptions {
-        strictLiveAgentRunOptions(
+        let routing = routing ?? IntentRouter.classify(scenario.prompt)
+        return strictLiveAgentRunOptions(
             req: req,
             scenario: scenario,
             e2eRunID: e2eRunID,
-            agentRunID: agentRunID
+            agentRunID: agentRunID,
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
         )
     }
 
