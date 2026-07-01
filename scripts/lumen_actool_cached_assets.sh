@@ -2,7 +2,15 @@
 set -euo pipefail
 
 REAL_ACTOOL="${LUMEN_REAL_ACTOOL:-/Users/ales27pm/Downloads/Xcode.app/Contents/Developer/usr/bin/actool}"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if [[ -L "$SCRIPT_PATH" ]]; then
+  resolved_path="$(readlink "$SCRIPT_PATH")"
+  if [[ "$resolved_path" != /* ]]; then
+    resolved_path="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)/$resolved_path"
+  fi
+  SCRIPT_PATH="$resolved_path"
+fi
+REPO_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 CACHED_APP="${LUMEN_CACHED_ASSETS_APP:-$REPO_ROOT/build/Lumen-20260630-211948.xcarchive/Products/Applications/Lumen.app}"
 
 has_arg() {
