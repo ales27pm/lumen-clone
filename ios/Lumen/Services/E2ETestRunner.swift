@@ -1303,6 +1303,9 @@ nonisolated enum E2ETestRunner {
                 if !referencesRetrievedSnippet(lowerFinal) {
                     failures.append("RAG grounding assertion failed: summary must reference retrieved docs/snippets")
                 }
+                if ragArchitectureGroundingIsIrrelevant(lowerFinal) {
+                    failures.append("RAG grounding assertion failed: architecture-notes answer used unrelated photo-library snippets")
+                }
             }
         }
 
@@ -2523,6 +2526,10 @@ nonisolated enum E2ETestRunner {
         if webSearchSummaryQualityFailure(finalText: finalText, scenario: scenario) {
             failures.append("Web search summarize scenario returned raw results or URL instead of a concise summary")
         }
+        if scenario.id == "training-rag-grounding",
+           ragArchitectureGroundingIsIrrelevant(lowerFinal) {
+            failures.append("RAG grounding assertion failed: architecture-notes answer used unrelated photo-library snippets")
+        }
 
         let rawMissingHints = Set(requiredHintsMissing(in: rawFinalText, scenario: scenario))
         let finalMissingHints = Set(requiredHintsMissing(in: finalText, scenario: scenario))
@@ -2615,8 +2622,14 @@ nonisolated enum E2ETestRunner {
     }
 
     nonisolated private static func referencesRetrievedSnippet(_ lowerFinal: String) -> Bool {
-        let signals = ["[1]", "[2]", "snippet", "source", "file", "pdf", "note", "photos", "retrieved"]
+        let signals = ["[1]", "[2]", "snippet", "source", "file", "pdf", "note", "retrieved"]
         return signals.contains { lowerFinal.contains($0) }
+    }
+
+    nonisolated private static func ragArchitectureGroundingIsIrrelevant(_ lowerFinal: String) -> Bool {
+        guard lowerFinal.contains("photos · photos") || lowerFinal.contains("photos (2026") else { return false }
+        let architectureSignals = ["architecture", "service", "component", "package", "class ", "struct ", "func ", ".swift", "api", "endpoint"]
+        return !architectureSignals.contains { lowerFinal.contains($0) }
     }
 
     private struct EvalRewriteOutcome {

@@ -1530,6 +1530,29 @@ extension AgentGroundingRegressionTests {
         #expect(!summary.lowercased().hasPrefix("search results for:"))
     }
 
+    @Test func deterministicWebSummaryFallbackSynthesizesPlainNumberedSearchResults() throws {
+        let observation = """
+        Search results for: Swift concurrency best practices
+
+        1. The Essential Guide to Concurrency in Swift: Avoiding Common ... - Medium
+        https://medium.com/@rashadsh/the-essential-guide-to-concurrency-in-swift-avoiding-common-pitfalls-9ac58ada1367
+
+        2. Swift Concurrency Best Practices - beefed.ai
+        https://beefed.ai/en/swift-concurrency-best-practices
+
+        3. Concurrency | Apple Developer Documentation
+        https://developer.apple.com/documentation/swift/concurrency
+        """
+
+        let summary = try #require(AgentService.deterministicWebSummaryFallbackForTests(observations: [("web.search", observation)]))
+
+        #expect(summary.contains("Swift"))
+        #expect(summary.contains("Concurrency") || summary.contains("concurrency"))
+        #expect(summary.split(separator: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("-") }.count >= 2)
+        #expect(!summary.lowercased().contains("no direct answer from web search"))
+        #expect(!summary.lowercased().hasPrefix("search results for:"))
+    }
+
     @Test func deterministicWebSummaryFallbackSynthesizesLivePayloadWithoutClosingMarker() throws {
         let observation = """
         Search results for: Swift concurrency best practices
@@ -1649,6 +1672,73 @@ extension AgentGroundingRegressionTests {
         #expect(retry.temperature <= 0.05)
         #expect(retry.topP <= 0.6)
         #expect(prompt.contains("Previous live agent-json attempt emitted no tokens"))
+        #expect(prompt.contains("Response format contract: output exactly one valid JSON object"))
+        #expect(prompt.contains(#""oneOf""#))
+        #expect(prompt.contains(#""action""#))
+        #expect(prompt.contains(#""final""#))
+        #expect(prompt.contains("/no_think"))
+    }
+
+    @Test func agentJSONIncompleteOutputRetryPromptRequiresFreshValidJSONOnly() {
+        let firstTurn = "User request:\nSet a reminder for 6 PM.\n\nEmit the first JSON object now. Choose either action or final."
+        let raw = "<think>\n</think>\n{\""
+
+        let retryTurn = AgentService.agentJSONIncompleteOutputRetryUserTurnForTests(
+            from: firstTurn,
+            rawOutput: raw
+        )
+
+        #expect(retryTurn.contains("User request:"))
+        #expect(retryTurn.contains("Set a reminder for 6 PM."))
+        #expect(retryTurn.contains("Previous live agent-json attempt stopped after an incomplete JSON object"))
+        #expect(retryTurn.contains("Ignore the incomplete object"))
+        #expect(retryTurn.contains("Do not include schema, required, status, approvalPrompt"))
+        #expect(retryTurn.contains(#"{"action":{"tool":"<allowed tool id>","args":{}}}"#))
+        #expect(retryTurn.contains(#"{"final":"<concise user-facing answer>"}"#))
+        #expect(retryTurn.contains("Output JSON only"))
+    }
+
+    @Test func agentJSONIncompleteOutputRetryRequestKeepsSchemaVisibleAndUsesFreshID() async {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Set a reminder for 6 PM.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 384,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let systemPrompt = await AgentService.shared.structuredSystemPromptForTests(req: req)
+        let userTurn = await AgentService.shared.structuredAgentUserTurnForTests(req: req)
+        let base = GenerateRequest(
+            systemPrompt: systemPrompt,
+            history: [],
+            userMessage: userTurn,
+            temperature: 0.2,
+            topP: 0.9,
+            repetitionPenalty: 1,
+            maxTokens: 512,
+            modelName: "agent-json",
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema)
+        )
+
+        let retry = AgentService.agentJSONIncompleteOutputRetryRequestForTests(
+            from: base,
+            userTurn: base.userMessage,
+            rawOutput: "<think>\n</think>\n{\""
+        )
+        let result = await AppLlamaService.shared.buildMessagesForTesting(req: retry, contextSize: 2048, slot: .executor)
+        let prompt = result.messages.map(\.content).joined(separator: "\n")
+
+        #expect(retry.id != base.id)
+        #expect(retry.responseFormat == base.responseFormat)
+        #expect(retry.temperature <= 0.02)
+        #expect(retry.topP <= 0.4)
+        #expect(prompt.contains("Previous live agent-json attempt stopped after an incomplete JSON object"))
         #expect(prompt.contains("Response format contract: output exactly one valid JSON object"))
         #expect(prompt.contains(#""oneOf""#))
         #expect(prompt.contains(#""action""#))
@@ -2515,6 +2605,39 @@ extension AgentGroundingRegressionTests {
         #expect(!final.contains("\"intent\""))
         #expect(!final.contains("nextModel"))
         #expect(!final.contains("reasoningSummary"))
+    }
+
+    @Test func structuredWebSummaryExtractsLumenPayloadTitles() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search web for diy underground shelter",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "Check out BattlBox's guide on building an underground shelter: https://www.battlbox.com/blogs/outdoors/how-to-build-an-underground-shelter-a-comprehensive-guide",
+            req: req,
+            observations: [
+                ("web.search", """
+                Search results for: diy underground shelter
+
+                <lumen_web_payload>{"results":[{"source":"www.bushcraftbasecamp.com","title":"10 Steps to Build a DIY Underground Bushcraft Survival Shelter","mediaKind":"page","url":"https://www.bushcraftbasecamp.com/10-steps-to-build-a-diy-underground-bushcraft-survival-shelter/"},{"source":"www.battlbox.com","title":"How To Build An Underground Shelter - Battlbox.com","mediaKind":"page","url":"https://www.battlbox.com/blogs/outdoors/how-to-build-an-underground-shelter-a-comprehensive-guide"}],"kind":"searchResults"}</lumen_web_payload>
+                """)
+            ],
+            steps: [AgentStep(kind: .observation, content: "Search results", toolID: "web.search")]
+        )
+
+        #expect(final.contains("Summary:"))
+        #expect(final.contains("DIY Underground Bushcraft Survival Shelter"))
+        #expect(final.contains("Battlbox.com"))
+        #expect(!final.contains("<lumen_web_payload"))
+        #expect(!final.contains("No direct answer from web search"))
     }
 
     @Test func structuredWebNoDirectAnswerFallsBackToSearchObservations() {

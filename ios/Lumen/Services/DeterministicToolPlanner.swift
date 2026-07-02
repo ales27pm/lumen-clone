@@ -106,6 +106,9 @@ nonisolated enum DeterministicToolPlanner {
 
         if routing.intent == .outlook, let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
             let canonical = ToolRouteGuard.canonicalToolID(single.tool)
+            if ToolRouteGuard.requiresUserApproval(canonical) {
+                return [single]
+            }
             if outlookMessageReferenceToolIDs.contains(canonical), availableToolIDs.contains("outlook.messages.list"), needsFreshOutlookMessageContext(action: single, prompt: text) {
                 return [
                     AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
@@ -357,7 +360,9 @@ nonisolated enum DeterministicToolPlanner {
             if text.contains("unread") { args["unreadOnly"] = .string("true") }
             return action("outlook.messages.list", args)
         }
-        if !containsAny(text, ["move", "archive", "delete", "trash", "mark", "reply", "forward"]) && isLatestOutlookReadIntent(text) {
+        if containsAny(text, ["mark", "set"]) && text.contains("unread") { return action("outlook.message.mark_unread", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
+        if containsAny(text, ["mark", "set"]) && text.contains("read") { return action("outlook.message.mark_read", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
+        if !containsAny(text, ["move", "archive", "delete", "trash", "mark", "set", "reply", "respond", "forward"]) && isLatestOutlookReadIntent(text) {
             return action("outlook.message.read", outlookMessageReadArgs("latest"))
                 ?? action("outlook.messages.list", ["limit": .string("1")])
         }
@@ -377,16 +382,14 @@ nonisolated enum DeterministicToolPlanner {
             if let body = extractOutlookBody(from: prompt), !body.isEmpty { args["body"] = .string(body) }
             return action("outlook.message.forward", args)
         }
-        if text.contains("archive") { return action("outlook.message.archive", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
-        if containsAny(text, ["delete", "trash"]) { return action("outlook.message.delete", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
-        if text.contains("mark") && text.contains("unread") { return action("outlook.message.mark_unread", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
-        if text.contains("mark") && text.contains("read") { return action("outlook.message.mark_read", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if text.contains("move") {
             guard let destination = extractOutlookDestinationFolder(from: text) else { return nil }
             var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
             args["destination"] = .string(destination)
             return action("outlook.message.move", args)
         }
+        if text.contains("archive") { return action("outlook.message.archive", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
+        if containsAny(text, ["delete", "trash"]) { return action("outlook.message.delete", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if text.contains("send") && containsAny(text, ["email", "mail", "outlook", "hotmail"]) {
             var args: AgentJSONArguments = ["subject": .string(extractOutlookSubject(from: prompt)), "body": .string(extractOutlookBody(from: prompt) ?? "")]
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
@@ -503,7 +506,7 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func isPersonalProfileRecallIntent(_ text: String) -> Bool { IntentRouter.isPersonalProfileRecallIntent(text) }
-    private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email"]) }
+    private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email", "read outlook message"]) }
     /// Determines whether text contains phrases indicating a save-then-recall memory pattern.
 /// - Parameters:
 ///   - text: The text to evaluate.
