@@ -1802,7 +1802,6 @@ final class AgentService {
                     let obs = AgentStep(kind: .observation, content: "Unknown tool: \(action.tool). Emit a final turn instead.", toolID: canonicalActionTool)
                     steps.append(obs)
                     continuation.yield(.step(obs))
-                    observations.append((action.tool, obs.content))
                     scratchpad += "\nAction: \(action.displayContent)\nObservation: \(compactScratchpadObservation(obs.content))"
                     if let locationObservation = currentLocationScratchpadContext(from: obs.content) {
                         scratchpad += "\nContext: \(locationObservation)"
@@ -1927,7 +1926,8 @@ final class AgentService {
                     break stepsLoop
                 }
 
-                if Self.hasUsableObservation(for: IntentRouter.classify(Self.sanitizedStructuredUserMessage(req.userMessage)).intent, observations: observations) {
+                let malformedIntent = IntentRouter.classify(Self.sanitizedStructuredUserMessage(req.userMessage)).intent
+                if Self.hasUsableObservation(for: malformedIntent, observations: observations) {
                     let reflection = AgentStep(kind: .reflection, content: "Malformed structured turn repaired by synthesizing from existing tool observations.")
                     steps.append(reflection)
                     continuation.yield(.step(reflection))
@@ -1954,7 +1954,7 @@ final class AgentService {
                 let streamedFinal = scanner.final.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !streamedFinal.isEmpty {
                     finalAnswer = streamedFinal
-                } else if !observations.isEmpty {
+                } else if Self.hasUsableObservation(for: malformedIntent, observations: observations) {
                     finalAnswer = await synthesizeFallback(req: req, observations: observations, reason: .malformed)
                 } else {
                     finalAnswer = await synthesizeUnstructuredFallback(
@@ -3044,6 +3044,13 @@ final class AgentService {
         deterministicWebSummaryFallback(observations: observations)
     }
 
+    nonisolated static func hasUsableObservationForTests(
+        intent: UserIntent,
+        observations: [(tool: String, result: String)]
+    ) -> Bool {
+        hasUsableObservation(for: intent, observations: observations)
+    }
+
     nonisolated static func repairMissingToolActionForTests(
         raw: String,
         req: AgentRequest,
@@ -3470,16 +3477,29 @@ final class AgentService {
             return observations.contains {
                 let tool = ToolRouteGuard.canonicalToolID($0.tool)
                 let result = $0.result.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (tool == "web.search" || tool == "web.fetch") && !result.isEmpty
+                return (tool == "web.search" || tool == "web.fetch") && isUsableObservationResult(result)
             }
         case .rag, .files:
             return observations.contains {
                 let tool = ToolRouteGuard.canonicalToolID($0.tool)
-                return tool == "rag.search" || tool == "files.read"
+                return (tool == "rag.search" || tool == "files.read") && isUsableObservationResult($0.result)
             }
         default:
-            return !observations.isEmpty
+            return observations.contains {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                return ToolRegistry.find(id: tool) != nil && isUsableObservationResult($0.result)
+            }
         }
+    }
+
+    private nonisolated static func isUsableObservationResult(_ result: String) -> Bool {
+        let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        let lower = text.lowercased()
+        return !lower.hasPrefix("unknown tool:")
+            && !lower.contains(" is disabled")
+            && !lower.contains("tool disabled")
+            && !lower.contains("disabled. enable it in tools")
     }
 
     private nonisolated static func repairMissingToolActionIfPossible(
