@@ -179,7 +179,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: mapsToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["search photos", "find photos", "photo library", "pictures from", "photos from", "images in my library"]) {
+        if isLikelyPhotosIntent(text) {
             return IntentRoutingDecision(intent: .photos, allowedToolIDs: photosToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
@@ -257,6 +257,15 @@ nonisolated enum IntentRouter {
         case .chat, .unknown:
             return false
         }
+    }
+
+    private static func isLikelyPhotosIntent(_ text: String) -> Bool {
+        matchesAny(text, [
+            "search photos", "find photos", "photo library", "pictures from", "photos from", "images in my library",
+            "show latest selfie picture", "show latest selfie", "show latest photo", "show latest picture",
+            "open latest selfie", "find latest selfie", "show recent selfies", "show my newest photo",
+            "newest photo", "newest picture", "latest selfie", "latest photo", "latest picture"
+        ])
     }
 
     static func unavailableMessage(for decision: IntentRoutingDecision) -> String {

@@ -1499,6 +1499,63 @@ extension AgentGroundingRegressionTests {
         #expect(noise.prefixNoise?.contains("Here is the JSON") == true)
     }
 
+    @Test func deterministicWebSummaryFallbackSynthesizesSwiftSearchObservations() throws {
+        let observation = """
+        Search results for: Swift concurrency best practices
+        {"title":"Swift.org - Concurrency","url":"https://swift.org/documentation/concurrency/","snippet":"Swift concurrency uses async/await and structured concurrency so tasks can be cancelled and scoped cleanly."}
+        {"title":"Apple Developer - MainActor","url":"https://developer.apple.com/documentation/swift/mainactor","snippet":"Use MainActor isolation for UI state updates and keep work that can suspend out of synchronous UI paths."}
+        """
+
+        let summary = try #require(AgentService.deterministicWebSummaryFallbackForTests(observations: [("web.search", observation)]))
+
+        #expect(summary.contains("Swift") || summary.contains("swift"))
+        #expect(summary.split(separator: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("-") }.count >= 2)
+        #expect(!summary.lowercased().contains("no direct answer from web search"))
+        #expect(!summary.lowercased().hasPrefix("search results for:"))
+    }
+
+    @Test func missingActionToolRepairsToOnlyAllowedToolWhenSafe() throws {
+        let raw = #"{"thought":"search","action":{"args":{"query":"Swift concurrency best practices"}}}"#
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for Swift concurrency best practices.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { ToolRouteGuard.canonicalToolID($0.id) == "web.search" },
+            relevantMemories: []
+        )
+
+        let repaired = try #require(AgentService.repairMissingToolActionForTests(raw: raw, req: req))
+
+        #expect(repaired.action.tool == "web.search")
+        #expect(repaired.action.args["query"]?.stringValue == "Swift concurrency best practices")
+    }
+
+    @Test func missingActionToolDoesNotRepairWhenMultipleToolsAreAllowed() throws {
+        let raw = #"{"thought":"search","action":{"args":{"query":"Swift concurrency best practices"}}}"#
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for Swift concurrency best practices.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter {
+                let id = ToolRouteGuard.canonicalToolID($0.id)
+                return id == "web.search" || id == "web.fetch"
+            },
+            relevantMemories: []
+        )
+
+        #expect(AgentService.repairMissingToolActionForTests(raw: raw, req: req) == nil)
+    }
+
     @Test func agentJSONOnlyQwenThinkWrapperWithoutJSONRemainsEmpty() throws {
         let raw = "<think>\nprivate reasoning\n</think>\n"
 

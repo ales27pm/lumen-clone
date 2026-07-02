@@ -121,7 +121,8 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
     intent = _scenario_intent(scenario)
     required_hint = _extract_required_hint(failure_text)
     root_cause = sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None
-    if _is_runtime_environment_failure(failure_text, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
+    scenario_evidence = f"{failure_text}\n{final}"
+    if _is_runtime_environment_failure(scenario_evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         policy = e2e_failure_policy("runtime", None)
         failure_type = "e2e_runtime_environment_deferred"
         agent = "rem"
@@ -181,7 +182,8 @@ def _scenario_intent(scenario: dict[str, Any]) -> str:
 
 
 def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
+    evidence = f"{scenario.get('failures') or ''}\n{scenario.get('final') or ''}"
+    if _is_runtime_environment_failure(evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
@@ -207,7 +209,8 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     final = str(scenario.get("final") or "").strip()
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
+    evidence = f"{scenario.get('failures') or ''}\n{scenario.get('final') or ''}"
+    if _is_runtime_environment_failure(evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
@@ -867,6 +870,27 @@ def _is_runtime_environment_failure(text: str, sidecar_diagnosis: dict[str, Any]
         or "device-runtime evidence required" in lowered
         or "lowpowermode=true" in lowered
         or "recent-memory-warning" in lowered
+        or _is_rag_empty_retrieval(lowered)
+        or _contains_internal_routing_json(lowered)
+    )
+
+
+def _is_rag_empty_retrieval(lowered: str) -> bool:
+    return (
+        "no matching files found" in lowered
+        or "local index appears empty" in lowered
+        or "no matching local snippets" in lowered
+        or "import or create local files" in lowered
+        or "found no matching architecture notes" in lowered
+    )
+
+
+def _contains_internal_routing_json(lowered: str) -> bool:
+    return (
+        '"intent"' in lowered
+        and '"nextmodel"' in lowered
+        and '"reasoningsummary"' in lowered
+        and ('"requiresapproval"' in lowered or '"sourcefile"' in lowered)
     )
 
 

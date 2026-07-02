@@ -80,10 +80,19 @@ enum PhotosTools {
             return "Photo library has \(totalInLibrary) images. Most recent: \(formatAssetDate(assets.firstObject?.creationDate))."
         }
         if total == 0 {
+            if wantSelfies {
+                return "I searched your photo library and found no selfies."
+            }
             return "No photos match \"\(query)\"."
         }
+        if let first = matches.first, trimmed.contains("latest") || trimmed.contains("newest") || trimmed.contains("recent") {
+            let noun = wantSelfies ? "selfie" : "photo"
+            return "Found latest \(noun) from \(formatAssetDate(first.creationDate)).\n\(assetPayloadJSON(first, queryMatched: query))"
+        }
         let sample = matches.prefix(5).map { formatAssetDate($0.creationDate) }.joined(separator: ", ")
-        return "Found \(total) photos matching \"\(query)\". Recent dates: \(sample)."
+        let payloads = matches.prefix(3).map { assetPayloadDictionary($0, queryMatched: query) }
+        let payload = jsonString(["matches": payloads]) ?? "{}"
+        return "Found \(total) photos matching \"\(query)\". Recent dates: \(sample).\n\(payload)"
     }
 
     static func captureImage() async -> String {
@@ -111,6 +120,42 @@ enum PhotosTools {
     private static func formatAssetDate(_ date: Date?) -> String {
         guard let date else { return "unknown date" }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private static func assetPayloadJSON(_ asset: PHAsset, queryMatched: String) -> String {
+        jsonString(["match": assetPayloadDictionary(asset, queryMatched: queryMatched)]) ?? "{}"
+    }
+
+    private static func assetPayloadDictionary(_ asset: PHAsset, queryMatched: String) -> [String: Any] {
+        [
+            "localIdentifier": asset.localIdentifier,
+            "creationDate": asset.creationDate.map { ISO8601DateFormatter().string(from: $0) } ?? "",
+            "mediaSubtypes": mediaSubtypeNames(asset.mediaSubtypes),
+            "isFavorite": asset.isFavorite,
+            "pixelWidth": asset.pixelWidth,
+            "pixelHeight": asset.pixelHeight,
+            "queryMatched": queryMatched,
+            "displayToken": "photos://asset/\(asset.localIdentifier)"
+        ]
+    }
+
+    private static func mediaSubtypeNames(_ subtypes: PHAssetMediaSubtype) -> [String] {
+        var names: [String] = []
+        if subtypes.contains(.photoPanorama) { names.append("photoPanorama") }
+        if subtypes.contains(.photoHDR) { names.append("photoHDR") }
+        if subtypes.contains(.photoScreenshot) { names.append("photoScreenshot") }
+        if subtypes.contains(.photoLive) { names.append("photoLive") }
+        if subtypes.contains(.photoDepthEffect) { names.append("photoDepthEffect") }
+        return names
+    }
+
+    private static func jsonString(_ object: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              let string = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return string
     }
 
     static func previousDayRange(

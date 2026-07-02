@@ -514,6 +514,7 @@ struct E2ETestRunnerView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            SceneTransitionCoordinator.shared.requestForegroundActivation()
             refreshResourceSnapshot()
             reloadLatestReport()
         }
@@ -533,7 +534,8 @@ struct E2ETestRunnerView: View {
     }
 
     private var failureBuckets: [E2EFailureBucket] {
-        let buckets = Dictionary(grouping: dashboardResults.flatMap(\.failures)) { failure in
+        let actionableResults = dashboardResults.filter { !$0.isRuntimePreflightNonActionable }
+        let buckets = Dictionary(grouping: actionableResults.flatMap(\.failures)) { failure in
             failureCategory(for: failure)
         }
         return ["intent", "tool-boundary", "response-quality", "runtime", "hygiene", "other"]
@@ -554,6 +556,7 @@ struct E2ETestRunnerView: View {
     @MainActor
     private func run() {
         guard !isRunning else { return }
+        SceneTransitionCoordinator.shared.requestForegroundActivation()
         refreshResourceSnapshot()
         if let blockedRunReason {
             exportError = blockedRunReason
@@ -673,12 +676,14 @@ struct E2ETestRunnerView: View {
 
     private func inProgressReportText(results: [E2ETestResult], total: Int) -> String {
         let passed = results.filter(\.passed).count
-        let failed = results.count - passed
+        let nonActionable = results.filter(\.isRuntimePreflightNonActionable).count
+        let failed = results.count - passed - nonActionable
         return """
         Running \(runMode.title) E2E suite
         Completed: \(results.count)/\(total)
         Passed: \(passed)
         Failed: \(failed)
+        Runtime preflight: \(nonActionable)
         """
     }
 
@@ -729,10 +734,12 @@ private struct E2ETestDashboardView: View {
 
     private var completedCount: Int { results.count }
     private var passedCount: Int { results.filter(\.passed).count }
-    private var failedCount: Int { completedCount - passedCount }
+    private var runtimePreflightCount: Int { results.filter(\.isRuntimePreflightNonActionable).count }
+    private var failedCount: Int { completedCount - passedCount - runtimePreflightCount }
     private var passRate: Double {
-        guard completedCount > 0 else { return 0 }
-        return Double(passedCount) / Double(completedCount)
+        let actionableCompleted = completedCount - runtimePreflightCount
+        guard actionableCompleted > 0 else { return 0 }
+        return Double(passedCount) / Double(actionableCompleted)
     }
     private var progressFraction: Double {
         guard totalScenarioCount > 0 else { return 0 }
@@ -755,6 +762,7 @@ private struct E2ETestDashboardView: View {
                 E2ETestMetricTile(title: "Pass rate", value: percentText(passRate), systemImage: "gauge.with.dots.needle.bottom.50percent", tint: .blue)
                 E2ETestMetricTile(title: "Passed", value: "\(passedCount)", systemImage: "checkmark.circle", tint: .green)
                 E2ETestMetricTile(title: "Failed", value: "\(failedCount)", systemImage: "xmark.circle", tint: failedCount > 0 ? .red : .secondary)
+                E2ETestMetricTile(title: "Preflight", value: "\(runtimePreflightCount)", systemImage: "thermometer.medium", tint: runtimePreflightCount > 0 ? .orange : .secondary)
                 E2ETestMetricTile(title: "Elapsed", value: durationText(elapsedSeconds), systemImage: "timer", tint: .orange)
             }
 
@@ -777,7 +785,7 @@ private struct E2ETestDashboardView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Theme.textSecondary)
                     HStack(spacing: 8) {
-                        StatusDot(color: latest.passed ? .green : .red, size: 9)
+                        StatusDot(color: latest.statusColor, size: 9)
                         Text(latest.title)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(2)
@@ -785,7 +793,7 @@ private struct E2ETestDashboardView: View {
                     if let firstFailure = latest.failures.first {
                         Text(firstFailure)
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(latest.isRuntimePreflightNonActionable ? .orange : .red)
                             .lineLimit(3)
                     }
                 }
@@ -801,18 +809,21 @@ private struct E2ETestDashboardView: View {
     private var statusText: String {
         if isRunning { return "Running" }
         if completedCount == 0 { return "Idle" }
+        if failedCount == 0, runtimePreflightCount > 0 { return "Preflight" }
         return failedCount == 0 ? "Passing" : "Failing"
     }
 
     private var statusIcon: String {
         if isRunning { return "play.circle" }
         if completedCount == 0 { return "circle.dashed" }
+        if failedCount == 0, runtimePreflightCount > 0 { return "thermometer.medium" }
         return failedCount == 0 ? "checkmark.seal" : "exclamationmark.triangle"
     }
 
     private var statusTint: Color {
         if isRunning { return .blue }
         if completedCount == 0 { return .secondary }
+        if failedCount == 0, runtimePreflightCount > 0 { return .orange }
         return failedCount == 0 ? .green : .red
     }
 }
@@ -856,7 +867,7 @@ private struct E2ETestResultRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusDot(color: result.passed ? .green : .red, size: 9)
+                StatusDot(color: result.statusColor, size: 9)
                 Text(result.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
@@ -873,7 +884,7 @@ private struct E2ETestResultRow: View {
             if let firstFailure = result.failures.first {
                 Text(firstFailure)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(result.isRuntimePreflightNonActionable ? .orange : .red)
                     .lineLimit(3)
             } else if !result.finalText.isEmpty {
                 Text(result.finalText)
@@ -883,6 +894,14 @@ private struct E2ETestResultRow: View {
             }
         }
         .padding(.vertical, 3)
+    }
+}
+
+private extension E2ETestResult {
+    var statusColor: Color {
+        if passed { return .green }
+        if isRuntimePreflightNonActionable { return .orange }
+        return .red
     }
 }
 

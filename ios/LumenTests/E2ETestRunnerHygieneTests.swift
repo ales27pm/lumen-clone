@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Lumen
 
@@ -679,6 +680,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(result.metadata["budgetDenialReason"] == denial)
         #expect(result.metadata["actionable"] == "false")
         #expect(result.metadata["trainingSignal"] == "false")
+        #expect(result.isRuntimePreflightNonActionable)
         #expect(result.events.map(\.phase) == ["live-runtime-preflight"])
         #expect(E2ETestRunner.liveRuntimeShouldStopAfterForTests(result))
         #else
@@ -700,7 +702,7 @@ struct E2ETestRunnerHygieneTests {
             forbiddenTextHints: [],
             requiresAgentRun: true
         )
-        let denial = "live-e2e.pre-scenario: scenePhase=inactive"
+        let denial = "live-e2e.pre-scenario: scenePhase=background"
         let result = await E2ETestRunner.liveRuntimePreflightBlockedResultForTests(
             scenario,
             denialReason: denial
@@ -710,7 +712,51 @@ struct E2ETestRunnerHygieneTests {
         #expect(result.metadata["budgetDenialReason"] == denial)
         #expect(result.metadata["actionable"] == "false")
         #expect(result.metadata["trainingSignal"] == "false")
-        #expect(E2ETestReport(id: UUID(), startedAt: Date(), finishedAt: Date(), passed: 0, failed: 1, results: [result]).summaryText.contains("runtime-preflight/non-actionable"))
+        #expect(result.isRuntimePreflightNonActionable)
+        let summary = E2ETestReport(id: UUID(), startedAt: Date(), finishedAt: Date(), passed: 0, failed: 1, results: [result]).summaryText
+        #expect(summary.contains("Failed: 0"))
+        #expect(summary.contains("Runtime preflight/non-actionable: 1"))
+        #expect(summary.contains("runtime-preflight/non-actionable"))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func liveRuntimeReadinessBarrierWaitsForRecoverableBackgroundScenePhase() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-maps-directions-direct",
+            title: "Live maps directions",
+            kind: .toolGuard,
+            prompt: "Get directions to the nearest hardware store.",
+            expectedIntent: .maps,
+            requiredAllowedToolIDs: ["maps.directions"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        await MainActor.run {
+            ResourceBudgetGate.setDiagnosticSnapshotOverride(.init(
+                scenePhase: .background,
+                lowPowerModeEnabled: false,
+                thermalState: .nominal,
+                recentMemoryWarningCount: 0,
+                lastMemoryWarningAt: nil
+            ))
+        }
+
+        let outcome = await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
+            scenario,
+            maxWaitNanoseconds: 5_000_000,
+            pollNanoseconds: 1_000_000
+        )
+        await MainActor.run {
+            ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+        }
+
+        #expect(outcome.denialReason == "live-e2e.pre-scenario: scenePhase=background")
+        #expect(outcome.events.contains { $0.phase == "live-runtime-preflight-wait" })
         #else
         #expect(true)
         #endif
@@ -785,11 +831,46 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "https://example.com/swift", scenario: scenario))
         #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "See the full tutorial at https://example.com/swift-concurrency", scenario: scenario))
         #expect(E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+            finalText: "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+            scenario: scenario
+        ).contains("Live agent returned fallback/error text instead of completing the scenario"))
+        #expect(E2ETestRunner.liveAgentQualityFailures(
             rawFinalText: #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search.","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
             finalText: #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search.","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
             scenario: scenario
         ).contains("Live agent returned fallback/error text instead of completing the scenario"))
         #expect(!E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "- Prefer structured cancellation so child tasks stop cleanly.\n- Keep MainActor UI updates explicit to avoid accidental data races.", scenario: scenario))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragEmptyRetrievalDoesNotRewriteIntoFakeModules() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "Training eval: RAG grounding",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let original = "I searched your local files but found no matching architecture notes. The local index appears empty; import or create files and reindex."
+        let outcome = await E2ETestRunner.validateAndRewriteFinalTextIfNeededForTests(
+            scenario: scenario,
+            routing: IntentRoutingDecision(intent: .rag, allowedToolIDs: ["rag.search"], requiresClarification: false, clarificationPrompt: nil),
+            originalFinal: original
+        )
+        #expect(outcome.finalText == original)
+        #expect(outcome.missingHints.isEmpty)
+        #expect(!outcome.rewriteAttempted)
+        #expect(!outcome.finalText.contains("Key modules"))
+        #expect(!outcome.finalText.contains("[1]"))
         #else
         #expect(true)
         #endif

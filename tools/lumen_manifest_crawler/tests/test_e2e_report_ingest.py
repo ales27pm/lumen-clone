@@ -507,6 +507,79 @@ def test_ingestion_keeps_cpu_watchdog_degraded_out_of_training_repairs(tmp_path:
     assert normalized.get("trainingSignals") in (None, [])
 
 
+def test_ingestion_keeps_rag_empty_index_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "rag-empty-e2e-report.json"
+    import json
+
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "training-rag-grounding",
+                "kind": "training",
+                "title": "Training eval: RAG grounding",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Search my files for architecture notes and summarize key modules.",
+                "actualIntent": "rag",
+                "expectedIntent": "rag",
+                "failures": ["RAG empty local index."],
+                "finalText": "No matching files found for 'architecture notes'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+                "events": [{"phase": "step", "message": "rag.search: No matching files found for 'architecture notes'. Your local index appears empty."}],
+                "metadata": {},
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_runtime_environment_deferred"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert normalized.get("trainingSignals") in (None, [])
+
+
+def test_ingestion_keeps_internal_routing_json_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "internal-json-e2e-report.json"
+    import json
+
+    leaked = '{"intent":"webSearch","nextModel":"rag","reasoningSummary":"bad","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}'
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "training-web-research",
+                "kind": "training",
+                "title": "Training eval: web research synthesis",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+                "actualIntent": "webSearch",
+                "expectedIntent": "webSearch",
+                "failures": ["Live agent returned fallback/error text instead of completing the scenario"],
+                "finalText": leaked,
+                "events": [],
+                "metadata": {},
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_runtime_environment_deferred"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert normalized.get("trainingSignals") in (None, [])
+
+
 def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):
     report_path = tmp_path / "e2e-with-model-evidence.json"
     import json

@@ -143,6 +143,78 @@ final class ImproveLoopSampleGateTests: XCTestCase {
         XCTAssertEqual(dataset.counters.resourceFallbackRejected, 1)
     }
 
+    func testRAGEmptyIndexIsQuarantinedNotTraining() {
+        let repair = AgentBehaviorRepairSample(
+            id: UUID(),
+            createdAt: Date(),
+            agent: "mouth",
+            violationCode: "rag_grounding",
+            promptPrefix: "Search my files for architecture notes and summarize key modules.",
+            expected: "honest empty retrieval final",
+            badOutput: "No matching files found for 'architecture notes'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+            correctedOutput: "Key modules: core module details were retrieved from local file snippets [1].",
+            lesson: "Do not hallucinate RAG sources.",
+            curriculum: "rag"
+        )
+        let audit = AgentBehaviorAuditReport(
+            passed: false,
+            score: 0.2,
+            generatedAt: Date(),
+            traceCount: 1,
+            violationCount: 1,
+            sourceCommit: "test",
+            violations: [],
+            recommendations: [],
+            repairSamples: [repair]
+        )
+
+        let dataset = ImproveLoopSampleGate.buildDataset(
+            behaviorAudit: audit,
+            traces: [],
+            scenarioResults: [],
+            sourceCommit: "test"
+        )
+
+        XCTAssertTrue(dataset.acceptedTraining.isEmpty)
+        XCTAssertEqual(dataset.quarantinedSamples.first?.sampleType, .rejectedArchitectureFailure)
+    }
+
+    func testInternalRoutingJSONLeakageIsQuarantinedNotTraining() {
+        let repair = AgentBehaviorRepairSample(
+            id: UUID(),
+            createdAt: Date(),
+            agent: "mouth",
+            violationCode: "final_leaked_internal_json",
+            promptPrefix: "Search web and summarize.",
+            expected: "web summary",
+            badOutput: #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"bad","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
+            correctedOutput: "Use structured concurrency and MainActor isolation.",
+            lesson: "Do not leak internal routing JSON.",
+            curriculum: "web"
+        )
+        let audit = AgentBehaviorAuditReport(
+            passed: false,
+            score: 0.2,
+            generatedAt: Date(),
+            traceCount: 1,
+            violationCount: 1,
+            sourceCommit: "test",
+            violations: [],
+            recommendations: [],
+            repairSamples: [repair]
+        )
+
+        let dataset = ImproveLoopSampleGate.buildDataset(
+            behaviorAudit: audit,
+            traces: [],
+            scenarioResults: [],
+            sourceCommit: "test"
+        )
+
+        XCTAssertTrue(dataset.acceptedTraining.isEmpty)
+        XCTAssertEqual(dataset.quarantinedSamples.first?.sampleType, .rejectedArchitectureFailure)
+    }
+
     func testCanonicalizesTraceAllowedToolComparison() {
         let trace = AgentBehaviorTrace(
             id: UUID(),

@@ -206,7 +206,7 @@ nonisolated enum DeterministicToolPlanner {
             if isCalendarCreateIntent(text) {
                 return action("calendar.create", [
                     "title": .string(extractCalendarTitle(from: prompt)),
-                    "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
+                    "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text) ?? 60))
                 ])
             }
             if isCalendarReadIntent(text) { return action("calendar.list") }
@@ -220,7 +220,8 @@ nonisolated enum DeterministicToolPlanner {
             if let q = extractContactQuery(from: prompt), !q.isEmpty { return action("contacts.search", ["query": .string(q)]) }
             return nil
         case .photos:
-            return action("photos.search", ["query": .string(extractDestination(from: prompt) ?? "")])
+            let query = extractPhotoQuery(from: prompt)
+            return query.isEmpty ? nil : action("photos.search", ["query": .string(query)])
         case .camera:
             return action("camera.capture")
         case .health:
@@ -286,9 +287,16 @@ nonisolated enum DeterministicToolPlanner {
                     "durationSeconds": .string(String(seconds))
                 ])
             case .schedule:
+                if let duration = RelativeDuration.parse(from: text), duration.unit == .seconds {
+                    return action("alarm.countdown", [
+                        "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
+                        "durationSeconds": .string(String(duration.seconds))
+                    ])
+                }
+                guard let minutes = calendarStartOffsetMinutes(from: text) else { return nil }
                 return action("alarm.schedule", [
                     "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
-                    "inMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
+                    "inMinutes": .string(String(minutes))
                 ])
             case .unknown:
                 return nil
@@ -309,7 +317,7 @@ nonisolated enum DeterministicToolPlanner {
                     "schedule": .string("once")
                 ]
                 if text.contains("tonight") { args["inMinutes"] = .string("120") }
-                else if let minutes = extractMinutes(from: text) { args["inMinutes"] = .string(String(minutes)) }
+                else if let minutes = calendarStartOffsetMinutes(from: text) { args["inMinutes"] = .string(String(minutes)) }
                 else { args["inMinutes"] = .string("60") }
                 return action("trigger.create", args)
             }
@@ -416,6 +424,9 @@ nonisolated enum DeterministicToolPlanner {
     static func firstURL(in text: String) -> String? { SlotAgentService.shared_firstURL(text) }
 
     private static func extractMinutes(from text: String) -> Int? {
+        if let duration = RelativeDuration.parse(from: text) {
+            return duration.minutesCeiled
+        }
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let regex = try? NSRegularExpression(pattern: #"(\d+)\s*(?:minute|minutes|min|mins)"#),
               let match = regex.firstMatch(in: text, range: nsRange),
@@ -426,8 +437,9 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func countdownDurationSeconds(from text: String) -> Int? {
-        if let minutes = extractMinutes(from: text) { return minutes * 60 }
+        if let duration = RelativeDuration.parse(from: text) { return duration.seconds }
         if let seconds = firstCapture(in: text, pattern: #"(?i)\b(\d+)\s*(?:second|seconds|sec|secs)\b"#).flatMap(Int.init) { return max(1, min(seconds, 24 * 60 * 60)) }
+        if let minutes = extractMinutes(from: text) { return minutes * 60 }
         return nil
     }
 
@@ -550,7 +562,13 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
         return "Event"
     }
 
-    private static func calendarStartOffsetMinutes(from text: String) -> Int {
+    private static func calendarStartOffsetMinutes(from text: String) -> Int? {
+        if let duration = RelativeDuration.parse(from: text) {
+            return duration.minutesCeiled
+        }
+        if RelativeDuration.containsExplicitRelativeSyntax(text) {
+            return nil
+        }
         if let explicitMinutes = extractMinutes(from: text) { return explicitMinutes }
         let now = Date()
         var calendar = Calendar.current
@@ -563,7 +581,7 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             let start = calendar.startOfDay(for: base)
             target = calendar.date(byAdding: .hour, value: hour, to: start) ?? target
         } else if !text.contains("tomorrow") {
-            target = now.addingTimeInterval(60 * 60)
+            return nil
         }
         if target <= now { target = calendar.date(byAdding: .day, value: 1, to: target) ?? now.addingTimeInterval(60 * 60) }
         return max(1, Int(target.timeIntervalSince(now) / 60))
@@ -624,6 +642,20 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             if let r = lower.range(of: marker) { return String(text[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines) }
         }
         return nil
+    }
+
+    private static func extractPhotoQuery(from prompt: String) -> String {
+        let text = normalized(prompt)
+        if containsAny(text, ["latest selfie", "newest selfie", "recent selfies", "recent selfie", "selfie picture"]) {
+            return "latest selfie"
+        }
+        if containsAny(text, ["latest photo", "latest picture", "newest photo", "newest picture", "recent photo", "recent picture"]) {
+            return "latest photo"
+        }
+        if text.contains("selfie") { return "selfie" }
+        let destination = extractDestination(from: prompt)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return destination?.isEmpty == false ? destination! : "photos"
     }
 
     static func extractContactQuery(from text: String) -> String? { extractDestination(from: text) }
