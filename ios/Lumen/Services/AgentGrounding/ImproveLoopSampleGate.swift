@@ -430,10 +430,7 @@ nonisolated enum ImproveLoopSampleGate {
     }
 
     private static func containsInternalRoutingJSON(_ lower: String) -> Bool {
-        lower.contains("\"intent\"")
-            && lower.contains("\"nextmodel\"")
-            && lower.contains("\"reasoningsummary\"")
-            && (lower.contains("\"requiresapproval\"") || lower.contains("\"sourcefile\""))
+        RoutingJSONLeakDetector.containsInternalRoutingJSON(lower)
     }
 
     private static let legacyToolAliasMap: [String: String] = [

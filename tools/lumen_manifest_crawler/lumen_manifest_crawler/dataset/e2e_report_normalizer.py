@@ -925,7 +925,6 @@ def _contains_internal_routing_json(lowered: str) -> bool:
         '"intent"' in lowered
         and '"nextmodel"' in lowered
         and '"reasoningsummary"' in lowered
-        and ('"requiresapproval"' in lowered or '"sourcefile"' in lowered)
     )
 
 

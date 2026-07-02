@@ -22,6 +22,7 @@ enum AlarmTools {
     }
 
     static func authorizationStatus() async -> String {
+        guard alarmUsageDescriptionPresent() else { return missingUsageDescriptionMessage }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             return "Alarm authorization status: \(String(describing: AlarmManager.shared.authorizationState))."
@@ -31,6 +32,7 @@ enum AlarmTools {
     }
 
     static func requestAuthorization() async -> String {
+        guard alarmUsageDescriptionPresent() else { return missingUsageDescriptionMessage }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             do {
@@ -89,12 +91,15 @@ enum AlarmTools {
     }
 
     static func list() async -> String {
+        guard alarmUsageDescriptionPresent() else { return missingUsageDescriptionMessage }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             do {
                 let alarms = try AlarmManager.shared.alarms
                 if alarms.isEmpty { return "No active alarms." }
-                return "Active alarms:\n" + alarms.map { "• \(String(describing: $0))" }.joined(separator: "\n")
+                return "Active alarms:\n" + alarms.map { alarm in
+                    "• id=\(alarm.id.uuidString); state=\(String(describing: alarm.state))"
+                }.joined(separator: "\n")
             } catch {
                 return "Unable to read alarms: \(error.localizedDescription)"
             }
@@ -161,6 +166,7 @@ enum AlarmTools {
         guard let uuid = UUID(uuidString: id) else {
             return "Invalid alarm id. Provide a UUID string in `id`."
         }
+        guard alarmUsageDescriptionPresent() else { return missingUsageDescriptionMessage }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             do {
@@ -175,6 +181,7 @@ enum AlarmTools {
     }
 
     private static func scheduleAlarm(title: String, fireDate: Date, repeats: Bool, snoozeMinutes: Int) async -> String {
+        guard alarmUsageDescriptionPresent() else { return missingUsageDescriptionMessage }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             do {
@@ -200,6 +207,7 @@ enum AlarmTools {
     }
 
     private static func scheduleCountdown(title: String, durationSeconds: Int) async -> String {
+        guard alarmUsageDescriptionPresent() else { return missingUsageDescriptionMessage }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             do {
@@ -222,31 +230,41 @@ enum AlarmTools {
     @available(iOS 26.0, *)
     private static func alarmAttributes(title: String) -> AlarmAttributes<LumenAlarmMetadata> {
         AlarmAttributes(
-            presentation: alarmPresentation(),
+            presentation: alarmPresentation(title: title),
             metadata: LumenAlarmMetadata(title: title),
             tintColor: .orange
         )
     }
 
     @available(iOS 26.0, *)
-    private static func alarmPresentation() -> AlarmPresentation {
+    private static func alarmPresentation(title: String) -> AlarmPresentation {
+        let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Alarm" : title
+        let localizedTitle = LocalizedStringResource(stringLiteral: displayTitle)
         let pauseButton = AlarmButton(text: "Pause", textColor: .orange, systemImageName: "pause.fill")
         let resumeButton = AlarmButton(text: "Resume", textColor: .orange, systemImageName: "play.fill")
         if #available(iOS 26.1, *) {
             let secondaryButton = AlarmButton(text: "Snooze", textColor: .orange, systemImageName: "zzz")
             return AlarmPresentation(
-                alert: .init(title: "Lumen Alarm", secondaryButton: secondaryButton, secondaryButtonBehavior: .countdown),
-                countdown: .init(title: "Lumen Countdown", pauseButton: pauseButton),
-                paused: .init(title: "Lumen Paused", resumeButton: resumeButton)
+                alert: .init(title: localizedTitle, secondaryButton: secondaryButton, secondaryButtonBehavior: .countdown),
+                countdown: .init(title: localizedTitle, pauseButton: pauseButton),
+                paused: .init(title: localizedTitle, resumeButton: resumeButton)
             )
         } else {
             let stopButton = AlarmButton(text: "Stop", textColor: .orange, systemImageName: "stop.fill")
             return AlarmPresentation(
-                alert: .init(title: "Lumen Alarm", stopButton: stopButton),
-                countdown: .init(title: "Lumen Countdown", pauseButton: pauseButton),
-                paused: .init(title: "Lumen Paused", resumeButton: resumeButton)
+                alert: .init(title: localizedTitle, stopButton: stopButton),
+                countdown: .init(title: localizedTitle, pauseButton: pauseButton),
+                paused: .init(title: localizedTitle, resumeButton: resumeButton)
             )
         }
     }
 #endif
+
+    nonisolated static var missingUsageDescriptionMessage: String {
+        "AlarmKit availability: unavailable (missing NSAlarmKitUsageDescription in the installed app bundle)."
+    }
+
+    private nonisolated static func alarmUsageDescriptionPresent() -> Bool {
+        PermissionsCenter.alarmUsageDescriptionPresent()
+    }
 }

@@ -348,7 +348,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .outlook, allowedToolIDs: outlookToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["search my photos", "find receipt pictures", "find photos", "photo library"]) {
+        if isLikelyPhotosIntent(text) {
             return IntentRoutingDecision(intent: .photos, allowedToolIDs: photosToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 

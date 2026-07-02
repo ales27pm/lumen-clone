@@ -722,6 +722,43 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func passedResultsWithRuntimeWordsAreNotNonActionablePreflight() {
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: "passed-with-old-runtime-text",
+            kind: E2ETestKind.training.rawValue,
+            title: "Passed scenario",
+            prompt: "Summarize runtime diagnostics.",
+            expectedIntent: UserIntent.chat.rawValue,
+            actualIntent: UserIntent.chat.rawValue,
+            requiresAgentRun: true,
+            passed: true,
+            failures: [],
+            finalText: "Previous run mentioned thermalState=serious, but this scenario passed.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: true,
+            events: [],
+            startedAt: Date(),
+            finishedAt: Date(),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: "",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            metadata: [
+                "failureKind": "liveRuntimeThermalCooldownRequired",
+                "actionable": "false",
+                "trainingSignal": "false"
+            ]
+        )
+
+        #expect(!result.isRuntimePreflightNonActionable)
+        let summary = E2ETestReport(id: UUID(), startedAt: Date(), finishedAt: Date(), passed: 1, failed: 0, results: [result]).summaryText
+        #expect(summary.contains("Passed: 1"))
+        #expect(!summary.contains("Runtime preflight/non-actionable: 1"))
+    }
+
     @Test func liveRuntimeReadinessBarrierWaitsForRecoverableBackgroundScenePhase() async {
         #if DEBUG
         let scenario = E2ETestScenario(

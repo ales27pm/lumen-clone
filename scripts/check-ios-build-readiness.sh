@@ -42,11 +42,17 @@ echo "== iOS signing capability checks =="
 python3 scripts/validate_ios_signing_capabilities.py
 
 echo "== Built app Info.plist check =="
-if [[ -n "${LUMEN_BUILT_APP_PATH:-}" ]]; then
-  python3 scripts/check_built_app_info_plist.py "$LUMEN_BUILT_APP_PATH"
-else
-  echo "Set LUMEN_BUILT_APP_PATH to a built .app, .xcarchive, or .ipa to verify final signed Info.plist metadata."
+if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
+  latest_candidate="$(find build -maxdepth 2 \( -name '*.xcarchive' -o -name '*.ipa' \) -print 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -n "$latest_candidate" ]]; then
+    export LUMEN_BUILT_APP_PATH="$latest_candidate"
+  fi
 fi
+if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
+  echo "error: LUMEN_BUILT_APP_PATH is required for final signed Info.plist metadata validation." >&2
+  exit 1
+fi
+python3 scripts/check_built_app_info_plist.py "$LUMEN_BUILT_APP_PATH"
 
 echo "== Static privacy/build-hardening checks =="
 if rg "${READINESS_RG_EXCLUDES[@]}" -n "TODO|stub|placeholder" ios/Lumen ios/LumenTests docs; then

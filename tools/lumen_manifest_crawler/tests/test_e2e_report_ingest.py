@@ -580,6 +580,40 @@ def test_ingestion_keeps_internal_routing_json_out_of_training_repairs(tmp_path:
     assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
 
 
+def test_ingestion_keeps_partial_internal_routing_json_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "partial-internal-json-e2e-report.json"
+    leaked = '{"intent":"webSearch","nextModel":"rag","reasoningSummary":"bad"}'
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "training-web-research",
+                "kind": "training",
+                "title": "Training eval: web research synthesis",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+                "actualIntent": "webSearch",
+                "expectedIntent": "webSearch",
+                "failures": ["Live agent returned fallback/error text instead of completing the scenario"],
+                "finalText": leaked,
+                "events": [],
+                "metadata": {},
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
+
+
 def test_ingestion_quarantines_web_no_direct_answer_finalizer_failure(tmp_path: Path):
     report_path = tmp_path / "web-fallback-e2e-report.json"
     report = {

@@ -331,6 +331,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     let metadata: [String: String]
 
     var isRuntimePreflightNonActionable: Bool {
+        guard !passed else { return false }
         if metadata["trainingSignal"]?.lowercased() == "false",
            metadata["actionable"]?.lowercased() == "false",
            metadata["failureKind"]?.hasPrefix("liveRuntime") == true {
@@ -573,9 +574,7 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
             "internal routing json"
         ]
         if nonTrainableSignals.contains(where: { evidence.contains($0) }) { return false }
-        if evidence.contains("\"intent\"")
-            && evidence.contains("\"nextmodel\"")
-            && evidence.contains("\"reasoningsummary\"") {
+        if RoutingJSONLeakDetector.containsInternalRoutingJSON(evidence) {
             return false
         }
         return true
@@ -1501,7 +1500,14 @@ nonisolated enum E2ETestRunner {
 
             let remaining = maxWaitNanoseconds - elapsedNanoseconds
             let sleepNanoseconds = min(max(pollNanoseconds, 1_000_000), remaining)
-            try? await Task.sleep(nanoseconds: sleepNanoseconds)
+            do {
+                try await Task.sleep(nanoseconds: sleepNanoseconds)
+            } catch {
+                return LiveRuntimeReadinessBarrierOutcome(
+                    denialReason: "live-e2e.pre-scenario: cancelled while waiting for runtime readiness; \(denial)",
+                    events: events
+                )
+            }
             attempt += 1
         }
     }
@@ -2545,11 +2551,6 @@ nonisolated enum E2ETestRunner {
             "full agent pipeline",
             "no direct answer from web search",
             "cpu-watchdog-degraded",
-            "\"intent\"",
-            "\"nextmodel\"",
-            "\"reasoningsummary\"",
-            "\"requiresapproval\"",
-            "\"sourcefile\"",
             "\"rewrittenfinalanswer\"",
             "\"requiresapprovaldecision\"",
             "\"requiresapprovalreasoningsummary\"",
@@ -2558,6 +2559,7 @@ nonisolated enum E2ETestRunner {
             "please ask again or tell me what you'd like to do next"
         ]
         return invalidSignals.contains(where: { combined.contains($0) })
+            || RoutingJSONLeakDetector.containsInternalRoutingJSON(combined)
             ? "Live agent returned fallback/error text instead of completing the scenario"
             : nil
     }

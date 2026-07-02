@@ -158,7 +158,7 @@ final class PermissionRegistry: NSObject, CLLocationManagerDelegate {
     }
 
     private func alarmStatus() -> AssistantPermissionState {
-        guard Bundle.main.object(forInfoDictionaryKey: "NSAlarmKitUsageDescription") != nil else {
+        guard PermissionsCenter.alarmUsageDescriptionPresent() else {
             return .unavailable
         }
 #if canImport(AlarmKit)

@@ -28,9 +28,9 @@ nonisolated struct RelativeDuration: Sendable, Equatable {
     var seconds: Int {
         switch unit {
         case .seconds: return Self.clamped(value, min: 1, max: 24 * 60 * 60)
-        case .minutes: return Self.clamped(value * 60, min: 60, max: 24 * 60 * 60)
-        case .hours: return Self.clamped(value * 60 * 60, min: 60 * 60, max: 24 * 60 * 60)
-        case .days: return Self.clamped(value * 24 * 60 * 60, min: 24 * 60 * 60, max: 7 * 24 * 60 * 60)
+        case .minutes: return Self.scaledSeconds(value, multiplier: 60, min: 60, max: 24 * 60 * 60)
+        case .hours: return Self.scaledSeconds(value, multiplier: 60 * 60, min: 60 * 60, max: 24 * 60 * 60)
+        case .days: return Self.scaledSeconds(value, multiplier: 24 * 60 * 60, min: 24 * 60 * 60, max: 7 * 24 * 60 * 60)
         }
     }
 
@@ -74,6 +74,11 @@ nonisolated struct RelativeDuration: Sendable, Equatable {
 
     private static func clamped(_ value: Int, min minimum: Int, max maximum: Int) -> Int {
         Swift.max(minimum, Swift.min(maximum, value))
+    }
+
+    private static func scaledSeconds(_ value: Int, multiplier: Int, min minimum: Int, max maximum: Int) -> Int {
+        guard value <= maximum / multiplier else { return maximum }
+        return clamped(value * multiplier, min: minimum, max: maximum)
     }
 
     private static func normalized(_ text: String) -> String {
