@@ -217,6 +217,8 @@ extension IntentRouterTests {
             ("Text 5551234567 that I am late.", .messageDraft, "messages.draft"),
             ("Am I signed in to Outlook?", .outlook, "outlook.status"),
             ("Search my photos for receipts.", .photos, "photos.search"),
+            ("Search my photos for receipts", .photos, "photos.search"),
+            ("Search my pictures for receipts.", .photos, "photos.search"),
             ("Show latest selfie picture", .photos, "photos.search"),
             ("Show my newest photo", .photos, "photos.search"),
             ("Find Lumen architecture notes in my local files.", .rag, "rag.search"),

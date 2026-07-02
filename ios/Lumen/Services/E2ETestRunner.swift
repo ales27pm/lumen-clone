@@ -1752,7 +1752,7 @@ nonisolated enum E2ETestRunner {
             preventDoubleGrounding: true,
             diagnosticsEnabled: false,
             allowDeterministicCompatibility: acceptsPolicyFirstEvidence,
-            allowParseFailureDeterministicRecovery: false,
+            allowParseFailureDeterministicRecovery: acceptsPolicyFirstEvidence,
             allowsMemoryPressureContinuation: scenario.kind == .training
         )
     }

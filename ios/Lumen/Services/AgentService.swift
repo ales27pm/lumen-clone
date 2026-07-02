@@ -3309,7 +3309,7 @@ final class AgentService {
         let lines = useful
             .filter { line in
                 let lower = line.lowercased()
-                return line.count >= 24
+                return line.count >= 16
                     && !lower.hasPrefix("search results for:")
                     && !lower.hasPrefix("web search results:")
                     && !lower.hasPrefix("http")
@@ -3362,7 +3362,8 @@ final class AgentService {
             #"(?is)\{[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*\}"#,
             #"(?is)\{[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*\}"#,
             #"(?is)"title"\s*:\s*"([^"]+)".{0,900}?"snippet"\s*:\s*"([^"]+)""#,
-            #"(?is)"snippet"\s*:\s*"([^"]+)".{0,900}?"title"\s*:\s*"([^"]+)""#
+            #"(?is)"snippet"\s*:\s*"([^"]+)".{0,900}?"title"\s*:\s*"([^"]+)""#,
+            #"(?is)"title"\s*:\s*"([^"]+)""#
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
