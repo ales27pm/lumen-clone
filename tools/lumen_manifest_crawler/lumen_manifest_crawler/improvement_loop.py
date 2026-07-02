@@ -499,6 +499,8 @@ def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
 
 def _runtime_gap_category(failure: dict[str, Any]) -> str:
     root_cause = _runtime_root_cause_category(failure)
+    if str(failure.get("type") or "") == "e2e_architecture_finalizer_failure":
+        return "architecture_finalizer_failure"
     if str(failure.get("type") or "") == "persistent_diagnostics_scenario_not_passed" and failure.get("remediationProposals"):
         return "persistent_diagnostics_remediation"
     if root_cause == "agent_json_context_overflow":
@@ -1019,6 +1021,8 @@ def _runtime_recommendation(
 ) -> str:
     if skipped_live_generation:
         return "Rerun this scenario through the live app/model path and export fresh E2E evidence before treating it as a tool failure."
+    if isinstance(failure, dict) and failure.get("trainable") is False:
+        return "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead."
     if failure_type == "agent_grounding_no_recent_model_traces":
         return "Fix runtime trace instrumentation or rerun the app before exporting; do not train from empty-trace evidence."
     if failure_type == "persistent_diagnostics_scenario_not_passed":

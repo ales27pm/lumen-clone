@@ -128,6 +128,11 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
         agent = "rem"
         curriculum = "runtime_environment_diagnostics"
         trainable = False
+    elif _is_architecture_or_finalizer_failure(scenario_evidence, sidecar_diagnosis):
+        failure_type = "e2e_architecture_finalizer_failure"
+        agent = "rem"
+        curriculum = "architecture_regression_diagnostics"
+        trainable = False
     else:
         policy = e2e_failure_policy(intent, required_hint)
         failure_type = policy.failure_type
@@ -358,12 +363,16 @@ def _final_artifact_diagnosis_for_scenario(scenario: dict[str, Any]) -> dict[str
     artifact_markers = [
         "tool output could not be validated",
         "could not be validated",
+        "no direct answer from web search",
+        "i'm ready. please ask again",
+        "please ask again or tell me what you'd like to do next",
+        "fallback/error text",
         '"reasoningsummary"',
         '"rewrittenfinalanswer"',
         '"requiresapprovaldecision"',
         '"requiresapprovalreasoningsummary"',
     ]
-    if not any(marker in lowered for marker in artifact_markers):
+    if not any(marker in lowered for marker in artifact_markers) and not _is_one_line_url_forwarding(lowered):
         return None
     return {
         "rootCauseCategory": "live_final_validation_artifact",
@@ -883,6 +892,32 @@ def _is_rag_empty_retrieval(lowered: str) -> bool:
         or "import or create local files" in lowered
         or "found no matching architecture notes" in lowered
     )
+
+
+def _is_architecture_or_finalizer_failure(text: str, sidecar_diagnosis: dict[str, Any] | None) -> bool:
+    if sidecar_diagnosis:
+        category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
+        if category == "live_final_validation_artifact":
+            return True
+        if category in RUNTIME_ENVIRONMENT_ROOT_CAUSES or category in AGENT_JSON_MODEL_ROOT_CAUSES or category == "agent_json_context_overflow":
+            return False
+    lowered = str(text or "").casefold()
+    return (
+        "no direct answer from web search" in lowered
+        or "i'm ready. please ask again" in lowered
+        or "please ask again or tell me what you'd like to do next" in lowered
+        or "tool output could not be validated" in lowered
+        or "could not be validated" in lowered
+        or "fallback/error text" in lowered
+        or _is_one_line_url_forwarding(lowered)
+    )
+
+
+def _is_one_line_url_forwarding(lowered: str) -> bool:
+    text = str(lowered or "").strip()
+    if "\n" in text or "http" not in text:
+        return False
+    return bool(re.match(r"^(?:check\s+out|see|read|visit|open|here(?:'s| is))\b.{0,220}https?://\S+\.?$", text, flags=re.IGNORECASE))
 
 
 def _contains_internal_routing_json(lowered: str) -> bool:

@@ -513,10 +513,14 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
             for key in ["intent", "tool-boundary", "response-quality", "runtime", "runtime-preflight/non-actionable", "other"] where failureBuckets[key] != nil {
                 lines.append("• \(key): \(failureBuckets[key] ?? 0) issues")
             }
-            let actionableFailureBuckets = failureBuckets.keys.filter { $0 != "runtime-preflight/non-actionable" }
-            if !actionableFailureBuckets.isEmpty {
+            let trainableFailureCount = results.filter { result in
+                fineTuningNegativeCandidate(result)
+            }.count
+            if trainableFailureCount > 0 {
                 lines.append("• Capture failed prompts + final outputs into next fine-tuning dataset.")
-                lines.append("• Prioritize scenarios with repeated tool-boundary violations.")
+                lines.append("• Fine-tuning candidates: \(trainableFailureCount) grounded model-quality failures.")
+            } else {
+                lines.append("• Non-trainable architecture/runtime/finalizer failures quarantined; create regression tests instead of SFT negatives.")
             }
             lines.append("")
         }
@@ -542,6 +546,39 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
     private func displayPercent(_ value: Double?) -> String {
         guard let value else { return "n/a" }
         return "\(Int(value.rounded()))%"
+    }
+
+    private func fineTuningNegativeCandidate(_ result: E2ETestResult) -> Bool {
+        guard !result.failures.isEmpty else { return false }
+        if result.isRuntimePreflightNonActionable { return false }
+        if result.metadata["trainingSignal"]?.lowercased() == "false" { return false }
+        let evidence = ([result.finalText] + result.failures + result.events.map(\.message) + Array(result.metadata.values))
+            .joined(separator: "\n")
+            .lowercased()
+        let nonTrainableSignals = [
+            "cpu-watchdog-degraded",
+            "thermalstate=serious",
+            "thermalstate=critical",
+            "scenephase=background",
+            "scenephase=inactive",
+            "no direct answer from web search",
+            "i'm ready. please ask again",
+            "please ask again or tell me what you'd like to do next",
+            "tool output could not be validated",
+            "could not be validated",
+            "no matching files found",
+            "local index appears empty",
+            "no matching local snippets",
+            "import or create local files",
+            "internal routing json"
+        ]
+        if nonTrainableSignals.contains(where: { evidence.contains($0) }) { return false }
+        if evidence.contains("\"intent\"")
+            && evidence.contains("\"nextmodel\"")
+            && evidence.contains("\"reasoningsummary\"") {
+            return false
+        }
+        return true
     }
 }
 
@@ -2517,6 +2554,7 @@ nonisolated enum E2ETestRunner {
             "\"requiresapprovaldecision\"",
             "\"requiresapprovalreasoningsummary\"",
             "please try again with thinking disabled",
+            "i'm ready. please ask again",
             "please ask again or tell me what you'd like to do next"
         ]
         return invalidSignals.contains(where: { combined.contains($0) })
@@ -2525,8 +2563,7 @@ nonisolated enum E2ETestRunner {
     }
 
     nonisolated private static func webSearchSummaryQualityFailure(finalText: String, scenario: E2ETestScenario) -> Bool {
-        guard scenario.expectedIntent == .webSearch,
-              webPromptRequiresSynthesis(scenario.prompt) else {
+        guard scenario.expectedIntent == .webSearch else {
             return false
         }
         let text = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2543,6 +2580,12 @@ nonisolated enum E2ETestRunner {
         }
         if text.range(of: #"(?is)^\s*see\s+the\s+full\s+(tutorial|article|guide|post|result)\s+at\s+https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
             return true
+        }
+        if text.range(of: #"(?is)^\s*(?:check\s+out|see|read|visit|open|here(?:'s| is))\b[^\n]{0,180}https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        guard webPromptRequiresSynthesis(scenario.prompt) else {
+            return false
         }
         let meaningfulLines = text
             .split(whereSeparator: \.isNewline)
@@ -2607,11 +2650,11 @@ nonisolated enum E2ETestRunner {
         originalFinal: String
     ) async -> EvalRewriteOutcome {
         let firstMissing = requiredHintsMissing(in: originalFinal, scenario: scenario)
-        guard !firstMissing.isEmpty else {
-            return EvalRewriteOutcome(finalText: originalFinal, missingHints: [], rewriteAttempted: false, rewriteSuccess: true)
-        }
         if liveAgentInvalidFinalReason(lowerRaw: originalFinal.lowercased(), lowerFinal: originalFinal.lowercased()) != nil {
             return EvalRewriteOutcome(finalText: originalFinal, missingHints: firstMissing, rewriteAttempted: false, rewriteSuccess: false)
+        }
+        guard !firstMissing.isEmpty else {
+            return EvalRewriteOutcome(finalText: originalFinal, missingHints: [], rewriteAttempted: false, rewriteSuccess: true)
         }
 
         let rewritten = await rewriteFinalTextForEvalHints(
@@ -2693,8 +2736,10 @@ nonisolated enum E2ETestRunner {
 
     nonisolated private static func enforceEvalGrounding(_ text: String, intent: UserIntent) -> String {
         guard intent == .rag else { return text }
-        if isRAGEmptyRetrievalEvidence(text.lowercased()) { return text }
         let lower = text.lowercased()
+        if isRAGEmptyRetrievalEvidence(lower) || liveAgentInvalidFinalReason(lowerRaw: lower, lowerFinal: lower) != nil {
+            return text
+        }
         var out = text
         if !(lower.contains("module") || lower.contains("modules")) {
             out += "\nKey modules: core module details were retrieved from local file snippets [1]."

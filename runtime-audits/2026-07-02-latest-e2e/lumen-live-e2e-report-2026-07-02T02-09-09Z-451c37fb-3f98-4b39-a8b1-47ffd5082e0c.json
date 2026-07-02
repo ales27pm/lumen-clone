@@ -1,0 +1,798 @@
+{
+  "app" : {
+    "buildNumber" : "20260701070315",
+    "bundleIdentifier" : "com.27pm.lumenclone",
+    "name" : "Lumen",
+    "shortVersion" : "1.0.0"
+  },
+  "exportPolicy" : {
+    "format" : "live-e2e-test-report-json",
+    "includesDeterministicStaticScenarios" : false,
+    "notes" : [
+      "This is the live E2E model/test layer export.",
+      "Scenarios with requiresAgentRun=true must exercise AgentService's model-backed generation path and record fresh AgentBehaviorTrace modelTurn evidence.",
+      "Routing-only tool coverage scenarios are static guard checks; if a live scenario says no model loaded, routing-only checks completed, or has no model-evidence event, the offline ingester treats it as invalid E2E evidence."
+    ],
+    "ownsLiveE2EScenarios" : true,
+    "privacy" : "Contains prompts, final outputs, failures, and event logs from the current local E2E run. Review before sharing outside the improve-loop.",
+    "sourceLayer" : "e2eTestReport"
+  },
+  "generatedAt" : "2026-07-02T02:09:09Z",
+  "payload" : {
+    "failed" : 3,
+    "finishedAt" : "2026-07-02T02:09:00Z",
+    "id" : "5B7C620B-CFD6-4BA8-B4D7-919E8D961A46",
+    "passed" : 2,
+    "results" : [
+      {
+        "actualIntent" : "weather",
+        "agentRunID" : "F7DE60BB-B5B5-45E3-8A2D-F7B94031F30A",
+        "conversationID" : "44791011-33F6-494F-AC77-D4761181E5EE",
+        "e2eRunID" : "E586FAF7-2AF6-40D8-B506-FC8923ADEF13",
+        "events" : [
+          {
+            "createdAt" : "2026-07-02T02:07:37Z",
+            "id" : "A2935C83-DC63-4387-901F-5D479580B50A",
+            "message" : "What is the weather here and should I carry an umbrella?",
+            "phase" : "start",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:37Z",
+            "id" : "69E2BB71-E2C3-45D6-B8A6-52953D6DB657",
+            "message" : "actual=weather, expected=weather",
+            "phase" : "intent",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:37Z",
+            "id" : "668B4E28-8689-4C39-BA87-F3276CD5E0E8",
+            "message" : "scenarioID=training-weather-grounded,e2eRunID=E586FAF7-2AF6-40D8-B506-FC8923ADEF13,agentRunID=F7DE60BB-B5B5-45E3-8A2D-F7B94031F30A,conversationID=44791011-33F6-494F-AC77-D4761181E5EE,turnID=1A85BC6F-30B4-41AA-B828-E0C0D2699841",
+            "phase" : "correlation",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:37Z",
+            "id" : "84AF4223-714A-4588-8CDA-FBDC08742FD1",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:37Z",
+            "id" : "32BB211F-9BCF-41C3-AF2B-2D4014FDF237",
+            "message" : "available=location.current,weather",
+            "phase" : "tools",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:39Z",
+            "id" : "EB3547D1-64B9-4BEC-A0FB-17F646F73D05",
+            "message" : "thought: D",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:41Z",
+            "id" : "16C01E55-5DF1-4AD8-922B-58C579ADC169",
+            "message" : "action: weather()",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:49Z",
+            "id" : "035A19FE-AB07-4E0F-B454-0DAE0F14C9C1",
+            "message" : "observation: Couldn't get your current location before the GPS timeout. Try again, move somewhere with a clearer signal, or ask with a city.",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:51Z",
+            "id" : "DF642253-9850-47D8-9942-0DF0D64C7397",
+            "message" : "thought: Observ",
+            "phase" : "step",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:52Z",
+            "id" : "76E93D51-DC64-47FC-AC4B-D199702973BB",
+            "message" : "runtime=agent-model, kind=model-backed, stage=agent-json-step-0, parseError=none, elapsedMs=3735, outputTokens=unknown, adapter=executor, matchedBy=correlation, scenarioID=training-weather-grounded,e2eRunID=E586FAF7-2AF6-40D8-B506-FC8923ADEF13,agentRunID=F7DE60BB-B5B5-45E3-8A2D-F7B94031F30A,conversationID=44791011-33F6-494F-AC77-D4761181E5EE,turnID=1A85BC6F-30B4-41AA-B828-E0C0D2699841",
+            "phase" : "model-evidence",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:52Z",
+            "id" : "402493BD-5645-426A-8DEC-B8E7954EFC04",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-weather-grounded"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:52Z",
+            "id" : "62481FA4-21C9-403E-BFFC-F12828B7BB1D",
+            "message" : "Weather update: Couldn't get your current location before the GPS timeout. Try again, move somewhere with a clearer signal, or ask with a city.. No precipitation was reported in the weather observation.",
+            "phase" : "final",
+            "scenarioID" : "training-weather-grounded"
+          }
+        ],
+        "evidenceMode" : "modelBackedRequired",
+        "expectedIntent" : "weather",
+        "failures" : [
+
+        ],
+        "finalText" : "Weather update: Couldn't get your current location before the GPS timeout. Try again, move somewhere with a clearer signal, or ask with a city.. No precipitation was reported in the weather observation.",
+        "finishedAt" : "2026-07-02T02:07:52Z",
+        "id" : "9250DEA1-BCB7-4A74-B3ED-F4840366CB75",
+        "kind" : "training",
+        "metadata" : {
+
+        },
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 11.881188118811881,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 267.46589499793305,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 1248.8343475341796,
+          "eventDensityCPUProxyPercent" : 1.586330750391104,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 1252.0187225341797,
+          "sampleCount" : 10
+        },
+        "prompt" : "What is the weather here and should I carry an umbrella?",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "Weather update: Couldn't get your current location before the GPS timeout. Try again, move somewhere with a clearer signal, or ask with a city.. No precipitation was reported in the weather observation.",
+        "requiresAgentRun" : true,
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "Weather update: Couldn't get your current location before the GPS timeout. Try again, move somewhere with a clearer signal, or ask with a city.. No precipitation was reported in the weather observation.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-weather-grounded",
+        "startedAt" : "2026-07-02T02:07:37Z",
+        "title" : "Training eval: weather stays grounded",
+        "turnID" : "1A85BC6F-30B4-41AA-B828-E0C0D2699841"
+      },
+      {
+        "actualIntent" : "webSearch",
+        "agentRunID" : "55D76780-9F5F-497A-88A4-C1DAB96D67E3",
+        "conversationID" : "4C26062A-43DA-42C6-B4E0-822B52E09B20",
+        "e2eRunID" : "893D68CE-97A9-4621-852B-AB0A7BCC4D17",
+        "events" : [
+          {
+            "createdAt" : "2026-07-02T02:07:57Z",
+            "id" : "6A323CBA-E8AE-45C5-AD4F-DFB99316654E",
+            "message" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+            "phase" : "start",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:57Z",
+            "id" : "A7B17E9D-2EB7-4AAD-B8AD-7B27A940FE33",
+            "message" : "actual=webSearch, expected=webSearch",
+            "phase" : "intent",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:58Z",
+            "id" : "469D2321-CDF1-4381-850C-34611E86D2FB",
+            "message" : "scenarioID=training-web-research,e2eRunID=893D68CE-97A9-4621-852B-AB0A7BCC4D17,agentRunID=55D76780-9F5F-497A-88A4-C1DAB96D67E3,conversationID=4C26062A-43DA-42C6-B4E0-822B52E09B20,turnID=A29268F0-1690-4711-988E-C8308653946C",
+            "phase" : "correlation",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:58Z",
+            "id" : "469A1EAF-EDA1-413E-AC12-BC2D457E7440",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:58Z",
+            "id" : "B937B745-3AED-4E3E-8D18-8A2ACF6D9895",
+            "message" : "available=web.fetch,web.search",
+            "phase" : "tools",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:07:58Z",
+            "id" : "06B976DB-C646-4530-BF00-8A0448DFAF5C",
+            "message" : "networkAccess=temporarily-enabled-for-live-e2e",
+            "phase" : "permissions",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:00Z",
+            "id" : "7310B453-806E-4B22-B930-4B67A6965AFF",
+            "message" : "thought: start",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:01Z",
+            "id" : "5F41A8AF-B15B-471B-B11B-431CD17FBBEE",
+            "message" : "action: web.search(query=Swift concurrency best practices)",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:02Z",
+            "id" : "6086B835-1A20-4B74-B9BC-AB5CC596DEAF",
+            "message" : "observation: Search results for: Swift concurrency best practices\n\n1. Concurrency | Apple Developer Documentation\nhttps://developer.apple.com/documentation/swift/concurrency\n\n2. Concurrency in Swift: A Detailed Guide - Medium\nhttps://medium.com/@gauravharkhani01/concurrency-in-swift-a-detailed-guide-3158941afc2e\n\n3. Swift Concurrency Best Practices - beefed.ai\nhttps://beefed.ai/en/swift-concurrency-best-practices\n\n4. Concurrency - Documentation\nhttps://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/\n\n5. Swift Concurrency Architecture: Patterns and Best Practices\nhttps://www.atelier-socle.com/en/articles/swift-concurrency-architecture\n\n6. Mastering Concurrency in Swift: A Comprehensive Guide\nhttps://codezup.com/mastering-concurrency-in-swift/\n\n<lumen_web_payload>{\"results\":[{\"source\":\"developer.apple.com\",\"mediaKind\":\"page\",\"title\":\"Concurrency | Apple Developer Documentation\",\"url\":\"https:\\/\\/developer.apple.com\\/documentation\\/swift\\/concurrency\"},{\"source\":\"medium.com\",\"mediaKind\":\"page\",\"title\":\"Concurrency in Swift: A Detailed Guide - Medium\",\"url\":\"https:\\/\\/medium.com\\/@gauravharkhani01\\/concurrency-in-swift-a-detailed-guide-3158941afc2e\"},{\"source\":\"beefed.ai\",\"mediaKind\":\"page\",\"title\":\"Swift Concurrency Best Practices - beefed.ai\",\"url\":\"https:\\/\\/beefed.ai\\/en\\/swift-concurrency-best-practices\"},{\"source\":\"docs.swift.org\",\"mediaKind\":\"page\",\"title\":\"Concurrency - Documentation\",\"url\":\"https:\\/\\/docs.swift.org\\/swift-book\\/documentation\\/the-swift-programming-language\\/concurrency\\/\"},{\"source\":\"www.atelier-socle.com\",\"mediaKind\":\"page\",\"title\":\"Swift Concurrency Architecture: Patterns and Best Practices\",\"url\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-architecture\"},{\"source\":\"codezup.com\",\"mediaKind\":\"page\",\"title\":\"Mastering Concurrency in Swift: A Comprehensive Guide\",\"url\":\"https:\\/\\/codezup.com\\/mastering-concurrency-in-swift\\/\"},{\"source\":\"softwarepatternslexicon.com\",\"mediaKind\":\"page\",\"title\":\"Concurrency Best Practices in Swift: Mastering Safe and Efficient Code\",\"url\":\"https:\\/\\/softwarepatternslexicon.com\\/swift\\/concurrency-patterns-in-swift\\/concurrency-best-practices-in-swift\\/\"},{\"source\":\"wesleydegroot.nl\",\"mediaKind\":\"page\",\"title\":\"Swift Concurrency Best Practices - Wesley de Groot\",\"url\":\"https:\\/\\/wesleydegroot.nl\\/blog\\/swift-concurrency-best-practices\"}],\"media\":[{\"sourcePageURL\":\"https:\\/\\/developer.apple.com\\/documentation\\/swift\\/concurrency\",\"kind\":\"page\",\"url\":\"https:\\/\\/developer.apple.com\\/documentation\\/swift\\/concurrency\",\"title\":\"Concurrency | Apple Developer Documentation\"},{\"sourcePageURL\":\"https:\\/\\/medium.com\\/@gauravharkhani01\\/concurrency-in-swift-a-detailed-guide-3158941afc2e\",\"kind\":\"page\",\"url\":\"https:\\/\\/medium.com\\/@gauravharkhani01\\/concurrency-in-swift-a-detailed-guide-3158941afc2e\",\"title\":\"Concurrency in Swift: A Detailed Guide - Medium\"},{\"sourcePageURL\":\"https:\\/\\/beefed.ai\\/en\\/swift-concurrency-best-practices\",\"kind\":\"page\",\"url\":\"https:\\/\\/beefed.ai\\/en\\/swift-concurrency-best-practices\",\"title\":\"Swift Concurrency Best Practices - beefed.ai\"},{\"sourcePageURL\":\"https:\\/\\/docs.swift.org\\/swift-book\\/documentation\\/the-swift-programming-language\\/concurrency\\/\",\"kind\":\"page\",\"url\":\"https:\\/\\/docs.swift.org\\/swift-book\\/documentation\\/the-swift-programming-language\\/concurrency\\/\",\"title\":\"Concurrency - Documentation\"},{\"sourcePageURL\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-architecture\",\"kind\":\"page\",\"url\":\"https:\\/\\/www.atelier-socle.com\\/en\\/articles\\/swift-concurrency-architecture\",\"title\":\"Swift Concurrency Architecture: Patterns and Best Practices\"},{\"sourcePageURL\":\"https:\\/\\/codezup.com\\/mastering-concurrency-in-swift\\/\",\"kind\":\"page\",\"url\":\"https:\\/\\/codezup.com\\/mastering-concurrency-in-swift\\/\",\"title\":\"Mastering Concurrency in Swift: A Comprehensive Guide\"},{\"sourcePageURL\":\"https:\\/\\/softwarepatternslexicon.com\\/swift\\/concurrency-patterns-in-swift\\/concurrency-best-pract\n…(truncated)",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:05Z",
+            "id" : "A0C820E9-4602-4606-BBCF-A7D20A3C5F3C",
+            "message" : "thought: rag",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:06Z",
+            "id" : "4C85634C-D6B7-48E4-9AE8-E2821544E306",
+            "message" : "reflection: Malformed structured turn repaired by synthesizing from existing tool observations.",
+            "phase" : "step",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:06Z",
+            "id" : "6F3AB8A0-64FD-4A2B-B801-F1D2ABE72C98",
+            "message" : "runtime=agent-model, kind=model-backed, stage=agent-json-step-0, parseError=none, elapsedMs=3407, outputTokens=unknown, adapter=executor, matchedBy=correlation, scenarioID=training-web-research,e2eRunID=893D68CE-97A9-4621-852B-AB0A7BCC4D17,agentRunID=55D76780-9F5F-497A-88A4-C1DAB96D67E3,conversationID=4C26062A-43DA-42C6-B4E0-822B52E09B20,turnID=A29268F0-1690-4711-988E-C8308653946C",
+            "phase" : "model-evidence",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:06Z",
+            "id" : "D1CDD004-F0B3-4DEF-AFCF-B9F9E9D2B9BF",
+            "message" : "missing_hints=[\"swift\"], rewrite_attempted=false, rewrite_success=false",
+            "phase" : "final-hints",
+            "scenarioID" : "training-web-research"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:06Z",
+            "id" : "B6E56DCF-F215-4AD1-826D-11ED485F7B2C",
+            "message" : "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+            "phase" : "final",
+            "scenarioID" : "training-web-research"
+          }
+        ],
+        "evidenceMode" : "modelBackedRequired",
+        "expectedIntent" : "webSearch",
+        "failures" : [
+          "Live agent returned fallback/error text instead of completing the scenario",
+          "Live final required hint missing: swift",
+          "Required final hint missing: swift"
+        ],
+        "finalText" : "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "finishedAt" : "2026-07-02T02:08:06Z",
+        "id" : "DFD94E86-7664-4682-BEB0-7083745454BF",
+        "kind" : "training",
+        "metadata" : {
+
+        },
+        "missingHints" : [
+          "swift"
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : false,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 5.176876617773943,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 262.8755364806867,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 1240.898930867513,
+          "eventDensityCPUProxyPercent" : 2.568468511855447,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 1252.5968475341797,
+          "sampleCount" : 9
+        },
+        "prompt" : "Search the web for two recent Swift concurrency best practices and summarize them.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "requiresAgentRun" : true,
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : false,
+        "sanitizedFinalPrefix" : "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-web-research",
+        "startedAt" : "2026-07-02T02:07:57Z",
+        "title" : "Training eval: web research synthesis",
+        "turnID" : "A29268F0-1690-4711-988E-C8308653946C"
+      },
+      {
+        "actualIntent" : "memory",
+        "agentRunID" : "6F7D6F07-E100-4945-8D4A-8FE51CB93077",
+        "conversationID" : "BC8497AC-E5EF-42EB-99F7-07BFDA408460",
+        "e2eRunID" : "C1CAB87B-6919-4169-8D93-06A9DCB100D9",
+        "events" : [
+          {
+            "createdAt" : "2026-07-02T02:08:11Z",
+            "id" : "4D07A93C-ADA7-4350-BED5-94927AC782F0",
+            "message" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            "phase" : "start",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:11Z",
+            "id" : "1863B300-BDAD-48FB-8CAE-2C2ACFC627C5",
+            "message" : "actual=memory, expected=memory",
+            "phase" : "intent",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:11Z",
+            "id" : "6684DEF9-0F7F-420D-9CEA-D8CA25DDAF23",
+            "message" : "scenarioID=training-memory-loop,e2eRunID=C1CAB87B-6919-4169-8D93-06A9DCB100D9,agentRunID=6F7D6F07-E100-4945-8D4A-8FE51CB93077,conversationID=BC8497AC-E5EF-42EB-99F7-07BFDA408460,turnID=6F162403-6D8F-4ECE-8DF1-008D2671EE81",
+            "phase" : "correlation",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:11Z",
+            "id" : "F4A094B9-FF1D-4430-96A5-0D10A05253C8",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:11Z",
+            "id" : "EB11A964-08D2-4BEC-B384-EF44ABD87DFA",
+            "message" : "available=memory.recall,memory.save",
+            "phase" : "tools",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:14Z",
+            "id" : "55311186-54FF-4300-94B0-5014C5CB01D8",
+            "message" : "reflection: Memory save-then-recall invariant repaired memory.recall into memory.save before tool execution.",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:14Z",
+            "id" : "934BA416-D253-464F-A94D-BCBBDAD9D0DE",
+            "message" : "action: memory.save(content=I prefer concise bullet points, kind=fact)",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:16Z",
+            "id" : "8D999E17-E2EB-433C-9284-F790B2919F23",
+            "message" : "observation: Saved: I prefer concise bullet points",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:19Z",
+            "id" : "43277464-1096-410B-A97F-9F9B27891052",
+            "message" : "reflection: Memory save-then-recall invariant repaired a premature final before required memory actions completed.",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:19Z",
+            "id" : "CDEA2C22-5F65-4CA4-B438-A2E2035B9B4A",
+            "message" : "action: memory.recall(query=prefer concise bullet points)",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:19Z",
+            "id" : "D6DD17CC-5FE3-4205-9230-446EF17A4FF9",
+            "message" : "observation: • I prefer concise bullet points",
+            "phase" : "step",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:22Z",
+            "id" : "48958C85-EA70-498A-B13D-6E61512D1DAB",
+            "message" : "runtime=agent-model, kind=model-backed, stage=agent-json-step-0, parseError=none, elapsedMs=3082, outputTokens=unknown, adapter=executor, matchedBy=correlation, scenarioID=training-memory-loop,e2eRunID=C1CAB87B-6919-4169-8D93-06A9DCB100D9,agentRunID=6F7D6F07-E100-4945-8D4A-8FE51CB93077,conversationID=BC8497AC-E5EF-42EB-99F7-07BFDA408460,turnID=6F162403-6D8F-4ECE-8DF1-008D2671EE81",
+            "phase" : "model-evidence",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:22Z",
+            "id" : "9FF7320C-26BB-422A-B353-567317A8EFCE",
+            "message" : "missing_hints=[], rewrite_attempted=false, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-memory-loop"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:22Z",
+            "id" : "F3D80AB1-D34D-4806-8CFD-49D80C8F2002",
+            "message" : "I remember that you prefer concise bullet points.",
+            "phase" : "final",
+            "scenarioID" : "training-memory-loop"
+          }
+        ],
+        "evidenceMode" : "modelBackedRequired",
+        "expectedIntent" : "memory",
+        "failures" : [
+
+        ],
+        "finalText" : "I remember that you prefer concise bullet points.",
+        "finishedAt" : "2026-07-02T02:08:22Z",
+        "id" : "139B0691-BE4E-41C7-A8EA-4D5E838ACF65",
+        "kind" : "training",
+        "metadata" : {
+
+        },
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : true,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "decodeTokensPerSecond" : 11.444921316165953,
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "promptEvalTokensPerSecond" : 263.115738886664,
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 1248.760944366455,
+          "eventDensityCPUProxyPercent" : 1.8220797491568144,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 1259.5656433105469,
+          "sampleCount" : 8
+        },
+        "prompt" : "Remember that I prefer concise bullet points, then tell me what you remembered.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "I remember that you prefer concise bullet points.",
+        "requiresAgentRun" : true,
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "I remember that you prefer concise bullet points.",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-memory-loop",
+        "startedAt" : "2026-07-02T02:08:11Z",
+        "title" : "Training eval: memory save/recall",
+        "turnID" : "6F162403-6D8F-4ECE-8DF1-008D2671EE81"
+      },
+      {
+        "actualIntent" : "rag",
+        "agentRunID" : "7F32AB23-799D-4ABC-8866-B2CAB3D776B0",
+        "conversationID" : "ABF60903-5A8F-45CE-8EC7-77DEDDC01339",
+        "e2eRunID" : "4F0814F9-2B70-49D2-961B-BFD18A84FF72",
+        "events" : [
+          {
+            "createdAt" : "2026-07-02T02:08:27Z",
+            "id" : "20A0C66A-6312-42CA-AD2B-C27F2B04E678",
+            "message" : "Search my files for architecture notes and summarize key modules.",
+            "phase" : "start",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:27Z",
+            "id" : "F38BAE6D-8E59-486F-A387-46E3EA723658",
+            "message" : "actual=rag, expected=rag",
+            "phase" : "intent",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:27Z",
+            "id" : "3ED3AFFC-A2DA-47E8-9EF6-66BABDF44D8B",
+            "message" : "scenarioID=training-rag-grounding,e2eRunID=4F0814F9-2B70-49D2-961B-BFD18A84FF72,agentRunID=7F32AB23-799D-4ABC-8866-B2CAB3D776B0,conversationID=ABF60903-5A8F-45CE-8EC7-77DEDDC01339,turnID=C4CF065B-0977-4A3F-8F1D-9BADAE0531A9",
+            "phase" : "correlation",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:27Z",
+            "id" : "01C6D4CC-9457-461D-B8B0-9AC062798B93",
+            "message" : "chat fleet ready",
+            "phase" : "models",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:27Z",
+            "id" : "C23C9B02-1418-4B61-934F-0C1F6858E44F",
+            "message" : "available=files.read,photos.search,rag.index_files,rag.index_photos,rag.search",
+            "phase" : "tools",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:31Z",
+            "id" : "3B46B087-BEBE-41E4-961E-AE6DC243668C",
+            "message" : "thought: Run",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:31Z",
+            "id" : "8FDA9B2C-C57C-4633-9910-4FA484477676",
+            "message" : "action: rag.search(query=architecture)",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:31Z",
+            "id" : "2EB541CD-A19F-4A19-9BEF-63FB338C6110",
+            "message" : "observation: No matching files found for 'architecture'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:35Z",
+            "id" : "DB814475-443A-42CE-9BF5-82127D4AF432",
+            "message" : "thought: Run",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:36Z",
+            "id" : "F6CABE1F-E34A-4E7F-AE64-48BC348AEB20",
+            "message" : "reflection: Duplicate tool call blocked: rag.search(query=architecture). Synthesizing answer from observations.",
+            "phase" : "step",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:36Z",
+            "id" : "79786F63-8DB1-4147-B4AA-BFE4EEFAFCDA",
+            "message" : "runtime=agent-model, kind=model-backed, stage=agent-json-step-1, parseError=none, elapsedMs=4482, outputTokens=unknown, adapter=executor, matchedBy=correlation, scenarioID=training-rag-grounding,e2eRunID=4F0814F9-2B70-49D2-961B-BFD18A84FF72,agentRunID=7F32AB23-799D-4ABC-8866-B2CAB3D776B0,conversationID=ABF60903-5A8F-45CE-8EC7-77DEDDC01339,turnID=C4CF065B-0977-4A3F-8F1D-9BADAE0531A9",
+            "phase" : "model-evidence",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:47Z",
+            "id" : "64B1BF2C-FA01-449C-9C3C-E763E46805B8",
+            "message" : "missing_hints=[], rewrite_attempted=true, rewrite_success=true",
+            "phase" : "final-hints",
+            "scenarioID" : "training-rag-grounding"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:47Z",
+            "id" : "B91EB169-D861-4F60-B9CB-43CC3C5C28C2",
+            "message" : "I'm ready. Please ask again or tell me what you'd like to do next.\nKey modules: core module details were retrieved from local file snippets [1].",
+            "phase" : "final",
+            "scenarioID" : "training-rag-grounding"
+          }
+        ],
+        "evidenceMode" : "modelBackedRequired",
+        "expectedIntent" : "rag",
+        "failures" : [
+          "Live agent returned fallback/error text instead of completing the scenario"
+        ],
+        "finalText" : "I'm ready. Please ask again or tell me what you'd like to do next.\nKey modules: core module details were retrieved from local file snippets [1].",
+        "finishedAt" : "2026-07-02T02:08:47Z",
+        "id" : "6D303D72-E568-47AF-835A-7A55FB7FDA03",
+        "kind" : "training",
+        "metadata" : {
+
+        },
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : false,
+        "performanceMatrix" : {
+          "accelerationDiagnostics" : {
+            "actualBackend" : "metal",
+            "actualKQVOffload" : true,
+            "actualOffloadedLayers" : 29,
+            "actualTotalLayers" : 29,
+            "aneUsedByCurrentRuntime" : false,
+            "backendRequested" : "metal",
+            "metalDeviceAvailable" : true,
+            "metalDeviceName" : "Apple A18 Pro GPU",
+            "metalDeviceUsed" : "Apple A18 Pro GPU",
+            "metalUnifiedMemory" : true,
+            "notes" : [
+              "llama_kv_cache_unified: layer  22: dev = Metal",
+              "llama_kv_cache_unified: layer  23: dev = Metal",
+              "llama_kv_cache_unified: layer  24: dev = Metal",
+              "llama_kv_cache_unified: layer  25: dev = Metal",
+              "llama_kv_cache_unified: layer  26: dev = Metal",
+              "llama_kv_cache_unified: layer  27: dev = Metal",
+              "llama_kv_cache_unified:      Metal KV buffer size =   448.00 MiB",
+              "llama_kv_cache_unified: size =  448.00 MiB (  4096 cells,  28 layers,  1/1 seqs), K (f16):  224.00 MiB, V (f16):  224.00 MiB",
+              "ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path."
+            ],
+            "recommendedMaxWorkingSetSizeMB" : 5461.34375,
+            "requestedGpuLayers" : 999,
+            "requestedKQVOffload" : true,
+            "verificationLevel" : "confirmed"
+          },
+          "averageRAMMB" : 1253.8703308105469,
+          "eventDensityCPUProxyPercent" : 1.0311073213165551,
+          "notes" : [
+            "CPU is an event-density estimate for test comparison only.",
+            "ANE and GPU counters are unavailable in this runtime and exported as null."
+          ],
+          "peakRAMMB" : 1260.6906433105469,
+          "sampleCount" : 8
+        },
+        "prompt" : "Search my files for architecture notes and summarize key modules.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "I searched your local files but found no matching architecture notes. The local index appears empty; import or create files and reindex.",
+        "requiresAgentRun" : true,
+        "rewriteAttempted" : true,
+        "rewriteSuccess" : true,
+        "sanitizedFinalPrefix" : "I'm ready. Please ask again or tell me what you'd like to do next.\nKey modules: core module details were retrieved from local file snippets [1].",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-rag-grounding",
+        "startedAt" : "2026-07-02T02:08:27Z",
+        "title" : "Training eval: local knowledge grounding",
+        "turnID" : "C4CF065B-0977-4A3F-8F1D-9BADAE0531A9"
+      },
+      {
+        "actualIntent" : "preflight",
+        "events" : [
+          {
+            "createdAt" : "2026-07-02T02:08:52Z",
+            "id" : "8C8EBEDF-4461-462F-901E-206F30234DBC",
+            "message" : "waiting for foreground runtime readiness; timeoutSeconds=8.0; reason=live-e2e.pre-scenario: thermalState=serious; device thermal state serious; cool device and retry",
+            "phase" : "live-runtime-preflight-wait",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:54Z",
+            "id" : "CE324722-1679-4FFD-A47D-2DB6D2BB8247",
+            "message" : "waiting for foreground runtime readiness; timeoutSeconds=8.0; reason=live-e2e.pre-scenario: thermalState=serious; device thermal state serious; cool device and retry",
+            "phase" : "live-runtime-preflight-wait",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:56Z",
+            "id" : "9AF71852-A4F4-456E-8AE4-C003BCB78E79",
+            "message" : "waiting for foreground runtime readiness; timeoutSeconds=8.0; reason=live-e2e.pre-scenario: thermalState=serious; device thermal state serious; cool device and retry",
+            "phase" : "live-runtime-preflight-wait",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-07-02T02:08:58Z",
+            "id" : "1A85F4F7-52B6-4511-94D8-B37758F7C7A3",
+            "message" : "waiting for foreground runtime readiness; timeoutSeconds=8.0; reason=live-e2e.pre-scenario: thermalState=serious; device thermal state serious; cool device and retry",
+            "phase" : "live-runtime-preflight-wait",
+            "scenarioID" : "training-scheduler-agent"
+          },
+          {
+            "createdAt" : "2026-07-02T02:09:00Z",
+            "id" : "CCAB383D-2CE0-4DD8-9484-C2786C95EF65",
+            "message" : "blocked before model prompt evaluation; reason=live-e2e.pre-scenario: thermalState=serious; device thermal state serious; cool device and retry",
+            "phase" : "live-runtime-preflight",
+            "scenarioID" : "training-scheduler-agent"
+          }
+        ],
+        "evidenceMode" : "modelBackedRequired",
+        "expectedIntent" : "trigger",
+        "failures" : [
+          "Live E2E preflight blocked model-backed generation before prompt evaluation: live-e2e.pre-scenario: thermalState=serious; device thermal state serious; cool device and retry"
+        ],
+        "finalText" : "device thermal state serious; cool device and retry",
+        "finishedAt" : "2026-07-02T02:09:00Z",
+        "id" : "B34CE593-4651-4797-BDAC-8FD96D19142A",
+        "kind" : "training",
+        "metadata" : {
+          "actionable" : "false",
+          "budgetDenialReason" : "live-e2e.pre-scenario: thermalState=serious; device thermal state serious; cool device and retry",
+          "budgetPolicy" : "foregroundInteractive",
+          "failureKind" : "liveRuntimeThermalCooldownRequired",
+          "trainingSignal" : "false"
+        },
+        "missingHints" : [
+
+        ],
+        "outputHygieneFailures" : [
+
+        ],
+        "passed" : false,
+        "prompt" : "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+        "rawFinalHadUnsafeLeakage" : false,
+        "rawFinalPrefix" : "",
+        "requiresAgentRun" : true,
+        "rewriteAttempted" : false,
+        "rewriteSuccess" : false,
+        "sanitizedFinalPrefix" : "device thermal state serious; cool device and retry",
+        "sanitizedFinalRemovedArtifacts" : [
+
+        ],
+        "scenarioID" : "training-scheduler-agent",
+        "startedAt" : "2026-07-02T02:09:00Z",
+        "title" : "Training eval: trigger scheduling quality"
+      }
+    ],
+    "startedAt" : "2026-07-02T02:07:37Z"
+  },
+  "schemaVersion" : "1.0.0"
+}

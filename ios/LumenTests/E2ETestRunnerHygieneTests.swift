@@ -830,6 +830,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "Search results for: Swift concurrency\nhttps://example.com", scenario: scenario))
         #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "https://example.com/swift", scenario: scenario))
         #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "See the full tutorial at https://example.com/swift-concurrency", scenario: scenario))
+        #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "Check out Battlbox.com's guide on building an underground shelter: https://example.com/shelter", scenario: scenario))
         #expect(E2ETestRunner.liveAgentQualityFailures(
             rawFinalText: "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
             finalText: "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
@@ -840,6 +841,21 @@ struct E2ETestRunnerHygieneTests {
             finalText: #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search.","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
             scenario: scenario
         ).contains("Live agent returned fallback/error text instead of completing the scenario"))
+        let directWebScenario = E2ETestScenario(
+            id: "web-search-no-calendar",
+            title: "Web search must not create calendar events",
+            kind: .toolGuard,
+            prompt: "Search web for diy underground shelter.",
+            expectedIntent: .webSearch,
+            requiredAllowedToolIDs: ["web.search"],
+            forbiddenToolIDs: ["calendar.create"],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            expectedToolID: "web.search",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.direct.rawValue
+        )
+        #expect(E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "Check out Battlbox.com's guide on building an underground shelter: https://example.com/shelter", scenario: directWebScenario))
         #expect(!E2ETestRunner.webSearchSummaryQualityFailureForTests(finalText: "- Prefer structured cancellation so child tasks stop cleanly.\n- Keep MainActor UI updates explicit to avoid accidental data races.", scenario: scenario))
         #else
         #expect(true)
@@ -871,6 +887,35 @@ struct E2ETestRunnerHygieneTests {
         #expect(!outcome.rewriteAttempted)
         #expect(!outcome.finalText.contains("Key modules"))
         #expect(!outcome.finalText.contains("[1]"))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragFallbackPollutionDoesNotPassOrRewriteAsValidFinal() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "Training eval: RAG grounding",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let polluted = "I'm ready. Please ask again or tell me what you'd like to do next.\nKey modules: core module details were retrieved from local file snippets [1]."
+        let outcome = await E2ETestRunner.validateAndRewriteFinalTextIfNeededForTests(
+            scenario: scenario,
+            routing: IntentRoutingDecision(intent: .rag, allowedToolIDs: ["rag.search"], requiresClarification: false, clarificationPrompt: nil),
+            originalFinal: polluted
+        )
+        #expect(outcome.finalText == polluted)
+        #expect(!outcome.rewriteAttempted)
+        #expect(!outcome.rewriteSuccess)
+        #expect(E2ETestRunner.liveAgentQualityFailures(rawFinalText: polluted, finalText: polluted, scenario: scenario).contains("Live agent returned fallback/error text instead of completing the scenario"))
         #else
         #expect(true)
         #endif

@@ -2034,9 +2034,24 @@ final class AgentService {
         }
 
         if routing.intent == .webSearch,
-           webFinalRequiresObservationFallback(finalAnswer),
-           let deterministic = deterministicWebSummaryFallback(observations: observations) {
-            return deterministic
+           hasUsableObservation(for: .webSearch, observations: observations),
+           webFinalRequiresObservationFallback(finalAnswer) {
+            return deterministicWebSummaryFallback(observations: observations)
+                ?? deterministicWebResultFallback(observations: observations)
+                ?? "I found web results, but could not synthesize a grounded final answer from them."
+        }
+
+        if routing.intent == .rag || routing.intent == .files {
+            let outcome = retrievalOutcome(from: observations)
+            if outcome.isEmptyRetrieval,
+               let deterministic = deterministicObservationFallback(observations: observations, intent: routing.intent) {
+                return deterministic
+            }
+            if structuredFinalIsGenericFallback(finalAnswer),
+               hasUsableObservation(for: routing.intent, observations: observations),
+               let deterministic = deterministicObservationFallback(observations: observations, intent: routing.intent) {
+                return deterministic
+            }
         }
 
         return finalAnswer
@@ -3241,8 +3256,9 @@ final class AgentService {
             }
             return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nUse the cited observations above for concrete modules when available."
         }
-        if intent == .webSearch, let summary = deterministicWebSummaryFallback(observations: observations) {
-            return summary
+        if intent == .webSearch {
+            return deterministicWebSummaryFallback(observations: observations)
+                ?? deterministicWebResultFallback(observations: observations)
         }
         guard let last = observations.last else { return nil }
         let compact = compactObservationResult(last.result, limit: 1_200)
@@ -3283,12 +3299,46 @@ final class AgentService {
         return "Summary:\n\(bullets.joined(separator: "\n"))"
     }
 
+    private nonisolated static func deterministicWebResultFallback(observations: [(tool: String, result: String)]) -> String? {
+        let joined = observations
+            .filter {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                return tool == "web.search" || tool == "web.fetch"
+            }
+            .map(\.result)
+            .joined(separator: "\n")
+        let candidates = prioritizeWebCandidates(webSummaryCandidates(from: joined))
+            .filter { candidate in
+                let lower = candidate.lowercased()
+                return candidate.count >= 12
+                    && !lower.hasPrefix("search results for:")
+                    && !lower.hasPrefix("web search results:")
+                    && !lower.contains("<lumen_web_payload")
+                    && !webFinalRequiresObservationFallback(candidate)
+            }
+        let bullets = candidates.prefix(3).map { "- \(compactObservationResult($0, limit: 180))" }
+        guard !bullets.isEmpty else {
+            let compact = compactObservationResult(joined, limit: 500)
+            return compact.isEmpty ? nil : "Web results found:\n- \(compact)"
+        }
+        if bullets.count == 1 {
+            return """
+            Web results found:
+            \(bullets[0])
+            - The remaining result payload did not include enough snippet detail for a stronger synthesis.
+            """
+        }
+        return "Web results found:\n\(bullets.joined(separator: "\n"))"
+    }
+
     private nonisolated static func webSummaryCandidates(from text: String) -> [String] {
         var candidates: [String] = []
         let patterns = [
             #"(?is)<lumen_web_payload[^>]*>(.*?)</lumen_web_payload>"#,
             #"(?is)\{[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*\}"#,
-            #"(?is)\{[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*\}"#
+            #"(?is)\{[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*\}"#,
+            #"(?is)"title"\s*:\s*"([^"]+)".{0,900}?"snippet"\s*:\s*"([^"]+)""#,
+            #"(?is)"snippet"\s*:\s*"([^"]+)".{0,900}?"title"\s*:\s*"([^"]+)""#
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
@@ -3358,7 +3408,21 @@ final class AgentService {
         if text.range(of: #"(?is)^\s*see\s+the\s+full\s+(tutorial|article|guide|post|result)\s+at\s+https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
             return true
         }
+        if text.range(of: #"(?is)^\s*(?:check\s+out|see|read|visit|open|here(?:'s| is))\b[^\n]{0,180}https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
         return false
+    }
+
+    private nonisolated static func structuredFinalIsGenericFallback(_ finalAnswer: String) -> Bool {
+        let lower = finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lower.isEmpty
+            || lower.contains("i'm ready. please ask again")
+            || lower.contains("please ask again or tell me what you'd like to do next")
+            || lower.contains("tool output could not be validated")
+            || lower.contains("could not be validated")
+            || lower.contains("i couldn't produce a confident answer")
+            || lower.contains("i couldn't find a confident answer")
     }
 
     private enum RetrievalOutcome: Sendable, Equatable {
