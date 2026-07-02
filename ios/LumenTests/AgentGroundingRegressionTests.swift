@@ -340,6 +340,91 @@ struct AgentGroundingRegressionTests {
         #expect(reminders?.lowercased().contains("buy foil") == true)
     }
 
+    @Test func agentServiceRepairsMemoryRecallBeforeSaveInvariant() {
+        #if DEBUG
+        let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."
+        let recallFirst = AgentAction(tool: "memory.recall", args: ["query": .string("user preference")])
+        let repaired = AgentService.repairedMemoryActionForTests(
+            modelAction: recallFirst,
+            prompt: prompt,
+            steps: []
+        )
+        #expect(repaired.action.tool == "memory.save")
+        #expect(repaired.action.args["content"]?.stringValue == "I prefer concise bullet points")
+        #expect(repaired.action.args["kind"]?.stringValue == "fact")
+        #expect(repaired.reflection?.content.contains("memory.recall into memory.save") == true)
+
+        let contaminatedSave = AgentAction(tool: "memory.save", args: [
+            "content": .string("I prefer concise bullet points, then tell me what you remembered."),
+            "kind": .string("note")
+        ])
+        let normalized = AgentService.repairedMemoryActionForTests(
+            modelAction: contaminatedSave,
+            prompt: prompt,
+            steps: []
+        )
+        #expect(normalized.action.tool == "memory.save")
+        #expect(normalized.action.args["content"]?.stringValue == "I prefer concise bullet points")
+        #expect(normalized.action.args["kind"]?.stringValue == "fact")
+        #expect(normalized.reflection != nil)
+
+        let savedStep = AgentStep(kind: .action, content: "memory.save", toolID: "memory.save", toolArgs: [
+            "content": "I prefer concise bullet points",
+            "kind": "fact"
+        ])
+        let next = AgentService.nextRequiredMemoryActionForTests(prompt: prompt, steps: [savedStep])
+        #expect(next?.tool == "memory.recall")
+        #expect(next?.args["query"]?.stringValue == "prefer concise bullet points")
+
+        let noSaveRepair = AgentService.repairedMemoryActionForTests(
+            modelAction: recallFirst,
+            prompt: prompt,
+            steps: [],
+            availableToolIDs: ["memory.recall"]
+        )
+        #expect(noSaveRepair.action.tool == "memory.recall")
+        #expect(noSaveRepair.reflection == nil)
+
+        let noRecallNext = AgentService.nextRequiredMemoryActionForTests(
+            prompt: prompt,
+            steps: [savedStep],
+            availableToolIDs: ["memory.save"]
+        )
+        #expect(noRecallNext == nil)
+
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: prompt,
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { ["memory.save", "memory.recall"].contains(ToolRouteGuard.canonicalToolID($0.id)) },
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "Memory tool output could not be validated.",
+            req: req,
+            observations: [
+                ("memory.save", "Saved."),
+                ("memory.recall", "I prefer concise bullet points")
+            ],
+            steps: [
+                savedStep,
+                AgentStep(kind: .action, content: "memory.recall", toolID: "memory.recall", toolArgs: ["query": "prefer concise bullet points"])
+            ]
+        )
+        #expect(final == "I remember that you prefer concise bullet points.")
+        #expect(!final.contains("I'm ready"))
+        #expect(!final.contains("Please ask again"))
+        #expect(!final.contains("Memory tool output could not be validated"))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func toolObservationFinalizerReportsStructuredRejectionReasons() {
         let intentMismatch = ToolObservationFinalizer.immediateFinalOutcome(
             intent: .calendar,
@@ -1430,6 +1515,63 @@ extension AgentGroundingRegressionTests {
         #expect(noise.prefixNoise?.contains("Here is the JSON") == true)
     }
 
+    @Test func deterministicWebSummaryFallbackSynthesizesSwiftSearchObservations() throws {
+        let observation = """
+        Search results for: Swift concurrency best practices
+        {"title":"Swift.org - Concurrency","url":"https://swift.org/documentation/concurrency/","snippet":"Swift concurrency uses async/await and structured concurrency so tasks can be cancelled and scoped cleanly."}
+        {"title":"Apple Developer - MainActor","url":"https://developer.apple.com/documentation/swift/mainactor","snippet":"Use MainActor isolation for UI state updates and keep work that can suspend out of synchronous UI paths."}
+        """
+
+        let summary = try #require(AgentService.deterministicWebSummaryFallbackForTests(observations: [("web.search", observation)]))
+
+        #expect(summary.contains("Swift") || summary.contains("swift"))
+        #expect(summary.split(separator: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("-") }.count >= 2)
+        #expect(!summary.lowercased().contains("no direct answer from web search"))
+        #expect(!summary.lowercased().hasPrefix("search results for:"))
+    }
+
+    @Test func missingActionToolRepairsToOnlyAllowedToolWhenSafe() throws {
+        let raw = #"{"thought":"search","action":{"args":{"query":"Swift concurrency best practices"}}}"#
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for Swift concurrency best practices.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { ToolRouteGuard.canonicalToolID($0.id) == "web.search" },
+            relevantMemories: []
+        )
+
+        let repaired = try #require(AgentService.repairMissingToolActionForTests(raw: raw, req: req))
+
+        #expect(repaired.action.tool == "web.search")
+        #expect(repaired.action.args["query"]?.stringValue == "Swift concurrency best practices")
+    }
+
+    @Test func missingActionToolDoesNotRepairWhenMultipleToolsAreAllowed() throws {
+        let raw = #"{"thought":"search","action":{"args":{"query":"Swift concurrency best practices"}}}"#
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for Swift concurrency best practices.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter {
+                let id = ToolRouteGuard.canonicalToolID($0.id)
+                return id == "web.search" || id == "web.fetch"
+            },
+            relevantMemories: []
+        )
+
+        #expect(AgentService.repairMissingToolActionForTests(raw: raw, req: req) == nil)
+    }
+
     @Test func agentJSONOnlyQwenThinkWrapperWithoutJSONRemainsEmpty() throws {
         let raw = "<think>\nprivate reasoning\n</think>\n"
 
@@ -2102,6 +2244,39 @@ extension AgentGroundingRegressionTests {
         #expect(recovery?.text.lowercased().contains("please ask again") == false)
     }
 
+    @Test func malformedTurnErrorObservationDoesNotShortCircuitParseRecovery() async {
+        let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: false)
+        let errorOnlyObservations = [
+            (tool: "made.up.tool", result: "Unknown tool: made.up.tool. Emit a final turn instead."),
+            (tool: "web.search", result: "Tool web.search is disabled. Enable it in Tools.")
+        ]
+
+        #expect(!AgentService.hasUsableObservationForTests(intent: .webSearch, observations: errorOnlyObservations))
+
+        let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+        let actionToolIDs = recovery?.steps
+            .filter { $0.kind == .action }
+            .compactMap(\.toolID)
+            .map(ToolRouteGuard.canonicalToolID) ?? []
+
+        #expect(actionToolIDs.contains("web.search"))
+        #expect(recovery?.text.lowercased().contains("unknown tool") == false)
+        #expect(recovery?.text.lowercased().contains("disabled") == false)
+    }
+
     @Test func agentServiceParseFailureRecoveryHonorsDisabledDeterministicCompatibility() async {
         let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains($0.id) }
         let req = AgentRequest(
@@ -2233,6 +2408,132 @@ extension AgentGroundingRegressionTests {
         #expect(lower.contains("weather update"))
         #expect(lower.contains("no precipitation was reported"))
         #expect(!lower.contains("umbrella"))
+    }
+
+    @Test func structuredWebSummaryInvalidFinalFallsBackToSearchObservations() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search.","requiresApproval":false,"sourceFile":"ios/Lumen/Models/ToolDefinition.swift"}"#,
+            req: req,
+            observations: [
+                ("web.search", """
+                Search results for: Swift concurrency best practices
+                Prefer structured concurrency with TaskGroup or async let so cancellation and errors propagate through child tasks.
+                Keep UI mutations isolated to MainActor and move long-running work off the main actor to avoid responsiveness and data-race issues.
+                """)
+            ],
+            steps: [AgentStep(kind: .observation, content: "Search results", toolID: "web.search")]
+        )
+
+        #expect(final.contains("Summary:"))
+        #expect(final.contains("structured concurrency"))
+        #expect(final.contains("MainActor"))
+        #expect(!final.contains("\"intent\""))
+        #expect(!final.contains("sourceFile"))
+    }
+
+    @Test func structuredWebPartialRoutingJSONFallsBackToSearchObservations() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search."}"#,
+            req: req,
+            observations: [
+                ("web.search", """
+                Search results for: Swift concurrency best practices
+                Prefer structured concurrency so cancellation and errors propagate through child tasks.
+                Keep UI state updates isolated to MainActor and move long-running work off the main actor.
+                """)
+            ],
+            steps: [AgentStep(kind: .observation, content: "Search results", toolID: "web.search")]
+        )
+
+        #expect(final.contains("Summary:"))
+        #expect(final.contains("structured concurrency"))
+        #expect(final.contains("MainActor"))
+        #expect(!final.contains("\"intent\""))
+        #expect(!final.contains("nextModel"))
+        #expect(!final.contains("reasoningSummary"))
+    }
+
+    @Test func structuredWebNoDirectAnswerFallsBackToSearchObservations() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+            req: req,
+            observations: [
+                ("web.search", """
+                Search results for: Swift concurrency best practices
+                {"title":"Swift.org - Concurrency","url":"https://swift.org/documentation/concurrency/","snippet":"Prefer structured concurrency so cancellation and errors propagate through child tasks."}
+                {"title":"Apple Developer - MainActor","url":"https://developer.apple.com/documentation/swift/mainactor","snippet":"Keep UI state updates isolated to MainActor and move long-running work off the main actor."}
+                """)
+            ],
+            steps: [AgentStep(kind: .observation, content: "Search results", toolID: "web.search")]
+        )
+
+        #expect(final.contains("Summary:"))
+        #expect(final.contains("structured concurrency"))
+        #expect(final.contains("MainActor"))
+        #expect(!final.lowercased().contains("no direct answer from web search"))
+    }
+
+    @Test func structuredRAGEmptyRetrievalOverridesPollutedFallbackFinal() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search my files for architecture notes and summarize key modules.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "I'm ready. Please ask again or tell me what you'd like to do next. Key modules: core module details were retrieved from local file snippets [1].",
+            req: req,
+            observations: [
+                ("rag.search", "No matching files found for 'architecture notes'. Your local index appears empty. Import or create local files, then reindex.")
+            ],
+            steps: [AgentStep(kind: .observation, content: "No matching files found", toolID: "rag.search")]
+        )
+
+        #expect(final == "I searched your local files but found no matching architecture notes. The local index appears empty; import or create files and reindex.")
+        #expect(!final.contains("Key modules"))
+        #expect(!final.contains("[1]"))
     }
 
     @Test func structuredMemorySaveRecallFinalPreservesExactPreference() {

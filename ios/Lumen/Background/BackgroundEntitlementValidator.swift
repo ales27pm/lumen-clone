@@ -31,7 +31,8 @@ enum BackgroundEntitlementValidator {
             ["NSSpeechRecognitionUsageDescription"],
             ["NSLocationAlwaysAndWhenInUseUsageDescription", "NSLocationAlwaysUsageDescription"],
             ["NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription", "NSCalendarsWriteOnlyAccessUsageDescription"],
-            ["NSContactsUsageDescription"]
+            ["NSContactsUsageDescription"],
+            ["NSAlarmKitUsageDescription"]
         ]
         for alternatives in keyChecks where !alternatives.contains(where: { (infoDictionary[$0] as? String)?.isEmpty == false }) {
             warnings.append(.init(code: "missing_usage_description", message: "Missing usage description: \(alternatives.joined(separator: " or "))"))

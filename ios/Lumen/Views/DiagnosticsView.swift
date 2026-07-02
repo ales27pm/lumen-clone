@@ -8,6 +8,7 @@ struct DiagnosticsView: View {
         Group {
             if let snapshot {
                 List {
+                    NavigationLink("Build") { BuildDiagnosticsView(build: snapshot.build) }
                     NavigationLink("Runtime") { RuntimeDashboardView(runtime: snapshot.runtime) }
                     NavigationLink("Permissions") { PermissionSnapshotView(snapshot: snapshot.permissions) }
                     NavigationLink("Tools") { ToolSecurityView(tools: snapshot.tools) }
@@ -28,6 +29,33 @@ struct DiagnosticsView: View {
             }
         }
         .onAppear { snapshot = provider.cachedSnapshot() }
+    }
+}
+
+struct BuildDiagnosticsView: View {
+    let build: BuildDiagnosticsSnapshot
+
+    var body: some View {
+        List {
+            row("Bundle ID", build.bundleIdentifier)
+            row("Bundle version", build.bundleVersion)
+            row("Build source", build.buildSourceIdentifier)
+            row("Git SHA", build.gitSHA)
+            row("Configuration", build.configuration)
+            row("Scheme", build.scheme)
+            row("NSAlarmKitUsageDescription", build.alarmKitUsageDescription ?? "Missing")
+        }
+        .navigationTitle("Build")
+    }
+
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+            Spacer(minLength: 16)
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
     }
 }
 

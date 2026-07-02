@@ -30,6 +30,8 @@ struct E2EScenarioGenerationTests {
             #expect(scenario.evidenceMode == .policyFirstAllowed)
             #expect(!scenario.prompt.isEmpty)
             #expect(scenario.requiredAllowedToolIDs.count == 1)
+            #expect(scenario.expectedToolID == scenario.requiredAllowedToolIDs.first.map(ToolRouteGuard.canonicalToolID))
+            #expect(scenario.scenarioBankKind != nil)
             if let toolID = scenario.requiredAllowedToolIDs.first {
                 #expect(!scenario.forbiddenToolIDs.contains(toolID))
             }

@@ -1524,6 +1524,7 @@ final class AgentService {
         var executedActionKeys: Set<String> = []
         var scratchpad = ""
         var finalAnswer = ""
+        let memoryCommandPlan = MemoryCommandPlan.saveThenRecall(from: Self.sanitizedStructuredUserMessage(req.userMessage))
 
         let sys = buildSystemPrompt(req: req)
         let maxSteps = max(1, req.maxSteps)
@@ -1756,13 +1757,56 @@ final class AgentService {
                 scratchpad += "\nThought: \(partial)"
             }
 
+            var actionToExecute: AgentAction?
+            if let parsedAction = turn.action {
+                let repair = Self.repairedMemoryActionIfNeeded(
+                    modelAction: parsedAction,
+                    memoryPlan: memoryCommandPlan,
+                    steps: steps,
+                    availableToolIDs: Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                )
+                if let reflection = repair.reflection {
+                    steps.append(reflection)
+                    continuation.yield(.step(reflection))
+                }
+                actionToExecute = repair.action
+            } else if turn.parseError == .missingActionTool,
+                      let repaired = Self.repairMissingToolActionIfPossible(
+                        raw: raw,
+                        req: req,
+                        observations: observations
+                      ) {
+                let reflection = AgentStep(
+                    kind: .reflection,
+                    content: repaired.diagnostic,
+                    toolID: repaired.action.tool,
+                    toolArgs: repaired.action.args.stringCoerced
+                )
+                steps.append(reflection)
+                continuation.yield(.step(reflection))
+                actionToExecute = repaired.action
+            } else if turn.final?.isEmpty == false,
+                      let requiredMemoryAction = Self.nextRequiredMemoryAction(
+                        memoryPlan: memoryCommandPlan,
+                        steps: steps,
+                        availableToolIDs: Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                      ) {
+                let reflection = AgentStep(
+                    kind: .reflection,
+                    content: "Memory save-then-recall invariant repaired a premature final before required memory actions completed."
+                )
+                steps.append(reflection)
+                continuation.yield(.step(reflection))
+                actionToExecute = requiredMemoryAction
+            }
+
             // Action path
-            if let action = turn.action {
-                guard let _ = ToolRegistry.find(id: action.tool) else {
-                    let obs = AgentStep(kind: .observation, content: "Unknown tool: \(action.tool). Emit a final turn instead.", toolID: action.tool)
+            if let action = actionToExecute {
+                let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
+                guard let _ = ToolRegistry.find(id: canonicalActionTool) else {
+                    let obs = AgentStep(kind: .observation, content: "Unknown tool: \(action.tool). Emit a final turn instead.", toolID: canonicalActionTool)
                     steps.append(obs)
                     continuation.yield(.step(obs))
-                    observations.append((action.tool, obs.content))
                     scratchpad += "\nAction: \(action.displayContent)\nObservation: \(compactScratchpadObservation(obs.content))"
                     if let locationObservation = currentLocationScratchpadContext(from: obs.content) {
                         scratchpad += "\nContext: \(locationObservation)"
@@ -1779,17 +1823,27 @@ final class AgentService {
                 }
                 executedActionKeys.insert(action.dedupeKey)
 
-                let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: action.tool, toolArgs: action.args.stringCoerced)
+                if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
+                    let approval = Self.approvalBoundaryFinal(for: canonicalActionTool, action: action)
+                    let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+                    steps.append(step)
+                    continuation.yield(.step(step))
+                    finalAnswer = approval
+                    continuation.yield(.finalDelta(finalAnswer))
+                    break stepsLoop
+                }
+
+                let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
                 steps.append(actionStep)
                 continuation.yield(.step(actionStep))
 
-                let isEnabled = req.availableTools.contains { $0.id == action.tool }
+                let isEnabled = req.availableTools.contains { ToolRouteGuard.canonicalToolID($0.id) == canonicalActionTool }
                 let result: String
                 if !isEnabled {
-                    result = "Tool \(action.tool) is disabled. Enable it in Tools."
+                    result = "Tool \(canonicalActionTool) is disabled. Enable it in Tools."
                 } else {
                     result = await SecureToolRegistry.shared.executeLegacyTool(
-                        action.tool,
+                        canonicalActionTool,
                         arguments: action.args,
                         approval: .autonomous,
                         conversationID: req.conversationID,
@@ -1797,10 +1851,10 @@ final class AgentService {
                     )
                 }
 
-                let obs = AgentStep(kind: .observation, content: result, toolID: action.tool)
+                let obs = AgentStep(kind: .observation, content: result, toolID: canonicalActionTool)
                 steps.append(obs)
                 continuation.yield(.step(obs))
-                observations.append((action.tool, result))
+                observations.append((canonicalActionTool, result))
                 scratchpad += "\nAction: \(action.displayContent)\nObservation: \(compactScratchpadObservation(result))"
                 if let locationObservation = currentLocationScratchpadContext(from: result) {
                     scratchpad += "\nContext: \(locationObservation)"
@@ -1877,6 +1931,16 @@ final class AgentService {
                     break stepsLoop
                 }
 
+                let malformedIntent = IntentRouter.classify(Self.sanitizedStructuredUserMessage(req.userMessage)).intent
+                if Self.hasUsableObservation(for: malformedIntent, observations: observations) {
+                    let reflection = AgentStep(kind: .reflection, content: "Malformed structured turn repaired by synthesizing from existing tool observations.")
+                    steps.append(reflection)
+                    continuation.yield(.step(reflection))
+                    finalAnswer = await synthesizeFallback(req: req, observations: observations, reason: .malformed)
+                    continuation.yield(.finalDelta(finalAnswer))
+                    break stepsLoop
+                }
+
                 if let recovery = await Self.structuredParseFailureRecovery(req: req, options: options) {
                     for step in recovery.steps {
                         steps.append(step)
@@ -1895,7 +1959,7 @@ final class AgentService {
                 let streamedFinal = scanner.final.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !streamedFinal.isEmpty {
                     finalAnswer = streamedFinal
-                } else if !observations.isEmpty {
+                } else if Self.hasUsableObservation(for: malformedIntent, observations: observations) {
                     finalAnswer = await synthesizeFallback(req: req, observations: observations, reason: .malformed)
                 } else {
                     finalAnswer = await synthesizeUnstructuredFallback(
@@ -1974,6 +2038,27 @@ final class AgentService {
             return memoryFinal
         }
 
+        if routing.intent == .webSearch,
+           hasUsableObservation(for: .webSearch, observations: observations),
+           webFinalRequiresObservationFallback(finalAnswer) {
+            return deterministicWebSummaryFallback(observations: observations)
+                ?? deterministicWebResultFallback(observations: observations)
+                ?? "I found web results, but could not synthesize a grounded final answer from them."
+        }
+
+        if routing.intent == .rag || routing.intent == .files {
+            let outcome = retrievalOutcome(from: observations)
+            if outcome.isEmptyRetrieval,
+               let deterministic = deterministicObservationFallback(observations: observations, intent: routing.intent) {
+                return deterministic
+            }
+            if structuredFinalIsGenericFallback(finalAnswer),
+               hasUsableObservation(for: routing.intent, observations: observations),
+               let deterministic = deterministicObservationFallback(observations: observations, intent: routing.intent) {
+                return deterministic
+            }
+        }
+
         return finalAnswer
     }
 
@@ -1992,6 +2077,83 @@ final class AgentService {
             availableToolIDs: availableToolIDs,
             routing: routing
         )
+    }
+
+    private nonisolated static func repairedMemoryActionIfNeeded(
+        modelAction: AgentAction,
+        memoryPlan: MemoryCommandPlan?,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> (action: AgentAction, reflection: AgentStep?) {
+        guard let required = nextRequiredMemoryAction(
+            memoryPlan: memoryPlan,
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        ) else {
+            return (modelAction, nil)
+        }
+        let modelTool = ToolRouteGuard.canonicalToolID(modelAction.tool)
+        let requiredTool = ToolRouteGuard.canonicalToolID(required.tool)
+        if modelTool == requiredTool, memoryActionArgumentsMatch(modelAction, required: required) {
+            return (modelAction, nil)
+        }
+        let reflection = AgentStep(
+            kind: .reflection,
+            content: "Memory save-then-recall invariant repaired \(modelTool) into \(requiredTool) before tool execution."
+        )
+        return (required, reflection)
+    }
+
+    private nonisolated static func memoryActionArgumentsMatch(_ action: AgentAction, required: AgentAction) -> Bool {
+        let requiredKeys = Set(required.args.keys)
+        guard Set(action.args.keys).isSuperset(of: requiredKeys) else { return false }
+        for key in requiredKeys {
+            guard action.args[key]?.stringValue == required.args[key]?.stringValue else { return false }
+        }
+        return true
+    }
+
+    private nonisolated static func nextRequiredMemoryAction(
+        memoryPlan: MemoryCommandPlan?,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> AgentAction? {
+        guard let memoryPlan else { return nil }
+        let actionToolIDs = steps
+            .filter { $0.kind == .action }
+            .compactMap(\.toolID)
+            .map(ToolRouteGuard.canonicalToolID)
+        if !actionToolIDs.contains("memory.save") {
+            guard availableToolIDs.contains("memory.save") else { return nil }
+            return AgentAction(tool: "memory.save", args: [
+                "content": .string(memoryPlan.saveContent),
+                "kind": .string("fact")
+            ])
+        }
+        if !actionToolIDs.contains("memory.recall") {
+            guard availableToolIDs.contains("memory.recall") else { return nil }
+            return AgentAction(tool: "memory.recall", args: ["query": .string(memoryPlan.recallQuery)])
+        }
+        return nil
+    }
+
+    private nonisolated static func approvalBoundaryFinal(for toolID: String, action: AgentAction) -> String {
+        switch toolID {
+        case "alarm.request_authorization":
+            return "Approval required for alarm.request_authorization. I did not request alarm authorization yet."
+        case "alarm.schedule", "alarm.countdown", "alarm.pause", "alarm.resume", "alarm.stop", "alarm.snooze", "alarm.cancel":
+            return "Approval required for \(toolID). I did not change alarms yet."
+        case "calendar.create":
+            return "Approval required for calendar.create. I did not create an event yet."
+        case "reminders.create":
+            return "Approval required for reminders.create. I did not create a reminder yet."
+        case "phone.call":
+            return "Approval required for phone.call. I did not place the call yet."
+        case "camera.capture":
+            return "Approval required for camera.capture. I did not open the camera yet."
+        default:
+            return "Approval required for \(action.displayContent). I did not run it yet."
+        }
     }
 
     private nonisolated static func structuredFinalContradictsContactPhoneContinuation(_ finalAnswer: String) -> Bool {
@@ -2891,6 +3053,25 @@ final class AgentService {
         observationFallbackPlainText(from: raw, intent: intent)
     }
 
+    nonisolated static func deterministicWebSummaryFallbackForTests(observations: [(tool: String, result: String)]) -> String? {
+        deterministicWebSummaryFallback(observations: observations)
+    }
+
+    nonisolated static func hasUsableObservationForTests(
+        intent: UserIntent,
+        observations: [(tool: String, result: String)]
+    ) -> Bool {
+        hasUsableObservation(for: intent, observations: observations)
+    }
+
+    nonisolated static func repairMissingToolActionForTests(
+        raw: String,
+        req: AgentRequest,
+        observations: [(tool: String, result: String)] = []
+    ) -> (action: AgentAction, diagnostic: String)? {
+        repairMissingToolActionIfPossible(raw: raw, req: req, observations: observations)
+    }
+
     nonisolated static func postprocessStructuredFinalAnswerForTests(
         _ finalAnswer: String,
         req: AgentRequest,
@@ -2898,6 +3079,32 @@ final class AgentService {
         steps: [AgentStep]
     ) -> String {
         postprocessStructuredFinalAnswer(finalAnswer, req: req, observations: observations, steps: steps)
+    }
+
+    nonisolated static func repairedMemoryActionForTests(
+        modelAction: AgentAction,
+        prompt: String,
+        steps: [AgentStep],
+        availableToolIDs: Set<String> = ["memory.save", "memory.recall"]
+    ) -> (action: AgentAction, reflection: AgentStep?) {
+        repairedMemoryActionIfNeeded(
+            modelAction: modelAction,
+            memoryPlan: MemoryCommandPlan.saveThenRecall(from: prompt),
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        )
+    }
+
+    nonisolated static func nextRequiredMemoryActionForTests(
+        prompt: String,
+        steps: [AgentStep],
+        availableToolIDs: Set<String> = ["memory.save", "memory.recall"]
+    ) -> AgentAction? {
+        nextRequiredMemoryAction(
+            memoryPlan: MemoryCommandPlan.saveThenRecall(from: prompt),
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        )
     }
 
     /// Exposes the internal structured parse failure recovery function for testing.
@@ -2964,6 +3171,12 @@ final class AgentService {
             intent: routing.intent,
             reason: reason
         )
+
+        if let deterministic = Self.deterministicObservationFallback(observations: observations, intent: routing.intent) {
+            if routing.intent == .webSearch || Self.retrievalOutcome(from: observations).isEmptyRetrieval {
+                return deterministic
+            }
+        }
 
         let genReq = GenerateRequest(
             systemPrompt: Self.observationFallbackSystemPrompt(intent: routing.intent),
@@ -3058,14 +3271,278 @@ final class AgentService {
     ) -> String? {
         guard !observations.isEmpty else { return nil }
         if intent == .rag || intent == .files {
+            let outcome = retrievalOutcome(from: observations)
+            if outcome.isEmptyRetrieval, let message = outcome.emptyMessage {
+                return message
+            }
             let sourced = observations.prefix(3).enumerated().map { index, obs in
                 "[\(index + 1)] \(compactObservationResult(obs.result, limit: 700))"
             }
             return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nUse the cited observations above for concrete modules when available."
         }
+        if intent == .webSearch {
+            return deterministicWebSummaryFallback(observations: observations)
+                ?? deterministicWebResultFallback(observations: observations)
+        }
         guard let last = observations.last else { return nil }
         let compact = compactObservationResult(last.result, limit: 1_200)
         return compact.isEmpty ? nil : compact
+    }
+
+    private nonisolated static func deterministicWebSummaryFallback(observations: [(tool: String, result: String)]) -> String? {
+        let joined = observations
+            .filter {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                return tool == "web.search" || tool == "web.fetch"
+            }
+            .map(\.result)
+            .joined(separator: "\n")
+        let candidates = webSummaryCandidates(from: joined)
+        let useful: [String]
+        if candidates.isEmpty {
+            useful = joined
+                .split(whereSeparator: \.isNewline)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        } else {
+            useful = candidates
+        }
+        let lines = useful
+            .filter { line in
+                let lower = line.lowercased()
+                return line.count >= 24
+                    && !lower.hasPrefix("search results for:")
+                    && !lower.hasPrefix("web search results:")
+                    && !lower.hasPrefix("http")
+                    && !lower.contains("<lumen_web_payload")
+                    && !lower.contains("\"mediakind\"")
+                    && !webFinalRequiresObservationFallback(line)
+            }
+        let ordered = prioritizeWebCandidates(lines)
+        let bullets = ordered.prefix(2).map { "- \(compactObservationResult($0, limit: 220))" }
+        guard bullets.count >= 2 else { return nil }
+        return "Summary:\n\(bullets.joined(separator: "\n"))"
+    }
+
+    private nonisolated static func deterministicWebResultFallback(observations: [(tool: String, result: String)]) -> String? {
+        let joined = observations
+            .filter {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                return tool == "web.search" || tool == "web.fetch"
+            }
+            .map(\.result)
+            .joined(separator: "\n")
+        let candidates = prioritizeWebCandidates(webSummaryCandidates(from: joined))
+            .filter { candidate in
+                let lower = candidate.lowercased()
+                return candidate.count >= 12
+                    && !lower.hasPrefix("search results for:")
+                    && !lower.hasPrefix("web search results:")
+                    && !lower.contains("<lumen_web_payload")
+                    && !webFinalRequiresObservationFallback(candidate)
+            }
+        let bullets = candidates.prefix(3).map { "- \(compactObservationResult($0, limit: 180))" }
+        guard !bullets.isEmpty else {
+            let compact = compactObservationResult(joined, limit: 500)
+            return compact.isEmpty ? nil : "Web results found:\n- \(compact)"
+        }
+        if bullets.count == 1 {
+            return """
+            Web results found:
+            \(bullets[0])
+            - The remaining result payload did not include enough snippet detail for a stronger synthesis.
+            """
+        }
+        return "Web results found:\n\(bullets.joined(separator: "\n"))"
+    }
+
+    private nonisolated static func webSummaryCandidates(from text: String) -> [String] {
+        var candidates: [String] = []
+        let patterns = [
+            #"(?is)<lumen_web_payload[^>]*>(.*?)</lumen_web_payload>"#,
+            #"(?is)\{[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*\}"#,
+            #"(?is)\{[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*\}"#,
+            #"(?is)"title"\s*:\s*"([^"]+)".{0,900}?"snippet"\s*:\s*"([^"]+)""#,
+            #"(?is)"snippet"\s*:\s*"([^"]+)".{0,900}?"title"\s*:\s*"([^"]+)""#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = text as NSString
+            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                if match.numberOfRanges >= 3 {
+                    let first = ns.substring(with: match.range(at: 1))
+                    let second = ns.substring(with: match.range(at: 2))
+                    candidates.append("\(first): \(second)")
+                } else if match.numberOfRanges >= 2 {
+                    candidates.append(ns.substring(with: match.range(at: 1)))
+                }
+            }
+        }
+        if !candidates.isEmpty { return candidates.map(decodeJSONStringEscapes).filter { !$0.isEmpty } }
+        return text
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private nonisolated static func prioritizeWebCandidates(_ candidates: [String]) -> [String] {
+        candidates.sorted { lhs, rhs in
+            webCandidatePriority(lhs) > webCandidatePriority(rhs)
+        }
+    }
+
+    private nonisolated static func webCandidatePriority(_ text: String) -> Int {
+        let lower = text.lowercased()
+        if lower.contains("developer.apple.com") || lower.contains("swift.org") || lower.contains("docs.swift.org") { return 3 }
+        if lower.contains("swift") || lower.contains("concurrency") || lower.contains("actor") || lower.contains("task") { return 2 }
+        return 1
+    }
+
+    private nonisolated static func decodeJSONStringEscapes(_ text: String) -> String {
+        let quoted = "\"\(text.replacingOccurrences(of: "\"", with: "\\\""))\""
+        guard let data = quoted.data(using: .utf8),
+              let decoded = try? JSONSerialization.jsonObject(with: data) as? String else {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return decoded.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func webPromptRequiresSynthesis(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        return lower.contains("summarize")
+            || lower.contains("synthesize")
+            || lower.contains("compare")
+    }
+
+    private nonisolated static func webFinalRequiresObservationFallback(_ finalAnswer: String) -> Bool {
+        let text = finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = text.lowercased()
+        if text.isEmpty { return true }
+        if lower.contains("no direct answer from web search") { return true }
+        if lower.hasPrefix("search results for:") || lower.hasPrefix("web search results:") { return true }
+        if lower.contains("search results for:") && (lower.contains("\nhttp") || lower.contains("\n- http")) { return true }
+        if RoutingJSONLeakDetector.containsInternalRoutingJSON(text) {
+            return true
+        }
+        if text.range(of: #"(?is)^\s*(https?://\S+)\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        if text.range(of: #"(?is)^\s*see\s+the\s+full\s+(tutorial|article|guide|post|result)\s+at\s+https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        if text.range(of: #"(?is)^\s*(?:check\s+out|see|read|visit|open|here(?:'s| is))\b[^\n]{0,180}https?://\S+\s*\.?\s*$"#, options: .regularExpression) != nil {
+            return true
+        }
+        return false
+    }
+
+    private nonisolated static func structuredFinalIsGenericFallback(_ finalAnswer: String) -> Bool {
+        let lower = finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lower.isEmpty
+            || lower.contains("i'm ready. please ask again")
+            || lower.contains("please ask again or tell me what you'd like to do next")
+            || lower.contains("tool output could not be validated")
+            || lower.contains("could not be validated")
+            || lower.contains("i couldn't produce a confident answer")
+            || lower.contains("i couldn't find a confident answer")
+    }
+
+    private enum RetrievalOutcome: Sendable, Equatable {
+        case snippets
+        case emptyIndex(String)
+        case noMatches(String)
+        case unavailable(String)
+
+        var isEmptyRetrieval: Bool {
+            switch self {
+            case .emptyIndex, .noMatches: return true
+            case .snippets, .unavailable: return false
+            }
+        }
+
+        var emptyMessage: String? {
+            switch self {
+            case .emptyIndex:
+                return "I searched your local files but found no matching architecture notes. The local index appears empty; import or create files and reindex."
+            case .noMatches:
+                return "I searched your local files but found no matching architecture notes."
+            case .snippets, .unavailable:
+                return nil
+            }
+        }
+    }
+
+    private nonisolated static func retrievalOutcome(from observations: [(tool: String, result: String)]) -> RetrievalOutcome {
+        let ragText = observations
+            .filter { ToolRouteGuard.canonicalToolID($0.tool) == "rag.search" || ToolRouteGuard.canonicalToolID($0.tool) == "files.read" }
+            .map(\.result)
+            .joined(separator: "\n")
+        let lower = ragText.lowercased()
+        if lower.contains("local index appears empty") || lower.contains("import or create local files") {
+            return .emptyIndex(ragText)
+        }
+        if lower.contains("no matching files found") || lower.contains("no matching local snippets") {
+            return .noMatches(ragText)
+        }
+        if lower.contains("unavailable") || lower.contains("disabled") || lower.contains("denied") {
+            return .unavailable(ragText)
+        }
+        return .snippets
+    }
+
+    private nonisolated static func hasUsableObservation(for intent: UserIntent, observations: [(tool: String, result: String)]) -> Bool {
+        switch intent {
+        case .webSearch:
+            return observations.contains {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                let result = $0.result.trimmingCharacters(in: .whitespacesAndNewlines)
+                return (tool == "web.search" || tool == "web.fetch") && isUsableObservationResult(result)
+            }
+        case .rag, .files:
+            return observations.contains {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                return (tool == "rag.search" || tool == "files.read") && isUsableObservationResult($0.result)
+            }
+        default:
+            return observations.contains {
+                let tool = ToolRouteGuard.canonicalToolID($0.tool)
+                return ToolRegistry.find(id: tool) != nil && isUsableObservationResult($0.result)
+            }
+        }
+    }
+
+    private nonisolated static func isUsableObservationResult(_ result: String) -> Bool {
+        let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        let lower = text.lowercased()
+        return !lower.hasPrefix("unknown tool:")
+            && !lower.contains(" is disabled")
+            && !lower.contains("tool disabled")
+            && !lower.contains("disabled. enable it in tools")
+    }
+
+    private nonisolated static func repairMissingToolActionIfPossible(
+        raw: String,
+        req: AgentRequest,
+        observations: [(tool: String, result: String)]
+    ) -> (action: AgentAction, diagnostic: String)? {
+        guard observations.isEmpty else { return nil }
+        switch AgentJSONCandidateSelector.select(from: raw) {
+        case .failure:
+            return nil
+        case .success(let selection):
+            let allowed = Array(Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })).sorted()
+            guard allowed.count == 1, let tool = allowed.first else { return nil }
+            let actionObject = (selection.object["action"] as? [String: Any]) ?? selection.object
+            let rawArgs = (actionObject["args"] ?? actionObject["arguments"] ?? actionObject["input"]) as? [String: Any] ?? [:]
+            var args: AgentJSONArguments = [:]
+            for (key, value) in rawArgs {
+                guard let parsed = AgentJSONValue.parse(value) else { return nil }
+                args[key] = parsed
+            }
+            return (
+                AgentAction(tool: tool, args: args),
+                "Structured action was missing action.tool; repaired to the only allowed tool \(tool)."
+            )
+        }
     }
 
     private nonisolated static func compactObservationResult(_ result: String, limit: Int) -> String {

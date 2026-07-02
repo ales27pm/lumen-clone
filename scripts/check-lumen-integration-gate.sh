@@ -28,6 +28,12 @@ run_check "iOS LoRA hardening invariants" python3 tools/check_ios_lora_hardening
 run_check "MSAL iOS release config" python3 scripts/validate-msal-ios-release-config.py
 run_check "iOS signing capabilities" python3 scripts/validate_ios_signing_capabilities.py
 run_check "No shell subprocess security check" python3 tools/security/check_no_shell_subprocess.py
+if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
+  latest_built_app="$(find build -maxdepth 2 \( -name '*.xcarchive' -o -name '*.ipa' \) -print 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -n "$latest_built_app" ]]; then
+    export LUMEN_BUILT_APP_PATH="$latest_built_app"
+  fi
+fi
 run_check "iOS build readiness" bash scripts/check-ios-build-readiness.sh
 run_git_diff_check
 

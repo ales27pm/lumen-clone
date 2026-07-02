@@ -226,9 +226,9 @@ nonisolated enum IntentClarificationPolicy {
                 return "What should the scheduled agent run do?"
             }
         case .alarm:
-            if lacksTime(value) && matchesAny(value, ["set alarm", "set an alarm", "alarm", "timer", "countdown"]) {
-                return "What time or duration should I use?"
-            }
+            guard matchesAny(value, ["alarm", "timer", "countdown", "snooze", "pause", "resume", "stop", "cancel", "authorization", "permission", "auth status", "list alarms", "active alarms", "wake me", "wake us"]) else { return nil }
+            let kind = AlarmCommandClassifier.classifyAlarmCommandKind(value)
+            return AlarmCommandClassifier.clarificationPrompt(for: kind, text: value)
         case .weather, .camera, .health, .motion, .outlook, .chat, .unknown:
             return nil
         }

@@ -7,7 +7,12 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-from lumen_manifest_crawler.dataset.e2e_report_normalizer import flatten_e2e_json_report
+from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
+    _final_artifact_diagnosis_for_scenario,
+    _is_architecture_or_finalizer_failure,
+    _is_runtime_environment_failure,
+    flatten_e2e_json_report,
+)
 from lumen_manifest_crawler.dataset.e2e_text_parser import parse_e2e_text_report
 
 SUPPORTED_TEXT_REPORT_SUFFIXES = {".txt", ".md", ".markdown", ".log"}
@@ -277,6 +282,7 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
             "failures": "; ".join(str(item) for item in result.get("failures", []) if item) if isinstance(result.get("failures"), list) else result.get("failures"),
             "final": result.get("finalText"),
             "events": result.get("events") or [],
+            "metadata": result.get("metadata") or {},
             "startedAt": result.get("startedAt"),
             "finishedAt": result.get("finishedAt"),
         })
@@ -292,14 +298,58 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
 
 
 def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
-    failed = [scenario for scenario in scenarios if scenario.get("passed") is not True]
+    all_failed = [
+        scenario
+        for scenario in scenarios
+        if scenario.get("passed") is not True
+    ]
+    failed = [
+        scenario
+        for scenario in all_failed
+        if _scenario_is_trainable_e2e_failure(scenario)
+    ]
     if not failed:
+        if all_failed:
+            return [
+                f"failed-scenarios: {len(all_failed)}",
+                "Non-trainable architecture/runtime/finalizer failures quarantined; create regression tests instead of SFT negatives.",
+            ]
         return []
     return [
         f"failed-scenarios: {len(failed)}",
         "Capture failed prompts + final outputs into next fine-tuning dataset.",
-        "Prioritize repeated tool-boundary, response-quality, and no-model execution failures.",
+        "Prioritize grounded response-quality failures with valid model evidence and valid tool observations.",
     ]
+
+
+def _scenario_is_trainable_e2e_failure(scenario: dict[str, Any]) -> bool:
+    if _scenario_marked_non_trainable_preflight(scenario):
+        return False
+    evidence = _scenario_evidence_text(scenario)
+    if _is_architecture_or_finalizer_failure(evidence, _final_artifact_diagnosis_for_scenario(scenario)):
+        return False
+    return True
+
+
+def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
+    metadata = scenario.get("metadata")
+    if isinstance(metadata, dict):
+        failure_kind = str(metadata.get("failureKind") or "")
+        if str(metadata.get("trainingSignal") or "").casefold() == "false" and failure_kind.startswith("liveRuntime"):
+            return True
+    evidence = _scenario_evidence_text(scenario)
+    return _is_runtime_environment_failure(evidence, None)
+
+
+def _scenario_evidence_text(scenario: dict[str, Any]) -> str:
+    return "\n".join(
+        str(part or "")
+        for part in [
+            scenario.get("failures"),
+            scenario.get("final"),
+            " ".join(str(event.get("message") or "") for event in scenario.get("events") or [] if isinstance(event, dict)),
+        ]
+    ).casefold()
 
 
 def _is_in_app_package(value: dict[str, Any]) -> bool:

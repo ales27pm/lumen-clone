@@ -14,6 +14,17 @@ set_bool() {
     "$plistbuddy" -c "Add :${key} bool true" "$plist"
 }
 
+set_string() {
+  key="$1"
+  value="$2"
+  if [ -z "$value" ]; then
+    return
+  fi
+  escaped="$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  "$plistbuddy" -c "Set :${key} \"${escaped}\"" "$plist" 2>/dev/null || \
+    "$plistbuddy" -c "Add :${key} string \"${escaped}\"" "$plist"
+}
+
 set_background_modes() {
   "$plistbuddy" -c "Delete :UIBackgroundModes" "$plist" 2>/dev/null || true
   "$plistbuddy" -c "Add :UIBackgroundModes array" "$plist"
@@ -59,6 +70,18 @@ set_carplay_voice_scene() {
 set_bool UIFileSharingEnabled
 set_bool LSSupportsOpeningDocumentsInPlace
 set_bool UISupportsDocumentBrowser
+set_string NSAlarmKitUsageDescription "${INFOPLIST_KEY_NSAlarmKitUsageDescription:-Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask.}"
+set_string LumenBuildSourceIdentifier "${CURRENT_PROJECT_VERSION:-}"
+set_string LumenBuildConfiguration "${CONFIGURATION:-}"
+set_string LumenBuildScheme "${LUMEN_BUILD_SCHEME:-${TARGET_NAME:-}}"
+set_string LumenGitSHA "${LUMEN_GIT_SHA:-unknown}"
 set_background_modes
 set_background_task_identifiers_from_build_setting
 set_carplay_voice_scene
+
+alarm_usage="$("$plistbuddy" -c "Print :NSAlarmKitUsageDescription" "$plist" 2>/dev/null || true)"
+trimmed_alarm_usage="$(printf '%s' "$alarm_usage" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+if [ -z "$trimmed_alarm_usage" ]; then
+  echo "error: generated Info.plist missing NSAlarmKitUsageDescription after capability patching" >&2
+  exit 1
+fi
