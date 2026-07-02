@@ -20,6 +20,8 @@ struct VoiceModeView: View {
     @State private var finishedStreaming = false
     @State private var stepsBuffer: [AgentStep] = []
     @State private var activeVoiceTurnID: UUID?
+    @State private var activeSpeechTurnID: UUID?
+    @State private var speechEndObserverTask: Task<Void, Never>?
     @State private var generationController = GenerationTaskController<String>()
 
     enum Phase { case idle, listening, thinking, speaking }
@@ -51,7 +53,7 @@ struct VoiceModeView: View {
 
                 Spacer()
 
-                VoiceWaveform(level: 0.5, phase: phase)
+                VoiceWaveform(level: VoiceService.shared.inputLevel, phase: phase)
                     .frame(height: 120)
                     .padding(.horizontal, 40)
 
@@ -192,9 +194,11 @@ struct VoiceModeView: View {
     }
 
     private func startListening() {
+        cancelSpeechEndObservation()
         session.stopSpeaking()
         responseText = ""
         activeVoiceTurnID = nil
+        activeSpeechTurnID = nil
         Task {
             await session.startPushToTalk { text in
                 Task { @MainActor in handleTranscript(text) }
@@ -239,6 +243,7 @@ struct VoiceModeView: View {
         let turnID = UUID()
         let controllerRequestID = UUID()
         activeVoiceTurnID = turnID
+        activeSpeechTurnID = turnID
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(true)
 
         let task = Task {
@@ -259,7 +264,7 @@ struct VoiceModeView: View {
                 let fallback = "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it."
                 responseText = fallback
                 finishedStreaming = true
-                speakPending()
+                speakPending(turnID: turnID)
                 let assistantMsg = ChatMessage(role: .assistant, content: fallback)
                 convo.messages.append(assistantMsg)
                 convo.updatedAt = Date()
@@ -315,7 +320,7 @@ struct VoiceModeView: View {
                         session.startSpeaking()
                     }
                     if mutation.shouldSpeakPending {
-                        speakPending()
+                        speakPending(turnID: turnID)
                     }
                 }
             }
@@ -325,7 +330,7 @@ struct VoiceModeView: View {
             let finalText = VoiceKernelEventReducer.finalResponseText(from: voiceEventState.finalText, lastUserMessage: text, routing: routing)
             let persistedFinal = FinalOutputSanitizer.sanitizeUserVisibleText(finalText).text
             responseText = persistedFinal
-            speakPending()
+            speakPending(turnID: turnID)
             let assistantMsg = ChatMessage(role: .assistant, content: persistedFinal, agentSteps: AgentStepContentBudget.boundedSanitizedSteps(stepsBuffer))
             convo.messages.append(assistantMsg)
             convo.updatedAt = Date()
@@ -384,47 +389,59 @@ struct VoiceModeView: View {
         return nil
     }
 
-    private func speakPending() {
+    private func speakPending(turnID: UUID) {
+        guard activeSpeechTurnID == turnID else { return }
         if phase != .speaking { phase = .speaking }; session.startSpeaking()
-        let currentChars = Array(responseText)
-        guard spokenPrefix < currentChars.count else {
-            if finishedStreaming && !VoiceService.shared.isSpeaking { onFinishedSpeaking() }
+        guard spokenPrefix < responseText.count else {
+            if finishedStreaming && !VoiceService.shared.isSpeaking { onFinishedSpeaking(turnID: turnID) }
             return
         }
-        let remaining = Array(currentChars[spokenPrefix...])
-        let boundaries: Set<Character> = [".", "!", "?", "\n"]
-        var end = remaining.count
-        if !finishedStreaming {
-            if let lastIdx = remaining.lastIndex(where: { boundaries.contains($0) }) {
-                end = lastIdx + 1
-            } else {
-                return
-            }
+        guard let next = VoiceStreamingChunker.nextChunk(
+            in: responseText,
+            startingAt: spokenPrefix,
+            finishedStreaming: finishedStreaming
+        ) else { return }
+        spokenPrefix = next.nextOffset
+        let chunk = next.text
+        guard !chunk.isEmpty else {
+            speakPending(turnID: turnID)
+            return
         }
-        let chunk = String(remaining[..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
-        spokenPrefix += end
-        guard !chunk.isEmpty else { return }
         if !VoiceService.shared.isSpeaking {
             session.speakChunk(chunk, voiceID: appState.voiceID, rate: appState.speakingRate)
-            observeSpeechEnd()
+            observeSpeechEnd(turnID: turnID)
         } else {
             session.speakChunk(chunk, voiceID: appState.voiceID, rate: appState.speakingRate)
         }
     }
 
-    private func observeSpeechEnd() {
-        Task { @MainActor in
+    private func observeSpeechEnd(turnID: UUID) {
+        cancelSpeechEndObservation()
+        speechEndObserverTask = Task { @MainActor in
             while VoiceService.shared.isSpeaking { try? await Task.sleep(for: .milliseconds(150)); if Task.isCancelled { return } }
+            guard !Task.isCancelled, activeSpeechTurnID == turnID else { return }
             if finishedStreaming && spokenPrefix >= responseText.count {
-                onFinishedSpeaking()
+                onFinishedSpeaking(turnID: turnID)
             } else {
-                speakPending()
+                speakPending(turnID: turnID)
             }
         }
     }
 
-    private func onFinishedSpeaking() {
-        if appState.handsFree {
+    private func onFinishedSpeaking(turnID: UUID) {
+        guard VoiceTurnCompletionPolicy.acceptsSpeechCompletion(
+            turnID: turnID,
+            activeSpeechTurnID: activeSpeechTurnID
+        ) else { return }
+        let shouldResume = VoiceTurnCompletionPolicy.shouldResumeHandsFree(
+            handsFree: appState.handsFree,
+            turnID: turnID,
+            activeSpeechTurnID: activeSpeechTurnID
+        )
+        activeSpeechTurnID = nil
+        activeVoiceTurnID = nil
+        session.stopSpeaking()
+        if shouldResume {
             startListening()
         } else {
             phase = .idle
@@ -440,8 +457,10 @@ struct VoiceModeView: View {
 
     private func interrupt() {
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
-        let turnID = activeVoiceTurnID
+        let turnID = activeVoiceTurnID ?? activeSpeechTurnID
         activeVoiceTurnID = nil
+        activeSpeechTurnID = nil
+        cancelSpeechEndObservation()
         generationController.cancel(for: "voice")
         responseTask?.cancel()
         unregisterResponseCancellation()
@@ -464,6 +483,8 @@ struct VoiceModeView: View {
 
     private func cancelForSceneTransition() {
         activeVoiceTurnID = nil
+        activeSpeechTurnID = nil
+        cancelSpeechEndObservation()
         generationController.cancel(for: "voice")
         responseTask?.cancel()
         unregisterResponseCancellation()
@@ -490,12 +511,19 @@ struct VoiceModeView: View {
 
     private func cleanup() {
         activeVoiceTurnID = nil
+        activeSpeechTurnID = nil
+        cancelSpeechEndObservation()
         generationController.cancel(for: "voice")
         responseTask?.cancel()
         unregisterResponseCancellation()
         session.cancel()
         session.stopSpeaking()
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
+    }
+
+    private func cancelSpeechEndObservation() {
+        speechEndObserverTask?.cancel()
+        speechEndObserverTask = nil
     }
 }
 
