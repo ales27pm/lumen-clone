@@ -376,6 +376,22 @@ struct AgentGroundingRegressionTests {
         #expect(next?.tool == "memory.recall")
         #expect(next?.args["query"]?.stringValue == "prefer concise bullet points")
 
+        let noSaveRepair = AgentService.repairedMemoryActionForTests(
+            modelAction: recallFirst,
+            prompt: prompt,
+            steps: [],
+            availableToolIDs: ["memory.recall"]
+        )
+        #expect(noSaveRepair.action.tool == "memory.recall")
+        #expect(noSaveRepair.reflection == nil)
+
+        let noRecallNext = AgentService.nextRequiredMemoryActionForTests(
+            prompt: prompt,
+            steps: [savedStep],
+            availableToolIDs: ["memory.save"]
+        )
+        #expect(noRecallNext == nil)
+
         let req = AgentRequest(
             systemPrompt: "sys",
             history: [],
