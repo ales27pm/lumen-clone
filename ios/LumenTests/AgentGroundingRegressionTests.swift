@@ -2394,6 +2394,65 @@ extension AgentGroundingRegressionTests {
         #expect(!final.contains("sourceFile"))
     }
 
+    @Test func structuredWebNoDirectAnswerFallsBackToSearchObservations() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+            req: req,
+            observations: [
+                ("web.search", """
+                Search results for: Swift concurrency best practices
+                {"title":"Swift.org - Concurrency","url":"https://swift.org/documentation/concurrency/","snippet":"Prefer structured concurrency so cancellation and errors propagate through child tasks."}
+                {"title":"Apple Developer - MainActor","url":"https://developer.apple.com/documentation/swift/mainactor","snippet":"Keep UI state updates isolated to MainActor and move long-running work off the main actor."}
+                """)
+            ],
+            steps: [AgentStep(kind: .observation, content: "Search results", toolID: "web.search")]
+        )
+
+        #expect(final.contains("Summary:"))
+        #expect(final.contains("structured concurrency"))
+        #expect(final.contains("MainActor"))
+        #expect(!final.lowercased().contains("no direct answer from web search"))
+    }
+
+    @Test func structuredRAGEmptyRetrievalOverridesPollutedFallbackFinal() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search my files for architecture notes and summarize key modules.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            "I'm ready. Please ask again or tell me what you'd like to do next. Key modules: core module details were retrieved from local file snippets [1].",
+            req: req,
+            observations: [
+                ("rag.search", "No matching files found for 'architecture notes'. Your local index appears empty. Import or create local files, then reindex.")
+            ],
+            steps: [AgentStep(kind: .observation, content: "No matching files found", toolID: "rag.search")]
+        )
+
+        #expect(final == "I searched your local files but found no matching architecture notes. The local index appears empty; import or create files and reindex.")
+        #expect(!final.contains("Key modules"))
+        #expect(!final.contains("[1]"))
+    }
+
     @Test func structuredMemorySaveRecallFinalPreservesExactPreference() {
         let req = AgentRequest(
             systemPrompt: "sys",

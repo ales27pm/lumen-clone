@@ -293,18 +293,53 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
 
 
 def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
-    failed = [
+    all_failed = [
         scenario
         for scenario in scenarios
-        if scenario.get("passed") is not True and not _scenario_marked_non_trainable_preflight(scenario)
+        if scenario.get("passed") is not True
+    ]
+    failed = [
+        scenario
+        for scenario in all_failed
+        if _scenario_is_trainable_e2e_failure(scenario)
     ]
     if not failed:
+        if all_failed:
+            return [
+                f"failed-scenarios: {len(all_failed)}",
+                "Non-trainable architecture/runtime/finalizer failures quarantined; create regression tests instead of SFT negatives.",
+            ]
         return []
     return [
         f"failed-scenarios: {len(failed)}",
         "Capture failed prompts + final outputs into next fine-tuning dataset.",
-        "Prioritize repeated tool-boundary, response-quality, and no-model execution failures.",
+        "Prioritize grounded response-quality failures with valid model evidence and valid tool observations.",
     ]
+
+
+def _scenario_is_trainable_e2e_failure(scenario: dict[str, Any]) -> bool:
+    if _scenario_marked_non_trainable_preflight(scenario):
+        return False
+    evidence = _scenario_evidence_text(scenario)
+    non_trainable_signals = [
+        "no direct answer from web search",
+        "i'm ready. please ask again",
+        "please ask again or tell me what you'd like to do next",
+        "tool output could not be validated",
+        "could not be validated",
+        "fallback/error text",
+        "internal routing json",
+    ]
+    if any(signal in evidence for signal in non_trainable_signals):
+        return False
+    if (
+        '"intent"' in evidence
+        and '"nextmodel"' in evidence
+        and '"reasoningsummary"' in evidence
+        and ('"requiresapproval"' in evidence or '"sourcefile"' in evidence)
+    ):
+        return False
+    return True
 
 
 def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
@@ -313,16 +348,13 @@ def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
         failure_kind = str(metadata.get("failureKind") or "")
         if str(metadata.get("trainingSignal") or "").casefold() == "false" and failure_kind.startswith("liveRuntime"):
             return True
-    evidence = "\n".join(
-        str(part or "")
-        for part in [
-            scenario.get("failures"),
-            scenario.get("final"),
-            " ".join(str(event.get("message") or "") for event in scenario.get("events") or [] if isinstance(event, dict)),
-        ]
-    ).casefold()
+    evidence = _scenario_evidence_text(scenario)
     return (
         "cpu-watchdog-degraded" in evidence
+        or "thermalstate=serious" in evidence
+        or "thermalstate=critical" in evidence
+        or "scenephase=background" in evidence
+        or "scenephase=inactive" in evidence
         or "no matching files found" in evidence
         or "local index appears empty" in evidence
         or "no matching local snippets" in evidence
@@ -334,6 +366,17 @@ def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
             and ('"requiresapproval"' in evidence or '"sourcefile"' in evidence)
         )
     )
+
+
+def _scenario_evidence_text(scenario: dict[str, Any]) -> str:
+    return "\n".join(
+        str(part or "")
+        for part in [
+            scenario.get("failures"),
+            scenario.get("final"),
+            " ".join(str(event.get("message") or "") for event in scenario.get("events") or [] if isinstance(event, dict)),
+        ]
+    ).casefold()
 
 
 def _is_in_app_package(value: dict[str, Any]) -> bool:

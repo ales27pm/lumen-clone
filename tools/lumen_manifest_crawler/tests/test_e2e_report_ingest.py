@@ -504,7 +504,7 @@ def test_ingestion_keeps_cpu_watchdog_degraded_out_of_training_repairs(tmp_path:
     assert failure_record["trainable"] is False
     assert failure_record["repairSample"]["trainable"] is False
     assert failure_record["e2eScenario"]["metadata"]["failureKind"] == "liveRuntimeCPUWatchdogDegraded"
-    assert normalized.get("trainingSignals") in (None, [])
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
 
 
 def test_ingestion_keeps_rag_empty_index_out_of_training_repairs(tmp_path: Path):
@@ -540,7 +540,7 @@ def test_ingestion_keeps_rag_empty_index_out_of_training_repairs(tmp_path: Path)
     assert failure_record["type"] == "e2e_runtime_environment_deferred"
     assert failure_record["trainable"] is False
     assert failure_record["repairSample"]["trainable"] is False
-    assert normalized.get("trainingSignals") in (None, [])
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
 
 
 def test_ingestion_keeps_internal_routing_json_out_of_training_repairs(tmp_path: Path):
@@ -577,7 +577,75 @@ def test_ingestion_keeps_internal_routing_json_out_of_training_repairs(tmp_path:
     assert failure_record["type"] == "e2e_runtime_environment_deferred"
     assert failure_record["trainable"] is False
     assert failure_record["repairSample"]["trainable"] is False
-    assert normalized.get("trainingSignals") in (None, [])
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
+
+
+def test_ingestion_quarantines_web_no_direct_answer_finalizer_failure(tmp_path: Path):
+    report_path = tmp_path / "web-fallback-e2e-report.json"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "training-web-research",
+                "kind": "training",
+                "title": "Training eval: web research synthesis",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+                "actualIntent": "webSearch",
+                "expectedIntent": "webSearch",
+                "failures": ["Live agent returned fallback/error text instead of completing the scenario"],
+                "finalText": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+                "events": [{"phase": "step", "message": "web.search returned Swift concurrency results"}],
+                "metadata": {},
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_architecture_finalizer_failure"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
+
+
+def test_ingestion_quarantines_rag_polluted_fallback_final(tmp_path: Path):
+    report_path = tmp_path / "rag-polluted-e2e-report.json"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "training-rag-grounding",
+                "kind": "training",
+                "title": "Training eval: local knowledge grounding",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Search my files for architecture notes and summarize key modules.",
+                "actualIntent": "rag",
+                "expectedIntent": "rag",
+                "failures": ["Live agent returned fallback/error text instead of completing the scenario"],
+                "finalText": "I'm ready. Please ask again or tell me what you'd like to do next. Key modules: core module details were retrieved from local file snippets [1].",
+                "events": [{"phase": "step", "message": "rag.search returned no matching files"}],
+                "metadata": {},
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_architecture_finalizer_failure"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
 
 
 def test_ingestion_accepts_live_e2e_with_model_evidence_event(tmp_path: Path):

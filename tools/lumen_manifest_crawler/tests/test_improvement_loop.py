@@ -252,15 +252,14 @@ def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Pat
         )
     )
 
-    runtime_gaps = [gap for gap in result.gaps if gap["title"] == "e2e_response_quality_outlook"]
+    runtime_gaps = [gap for gap in result.gaps if gap["title"] == "e2e_architecture_finalizer_failure"]
     assert len(runtime_gaps) == 1
     assert runtime_gaps[0]["severity"] == "warning"
-    assert runtime_gaps[0]["category"] == "skipped_live_model_generation"
-    assert runtime_gaps[0]["evidence"]["rootCauseCategory"] == "skipped_live_model_generation"
+    assert runtime_gaps[0]["category"] == "architecture_finalizer_failure"
+    assert runtime_gaps[0]["evidence"]["trainable"] is False
     assert result.state["runtime"]["rawFailureCount"] == 1
     assert result.state["runtime"]["failureCount"] == 0
     assert result.state["runtime"]["skippedLiveModelGenerationCount"] == 1
-    assert result.state["triage"]["rootCauseCounts"]["skipped_live_model_generation"] == 1
 
 
 def test_improvement_loop_treats_deterministic_live_evidence_as_runtime_failure(tmp_path: Path):
@@ -507,6 +506,53 @@ def test_improvement_loop_groups_agent_json_resource_budget_denied(tmp_path: Pat
     assert runtime_gaps[0]["category"] == "runtime_environment_deferred"
     assert runtime_gaps[0]["evidence"]["trainable"] is False
     assert result.state["triage"]["rootCauseCounts"]["runtime_environment_deferred"] == 1
+
+
+def test_improvement_loop_quarantines_non_trainable_finalizer_failure(tmp_path: Path):
+    report = tmp_path / "latest-e2e-report.json"
+    report.write_text(
+        json.dumps({
+            "kind": "lumen_e2e_test_report",
+            "passed": False,
+            "failed": 1,
+            "results": [
+                {
+                    "scenarioID": "training-web-research",
+                    "kind": "training",
+                    "title": "Training eval: web research synthesis",
+                    "passed": False,
+                    "prompt": "Search the web for two recent Swift concurrency best practices and summarize them.",
+                    "actualIntent": "webSearch",
+                    "expectedIntent": "webSearch",
+                    "requiresAgentRun": True,
+                    "failures": ["Live agent returned fallback/error text instead of completing the scenario"],
+                    "finalText": "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+                    "events": [],
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(report,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+        )
+    )
+
+    runtime_gaps = [gap for gap in result.gaps if gap["title"] == "e2e_architecture_finalizer_failure"]
+    assert len(runtime_gaps) == 1
+    assert runtime_gaps[0]["category"] == "architecture_finalizer_failure"
+    assert runtime_gaps[0]["evidence"]["trainable"] is False
+    assert "Quarantine this architecture/runtime/finalizer failure from SFT" in runtime_gaps[0]["recommendedAction"]
 
 
 def test_improvement_loop_groups_agent_json_context_overflow(tmp_path: Path):

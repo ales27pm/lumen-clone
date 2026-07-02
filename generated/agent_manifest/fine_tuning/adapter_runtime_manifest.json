@@ -12,9 +12,9 @@
       "recordCounts": {
         "eval": 558,
         "train_dpo": 15,
-        "train_sft": 9262,
+        "train_sft": 9466,
         "val_dpo": 3,
-        "val_sft": 1635
+        "val_sft": 1670
       },
       "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map."
     },
@@ -46,9 +46,9 @@
       "recordCounts": {
         "eval": 86,
         "train_dpo": 15,
-        "train_sft": 4631,
+        "train_sft": 4722,
         "val_dpo": 3,
-        "val_sft": 817
+        "val_sft": 833
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -80,9 +80,9 @@
       "recordCounts": {
         "eval": 8,
         "train_dpo": 12,
-        "train_sft": 264,
+        "train_sft": 258,
         "val_dpo": 2,
-        "val_sft": 47
+        "val_sft": 45
       },
       "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels."
     },
@@ -97,9 +97,9 @@
       "recordCounts": {
         "eval": 6,
         "train_dpo": 8,
-        "train_sft": 3998,
+        "train_sft": 4089,
         "val_dpo": 2,
-        "val_sft": 706
+        "val_sft": 722
       },
       "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
     }
