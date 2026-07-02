@@ -99,6 +99,20 @@ final class SecureToolRegistryTests: XCTestCase {
         )
     }
 
+    func testAlarmArgumentErrorsClassifyAsFailures() {
+        for text in [
+            "Missing schedule. Provide `inMinutes` or `timestamp` (Unix seconds).",
+            "Missing duration. Provide `durationSeconds` greater than 0.",
+            "Invalid alarm id. Provide the alarm UUID from `alarm.list` in `id`."
+        ] {
+            XCTAssertEqual(ProductivityLocalTool.alarmStatus(from: text), .failed)
+            XCTAssertEqual(
+                ProductivityLocalTool.alarmErrorCode(text: text, status: .failed),
+                "alarmkit_invalid_arguments"
+            )
+        }
+    }
+
 
     func testMediaToolsAreNotBackgroundReadOnly() async {
         let definitions = await SecureToolRegistry.shared.definitions()

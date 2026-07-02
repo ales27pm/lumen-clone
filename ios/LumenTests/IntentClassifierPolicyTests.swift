@@ -141,6 +141,13 @@ struct IntentClassifierPolicyTests {
         #expect(routing.allowedToolIDs.contains("maps.search") == false)
     }
 
+    @Test func wakeMeUpRoutesToAlarmClarification() async {
+        let routing = await IntentClassifierService.shared.route("Wake me up")
+        #expect(routing.intent == .alarm)
+        #expect(routing.requiresClarification)
+        #expect(routing.clarificationPrompt == "What time should I use for the alarm?")
+    }
+
     @Test func ambiguousPromptAsksClarificationBeforeTools() async {
         let meeting = await IntentClassifierService.shared.route("Find my meeting tonight")
         #expect(meeting.requiresClarification)

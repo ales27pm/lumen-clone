@@ -245,6 +245,25 @@ struct DeterministicToolPlannerTests {
         #expect(invalid.isEmpty)
     }
 
+    @Test func alarmExplicitLargeDurationDoesNotOverflowOrDefaultToSixtyMinutes() async throws {
+        let prompt = "Set alarm in 999999999999999 days."
+        let routing = IntentRouter.classify(prompt)
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(steps.map(\.tool) == ["alarm.schedule"])
+        #expect(steps.first?.args["inMinutes"]?.stringValue == "10080")
+        #expect(steps.first?.args["inMinutes"]?.stringValue != "60")
+    }
+
+    @Test func memoryRecallQueryStripsGenericFirstPersonPrefix() async throws {
+        let plan = MemoryCommandPlan.saveThenRecall(from: "Remember that I prefer compact answers, then tell me what you remembered.")
+        #expect(plan?.saveContent == "I prefer compact answers")
+        #expect(plan?.recallQuery == "prefer compact answers")
+    }
+
     @Test func latestSelfiePhotoPromptPlansPhotosSearchWithGroundedQuery() async throws {
         let prompt = "Show latest selfie picture"
         let routing = IntentRouter.classify(prompt)

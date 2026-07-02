@@ -3395,11 +3395,7 @@ final class AgentService {
         if lower.contains("no direct answer from web search") { return true }
         if lower.hasPrefix("search results for:") || lower.hasPrefix("web search results:") { return true }
         if lower.contains("search results for:") && (lower.contains("\nhttp") || lower.contains("\n- http")) { return true }
-        if lower.contains("\"intent\"")
-            && lower.contains("\"nextmodel\"")
-            && lower.contains("\"reasoningsummary\"")
-            && lower.contains("\"requiresapproval\"")
-            && lower.contains("\"sourcefile\"") {
+        if RoutingJSONLeakDetector.containsInternalRoutingJSON(text) {
             return true
         }
         if text.range(of: #"(?is)^\s*(https?://\S+)\s*$"#, options: .regularExpression) != nil {

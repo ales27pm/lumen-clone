@@ -9,12 +9,13 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import NoReturn
 
 
 REQUIRED_ALARM_KEY = "NSAlarmKitUsageDescription"
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     print(f"error: {message}", file=sys.stderr)
     raise SystemExit(1)
 
@@ -54,8 +55,9 @@ def _validate_info(info: dict, source: str) -> None:
     print(f"ok: bundleIdentifier={bundle_id} CFBundleVersion={bundle_version}")
     for key in ("LumenBuildSourceIdentifier", "LumenBuildConfiguration", "LumenBuildScheme", "LumenGitSHA"):
         value = str(info.get(key) or "").strip()
-        if value:
-            print(f"ok: {key}={value}")
+        if not value or value.casefold() == "unknown":
+            _fail(f"{source} Info.plist missing required build metadata {key}")
+        print(f"ok: {key}={value}")
 
 
 def _validate_ipa(path: Path) -> None:

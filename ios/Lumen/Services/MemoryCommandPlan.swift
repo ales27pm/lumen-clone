@@ -45,8 +45,8 @@ nonisolated struct MemoryCommandPlan: Sendable, Hashable {
         let cleaned = fact
             .replacingOccurrences(of: "User's name is ", with: "", options: [.caseInsensitive])
             .replacingOccurrences(of: "User prefers to be called ", with: "", options: [.caseInsensitive])
+            .replacingOccurrences(of: #"(?i)^\s*(?:i\s+am\s+|i'm\s+|i\s+|my\s+)"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleaned.lowercased().contains("prefer concise bullet points") { return "prefer concise bullet points" }
         if !cleaned.isEmpty { return cleaned }
         return fallback.trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -7,7 +7,12 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-from lumen_manifest_crawler.dataset.e2e_report_normalizer import flatten_e2e_json_report
+from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
+    _final_artifact_diagnosis_for_scenario,
+    _is_architecture_or_finalizer_failure,
+    _is_runtime_environment_failure,
+    flatten_e2e_json_report,
+)
 from lumen_manifest_crawler.dataset.e2e_text_parser import parse_e2e_text_report
 
 SUPPORTED_TEXT_REPORT_SUFFIXES = {".txt", ".md", ".markdown", ".log"}
@@ -321,23 +326,7 @@ def _scenario_is_trainable_e2e_failure(scenario: dict[str, Any]) -> bool:
     if _scenario_marked_non_trainable_preflight(scenario):
         return False
     evidence = _scenario_evidence_text(scenario)
-    non_trainable_signals = [
-        "no direct answer from web search",
-        "i'm ready. please ask again",
-        "please ask again or tell me what you'd like to do next",
-        "tool output could not be validated",
-        "could not be validated",
-        "fallback/error text",
-        "internal routing json",
-    ]
-    if any(signal in evidence for signal in non_trainable_signals):
-        return False
-    if (
-        '"intent"' in evidence
-        and '"nextmodel"' in evidence
-        and '"reasoningsummary"' in evidence
-        and ('"requiresapproval"' in evidence or '"sourcefile"' in evidence)
-    ):
+    if _is_architecture_or_finalizer_failure(evidence, _final_artifact_diagnosis_for_scenario(scenario)):
         return False
     return True
 
@@ -349,23 +338,7 @@ def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
         if str(metadata.get("trainingSignal") or "").casefold() == "false" and failure_kind.startswith("liveRuntime"):
             return True
     evidence = _scenario_evidence_text(scenario)
-    return (
-        "cpu-watchdog-degraded" in evidence
-        or "thermalstate=serious" in evidence
-        or "thermalstate=critical" in evidence
-        or "scenephase=background" in evidence
-        or "scenephase=inactive" in evidence
-        or "no matching files found" in evidence
-        or "local index appears empty" in evidence
-        or "no matching local snippets" in evidence
-        or "import or create local files" in evidence
-        or (
-            '"intent"' in evidence
-            and '"nextmodel"' in evidence
-            and '"reasoningsummary"' in evidence
-            and ('"requiresapproval"' in evidence or '"sourcefile"' in evidence)
-        )
-    )
+    return _is_runtime_environment_failure(evidence, None)
 
 
 def _scenario_evidence_text(scenario: dict[str, Any]) -> str:

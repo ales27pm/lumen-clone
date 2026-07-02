@@ -2394,6 +2394,40 @@ extension AgentGroundingRegressionTests {
         #expect(!final.contains("sourceFile"))
     }
 
+    @Test func structuredWebPartialRoutingJSONFallsBackToSearchObservations() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 256,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let final = AgentService.postprocessStructuredFinalAnswerForTests(
+            #"{"intent":"webSearch","nextModel":"rag","reasoningSummary":"Intent webSearch is allowed to use rag.search."}"#,
+            req: req,
+            observations: [
+                ("web.search", """
+                Search results for: Swift concurrency best practices
+                Prefer structured concurrency so cancellation and errors propagate through child tasks.
+                Keep UI state updates isolated to MainActor and move long-running work off the main actor.
+                """)
+            ],
+            steps: [AgentStep(kind: .observation, content: "Search results", toolID: "web.search")]
+        )
+
+        #expect(final.contains("Summary:"))
+        #expect(final.contains("structured concurrency"))
+        #expect(final.contains("MainActor"))
+        #expect(!final.contains("\"intent\""))
+        #expect(!final.contains("nextModel"))
+        #expect(!final.contains("reasoningSummary"))
+    }
+
     @Test func structuredWebNoDirectAnswerFallsBackToSearchObservations() {
         let req = AgentRequest(
             systemPrompt: "sys",

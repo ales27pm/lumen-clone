@@ -676,7 +676,7 @@ struct E2ETestRunnerView: View {
 
     private func inProgressReportText(results: [E2ETestResult], total: Int) -> String {
         let passed = results.filter(\.passed).count
-        let nonActionable = results.filter(\.isRuntimePreflightNonActionable).count
+        let nonActionable = results.filter { !$0.passed && $0.isRuntimePreflightNonActionable }.count
         let failed = results.count - passed - nonActionable
         return """
         Running \(runMode.title) E2E suite
@@ -734,7 +734,7 @@ private struct E2ETestDashboardView: View {
 
     private var completedCount: Int { results.count }
     private var passedCount: Int { results.filter(\.passed).count }
-    private var runtimePreflightCount: Int { results.filter(\.isRuntimePreflightNonActionable).count }
+    private var runtimePreflightCount: Int { results.filter { !$0.passed && $0.isRuntimePreflightNonActionable }.count }
     private var failedCount: Int { completedCount - passedCount - runtimePreflightCount }
     private var passRate: Double {
         let actionableCompleted = completedCount - runtimePreflightCount
@@ -894,14 +894,6 @@ private struct E2ETestResultRow: View {
             }
         }
         .padding(.vertical, 3)
-    }
-}
-
-private extension E2ETestResult {
-    var statusColor: Color {
-        if passed { return .green }
-        if isRuntimePreflightNonActionable { return .orange }
-        return .red
     }
 }
 
