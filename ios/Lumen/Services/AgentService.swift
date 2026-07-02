@@ -1762,7 +1762,8 @@ final class AgentService {
                 let repair = Self.repairedMemoryActionIfNeeded(
                     modelAction: parsedAction,
                     memoryPlan: memoryCommandPlan,
-                    steps: steps
+                    steps: steps,
+                    availableToolIDs: Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
                 )
                 if let reflection = repair.reflection {
                     steps.append(reflection)
@@ -1785,7 +1786,11 @@ final class AgentService {
                 continuation.yield(.step(reflection))
                 actionToExecute = repaired.action
             } else if turn.final?.isEmpty == false,
-                      let requiredMemoryAction = Self.nextRequiredMemoryAction(memoryPlan: memoryCommandPlan, steps: steps) {
+                      let requiredMemoryAction = Self.nextRequiredMemoryAction(
+                        memoryPlan: memoryCommandPlan,
+                        steps: steps,
+                        availableToolIDs: Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                      ) {
                 let reflection = AgentStep(
                     kind: .reflection,
                     content: "Memory save-then-recall invariant repaired a premature final before required memory actions completed."
@@ -2077,9 +2082,14 @@ final class AgentService {
     private nonisolated static func repairedMemoryActionIfNeeded(
         modelAction: AgentAction,
         memoryPlan: MemoryCommandPlan?,
-        steps: [AgentStep]
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
     ) -> (action: AgentAction, reflection: AgentStep?) {
-        guard let required = nextRequiredMemoryAction(memoryPlan: memoryPlan, steps: steps) else {
+        guard let required = nextRequiredMemoryAction(
+            memoryPlan: memoryPlan,
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        ) else {
             return (modelAction, nil)
         }
         let modelTool = ToolRouteGuard.canonicalToolID(modelAction.tool)
@@ -2105,7 +2115,8 @@ final class AgentService {
 
     private nonisolated static func nextRequiredMemoryAction(
         memoryPlan: MemoryCommandPlan?,
-        steps: [AgentStep]
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
     ) -> AgentAction? {
         guard let memoryPlan else { return nil }
         let actionToolIDs = steps
@@ -2113,12 +2124,14 @@ final class AgentService {
             .compactMap(\.toolID)
             .map(ToolRouteGuard.canonicalToolID)
         if !actionToolIDs.contains("memory.save") {
+            guard availableToolIDs.contains("memory.save") else { return nil }
             return AgentAction(tool: "memory.save", args: [
                 "content": .string(memoryPlan.saveContent),
                 "kind": .string("fact")
             ])
         }
         if !actionToolIDs.contains("memory.recall") {
+            guard availableToolIDs.contains("memory.recall") else { return nil }
             return AgentAction(tool: "memory.recall", args: ["query": .string(memoryPlan.recallQuery)])
         }
         return nil
@@ -3071,22 +3084,26 @@ final class AgentService {
     nonisolated static func repairedMemoryActionForTests(
         modelAction: AgentAction,
         prompt: String,
-        steps: [AgentStep]
+        steps: [AgentStep],
+        availableToolIDs: Set<String> = ["memory.save", "memory.recall"]
     ) -> (action: AgentAction, reflection: AgentStep?) {
         repairedMemoryActionIfNeeded(
             modelAction: modelAction,
             memoryPlan: MemoryCommandPlan.saveThenRecall(from: prompt),
-            steps: steps
+            steps: steps,
+            availableToolIDs: availableToolIDs
         )
     }
 
     nonisolated static func nextRequiredMemoryActionForTests(
         prompt: String,
-        steps: [AgentStep]
+        steps: [AgentStep],
+        availableToolIDs: Set<String> = ["memory.save", "memory.recall"]
     ) -> AgentAction? {
         nextRequiredMemoryAction(
             memoryPlan: MemoryCommandPlan.saveThenRecall(from: prompt),
-            steps: steps
+            steps: steps,
+            availableToolIDs: availableToolIDs
         )
     }
 
