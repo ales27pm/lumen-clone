@@ -288,7 +288,7 @@ struct E2ETestRunnerHygieneTests {
 
         #expect(E2ETestRunner.acceptsPolicyFirstExecutionEvidenceForTests(scenario, routing: routing))
         #expect(options.allowDeterministicCompatibility)
-        #expect(!options.allowParseFailureDeterministicRecovery)
+        #expect(options.allowParseFailureDeterministicRecovery)
         #expect(!options.allowsMemoryPressureContinuation)
         #else
         #expect(true)

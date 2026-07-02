@@ -261,7 +261,11 @@ nonisolated enum IntentRouter {
 
     private static func isLikelyPhotosIntent(_ text: String) -> Bool {
         matchesAny(text, [
-            "search photos", "find photos", "photo library", "pictures from", "photos from", "images in my library",
+            "search photos", "search my photos", "search photo library", "find photos", "find my photos",
+            "search pictures", "search my pictures", "find pictures", "find my pictures",
+            "photo library", "pictures from", "photos from", "photos for", "pictures for",
+            "receipt pictures", "receipts in my photos", "receipts in my photo library",
+            "images in my library", "images in my photo library",
             "show latest selfie picture", "show latest selfie", "show latest photo", "show latest picture",
             "open latest selfie", "find latest selfie", "show recent selfies", "show my newest photo",
             "newest photo", "newest picture", "latest selfie", "latest photo", "latest picture"

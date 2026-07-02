@@ -1530,6 +1530,21 @@ extension AgentGroundingRegressionTests {
         #expect(!summary.lowercased().hasPrefix("search results for:"))
     }
 
+    @Test func deterministicWebSummaryFallbackSynthesizesLivePayloadWithoutClosingMarker() throws {
+        let observation = """
+        Search results for: Swift concurrency best practices
+        <lumen_web_payload>{"results":[{"title":"Swift.org - Concurrency","url":"https://swift.org/documentation/concurrency/"},{"title":"Apple Developer - MainActor and Swift concurrency","url":"https://developer.apple.com/documentation/swift/mainactor"}]}
+        """
+
+        let summary = try #require(AgentService.deterministicWebSummaryFallbackForTests(observations: [("web.search", observation)]))
+
+        #expect(summary.contains("Swift"))
+        #expect(summary.contains("MainActor") || summary.contains("Concurrency"))
+        #expect(summary.split(separator: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("-") }.count >= 2)
+        #expect(!summary.lowercased().contains("no direct answer from web search"))
+        #expect(!summary.lowercased().contains("<lumen_web_payload"))
+    }
+
     @Test func missingActionToolRepairsToOnlyAllowedToolWhenSafe() throws {
         let raw = #"{"thought":"search","action":{"args":{"query":"Swift concurrency best practices"}}}"#
         let req = AgentRequest(
@@ -2343,6 +2358,31 @@ extension AgentGroundingRegressionTests {
             #expect(actionToolIDs == expectedTools)
             #expect(recovery?.text.lowercased().contains("unavailable") == false)
         }
+    }
+
+    @Test func agentServiceParseFailureRecoveryProducesAlarmApprovalBoundary() async {
+        let prompt = "Set an alarm for tomorrow at 7."
+        let routing = IntentRouter.classify(prompt)
+        let tools = ToolRegistry.all.filter { IntentRouter.isToolAllowed($0.id, for: routing) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: prompt,
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: false)
+
+        let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+
+        #expect(recovery?.steps.first?.kind == .approvalBoundary)
+        #expect(recovery?.steps.first?.toolID == "alarm.schedule")
+        #expect(recovery?.text.lowercased().contains("approval required for alarm.schedule") == true)
     }
 
     @Test func agentServiceParseFailureRecoveryAnswersChatDirectly() async {
