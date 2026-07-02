@@ -2228,6 +2228,39 @@ extension AgentGroundingRegressionTests {
         #expect(recovery?.text.lowercased().contains("please ask again") == false)
     }
 
+    @Test func malformedTurnErrorObservationDoesNotShortCircuitParseRecovery() async {
+        let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains($0.id) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: tools,
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(modelContext: nil, conversationID: req.conversationID, turnID: req.turnID, groundingMode: .slotAgent, allowDegradedGrounding: false, preventDoubleGrounding: true, diagnosticsEnabled: false)
+        let errorOnlyObservations = [
+            (tool: "made.up.tool", result: "Unknown tool: made.up.tool. Emit a final turn instead."),
+            (tool: "web.search", result: "Tool web.search is disabled. Enable it in Tools.")
+        ]
+
+        #expect(!AgentService.hasUsableObservationForTests(intent: .webSearch, observations: errorOnlyObservations))
+
+        let recovery = await AgentService.structuredParseFailureRecoveryForTests(req: req, options: options)
+        let actionToolIDs = recovery?.steps
+            .filter { $0.kind == .action }
+            .compactMap(\.toolID)
+            .map(ToolRouteGuard.canonicalToolID) ?? []
+
+        #expect(actionToolIDs.contains("web.search"))
+        #expect(recovery?.text.lowercased().contains("unknown tool") == false)
+        #expect(recovery?.text.lowercased().contains("disabled") == false)
+    }
+
     @Test func agentServiceParseFailureRecoveryHonorsDisabledDeterministicCompatibility() async {
         let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains($0.id) }
         let req = AgentRequest(

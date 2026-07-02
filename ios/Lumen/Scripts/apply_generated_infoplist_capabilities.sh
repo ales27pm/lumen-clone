@@ -20,8 +20,9 @@ set_string() {
   if [ -z "$value" ]; then
     return
   fi
-  "$plistbuddy" -c "Set :${key} ${value}" "$plist" 2>/dev/null || \
-    "$plistbuddy" -c "Add :${key} string ${value}" "$plist"
+  escaped="$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  "$plistbuddy" -c "Set :${key} \"${escaped}\"" "$plist" 2>/dev/null || \
+    "$plistbuddy" -c "Add :${key} string \"${escaped}\"" "$plist"
 }
 
 set_background_modes() {
