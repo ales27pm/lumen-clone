@@ -14,6 +14,75 @@ nonisolated enum AlarmCommandKind: Sendable, Hashable {
     case unknown
 }
 
+nonisolated struct RelativeDuration: Sendable, Equatable {
+    enum Unit: Sendable, Equatable {
+        case seconds
+        case minutes
+        case hours
+        case days
+    }
+
+    let value: Int
+    let unit: Unit
+
+    var seconds: Int {
+        switch unit {
+        case .seconds: return Self.clamped(value, min: 1, max: 24 * 60 * 60)
+        case .minutes: return Self.clamped(value * 60, min: 60, max: 24 * 60 * 60)
+        case .hours: return Self.clamped(value * 60 * 60, min: 60 * 60, max: 24 * 60 * 60)
+        case .days: return Self.clamped(value * 24 * 60 * 60, min: 24 * 60 * 60, max: 7 * 24 * 60 * 60)
+        }
+    }
+
+    var minutesCeiled: Int {
+        max(1, min(7 * 24 * 60, Int(ceil(Double(seconds) / 60.0))))
+    }
+
+    static func parse(from text: String) -> RelativeDuration? {
+        let normalizedText = text.lowercased()
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?i)\b(?:in|for|after)\s+(\d+)\s*(seconds?|secs?|sec|minutes?|mins?|min|hours?|hrs?|hr|days?)\b"#
+        ) else { return nil }
+        let ns = normalizedText as NSString
+        guard let match = regex.firstMatch(in: normalizedText, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 2,
+              let value = Int(ns.substring(with: match.range(at: 1))) else {
+            return nil
+        }
+        let rawUnit = ns.substring(with: match.range(at: 2))
+        let unit: Unit
+        if rawUnit.hasPrefix("sec") || rawUnit.hasPrefix("second") {
+            unit = .seconds
+        } else if rawUnit.hasPrefix("min") || rawUnit.hasPrefix("minute") {
+            unit = .minutes
+        } else if rawUnit.hasPrefix("hr") || rawUnit.hasPrefix("hour") {
+            unit = .hours
+        } else if rawUnit.hasPrefix("day") {
+            unit = .days
+        } else {
+            return nil
+        }
+        return RelativeDuration(value: max(1, value), unit: unit)
+    }
+
+    static func containsExplicitRelativeSyntax(_ text: String) -> Bool {
+        normalized(text).range(
+            of: #"(?i)\b(?:in|for|after)\s+\S+\s+\S+"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func clamped(_ value: Int, min minimum: Int, max maximum: Int) -> Int {
+        Swift.max(minimum, Swift.min(maximum, value))
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text.lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 nonisolated enum AlarmCommandClassifier {
     static func classifyAlarmCommandKind(_ normalizedText: String) -> AlarmCommandKind {
         let text = normalized(normalizedText)
@@ -52,17 +121,15 @@ nonisolated enum AlarmCommandClassifier {
     }
 
     static func hasTimeOrDate(_ text: String) -> Bool {
-        normalized(text).range(
-            of: #"(?i)\b(\d{1,2}(:\d{2})?\s*(am|pm)?|noon|midnight|morning|afternoon|evening|tonight|tomorrow|today|in \d+\s+(seconds?|minutes?|hours?|days?))\b"#,
+        if RelativeDuration.parse(from: text) != nil { return true }
+        return normalized(text).range(
+            of: #"(?i)\b(\d{1,2}(:\d{2})?\s*(am|pm)?|noon|midnight|morning|afternoon|evening|tonight|tomorrow|today)\b"#,
             options: .regularExpression
         ) != nil
     }
 
     static func hasDuration(_ text: String) -> Bool {
-        normalized(text).range(
-            of: #"(?i)\b(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b"#,
-            options: .regularExpression
-        ) != nil
+        RelativeDuration.parse(from: text) != nil
     }
 
     static func hasMutationTarget(_ text: String) -> Bool {

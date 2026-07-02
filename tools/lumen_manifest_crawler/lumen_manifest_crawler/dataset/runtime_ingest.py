@@ -321,7 +321,19 @@ def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
             " ".join(str(event.get("message") or "") for event in scenario.get("events") or [] if isinstance(event, dict)),
         ]
     ).casefold()
-    return "cpu-watchdog-degraded" in evidence
+    return (
+        "cpu-watchdog-degraded" in evidence
+        or "no matching files found" in evidence
+        or "local index appears empty" in evidence
+        or "no matching local snippets" in evidence
+        or "import or create local files" in evidence
+        or (
+            '"intent"' in evidence
+            and '"nextmodel"' in evidence
+            and '"reasoningsummary"' in evidence
+            and ('"requiresapproval"' in evidence or '"sourcefile"' in evidence)
+        )
+    )
 
 
 def _is_in_app_package(value: dict[str, Any]) -> bool:

@@ -193,6 +193,71 @@ struct DeterministicToolPlannerTests {
         #expect(schedule.first?.args["inMinutes"]?.stringValue == "10")
     }
 
+    @Test func alarmExplicitSecondsNeverFallsThroughToSixtyMinuteDefault() async throws {
+        let prompts = [
+            "Hi please set an alarm in 10 seconds",
+            "Set alarm in 10 seconds.",
+            "Set an alarm in 10 seconds."
+        ]
+
+        for prompt in prompts {
+            let routing = IntentRouter.classify(prompt)
+            let steps = DeterministicToolPlanner.planSteps(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(routing.intent == .alarm)
+            #expect(steps.map(\.tool) == ["alarm.countdown"], "Prompt \(prompt) planned \(steps.map(\.tool))")
+            #expect(steps.first?.args["durationSeconds"]?.stringValue == "10")
+            #expect(steps.first?.args["inMinutes"]?.stringValue != "60")
+        }
+    }
+
+    @Test func alarmRelativeDurationPlannerKeepsMinuteAndInvalidCasesHonest() async throws {
+        let schedulePrompt = "Schedule an alarm in 2 minutes."
+        let scheduleRouting = IntentRouter.classify(schedulePrompt)
+        let schedule = DeterministicToolPlanner.planSteps(
+            routing: scheduleRouting,
+            prompt: schedulePrompt,
+            availableToolIDs: scheduleRouting.allowedToolIDs
+        )
+        #expect(schedule.map(\.tool) == ["alarm.schedule"])
+        #expect(schedule.first?.args["inMinutes"]?.stringValue == "2")
+
+        let timerPrompt = "Start a timer for 10 seconds."
+        let timerRouting = IntentRouter.classify(timerPrompt)
+        let timer = DeterministicToolPlanner.planSteps(
+            routing: timerRouting,
+            prompt: timerPrompt,
+            availableToolIDs: timerRouting.allowedToolIDs
+        )
+        #expect(timer.map(\.tool) == ["alarm.countdown"])
+        #expect(timer.first?.args["durationSeconds"]?.stringValue == "10")
+
+        let invalidPrompt = "Set alarm in bananas."
+        let invalidRouting = IntentRouter.classify(invalidPrompt)
+        let invalid = DeterministicToolPlanner.planSteps(
+            routing: invalidRouting,
+            prompt: invalidPrompt,
+            availableToolIDs: invalidRouting.allowedToolIDs
+        )
+        #expect(invalid.isEmpty)
+    }
+
+    @Test func latestSelfiePhotoPromptPlansPhotosSearchWithGroundedQuery() async throws {
+        let prompt = "Show latest selfie picture"
+        let routing = IntentRouter.classify(prompt)
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(routing.intent == .photos)
+        #expect(steps.map(\.tool) == ["photos.search"])
+        #expect(steps.first?.args["query"]?.stringValue == "latest selfie")
+    }
+
     @Test func memorySaveThenRecallExtractsFactAndOrdersActions() async throws {
         let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."
         #expect(DeterministicToolPlanner.extractMemoryFact(from: prompt) == "I prefer concise bullet points")

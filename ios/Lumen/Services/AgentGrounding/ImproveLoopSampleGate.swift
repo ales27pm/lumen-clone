@@ -357,6 +357,12 @@ nonisolated enum ImproveLoopSampleGate {
         if lower.contains("tool output could not be validated") {
             return "final validator fallback is architecture/runtime feedback, not direct fine-tuning data"
         }
+        if isRAGEmptyRetrieval(lower) {
+            return "empty local retrieval index is fixture/runtime state, not direct fine-tuning data"
+        }
+        if containsInternalRoutingJSON(lower) {
+            return "internal routing JSON leakage is architecture/runtime feedback, not direct fine-tuning data"
+        }
         return nil
     }
 
@@ -414,6 +420,20 @@ nonisolated enum ImproveLoopSampleGate {
             || lower.contains("scenephase=background")
             || lower.contains("thermalstate=serious")
             || lower.contains("thermalstate=critical")
+    }
+
+    private static func isRAGEmptyRetrieval(_ lower: String) -> Bool {
+        lower.contains("no matching files found")
+            || lower.contains("local index appears empty")
+            || lower.contains("no matching local snippets")
+            || lower.contains("import or create local files")
+    }
+
+    private static func containsInternalRoutingJSON(_ lower: String) -> Bool {
+        lower.contains("\"intent\"")
+            && lower.contains("\"nextmodel\"")
+            && lower.contains("\"reasoningsummary\"")
+            && (lower.contains("\"requiresapproval\"") || lower.contains("\"sourcefile\""))
     }
 
     private static let legacyToolAliasMap: [String: String] = [

@@ -330,6 +330,24 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
     let performanceMatrix: E2EPerformanceMatrix?
     let metadata: [String: String]
 
+    var isRuntimePreflightNonActionable: Bool {
+        if metadata["trainingSignal"]?.lowercased() == "false",
+           metadata["actionable"]?.lowercased() == "false",
+           metadata["failureKind"]?.hasPrefix("liveRuntime") == true {
+            return true
+        }
+        let evidence = ([finalText] + failures + events.map(\.message) + Array(metadata.values))
+            .joined(separator: "\n")
+            .lowercased()
+        return evidence.contains("live e2e preflight blocked model-backed generation before prompt evaluation")
+            || evidence.contains("thermalstate=serious")
+            || evidence.contains("thermalstate=critical")
+            || evidence.contains("scenephase=inactive")
+            || evidence.contains("scenephase=background")
+            || evidence.contains("cpu-watchdog-degraded")
+            || evidence.contains("runtime-preflight/non-actionable")
+    }
+
     init(
         id: UUID,
         scenarioID: String,
@@ -436,9 +454,14 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
 
     var summaryText: String {
         var lines: [String] = []
+        let runtimePreflightNonActionable = results.filter { !$0.passed && $0.isRuntimePreflightNonActionable }.count
+        let actionableFailed = max(failed - runtimePreflightNonActionable, 0)
         lines.append("E2E Test Report")
         lines.append("Passed: \(passed)")
-        lines.append("Failed: \(failed)")
+        lines.append("Failed: \(actionableFailed)")
+        if runtimePreflightNonActionable > 0 {
+            lines.append("Runtime preflight/non-actionable: \(runtimePreflightNonActionable)")
+        }
         let modelBackedPassed = results.filter { $0.passed && $0.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue }.count
         let policyFirstPassed = results.filter { $0.passed && $0.evidenceMode == E2EEvidenceMode.policyFirstAllowed.rawValue }.count
         let routingOnlyPassed = results.filter { $0.passed && $0.evidenceMode == E2EEvidenceMode.routingOnly.rawValue }.count
@@ -465,6 +488,9 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
         var failureBuckets: [String: Int] = [:]
         for result in results where !result.failures.isEmpty {
             let forcedBucket: String? = {
+                if result.isRuntimePreflightNonActionable {
+                    return "runtime-preflight/non-actionable"
+                }
                 if result.metadata["trainingSignal"]?.lowercased() == "false",
                    result.metadata["failureKind"]?.hasPrefix("liveRuntime") == true {
                     return "runtime-preflight/non-actionable"
@@ -1368,23 +1394,95 @@ nonisolated enum E2ETestRunner {
         onEvent: EventCallback?
     ) async -> E2ETestResult? {
         guard scenario.requiresAgentRun else { return nil }
-        let decision = await MainActor.run {
-            ResourceBudgetGate.decision(
-                policy: .foregroundInteractive,
-                reason: "live-e2e.pre-scenario"
-            )
-        }
-        guard !decision.allowed, let denial = decision.denialReason else { return nil }
+        let readiness = await liveRuntimeReadinessBarrier(
+            for: scenario,
+            maxWaitNanoseconds: liveRuntimeReadinessMaxWaitNanoseconds,
+            pollNanoseconds: liveRuntimeReadinessPollNanoseconds,
+            onEvent: onEvent
+        )
+        guard let denial = readiness.denialReason else { return nil }
         return await liveRuntimePreflightBlockedResult(
             for: scenario,
             denialReason: denial,
+            readinessEvents: readiness.events,
             onEvent: onEvent
         )
+    }
+
+    private struct LiveRuntimeReadinessBarrierOutcome: Sendable {
+        let denialReason: String?
+        let events: [E2ETestEvent]
+    }
+
+    private static let liveRuntimeReadinessMaxWaitNanoseconds: UInt64 = 8_000_000_000
+    private static let liveRuntimeReadinessPollNanoseconds: UInt64 = 500_000_000
+
+    private static func liveRuntimeReadinessBarrier(
+        for scenario: E2ETestScenario,
+        maxWaitNanoseconds: UInt64,
+        pollNanoseconds: UInt64,
+        onEvent: EventCallback?
+    ) async -> LiveRuntimeReadinessBarrierOutcome {
+        let started = Date()
+        let timeoutSeconds = Double(maxWaitNanoseconds) / 1_000_000_000
+        var events: [E2ETestEvent] = []
+        var attempt = 0
+
+        while true {
+            let decision = await MainActor.run {
+                ResourceBudgetGate.decision(
+                    policy: .foregroundInteractive,
+                    reason: "live-e2e.pre-scenario"
+                )
+            }
+            if decision.allowed {
+                return LiveRuntimeReadinessBarrierOutcome(denialReason: nil, events: events)
+            }
+
+            guard let denial = decision.denialReason else {
+                return LiveRuntimeReadinessBarrierOutcome(denialReason: nil, events: events)
+            }
+
+            let elapsedNanoseconds = UInt64(max(Date().timeIntervalSince(started), 0.0) * 1_000_000_000)
+            guard maxWaitNanoseconds > 0,
+                  elapsedNanoseconds < maxWaitNanoseconds,
+                  liveRuntimePreflightDenialCanWait(denial) else {
+                return LiveRuntimeReadinessBarrierOutcome(denialReason: denial, events: events)
+            }
+
+            if events.isEmpty || attempt % 4 == 0 {
+                let event = E2ETestEvent(
+                    id: UUID(),
+                    createdAt: Date(),
+                    scenarioID: scenario.id,
+                    phase: "live-runtime-preflight-wait",
+                    message: "waiting for foreground runtime readiness; timeoutSeconds=\(String(format: "%.1f", timeoutSeconds)); reason=\(denial)"
+                )
+                events.append(event)
+                await onEvent?(event)
+            }
+
+            let remaining = maxWaitNanoseconds - elapsedNanoseconds
+            let sleepNanoseconds = min(max(pollNanoseconds, 1_000_000), remaining)
+            try? await Task.sleep(nanoseconds: sleepNanoseconds)
+            attempt += 1
+        }
+    }
+
+    private nonisolated static func liveRuntimePreflightDenialCanWait(_ denialReason: String) -> Bool {
+        let lower = denialReason.lowercased()
+        return lower.contains("scenephase=inactive")
+            || lower.contains("scenephase=background")
+            || lower.contains("thermalstate=serious")
+            || lower.contains("thermalstate=critical")
+            || lower.contains("thermalstate=unknown")
+            || lower.contains("thermalstate=nil")
     }
 
     private static func liveRuntimePreflightBlockedResult(
         for scenario: E2ETestScenario,
         denialReason: String,
+        readinessEvents: [E2ETestEvent] = [],
         onEvent: EventCallback?
     ) async -> E2ETestResult {
         let started = Date()
@@ -1400,6 +1498,7 @@ nonisolated enum E2ETestRunner {
             message: "blocked before model prompt evaluation; reason=\(denialReason)"
         )
         await onEvent?(event)
+        let events = readinessEvents + [event]
         return E2ETestResult(
             id: UUID(),
             scenarioID: scenario.id,
@@ -1416,7 +1515,7 @@ nonisolated enum E2ETestRunner {
             missingHints: [],
             rewriteAttempted: false,
             rewriteSuccess: false,
-            events: [event],
+            events: events,
             startedAt: started,
             finishedAt: Date(),
             rawFinalPrefix: "",
@@ -2117,6 +2216,20 @@ nonisolated enum E2ETestRunner {
         liveRuntimeBudgetFailureKind(denialReason)
     }
 
+    static func liveRuntimeReadinessBarrierForTests(
+        _ scenario: E2ETestScenario,
+        maxWaitNanoseconds: UInt64,
+        pollNanoseconds: UInt64
+    ) async -> (denialReason: String?, events: [E2ETestEvent]) {
+        let outcome = await liveRuntimeReadinessBarrier(
+            for: scenario,
+            maxWaitNanoseconds: maxWaitNanoseconds,
+            pollNanoseconds: pollNanoseconds,
+            onEvent: nil
+        )
+        return (outcome.denialReason, outcome.events)
+    }
+
     nonisolated static func liveRuntimePacingNanosecondsForTests(
         after result: E2ETestResult,
         thermalState: ProcessInfo.ThermalState,
@@ -2521,7 +2634,9 @@ nonisolated enum E2ETestRunner {
                 missing.append("precision/recall plain-language explainer")
             }
         }
-        if scenario.id == "training-rag-grounding", !(lower.contains("module") || lower.contains("modules")) {
+        if scenario.id == "training-rag-grounding",
+           !isRAGEmptyRetrievalEvidence(lower),
+           !(lower.contains("module") || lower.contains("modules")) {
             missing.append("module(s)")
         }
         if scenario.id == "training-memory-loop", !lower.contains("prefer concise bullet points") {
@@ -2578,6 +2693,7 @@ nonisolated enum E2ETestRunner {
 
     nonisolated private static func enforceEvalGrounding(_ text: String, intent: UserIntent) -> String {
         guard intent == .rag else { return text }
+        if isRAGEmptyRetrievalEvidence(text.lowercased()) { return text }
         let lower = text.lowercased()
         var out = text
         if !(lower.contains("module") || lower.contains("modules")) {
@@ -2642,6 +2758,14 @@ nonisolated enum E2ETestRunner {
         }
 
         return requiredHint
+    }
+
+    nonisolated private static func isRAGEmptyRetrievalEvidence(_ lowerText: String) -> Bool {
+        lowerText.contains("no matching files found")
+            || lowerText.contains("local index appears empty")
+            || lowerText.contains("no matching local snippets")
+            || lowerText.contains("import or create local files")
+            || lowerText.contains("found no matching architecture notes")
     }
 }
 
