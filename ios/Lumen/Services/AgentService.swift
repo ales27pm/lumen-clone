@@ -1676,6 +1676,80 @@ final class AgentService {
                 }
             }
 
+            if !Task.isCancelled,
+               forcedParseError == nil,
+               Self.runtimeFailureParseError(from: raw) == nil,
+               raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                let firstAttemptTurn = AgentTurnParser.parse(raw)
+                if firstAttemptTurn.parseError == .incompleteJSON,
+                   scanner.final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    recordParseFailure(
+                        req: req,
+                        parseError: .incompleteJSON,
+                        raw: raw,
+                        scanner: scanner,
+                        systemPrompt: sys,
+                        userTurn: userTurn,
+                        stepIndex: stepIndex
+                    )
+
+                    let retryGenReq = Self.agentJSONIncompleteOutputRetryRequest(
+                        from: genReq,
+                        userTurn: userTurn,
+                        rawOutput: raw
+                    )
+                    let retryPreflight = await preflightAgentJSONPrompt(retryGenReq)
+                    genReq = retryGenReq
+                    preflight = retryPreflight
+                    completedPayload = nil
+                    if !retryPreflight.fits {
+                        raw = Self.contextWindowExceededRawOutputPrefix
+                        forcedParseError = .contextWindowExceeded
+                    } else {
+                        scanner = StreamingJSONScanner()
+                        raw = ""
+                        streamedFinalLen = 0
+                        firstTokenLatencyMs = nil
+                        outputChunks = 0
+                        streamStarted = false
+                        finalChunkReceived = false
+                        generationStartedAt = Date()
+
+                        streamStarted = true
+                        for await token in await AppLlamaService.shared.stream(retryGenReq, slot: Self.structuredAgentModelSlot) {
+                            if Task.isCancelled { break }
+                            switch token {
+                            case .text(let s):
+                                if firstTokenLatencyMs == nil {
+                                    firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
+                                }
+                                outputChunks += 1
+                                raw += s
+                                for event in scanner.feed(s) {
+                                    switch event {
+                                    case .thoughtDelta:
+                                        let current = scanner.thought
+                                        if !thoughtStepYielded {
+                                            continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
+                                            thoughtStepYielded = true
+                                        } else {
+                                            continuation.yield(.stepDelta(id: thoughtStepID, text: current))
+                                        }
+                                    case .finalDelta(let delta):
+                                        streamedFinalLen += delta.count
+                                        continuation.yield(.finalDelta(delta))
+                                    }
+                                }
+                            case .done:
+                                finalChunkReceived = true
+                                break
+                            }
+                        }
+                        completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: retryGenReq.id)
+                    }
+                }
+            }
+
             if Task.isCancelled { break }
 
             let turn = forcedParseError
@@ -2462,6 +2536,54 @@ final class AgentService {
         """
     }
 
+    private nonisolated static func agentJSONIncompleteOutputRetryRequest(
+        from request: GenerateRequest,
+        userTurn: String,
+        rawOutput: String
+    ) -> GenerateRequest {
+        GenerateRequest(
+            sessionID: request.sessionID,
+            systemPrompt: request.systemPrompt,
+            history: request.history,
+            userMessage: agentJSONIncompleteOutputRetryUserTurn(from: userTurn, rawOutput: rawOutput),
+            temperature: min(request.temperature, 0.02),
+            topP: min(request.topP, 0.4),
+            repetitionPenalty: max(request.repetitionPenalty, 1.05),
+            maxTokens: min(max(request.maxTokens, structuredTurnMinTokenCap), structuredTurnMaxTokenCap),
+            modelName: request.modelName,
+            relevantMemories: request.relevantMemories,
+            attachments: request.attachments,
+            responseFormat: request.responseFormat,
+            seed: request.seed.map { $0 &+ 7 },
+            developerTraceModeEnabled: request.developerTraceModeEnabled,
+            reasoningCaptureEnabled: request.reasoningCaptureEnabled,
+            reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: request.allowsMemoryPressureContinuation
+        )
+    }
+
+    private nonisolated static func agentJSONIncompleteOutputRetryUserTurn(
+        from userTurn: String,
+        rawOutput: String
+    ) -> String {
+        let clipped = String(AgentThinkBlockSanitizer.redactedForDiagnostics(rawOutput)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(700))
+        return """
+        \(compactAgentJSONUserTurnForPreflight(userTurn))
+
+        Previous live agent-json attempt stopped after an incomplete JSON object:
+        \(clipped)
+
+        Ignore the incomplete object and emit a fresh valid JSON object now.
+        Use only the schema forms below. Do not include schema, required, status, approvalPrompt, or tool metadata fields.
+        {"action":{"tool":"<allowed tool id>","args":{}}}
+        {"final":"<concise user-facing answer>"}
+        /no_think
+        Start with { and finish after the matching }. Output JSON only.
+        """
+    }
+
     private func preflightAgentJSONPrompt(_ request: GenerateRequest) async -> StructuredPromptPreflight {
         let contextSize = await AppLlamaService.shared.contextSizeForDiagnostics(slot: Self.structuredAgentModelSlot)
         let promptBuild = await AppLlamaService.shared.buildMessagesForDiagnostics(
@@ -3003,6 +3125,21 @@ final class AgentService {
         agentJSONEmptyOutputRetryRequest(from: request, userTurn: userTurn)
     }
 
+    nonisolated static func agentJSONIncompleteOutputRetryUserTurnForTests(
+        from userTurn: String,
+        rawOutput: String
+    ) -> String {
+        agentJSONIncompleteOutputRetryUserTurn(from: userTurn, rawOutput: rawOutput)
+    }
+
+    nonisolated static func agentJSONIncompleteOutputRetryRequestForTests(
+        from request: GenerateRequest,
+        userTurn: String,
+        rawOutput: String
+    ) -> GenerateRequest {
+        agentJSONIncompleteOutputRetryRequest(from: request, userTurn: userTurn, rawOutput: rawOutput)
+    }
+
     nonisolated static func agentJSONContextCompactionRequestForTests(from request: GenerateRequest) -> GenerateRequest {
         agentJSONContextCompactionRequest(from: request)
     }
@@ -3278,7 +3415,7 @@ final class AgentService {
             let sourced = observations.prefix(3).enumerated().map { index, obs in
                 "[\(index + 1)] \(compactObservationResult(obs.result, limit: 700))"
             }
-            return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nUse the cited observations above for concrete modules when available."
+            return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nNo explicit modules were present in the retrieved snippets unless named above."
         }
         if intent == .webSearch {
             return deterministicWebSummaryFallback(observations: observations)
@@ -3357,8 +3494,9 @@ final class AgentService {
 
     private nonisolated static func webSummaryCandidates(from text: String) -> [String] {
         var candidates: [String] = []
+        candidates.append(contentsOf: webPayloadCandidates(from: text))
+
         let patterns = [
-            #"(?is)<lumen_web_payload[^>]*>(.*?)</lumen_web_payload>"#,
             #"(?is)\{[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*\}"#,
             #"(?is)\{[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*\}"#,
             #"(?is)"title"\s*:\s*"([^"]+)".{0,900}?"snippet"\s*:\s*"([^"]+)""#,
@@ -3382,6 +3520,46 @@ final class AgentService {
         return text
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private nonisolated static func webPayloadCandidates(from text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"(?is)<lumen_web_payload[^>]*>(.*?)</lumen_web_payload>"#) else {
+            return []
+        }
+        let ns = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            .flatMap { match -> [String] in
+                guard match.numberOfRanges >= 2 else { return [] }
+                let payload = ns.substring(with: match.range(at: 1))
+                guard let data = payload.data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    return []
+                }
+                return webPayloadItems(from: object)
+            }
+    }
+
+    private nonisolated static func webPayloadItems(from object: [String: Any]) -> [String] {
+        var items: [String] = []
+        for key in ["results", "media"] {
+            guard let array = object[key] as? [[String: Any]] else { continue }
+            for item in array {
+                guard let title = (item["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !title.isEmpty else { continue }
+                let snippet = (item["snippet"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let source = (item["source"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let snippet, !snippet.isEmpty {
+                    items.append("\(title): \(snippet)")
+                } else if let source, !source.isEmpty {
+                    items.append("\(title) - \(source)")
+                } else {
+                    items.append(title)
+                }
+            }
+        }
+        return items
     }
 
     private nonisolated static func prioritizeWebCandidates(_ candidates: [String]) -> [String] {
@@ -3483,10 +3661,19 @@ final class AgentService {
         if lower.contains("no matching files found") || lower.contains("no matching local snippets") {
             return .noMatches(ragText)
         }
+        if looksLikeOnlyPhotoRollups(lower) {
+            return .noMatches(ragText)
+        }
         if lower.contains("unavailable") || lower.contains("disabled") || lower.contains("denied") {
             return .unavailable(ragText)
         }
         return .snippets
+    }
+
+    private nonisolated static func looksLikeOnlyPhotoRollups(_ lower: String) -> Bool {
+        guard lower.contains("photos · photos") || lower.contains("photos (2026") else { return false }
+        let architectureSignals = ["architecture", "module", "service", "component", "package", "class ", "struct ", "func ", ".swift", "api", "endpoint"]
+        return !architectureSignals.contains { lower.contains($0) }
     }
 
     private nonisolated static func hasUsableObservation(for intent: UserIntent, observations: [(tool: String, result: String)]) -> Bool {
