@@ -19,6 +19,37 @@ final class SecureToolRegistryTests: XCTestCase {
         XCTAssertTrue(ProductivityLocalTool.nativeToolIDs.isSubset(of: ids))
     }
 
+    func testAlarmPermissionBridgeUsesAlarmKitUsageDescription() {
+        let bridged = ToolSchemaBridge.toCatalogToolDefinitions([
+            SecureToolDefinition(
+                id: "example.alarm",
+                displayName: "Example Alarm",
+                description: "Example",
+                category: .userVisibleAction,
+                requiredPermissions: [.alarms],
+                supportsBackgroundExecution: false,
+                requiresUserApproval: false,
+                argumentSchemaDescription: "{}",
+                resultPrivacyLevel: .low,
+                maxOutputCharacters: 100
+            )
+        ])
+
+        XCTAssertEqual(bridged.first?.permissionKey, "NSAlarmKitUsageDescription")
+        XCTAssertEqual(bridged.first?.permissionKind, .alarms)
+    }
+
+    @MainActor
+    func testAlarmToolsBypassGenericPermissionGateForRuntimeEvidence() async {
+        let statusFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: "alarm.authorization_status", arguments: [:])
+        let requestFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: "alarm.request_authorization", arguments: [:])
+        let countdownFailure = await ToolRouteGuard.ensurePermissionIfNeeded(for: "alarm.countdown", arguments: ["durationSeconds": "300"])
+
+        XCTAssertNil(statusFailure)
+        XCTAssertNil(requestFailure)
+        XCTAssertNil(countdownFailure)
+    }
+
 
     func testCommunicationToolsAreRegisteredNatively() async {
         let ids = await Set(SecureToolRegistry.shared.definitions().map(\.id))
@@ -46,6 +77,40 @@ final class SecureToolRegistryTests: XCTestCase {
             ToolResultStatusClassifier.status(from: "Unsupported native productivity tool: example.tool."),
             .unavailable
         )
+        XCTAssertEqual(
+            ToolResultStatusClassifier.status(from: AlarmTools.unavailableMessage),
+            .unavailable
+        )
+    }
+
+    func testAlarmUnavailablePayloadRequiresDeviceRuntimeEvidence() {
+        let payload = ProductivityLocalTool.alarmStructuredPayload(
+            toolID: "alarm.authorization_status",
+            text: AlarmTools.unavailableMessage,
+            status: .unavailable
+        )
+
+        XCTAssertEqual(payload["availability"], "unavailable")
+        XCTAssertEqual(payload["runtimeEvidence"], "device-runtime-required")
+        XCTAssertEqual(payload["alarmKitStatus"], "unavailable")
+        XCTAssertEqual(
+            ProductivityLocalTool.alarmErrorCode(text: AlarmTools.unavailableMessage, status: .unavailable),
+            "alarmkit_runtime_unavailable"
+        )
+    }
+
+    func testAlarmArgumentErrorsClassifyAsFailures() {
+        for text in [
+            "Missing schedule. Provide `inMinutes` or `timestamp` (Unix seconds).",
+            "Missing duration. Provide `durationSeconds` greater than 0.",
+            "Invalid alarm id. Provide the alarm UUID from `alarm.list` in `id`."
+        ] {
+            XCTAssertEqual(ProductivityLocalTool.alarmStatus(from: text), .failed)
+            XCTAssertEqual(
+                ProductivityLocalTool.alarmErrorCode(text: text, status: .failed),
+                "alarmkit_invalid_arguments"
+            )
+        }
     }
 
 

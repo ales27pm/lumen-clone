@@ -19,6 +19,9 @@ nonisolated enum ToolRouteGuard {
         arguments: [String: String],
         isForeground: Bool = true
     ) async -> String? {
+        if canonicalToolID.hasPrefix("alarm.") {
+            return nil
+        }
         if canonicalToolID == "weather" {
             let value = (arguments["location"] ?? arguments["city"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if !value.isEmpty, value != "here", value != "current", value != "current location" {

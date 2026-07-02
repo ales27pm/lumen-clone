@@ -586,8 +586,8 @@ private struct DeveloperE2ELatestResults: View {
                 .foregroundStyle(Theme.textSecondary)
             ForEach(results) { result in
                 HStack(alignment: .top, spacing: 9) {
-                    Image(systemName: result.passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                        .foregroundStyle(result.passed ? .green : .red)
+                    Image(systemName: result.statusIcon)
+                        .foregroundStyle(result.statusColor)
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(result.title)
@@ -596,7 +596,7 @@ private struct DeveloperE2ELatestResults: View {
                             .lineLimit(2)
                         Text(result.failures.first ?? "\(result.actualIntent) · \(result.requiresAgentRun ? "live" : "static")")
                             .font(.caption2)
-                            .foregroundStyle(result.passed ? Theme.textSecondary : .red)
+                            .foregroundStyle(result.passed ? Theme.textSecondary : result.statusColor)
                             .lineLimit(2)
                     }
                     Spacer(minLength: 0)

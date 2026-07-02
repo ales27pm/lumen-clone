@@ -166,6 +166,11 @@ final class PermissionsCenter {
     func state(_ kind: PermissionKind) -> PermissionState { states[kind] ?? .notDetermined }
     func lastRequestMessage(_ kind: PermissionKind) -> String? { lastRequestMessages[kind] }
 
+    nonisolated static func alarmUsageDescriptionPresent(infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]) -> Bool {
+        guard let value = infoDictionary["NSAlarmKitUsageDescription"] as? String else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     func refreshAll() {
         for kind in PermissionKind.allCases { states[kind] = readCurrentState(kind) }
         Task { @MainActor in
@@ -251,6 +256,11 @@ final class PermissionsCenter {
             lastRequestMessages[kind] = ok ? "Notifications granted." : "Notifications were not granted."
             TriggerScheduler.shared.lastPermissionGranted = ok
         case .alarms:
+            guard Self.alarmUsageDescriptionPresent() else {
+                states[.alarms] = .unavailable
+                lastRequestMessages[kind] = "Alarm authorization unavailable: missing NSAlarmKitUsageDescription in the installed app bundle."
+                return
+            }
             let message = await AlarmTools.requestAuthorization()
             lastRequestMessages[kind] = message
             await refreshAlarmStateAfterAuthorization()
@@ -407,6 +417,9 @@ final class PermissionsCenter {
     }
 
     private func currentAlarmState() -> PermissionState {
+        guard Self.alarmUsageDescriptionPresent() else {
+            return .unavailable
+        }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             switch AlarmManager.shared.authorizationState {

@@ -103,6 +103,7 @@ def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
             "failures": failure_text,
             "final": result.get("finalText"),
             "events": result.get("events") or [],
+            "metadata": result.get("metadata") or {},
             "startedAt": result.get("startedAt"),
             "finishedAt": result.get("finishedAt"),
         })
@@ -120,11 +121,17 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
     intent = _scenario_intent(scenario)
     required_hint = _extract_required_hint(failure_text)
     root_cause = sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None
-    if _is_runtime_environment_failure(failure_text, sidecar_diagnosis):
+    scenario_evidence = f"{failure_text}\n{final}"
+    if _is_runtime_environment_failure(scenario_evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         policy = e2e_failure_policy("runtime", None)
         failure_type = "e2e_runtime_environment_deferred"
         agent = "rem"
         curriculum = "runtime_environment_diagnostics"
+        trainable = False
+    elif _is_architecture_or_finalizer_failure(scenario_evidence, sidecar_diagnosis):
+        failure_type = "e2e_architecture_finalizer_failure"
+        agent = "rem"
+        curriculum = "architecture_regression_diagnostics"
         trainable = False
     else:
         policy = e2e_failure_policy(intent, required_hint)
@@ -155,6 +162,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
             "modelEvidenceRootCause": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None,
             "modelEvidenceTrace": sidecar_diagnosis.get("trace") if sidecar_diagnosis else None,
             "modelEvidenceStatus": sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else scenario.get("modelEvidenceStatus"),
+            "metadata": scenario.get("metadata") or {},
         },
         "repairSample": {
             "agent": agent,
@@ -179,7 +187,8 @@ def _scenario_intent(scenario: dict[str, Any]) -> str:
 
 
 def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+    evidence = f"{scenario.get('failures') or ''}\n{scenario.get('final') or ''}"
+    if _is_runtime_environment_failure(evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
@@ -205,7 +214,8 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     final = str(scenario.get("final") or "").strip()
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+    evidence = f"{scenario.get('failures') or ''}\n{scenario.get('final') or ''}"
+    if _is_runtime_environment_failure(evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data."
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
@@ -353,12 +363,16 @@ def _final_artifact_diagnosis_for_scenario(scenario: dict[str, Any]) -> dict[str
     artifact_markers = [
         "tool output could not be validated",
         "could not be validated",
+        "no direct answer from web search",
+        "i'm ready. please ask again",
+        "please ask again or tell me what you'd like to do next",
+        "fallback/error text",
         '"reasoningsummary"',
         '"rewrittenfinalanswer"',
         '"requiresapprovaldecision"',
         '"requiresapprovalreasoningsummary"',
     ]
-    if not any(marker in lowered for marker in artifact_markers):
+    if not any(marker in lowered for marker in artifact_markers) and not _is_one_line_url_forwarding(lowered):
         return None
     return {
         "rootCauseCategory": "live_final_validation_artifact",
@@ -859,8 +873,69 @@ def _is_runtime_environment_failure(text: str, sidecar_diagnosis: dict[str, Any]
         or "thermalstate=serious" in lowered
         or "thermalstate=critical" in lowered
         or "scenephase=background" in lowered
+        or "scenephase=inactive" in lowered
+        or "alarmkit runtime unavailable" in lowered
+        or "alarmkit availability: unavailable" in lowered
+        or "device-runtime evidence required" in lowered
         or "lowpowermode=true" in lowered
         or "recent-memory-warning" in lowered
+        or _is_rag_empty_retrieval(lowered)
+        or _contains_internal_routing_json(lowered)
+    )
+
+
+def _is_rag_empty_retrieval(lowered: str) -> bool:
+    return (
+        "no matching files found" in lowered
+        or "local index appears empty" in lowered
+        or "no matching local snippets" in lowered
+        or "import or create local files" in lowered
+        or "found no matching architecture notes" in lowered
+    )
+
+
+def _is_architecture_or_finalizer_failure(text: str, sidecar_diagnosis: dict[str, Any] | None) -> bool:
+    if sidecar_diagnosis:
+        category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
+        if category == "live_final_validation_artifact":
+            return True
+        if category in RUNTIME_ENVIRONMENT_ROOT_CAUSES or category in AGENT_JSON_MODEL_ROOT_CAUSES or category == "agent_json_context_overflow":
+            return False
+    lowered = str(text or "").casefold()
+    return (
+        "no direct answer from web search" in lowered
+        or "i'm ready. please ask again" in lowered
+        or "please ask again or tell me what you'd like to do next" in lowered
+        or "tool output could not be validated" in lowered
+        or "could not be validated" in lowered
+        or "fallback/error text" in lowered
+        or _is_one_line_url_forwarding(lowered)
+    )
+
+
+def _is_one_line_url_forwarding(lowered: str) -> bool:
+    text = str(lowered or "").strip()
+    if "\n" in text or "http" not in text:
+        return False
+    return bool(re.match(r"^(?:check\s+out|see|read|visit|open|here(?:'s| is))\b.{0,220}https?://\S+\.?$", text, flags=re.IGNORECASE))
+
+
+def _contains_internal_routing_json(lowered: str) -> bool:
+    return (
+        '"intent"' in lowered
+        and '"nextmodel"' in lowered
+        and '"reasoningsummary"' in lowered
+    )
+
+
+def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
+    metadata = scenario.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    failure_kind = str(metadata.get("failureKind") or "")
+    return (
+        str(metadata.get("trainingSignal") or "").casefold() == "false"
+        and failure_kind.startswith("liveRuntime")
     )
 
 
@@ -968,7 +1043,7 @@ def _clean_derived_fragment(value: str) -> str:
 
 def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     intent = _scenario_intent(scenario)
-    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis):
+    if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples."
     if sidecar_diagnosis:
         if sidecar_diagnosis.get("rootCauseCategory") == "agent_json_context_overflow":

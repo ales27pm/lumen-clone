@@ -98,6 +98,15 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
 
     private static func snapshot() -> DiagnosticsSnapshot {
         DiagnosticsSnapshot(
+            build: BuildDiagnosticsSnapshot(
+                bundleIdentifier: "com.27pm.lumenclone",
+                bundleVersion: "1",
+                buildSourceIdentifier: "1",
+                gitSHA: "test",
+                configuration: "Debug",
+                scheme: "Lumen",
+                alarmKitUsageDescription: "Alarm scheduling"
+            ),
             runtime: RuntimeDiagnosticsSnapshot(
                 foundationModelsAvailable: false,
                 foundationModelsStatus: "unavailable",

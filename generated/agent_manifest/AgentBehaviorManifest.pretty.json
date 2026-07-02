@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "7352e2d92f06383779807157ec5439072753c377",
+    "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -31,11 +31,11 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "2ea5f68bf36e516f45276efb82387b5473f472694c1784a055b1ff1a9233387a"
+        "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "sha256": "47ae9995a48b65df689bd4bc75b8c232fd7d63a9cabe026ae60804c4a5b9b81a"
+        "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
@@ -55,11 +55,11 @@
       },
       {
         "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-        "sha256": "0e08d353f084baa49f528f99772eea424d6015de04f21665345ff3a51daa87a7"
+        "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
       },
       {
         "path": "ios/Lumen/Views/ChatView.swift",
-        "sha256": "338f724834b3f49312831e10f89042d074ac4612bb7087bc9cd30ef7c44ae579"
+        "sha256": "0112d14866bd7b1029c95cbb65e77328fd3dd66ba33c761bbfcd66178e45bdb4"
       }
     ]
   },

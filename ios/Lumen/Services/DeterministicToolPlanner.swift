@@ -88,18 +88,18 @@ nonisolated enum DeterministicToolPlanner {
     static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
         let text = normalized(prompt)
 
-        if routing.intent == .memory, isMemorySaveThenRecallIntent(text) {
+        if routing.intent == .memory, let memoryPlan = MemoryCommandPlan.saveThenRecall(from: prompt) {
             var actions: [AgentAction] = []
             if let save = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs), ToolRouteGuard.canonicalToolID(save.tool) == "memory.save" {
                 actions.append(save)
             } else if availableToolIDs.contains("memory.save") {
                 actions.append(AgentAction(tool: "memory.save", args: [
-                    "content": .string(extractMemoryFact(from: prompt)),
+                    "content": .string(memoryPlan.saveContent),
                     "kind": .string("fact")
                 ]))
             }
             if availableToolIDs.contains("memory.recall") {
-                actions.append(AgentAction(tool: "memory.recall", args: ["query": .string(extractMemoryRecallQuery(from: prompt))]))
+                actions.append(AgentAction(tool: "memory.recall", args: ["query": .string(memoryPlan.recallQuery)]))
             }
             if !actions.isEmpty { return actions }
         }
@@ -206,7 +206,7 @@ nonisolated enum DeterministicToolPlanner {
             if isCalendarCreateIntent(text) {
                 return action("calendar.create", [
                     "title": .string(extractCalendarTitle(from: prompt)),
-                    "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
+                    "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text) ?? 60))
                 ])
             }
             if isCalendarReadIntent(text) { return action("calendar.list") }
@@ -220,7 +220,8 @@ nonisolated enum DeterministicToolPlanner {
             if let q = extractContactQuery(from: prompt), !q.isEmpty { return action("contacts.search", ["query": .string(q)]) }
             return nil
         case .photos:
-            return action("photos.search", ["query": .string(extractDestination(from: prompt) ?? "")])
+            let query = extractPhotoQuery(from: prompt)
+            return query.isEmpty ? nil : action("photos.search", ["query": .string(query)])
         case .camera:
             return action("camera.capture")
         case .health:
@@ -252,48 +253,54 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .alarm:
-            if containsAny(text, ["request", "prompt", "ask"]) && containsAny(text, ["authorization", "permission", "access"]) { return action("alarm.request_authorization") }
-            if containsAny(text, ["authorization", "permission", "access", "status"]) && containsAny(text, ["check", "show", "status", "authorized", "allowed"]) { return action("alarm.authorization_status") }
-            if containsAny(text, ["pause"]) {
+            switch AlarmCommandClassifier.classifyAlarmCommandKind(text) {
+            case .requestAuthorization:
+                return action("alarm.request_authorization")
+            case .authorizationStatus:
+                return action("alarm.authorization_status")
+            case .list:
+                return action("alarm.list")
+            case .pause:
                 let args = alarmMutationArgs(from: prompt)
                 guard args["id"] != nil else { return nil }
                 return action("alarm.pause", args)
-            }
-            if containsAny(text, ["resume"]) {
+            case .resume:
                 let args = alarmMutationArgs(from: prompt)
                 guard args["id"] != nil else { return nil }
                 return action("alarm.resume", args)
-            }
-            if containsAny(text, ["stop"]) {
+            case .stop:
                 let args = alarmMutationArgs(from: prompt)
                 guard args["id"] != nil else { return nil }
                 return action("alarm.stop", args)
-            }
-            if containsAny(text, ["snooze"]) {
+            case .snooze:
                 let args = alarmMutationArgs(from: prompt)
                 guard args["id"] != nil else { return nil }
                 return action("alarm.snooze", args)
-            }
-            if containsAny(text, ["cancel", "delete", "remove"]) {
+            case .cancel:
                 let args = alarmMutationArgs(from: prompt)
                 guard args["id"] != nil else { return nil }
                 return action("alarm.cancel", args)
-            }
-            if containsAny(text, ["countdown", "timer"]) {
+            case .countdown:
                 guard let seconds = countdownDurationSeconds(from: text) else { return nil }
                 return action("alarm.countdown", [
                     "title": .string(extractAlarmTitle(from: prompt, fallback: "Countdown")),
                     "durationSeconds": .string(String(seconds))
                 ])
-            }
-            if containsAny(text, ["list", "show", "active alarms", "all alarms"]) { return action("alarm.list") }
-            if isAlarmScheduleIntent(text) {
+            case .schedule:
+                if let duration = RelativeDuration.parse(from: text), duration.unit == .seconds {
+                    return action("alarm.countdown", [
+                        "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
+                        "durationSeconds": .string(String(duration.seconds))
+                    ])
+                }
+                guard let minutes = calendarStartOffsetMinutes(from: text) else { return nil }
                 return action("alarm.schedule", [
                     "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
-                    "inMinutes": .string(String(calendarStartOffsetMinutes(from: text)))
+                    "inMinutes": .string(String(minutes))
                 ])
+            case .unknown:
+                return nil
             }
-            return nil
         case .trigger:
             if containsAny(text, ["list", "show", "scheduled agent runs", "scheduled runs", "active triggers", "active scheduled", "what triggers"]) {
                 return action("trigger.list")
@@ -310,7 +317,7 @@ nonisolated enum DeterministicToolPlanner {
                     "schedule": .string("once")
                 ]
                 if text.contains("tonight") { args["inMinutes"] = .string("120") }
-                else if let minutes = extractMinutes(from: text) { args["inMinutes"] = .string(String(minutes)) }
+                else if let minutes = calendarStartOffsetMinutes(from: text) { args["inMinutes"] = .string(String(minutes)) }
                 else { args["inMinutes"] = .string("60") }
                 return action("trigger.create", args)
             }
@@ -417,6 +424,9 @@ nonisolated enum DeterministicToolPlanner {
     static func firstURL(in text: String) -> String? { SlotAgentService.shared_firstURL(text) }
 
     private static func extractMinutes(from text: String) -> Int? {
+        if let duration = RelativeDuration.parse(from: text) {
+            return duration.minutesCeiled
+        }
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let regex = try? NSRegularExpression(pattern: #"(\d+)\s*(?:minute|minutes|min|mins)"#),
               let match = regex.firstMatch(in: text, range: nsRange),
@@ -427,8 +437,9 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func countdownDurationSeconds(from text: String) -> Int? {
-        if let minutes = extractMinutes(from: text) { return minutes * 60 }
+        if let duration = RelativeDuration.parse(from: text) { return duration.seconds }
         if let seconds = firstCapture(in: text, pattern: #"(?i)\b(\d+)\s*(?:second|seconds|sec|secs)\b"#).flatMap(Int.init) { return max(1, min(seconds, 24 * 60 * 60)) }
+        if let minutes = extractMinutes(from: text) { return minutes * 60 }
         return nil
     }
 
@@ -464,13 +475,14 @@ nonisolated enum DeterministicToolPlanner {
         return nil
     }
 
-    private static func firstUUID(in text: String) -> String? {
-        firstCapture(in: text, pattern: #"(\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b)"#)
-    }
+    private static func firstUUID(in text: String) -> String? { AlarmCommandClassifier.firstUUID(in: text) }
 
     private static func extractAlarmTitle(from prompt: String, fallback: String) -> String {
         if let named = firstCapture(in: prompt, pattern: #"(?i)\b(?:named|called)\s+([^.!?\n]+)"#) {
-            let cleaned = cleanCapturedValue(named)
+            var cleaned = cleanCapturedValue(named)
+            if let range = cleaned.range(of: #"(?i)\s+(?:for|in)\s+\d+\s+(?:seconds?|minutes?|hours?|days?)\b"#, options: .regularExpression) {
+                cleaned = String(cleaned[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             if !cleaned.isEmpty { return cleaned }
         }
         return fallback
@@ -496,7 +508,7 @@ nonisolated enum DeterministicToolPlanner {
 /// - Parameters:
 ///   - text: The text to evaluate.
 /// - Returns: `true` if the text contains both save-related and recall-related phrases, `false` otherwise.
-private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { containsAny(text, ["remember", "save", "note", "keep this in mind"]) && containsAny(text, ["tell me what", "what you remembered", "what did you remember", "repeat it back", "then tell"]) }
+private static func isMemorySaveThenRecallIntent(_ text: String) -> Bool { MemoryCommandPlan.saveThenRecall(from: text) != nil }
     /// Determines whether text represents a nearby or proximity-based map search.
 /// - Returns: `true` if the text contains proximity keywords, `false` otherwise.
 private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAny(text, ["nearby", "near me", "closest", "nearest", "around me", "around here", "in my area"]) }
@@ -550,7 +562,13 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
         return "Event"
     }
 
-    private static func calendarStartOffsetMinutes(from text: String) -> Int {
+    private static func calendarStartOffsetMinutes(from text: String) -> Int? {
+        if let duration = RelativeDuration.parse(from: text) {
+            return duration.minutesCeiled
+        }
+        if RelativeDuration.containsExplicitRelativeSyntax(text) {
+            return nil
+        }
         if let explicitMinutes = extractMinutes(from: text) { return explicitMinutes }
         let now = Date()
         var calendar = Calendar.current
@@ -563,7 +581,7 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             let start = calendar.startOfDay(for: base)
             target = calendar.date(byAdding: .hour, value: hour, to: start) ?? target
         } else if !text.contains("tomorrow") {
-            target = now.addingTimeInterval(60 * 60)
+            return nil
         }
         if target <= now { target = calendar.date(byAdding: .day, value: 1, to: target) ?? now.addingTimeInterval(60 * 60) }
         return max(1, Int(target.timeIntervalSince(now) / 60))
@@ -584,22 +602,11 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     }
 
     private static func extractMemoryRecallQuery(from prompt: String) -> String {
-        let fact = extractMemoryFact(from: prompt)
-        let cleaned = fact
-            .replacingOccurrences(of: "User's name is ", with: "", options: [.caseInsensitive])
-            .replacingOccurrences(of: "User prefers to be called ", with: "", options: [.caseInsensitive])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleaned.lowercased().contains("prefer concise bullet points") { return "prefer concise bullet points" }
-        if !cleaned.isEmpty { return cleaned }
-        return prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        MemoryCommandPlan.extractMemoryRecallQuery(from: prompt)
     }
 
     static func extractMemoryFact(from prompt: String) -> String {
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let name = firstCapture(in: trimmed, pattern: #"(?i)\b(?:can you\s+)?(?:please\s+)?(?:remember|save|note)\s+(?:that\s+)?my name is\s+([^.!?\n]+)"#) ?? firstCapture(in: trimmed, pattern: #"(?i)\bmy name is\s+([^.!?\n]+)"#) { return "User's name is \(cleanCapturedValue(name))" }
-        if let name = firstCapture(in: trimmed, pattern: #"(?i)\bcall me\s+([^.!?\n]+)"#) { return "User prefers to be called \(cleanCapturedValue(name))" }
-        if let fact = firstCapture(in: trimmed, pattern: #"(?i)\bremember that\s+(.+)"#) ?? firstCapture(in: trimmed, pattern: #"(?i)\bsave this fact:?\s+(.+)"#) ?? firstCapture(in: trimmed, pattern: #"(?i)\bkeep this in mind:?\s+(.+)"#) { return normalizeFactSentence(fact) }
-        return normalizeFactSentence(trimmed)
+        MemoryCommandPlan.extractMemoryFact(from: prompt)
     }
 
     private static func firstCapture(in text: String, pattern: String) -> String? {
@@ -635,6 +642,20 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             if let r = lower.range(of: marker) { return String(text[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines) }
         }
         return nil
+    }
+
+    private static func extractPhotoQuery(from prompt: String) -> String {
+        let text = normalized(prompt)
+        if containsAny(text, ["latest selfie", "newest selfie", "recent selfies", "recent selfie", "selfie picture"]) {
+            return "latest selfie"
+        }
+        if containsAny(text, ["latest photo", "latest picture", "newest photo", "newest picture", "recent photo", "recent picture"]) {
+            return "latest photo"
+        }
+        if text.contains("selfie") { return "selfie" }
+        let destination = extractDestination(from: prompt)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return destination?.isEmpty == false ? destination! : "photos"
     }
 
     static func extractContactQuery(from text: String) -> String? { extractDestination(from: text) }

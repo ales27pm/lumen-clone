@@ -357,6 +357,12 @@ nonisolated enum ImproveLoopSampleGate {
         if lower.contains("tool output could not be validated") {
             return "final validator fallback is architecture/runtime feedback, not direct fine-tuning data"
         }
+        if isRAGEmptyRetrieval(lower) {
+            return "empty local retrieval index is fixture/runtime state, not direct fine-tuning data"
+        }
+        if containsInternalRoutingJSON(lower) {
+            return "internal routing JSON leakage is architecture/runtime feedback, not direct fine-tuning data"
+        }
         return nil
     }
 
@@ -403,6 +409,28 @@ nonisolated enum ImproveLoopSampleGate {
         return lower.contains("can’t safely start the full agent pipeline")
             || lower.contains("can't safely start the full agent pipeline")
             || lower.contains("device has cooled down")
+            || lower.contains("resource-budget-denied-before-prompt-eval")
+            || lower.contains("cpu-watchdog-degraded")
+            || lower.contains("liveruntimecpuwatchdogdegraded")
+            || lower.contains("live e2e preflight blocked model-backed generation before prompt evaluation")
+            || lower.contains("alarmkit runtime unavailable")
+            || lower.contains("alarmkit availability: unavailable")
+            || lower.contains("device-runtime evidence required")
+            || lower.contains("scenephase=inactive")
+            || lower.contains("scenephase=background")
+            || lower.contains("thermalstate=serious")
+            || lower.contains("thermalstate=critical")
+    }
+
+    private static func isRAGEmptyRetrieval(_ lower: String) -> Bool {
+        lower.contains("no matching files found")
+            || lower.contains("local index appears empty")
+            || lower.contains("no matching local snippets")
+            || lower.contains("import or create local files")
+    }
+
+    private static func containsInternalRoutingJSON(_ lower: String) -> Bool {
+        RoutingJSONLeakDetector.containsInternalRoutingJSON(lower)
     }
 
     private static let legacyToolAliasMap: [String: String] = [

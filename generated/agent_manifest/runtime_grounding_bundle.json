@@ -3,13 +3,13 @@
   "codebaseHome": {
     "languageCounts": {
       "csv": 5,
-      "json": 55,
+      "json": 56,
       "markdown": 66,
       "mixed": 1,
       "plist": 3,
-      "python": 104,
-      "shell": 15,
-      "swift": 491,
+      "python": 106,
+      "shell": 16,
+      "swift": 495,
       "text": 8,
       "toml": 1,
       "xcode_project": 1,
@@ -23,6 +23,7 @@
       "Assets.xcassets/AccentColor.colorset": 1,
       "Assets.xcassets/AppIcon.appiconset": 1,
       "Assets.xcassets/LumenAssistantMark.imageset": 1,
+      "Assets.xcassets/LumenMark.imageset": 1,
       "Assets.xcassets/LumenVerticalLogo.imageset": 1,
       "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
       "Assistant": 27,
@@ -30,7 +31,7 @@
       "Brand": 2,
       "CarPlay": 2,
       "Developer": 3,
-      "Diagnostics": 20,
+      "Diagnostics": 21,
       "KnowledgeGraph": 1,
       "Memory": 8,
       "Models": 15,
@@ -38,7 +39,7 @@
       "RAG": 9,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
       "Scripts": 2,
-      "Services": 58,
+      "Services": 60,
       "Services/AgentGrounding": 13,
       "Services/Diagnostics": 1,
       "Services/IntentClassification": 5,
@@ -63,7 +64,7 @@
       "ios": 1,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 155,
+      "ios/LumenTests": 156,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 6,
@@ -72,7 +73,7 @@
       "runtime-audits/2026-06-08-second-improve-loop": 5,
       "runtime-audits/2026-06-09-third-improve-loop": 5,
       "runtime-audits/2026-06-25-device-e2e": 3,
-      "scripts": 19,
+      "scripts": 21,
       "tools": 12,
       "tools/fine_tuning/unsloth": 19,
       "tools/hf_artifacts": 2,
@@ -84,10 +85,10 @@
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 39,
       "tools/lumen_manifest_crawler/tests": 24,
       "tools/pipeline": 7,
-      "tools/pipeline/tests": 2,
+      "tools/pipeline/tests": 3,
       "tools/security": 1
     },
-    "recordCount": 753,
+    "recordCount": 761,
     "selectedFiles": [
       {
         "imports": [
@@ -288,7 +289,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` owns ImproveLoopSampleGate behavior and defines: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, ImproveLoopTrainingSample, ImproveLoopDatasetCounters, ImproveLoopDataset, ImproveLoopSampleGate, buildDataset, append.",
-        "sha256": "3270a0a76857e6c2f588bf5cc79e4f26f906e7d74965ca26609de40303413267",
+        "sha256": "ccfe0c56921c7a3d3ff067dce5b74889b70a11eba9fc40cd6cfa8eabaeee835b",
         "symbols": [
           "ImproveLoopSampleDisposition",
           "ImproveLoopSampleType",
@@ -1228,7 +1229,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer, StripResult, LeadingBlock.",
-        "sha256": "2ea5f68bf36e516f45276efb82387b5473f472694c1784a055b1ff1a9233387a",
+        "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -1251,15 +1252,18 @@
       {
         "imports": [
           "Foundation",
-          "AlarmKit"
+          "AlarmKit",
+          "SwiftUI"
         ],
         "language": "swift",
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-        "responsibility": "`ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: AlarmTools, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause, resume, stop.",
-        "sha256": "0e08d353f084baa49f528f99772eea424d6015de04f21665345ff3a51daa87a7",
+        "responsibility": "`ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: LumenAlarmMetadata, AlarmTools, isRuntimeUnavailableText, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause.",
+        "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42",
         "symbols": [
+          "LumenAlarmMetadata",
           "AlarmTools",
+          "isRuntimeUnavailableText",
           "authorizationStatus",
           "requestAuthorization",
           "schedule",
@@ -1272,9 +1276,7 @@
           "snooze",
           "mutateAlarm",
           "scheduleAlarm",
-          "state",
-          "title",
-          "snoozeMinutes"
+          "scheduleCountdown"
         ]
       },
       {
@@ -1517,13 +1519,17 @@
         "language": "swift",
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/PhotosTools.swift",
-        "responsibility": "`ios/Lumen/Services/Tools/PhotosTools.swift` owns PhotosTools behavior and defines: PhotosTools, searchPhotos, captureImage, formatAssetDate, previousDayRange, logger, status, options, assets, trimmed.",
-        "sha256": "e746f8988f56a6542debf5ef5a7d7b7abf0479098fd17c61f921738a342688f9",
+        "responsibility": "`ios/Lumen/Services/Tools/PhotosTools.swift` owns PhotosTools behavior and defines: PhotosTools, searchPhotos, captureImage, formatAssetDate, assetPayloadJSON, assetPayloadDictionary, mediaSubtypeNames, jsonString, previousDayRange, logger.",
+        "sha256": "1ec669fcd8908415c79b477fc1a481b8b1dfd08bbec70e6b8993dc84abfc7d52",
         "symbols": [
           "PhotosTools",
           "searchPhotos",
           "captureImage",
           "formatAssetDate",
+          "assetPayloadJSON",
+          "assetPayloadDictionary",
+          "mediaSubtypeNames",
+          "jsonString",
           "previousDayRange",
           "logger",
           "status",
@@ -1531,11 +1537,7 @@
           "assets",
           "trimmed",
           "now",
-          "cal",
-          "dateRange",
-          "start",
-          "weekStart",
-          "monthStart"
+          "cal"
         ]
       },
       {
@@ -1748,7 +1750,7 @@
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift",
         "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, IntentClarificationPolicy, resolve, resolveMediumConfidence, clarificationForAmbiguousModelResult, rankedAlternatives, shouldClarifyBetween, clarificationPrompt, clarificationLabel, sanitized.",
-        "sha256": "a1cf5d4913e9612c07bf78153029709058ba28e04330b9e6e3e1c0bdafc1f972",
+        "sha256": "159c8e3119fac9202c8ca8b9be3d54d2fa08df0c7f2d70f09694088b8183c437",
         "symbols": [
           "IntentClassifierPolicy",
           "IntentClarificationPolicy",
@@ -1798,8 +1800,8 @@
         "language": "swift",
         "module": "Services",
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, unavailableMessage.",
-        "sha256": "47ae9995a48b65df689bd4bc75b8c232fd7d63a9cabe026ae60804c4a5b9b81a",
+        "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, isLikelyPhotosIntent.",
+        "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6",
         "symbols": [
           "UserIntent",
           "IntentRoutingDecision",
@@ -1810,13 +1812,13 @@
           "allowedToolIDs",
           "isToolAllowed",
           "intentRequiresTool",
+          "isLikelyPhotosIntent",
           "unavailableMessage",
           "blockedToolMessage",
           "isLikelyPhoneCallIntent",
           "isLikelyLocalKnowledgeQuery",
           "isPersonalProfileRecallIntent",
-          "isPersonalProfileSaveIntent",
-          "isExplicitActionIntentContainingProfilePhrase"
+          "isPersonalProfileSaveIntent"
         ]
       },
       {
@@ -2169,7 +2171,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "7352e2d92f06383779807157ec5439072753c377",
+  "manifestCommit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

@@ -342,6 +342,7 @@ ARCHIVE_ENV=(
   "LUMEN_IOS_PROJECT_PATH=$PROJECT_PATH"
   "LUMEN_IOS_SCHEME=$SCHEME"
   "LUMEN_IOS_CONFIGURATION=$CONFIGURATION"
+  "LUMEN_GIT_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
   "LUMEN_IOS_ALLOW_PROVISIONING_UPDATES=1"
   "LUMEN_IOS_CODE_SIGN_STYLE=Automatic"
   "LUMEN_IOS_DEVELOPMENT_TEAM=$TEAM_ID"
@@ -357,6 +358,9 @@ fi
 
 env "${ARCHIVE_ENV[@]}" bash "$STABLE_ARCHIVE_SCRIPT"
 
+info "Verify archived app Info.plist"
+python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$ARCHIVE_PATH"
+
 info "Export IPA"
 run_logged "$EXPORT_LOG" \
   xcodebuild \
@@ -369,6 +373,9 @@ run_logged "$EXPORT_LOG" \
 
 IPA_PATH="$("$FIND_BIN" "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
 [[ -n "$IPA_PATH" ]] || fail "No IPA found in $EXPORT_DIR"
+
+info "Verify exported IPA Info.plist"
+python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$IPA_PATH"
 
 bold "Built IPA: $IPA_PATH"
 if [[ -z "$UPLOAD_AFTER_BUILD" ]]; then
