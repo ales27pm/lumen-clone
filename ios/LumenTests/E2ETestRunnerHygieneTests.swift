@@ -974,8 +974,8 @@ struct E2ETestRunnerHygieneTests {
         )
         let final = """
         Summary
-        [1] Photos · Photos 2026-01 · score 0.26
-        Photos (2026-01): 158 items between Jan 2, 2026 and Jan 31, 2026.
+        [1] Photos · Photos 2027-01 · score 0.26
+        Photos (2027-01): 158 items between Jan 2, 2027 and Jan 31, 2027.
 
         Key modules
         Use the cited observations above for concrete modules when available.

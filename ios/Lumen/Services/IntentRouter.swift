@@ -263,7 +263,7 @@ nonisolated enum IntentRouter {
         matchesAny(text, [
             "search photos", "search my photos", "search photo library", "find photos", "find my photos",
             "search pictures", "search my pictures", "find pictures", "find my pictures",
-            "photo library", "pictures from", "photos from", "photos for", "pictures for",
+            "pictures from", "photos from",
             "receipt pictures", "receipts in my photos", "receipts in my photo library",
             "images in my library", "images in my photo library",
             "show latest selfie picture", "show latest selfie", "show latest photo", "show latest picture",
