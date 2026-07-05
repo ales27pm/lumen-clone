@@ -234,6 +234,14 @@ extension IntentRouterTests {
         }
     }
 
+    @Test func publicPhotoWordingDoesNotHijackWebLookup() {
+        let decision = IntentRouter.classify("Search web for photos for my presentation.")
+
+        #expect(decision.intent == .webSearch)
+        #expect(IntentRouter.isToolAllowed("web.search", for: decision))
+        #expect(!IntentRouter.isToolAllowed("photos.search", for: decision))
+    }
+
     @Test func liveScenarioGeneratedPromptsStayExecutableForSpecificTools() async throws {
         let entries = Dictionary(uniqueKeysWithValues: ToolScenarioBank.entries().map { ($0.expectedToolID + ":" + $0.kind.rawValue, $0) })
         let expected: [(String, String)] = [

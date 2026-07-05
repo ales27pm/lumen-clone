@@ -106,14 +106,14 @@ nonisolated enum DeterministicToolPlanner {
 
         if routing.intent == .outlook, let single = plan(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs) {
             let canonical = ToolRouteGuard.canonicalToolID(single.tool)
-            if ToolRouteGuard.requiresUserApproval(canonical) {
-                return [single]
-            }
             if outlookMessageReferenceToolIDs.contains(canonical), availableToolIDs.contains("outlook.messages.list"), needsFreshOutlookMessageContext(action: single, prompt: text) {
                 return [
                     AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
                     single
                 ]
+            }
+            if ToolRouteGuard.requiresUserApproval(canonical) {
+                return [single]
             }
             return [single]
         }

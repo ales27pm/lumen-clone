@@ -165,7 +165,7 @@ final class CarPlayVoiceStartupFailureTests: XCTestCase {
         XCTAssertEqual(delegate.sessionStateForTests, .listening)
         XCTAssertTrue(delegate.hasListeningTimeoutTaskForTests)
 
-        delegate.handleVoiceStartupFailureForTests("Voice input is unavailable in the current CarPlay audio route.")
+        delegate.handleVoiceStartupFailureForTests("Voice input is unavailable right now.")
 
         XCTAssertEqual(delegate.sessionStateForTests, .unavailable)
         XCTAssertFalse(delegate.hasListeningTimeoutTaskForTests)

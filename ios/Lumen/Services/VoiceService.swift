@@ -17,7 +17,7 @@ nonisolated struct VoiceInputReadinessSnapshot: Equatable, Sendable {
 }
 
 nonisolated enum VoiceInputReadiness {
-    static let unavailableMessage = "Voice input is unavailable in the current CarPlay audio route. Try again after the microphone route is active."
+    static let unavailableMessage = "Voice input is unavailable right now. Try again after the microphone route is active."
 
     static func failureReason(for snapshot: VoiceInputReadinessSnapshot) -> String? {
         if let exceptionError = snapshot.exceptionError, !exceptionError.isEmpty {
@@ -103,6 +103,7 @@ struct VoiceAudioStartup {
             var format: AVAudioFormat?
             let ok = AudioExceptionCatcher.`try`({
                 let input = engine.inputNode
+                input.removeTap(onBus: 0)
                 format = input.outputFormat(forBus: 0)
                 input.installTap(onBus: 0, bufferSize: 1024, format: format, block: tap)
             }, error: &exceptionError)
@@ -146,7 +147,7 @@ struct VoiceAudioStartup {
         }
     )
 
-    private static func portSummary(_ ports: [AVAudioSessionPortDescription]) -> String {
+    static func portSummary(_ ports: [AVAudioSessionPortDescription]) -> String {
         guard !ports.isEmpty else { return "none" }
         return ports
             .map { "\($0.portType.rawValue):\($0.portName)" }
@@ -385,10 +386,9 @@ final class VoiceService: NSObject {
     }
 
     private func handleAudioRouteChange(rawReason: UInt?) {
-        let reason = rawReason
-            .flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
-            .map(Self.routeChangeReasonName(_:)) ?? "unknown"
-        if isListening {
+        let routeChangeReason = rawReason.flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
+        let reason = routeChangeReason.map(Self.routeChangeReasonName(_:)) ?? "unknown"
+        if isListening, Self.routeChangeInvalidatesActiveInput(routeChangeReason) {
             lastError = "Voice input route changed. Tap the microphone to resume."
             resetListeningState()
         }
@@ -401,9 +401,9 @@ final class VoiceService: NSObject {
         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .voiceAudioSessionEvent, values: [
             "source": source,
             "phase": phase,
-            "routeInputs": Self.portSummary(route.inputs),
-            "routeOutputs": Self.portSummary(route.outputs),
-            "availableInputs": Self.portSummary(session.availableInputs ?? []),
+            "routeInputs": VoiceAudioStartup.portSummary(route.inputs),
+            "routeOutputs": VoiceAudioStartup.portSummary(route.outputs),
+            "availableInputs": VoiceAudioStartup.portSummary(session.availableInputs ?? []),
             "isInputAvailable": String(session.isInputAvailable),
             "reason": reason
         ]))
@@ -423,11 +423,15 @@ final class VoiceService: NSObject {
         }
     }
 
-    private static func portSummary(_ ports: [AVAudioSessionPortDescription]) -> String {
-        guard !ports.isEmpty else { return "none" }
-        return ports
-            .map { "\($0.portType.rawValue):\($0.portName)" }
-            .joined(separator: "|")
+    private static func routeChangeInvalidatesActiveInput(_ reason: AVAudioSession.RouteChangeReason?) -> Bool {
+        switch reason {
+        case .oldDeviceUnavailable, .noSuitableRouteForCategory:
+            return true
+        case .unknown, .newDeviceAvailable, .categoryChange, .override, .wakeFromSleep, .routeConfigurationChange, nil:
+            return false
+        @unknown default:
+            return false
+        }
     }
 
     #if DEBUG

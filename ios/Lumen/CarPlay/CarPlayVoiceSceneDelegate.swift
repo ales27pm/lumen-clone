@@ -20,7 +20,7 @@ final class CarPlayVoiceSceneDelegate: UIResponder, CPTemplateApplicationSceneDe
     private var listeningTimeoutTask: Task<Void, Never>?
     private var lastFailureReason: String?
     private var lastActivatedVoiceStateID: String?
-    private var lastVoiceStateActivationAt: Date?
+    private var lastVoiceStateActivationUptime: TimeInterval?
     private var pendingVoiceStateActivationTask: Task<Void, Never>?
 
     func templateApplicationScene(
@@ -412,26 +412,29 @@ private extension CarPlayVoiceSceneDelegate {
     func activateVoiceState(_ identifier: String, force: Bool = false) {
         guard let voiceTemplate else { return }
         if force {
+            pendingVoiceStateActivationTask?.cancel()
             pendingVoiceStateActivationTask = nil
             voiceTemplate.activateVoiceControlState(withIdentifier: identifier)
             lastActivatedVoiceStateID = identifier
-            lastVoiceStateActivationAt = Date()
+            lastVoiceStateActivationUptime = ProcessInfo.processInfo.systemUptime
             return
         }
 
         switch CarPlayVoiceStateActivationPolicy.decision(
             requestedStateID: identifier,
             previousStateID: lastActivatedVoiceStateID,
-            lastActivationAt: lastVoiceStateActivationAt,
-            now: Date()
+            lastActivationUptime: lastVoiceStateActivationUptime,
+            nowUptime: ProcessInfo.processInfo.systemUptime
         ) {
         case .activateNow:
             pendingVoiceStateActivationTask?.cancel()
             pendingVoiceStateActivationTask = nil
             voiceTemplate.activateVoiceControlState(withIdentifier: identifier)
             lastActivatedVoiceStateID = identifier
-            lastVoiceStateActivationAt = Date()
+            lastVoiceStateActivationUptime = ProcessInfo.processInfo.systemUptime
         case .skipDuplicate:
+            pendingVoiceStateActivationTask?.cancel()
+            pendingVoiceStateActivationTask = nil
             return
         case .delay(let delay):
             pendingVoiceStateActivationTask?.cancel()

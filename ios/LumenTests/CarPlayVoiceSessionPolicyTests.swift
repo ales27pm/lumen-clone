@@ -40,8 +40,8 @@ final class CarPlayVoiceSessionPolicyTests: XCTestCase {
         let decision = CarPlayVoiceStateActivationPolicy.decision(
             requestedStateID: "listening",
             previousStateID: "listening",
-            lastActivationAt: Date(timeIntervalSince1970: 100),
-            now: Date(timeIntervalSince1970: 101)
+            lastActivationUptime: 100,
+            nowUptime: 101
         )
 
         XCTAssertEqual(decision, .skipDuplicate)
@@ -51,8 +51,8 @@ final class CarPlayVoiceSessionPolicyTests: XCTestCase {
         let decision = CarPlayVoiceStateActivationPolicy.decision(
             requestedStateID: "thinking",
             previousStateID: "listening",
-            lastActivationAt: Date(timeIntervalSince1970: 100),
-            now: Date(timeIntervalSince1970: 100.1),
+            lastActivationUptime: 100,
+            nowUptime: 100.1,
             minimumInterval: 0.35
         )
 
@@ -67,11 +67,23 @@ final class CarPlayVoiceSessionPolicyTests: XCTestCase {
         let decision = CarPlayVoiceStateActivationPolicy.decision(
             requestedStateID: "speaking",
             previousStateID: "thinking",
-            lastActivationAt: Date(timeIntervalSince1970: 100),
-            now: Date(timeIntervalSince1970: 100.5),
+            lastActivationUptime: 100,
+            nowUptime: 100.5,
             minimumInterval: 0.35
         )
 
         XCTAssertEqual(decision, .activateNow)
+    }
+
+    func testVoiceStateActivationPolicyClampsBackwardClockMovement() {
+        let decision = CarPlayVoiceStateActivationPolicy.decision(
+            requestedStateID: "speaking",
+            previousStateID: "thinking",
+            lastActivationUptime: 100,
+            nowUptime: 99,
+            minimumInterval: 0.35
+        )
+
+        XCTAssertEqual(decision, .delay(0.35))
     }
 }

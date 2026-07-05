@@ -328,7 +328,7 @@ struct DeterministicToolPlannerTests {
                 prompt: prompt,
                 availableToolIDs: routing.allowedToolIDs
             )
-            #expect(steps.map(\.tool) == [expectedTool], "Prompt \(prompt) planned \(steps.map(\.tool))")
+            #expect(steps.map(\.tool) == ["outlook.messages.list", expectedTool], "Prompt \(prompt) planned \(steps.map(\.tool))")
         }
     }
 

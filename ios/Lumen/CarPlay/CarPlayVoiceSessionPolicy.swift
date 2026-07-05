@@ -55,17 +55,17 @@ nonisolated enum CarPlayVoiceStateActivationPolicy {
     static func decision(
         requestedStateID: String,
         previousStateID: String?,
-        lastActivationAt: Date?,
-        now: Date,
+        lastActivationUptime: TimeInterval?,
+        nowUptime: TimeInterval,
         minimumInterval: TimeInterval = CarPlayVoiceSessionPolicy.voiceStateActivationMinimumInterval
     ) -> CarPlayVoiceStateActivationDecision {
         if previousStateID == requestedStateID {
             return .skipDuplicate
         }
-        guard let lastActivationAt else {
+        guard let lastActivationUptime else {
             return .activateNow
         }
-        let elapsed = now.timeIntervalSince(lastActivationAt)
+        let elapsed = max(0, nowUptime - lastActivationUptime)
         guard elapsed < minimumInterval else {
             return .activateNow
         }

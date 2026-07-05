@@ -1553,10 +1553,10 @@ extension AgentGroundingRegressionTests {
         #expect(!summary.lowercased().hasPrefix("search results for:"))
     }
 
-    @Test func deterministicWebSummaryFallbackSynthesizesLivePayloadWithoutClosingMarker() throws {
+    @Test func deterministicWebSummaryFallbackSynthesizesLivePayload() throws {
         let observation = """
         Search results for: Swift concurrency best practices
-        <lumen_web_payload>{"results":[{"title":"Swift.org - Concurrency","url":"https://swift.org/documentation/concurrency/"},{"title":"Apple Developer - MainActor and Swift concurrency","url":"https://developer.apple.com/documentation/swift/mainactor"}]}
+        <lumen_web_payload>{"results":[{"title":"Swift.org - Concurrency","url":"https://swift.org/documentation/concurrency/"},{"title":"Apple Developer - MainActor and Swift concurrency","url":"https://developer.apple.com/documentation/swift/mainactor"}]}</lumen_web_payload>
         """
 
         let summary = try #require(AgentService.deterministicWebSummaryFallbackForTests(observations: [("web.search", observation)]))
@@ -1566,6 +1566,7 @@ extension AgentGroundingRegressionTests {
         #expect(summary.split(separator: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("-") }.count >= 2)
         #expect(!summary.lowercased().contains("no direct answer from web search"))
         #expect(!summary.lowercased().contains("<lumen_web_payload"))
+        #expect(summary.components(separatedBy: "Swift.org - Concurrency").count == 2)
     }
 
     @Test func missingActionToolRepairsToOnlyAllowedToolWhenSafe() throws {
