@@ -1474,6 +1474,16 @@ final class AgentService {
         let streamTerminationReason: String?
     }
 
+    private struct StructuredAgentStreamOutcome {
+        let scanner: StreamingJSONScanner
+        let raw: String
+        let streamedFinalLen: Int
+        let firstTokenLatencyMs: Int?
+        let outputChunks: Int
+        let finalChunkReceived: Bool
+        let thoughtStepYielded: Bool
+    }
+
     private struct StructuredPromptPreflight: Sendable {
         let request: GenerateRequest
         let contextSize: Int
@@ -1484,6 +1494,62 @@ final class AgentService {
         var totalEstimatedTokens: Int {
             estimatedPromptTokens + request.maxTokens + AgentService.structuredPromptPreflightSafetyTokens
         }
+    }
+
+    private static func runStructuredAgentStream(
+        _ genReq: GenerateRequest,
+        generationStartedAt: Date,
+        continuation: AsyncStream<AgentEvent>.Continuation,
+        thoughtStepID: UUID,
+        thoughtStepYielded: Bool
+    ) async -> StructuredAgentStreamOutcome {
+        let scanner = StreamingJSONScanner()
+        var raw = ""
+        var streamedFinalLen = 0
+        var firstTokenLatencyMs: Int?
+        var outputChunks = 0
+        var finalChunkReceived = false
+        var yieldedThoughtStep = thoughtStepYielded
+
+        for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
+            if Task.isCancelled { break }
+            switch token {
+            case .text(let text):
+                if firstTokenLatencyMs == nil {
+                    firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
+                }
+                outputChunks += 1
+                raw += text
+                for event in scanner.feed(text) {
+                    switch event {
+                    case .thoughtDelta:
+                        let current = scanner.thought
+                        if !yieldedThoughtStep {
+                            continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
+                            yieldedThoughtStep = true
+                        } else {
+                            continuation.yield(.stepDelta(id: thoughtStepID, text: current))
+                        }
+                    case .finalDelta(let delta):
+                        streamedFinalLen += delta.count
+                        continuation.yield(.finalDelta(delta))
+                    }
+                }
+            case .done:
+                finalChunkReceived = true
+                break
+            }
+        }
+
+        return StructuredAgentStreamOutcome(
+            scanner: scanner,
+            raw: raw,
+            streamedFinalLen: streamedFinalLen,
+            firstTokenLatencyMs: firstTokenLatencyMs,
+            outputChunks: outputChunks,
+            finalChunkReceived: finalChunkReceived,
+            thoughtStepYielded: yieldedThoughtStep
+        )
     }
 
     /// Executes an agent structured turn and streams progress events.
@@ -1564,6 +1630,16 @@ final class AgentService {
             var forcedParseError: AgentTurnParseError?
             var runtimePreflightFailureReason: String?
 
+            func applyStreamOutcome(_ outcome: StructuredAgentStreamOutcome) {
+                scanner = outcome.scanner
+                raw = outcome.raw
+                streamedFinalLen = outcome.streamedFinalLen
+                firstTokenLatencyMs = outcome.firstTokenLatencyMs
+                outputChunks = outcome.outputChunks
+                finalChunkReceived = outcome.finalChunkReceived
+                thoughtStepYielded = outcome.thoughtStepYielded
+            }
+
             if !preflight.fits {
                 let compactReq = Self.agentJSONContextCompactionRequest(from: genReq)
                 let compactPreflight = await preflightAgentJSONPrompt(compactReq)
@@ -1587,35 +1663,13 @@ final class AgentService {
                     forcedParseError = .empty
                 } else {
                     streamStarted = true
-                    for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
-                        if Task.isCancelled { break }
-                        switch token {
-                        case .text(let s):
-                            if firstTokenLatencyMs == nil {
-                                firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
-                            }
-                            outputChunks += 1
-                            raw += s
-                            for event in scanner.feed(s) {
-                                switch event {
-                                case .thoughtDelta:
-                                    let current = scanner.thought
-                                    if !thoughtStepYielded {
-                                        continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
-                                        thoughtStepYielded = true
-                                    } else {
-                                        continuation.yield(.stepDelta(id: thoughtStepID, text: current))
-                                    }
-                                case .finalDelta(let delta):
-                                    streamedFinalLen += delta.count
-                                    continuation.yield(.finalDelta(delta))
-                                }
-                            }
-                        case .done:
-                            finalChunkReceived = true
-                            break
-                        }
-                    }
+                    applyStreamOutcome(await Self.runStructuredAgentStream(
+                        genReq,
+                        generationStartedAt: generationStartedAt,
+                        continuation: continuation,
+                        thoughtStepID: thoughtStepID,
+                        thoughtStepYielded: thoughtStepYielded
+                    ))
                     completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: genReq.id)
                 }
             }
@@ -1643,36 +1697,66 @@ final class AgentService {
                     generationStartedAt = Date()
 
                     streamStarted = true
-                    for await token in await AppLlamaService.shared.stream(retryGenReq, slot: Self.structuredAgentModelSlot) {
-                        if Task.isCancelled { break }
-                        switch token {
-                        case .text(let s):
-                            if firstTokenLatencyMs == nil {
-                                firstTokenLatencyMs = Int(Date().timeIntervalSince(generationStartedAt) * 1000)
-                            }
-                            outputChunks += 1
-                            raw += s
-                            for event in scanner.feed(s) {
-                                switch event {
-                                case .thoughtDelta:
-                                    let current = scanner.thought
-                                    if !thoughtStepYielded {
-                                        continuation.yield(.step(AgentStep(id: thoughtStepID, kind: .thought, content: current)))
-                                        thoughtStepYielded = true
-                                    } else {
-                                        continuation.yield(.stepDelta(id: thoughtStepID, text: current))
-                                    }
-                                case .finalDelta(let delta):
-                                    streamedFinalLen += delta.count
-                                    continuation.yield(.finalDelta(delta))
-                                }
-                            }
-                        case .done:
-                            finalChunkReceived = true
-                            break
-                        }
-                    }
+                    applyStreamOutcome(await Self.runStructuredAgentStream(
+                        retryGenReq,
+                        generationStartedAt: generationStartedAt,
+                        continuation: continuation,
+                        thoughtStepID: thoughtStepID,
+                        thoughtStepYielded: thoughtStepYielded
+                    ))
                     completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: retryGenReq.id)
+                }
+            }
+
+            if !Task.isCancelled,
+               forcedParseError == nil,
+               Self.runtimeFailureParseError(from: raw) == nil,
+               raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                let firstAttemptTurn = AgentTurnParser.parse(raw)
+                if firstAttemptTurn.parseError == .incompleteJSON,
+                   scanner.final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    recordParseFailure(
+                        req: req,
+                        parseError: .incompleteJSON,
+                        raw: raw,
+                        scanner: scanner,
+                        systemPrompt: sys,
+                        userTurn: userTurn,
+                        stepIndex: stepIndex
+                    )
+
+                    let retryGenReq = Self.agentJSONIncompleteOutputRetryRequest(
+                        from: genReq,
+                        userTurn: userTurn,
+                        rawOutput: raw
+                    )
+                    let retryPreflight = await preflightAgentJSONPrompt(retryGenReq)
+                    genReq = retryGenReq
+                    preflight = retryPreflight
+                    completedPayload = nil
+                    if !retryPreflight.fits {
+                        raw = Self.contextWindowExceededRawOutputPrefix
+                        forcedParseError = .contextWindowExceeded
+                    } else {
+                        scanner = StreamingJSONScanner()
+                        raw = ""
+                        streamedFinalLen = 0
+                        firstTokenLatencyMs = nil
+                        outputChunks = 0
+                        streamStarted = false
+                        finalChunkReceived = false
+                        generationStartedAt = Date()
+
+                        streamStarted = true
+                        applyStreamOutcome(await Self.runStructuredAgentStream(
+                            retryGenReq,
+                            generationStartedAt: generationStartedAt,
+                            continuation: continuation,
+                            thoughtStepID: thoughtStepID,
+                            thoughtStepYielded: thoughtStepYielded
+                        ))
+                        completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: retryGenReq.id)
+                    }
                 }
             }
 
@@ -2462,6 +2546,54 @@ final class AgentService {
         """
     }
 
+    private nonisolated static func agentJSONIncompleteOutputRetryRequest(
+        from request: GenerateRequest,
+        userTurn: String,
+        rawOutput: String
+    ) -> GenerateRequest {
+        GenerateRequest(
+            sessionID: request.sessionID,
+            systemPrompt: request.systemPrompt,
+            history: request.history,
+            userMessage: agentJSONIncompleteOutputRetryUserTurn(from: userTurn, rawOutput: rawOutput),
+            temperature: min(request.temperature, 0.02),
+            topP: min(request.topP, 0.4),
+            repetitionPenalty: max(request.repetitionPenalty, 1.05),
+            maxTokens: min(max(request.maxTokens, structuredTurnMinTokenCap), structuredTurnMaxTokenCap),
+            modelName: request.modelName,
+            relevantMemories: request.relevantMemories,
+            attachments: request.attachments,
+            responseFormat: request.responseFormat,
+            seed: request.seed.map { $0 &+ 7 },
+            developerTraceModeEnabled: request.developerTraceModeEnabled,
+            reasoningCaptureEnabled: request.reasoningCaptureEnabled,
+            reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: request.allowsMemoryPressureContinuation
+        )
+    }
+
+    private nonisolated static func agentJSONIncompleteOutputRetryUserTurn(
+        from userTurn: String,
+        rawOutput: String
+    ) -> String {
+        let clipped = String(AgentThinkBlockSanitizer.redactedForDiagnostics(rawOutput)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(700))
+        return """
+        \(compactAgentJSONUserTurnForPreflight(userTurn))
+
+        Previous live agent-json attempt stopped after an incomplete JSON object:
+        \(clipped)
+
+        Ignore the incomplete object and emit a fresh valid JSON object now.
+        Use only the schema forms below. Do not include schema, required, status, approvalPrompt, or tool metadata fields.
+        {"action":{"tool":"<allowed tool id>","args":{}}}
+        {"final":"<concise user-facing answer>"}
+        /no_think
+        Start with { and finish after the matching }. Output JSON only.
+        """
+    }
+
     private func preflightAgentJSONPrompt(_ request: GenerateRequest) async -> StructuredPromptPreflight {
         let contextSize = await AppLlamaService.shared.contextSizeForDiagnostics(slot: Self.structuredAgentModelSlot)
         let promptBuild = await AppLlamaService.shared.buildMessagesForDiagnostics(
@@ -3003,6 +3135,21 @@ final class AgentService {
         agentJSONEmptyOutputRetryRequest(from: request, userTurn: userTurn)
     }
 
+    nonisolated static func agentJSONIncompleteOutputRetryUserTurnForTests(
+        from userTurn: String,
+        rawOutput: String
+    ) -> String {
+        agentJSONIncompleteOutputRetryUserTurn(from: userTurn, rawOutput: rawOutput)
+    }
+
+    nonisolated static func agentJSONIncompleteOutputRetryRequestForTests(
+        from request: GenerateRequest,
+        userTurn: String,
+        rawOutput: String
+    ) -> GenerateRequest {
+        agentJSONIncompleteOutputRetryRequest(from: request, userTurn: userTurn, rawOutput: rawOutput)
+    }
+
     nonisolated static func agentJSONContextCompactionRequestForTests(from request: GenerateRequest) -> GenerateRequest {
         agentJSONContextCompactionRequest(from: request)
     }
@@ -3278,7 +3425,7 @@ final class AgentService {
             let sourced = observations.prefix(3).enumerated().map { index, obs in
                 "[\(index + 1)] \(compactObservationResult(obs.result, limit: 700))"
             }
-            return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nUse the cited observations above for concrete modules when available."
+            return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nNo explicit modules were present in the retrieved snippets unless named above."
         }
         if intent == .webSearch {
             return deterministicWebSummaryFallback(observations: observations)
@@ -3309,7 +3456,7 @@ final class AgentService {
         let lines = useful
             .filter { line in
                 let lower = line.lowercased()
-                return line.count >= 24
+                return line.count >= 16
                     && !lower.hasPrefix("search results for:")
                     && !lower.hasPrefix("web search results:")
                     && !lower.hasPrefix("http")
@@ -3357,17 +3504,20 @@ final class AgentService {
 
     private nonisolated static func webSummaryCandidates(from text: String) -> [String] {
         var candidates: [String] = []
+        candidates.append(contentsOf: webPayloadCandidates(from: text))
+        let fallbackText = strippingWebPayloadBlocks(from: text)
+
         let patterns = [
-            #"(?is)<lumen_web_payload[^>]*>(.*?)</lumen_web_payload>"#,
             #"(?is)\{[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*\}"#,
             #"(?is)\{[^{}]*"snippet"\s*:\s*"([^"]+)"[^{}]*"title"\s*:\s*"([^"]+)"[^{}]*\}"#,
             #"(?is)"title"\s*:\s*"([^"]+)".{0,900}?"snippet"\s*:\s*"([^"]+)""#,
-            #"(?is)"snippet"\s*:\s*"([^"]+)".{0,900}?"title"\s*:\s*"([^"]+)""#
+            #"(?is)"snippet"\s*:\s*"([^"]+)".{0,900}?"title"\s*:\s*"([^"]+)""#,
+            #"(?is)"title"\s*:\s*"([^"]+)""#
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-            let ns = text as NSString
-            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let ns = fallbackText as NSString
+            for match in regex.matches(in: fallbackText, range: NSRange(location: 0, length: ns.length)) {
                 if match.numberOfRanges >= 3 {
                     let first = ns.substring(with: match.range(at: 1))
                     let second = ns.substring(with: match.range(at: 2))
@@ -3377,16 +3527,91 @@ final class AgentService {
                 }
             }
         }
-        if !candidates.isEmpty { return candidates.map(decodeJSONStringEscapes).filter { !$0.isEmpty } }
+        if !candidates.isEmpty {
+            return dedupedWebCandidates(candidates.map(decodeJSONStringEscapes).filter { !$0.isEmpty })
+        }
         return text
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private nonisolated static func strippingWebPayloadBlocks(from text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"(?is)<lumen_web_payload[^>]*>.*?</lumen_web_payload>"#) else {
+            return text
+        }
+        let nsRange = NSRange(location: 0, length: (text as NSString).length)
+        return regex.stringByReplacingMatches(in: text, range: nsRange, withTemplate: "")
+    }
+
+    private nonisolated static func webPayloadCandidates(from text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"(?is)<lumen_web_payload[^>]*>(.*?)</lumen_web_payload>"#) else {
+            return []
+        }
+        let ns = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            .flatMap { match -> [String] in
+                guard match.numberOfRanges >= 2 else { return [] }
+                let payload = ns.substring(with: match.range(at: 1))
+                guard let data = payload.data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    return []
+                }
+                return webPayloadItems(from: object)
+            }
+    }
+
+    private nonisolated static func webPayloadItems(from object: [String: Any]) -> [String] {
+        var items: [String] = []
+        for key in ["results", "media"] {
+            guard let array = object[key] as? [[String: Any]] else { continue }
+            for item in array {
+                guard let title = (item["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !title.isEmpty else { continue }
+                let snippet = (item["snippet"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let source = (item["source"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let snippet, !snippet.isEmpty {
+                    items.append("\(title): \(snippet)")
+                } else if let source, !source.isEmpty {
+                    items.append("\(title) - \(source)")
+                } else {
+                    items.append(title)
+                }
+            }
+        }
+        return items
     }
 
     private nonisolated static func prioritizeWebCandidates(_ candidates: [String]) -> [String] {
         candidates.sorted { lhs, rhs in
             webCandidatePriority(lhs) > webCandidatePriority(rhs)
         }
+    }
+
+    private nonisolated static func dedupedWebCandidates(_ candidates: [String]) -> [String] {
+        var seen: Set<String> = []
+        var unique: [String] = []
+        for candidate in candidates {
+            let key = normalizedWebCandidateTitle(candidate)
+            guard !key.isEmpty, !seen.contains(key) else { continue }
+            seen.insert(key)
+            unique.append(candidate)
+        }
+        return unique
+    }
+
+    private nonisolated static func normalizedWebCandidateTitle(_ candidate: String) -> String {
+        let title = candidate
+            .split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init) ?? candidate
+        let normalized = title.lowercased().map { character -> Character in
+            character.isLetter || character.isNumber ? character : " "
+        }
+        return String(normalized)
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 
     private nonisolated static func webCandidatePriority(_ text: String) -> Int {
@@ -3482,10 +3707,21 @@ final class AgentService {
         if lower.contains("no matching files found") || lower.contains("no matching local snippets") {
             return .noMatches(ragText)
         }
+        if looksLikeOnlyPhotoRollups(lower) {
+            return .noMatches(ragText)
+        }
         if lower.contains("unavailable") || lower.contains("disabled") || lower.contains("denied") {
             return .unavailable(ragText)
         }
         return .snippets
+    }
+
+    private nonisolated static func looksLikeOnlyPhotoRollups(_ lower: String) -> Bool {
+        let hasPhotoRollupCitation = lower.contains("photos · photos")
+            || lower.range(of: #"photos \(\d{4}"#, options: .regularExpression) != nil
+        guard hasPhotoRollupCitation else { return false }
+        let architectureSignals = ["architecture", "module", "service", "component", "package", "class ", "struct ", "func ", ".swift", "api", "endpoint"]
+        return !architectureSignals.contains { lower.contains($0) }
     }
 
     private nonisolated static func hasUsableObservation(for intent: UserIntent, observations: [(tool: String, result: String)]) -> Bool {

@@ -15,6 +15,7 @@ nonisolated enum CarPlayVoiceSessionState: String, Sendable, Equatable {
 
 nonisolated enum CarPlayVoiceSessionPolicy {
     static let listeningTimeoutSeconds: TimeInterval = 12
+    static let voiceStateActivationMinimumInterval: TimeInterval = 0.35
     static let maxSpokenAnswerCharacters = 420
     static let thermalRetryMessage = "Device is too warm; cool iPhone and retry."
     static let emptyTranscriptMessage = "I didn’t catch that. Please try again."
@@ -41,5 +42,33 @@ nonisolated enum CarPlayVoiceSessionPolicy {
 
     static func acceptsAsk(in state: CarPlayVoiceSessionState) -> Bool {
         state.acceptsAsk
+    }
+}
+
+nonisolated enum CarPlayVoiceStateActivationDecision: Equatable, Sendable {
+    case activateNow
+    case delay(TimeInterval)
+    case skipDuplicate
+}
+
+nonisolated enum CarPlayVoiceStateActivationPolicy {
+    static func decision(
+        requestedStateID: String,
+        previousStateID: String?,
+        lastActivationUptime: TimeInterval?,
+        nowUptime: TimeInterval,
+        minimumInterval: TimeInterval = CarPlayVoiceSessionPolicy.voiceStateActivationMinimumInterval
+    ) -> CarPlayVoiceStateActivationDecision {
+        if previousStateID == requestedStateID {
+            return .skipDuplicate
+        }
+        guard let lastActivationUptime else {
+            return .activateNow
+        }
+        let elapsed = max(0, nowUptime - lastActivationUptime)
+        guard elapsed < minimumInterval else {
+            return .activateNow
+        }
+        return .delay(max(0, minimumInterval - elapsed))
     }
 }
