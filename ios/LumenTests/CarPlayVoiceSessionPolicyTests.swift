@@ -35,4 +35,55 @@ final class CarPlayVoiceSessionPolicyTests: XCTestCase {
         XCTAssertFalse(spoken.contains("<think>"))
         XCTAssertLessThanOrEqual(spoken.count, 40)
     }
+
+    func testVoiceStateActivationPolicySkipsDuplicateState() {
+        let decision = CarPlayVoiceStateActivationPolicy.decision(
+            requestedStateID: "listening",
+            previousStateID: "listening",
+            lastActivationUptime: 100,
+            nowUptime: 101
+        )
+
+        XCTAssertEqual(decision, .skipDuplicate)
+    }
+
+    func testVoiceStateActivationPolicyDelaysRapidDifferentState() {
+        let decision = CarPlayVoiceStateActivationPolicy.decision(
+            requestedStateID: "thinking",
+            previousStateID: "listening",
+            lastActivationUptime: 100,
+            nowUptime: 100.1,
+            minimumInterval: 0.35
+        )
+
+        if case .delay(let delay) = decision {
+            XCTAssertEqual(delay, 0.25, accuracy: 0.001)
+        } else {
+            XCTFail("Expected delayed CarPlay voice state activation, got \(decision)")
+        }
+    }
+
+    func testVoiceStateActivationPolicyAllowsStateAfterInterval() {
+        let decision = CarPlayVoiceStateActivationPolicy.decision(
+            requestedStateID: "speaking",
+            previousStateID: "thinking",
+            lastActivationUptime: 100,
+            nowUptime: 100.5,
+            minimumInterval: 0.35
+        )
+
+        XCTAssertEqual(decision, .activateNow)
+    }
+
+    func testVoiceStateActivationPolicyClampsBackwardClockMovement() {
+        let decision = CarPlayVoiceStateActivationPolicy.decision(
+            requestedStateID: "speaking",
+            previousStateID: "thinking",
+            lastActivationUptime: 100,
+            nowUptime: 99,
+            minimumInterval: 0.35
+        )
+
+        XCTAssertEqual(decision, .delay(0.35))
+    }
 }

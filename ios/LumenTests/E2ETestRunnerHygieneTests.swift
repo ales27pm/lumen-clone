@@ -288,7 +288,7 @@ struct E2ETestRunnerHygieneTests {
 
         #expect(E2ETestRunner.acceptsPolicyFirstExecutionEvidenceForTests(scenario, routing: routing))
         #expect(options.allowDeterministicCompatibility)
-        #expect(!options.allowParseFailureDeterministicRecovery)
+        #expect(options.allowParseFailureDeterministicRecovery)
         #expect(!options.allowsMemoryPressureContinuation)
         #else
         #expect(true)
@@ -953,6 +953,40 @@ struct E2ETestRunnerHygieneTests {
         #expect(!outcome.rewriteAttempted)
         #expect(!outcome.rewriteSuccess)
         #expect(E2ETestRunner.liveAgentQualityFailures(rawFinalText: polluted, finalText: polluted, scenario: scenario).contains("Live agent returned fallback/error text instead of completing the scenario"))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragArchitectureScenarioRejectsPhotoLibraryRollups() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "Training eval: RAG grounding",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["module", "[1]"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let final = """
+        Summary
+        [1] Photos · Photos 2027-01 · score 0.26
+        Photos (2027-01): 158 items between Jan 2, 2027 and Jan 31, 2027.
+
+        Key modules
+        Use the cited observations above for concrete modules when available.
+        """
+
+        let failures = E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: final,
+            finalText: final,
+            scenario: scenario
+        )
+        #expect(failures.contains("RAG grounding assertion failed: architecture-notes answer used unrelated photo-library snippets"))
         #else
         #expect(true)
         #endif

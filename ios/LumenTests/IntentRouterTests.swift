@@ -217,6 +217,8 @@ extension IntentRouterTests {
             ("Text 5551234567 that I am late.", .messageDraft, "messages.draft"),
             ("Am I signed in to Outlook?", .outlook, "outlook.status"),
             ("Search my photos for receipts.", .photos, "photos.search"),
+            ("Search my photos for receipts", .photos, "photos.search"),
+            ("Search my pictures for receipts.", .photos, "photos.search"),
             ("Show latest selfie picture", .photos, "photos.search"),
             ("Show my newest photo", .photos, "photos.search"),
             ("Find Lumen architecture notes in my local files.", .rag, "rag.search"),
@@ -230,6 +232,14 @@ extension IntentRouterTests {
             #expect(decision.intent == item.1, "Prompt \(item.0) routed as \(decision.intent.rawValue)")
             #expect(IntentRouter.isToolAllowed(item.2, for: decision), "Prompt \(item.0) did not allow \(item.2)")
         }
+    }
+
+    @Test func publicPhotoWordingDoesNotHijackWebLookup() {
+        let decision = IntentRouter.classify("Search web for photos for my presentation.")
+
+        #expect(decision.intent == .webSearch)
+        #expect(IntentRouter.isToolAllowed("web.search", for: decision))
+        #expect(!IntentRouter.isToolAllowed("photos.search", for: decision))
     }
 
     @Test func liveScenarioGeneratedPromptsStayExecutableForSpecificTools() async throws {

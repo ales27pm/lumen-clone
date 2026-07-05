@@ -298,6 +298,55 @@ struct DeterministicToolPlannerTests {
         #expect(action?.tool == "outlook.message.move")
         #expect(action?.args["destination"]?.stringValue == "inbox")
     }
+
+    @Test func outlookCoveragePhrasesPlanExpectedMutationTools() async throws {
+        let routing = IntentRoutingDecision(
+            intent: .outlook,
+            allowedToolIDs: [
+                "outlook.messages.list",
+                "outlook.message.mark_read",
+                "outlook.message.mark_unread",
+                "outlook.message.move",
+                "outlook.message.archive",
+                "outlook.message.reply",
+                "outlook.message.reply_all"
+            ],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let cases: [(String, String)] = [
+            ("Set the latest Outlook email read.", "outlook.message.mark_read"),
+            ("Set the latest Outlook email unread.", "outlook.message.mark_unread"),
+            ("Move my latest Outlook email to Archive.", "outlook.message.move"),
+            ("Respond to my latest Outlook email saying thanks.", "outlook.message.reply"),
+            ("Respond to all on my latest Outlook email saying thanks.", "outlook.message.reply_all")
+        ]
+
+        for (prompt, expectedTool) in cases {
+            let steps = DeterministicToolPlanner.planSteps(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(steps.map(\.tool) == ["outlook.messages.list", expectedTool], "Prompt \(prompt) planned \(steps.map(\.tool))")
+        }
+    }
+
+    @Test func outlookReadToolInstructionSelectsReadWhenMessageReferenceIsMissing() async throws {
+        let routing = IntentRoutingDecision(
+            intent: .outlook,
+            allowedToolIDs: ["outlook.messages.list", "outlook.message.read"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: "Use Read Outlook Message, but ask for clarification if required details are missing.",
+            availableToolIDs: routing.allowedToolIDs
+        )
+        #expect(steps.map(\.tool).contains("outlook.message.read"))
+    }
+
     @Test func weatherInCityKeepsExplicitLocation() async throws {
         let routing = IntentRoutingDecision(intent: .weather, allowedToolIDs: ["weather"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "weather in Montreal", availableToolIDs: ["weather"])
