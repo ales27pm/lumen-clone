@@ -9,6 +9,7 @@ struct MemoryView: View {
     @State private var showWipeAlert = false
     @State private var showExport = false
     @State private var exportText = ""
+    @State private var operationError: String?
 
     var filtered: [MemoryItem] {
         guard !search.isEmpty else { return items }
@@ -62,8 +63,12 @@ struct MemoryView: View {
                     Menu {
                         Button { showAdd = true } label: { Label("Add memory", systemImage: "plus") }
                         Button {
-                            exportText = MemoryStore.exportJSON(context: modelContext)
-                            showExport = true
+                            do {
+                                exportText = try MemoryStore.exportJSONThrowing(context: modelContext)
+                                showExport = true
+                            } catch {
+                                operationError = "Could not export memory: \(error.localizedDescription)"
+                            }
                         } label: { Label("Export JSON", systemImage: "square.and.arrow.up") }
                         Button(role: .destructive) { showWipeAlert = true } label: { Label("Wipe all", systemImage: "trash") }
                     } label: {
@@ -97,11 +102,26 @@ struct MemoryView: View {
             }
             .alert("Wipe all memory?", isPresented: $showWipeAlert) {
                 Button("Wipe", role: .destructive) {
-                    try? MemoryStore.wipeEverything(context: modelContext)
+                    do {
+                        try MemoryStore.wipeEverything(context: modelContext)
+                    } catch {
+                        operationError = "Could not wipe memory: \(error.localizedDescription)"
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This permanently deletes every memory, including pinned items.")
+            }
+            .alert(
+                "Memory operation failed",
+                isPresented: Binding(
+                    get: { operationError != nil },
+                    set: { if $0 == false { operationError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { operationError = nil }
+            } message: {
+                Text(operationError ?? "")
             }
         }
     }

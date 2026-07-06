@@ -78,6 +78,11 @@ def test_reranker_dedicated_output_directory_is_written(tmp_path: Path) -> None:
     assert reranker_dir.exists()
     assert expected_files.issubset({path.name for path in reranker_dir.iterdir()})
 
+    alias = output / "dataset" / "reranker_train_pairs.jsonl"
+    assert alias.is_symlink()
+    assert alias.readlink() == Path("../reranker/train_pairs.jsonl")
+    assert alias.resolve() == (reranker_dir / "train_pairs.jsonl").resolve()
+
     card = json.loads((reranker_dir / "dataset_card.json").read_text(encoding="utf-8"))
     assert card["model"] == RERANKER_MODEL_ID
     assert card["counts"]["trainPairs"] == sum(1 for _ in (reranker_dir / "train_pairs.jsonl").open(encoding="utf-8"))

@@ -26,13 +26,16 @@ struct RemoteModelAccessPolicy: Sendable, Codable, Equatable {
 actor DeviceModelPolicy {
     private let provider: any DeviceCapabilityProviding
     private let remoteModelAccessPolicy: RemoteModelAccessPolicy
+    private let allowMockModels: Bool
 
     init(
         provider: any DeviceCapabilityProviding = SystemDeviceCapabilityProvider(),
-        remoteModelAccessPolicy: RemoteModelAccessPolicy = .localOnly
+        remoteModelAccessPolicy: RemoteModelAccessPolicy = .localOnly,
+        allowMockModels: Bool = false
     ) {
         self.provider = provider
         self.remoteModelAccessPolicy = remoteModelAccessPolicy
+        self.allowMockModels = allowMockModels
     }
 
     func evaluate(
@@ -61,6 +64,20 @@ actor DeviceModelPolicy {
                 reasons: reasons
             ))
         case .mock:
+            guard allowMockModels else {
+                add(.mockBackendNotAllowed, to: &reasons)
+                let estimate = ModelMemoryEstimator.estimate(model: model, profile: selectedProfile, budget: selectedBudget)
+                return .rejected(report(
+                    model: model,
+                    snapshot: snapshot,
+                    requestedProfile: requestedProfile,
+                    selectedProfile: selectedProfile,
+                    requestedBudget: requestedBudget,
+                    selectedBudget: selectedBudget,
+                    memoryEstimate: estimate,
+                    reasons: reasons
+                ))
+            }
             add(.modelFitsMemoryBudget, to: &reasons)
             let estimate = ModelMemoryEstimator.estimate(model: model, profile: selectedProfile, budget: selectedBudget)
             return .allowed(report(

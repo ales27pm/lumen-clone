@@ -7,11 +7,13 @@ final class DiagnosticsProvider {
     func cachedSnapshot() -> DiagnosticsSnapshot {
         let build = BuildDiagnosticsSnapshot.current()
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
+        let capabilityMatrix = AssistantRuntimeCapabilityMatrix.current()
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
             foundationModelsStatus: profiler.foundationModelsStatus,
             coreMLAvailable: profiler.coreMLAvailable,
             coreMLStatus: profiler.coreMLStatus,
+            runtimeCapabilityRows: capabilityMatrix.rows,
             metalAvailable: profiler.metalAvailable,
             lowPowerModeEnabled: profiler.lowPowerModeEnabled,
             thermalState: profiler.thermalState.rawValue,
@@ -48,11 +50,13 @@ final class DiagnosticsProvider {
         let build = BuildDiagnosticsSnapshot.current(infoDictionary: info)
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let metrics = (try? await RuntimeMetricsStore.shared.recentMetrics(limit: 10)) ?? []
+        let capabilityMatrix = AssistantRuntimeCapabilityMatrix.current()
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
             foundationModelsStatus: profiler.foundationModelsStatus,
             coreMLAvailable: profiler.coreMLAvailable,
             coreMLStatus: profiler.coreMLStatus,
+            runtimeCapabilityRows: capabilityMatrix.rows,
             metalAvailable: profiler.metalAvailable,
             lowPowerModeEnabled: profiler.lowPowerModeEnabled,
             thermalState: profiler.thermalState.rawValue,

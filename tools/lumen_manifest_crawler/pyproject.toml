@@ -28,5 +28,9 @@ packages = ["lumen_manifest_crawler"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "../.."]
 addopts = "-q"
+markers = [
+  "slow: tests that exercise expensive generated-data or model-artifact paths",
+  "e2e: tests that require external runtime state or long-running integration setup"
+]

@@ -361,6 +361,9 @@ env "${ARCHIVE_ENV[@]}" bash "$STABLE_ARCHIVE_SCRIPT"
 info "Verify archived app Info.plist"
 python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$ARCHIVE_PATH"
 
+info "Verify archived app signed entitlements"
+python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" --signed-app-path "$ARCHIVE_PATH"
+
 info "Export IPA"
 run_logged "$EXPORT_LOG" \
   xcodebuild \
@@ -376,6 +379,9 @@ IPA_PATH="$("$FIND_BIN" "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print -
 
 info "Verify exported IPA Info.plist"
 python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$IPA_PATH"
+
+info "Verify exported IPA signed entitlements"
+python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" --signed-app-path "$IPA_PATH"
 
 bold "Built IPA: $IPA_PATH"
 if [[ -z "$UPLOAD_AFTER_BUILD" ]]; then

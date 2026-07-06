@@ -8,9 +8,28 @@ This document classifies generated or exported artifact paths used by the Lumen 
 |---|---|---|---|
 | `runtime-audits/` | Historical, dated runtime exports. | Treat each file as an archived snapshot from a specific app/TestFlight run. It is not equivalent to current live proof unless a runbook explicitly selects that file for the current pass. | Export a fresh in-app dataset package or E2E report from the shipped app, save it with a dated/build-labeled name, then pass it with `--runtime-audit` to `generate` or `improve-loop`. |
 | `tools/lumen_manifest_crawler/generated/` | Regenerable crawler and dataset-pipeline outputs. | Use these as checked-in examples or local tool outputs, not as hand-authored source of truth. They can be replaced by rerunning the crawler from Swift source and selected runtime inputs. | From `tools/lumen_manifest_crawler`: `python -m lumen_manifest_crawler generate --root ../.. --output generated/agent_manifest --pretty --generate-system-prompts --generate-agent-fine-tuning --fine-tuning-output generated/fine_tuning`. |
+| `generated/fine_tuning/` | Canonical checked-in fine-tuning datasets. | Use this as the single checked-in per-agent fine-tuning output root. Do not commit duplicate files under `generated/agent_manifest/fine_tuning/`; those are stale compatibility outputs when `--fine-tuning-output` is omitted. | Regenerate with the manifest crawler command above and keep `--fine-tuning-output generated/fine_tuning` explicit. |
 | `ios/Lumen/AgentBehaviorManifest.json` | Bundled deterministic app resource, not live evidence. | This is the manifest copy shipped inside the iOS app bundle so the app can audit live runtime state against the manifest-derived training truth. Its `artifactStatus.runtimeEvidence=false` and `artifactStatus.deterministicBuild=true` fields mean the file is not proof of a live TestFlight run. Do not edit it by hand. | Regenerate `generated/agent_manifest/AgentBehaviorManifest.json` with the crawler, then run `scripts/sync-agent-manifest-resource.sh` to copy/sync that JSON into `ios/Lumen/AgentBehaviorManifest.json` as part of the app resource update. |
 | `generated/agent_improvement_loop/` | Expected improvement-loop outputs. | Documentation and runbooks may mention these files before they exist in a fresh clone. Absence means the loop has not been run in that workspace, not that the paths are invalid. | Run `python -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop --runtime-audit <fresh-audit-or-report> --generate-system-prompts --generate-agent-fine-tuning`. |
 | Other `generated/...` paths mentioned in docs | Expected generated outputs. | Treat them as products of the manifest crawler, dataset compiler, adapter export, or improvement loop. They are not guaranteed to be present until the corresponding command has run. | Use the command attached to the owning pipeline: `generate` for manifest/datasets/fleet prompts, `improve-loop` for loop state/runbooks, and adapter export/training commands for model artifacts. |
+
+## Generated dataset alias policy
+
+Embedding and reranker datasets have canonical homes under:
+
+- `generated/agent_manifest/embedding/`
+- `generated/agent_manifest/reranker/`
+
+The older compatibility paths under `generated/agent_manifest/dataset/` must be
+symlinks to those canonical files, not second full JSONL copies. This keeps
+legacy docs and tooling paths usable while avoiding duplicate tens-of-MB
+checkout payloads. `scripts/check-generated-jsonl-artifacts.py` enforces this
+alongside the zero-byte JSONL guard.
+
+Per-agent fine-tuning JSONL files have a separate canonical root:
+`generated/fine_tuning/`. The repository must not also check in
+`generated/agent_manifest/fine_tuning/`, because that creates stale parallel
+training corpora with different source snapshots and large duplicate payloads.
 
 ## AgentBehaviorManifest timestamp and evidence status
 

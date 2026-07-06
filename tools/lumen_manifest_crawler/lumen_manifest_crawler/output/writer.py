@@ -16,6 +16,29 @@ from lumen_manifest_crawler.dataset.fine_tuning import AgentFineTuningDataset
 from lumen_manifest_crawler.output.hashing import sha256_file
 
 
+EMBEDDING_DATASET_ALIASES = {
+    "embedding_corpus": ("embedding", "corpus.jsonl"),
+    "embedding_train_pairs": ("embedding", "train_pairs.jsonl"),
+    "embedding_val_pairs": ("embedding", "val_pairs.jsonl"),
+    "embedding_train_triplets": ("embedding", "train_triplets.jsonl"),
+    "embedding_val_triplets": ("embedding", "val_triplets.jsonl"),
+    "embedding_hard_negatives": ("embedding", "hard_negatives.jsonl"),
+    "embedding_eval_retrieval": ("embedding", "eval_retrieval.jsonl"),
+}
+
+RERANKER_DATASET_ALIASES = {
+    "reranker_train_pairs": ("reranker", "train_pairs.jsonl"),
+    "reranker_val_pairs": ("reranker", "val_pairs.jsonl"),
+    "reranker_hard_negative_pairs": ("reranker", "hard_negative_pairs.jsonl"),
+    "reranker_eval_reranking": ("reranker", "eval_reranking.jsonl"),
+}
+
+CANONICAL_DATASET_ALIASES = {
+    **EMBEDDING_DATASET_ALIASES,
+    **RERANKER_DATASET_ALIASES,
+}
+
+
 def write_outputs(
     output_dir: Path,
     manifest: AgentBehaviorManifest,
@@ -69,7 +92,7 @@ def write_outputs(
         )
     _write_dataset_index(output_dir / "dataset_index.csv", datasets)
     for name, records in datasets.items():
-        if name == "dataset_manifest":
+        if name == "dataset_manifest" or name in CANONICAL_DATASET_ALIASES:
             continue
         with (dataset_dir / f"{name}.jsonl").open("w", encoding="utf-8") as handle:
             for record in records:
@@ -80,6 +103,7 @@ def write_outputs(
 
     _write_embedding_outputs(output_dir / "embedding", datasets)
     _write_reranker_outputs(output_dir / "reranker", datasets)
+    _write_dataset_aliases(dataset_dir, datasets)
     _write_runtime_grounding_outputs(output_dir, manifest, datasets)
 
     if fine_tuning_datasets is not None:
@@ -138,6 +162,17 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _write_dataset_aliases(dataset_dir: Path, datasets: dict[str, list[dict[str, Any]]]) -> None:
+    for dataset_name, (canonical_dir, canonical_filename) in CANONICAL_DATASET_ALIASES.items():
+        if dataset_name not in datasets:
+            continue
+        alias = dataset_dir / f"{dataset_name}.jsonl"
+        target = Path("..") / canonical_dir / canonical_filename
+        if alias.exists() or alias.is_symlink():
+            alias.unlink()
+        alias.symlink_to(target)
 
 
 def _write_cross_model_index(path: Path, records: list[dict[str, Any]]) -> None:

@@ -9,6 +9,19 @@ struct RuntimeDashboardView: View {
                 Text("CoreML embeddings: \(runtime.coreMLAvailable ? "Available" : "Unavailable") - \(runtime.coreMLStatus)")
                 Text("Metal: \(runtime.metalAvailable ? "Available" : "Unavailable")")
             }
+            Section("Runtime Capabilities") {
+                ForEach(runtime.runtimeCapabilityRows) { row in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(row.kind.rawValue)
+                            .font(.subheadline.weight(.semibold))
+                        Text("generation: \(row.generationSelectable ? "selectable" : row.generationSupported ? "supported but unavailable" : "not supported")")
+                        Text("embeddings: \(row.embeddingSelectable ? "selectable" : row.embeddingSupported ? "supported but unavailable" : "not supported")")
+                        Text(row.status)
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.caption)
+                }
+            }
             Section("Policy") {
                 Text("Low Power: \(runtime.lowPowerModeEnabled ? "On" : "Off")")
                 Text("Thermal: \(runtime.thermalState)")

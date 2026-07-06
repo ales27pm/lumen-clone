@@ -27,6 +27,10 @@ MODELS_VIEW = ROOT / "ios/Lumen/Views/ModelsView.swift"
 ASSISTANT_RUNTIME_ADAPTERS = ROOT / "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift"
 ASSISTANT_RUNTIME_ROUTER = ROOT / "ios/Lumen/Assistant/AssistantRuntimeRouter.swift"
 RUNTIME_DASHBOARD_VIEW = ROOT / "ios/Lumen/Views/RuntimeDashboardView.swift"
+RUNTIME_DIAGNOSTICS_SNAPSHOT = ROOT / "ios/Lumen/Diagnostics/RuntimeDiagnosticsSnapshot.swift"
+DIAGNOSTICS_PROVIDER = ROOT / "ios/Lumen/Diagnostics/DiagnosticsProvider.swift"
+MEMORY_STORE = ROOT / "ios/Lumen/Services/MemoryStore.swift"
+RAG_STORE = ROOT / "ios/Lumen/Services/RAGStore.swift"
 EXPORT_GGUF = ROOT / "tools/fine_tuning/unsloth/export_gguf.py"
 DOC = ROOT / "docs/ADAPTER_RUNTIME_IMPROVE_LOOP.md"
 TERMINAL_LOOP = ROOT / "tools/lumen_terminal_improve_loop.py"
@@ -176,6 +180,11 @@ def check_runtime() -> None:
         "Do not report whitespace word count as outputTokenCount.",
     )
     require(
+        "func embed(text: String, dimensions: Int = 256) async -> [Double]" not in text
+        and "return []\n        }\n    }\n\n    private func loadChatModelSync" not in text,
+        "Embedding failures must use the throwing embed(_:) API, not log and return an empty vector.",
+    )
+    require(
         "adapterApplied" in text and "adapterSlot" in text and "adapterFailureReason" in text,
         "Runtime trace metadata must include adapterApplied, adapterSlot, and adapterFailureReason.",
     )
@@ -185,6 +194,8 @@ def check_staged_system_adapters() -> None:
     adapters = read(ASSISTANT_RUNTIME_ADAPTERS)
     router = read(ASSISTANT_RUNTIME_ROUTER)
     dashboard = read(RUNTIME_DASHBOARD_VIEW)
+    runtime_snapshot = read(RUNTIME_DIAGNOSTICS_SNAPSHOT)
+    diagnostics_provider = read(DIAGNOSTICS_PROVIDER)
     require(
         "let supportsGeneration: Bool = false" in adapters
         and "FoundationModels generation is staged: implementation missing" in adapters,
@@ -207,6 +218,57 @@ def check_staged_system_adapters() -> None:
     require(
         "foundationModelsStatus" in dashboard and "coreMLStatus" in dashboard and "Unavailable" in dashboard,
         "Runtime diagnostics UI must expose staged/unavailable adapter status.",
+    )
+    require(
+        "struct AssistantRuntimeCapabilityMatrix" in adapters
+        and "generationSelectable" in adapters
+        and "embeddingSelectable" in adapters
+        and "runtimeCapabilityRows: [AssistantRuntimeCapabilityRow]" in runtime_snapshot
+        and "AssistantRuntimeCapabilityMatrix.current()" in diagnostics_provider
+        and "runtimeCapabilityRows: capabilityMatrix.rows" in diagnostics_provider
+        and "Runtime Capabilities" in dashboard,
+        "Runtime diagnostics must expose a capability matrix for selectable generation and embedding runtimes.",
+    )
+    require(
+        "struct AssistantRuntimeCapabilityMatrix" in adapters
+        and "generationSelectable: foundation.supportsGeneration && foundation.isAvailable" in adapters
+        and "embeddingSelectable: coreML.supportsEmbeddings && coreML.isAvailable" in adapters,
+        "Runtime adapter capability matrix must make staged generation/embedding non-selectability explicit.",
+    )
+    require(
+        "runtimeCapabilityRows" in dashboard and "Runtime Capabilities" in dashboard,
+        "Runtime diagnostics UI must expose the runtime capability matrix.",
+    )
+
+
+def check_persistence_search_diagnostics() -> None:
+    memory = read(MEMORY_STORE)
+    rag = read(RAG_STORE)
+    require(
+        "lexical_fetch_failed:" in memory
+        and "fetch_failed:" in memory
+        and "combinedDiagnostic(primary:" in memory,
+        "Memory recall diagnostics must surface semantic and lexical fetch failures instead of returning empty results silently.",
+    )
+    require(
+        "lexical_fetch_failed:" in rag
+        and "semantic_fetch_failed:" in rag
+        and "rag_fetch_failed op=resolveVectorCandidates" in rag
+        and "rag_fetch_failed op=lexicalSearch" in rag
+        and "combinedDiagnostic(primary:" in rag,
+        "RAG search diagnostics must surface semantic and lexical fallback fetch failures instead of returning empty results silently.",
+    )
+    require(
+        "guard let availableItems = try? context.fetch(FetchDescriptor<MemoryItem>()) else { return [] }" not in memory,
+        "Memory lexical recall must not collapse SwiftData fetch failure to an empty result.",
+    )
+    require(
+        "guard let all = try? context.fetch(descriptor) else { return [] }" not in rag,
+        "RAG lexical search must not collapse SwiftData fetch failure to an empty result.",
+    )
+    require(
+        "(try? context.fetch(FetchDescriptor<RAGChunk>())) ?? []" not in rag,
+        "RAG semantic candidate resolution must not collapse SwiftData fetch failure to an empty result.",
     )
 
 
@@ -370,6 +432,7 @@ def main() -> int:
         check_fleet_resolver,
         check_runtime,
         check_staged_system_adapters,
+        check_persistence_search_diagnostics,
         check_swift_llama_pin,
         check_slot_coordinator,
         check_models_view,
