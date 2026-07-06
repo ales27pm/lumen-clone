@@ -6,6 +6,7 @@ nonisolated struct LumenAdapterRoleContract: Sendable, Hashable, Identifiable {
     let adapterID: String
     let adapterRepoID: String
     let adapterFileName: String
+    let adapterSourcePath: String?
     let adapterArtifactPath: String
     let baseModelID: String
     let systemPrompt: String
@@ -90,6 +91,11 @@ nonisolated struct LumenTrainedModelRuntimeContract: Sendable, Hashable {
 }
 
 nonisolated enum LumenTrainedModelRuntimeRegistry {
+    private static let qwen3ZeroGPURunID = "20260706T011546Z"
+    private static func qwen3AdapterSourcePath(_ fileName: String) -> String {
+        "runs/\(qwen3ZeroGPURunID)/lora_gguf/\(fileName)"
+    }
+
     static var selected: LumenTrainedModelRuntimeContract {
         contract(for: LumenModelFamily.persistedSelected)
     }
@@ -134,12 +140,12 @@ nonisolated enum LumenTrainedModelRuntimeRegistry {
         embeddingFileName: "Qwen3-Embedding-0.6B-Q8_0.gguf",
         adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
         adapterRoles: [
-            LumenAdapterRoleContract(roleID: "cortex", slot: .cortex, adapterID: "lumen-cortex-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-cortex-lora.gguf", adapterArtifactPath: "models/lora/cortex", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Cortex, Lumen's routing and planning agent. Select manifest-approved tools, persist required action steps, and delegate execution to Executor.", trainRecordCount: 289, validationRecordCount: 51, expectsStructuredOutput: true),
-            LumenAdapterRoleContract(roleID: "executor", slot: .executor, adapterID: "lumen-executor-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-executor-lora.gguf", adapterArtifactPath: "models/lora/executor", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Executor, Lumen's tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.", trainRecordCount: 686, validationRecordCount: 121, expectsStructuredOutput: true),
-            LumenAdapterRoleContract(roleID: "mouth", slot: .mouth, adapterID: "lumen-mouth-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-mouth-lora.gguf", adapterArtifactPath: "models/lora/mouth", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.", trainRecordCount: 132, validationRecordCount: 23, expectsStructuredOutput: false),
-            LumenAdapterRoleContract(roleID: "mimicry", slot: .mimicry, adapterID: "lumen-mimicry-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-mimicry-lora.gguf", adapterArtifactPath: "models/lora/mimicry", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Mimicry, Lumen's style adaptation agent. Adapt tone within safety and privacy boundaries.", trainRecordCount: 54, validationRecordCount: 10, expectsStructuredOutput: false),
-            LumenAdapterRoleContract(roleID: "rem", slot: .rem, adapterID: "lumen-rem-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-rem-lora.gguf", adapterArtifactPath: "models/lora/rem", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.", trainRecordCount: 455, validationRecordCount: 80, expectsStructuredOutput: false),
-            LumenAdapterRoleContract(roleID: "fleet", slot: nil, adapterID: "lumen-fleet-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-fleet-lora.gguf", adapterArtifactPath: "models/lora/fleet", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.", trainRecordCount: 1114, validationRecordCount: 196, expectsStructuredOutput: false),
+            LumenAdapterRoleContract(roleID: "cortex", slot: .cortex, adapterID: "lumen-cortex-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-cortex-lora.gguf", adapterSourcePath: qwen3AdapterSourcePath("lumen-cortex-lora.gguf"), adapterArtifactPath: "runs/20260706T011546Z/adapters/cortex", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Cortex, Lumen's routing and planning agent. Select manifest-approved tools, persist required action steps, and delegate execution to Executor.", trainRecordCount: 9573, validationRecordCount: 1689, expectsStructuredOutput: true),
+            LumenAdapterRoleContract(roleID: "executor", slot: .executor, adapterID: "lumen-executor-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-executor-lora.gguf", adapterSourcePath: qwen3AdapterSourcePath("lumen-executor-lora.gguf"), adapterArtifactPath: "runs/20260706T011546Z/adapters/executor", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Executor, Lumen's tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.", trainRecordCount: 591, validationRecordCount: 104, expectsStructuredOutput: true),
+            LumenAdapterRoleContract(roleID: "mouth", slot: .mouth, adapterID: "lumen-mouth-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-mouth-lora.gguf", adapterSourcePath: qwen3AdapterSourcePath("lumen-mouth-lora.gguf"), adapterArtifactPath: "runs/20260706T011546Z/adapters/mouth", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.", trainRecordCount: 258, validationRecordCount: 45, expectsStructuredOutput: false),
+            LumenAdapterRoleContract(roleID: "mimicry", slot: .mimicry, adapterID: "lumen-mimicry-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-mimicry-lora.gguf", adapterSourcePath: qwen3AdapterSourcePath("lumen-mimicry-lora.gguf"), adapterArtifactPath: "runs/20260706T011546Z/adapters/mimicry", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are Mimicry, Lumen's style adaptation agent. Adapt tone within safety and privacy boundaries.", trainRecordCount: 88, validationRecordCount: 16, expectsStructuredOutput: false),
+            LumenAdapterRoleContract(roleID: "rem", slot: .rem, adapterID: "lumen-rem-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-rem-lora.gguf", adapterSourcePath: qwen3AdapterSourcePath("lumen-rem-lora.gguf"), adapterArtifactPath: "runs/20260706T011546Z/adapters/rem", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.", trainRecordCount: 4138, validationRecordCount: 730, expectsStructuredOutput: false),
+            LumenAdapterRoleContract(roleID: "fleet", slot: nil, adapterID: "lumen-fleet-adapter", adapterRepoID: "ales27pm/lumen-qwen3-bootstrap-adapters-gguf", adapterFileName: "lumen-fleet-lora.gguf", adapterSourcePath: qwen3AdapterSourcePath("lumen-fleet-lora.gguf"), adapterArtifactPath: "runs/20260706T011546Z/adapters/fleet", baseModelID: "Qwen/Qwen3-1.7B", systemPrompt: "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.", trainRecordCount: 4770, validationRecordCount: 842, expectsStructuredOutput: false),
         ],
         loadBaseModelOnce: true,
         selectAdapterByAgentSlot: true,

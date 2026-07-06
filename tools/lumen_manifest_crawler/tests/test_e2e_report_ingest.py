@@ -648,6 +648,42 @@ def test_ingestion_quarantines_web_no_direct_answer_finalizer_failure(tmp_path: 
     assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
 
 
+def test_ingestion_quarantines_stale_outlook_archive_move_alias(tmp_path: Path):
+    report_path = tmp_path / "outlook-alias-e2e-report.json"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "live-outlook-message-move-direct",
+                "kind": "toolGuard",
+                "title": "Live outlook.message.move direct",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Move my latest Outlook email to Archive.",
+                "actualIntent": "outlook",
+                "expectedIntent": "outlook",
+                "failures": ["deterministic compatibility trace is not live model evidence"],
+                "finalText": "Approval required for outlook.message.move. I did not modify Outlook mail yet.",
+                "events": [],
+                "metadata": {"expectedToolID": "outlook.message.move"},
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_test_alias_mismatch"
+    assert failure_record["rootCauseCategory"] == "stale_test_alias"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert "outlook.message.archive" in failure_record["expected"][0]
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
+
+
 def test_ingestion_quarantines_rag_polluted_fallback_final(tmp_path: Path):
     report_path = tmp_path / "rag-polluted-e2e-report.json"
     report = {

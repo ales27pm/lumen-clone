@@ -255,14 +255,38 @@ struct AgentGroundingRegressionTests {
         )
         #expect(weather?.lowercased().contains("weather") == true)
 
-        let payload = WebRichContentPayload(kind: .searchResults, query: "diy underground shelter")
+        let payload = WebRichContentPayload(
+            kind: .searchResults,
+            query: "diy underground shelter",
+            results: [
+                WebSearchResultPayload(
+                    title: "Underground Shelter Planning",
+                    url: "https://example.com/shelter-planning",
+                    snippet: "Start with drainage, ventilation, and local permit constraints before choosing a shelter design.",
+                    source: "Example Preparedness",
+                    mediaKind: nil
+                ),
+                WebSearchResultPayload(
+                    title: "Safe Room Ventilation Basics",
+                    url: "https://example.com/ventilation",
+                    snippet: "Ventilation and emergency exits are core safety requirements for enclosed shelter spaces.",
+                    source: "Example Safety",
+                    mediaKind: nil
+                )
+            ]
+        )
         let web = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .webSearch,
             toolID: "web.search",
             observation: "Found 5 results for diy underground shelter \(payload.encodedMarker())",
-            originalPrompt: "Search web for diy underground shelter"
+            originalPrompt: "Search web for diy underground shelter and summarize the findings."
         )
         #expect(web?.contains("<lumen_web_payload>") == true)
+        let visibleWeb = WebRichContentPayload.removingMarkers(from: web ?? "")
+        #expect(visibleWeb.contains("Summary:") == true)
+        #expect(visibleWeb.lowercased().contains("drainage") == true)
+        #expect(visibleWeb.lowercased().contains("web search results") == false)
+        #expect(visibleWeb.contains("https://") == false)
 
         let maps = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .maps,
@@ -451,8 +475,9 @@ struct AgentGroundingRegressionTests {
             observation: "Result 1\nResult 2",
             originalPrompt: "Summarize and compare these sources."
         )
-        #expect(deepSynthesis.accepted == false)
-        #expect(deepSynthesis.rejectionReason == "deep-synthesis-required")
+        #expect(deepSynthesis.accepted == true)
+        #expect(deepSynthesis.text?.contains("Summary:") == true)
+        #expect(deepSynthesis.rejectionReason == nil)
     }
 
     @Test func agentGroundingPackageDoesNotExportStaticScenarioResultsByDefault() throws {

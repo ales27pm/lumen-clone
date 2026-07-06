@@ -7,11 +7,11 @@
   "agent": "executor",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "084d488a7038dcf5dc8e698fd4a46b683c9b5604",
+    "manifestCommit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
     "recordCounts": {
       "eval": 114,
       "train_dpo": 14,
-      "train_sft": 588,
+      "train_sft": 591,
       "val_dpo": 2,
       "val_sft": 104
     },
@@ -24,6 +24,7 @@
       "executor_tool_calls",
       "fleet_system_prompts",
       "manifest_grounding_cards",
+      "self_model_cards",
       "tool_schema_cards",
       "train_sft",
       "validation_sft"
@@ -47,6 +48,7 @@
       "manifest_grounding_cards",
       "permission_unavailable",
       "role_directory",
+      "self_model_card_grounding",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",

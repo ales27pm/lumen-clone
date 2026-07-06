@@ -483,6 +483,12 @@ RUNTIME_ENVIRONMENT_ROOT_CAUSES = {
     "runtime_environment_deferred",
 }
 
+NON_BLOCKING_RUNTIME_DIAGNOSTIC_ROOT_CAUSES = {
+    "deterministic_compatibility_not_training_evidence",
+    "deterministic_compatibility_not_live_evidence",
+    "runtime_environment_deferred",
+}
+
 
 def _is_skipped_live_model_generation(failure: dict[str, Any]) -> bool:
     root_cause = str(failure.get("rootCauseCategory") or "")
@@ -851,6 +857,12 @@ def _build_gap_report(  # NOSONAR
         skipped_live_generation = _is_skipped_live_model_generation(failure)
         severity = _runtime_gap_severity(failure_type, failure, skipped_live_generation=skipped_live_generation)
         category = _runtime_gap_category(failure)
+        if _is_non_blocking_runtime_diagnostic(
+            failure,
+            category=category,
+            skipped_live_generation=skipped_live_generation,
+        ):
+            continue
         evidence = dict(failure)
         evidence["rootCauseCategory"] = _runtime_root_cause_category(failure)
         gaps.append({
@@ -956,6 +968,8 @@ def _testflight_runtime_build_mismatch_gap(
         else:
             missing.append(evidence)
 
+    if matching > 0:
+        return None
     if not mismatched and not missing:
         return None
 
@@ -1043,6 +1057,20 @@ def _runtime_recommendation(
     if failure_type == "trace_parse_error":
         return "Fix the tool-scoped trace producer or parser contract, then add a regression eval for the affected tool scope."
     return "Convert this failure into a REM repair sample and add a regression eval."
+
+
+def _is_non_blocking_runtime_diagnostic(
+    failure: dict[str, Any],
+    *,
+    category: str,
+    skipped_live_generation: bool,
+) -> bool:
+    root_cause = _runtime_root_cause_category(failure)
+    if root_cause in NON_BLOCKING_RUNTIME_DIAGNOSTIC_ROOT_CAUSES:
+        return True
+    if skipped_live_generation and failure.get("trainable") is False:
+        return True
+    return category == "architecture_finalizer_failure" and failure.get("trainable") is False
 
 
 def _runtime_gap_severity(

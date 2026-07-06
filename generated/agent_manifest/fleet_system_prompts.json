@@ -1431,7 +1431,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+        "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -1485,14 +1485,14 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+            "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+            "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
           },
           {
             "domains": [
@@ -1527,7 +1527,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-            "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+            "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
           },
           {
             "domains": [
@@ -2446,7 +2446,7 @@
     "slotID": "cortex",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+      "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -2500,14 +2500,14 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+          "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+          "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
         },
         {
           "domains": [
@@ -2542,7 +2542,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-          "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+          "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
         },
         {
           "domains": [
@@ -3519,7 +3519,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+        "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -3573,14 +3573,14 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+            "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+            "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
           },
           {
             "domains": [
@@ -3615,7 +3615,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-            "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+            "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
           },
           {
             "domains": [
@@ -4523,7 +4523,7 @@
     "slotID": "embedding",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+      "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -4577,14 +4577,14 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+          "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+          "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
         },
         {
           "domains": [
@@ -4619,7 +4619,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-          "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+          "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
         },
         {
           "domains": [
@@ -6383,7 +6383,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+        "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -6437,14 +6437,14 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+            "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+            "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
           },
           {
             "domains": [
@@ -6479,7 +6479,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-            "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+            "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
           },
           {
             "domains": [
@@ -7395,7 +7395,7 @@
     "slotID": "executor",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+      "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -7449,14 +7449,14 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+          "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+          "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
         },
         {
           "domains": [
@@ -7491,7 +7491,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-          "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+          "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
         },
         {
           "domains": [
@@ -8476,7 +8476,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+        "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -8530,14 +8530,14 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+            "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+            "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
           },
           {
             "domains": [
@@ -8572,7 +8572,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-            "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+            "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
           },
           {
             "domains": [
@@ -9486,7 +9486,7 @@
     "slotID": "mimicry",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+      "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -9540,14 +9540,14 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+          "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+          "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
         },
         {
           "domains": [
@@ -9582,7 +9582,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-          "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+          "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
         },
         {
           "domains": [
@@ -10567,7 +10567,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+        "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -10621,14 +10621,14 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+            "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+            "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
           },
           {
             "domains": [
@@ -10663,7 +10663,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-            "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+            "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
           },
           {
             "domains": [
@@ -11577,7 +11577,7 @@
     "slotID": "mouth",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+      "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -11631,14 +11631,14 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+          "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+          "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
         },
         {
           "domains": [
@@ -11673,7 +11673,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-          "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+          "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
         },
         {
           "domains": [
@@ -12660,7 +12660,7 @@
       },
       "sourceCodeMap": {
         "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-        "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+        "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
         "domains": {
           "chat": 2,
           "fleet": 1,
@@ -12714,14 +12714,14 @@
               "chat"
             ],
             "path": "ios/Lumen/Services/AgentService.swift",
-            "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+            "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
           },
           {
             "domains": [
               "routing"
             ],
             "path": "ios/Lumen/Services/IntentRouter.swift",
-            "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+            "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
           },
           {
             "domains": [
@@ -12756,7 +12756,7 @@
               "tools"
             ],
             "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-            "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+            "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
           },
           {
             "domains": [
@@ -13673,7 +13673,7 @@
     "slotID": "rem",
     "source_code_map": {
       "boundary": "This is a manifest-derived, hashed source map used for operational self-awareness. It is not raw source-code disclosure and does not grant access to private runtime data.",
-      "commit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+      "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
       "domains": {
         "chat": 2,
         "fleet": 1,
@@ -13727,14 +13727,14 @@
             "chat"
           ],
           "path": "ios/Lumen/Services/AgentService.swift",
-          "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10"
+          "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
         },
         {
           "domains": [
             "routing"
           ],
           "path": "ios/Lumen/Services/IntentRouter.swift",
-          "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6"
+          "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
         },
         {
           "domains": [
@@ -13769,7 +13769,7 @@
             "tools"
           ],
           "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-          "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42"
+          "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
         },
         {
           "domains": [

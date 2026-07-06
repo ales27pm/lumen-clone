@@ -43,6 +43,7 @@ EXPECTED_ADAPTERS = {
     "lumen-rem-lora.gguf",
     "lumen-fleet-lora.gguf",
 }
+EXPECTED_ZEROGPU_RUN_ID = "20260706T011546Z"
 
 RELEASE_BAKE_DEFAULTS = {
     "lumen-cortex-release-bake-q4_k_m.gguf",
@@ -87,7 +88,8 @@ def section_after_marker(text: str, marker: str) -> str:
 
 def check_catalog() -> None:
     catalog = section_after_marker(read(MODEL_FAMILY_SELECTION), "static var qwen3BootstrapModels")
-    contract = section_after_marker(read(MODEL_ADAPTER_RUNTIME_CONTRACT), "static let qwen3AdapterBootstrapContract")
+    contract_source = read(MODEL_ADAPTER_RUNTIME_CONTRACT)
+    contract = section_after_marker(contract_source, "static let qwen3AdapterBootstrapContract")
 
     require(
         "qwen3AdapterBootstrapContract" in catalog
@@ -97,6 +99,11 @@ def check_catalog() -> None:
     )
     for adapter in sorted(EXPECTED_ADAPTERS):
         require(adapter in contract, f"Qwen3 default catalog missing adapter: {adapter}")
+        require(
+            f'qwen3AdapterSourcePath("{adapter}")' in contract,
+            f"Qwen3 adapter contract missing run-scoped source path: {adapter}",
+        )
+    require(f'private static let qwen3ZeroGPURunID = "{EXPECTED_ZEROGPU_RUN_ID}"' in contract_source, "Qwen3 adapter contract must pin the current ZeroGPU run id.")
     for release_bake in sorted(RELEASE_BAKE_DEFAULTS):
         require(
             release_bake not in catalog and release_bake not in contract,
@@ -105,10 +112,20 @@ def check_catalog() -> None:
     require(
         'roleID: "fleet"' in contract
         and "lumen-fleet-lora.gguf" in contract
+        and "sourcePath: adapter.adapterSourcePath" in catalog
         and "contract.adapterRoles.map" in catalog
         and "role: .roleAdapter" in catalog,
         "Fleet adapter must be represented as a role adapter, not by abusing embedding slot metadata.",
     )
+    for expected in (
+        "trainRecordCount: 9573",
+        "trainRecordCount: 591",
+        "trainRecordCount: 4770",
+        "validationRecordCount: 1689",
+        "validationRecordCount: 104",
+        "validationRecordCount: 842",
+    ):
+        require(expected in contract, f"Qwen3 adapter contract missing current ZeroGPU dataset count: {expected}")
 
 
 def check_fleet_resolver() -> None:

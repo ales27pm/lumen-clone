@@ -191,6 +191,59 @@ def test_improvement_loop_flags_stale_testflight_runtime_audit_build(tmp_path: P
     assert result.passed is False
 
 
+def test_improvement_loop_ignores_stale_testflight_reports_when_current_build_is_present(tmp_path: Path):
+    for name, build_number in {
+        "stale-e2e.json": "20260628223733",
+        "current-e2e.json": "20260629054657",
+    }.items():
+        (tmp_path / name).write_text(
+            json.dumps({
+                "schemaVersion": "1.0.0",
+                "generatedAt": "2026-06-29T00:00:00Z",
+                "app": {
+                    "name": "Lumen",
+                    "bundleIdentifier": "com.27pm.lumenclone",
+                    "shortVersion": "1.0.0",
+                    "buildNumber": build_number,
+                },
+                "exportPolicy": {
+                    "format": "live-e2e-test-report-json",
+                    "sourceLayer": "e2eTestReport",
+                    "ownsLiveE2EScenarios": True,
+                    "includesDeterministicStaticScenarios": False,
+                },
+                "payload": {
+                    "id": build_number,
+                    "passed": 1,
+                    "failed": 0,
+                    "results": [],
+                },
+            }),
+            encoding="utf-8",
+        )
+
+    result = run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=tmp_path / "agent_manifest",
+            loop_output=tmp_path / "loop",
+            runtime_audit_paths=(tmp_path,),
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=False,
+            generate_system_prompts=False,
+            testflight_build_label="20260629054657",
+        )
+    )
+
+    assert not any(gap["category"] == "testflight_runtime_build_mismatch" for gap in result.gaps)
+    assert result.state["runtime"]["reportCount"] == 1
+    assert result.state["runtime"]["totalReportCount"] == 2
+    assert result.state["runtime"]["staleReportCount"] == 1
+    assert result.state["testFlight"]["status"] == "runtime-audit-ingested"
+
+
 def test_improvement_loop_records_failed_command_as_critical_gap(tmp_path: Path):
     result = run_agent_improvement_loop(
         AgentImprovementLoopConfig(
@@ -253,16 +306,14 @@ def test_improvement_loop_reclassifies_skipped_live_model_evidence(tmp_path: Pat
     )
 
     runtime_gaps = [gap for gap in result.gaps if gap["title"] == "e2e_architecture_finalizer_failure"]
-    assert len(runtime_gaps) == 1
-    assert runtime_gaps[0]["severity"] == "warning"
-    assert runtime_gaps[0]["category"] == "architecture_finalizer_failure"
-    assert runtime_gaps[0]["evidence"]["trainable"] is False
+    assert runtime_gaps == []
     assert result.state["runtime"]["rawFailureCount"] == 1
     assert result.state["runtime"]["failureCount"] == 0
     assert result.state["runtime"]["skippedLiveModelGenerationCount"] == 1
+    assert result.passed is True
 
 
-def test_improvement_loop_treats_deterministic_live_evidence_as_runtime_failure(tmp_path: Path):
+def test_improvement_loop_keeps_deterministic_live_evidence_non_blocking(tmp_path: Path):
     report = tmp_path / "live-e2e.json"
     report.write_text(
         json.dumps({
@@ -307,13 +358,12 @@ def test_improvement_loop_treats_deterministic_live_evidence_as_runtime_failure(
     )
 
     runtime_gaps = [gap for gap in result.gaps if gap["category"] == "deterministic_compatibility_not_live_evidence"]
-    assert len(runtime_gaps) == 1
-    assert runtime_gaps[0]["severity"] == "error"
-    assert runtime_gaps[0]["evidence"]["rootCauseCategory"] == "deterministic_compatibility_not_live_evidence"
+    assert runtime_gaps == []
     assert result.state["runtime"]["rawFailureCount"] == 1
     assert result.state["runtime"]["failureCount"] == 1
     assert result.state["runtime"]["skippedLiveModelGenerationCount"] == 0
-    assert result.state["triage"]["rootCauseCounts"]["deterministic_compatibility_not_live_evidence"] == 1
+    assert "deterministic_compatibility_not_live_evidence" not in result.state["triage"]["rootCauseCounts"]
+    assert result.passed is True
 
 
 def test_improvement_loop_uses_persistent_diagnostic_remediation_action(tmp_path: Path):
@@ -502,10 +552,10 @@ def test_improvement_loop_groups_agent_json_resource_budget_denied(tmp_path: Pat
         gap for gap in result.gaps
         if gap["evidence"].get("rootCauseCategory") == "runtime_environment_deferred"
     ]
-    assert len(runtime_gaps) == 1
-    assert runtime_gaps[0]["category"] == "runtime_environment_deferred"
-    assert runtime_gaps[0]["evidence"]["trainable"] is False
-    assert result.state["triage"]["rootCauseCounts"]["runtime_environment_deferred"] == 1
+    assert runtime_gaps == []
+    assert result.state["runtime"]["rawFailureCount"] == 1
+    assert "runtime_environment_deferred" not in result.state["triage"]["rootCauseCounts"]
+    assert result.passed is True
 
 
 def test_improvement_loop_quarantines_non_trainable_finalizer_failure(tmp_path: Path):
@@ -549,10 +599,10 @@ def test_improvement_loop_quarantines_non_trainable_finalizer_failure(tmp_path: 
     )
 
     runtime_gaps = [gap for gap in result.gaps if gap["title"] == "e2e_architecture_finalizer_failure"]
-    assert len(runtime_gaps) == 1
-    assert runtime_gaps[0]["category"] == "architecture_finalizer_failure"
-    assert runtime_gaps[0]["evidence"]["trainable"] is False
-    assert "Quarantine this architecture/runtime/finalizer failure from SFT" in runtime_gaps[0]["recommendedAction"]
+    assert runtime_gaps == []
+    assert result.state["runtime"]["rawFailureCount"] == 1
+    assert result.state["runtime"]["failureCount"] == 1
+    assert result.passed is True
 
 
 def test_improvement_loop_groups_agent_json_context_overflow(tmp_path: Path):
