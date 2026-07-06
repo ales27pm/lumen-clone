@@ -3,13 +3,13 @@
   "codebaseHome": {
     "languageCounts": {
       "csv": 5,
-      "json": 56,
+      "json": 57,
       "markdown": 66,
       "mixed": 1,
       "plist": 3,
-      "python": 106,
+      "python": 107,
       "shell": 16,
-      "swift": 495,
+      "swift": 498,
       "text": 8,
       "toml": 1,
       "xcode_project": 1,
@@ -39,7 +39,7 @@
       "RAG": 9,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
       "Scripts": 2,
-      "Services": 60,
+      "Services": 61,
       "Services/AgentGrounding": 13,
       "Services/Diagnostics": 1,
       "Services/IntentClassification": 5,
@@ -54,7 +54,7 @@
       "System": 16,
       "Tools": 14,
       "Tools/Builtin": 12,
-      "Views": 31,
+      "Views": 32,
       "Voice": 7,
       "app": 5,
       "codebase_txt_chunks": 2,
@@ -64,7 +64,7 @@
       "ios": 1,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 156,
+      "ios/LumenTests": 157,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 6,
@@ -73,6 +73,7 @@
       "runtime-audits/2026-06-08-second-improve-loop": 5,
       "runtime-audits/2026-06-09-third-improve-loop": 5,
       "runtime-audits/2026-06-25-device-e2e": 3,
+      "runtime-audits/2026-07-02-latest-e2e": 1,
       "scripts": 21,
       "tools": 12,
       "tools/fine_tuning/unsloth": 19,
@@ -85,10 +86,10 @@
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 39,
       "tools/lumen_manifest_crawler/tests": 24,
       "tools/pipeline": 7,
-      "tools/pipeline/tests": 3,
+      "tools/pipeline/tests": 4,
       "tools/security": 1
     },
-    "recordCount": 761,
+    "recordCount": 766,
     "selectedFiles": [
       {
         "imports": [
@@ -289,7 +290,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` owns ImproveLoopSampleGate behavior and defines: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, ImproveLoopTrainingSample, ImproveLoopDatasetCounters, ImproveLoopDataset, ImproveLoopSampleGate, buildDataset, append.",
-        "sha256": "ccfe0c56921c7a3d3ff067dce5b74889b70a11eba9fc40cd6cfa8eabaeee835b",
+        "sha256": "9d64f318705ac1a9953f37d5374d084c1ed6b033754ac4763fe8f886ea919ca1",
         "symbols": [
           "ImproveLoopSampleDisposition",
           "ImproveLoopSampleType",
@@ -1229,7 +1230,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer, StripResult, LeadingBlock.",
-        "sha256": "89b1f86bf913e6b79b6ab317d53701b205f93988c81ea674513147622cb01b10",
+        "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -1259,7 +1260,7 @@
         "module": "Services/Tools",
         "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
         "responsibility": "`ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: LumenAlarmMetadata, AlarmTools, isRuntimeUnavailableText, authorizationStatus, requestAuthorization, schedule, countdown, list, cancel, pause.",
-        "sha256": "eb0e633657a078f42fc69745ac15ddd47aa360c717c4698607a05d5913160b42",
+        "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785",
         "symbols": [
           "LumenAlarmMetadata",
           "AlarmTools",
@@ -1750,7 +1751,7 @@
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift",
         "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, IntentClarificationPolicy, resolve, resolveMediumConfidence, clarificationForAmbiguousModelResult, rankedAlternatives, shouldClarifyBetween, clarificationPrompt, clarificationLabel, sanitized.",
-        "sha256": "159c8e3119fac9202c8ca8b9be3d54d2fa08df0c7f2d70f09694088b8183c437",
+        "sha256": "15965fa86310144d7d0ed85245cbdbee649062c7ed7cc4d261259f60c56bb309",
         "symbols": [
           "IntentClassifierPolicy",
           "IntentClarificationPolicy",
@@ -1801,7 +1802,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/IntentRouter.swift",
         "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, isLikelyPhotosIntent.",
-        "sha256": "f7cb981bef25160e8ab57f3552a9755ff901240c7aab2053884d5087c1eb30c6",
+        "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570",
         "symbols": [
           "UserIntent",
           "IntentRoutingDecision",
@@ -2171,7 +2172,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "99e3ffc0dcd1aaf00e7792a66696b838813710ba",
+  "manifestCommit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

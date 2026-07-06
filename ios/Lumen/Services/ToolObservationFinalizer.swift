@@ -75,8 +75,7 @@ nonisolated enum ToolObservationFinalizer {
             return accepted("Current location: \(plainObservation)\(payloadMarkers)")
         case "web.search":
             guard intent == .webSearch else { return rejected("intent-mismatch") }
-            if asksForDeepSynthesis(lowerPrompt) { return rejected("deep-synthesis-required") }
-            return accepted("Web search results:\n\(compactWebResults(from: cleanObservation, fallback: plainObservation))\(payloadMarkers)")
+            return accepted("\(synthesizedWebSearchAnswer(from: cleanObservation, fallback: plainObservation, originalPrompt: originalPrompt))\(payloadMarkers)")
         case "web.fetch":
             guard intent == .webSearch else { return rejected("intent-mismatch") }
             if asksForDeepSynthesis(lowerPrompt) { return rejected("deep-synthesis-required") }
@@ -214,6 +213,97 @@ nonisolated enum ToolObservationFinalizer {
             }
             .filter { !$0.isEmpty }
             .filter { !$0.lowercased().contains("no contacts match") }
+    }
+
+    /// Formats search results into a compact synthesized answer that avoids exposing raw result listings as the final answer.
+    /// - Parameters:
+    ///   - text: A string containing encoded `WebRichContentPayload` items.
+    ///   - fallback: Alternative text to display if no search results are found.
+    ///   - originalPrompt: The user's prompt, used only to decide whether an explicit limited-evidence note is needed.
+    /// - Returns: A summary-oriented answer with source labels and no visible raw URLs.
+    private static func synthesizedWebSearchAnswer(from text: String, fallback: String, originalPrompt: String) -> String {
+        let payloads = WebRichContentPayload.decodeAll(from: text)
+        if let payload = payloads.first(where: { $0.kind == .searchResults }), !payload.results.isEmpty {
+            var bullets = payload.results
+                .prefix(4)
+                .map(webSearchBullet)
+                .filter { !$0.isEmpty }
+
+            if bullets.count == 1 && asksForDeepSynthesis(originalPrompt.lowercased()) {
+                bullets.append("The available search evidence is limited, so verify the details against a primary source before acting on it.")
+            }
+
+            if !bullets.isEmpty {
+                var lines = ["Summary:"]
+                lines.append(contentsOf: bullets.map { "- \($0)" })
+                let sources = payload.results
+                    .prefix(4)
+                    .compactMap(webSourceLabel)
+                    .reduce(into: [String]()) { labels, label in
+                        if !labels.contains(label) { labels.append(label) }
+                    }
+                if !sources.isEmpty {
+                    lines.append("Sources: \(sources.joined(separator: ", ")).")
+                }
+                return lines.joined(separator: "\n")
+            }
+        }
+
+        let fallbackSummary = fallback
+            .split(whereSeparator: \.isNewline)
+            .map { cleanWebSummaryFragment(String($0)) }
+            .filter { !$0.isEmpty }
+            .prefix(3)
+            .joined(separator: " ")
+
+        guard !fallbackSummary.isEmpty else {
+            return "Summary: I did not find usable search snippets for this query."
+        }
+        return "Summary: \(sentenceCased(fallbackSummary))"
+    }
+
+    private static func webSearchBullet(_ result: WebSearchResultPayload) -> String {
+        let title = cleanWebSummaryFragment(result.title)
+        let snippet = cleanWebSummaryFragment(result.snippet ?? "")
+        let source = webSourceLabel(result)
+
+        var parts: [String] = []
+        if !title.isEmpty { parts.append(title) }
+        if !snippet.isEmpty && snippet.lowercased() != title.lowercased() { parts.append(snippet) }
+
+        var sentence = parts.joined(separator: ": ")
+        if sentence.isEmpty, let source { sentence = "A result from \(source) is available for this query" }
+        if let source, !sentence.lowercased().contains(source.lowercased()) {
+            sentence += " (source: \(source))"
+        }
+        return sentenceCased(sentence)
+    }
+
+    private static func webSourceLabel(_ result: WebSearchResultPayload) -> String? {
+        if let source = result.source {
+            let clean = cleanWebSummaryFragment(source)
+            if !clean.isEmpty { return clean }
+        }
+        if let url = result.url, let host = URL(string: url)?.host {
+            return host.replacingOccurrences(of: #"^www\."#, with: "", options: .regularExpression)
+        }
+        return nil
+    }
+
+    private static func cleanWebSummaryFragment(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"https?://\S+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)^\s*search results for:\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^\s*\d+[\.)]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func sentenceCased(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if let last = trimmed.last, ".!?".contains(last) { return trimmed }
+        return "\(trimmed)."
     }
 
     /// Formats search results into a compact list, or displays fallback text when no results are available.

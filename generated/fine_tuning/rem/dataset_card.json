@@ -1,6 +1,6 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 4409,
+  "availableSFTRecords": 4904,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -8,7 +8,7 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "084d488a7038dcf5dc8e698fd4a46b683c9b5604",
+  "manifestCommit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
@@ -22,9 +22,9 @@
   "recordCounts": {
     "eval": 6,
     "train_dpo": 8,
-    "train_sft": 3718,
+    "train_sft": 4138,
     "val_dpo": 2,
-    "val_sft": 656
+    "val_sft": 730
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
@@ -33,6 +33,8 @@
     "cross_model_training",
     "manifest_grounding_cards",
     "rem_reflection",
+    "runtime_audit_repairs",
+    "self_model_cards",
     "train_sft"
   ],
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
@@ -47,6 +49,8 @@
     "manifest_grounding_cards",
     "reflection_and_memory_policy",
     "rem_reflection",
+    "runtime_manifest_drift_repair",
+    "self_model_card_grounding",
     "tool_id_repair",
     "ultra_specific_argument_extraction_repair",
     "ultra_specific_manifest_tool_repair",

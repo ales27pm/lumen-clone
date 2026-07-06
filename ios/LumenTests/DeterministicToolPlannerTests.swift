@@ -317,7 +317,8 @@ struct DeterministicToolPlannerTests {
         let cases: [(String, String)] = [
             ("Set the latest Outlook email read.", "outlook.message.mark_read"),
             ("Set the latest Outlook email unread.", "outlook.message.mark_unread"),
-            ("Move my latest Outlook email to Archive.", "outlook.message.move"),
+            ("Move my latest Outlook email to Archive.", "outlook.message.archive"),
+            ("Move my latest Outlook email to Inbox.", "outlook.message.move"),
             ("Respond to my latest Outlook email saying thanks.", "outlook.message.reply"),
             ("Respond to all on my latest Outlook email saying thanks.", "outlook.message.reply_all")
         ]

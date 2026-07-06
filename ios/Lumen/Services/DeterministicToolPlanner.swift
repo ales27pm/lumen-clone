@@ -382,13 +382,13 @@ nonisolated enum DeterministicToolPlanner {
             if let body = extractOutlookBody(from: prompt), !body.isEmpty { args["body"] = .string(body) }
             return action("outlook.message.forward", args)
         }
+        if text.contains("archive") { return action("outlook.message.archive", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if text.contains("move") {
             guard let destination = extractOutlookDestinationFolder(from: text) else { return nil }
             var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
             args["destination"] = .string(destination)
             return action("outlook.message.move", args)
         }
-        if text.contains("archive") { return action("outlook.message.archive", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if containsAny(text, ["delete", "trash"]) { return action("outlook.message.delete", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if text.contains("send") && containsAny(text, ["email", "mail", "outlook", "hotmail"]) {
             var args: AgentJSONArguments = ["subject": .string(extractOutlookSubject(from: prompt)), "body": .string(extractOutlookBody(from: prompt) ?? "")]

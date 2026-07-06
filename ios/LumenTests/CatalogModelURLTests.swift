@@ -27,7 +27,7 @@ struct CatalogModelURLTests {
         #expect(url.query?.contains("download=true") == true)
     }
 
-    @Test func buildsQwen3AdapterDownloadURLAtPublishedRootPath() {
+    @Test func buildsQwen3AdapterDownloadURLAtPublishedRunPath() {
         let model = CatalogModel(
             id: "adapter",
             name: "Adapter",
@@ -38,7 +38,8 @@ struct CatalogModelURLTests {
             sizeBytes: 1,
             role: .roleAdapter,
             description: "",
-            tags: []
+            tags: [],
+            sourcePath: "runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf"
         )
 
         guard case .success(let url) = model.downloadURLResult else {
@@ -47,8 +48,8 @@ struct CatalogModelURLTests {
         }
 
         #expect(model.fileName == "lumen-executor-lora.gguf")
-        #expect(model.sourcePath == nil)
-        #expect(url.path == "/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/resolve/main/lumen-executor-lora.gguf")
+        #expect(model.sourcePath == "runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf")
+        #expect(url.path == "/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/resolve/main/runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf")
         #expect(url.query?.contains("download=true") == true)
     }
 

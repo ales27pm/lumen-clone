@@ -325,10 +325,22 @@ def _derive_e2e_training_signals(scenarios: list[dict[str, Any]]) -> list[str]:
 def _scenario_is_trainable_e2e_failure(scenario: dict[str, Any]) -> bool:
     if _scenario_marked_non_trainable_preflight(scenario):
         return False
+    if _scenario_has_stale_outlook_archive_move_alias(scenario):
+        return False
     evidence = _scenario_evidence_text(scenario)
     if _is_architecture_or_finalizer_failure(evidence, _final_artifact_diagnosis_for_scenario(scenario)):
         return False
     return True
+
+
+def _scenario_has_stale_outlook_archive_move_alias(scenario: dict[str, Any]) -> bool:
+    metadata = scenario.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    expected_tool = str(metadata.get("expectedToolID") or metadata.get("expectedToolId") or "").casefold()
+    if expected_tool != "outlook.message.move":
+        return False
+    prompt = str(scenario.get("prompt") or "").casefold()
+    return "archive" in prompt
 
 
 def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:

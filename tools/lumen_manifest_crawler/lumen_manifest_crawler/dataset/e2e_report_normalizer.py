@@ -122,7 +122,13 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
     required_hint = _extract_required_hint(failure_text)
     root_cause = sidecar_diagnosis.get("rootCauseCategory") if sidecar_diagnosis else None
     scenario_evidence = f"{failure_text}\n{final}"
-    if _is_runtime_environment_failure(scenario_evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
+    stale_alias = _scenario_has_stale_outlook_archive_move_alias(scenario)
+    if stale_alias:
+        failure_type = "e2e_test_alias_mismatch"
+        agent = "rem"
+        curriculum = "scenario_alias_diagnostics"
+        trainable = False
+    elif _is_runtime_environment_failure(scenario_evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         policy = e2e_failure_policy("runtime", None)
         failure_type = "e2e_runtime_environment_deferred"
         agent = "rem"
@@ -148,7 +154,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
         "actual": final,
         "scenario": prompt,
         "problem": failure_text,
-        "rootCauseCategory": root_cause,
+        "rootCauseCategory": "stale_test_alias" if stale_alias else root_cause,
         "trainable": trainable,
         "sourceLayer": source_layer,
         "e2eScenario": {
@@ -186,8 +192,20 @@ def _scenario_intent(scenario: dict[str, Any]) -> str:
     return expected_intent or "unknown"
 
 
+def _scenario_has_stale_outlook_archive_move_alias(scenario: dict[str, Any]) -> bool:
+    metadata = scenario.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    expected_tool = str(metadata.get("expectedToolID") or metadata.get("expectedToolId") or "").casefold()
+    if expected_tool != "outlook.message.move":
+        return False
+    prompt = str(scenario.get("prompt") or "").casefold()
+    return "archive" in prompt
+
+
 def _expected_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     evidence = f"{scenario.get('failures') or ''}\n{scenario.get('final') or ''}"
+    if _scenario_has_stale_outlook_archive_move_alias(scenario):
+        return "Outlook archive prompts must be labeled as outlook.message.archive, not outlook.message.move; stale scenario aliases are diagnostics only and must not feed SFT."
     if _is_runtime_environment_failure(evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
     if sidecar_diagnosis:
@@ -215,6 +233,8 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     intent = _scenario_intent(scenario)
     normalized_intent = intent.casefold()
     evidence = f"{scenario.get('failures') or ''}\n{scenario.get('final') or ''}"
+    if _scenario_has_stale_outlook_archive_move_alias(scenario):
+        return "Regenerate the scenario with expectedToolID outlook.message.archive for archive wording, or change the move scenario wording to a non-archive folder such as Inbox."
     if _is_runtime_environment_failure(evidence, sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data."
     if sidecar_diagnosis:
@@ -1043,6 +1063,8 @@ def _clean_derived_fragment(value: str) -> str:
 
 def _lesson_for_e2e_failure(scenario: dict[str, Any], required_hint: str | None, sidecar_diagnosis: dict[str, Any] | None = None) -> str:
     intent = _scenario_intent(scenario)
+    if _scenario_has_stale_outlook_archive_move_alias(scenario):
+        return "Archive wording is a first-class alias for outlook.message.archive; do not train adapters to route archive prompts through outlook.message.move."
     if _is_runtime_environment_failure(str(scenario.get("failures") or ""), sidecar_diagnosis) or _scenario_marked_non_trainable_preflight(scenario):
         return "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples."
     if sidecar_diagnosis:
