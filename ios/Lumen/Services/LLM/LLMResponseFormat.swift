@@ -50,9 +50,13 @@ enum LLMResponseFormat: Sendable, Codable, Equatable {
 
     var enforcementDiagnostic: String? {
         switch self {
+        case .json:
+            return "json=native_json_object_grammar"
+        case .toolCallJSON:
+            return "toolCallJSON=native_json_object_grammar"
         case .constrainedJSON:
-            return "constrainedJSON=prompt_contract_only"
-        case .plainText, .json, .toolCallJSON:
+            return "constrainedJSON=native_json_object_grammar_schema_prompt"
+        case .plainText:
             return nil
         }
     }

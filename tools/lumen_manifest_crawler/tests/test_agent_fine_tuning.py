@@ -21,6 +21,8 @@ EXPECTED_SHARED_BASE_REPO = "ales27pm/lumen-qwen3-bootstrap-gguf"
 EXPECTED_SHARED_BASE_FILE = "lumen-qwen3-fast-shared-q4_k_m.gguf"
 EXPECTED_ADAPTER_REPO = "ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
 
+pytestmark = pytest.mark.slow
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]

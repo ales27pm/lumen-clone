@@ -55,8 +55,9 @@ struct GGUFEngineScaffoldTests {
         let prompt = try GGUFPromptBuilder.buildPrompt(from: request)
 
         #expect(prompt.contains("/no_think"))
-        #expect(prompt.contains("constrainedJSON=prompt_contract_only"))
-        #expect(prompt.contains("TODO: wire llama.cpp grammar enforcement"))
+        #expect(prompt.contains("constrainedJSON=native_json_object_grammar_schema_prompt"))
+        #expect(prompt.contains("native JSON object grammar enabled"))
+        #expect(!prompt.contains("TODO:"))
         #expect(!prompt.contains("/think"))
         #expect(!prompt.contains("If reasoning capture is enabled"))
     }

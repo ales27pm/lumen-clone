@@ -36,6 +36,80 @@ enum CoreMLRuntimeError: Error, Sendable, Equatable {
     case computeFailure(String)
 }
 
+struct AssistantRuntimeCapabilityRow: Sendable, Equatable, Identifiable {
+    let kind: AssistantRuntimeKind
+    let generationSupported: Bool
+    let generationSelectable: Bool
+    let embeddingSupported: Bool
+    let embeddingSelectable: Bool
+    let status: String
+    let unavailableReason: String?
+
+    var id: String { kind.rawValue }
+}
+
+struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
+    let rows: [AssistantRuntimeCapabilityRow]
+
+    static func current(
+        foundation: FoundationModelsRuntimeAdapter = .init(),
+        llama: LlamaRuntimeAdapter = .live(),
+        fallback: DeterministicFallbackRuntime = .init(),
+        coreML: CoreMLRuntimeAdapter = .init(modelURL: nil)
+    ) -> AssistantRuntimeCapabilityMatrix {
+        AssistantRuntimeCapabilityMatrix(rows: [
+            AssistantRuntimeCapabilityRow(
+                kind: foundation.kind,
+                generationSupported: foundation.supportsGeneration,
+                generationSelectable: foundation.supportsGeneration && foundation.isAvailable,
+                embeddingSupported: false,
+                embeddingSelectable: false,
+                status: foundation.availabilityStatus,
+                unavailableReason: foundation.unavailableReason
+            ),
+            AssistantRuntimeCapabilityRow(
+                kind: llama.kind,
+                generationSupported: true,
+                generationSelectable: llama.isAvailable,
+                embeddingSupported: false,
+                embeddingSelectable: false,
+                status: llama.isAvailable ? "available" : "unavailable",
+                unavailableReason: llama.unavailableReason
+            ),
+            AssistantRuntimeCapabilityRow(
+                kind: fallback.kind,
+                generationSupported: true,
+                generationSelectable: fallback.isAvailable,
+                embeddingSupported: false,
+                embeddingSelectable: false,
+                status: "limited local fallback",
+                unavailableReason: fallback.unavailableReason
+            ),
+            AssistantRuntimeCapabilityRow(
+                kind: coreML.kind,
+                generationSupported: false,
+                generationSelectable: false,
+                embeddingSupported: coreML.supportsEmbeddings,
+                embeddingSelectable: coreML.supportsEmbeddings && coreML.isAvailable,
+                status: coreML.availabilityStatus,
+                unavailableReason: coreML.unavailableReason
+            )
+        ])
+    }
+
+    func row(for kind: AssistantRuntimeKind) -> AssistantRuntimeCapabilityRow? {
+        rows.first { $0.kind == kind }
+    }
+
+    var selectableGenerationRuntimes: [AssistantRuntimeKind] {
+        rows.filter(\.generationSelectable).map(\.kind)
+    }
+
+    var selectableEmbeddingRuntimes: [AssistantRuntimeKind] {
+        rows.filter(\.embeddingSelectable).map(\.kind)
+    }
+}
+
 struct DeterministicFallbackRuntime: LocalTextGenerationRuntime {
     let kind: AssistantRuntimeKind = .deterministicFallback
     let isAvailable: Bool = true

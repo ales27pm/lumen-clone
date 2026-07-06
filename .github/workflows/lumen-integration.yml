@@ -1,0 +1,67 @@
+name: Lumen integration gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: lumen-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-and-python:
+    name: Static checks and Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Python syntax compile
+        run: python -m compileall -q scripts tools
+
+      - name: Generated artifact validation
+        run: python scripts/check-generated-jsonl-artifacts.py
+
+      - name: Adapter runtime invariants
+        run: python tools/check_adapter_runtime_invariants.py
+
+      - name: Python tests
+        run: |
+          timeout 900 uv run --python 3.12 \
+            --with-editable ./tools/lumen_manifest_crawler \
+            --with pytest --with pydantic --with typer --with rich \
+            python -m pytest -m "not slow and not e2e"
+
+      - name: Git diff whitespace check
+        run: git diff --check
+
+  ios-build:
+    name: iOS readiness and build-for-testing
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Repository integration gate
+        run: bash scripts/check-lumen-integration-gate.sh
+
+      - name: Build for testing
+        run: |
+          xcodebuild \
+            -project ios/Lumen.xcodeproj \
+            -scheme Lumen \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            -derivedDataPath build/DerivedData-CI \
+            build-for-testing \
+            CODE_SIGNING_ALLOWED=NO

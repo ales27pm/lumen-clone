@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.embedding import EMBEDDING_MODEL_ID, compile_embedding_datasets
@@ -85,6 +87,7 @@ def test_embedding_tool_schema_carries_runtime_contract() -> None:
     assert metadata["confirmationMode"] == tool.confirmationMode
 
 
+@pytest.mark.slow
 def test_embedding_corpus_contains_codebase_home_when_root_is_provided() -> None:
     repo_root = _repo_root()
     manifest = generate_manifest(repo_root)
@@ -121,11 +124,17 @@ def test_embedding_dedicated_output_directory_is_written(tmp_path: Path) -> None
     assert embedding_dir.exists()
     assert expected_files.issubset({path.name for path in embedding_dir.iterdir()})
 
+    alias = output / "dataset" / "embedding_corpus.jsonl"
+    assert alias.is_symlink()
+    assert alias.readlink() == Path("../embedding/corpus.jsonl")
+    assert alias.resolve() == (embedding_dir / "corpus.jsonl").resolve()
+
     card = json.loads((embedding_dir / "dataset_card.json").read_text(encoding="utf-8"))
     assert card["model"] == EMBEDDING_MODEL_ID
     assert card["counts"]["corpus"] == sum(1 for _ in (embedding_dir / "corpus.jsonl").open(encoding="utf-8"))
 
 
+@pytest.mark.slow
 def test_runtime_grounding_bundle_is_written_for_build_injection(tmp_path: Path) -> None:
     repo_root = _repo_root()
     manifest = generate_manifest(repo_root)

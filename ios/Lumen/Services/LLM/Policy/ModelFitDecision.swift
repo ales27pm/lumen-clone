@@ -57,5 +57,6 @@ enum ModelFitReason: String, Sendable, Codable, Equatable, CaseIterable {
     case remoteModelEscalationAllowed
     case remoteModelEscalationNotAllowed
     case remoteModelBackgroundBlocked
+    case mockBackendNotAllowed
     case unknownModelSize
 }

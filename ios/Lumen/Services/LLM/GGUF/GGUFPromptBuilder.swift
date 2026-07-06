@@ -142,7 +142,7 @@ nonisolated enum GGUFPromptBuilder {
         case .constrainedJSON(let schema):
             return """
             Response format contract: output exactly one valid JSON object matching this schema. Do not include prose, markdown, code fences, or hidden reasoning.
-            Enforcement diagnostic: \(responseFormat.enforcementDiagnostic ?? "none"). TODO: wire llama.cpp grammar enforcement when GGUFBridgeGenerateConfig exposes grammar.
+            Enforcement diagnostic: \(responseFormat.enforcementDiagnostic ?? "none"); native JSON object grammar enabled; schema keyword validation remains prompt contract.
             JSON schema:
             \(schema)
             """

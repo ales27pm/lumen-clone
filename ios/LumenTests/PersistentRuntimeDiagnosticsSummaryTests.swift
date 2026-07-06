@@ -112,6 +112,7 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
                 foundationModelsStatus: "unavailable",
                 coreMLAvailable: true,
                 coreMLStatus: "available",
+                runtimeCapabilityRows: AssistantRuntimeCapabilityMatrix.current().rows,
                 metalAvailable: true,
                 lowPowerModeEnabled: false,
                 thermalState: "nominal",

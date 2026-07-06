@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import SwiftUI
 @testable import Lumen
 
 final class PersistenceAuditTests: XCTestCase {
@@ -80,6 +81,47 @@ final class PersistenceAuditTests: XCTestCase {
         let resolvedCandidate = try XCTUnwrap(resolved.first)
         XCTAssertEqual(resolvedCandidate.0.sourceName, "live")
         XCTAssertEqual(resolvedCandidate.1, 0.75, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testMemoryExtractionReportsSkippedMaintenanceBudget() async throws {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .serious,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+
+        let container = try ModelContainer(for: MemoryItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+
+        let result = await MemoryStore.extractAndStore(
+            userText: "I love deterministic diagnostics.",
+            assistantText: "",
+            context: context
+        )
+
+        XCTAssertEqual(result.attempted, 0)
+        XCTAssertEqual(result.stored, 0)
+        XCTAssertEqual(result.failed, 0)
+        XCTAssertEqual(result.skipped, 1)
+        XCTAssertEqual(result.diagnostics, ["memory_extract_skipped"])
+    }
+
+    @MainActor
+    func testRAGIndexFileReportsReadFailure() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-rag-\(UUID().uuidString).txt")
+
+        let result = await RAGStore.indexFileWithDiagnostics(url: missingURL, context: context)
+
+        XCTAssertEqual(result.indexedCount, 0)
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertEqual(result.diagnostic, "file_read_failed")
     }
 
     @MainActor

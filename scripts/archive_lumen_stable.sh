@@ -190,6 +190,59 @@ resolve_package_dependencies() {
   done
 }
 
+expected_signing_identity_patterns() {
+  if [[ -n "$EFFECTIVE_CODE_SIGN_IDENTITY_VALUE" ]]; then
+    printf '%s\n' "$EFFECTIVE_CODE_SIGN_IDENTITY_VALUE"
+    return 0
+  fi
+
+  case "$CONFIGURATION" in
+    Release|AppStore|App\ Store)
+      printf '%s\n' "iOS Distribution"
+      printf '%s\n' "Apple Distribution"
+      ;;
+    *)
+      printf '%s\n' "iPhone Developer"
+      printf '%s\n' "Apple Development"
+      ;;
+  esac
+}
+
+has_matching_signing_identity() {
+  local pattern="$1"
+  security find-identity -v -p codesigning 2>/dev/null | grep -F "$pattern" >/dev/null
+}
+
+preflight_signing_identity() {
+  if [[ "${LUMEN_IOS_SKIP_SIGNING_IDENTITY_PREFLIGHT:-0}" == "1" ]]; then
+    warn "Skipping signing identity preflight because LUMEN_IOS_SKIP_SIGNING_IDENTITY_PREFLIGHT=1."
+    return 0
+  fi
+  command -v security >/dev/null 2>&1 || fail "security command not found; cannot inspect code signing identities."
+
+  local patterns=()
+  local pattern
+  while IFS= read -r pattern; do
+    [[ -n "$pattern" ]] && patterns+=("$pattern")
+  done < <(expected_signing_identity_patterns)
+
+  for pattern in "${patterns[@]}"; do
+    if has_matching_signing_identity "$pattern"; then
+      info "Found local code signing identity matching: $pattern"
+      return 0
+    fi
+  done
+
+  local expected
+  expected="$(IFS=', '; printf '%s' "${patterns[*]}")"
+  if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" && ${#XCODE_AUTH_ARGS[@]} -gt 0 ]]; then
+    warn "No local code signing identity matched '$expected'; continuing because authenticated automatic provisioning is enabled."
+    return 0
+  fi
+
+  fail "No local code signing identity matched '$expected'. Install the Apple distribution certificate/private key for team '${DEVELOPMENT_TEAM_VALUE:-project default}', or rerun with App Store Connect API auth and LUMEN_IOS_ALLOW_PROVISIONING_UPDATES=1."
+}
+
 [[ "$(uname -s)" == "Darwin" ]] || fail "This script must run on macOS."
 command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild not found. Select Xcode with: sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer"
 command -v python3 >/dev/null 2>&1 || fail "python3 not found. Install Xcode Command Line Tools or Python 3."
@@ -280,6 +333,9 @@ if [[ "${LUMEN_RESET_SWIFTPM_CACHE:-0}" == "1" ]]; then
   reset_swiftpm_cache
 fi
 
+info "Checking local code signing identity"
+preflight_signing_identity
+
 info "Resolving Swift package dependencies"
 resolve_package_dependencies
 
@@ -289,7 +345,11 @@ ln -sf "$REPO_ROOT/scripts/lumen_actool_cached_assets.sh" "$ACTOOL_SHIM_PATH"
 ARCHIVE_COMMAND=(
   xcodebuild
   "${PROJECT_SELECTOR[@]}"
-  "${SIGNING_XCCONFIG_ARGS[@]}"
+)
+if (( ${#SIGNING_XCCONFIG_ARGS[@]} > 0 )); then
+  ARCHIVE_COMMAND+=("${SIGNING_XCCONFIG_ARGS[@]}")
+fi
+ARCHIVE_COMMAND+=(
   -scheme "$SCHEME"
   -derivedDataPath "$DERIVED_DATA_PATH"
   -clonedSourcePackagesDirPath "$CLONED_SOURCE_PACKAGES_DIR"
@@ -329,5 +389,12 @@ run_logged "$LOG_PATH" "${ARCHIVE_COMMAND[@]}"
 
 info "Verifying archived app Info.plist"
 python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$ARCHIVE_PATH"
+
+info "Verifying archived app signed entitlements"
+python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
+  --project-file "$PROJECT_FILE" \
+  --entitlements "$REPO_ROOT/ios/Lumen/Lumen.entitlements" \
+  --app-store-entitlements "$REPO_ROOT/ios/Lumen/LumenAppStore.entitlements" \
+  --signed-app-path "$ARCHIVE_PATH"
 
 bold "✅ Archive created: $ARCHIVE_PATH"

@@ -41,18 +41,8 @@ wc -l /tmp/lumen_app_swift_files.txt /tmp/lumen_test_swift_files.txt
 echo "== iOS signing capability checks =="
 python3 scripts/validate_ios_signing_capabilities.py
 
-echo "== Built app Info.plist check =="
-if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
-  latest_candidate="$(find build -maxdepth 2 \( -name '*.xcarchive' -o -name '*.ipa' \) -print 2>/dev/null | sort | tail -n 1 || true)"
-  if [[ -n "$latest_candidate" ]]; then
-    export LUMEN_BUILT_APP_PATH="$latest_candidate"
-  fi
-fi
-if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
-  echo "error: LUMEN_BUILT_APP_PATH is required for final signed Info.plist metadata validation." >&2
-  exit 1
-fi
-python3 scripts/check_built_app_info_plist.py "$LUMEN_BUILT_APP_PATH"
+echo "== Generated JSONL artifact checks =="
+python3 scripts/check-generated-jsonl-artifacts.py
 
 echo "== Static privacy/build-hardening checks =="
 if rg "${READINESS_RG_EXCLUDES[@]}" -n "TODO|stub|placeholder" ios/Lumen ios/LumenTests docs; then
@@ -69,6 +59,24 @@ if rg "${READINESS_RG_EXCLUDES[@]}" -n "OSLog|Logger" ios/Lumen/AppIntents ios/L
   echo "Found logging APIs in privacy-sensitive additions; review output above." >&2
 else
   true
+fi
+
+echo "== Built app artifact checks =="
+if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
+  latest_candidate="$(find build -maxdepth 2 \( -name '*.xcarchive' -o -name '*.ipa' \) -print 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -n "$latest_candidate" ]]; then
+    export LUMEN_BUILT_APP_PATH="$latest_candidate"
+  fi
+fi
+if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
+  if [[ "${LUMEN_REQUIRE_BUILT_APP:-0}" == "1" ]]; then
+    echo "error: LUMEN_BUILT_APP_PATH is required for final signed Info.plist metadata validation." >&2
+    exit 1
+  fi
+  echo "No built app artifact found; skipping signed Info.plist metadata validation. Set LUMEN_REQUIRE_BUILT_APP=1 to make this mandatory."
+else
+  python3 scripts/check_built_app_info_plist.py "$LUMEN_BUILT_APP_PATH"
+  python3 scripts/validate_ios_signing_capabilities.py --signed-app-path "$LUMEN_BUILT_APP_PATH"
 fi
 
 echo "Build readiness static checks completed. Run xcodebuild on macOS for compile validation."

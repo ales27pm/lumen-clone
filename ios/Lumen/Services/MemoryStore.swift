@@ -38,6 +38,19 @@ enum MemoryStore {
         let diagnostic: String?
     }
 
+    private struct LexicalRecallResult {
+        let items: [MemoryItem]
+        let diagnostic: String?
+    }
+
+    struct AutoExtractionResult {
+        let attempted: Int
+        let stored: Int
+        let failed: Int
+        let skipped: Int
+        let diagnostics: [String]
+    }
+
     static func recall(query: String, context: ModelContext, limit: Int = 5) async -> [MemoryItem] {
         await recallWithDiagnostics(query: query, context: context, limit: limit).items
     }
@@ -50,10 +63,11 @@ enum MemoryStore {
 
         if let budgetDenial = ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.recall") {
             logger.error("memory_embedding_budget_denied op=recall reason=\(budgetDenial, privacy: .public)")
+            let fallback = lexicalRecallResult(query: trimmed, context: context, limit: limit)
             return RecallResult(
-                items: lexicalRecall(query: trimmed, context: context, limit: limit),
+                items: fallback.items,
                 mode: "lexical_fallback",
-                diagnostic: budgetDenial
+                diagnostic: combinedDiagnostic(primary: budgetDenial, secondary: fallback.diagnostic)
             )
         }
 
@@ -62,22 +76,34 @@ enum MemoryStore {
             queryVec = try await AppLlamaService.shared.embed(trimmed)
         } catch {
             logger.error("memory_embedding_failed op=recall error=\(String(describing: error), privacy: .public)")
+            let fallback = lexicalRecallResult(query: trimmed, context: context, limit: limit)
             return RecallResult(
-                items: lexicalRecall(query: trimmed, context: context, limit: limit),
+                items: fallback.items,
                 mode: "lexical_fallback",
-                diagnostic: "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                diagnostic: combinedDiagnostic(
+                    primary: "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))",
+                    secondary: fallback.diagnostic
+                )
             )
         }
         guard !queryVec.isEmpty else {
             logger.error("memory_embedding_empty op=recall")
+            let fallback = lexicalRecallResult(query: trimmed, context: context, limit: limit)
             return RecallResult(
-                items: lexicalRecall(query: trimmed, context: context, limit: limit),
+                items: fallback.items,
                 mode: "lexical_fallback",
-                diagnostic: "embedding_empty"
+                diagnostic: combinedDiagnostic(primary: "embedding_empty", secondary: fallback.diagnostic)
             )
         }
 
-        let availableItems = (try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []
+        let availableItems: [MemoryItem]
+        do {
+            availableItems = try context.fetch(FetchDescriptor<MemoryItem>())
+        } catch {
+            let diagnostic = "fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("memory_fetch_failed op=recall diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            return RecallResult(items: [], mode: "failed", diagnostic: diagnostic)
+        }
         guard !availableItems.isEmpty else {
             return RecallResult(items: [], mode: "semantic", diagnostic: "empty_store")
         }
@@ -118,10 +144,13 @@ enum MemoryStore {
         }
         if results.count < limit {
             let existingIDs = Set(results.map(\.persistentModelID))
-            let backfill = lexicalRecall(query: trimmed, context: context, limit: limit - results.count, excluding: existingIDs)
-            results.append(contentsOf: backfill)
-            if !backfill.isEmpty {
-                return RecallResult(items: results, mode: "semantic_with_lexical_backfill", diagnostic: nil)
+            let backfill = lexicalRecallResult(query: trimmed, context: context, limit: limit - results.count, excluding: existingIDs)
+            results.append(contentsOf: backfill.items)
+            if !backfill.items.isEmpty {
+                return RecallResult(items: results, mode: "semantic_with_lexical_backfill", diagnostic: backfill.diagnostic)
+            }
+            if let diagnostic = backfill.diagnostic {
+                return RecallResult(items: results, mode: "semantic", diagnostic: diagnostic)
             }
         }
         return RecallResult(items: results, mode: "semantic", diagnostic: nil)
@@ -133,15 +162,33 @@ enum MemoryStore {
         limit: Int,
         excluding excludedIDs: Set<PersistentIdentifier> = []
     ) -> [MemoryItem] {
+        lexicalRecallResult(query: query, context: context, limit: limit, excluding: excludedIDs).items
+    }
+
+    private static func lexicalRecallResult(
+        query: String,
+        context: ModelContext,
+        limit: Int,
+        excluding excludedIDs: Set<PersistentIdentifier> = []
+    ) -> LexicalRecallResult {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, limit > 0 else { return [] }
+        guard !trimmed.isEmpty, limit > 0 else {
+            return LexicalRecallResult(items: [], diagnostic: "lexical_empty_query")
+        }
         let queryLower = trimmed.lowercased()
         let terms = queryLower
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count >= 2 }
-        guard let availableItems = try? context.fetch(FetchDescriptor<MemoryItem>()) else { return [] }
+        let availableItems: [MemoryItem]
+        do {
+            availableItems = try context.fetch(FetchDescriptor<MemoryItem>())
+        } catch {
+            let diagnostic = "lexical_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("memory_fetch_failed op=lexicalRecall diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            return LexicalRecallResult(items: [], diagnostic: diagnostic)
+        }
         let now = Date()
-        return availableItems.compactMap { item -> (MemoryItem, Double)? in
+        let items = availableItems.compactMap { item -> (MemoryItem, Double)? in
             guard !excludedIDs.contains(item.persistentModelID), !isExpired(item, now: now) else { return nil }
             let content = item.content.lowercased()
             let topic = item.topic?.lowercased() ?? ""
@@ -165,6 +212,12 @@ enum MemoryStore {
         }
         .prefix(limit)
         .map { $0.0 }
+        return LexicalRecallResult(items: items, diagnostic: nil)
+    }
+
+    private static func combinedDiagnostic(primary: String, secondary: String?) -> String {
+        guard let secondary, !secondary.isEmpty else { return primary }
+        return "\(primary);\(secondary)"
     }
 
     static func remember(_ content: String, kind: MemoryKind = .fact, source: String = "manual", topic: String? = nil, context: ModelContext) async throws {
@@ -202,19 +255,45 @@ enum MemoryStore {
         MemoryVectorIndex.shared.append(id: item.persistentModelID, isPinned: item.isPinned, vector: embedding)
     }
 
-    static func extractAndStore(userText: String, assistantText: String, transientTexts: [String] = [], context: ModelContext) async {
+    @discardableResult
+    static func extractAndStore(userText: String, assistantText: String, transientTexts: [String] = [], context: ModelContext) async -> AutoExtractionResult {
         let durableAssistant = durableAssistantText(assistantText, transientTexts: transientTexts)
         let combined = userText + "\n" + durableAssistant
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .memory)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
+        var attempted = 0
+        var stored = 0
+        var failed = 0
+        var skipped = 0
+        var diagnostics: [String] = []
         for extracted in extractFacts(from: combined) {
-            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .memory) || !ResourceBudgetGate.allowsMaintenance(reason: "memory.extract") { break }
-            try? await remember(extracted.content, kind: extracted.kind, source: "auto", topic: extracted.topic, context: context)
+            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .memory) || !ResourceBudgetGate.allowsMaintenance(reason: "memory.extract") {
+                skipped += 1
+                diagnostics.append("memory_extract_skipped")
+                break
+            }
+            attempted += 1
+            do {
+                try await remember(extracted.content, kind: extracted.kind, source: "auto", topic: extracted.topic, context: context)
+                stored += 1
+            } catch {
+                failed += 1
+                let diagnostic = "remember_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                diagnostics.append(diagnostic)
+                logger.error("memory_auto_store_failed op=extractAndStore diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            }
         }
+        return AutoExtractionResult(
+            attempted: attempted,
+            stored: stored,
+            failed: failed,
+            skipped: skipped,
+            diagnostics: diagnostics
+        )
     }
 
     static func wipeAll(context: ModelContext) throws {
-        guard let all = try? context.fetch(FetchDescriptor<MemoryItem>()) else { return }
+        let all = try context.fetch(FetchDescriptor<MemoryItem>())
         for item in all where !item.isPinned {
             context.delete(item)
         }
@@ -223,20 +302,30 @@ enum MemoryStore {
     }
 
     static func wipeEverything(context: ModelContext) throws {
-        guard let all = try? context.fetch(FetchDescriptor<MemoryItem>()) else { return }
+        let all = try context.fetch(FetchDescriptor<MemoryItem>())
         for item in all { context.delete(item) }
         try persist(context, operation: "wipeEverything", scope: "MemoryItem")
         MemoryVectorIndex.shared.invalidate()
     }
 
     static func exportJSON(context: ModelContext) -> String {
-        guard let all = try? context.fetch(FetchDescriptor<MemoryItem>()) else { return "[]" }
+        do {
+            return try exportJSONThrowing(context: context)
+        } catch {
+            logger.error("memory_export_failed op=exportJSON error=\(String(describing: error), privacy: .public)")
+            return "[]"
+        }
+    }
+
+    static func exportJSONThrowing(context: ModelContext) throws -> String {
+        let all = try context.fetch(FetchDescriptor<MemoryItem>())
         struct Export: Codable { let content: String; let kind: String; let topic: String?; let pinned: Bool; let createdAt: Date }
         let items = all.map { Export(content: $0.content, kind: $0.kind, topic: $0.topic, pinned: $0.isPinned, createdAt: $0.createdAt) }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         enc.dateEncodingStrategy = .iso8601
-        return (try? String(data: enc.encode(items), encoding: .utf8)) ?? "[]"
+        let data = try enc.encode(items)
+        return String(decoding: data, as: UTF8.self)
     }
 
     // MARK: - Fact extraction (lightweight, rule-based)

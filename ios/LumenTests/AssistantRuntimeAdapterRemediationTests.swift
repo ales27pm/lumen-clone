@@ -62,6 +62,28 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         }
     }
 
+    func testCapabilityMatrixMarksStagedAdaptersNonSelectable() {
+        let matrix = AssistantRuntimeCapabilityMatrix.current(
+            foundation: FoundationModelsRuntimeAdapter(),
+            llama: LlamaRuntimeAdapter(isAvailable: false),
+            fallback: DeterministicFallbackRuntime(),
+            coreML: CoreMLRuntimeAdapter(modelURL: nil)
+        )
+
+        let foundation = matrix.row(for: .foundationModels)
+        XCTAssertEqual(foundation?.generationSupported, false)
+        XCTAssertEqual(foundation?.generationSelectable, false)
+        XCTAssertTrue(foundation?.status.contains("staged") == true || foundation?.status.contains("framework unavailable") == true)
+
+        let coreML = matrix.row(for: .coreML)
+        XCTAssertEqual(coreML?.embeddingSupported, false)
+        XCTAssertEqual(coreML?.embeddingSelectable, false)
+        XCTAssertEqual(coreML?.status, "staged: implementation missing")
+
+        XCTAssertEqual(matrix.selectableGenerationRuntimes, [.deterministicFallback])
+        XCTAssertEqual(matrix.selectableEmbeddingRuntimes, [])
+    }
+
     func testMetricErrorSanitizerDoesNotExposeDescription() {
         let code = RuntimeMetricErrorSanitizer.code(for: LocalRuntimeError.unavailable("raw private text"))
         XCTAssertEqual(code, "runtime_unavailable")

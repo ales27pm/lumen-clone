@@ -5,6 +5,7 @@ struct RuntimeDiagnosticsSnapshot: Sendable {
     let foundationModelsStatus: String
     let coreMLAvailable: Bool
     let coreMLStatus: String
+    let runtimeCapabilityRows: [AssistantRuntimeCapabilityRow]
     let metalAvailable: Bool
     let lowPowerModeEnabled: Bool
     let thermalState: String

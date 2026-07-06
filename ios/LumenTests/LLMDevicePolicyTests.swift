@@ -79,6 +79,37 @@ struct LLMDevicePolicyTests {
         #expect(decision.report.reasons.contains(ModelFitReason.remoteModelEscalationAllowed) == false)
     }
 
+    @Test func mockBackendIsRejectedByDefault() async {
+        let policy = DeviceModelPolicy(provider: TestDeviceCapabilityProvider())
+
+        let decision = await policy.evaluate(
+            model: mockModel(id: "mock.default-deny"),
+            requestedProfile: InferenceProfile.simulatorSafe,
+            requestedBudget: InferenceBudget.fast,
+            appIsForeground: true
+        )
+
+        #expect(decision.isRejected)
+        #expect(decision.report.reasons.contains(ModelFitReason.mockBackendNotAllowed))
+    }
+
+    @Test func mockBackendRequiresExplicitTestHarnessOptIn() async {
+        let policy = DeviceModelPolicy(
+            provider: TestDeviceCapabilityProvider(),
+            allowMockModels: true
+        )
+
+        let decision = await policy.evaluate(
+            model: mockModel(id: "mock.test-harness"),
+            requestedProfile: InferenceProfile.simulatorSafe,
+            requestedBudget: InferenceBudget.fast,
+            appIsForeground: true
+        )
+
+        #expect(decision.isAllowed)
+        #expect(decision.report.reasons.contains(ModelFitReason.mockBackendNotAllowed) == false)
+    }
+
     @Test func simulatorDisablesMetalAndDowngradesGGUFProfile() async {
         let provider = TestDeviceCapabilityProvider(
             formFactor: .simulator,
@@ -402,6 +433,15 @@ struct LLMDevicePolicyTests {
             id: id,
             displayName: "Policy Test Remote",
             backend: .remote,
+            contextLength: 8_192
+        )
+    }
+
+    private func mockModel(id: String) -> LocalLLMModel {
+        LocalLLMModel(
+            id: id,
+            displayName: "Policy Test Mock",
+            backend: .mock,
             contextLength: 8_192
         )
     }

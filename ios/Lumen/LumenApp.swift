@@ -46,7 +46,6 @@ final class AppStartupCoordinator {
             // Complete core boot immediately so the UI renders.
             // Heavy work (grounding resources, fleet checks, model loading)
             // continues in a background detached task.
-            let ctx = ModelContext(container)
             appState.runtime.completeBootCore()
             state = .ready(container)
 
@@ -54,8 +53,10 @@ final class AppStartupCoordinator {
             // This MUST NOT inherit @MainActor isolation.
             // Capture parameters locally so they can escape into the Task.detached closure.
             let capturedAppState = appState
+            let capturedContainer = container
             let capturedBootstrap = bootstrap
             Task.detached(priority: .medium) {
+                let ctx = ModelContext(capturedContainer)
                 do {
                     try await capturedBootstrap(capturedAppState, ctx)
                 } catch {
@@ -193,112 +194,6 @@ final class AppStartupCoordinator {
                 appState.runtime.updateBootStep(id: "grounding", detail: "Grounding resources unavailable — limited mode", state: .complete)
             }
         }
-    }
-
-    /// Loads chat and embedding models in the background with progressive fallbacks.
-    /// - First tries the user's preferred model with full context
-    /// - Falls back to 2048 context if full context fails
-    /// - Falls back to next available model if preferred fails
-    /// - Tries embedding model similarly
-    /// The app remains fully usable even if all models fail to load.
-    private static func loadModelsWithFallbacks(appState: AppState, context ctx: ModelContext) async {
-        await MainActor.run {
-            appState.runtime.updateBootStep(id: "loader", detail: "Loading models in background", state: .running)
-        }
-
-        let allStored = (try? ctx.fetch(FetchDescriptor<StoredModel>())) ?? []
-
-        // Load chat model with fallbacks
-        let chatLoaded = await loadChatModelWithFallbacks(appState: appState, stored: allStored)
-
-        // Load embedding model with fallbacks
-        let embedLoaded = await loadEmbeddingModelWithFallbacks(appState: appState, stored: allStored)
-
-        let statusDetail: String
-        if chatLoaded && embedLoaded {
-            statusDetail = "All models ready"
-        } else if chatLoaded {
-            statusDetail = "Chat model ready (embedding unavailable)"
-        } else if embedLoaded {
-            statusDetail = "Embedding model ready (chat unavailable)"
-        } else {
-            statusDetail = "Models will load on first use"
-        }
-
-        await MainActor.run {
-            appState.runtime.updateBootStep(id: "loader", detail: statusDetail, state: chatLoaded || embedLoaded ? .complete : .warning)
-            appState.runtime.bootHeadline = "Lumen is ready"
-        }
-
-        // Auto-dismiss boot splash after a short grace period so the user
-        // can see the final "ready" state, but only if they haven't already
-        // dismissed manually.
-        try? await Task.sleep(for: .seconds(1.5))
-        await MainActor.run {
-            if appState.runtime.bootSplashVisible {
-                appState.runtime.dismissBootSplash()
-            }
-        }
-    }
-
-    private static func loadChatModelWithFallbacks(appState: AppState, stored: [StoredModel]) async -> Bool {
-        let chatModels = stored.filter { $0.modelRole == .chat }
-        guard !chatModels.isEmpty else { return false }
-
-        let preferredID = appState.activeChatModelID
-        var candidates = chatModels
-        if let preferredID, let preferred = chatModels.first(where: { $0.id.uuidString == preferredID }) {
-            candidates.removeAll { $0.id == preferred.id }
-            candidates.insert(preferred, at: 0)
-        }
-
-        for candidate in candidates {
-            let path = ModelStorage.resolvedModelURL(from: candidate.localPath, fileName: candidate.fileName).path
-            guard FileManager.default.fileExists(atPath: path) else { continue }
-
-            // Try full context first, then fallback to 2048
-            for contextSize in [appState.contextSize, 2048] {
-                guard contextSize > 0 else { continue }
-                do {
-                    try await AppLlamaService.shared.loadChatModel(path: path, contextSize: contextSize)
-                    await MainActor.run {
-                        appState.activeChatModelID = candidate.id.uuidString
-                        appState.runtime.updateBootStep(id: "loader", detail: "Chat model loaded (\(candidate.name), ctx=\(contextSize))", state: .running)
-                    }
-                    return true
-                } catch {
-                    continue
-                }
-            }
-        }
-        return false
-    }
-
-    private static func loadEmbeddingModelWithFallbacks(appState: AppState, stored: [StoredModel]) async -> Bool {
-        let embedModels = stored.filter { $0.modelRole == .embedding }
-        guard !embedModels.isEmpty else { return false }
-
-        let preferredID = appState.activeEmbeddingModelID
-        var candidates = embedModels
-        if let preferredID, let preferred = embedModels.first(where: { $0.id.uuidString == preferredID }) {
-            candidates.removeAll { $0.id == preferred.id }
-            candidates.insert(preferred, at: 0)
-        }
-
-        for candidate in candidates {
-            let path = ModelStorage.resolvedModelURL(from: candidate.localPath, fileName: candidate.fileName).path
-            guard FileManager.default.fileExists(atPath: path) else { continue }
-            do {
-                try await AppLlamaService.shared.loadEmbeddingModel(path: path)
-                await MainActor.run {
-                    appState.activeEmbeddingModelID = candidate.id.uuidString
-                }
-                return true
-            } catch {
-                continue
-            }
-        }
-        return false
     }
 
     private static func withStage(_ stage: Stage, operation: () async throws -> Void) async throws {

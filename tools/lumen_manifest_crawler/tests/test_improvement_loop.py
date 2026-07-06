@@ -5,7 +5,11 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from lumen_manifest_crawler.improvement_loop import AgentImprovementLoopConfig, run_agent_improvement_loop
+
+pytestmark = pytest.mark.slow
 
 
 def _repo_root() -> Path:

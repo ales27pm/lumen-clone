@@ -301,6 +301,23 @@ struct LLMModelStorageTests {
         #expect(usable.contains { $0.model.backend == .remote } == false)
     }
 
+    @Test func modelSelectionServiceDoesNotSelectMockModelWithoutTestHarnessPolicy() async throws {
+        let temp = try makeTemporaryStorage()
+        defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
+        let storage = LLMModelStorage(location: temp.location)
+        _ = try await storage.registerTinyIntentModel()
+        try await storage.saveRecord(installedMockRecord(id: "mock.standard-chat"))
+        let policy = DeviceModelPolicy(provider: TestDeviceCapabilityProvider())
+        let selection = ModelSelectionService(storage: storage, policy: policy)
+
+        let best = try await selection.bestModel(for: .standardChat, appIsForeground: true)
+        let usable = try await selection.installedUsableModels(appIsForeground: true)
+
+        #expect(best?.id == "builtin.tiny-intent")
+        #expect(best?.model.backend == .tinyIntent)
+        #expect(usable.contains { $0.model.backend == .mock } == false)
+    }
+
     @Test func hashMismatchThrowsModelStorageError() async throws {
         let temp = try makeTemporaryStorage()
         defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
@@ -354,6 +371,26 @@ struct LLMModelStorageTests {
                 id: id,
                 displayName: "Installed Remote",
                 backend: .remote,
+                contextLength: 8_192
+            ),
+            fileURL: nil,
+            relativePath: nil,
+            sha256: nil,
+            sizeBytes: nil,
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastVerifiedAt: nil,
+            verificationStatus: .verified
+        )
+    }
+
+    private func installedMockRecord(id: String) -> InstalledModelRecord {
+        InstalledModelRecord(
+            id: id,
+            catalogID: nil,
+            model: LocalLLMModel(
+                id: id,
+                displayName: "Installed Mock",
+                backend: .mock,
                 contextLength: 8_192
             ),
             fileURL: nil,

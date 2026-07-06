@@ -148,11 +148,20 @@ struct SourcesView: View {
         Task {
             busy = true; defer { busy = false }
             var total = 0
+            var failures: [String] = []
             for u in urls {
                 guard let dest = FileStore.importFile(from: u) else { continue }
-                total += await RAGStore.indexFile(url: dest, context: modelContext)
+                let result = await RAGStore.indexFileWithDiagnostics(url: dest, context: modelContext)
+                total += result.indexedCount
+                if result.didIndexAllChunks == false, let diagnostic = result.diagnostic {
+                    failures.append("\(dest.lastPathComponent): \(diagnostic)")
+                }
             }
-            status = "Indexed \(total) new chunks from \(urls.count) file(s)."
+            if failures.isEmpty {
+                status = "Indexed \(total) new chunks from \(urls.count) file(s)."
+            } else {
+                status = "Indexed \(total) chunks; \(failures.count) file(s) degraded or failed. \(failures.prefix(2).joined(separator: "; "))"
+            }
         }
     }
 

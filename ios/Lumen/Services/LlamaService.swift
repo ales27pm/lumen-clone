@@ -144,6 +144,24 @@ private extension LLMResponseFormat {
             return true
         }
     }
+
+    var llamaGrammarConfig: LlamaGrammarConfig? {
+        guard requiresRawStructuredOutput else { return nil }
+        return LlamaGrammarConfig(grammar: Self.jsonObjectGrammar, grammarRoot: "root")
+    }
+
+    private static let jsonObjectGrammar = #"""
+    root   ::= object
+    value  ::= object | array | string | number | "true" | "false" | "null"
+    object ::= "{" ws ( string ws ":" ws value ("," ws string ws ":" ws value)* )? ws "}"
+    array  ::= "[" ws ( value ("," ws value)* )? ws "]"
+    string ::= "\"" (
+      [^"\\\u0000-\u001f] |
+      "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4})
+    )* "\"" ws
+    number ::= ("-")? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+    ws     ::= ([ \t\n\r] ws)?
+    """#
 }
 
 nonisolated enum GenerationToken: Sendable {
@@ -933,6 +951,7 @@ final actor AppLlamaService {
         repetitionPenalty: Float = 1.1,
         maxTokens: Int? = nil,
         seed: UInt32? = nil,
+        responseFormat: LLMResponseFormat = .plainText,
         cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         if let runtime = sharedChatRuntime {
@@ -944,6 +963,7 @@ final actor AppLlamaService {
                 repetitionPenalty: repetitionPenalty,
                 maxTokens: maxTokens,
                 seed: seed,
+                responseFormat: responseFormat,
                 cancellationToken: cancellationToken
             )
         }
@@ -959,6 +979,7 @@ final actor AppLlamaService {
             repetitionPenalty: repetitionPenalty,
             maxTokens: maxTokens,
             seed: seed,
+            responseFormat: responseFormat,
             cancellationToken: cancellationToken
         )
     }
@@ -971,6 +992,7 @@ final actor AppLlamaService {
         repetitionPenalty: Float = 1.1,
         maxTokens: Int? = nil,
         seed: UInt32? = nil,
+        responseFormat: LLMResponseFormat = .plainText,
         cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         if let runtime = sharedChatRuntime {
@@ -982,6 +1004,7 @@ final actor AppLlamaService {
                 repetitionPenalty: repetitionPenalty,
                 maxTokens: maxTokens,
                 seed: seed,
+                responseFormat: responseFormat,
                 cancellationToken: cancellationToken
             )
         }
@@ -997,6 +1020,7 @@ final actor AppLlamaService {
             repetitionPenalty: repetitionPenalty,
             maxTokens: maxTokens,
             seed: seed,
+            responseFormat: responseFormat,
             cancellationToken: cancellationToken
         )
     }
@@ -1010,6 +1034,7 @@ final actor AppLlamaService {
         repetitionPenalty: Float,
         maxTokens: Int?,
         seed: UInt32?,
+        responseFormat: LLMResponseFormat,
         cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         let resolvedSeed = seed ?? makeRandomSeed()
@@ -1017,6 +1042,7 @@ final actor AppLlamaService {
             temperature: temperature,
             seed: resolvedSeed,
             topP: topP,
+            grammarConfig: responseFormat.llamaGrammarConfig,
             repetitionPenaltyConfig: LlamaRepetitionPenaltyConfig(repeatPenalty: repetitionPenalty)
         )
         return await runtime.streamCompletion(of: messages, samplingConfig: sampling, maxTokens: maxTokens, cancellationToken: cancellationToken)
@@ -1031,6 +1057,7 @@ final actor AppLlamaService {
         repetitionPenalty: Float,
         maxTokens: Int?,
         seed: UInt32?,
+        responseFormat: LLMResponseFormat,
         cancellationToken: LlamaGenerationCancellationToken? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         try cancellationToken?.checkCancellation()
@@ -1040,6 +1067,7 @@ final actor AppLlamaService {
             temperature: temperature,
             seed: resolvedSeed,
             topP: topP,
+            grammarConfig: responseFormat.llamaGrammarConfig,
             repetitionPenaltyConfig: LlamaRepetitionPenaltyConfig(repeatPenalty: repetitionPenalty)
         )
         let rawStream = try await runtime.service.streamCompletion(of: messages, samplingConfig: sampling)
@@ -1367,6 +1395,7 @@ final actor AppLlamaService {
                         repetitionPenalty: Float(groundedRequest.repetitionPenalty),
                         maxTokens: groundedRequest.maxTokens,
                         seed: groundedRequest.seed,
+                        responseFormat: groundedRequest.responseFormat,
                         cancellationToken: cancellationToken
                     )
                     streamStarted = true
@@ -1792,19 +1821,6 @@ final actor AppLlamaService {
         return normalize(raw.map(Double.init))
     }
 
-    func embed(text: String, dimensions: Int = 256) async -> [Double] {
-        let requestID = UUID().uuidString
-        do {
-            return try await embed(text)
-        } catch {
-            let errorCode = classifyError(error)
-            Logger(subsystem: "com.lumen.runtime", category: "llama.service").error(
-                "event=llama.embedding.failure severity=error error_code=\(errorCode.rawValue, privacy: .public) request_id=\(requestID, privacy: .public) dimensions=\(dimensions, privacy: .public) message=\(error.localizedDescription, privacy: .public)"
-            )
-            return []
-        }
-    }
-
     private func loadChatModelSync(path: String, slot: LumenModelSlot, contextSize: Int, batchSize: UInt32) throws {
         guard slot != .embedding else {
             throw LlamaError.failedToInitializeContext("Embedding slot cannot be loaded as chat")
@@ -2218,7 +2234,7 @@ final actor AppLlamaService {
         case .constrainedJSON(let schema):
             instruction = """
             Response format contract: output exactly one valid JSON object matching this schema. Do not include prose, markdown, code fences, or hidden reasoning.
-            Enforcement diagnostic: \(responseFormat.enforcementDiagnostic ?? "none"). TODO: wire llama.cpp grammar enforcement when the native bridge exposes grammar.
+            Enforcement diagnostic: \(responseFormat.enforcementDiagnostic ?? "none"); native JSON object grammar enabled; schema keyword validation remains prompt contract.
             JSON schema:
             \(schema)
             """

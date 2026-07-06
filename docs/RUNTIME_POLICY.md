@@ -6,10 +6,12 @@
 - Foreground nominal: `maxTokens=1024`, heavy runtime enabled.
 
 `AssistantRuntimeRouter` uses this decision and task kind to select:
-- CoreML for embedding/safety tasks when available.
-- FoundationModels for preferred foreground chat-like tasks when available and policy allows.
+- CoreML for embedding/safety tasks only when the runtime capability matrix marks CoreML embeddings as selectable.
+- FoundationModels for preferred foreground chat-like tasks only when the runtime capability matrix marks FoundationModels generation as selectable and policy allows.
 - llama when FoundationModels is unavailable or constrained.
 - deterministic fallback for constrained or unavailable scenarios.
+
+`AssistantRuntimeCapabilityMatrix` is the source of truth for staged adapter capability reporting. FoundationModels and CoreML may appear in diagnostics with framework or model status, but staged implementations must report `generationSelectable=false` or `embeddingSelectable=false` until their real generation/embedding paths are implemented. Diagnostics should show both the status and selectability so a staged adapter cannot look production-capable by mere framework availability.
 
 ## ResourceBudgetGate model-load policy
 
