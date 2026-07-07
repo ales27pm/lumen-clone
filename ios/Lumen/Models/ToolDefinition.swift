@@ -117,12 +117,13 @@ private nonisolated enum ToolArgumentContractCatalog {
         case "mail.draft":
             return [
                 .init("to"),
-                .init("subject"),
+                .init("subject", required: false),
                 .init("body"),
                 .init("recipient", required: false),
                 .init("email", required: false),
                 .init("message", required: false),
-                .init("text", required: false)
+                .init("text", required: false),
+                .init("title", required: false)
             ]
         case "outlook.folders.list":
             return [.init("includeHidden", type: .bool, required: false)]

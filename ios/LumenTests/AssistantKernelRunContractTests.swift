@@ -79,7 +79,7 @@ final class AssistantKernelRunContractTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(finalText, "Lumen is running in limited local mode.")
+        XCTAssertEqual(finalText, "Diagnostic deterministic runtime response.")
         XCTAssertEqual(selectedRuntime, AssistantRuntimeKind.deterministicFallback.rawValue)
         XCTAssertEqual(runtimeMetadata["budgetPolicy"], LumenSlotBudgetPolicy.foregroundInteractive.rawValue)
         XCTAssertEqual(runtimeMetadata["budgetDenialReason"], "foregroundInteractive: heavyRuntime=false")

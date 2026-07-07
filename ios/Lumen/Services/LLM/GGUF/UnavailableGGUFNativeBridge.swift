@@ -1,5 +1,6 @@
 import Foundation
 
+#if DEBUG
 actor UnavailableGGUFNativeBridge: GGUFNativeBridge {
     private var cancellationRequested = false
 
@@ -25,3 +26,4 @@ actor UnavailableGGUFNativeBridge: GGUFNativeBridge {
         cancellationRequested = true
     }
 }
+#endif

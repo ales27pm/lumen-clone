@@ -107,12 +107,19 @@ extension AssistantKernel: AgentKernelRunning {
                             diagnosticsEnabled: true
                         )
 
+                        #if DEBUG
                         let bridgedEvents = request.requiresBackgroundSafeToolBridge
                             ? LegacyAgentCompatibilityBridge.runSlotAgentKernelCompatibility(legacyRequest, options: legacyOptions)
                             : runLegacyAgentBridge(legacyRequest, options: legacyOptions)
                         for await bridgedEvent in bridgedEvents {
                             continuation.yield(bridgedEvent)
                         }
+                        #else
+                        let message = "Tool-capable agent turns are excluded from this Release build until native kernel tool execution is available."
+                        emitStep(.observation, message)
+                        continuation.yield(.final(message))
+                        continuation.yield(.done(finalText: message, steps: emittedSteps))
+                        #endif
                         continuation.finish()
                         return
                     }
@@ -221,7 +228,15 @@ extension AssistantKernel: AgentKernelRunning {
     }
 
     func runLegacyAgentBridge(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentKernelEvent> {
+        #if DEBUG
         LegacyAgentCompatibilityBridge.runLegacyAgentService(request, options: options)
+        #else
+        AsyncStream { continuation in
+            let message = "Legacy agent bridge is excluded from Release builds."
+            continuation.yield(.error(message))
+            continuation.finish()
+        }
+        #endif
     }
 
     private func toolBridgeAvailableTools(

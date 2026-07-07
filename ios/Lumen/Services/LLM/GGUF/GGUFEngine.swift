@@ -14,8 +14,16 @@ actor GGUFEngine: LLMEngine {
     private var generationInProgress = false
     private var generationInProgressWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(nativeBridge: any GGUFNativeBridge = UnavailableGGUFNativeBridge()) {
-        self.nativeBridge = nativeBridge
+    init(nativeBridge: (any GGUFNativeBridge)? = nil) {
+        if let nativeBridge {
+            self.nativeBridge = nativeBridge
+        } else {
+            #if DEBUG
+            self.nativeBridge = UnavailableGGUFNativeBridge()
+            #else
+            preconditionFailure("GGUFEngine requires a compiled native bridge in Release builds.")
+            #endif
+        }
     }
 
     func load(model: LocalLLMModel, profile: InferenceProfile) async throws {

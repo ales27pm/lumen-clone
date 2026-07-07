@@ -191,6 +191,8 @@ nonisolated enum SelfModelSnapshotBuilder {
             return .llamaGGUF
         case .deterministicFallback:
             return .deterministicFallback
+        case .unavailable:
+            return .unavailable
         }
     }
 
