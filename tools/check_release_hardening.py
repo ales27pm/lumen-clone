@@ -52,14 +52,21 @@ def iter_files(roots: list[pathlib.Path], suffixes: tuple[str, ...]) -> list[pat
     return sorted(files)
 
 
+def _condition_contains_debug(directive: str) -> bool:
+    condition = re.sub(r"//.*$", "", directive)
+    return re.search(r"\bDEBUG\b", condition) is not None
+
+
 def debug_stack_for_lines(lines: list[str]) -> list[bool]:
     stack: list[bool] = []
     states: list[bool] = []
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("#if"):
-            stack.append(stripped == "#if DEBUG")
-        elif stripped.startswith("#else") and stack:
+            stack.append(_condition_contains_debug(stripped))
+        elif stripped.startswith("#elseif") and stack:
+            stack[-1] = _condition_contains_debug(stripped)
+        elif stripped == "#else" and stack:
             stack[-1] = not stack[-1]
         elif stripped.startswith("#endif") and stack:
             stack.pop()
@@ -81,8 +88,6 @@ def scan_source() -> list[str]:
                     violations.append(f"{relative}:{line_number}: {label}: {line.strip()}")
             for label, pattern in DEBUG_ONLY_PATTERNS.items():
                 if pattern.search(line) and not debug_only:
-                    if relative == "ios/Lumen/Assistant/AssistantKernel+Streaming.swift" and "func runLegacyAgentBridge" in line:
-                        continue
                     violations.append(f"{relative}:{line_number}: {label} must be inside #if DEBUG: {line.strip()}")
     return violations
 

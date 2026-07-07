@@ -174,6 +174,23 @@ nonisolated enum ToolRouteGuard {
         let loweredValues = arguments.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
 
         switch canonicalToolID {
+        case "messages.draft":
+            if out["to"] == nil {
+                out["to"] = arguments["recipient"] ?? arguments["number"]
+            }
+            if out["body"] == nil {
+                out["body"] = arguments["message"] ?? arguments["text"]
+            }
+        case "mail.draft":
+            if out["to"] == nil {
+                out["to"] = arguments["recipient"] ?? arguments["email"]
+            }
+            if out["subject"] == nil {
+                out["subject"] = arguments["title"]
+            }
+            if out["body"] == nil {
+                out["body"] = arguments["message"] ?? arguments["text"]
+            }
         case "maps.search":
             if out["query"] == nil {
                 out["query"] = arguments["location"] ?? arguments["destination"] ?? arguments["place"] ?? arguments["nearby"]
@@ -230,6 +247,39 @@ nonisolated enum ToolRouteGuard {
             out["query"] = "nearest airport near me"
         }
         return out
+    }
+
+    static func aliasesAllowedDuringNormalization(for canonicalToolID: String) -> Set<String> {
+        switch canonicalToolID {
+        case "messages.draft":
+            return ["recipient", "number", "message", "text"]
+        case "mail.draft":
+            return ["recipient", "email", "message", "text", "title"]
+        case "maps.search":
+            return ["location", "destination", "place", "nearby"]
+        case "maps.directions":
+            return ["query", "location", "place"]
+        case "weather":
+            return ["query", "city"]
+        case "web.search":
+            return ["q", "term", "search"]
+        case "web.fetch":
+            return ["uri", "link", "query"]
+        case "outlook.messages.search":
+            return ["q", "term", "search", "subject", "from"]
+        case "outlook.message.read", "outlook.attachments.list", "outlook.message.mark_read",
+             "outlook.message.mark_unread", "outlook.message.move", "outlook.message.archive",
+             "outlook.message.delete":
+            return ["id", "messageID", "message", "reference", "ordinal"]
+        case "outlook.message.reply", "outlook.message.reply_all":
+            return ["id", "messageID", "message", "reference", "ordinal", "comment"]
+        case "outlook.message.forward":
+            return ["id", "messageID", "message", "reference", "ordinal", "recipient", "recipients", "email", "text", "content", "comment"]
+        case "outlook.draft.create", "outlook.mail.send":
+            return ["recipient", "recipients", "email", "message", "text", "content", "comment"]
+        default:
+            return []
+        }
     }
 
     static func canExecuteTool(_ canonicalToolID: String, arguments: [String: String], approval: ToolExecutionApproval) -> Bool {

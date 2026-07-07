@@ -86,8 +86,29 @@ final class RuntimeRouterTests: XCTestCase {
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
         let selection = router.selection(for: context)
 
-        XCTAssertEqual(selection.runtime, .llama)
+        XCTAssertEqual(selection.runtime, .unavailable)
         XCTAssertNotEqual(selection.runtime, .deterministicFallback)
+    }
+
+    func testReleasePolicyDoesNotSelectHeavyRuntimeWhenPolicyDeniedEvenIfLlamaAvailable() {
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { _ in "ok" }),
+            allowDiagnosticFallbackSelection: false
+        )
+        let context = AssistantTurnContext(
+            task: .chat,
+            input: "hello",
+            isForeground: true,
+            lowPowerMode: false,
+            thermalState: .nominal,
+            allowHeavyRuntime: false
+        )
+        let selection = router.selection(for: context)
+
+        XCTAssertEqual(selection.runtime, .unavailable)
+        XCTAssertNotEqual(selection.runtime, .llama)
+        XCTAssertNotEqual(selection.runtime, .deterministicFallback)
+        XCTAssertEqual(selection.reason, "foregroundInteractive: heavyRuntime=false")
     }
 
     func testReleasePolicyDoesNotSelectDiagnosticFallbackForEmbedding() {
