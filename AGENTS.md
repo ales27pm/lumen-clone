@@ -42,8 +42,8 @@ git diff --check
 python3 -m compileall tools scripts
 python3 tools/check_release_hardening.py
 bash scripts/check-lumen-integration-gate.sh
-uv run --python 3.12 pytest -m "not slow and not e2e"
-cd tools/lumen_manifest_crawler && uv run --python 3.12 pytest --collect-only
+uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler --with pytest --with pydantic --with typer --with rich pytest -m "not slow and not e2e"
+cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only
 ```
 
 The repository documentation may list `python -m compileall tools scripts` for parity with generic environments. On this host, `python` may be unavailable; record that exact failure if required, then run `python3 -m compileall tools scripts`.
@@ -56,8 +56,8 @@ Useful command recap:
 | `python3 -m compileall tools scripts` | Python syntax check | After script/tool edits |
 | `python3 tools/check_release_hardening.py` | Release routing/static hardening guard | After runtime, docs, or gate edits |
 | `bash scripts/check-lumen-integration-gate.sh` | Repo integration gate | Before claiming a hardening pass |
-| `uv run --python 3.12 pytest -m "not slow and not e2e"` | Python unit suite | After Python/tooling changes |
-| `cd tools/lumen_manifest_crawler && uv run --python 3.12 pytest --collect-only` | Crawler collection check | After crawler or import-path changes |
+| `uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler --with pytest --with pydantic --with typer --with rich pytest -m "not slow and not e2e"` | Python unit suite | After Python/tooling changes |
+| `cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only` | Crawler collection check | After crawler or import-path changes |
 
 Stable Xcode compile checkpoint:
 

@@ -13,8 +13,8 @@ This package owns deterministic source crawling, manifest generation, dataset po
 Common checks:
 
 ```bash
-uv run --python 3.12 pytest --collect-only
-uv run --python 3.12 pytest -m "not slow and not e2e"
+uv run --python 3.12 --with pytest pytest --collect-only
+uv run --python 3.12 --with pytest pytest -m "not slow and not e2e"
 ```
 
 From the repository root, the editable-package collect check is:
@@ -30,8 +30,8 @@ Useful command recap:
 
 | Command | Purpose | When to use |
 | --- | --- | --- |
-| `uv run --python 3.12 pytest --collect-only` | Import and collection validation | After module, fixture, or dependency changes |
-| `uv run --python 3.12 pytest -m "not slow and not e2e"` | Local crawler tests | After crawler logic changes |
+| `uv run --python 3.12 --with pytest pytest --collect-only` | Import and collection validation | After module, fixture, or dependency changes |
+| `uv run --python 3.12 --with pytest pytest -m "not slow and not e2e"` | Local crawler tests | After crawler logic changes |
 | `python3 -m compileall tools scripts` | Repo Python syntax check | After Python edits outside this package too |
 | `python3 -m lumen_manifest_crawler developer-cycle --root .` | Top-level developer-cycle report | Only when the task asks for framework/report regeneration |
 

@@ -78,7 +78,6 @@ final class AssistantKernel {
         }
         let selection = router.selection(for: context)
         guard selection.runtime != .coreML else { throw KernelError.unsupportedRuntimeForTextTurn(.coreML) }
-        guard selection.runtime != .unavailable else { throw KernelError.unsupportedRuntimeForTextTurn(.unavailable) }
         let decision = ComputePolicy.decide(for: context)
         let request = TextGenerationRequest(
             prompt: context.input,

@@ -390,7 +390,10 @@ public struct AgentGroundingAuditView: View {
                 }
             }
             #else
-            errorMessage = "Legacy bridge smoke test is excluded from Release builds."
+            await MainActor.run {
+                guard liveTraceSmokeRunID == runID else { return }
+                errorMessage = "Legacy bridge smoke test is excluded from Release builds."
+            }
             #endif
 
             guard !Task.isCancelled else { return }
