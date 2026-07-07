@@ -29,14 +29,32 @@ Run the repository integration gate:
 bash scripts/check-lumen-integration-gate.sh
 ```
 
+Run the local Python validation set:
+
+```sh
+git diff --check
+python3 -m compileall tools scripts
+uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler --with pytest --with pydantic --with typer --with rich pytest -m "not slow and not e2e"
+cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only
+```
+
 Run the stable simulator compile checkpoint:
 
 ```sh
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
-  -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath build/DerivedData-AuditFix \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   build-for-testing \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+When CoreSimulator is healthy enough for XCTest execution:
+
+```sh
+xcodebuild -project ios/Lumen.xcodeproj \
+  -scheme Lumen \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  test \
   CODE_SIGNING_ALLOWED=NO
 ```
 
@@ -66,8 +84,13 @@ files, so checkout size does not double while older tooling paths still work.
 
 ## Reference Docs
 
+- `AGENTS.md`
+- `ios/AGENTS.md`
+- `docs/AGENTS.md`
+- `tools/lumen_manifest_crawler/AGENTS.md`
 - `docs/VALIDATION.md`
 - `docs/DEVELOPER_WORKFLOW.md`
 - `docs/DEVELOPER_IMPROVE_FRAMEWORK.md`
 - `docs/RUNTIME_AUDIT_BOUNDARIES.md`
 - `docs/RUNTIME_STATUS_MATRIX.md`
+- `FEATURE_COMPLETE_VALIDATION.md`

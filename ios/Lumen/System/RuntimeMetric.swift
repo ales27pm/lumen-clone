@@ -26,7 +26,6 @@ enum RuntimeMetricErrorSanitizer {
         case let error as LocalRuntimeError:
             switch error {
             case .unavailable: return "runtime_unavailable"
-            case .generationNotImplemented(let runtime): return "generation_not_implemented_\(runtime.rawValue)"
             }
         case let error as CoreMLRuntimeError:
             switch error {
@@ -35,7 +34,7 @@ enum RuntimeMetricErrorSanitizer {
             case .modelNotFound: return "coreml_model_not_found"
             case .incompatibleModel: return "coreml_incompatible_model"
             case .shapeMismatch: return "coreml_shape_mismatch"
-            case .embeddingExtractionNotImplemented: return "coreml_embedding_extraction_not_implemented"
+            case .experimentalRuntimeDisabled: return "coreml_experimental_runtime_disabled"
             case .computeFailure: return "coreml_compute_failure"
             }
         case is CancellationError:

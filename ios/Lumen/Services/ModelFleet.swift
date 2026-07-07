@@ -49,6 +49,7 @@ nonisolated enum LumenRuntimePathKind: String, Codable, Sendable, Hashable {
     case coreML
     case foundationModels
     case deterministicFallback
+    case unavailable
     case embedding
     case unknown
 }
@@ -121,6 +122,8 @@ nonisolated struct LumenModelSlotContract: Sendable, Hashable {
             return .foundationModels
         case "deterministic-compatibility", "deterministicFallback":
             return .deterministicFallback
+        case "unavailable":
+            return .unavailable
         case "embedding":
             return .embedding
         default:
