@@ -56,8 +56,14 @@ def _condition_contains_debug(directive: str) -> bool:
     condition = re.sub(r"//.*$", "", directive)
     for match in re.finditer(r"\bDEBUG\b", condition):
         prefix = condition[: match.start()].rstrip()
-        while prefix.endswith("("):
-            prefix = prefix[:-1].rstrip()
+        while True:
+            normalized = prefix
+            while normalized.endswith("("):
+                normalized = normalized[:-1].rstrip()
+            normalized = re.sub(r"\bdefined\s*$", "", normalized).rstrip()
+            if normalized == prefix:
+                break
+            prefix = normalized
         if not prefix.endswith("!"):
             return True
     return False

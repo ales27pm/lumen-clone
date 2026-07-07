@@ -23,3 +23,19 @@ def test_parenthesized_negated_debug_condition_is_release_branch():
 
 def test_spaced_parenthesized_negated_debug_condition_is_release_branch():
     assert _states_for_directive("#if ! ( DEBUG )") == [False, False, True, True, False]
+
+
+def test_defined_debug_condition_is_debug_only():
+    assert _states_for_directive("#if defined(DEBUG)") == [True, True, False, False, False]
+
+
+def test_negated_defined_debug_condition_is_release_branch():
+    assert _states_for_directive("#if !defined(DEBUG)") == [False, False, True, True, False]
+
+
+def test_spaced_negated_defined_debug_condition_is_release_branch():
+    assert _states_for_directive("#if ! defined ( DEBUG )") == [False, False, True, True, False]
+
+
+def test_nested_negated_defined_debug_condition_is_release_branch():
+    assert _states_for_directive("#if !(defined(DEBUG))") == [False, False, True, True, False]
