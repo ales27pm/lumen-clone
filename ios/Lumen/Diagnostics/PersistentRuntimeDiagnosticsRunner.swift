@@ -418,6 +418,7 @@ actor PersistentRuntimeDiagnosticsRunner {
             mutable.metrics.promptSHA256 = Self.sha256(req.userMessage)
             mutable.metrics.promptRedactionMode = "hash_and_size_only"
             let started = ProcessInfo.processInfo.systemUptime
+            #if DEBUG
             let events = await MainActor.run {
                 AssistantKernel.shared.runLegacyAgentBridge(req, options: .default)
             }
@@ -437,6 +438,12 @@ actor PersistentRuntimeDiagnosticsRunner {
             mutable.finishedAt = Date()
             mutable.status = .passed
             mutable.events.append(PersistentDiagnosticEvent(code: "live_agent_stream_passed", message: "Live agent stream completed by explicit user request"))
+            #else
+            mutable.metrics.generationElapsedMs = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            mutable.finishedAt = Date()
+            mutable.status = .skipped
+            mutable.events.append(PersistentDiagnosticEvent(code: "legacy_bridge_excluded_release", message: "Legacy bridge live diagnostic is excluded from Release builds"))
+            #endif
             return mutable
         }
     }
@@ -450,6 +457,7 @@ actor PersistentRuntimeDiagnosticsRunner {
                 var mutable = mutableStart
                 mutable.metrics.inputToolCount = req.availableTools.count
                 mutable.metrics.toolCount = req.availableTools.count
+                #if DEBUG
                 let events = await MainActor.run {
                     AssistantKernel.shared.runLegacyAgentBridge(req, options: .default)
                 }
@@ -460,6 +468,11 @@ actor PersistentRuntimeDiagnosticsRunner {
                 mutable.status = .passed
                 mutable.finishedAt = Date()
                 mutable.events.append(PersistentDiagnosticEvent(code: "agent_cancel_stream_completed", message: "Agent stream completed before cancellation"))
+                #else
+                mutable.status = .skipped
+                mutable.finishedAt = Date()
+                mutable.events.append(PersistentDiagnosticEvent(code: "legacy_bridge_excluded_release", message: "Legacy bridge cancellation diagnostic is excluded from Release builds"))
+                #endif
                 return mutable
             }
         }

@@ -1,30 +1,27 @@
 # Runtime Status Matrix
 
-This matrix is a short status index for the main Lumen runtime surfaces. It separates the **product target** adapter-first canonical runtime shape from the **current live or bridged implementation** for each surface, so migration documents do not imply that every entrypoint already runs the final adapter runtime.
+This matrix describes the Release product surface. A feature is either shipped, excluded from Release, or available only in DEBUG diagnostics. Historical PR notes may describe older migration states; this file is the current shipping reference.
 
-Status values:
+| Surface | Release status | Runtime owner | User-visible behavior |
+| --- | --- | --- | --- |
+| Foreground chat, text turns | Shipped | `AssistantKernel.run(...)` with `LlamaRuntimeAdapter.live(...)` backed by `AppLlamaService` | Uses the local SwiftLlama/AppLlamaService path when a chat model is loaded. Missing or failed models surface typed runtime errors instead of deterministic assistant text. |
+| Foreground chat, tool-required turns | Excluded from Release until native kernel tool execution is enabled | `AssistantKernel+Streaming` | Release returns an explicit message that tool-capable agent turns are excluded. DEBUG builds may exercise the legacy migration probe. |
+| Voice text-only turns | Shipped | `VoiceCommandRouter` -> `AssistantKernel.run(...)` | Foreground, user-initiated voice turns route through the kernel and cancel on scene transitions. |
+| Voice tool-capable turns | Excluded from Release | `VoiceCommandRouter` | Release returns an explicit unavailable message. DEBUG builds may exercise legacy migration probes. |
+| AppIntents | Shipped only for guarded local actions | `LumenAskIntent`, `LumenAddMemoryIntent`, `LumenMemorySearchIntent`, `LumenRunTriggerIntent` | Intents return degraded or open-app responses when model, memory, approval, or store context is unavailable. They must not claim tool execution without the required context. |
+| Trigger and headless execution | Shipped only for background-safe coordination | `HeadlessAgentKernelRunner`, `BackgroundToolBridgePolicy`, `TriggerScheduler` | Background work cannot prompt for permissions or load unavailable model assets. Tool-capable legacy execution is excluded from Release. |
+| Role adapter runtime | Shipped for adapter lifecycle and diagnostics | `ModelFleet`, `SlotModelRuntimeCoordinator`, `AppLlamaService` | Qwen3 shared-base plus role-adapter artifacts are verified before use; missing role adapters fail with typed diagnostics. |
+| REM/runtime repair workflows | DEBUG diagnostics only | `RemCycleService`, generated improve-loop artifacts | Not presented as a shipped autonomous assistant capability. |
+| RAG search | Shipped | `RAGStore`, `RAGEngine`, `RAGSearchTool` | Empty results, embedding failures, fetch failures, and lexical fallback modes are surfaced through diagnostics. |
+| Memory recall/save | Shipped | `MemoryStore`, `MemoryEngine`, `MemorySearchTool`, `MemoryCaptureQueue` | Empty store, embedding failures, save failures, and pending capture queues are distinct states. |
+| FoundationModels text runtime | Excluded from Release routing | `FoundationModelsRuntimeAdapter` | Reported as experimental and non-selectable until a real generation implementation exists. |
+| CoreML embedding runtime | Excluded from Release routing | `CoreMLRuntimeAdapter` | Reported as experimental and non-selectable until real embedding extraction exists. |
+| Deterministic runtime | DEBUG diagnostics only | `DeterministicFallbackRuntime` | Release routing cannot select it. DEBUG tests may select it explicitly. |
+| GGUF native engine | Excluded unless a compiled native bridge is supplied | `GGUFEngine`, `GGUFNativeBridge` | The unavailable bridge is DEBUG-only. Release factory registration cannot install an unavailable GGUF backend. |
+| Persistent diagnostics and E2E probes | Shipped for static/local diagnostics; live legacy probes DEBUG-only | `DiagnosticsProvider`, `PersistentRuntimeDiagnosticsRunner`, `E2ETestRunner` | Release diagnostics can export structured state. Legacy live probes are skipped in Release. |
 
-- `live`: the surface is wired through the intended current runtime boundary for that surface.
-- `partial`: the surface has some target-runtime wiring but still depends on staged or incomplete behavior.
-- `compatibility bridge`: the surface is intentionally routed through a bridge while legacy services remain in place.
-- `planned`: the surface is documented as a target, but live runtime ownership is not complete.
+## Release Readiness Vocabulary
 
-| Surface | Entrypoint actuel | Statut | Runtime utilisé | Limitation observable | Document propriétaire |
-|---|---|---|---|---|---|
-| Chat foreground | `ios/Lumen/Views/ChatView.swift` -> `ios/Lumen/Assistant/AssistantKernel+Streaming.swift` -> `ios/Lumen/Views/ChatKernelEventReducer.swift`; compatibility services remain in `ios/Lumen/Services/AgentService.swift` and `ios/Lumen/Services/SlotAgentService.swift` | `live` | kernel-native event consumption | Foreground chat enters through `AssistantKernel.run(...)` and ChatView consumes native kernel events; tool-required chat turns may still cross the documented compatibility bridge inside the kernel until native tool stages are complete. | `docs/AGENT_KERNEL_MIGRATION_STATUS.md` |
-| Voice text-only | `ios/Lumen/Views/VoiceModeView.swift` -> `ios/Lumen/Voice/VoiceCommandRouter.swift` -> `ios/Lumen/Assistant/AssistantKernel+Streaming.swift` | `live` | kernel-native | Voice remains foreground, user-initiated, speech-service backed, and text-turn oriented; scene transitions cancel active generation and require a new user action. | `docs/VOICE_MODE.md` |
-| Voice tool-capable | `ios/Lumen/Voice/VoiceCommandRouter.swift`; `ios/Lumen/Views/VoiceModeView.swift`; `ios/Lumen/Assistant/AssistantKernel+Streaming.swift` -> `runLegacyAgentBridge(...)` when tools are required | `partial` | compatibility bridge | Tool-capable voice remains behind the kernel boundary but still uses legacy event adaptation and the documented bridge; it is not equivalent to unattended headless tool execution or fully migrated voice tooling. | `docs/AGENT_KERNEL_MIGRATION_PR4.md` |
-| AppIntent | `ios/Lumen/AppIntents/LumenAskIntent.swift`; `ios/Lumen/AppIntents/LumenRunTriggerIntent.swift`; `ios/Lumen/AppIntents/LumenAddMemoryIntent.swift`; `ios/Lumen/AppIntents/LumenMemorySearchIntent.swift` | `compatibility bridge` | legacy bridge | AppIntents are guarded and privacy-constrained; sensitive or ambiguous actions can return an open-app/approval response instead of executing fully in the extension-style path. | `docs/APP_INTENTS.md` |
-| Trigger/headless | `ios/Lumen/Background/BackgroundOrchestrator.swift` -> `ios/Lumen/Services/TriggerScheduler.swift` -> `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift`; manual trigger UI starts in `ios/Lumen/Views/TriggersView.swift` | `compatibility bridge` | kernel boundary plus legacy bridge | Scheduled/background turns are background-gated, cannot prompt for permissions, can run background-safe local tool-only prompts without loading chat, and do not yet claim full kernel tool parity. | `docs/BACKGROUND_PROCESSING.md` |
-| Role pipeline | `ios/Lumen/Services/RolePipelineAgentService.swift`; slot execution through `ios/Lumen/Services/SlotAgentService.swift` | `partial` | legacy bridge | Role stages use bounded grounding and secure tool bridging, but the legacy planning/execution loop remains until the adapter runtime owns per-role stage execution end to end. | `docs/LEGACY_AGENT_MIGRATION.md` |
-| REM | `ios/Lumen/Services/RemCycleService.swift`; runtime repair/audit artifacts under `generated/agent_improvement_loop/` | `planned` | adapter runtime | REM is a product target for repair, memory policy, regression samples, and training feedback; it must not be treated as blocking proof that the full role-adapter runtime is live on every surface. | `docs/ADAPTER_RUNTIME_IMPROVE_LOOP.md` |
-| Diagnostics/E2E | `ios/Lumen/Diagnostics/DiagnosticsProvider.swift`; `ios/Lumen/Diagnostics/PersistentRuntimeDiagnosticsRunner.swift`; E2E evidence export via `ios/Lumen/Services/Diagnostics/EvidenceLayerExporter.swift` | `live` | deterministic fallback | Persistent diagnostics attach local remediation proposals to failed/skipped/interrupted records; Live E2E still owns scenario pass/fail, and static/local checks cannot replace shipped-device evidence. | `docs/RUNTIME_AUDIT_BOUNDARIES.md` |
-
-## Canonical runtime shape labeling
-
-When other documents mention the canonical runtime shape, use these labels:
-
-- **Product target:** the adapter-first shape: one shared Qwen3 chat base, one Qwen3 embedding model, and one active role LoRA adapter at a time for Cortex, Executor, Mouth, Mimicry, REM, and Fleet-oriented workflows.
-- **Live state by surface:** the actual status in the table above. A surface marked `live` is live for its current boundary, not automatically proof that every role adapter in the product target is active there.
-- **Bridge state:** `compatibility bridge` means the entrypoint is intentionally preserved through kernel or legacy compatibility while migration continues. It should not be described as the final adapter runtime.
-- **Planned state:** `planned` means the document describes intended runtime ownership or training flow rather than shipped proof for that surface.
+- **Shipped** means the Release app exposes the feature and has production code paths plus tests or diagnostics for failure modes.
+- **Excluded from Release** means the Release app does not route user requests through that path.
+- **DEBUG diagnostics only** means the path may exist for migration evidence, tests, or developer tools, but must not be user-selectable in Release.

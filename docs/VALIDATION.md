@@ -24,6 +24,37 @@ python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent
 - **Runtime validation** comes from exported runtime audit/TestFlight/E2E evidence. Missing runtime evidence is not a runtime pass, and simulator XCTest success is not a substitute for live runtime evidence.
 - **Training/HF validation** is opt-in and never runs by default.
 
+## Feature-Complete Release Gate
+
+Run these commands before claiming a Release hardening pass:
+
+```bash
+git diff --check
+python -m compileall tools scripts
+bash scripts/check-lumen-integration-gate.sh
+uv run --python 3.12 pytest -m "not slow and not e2e"
+cd tools/lumen_manifest_crawler && uv run --python 3.12 pytest --collect-only
+```
+
+On a macOS/Xcode runner with the requested simulator installed:
+
+```bash
+xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=iPhone 16' build-for-testing CODE_SIGNING_ALLOWED=NO
+xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=iPhone 16' test CODE_SIGNING_ALLOWED=NO
+```
+
+Release submission validation also requires credentialed or physical-device checks:
+
+- signed archive and export
+- signed entitlement inspection
+- privacy manifest validation
+- TestFlight or real-device smoke test
+- real-device local model load
+- live tool-call validation
+- live RAG indexing and search
+- live memory extraction and storage
+- voice/AppIntent flows that are enabled in the submitted build
+
 ## Failure Flags
 
 - `--fail-on-static` exits non-zero for static validation failures.

@@ -1112,6 +1112,7 @@ nonisolated enum E2ETestRunner {
                         agentRunID: agentRunID,
                         acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
                     )
+                    #if DEBUG
                     let agentEvents = await MainActor.run {
                         AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
                     }
@@ -1144,6 +1145,9 @@ nonisolated enum E2ETestRunner {
                             failures.append("Agent error: \(message)")
                         }
                     }
+                    #else
+                    failures.append("Legacy bridge E2E path is excluded from Release builds.")
+                    #endif
                 }
                 let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
                 let evidenceDiagnosis = modelRuntimeEvidenceDiagnosis(

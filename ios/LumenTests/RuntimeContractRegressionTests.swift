@@ -10,10 +10,9 @@ struct LocalRuntimeErrorDescriptionsTests {
         #expect(!error.localizedDescription.contains("error 0"))
     }
 
-    @Test func notImplementedNamesRuntimeKind() {
-        let error = LocalRuntimeError.generationNotImplemented(.foundationModels)
-        #expect(error.errorDescription?.contains("foundationModels") == true)
-        #expect(!error.localizedDescription.contains("error 0"))
+    @Test func experimentalRuntimeDisabledIsSanitized() {
+        let error = CoreMLRuntimeError.experimentalRuntimeDisabled
+        #expect(RuntimeMetricErrorSanitizer.code(for: error) == "coreml_experimental_runtime_disabled")
     }
 }
 
