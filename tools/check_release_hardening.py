@@ -54,7 +54,15 @@ def iter_files(roots: list[pathlib.Path], suffixes: tuple[str, ...]) -> list[pat
 
 def _condition_contains_debug(directive: str) -> bool:
     condition = re.sub(r"//.*$", "", directive)
-    return re.search(r"\bDEBUG\b", condition) is not None
+    for match in re.finditer(r"\bDEBUG\b", condition):
+        prefix = condition[: match.start()].rstrip()
+        if not prefix.endswith("!"):
+            return True
+    return False
+
+
+def _is_else_directive(stripped: str) -> bool:
+    return re.match(r"^#else(?:\s|//|$)", stripped) is not None
 
 
 def debug_stack_for_lines(lines: list[str]) -> list[bool]:
@@ -66,7 +74,7 @@ def debug_stack_for_lines(lines: list[str]) -> list[bool]:
             stack.append(_condition_contains_debug(stripped))
         elif stripped.startswith("#elseif") and stack:
             stack[-1] = _condition_contains_debug(stripped)
-        elif stripped == "#else" and stack:
+        elif _is_else_directive(stripped) and stack:
             stack[-1] = not stack[-1]
         elif stripped.startswith("#endif") and stack:
             stack.pop()

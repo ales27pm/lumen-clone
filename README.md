@@ -34,7 +34,7 @@ Run the local Python validation set:
 ```sh
 git diff --check
 python3 -m compileall tools scripts
-uv run --python 3.12 --with pytest pytest -m "not slow and not e2e"
+uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler --with pytest --with pydantic --with typer --with rich pytest -m "not slow and not e2e"
 cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only
 ```
 

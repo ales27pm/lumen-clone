@@ -93,6 +93,41 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         XCTAssertEqual(metrics.last?.errorCode, "runtime_unavailable")
     }
 
+    func testRunTextTurnMetersUnavailableRuntimeSelection() async throws {
+        let metricsURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("assistant-kernel-unavailable-selection-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: metricsURL) }
+
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { _ in "should not run" }),
+            allowDiagnosticFallbackSelection: false
+        )
+        let kernel = AssistantKernel(router: router, metricsStore: RuntimeMetricsStore(fileURL: metricsURL))
+        let context = AssistantTurnContext(
+            task: .chat,
+            input: "hello",
+            isForeground: true,
+            lowPowerMode: false,
+            thermalState: .nominal,
+            allowHeavyRuntime: false
+        )
+
+        do {
+            _ = try await kernel.runTextTurn(context)
+            XCTFail("Expected unavailable runtime selection to throw")
+        } catch AssistantKernel.KernelError.unsupportedRuntimeForTextTurn(let runtime) {
+            XCTAssertEqual(runtime, .unavailable)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let metrics = try await RuntimeMetricsStore(fileURL: metricsURL).recentMetrics(limit: 1)
+        XCTAssertEqual(metrics.last?.runtimeName, AssistantRuntimeKind.unavailable.rawValue)
+        XCTAssertEqual(metrics.last?.policySummary, "foregroundInteractive: heavyRuntime=false")
+        XCTAssertEqual(metrics.last?.success, false)
+        XCTAssertEqual(metrics.last?.errorCode, "unsupported_runtime_for_text_turn")
+    }
+
     func testLiveLlamaAdapterReportsAvailableToRouterButThrowsUntilModelLoaded() async {
         let service = StubLlamaStreamingService(isChatLoaded: false)
         let adapter = LlamaRuntimeAdapter.live(service: service)
