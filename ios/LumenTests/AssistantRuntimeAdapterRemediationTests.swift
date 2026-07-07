@@ -18,16 +18,16 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         let runtime = CoreMLRuntimeAdapter(modelURL: url)
         XCTAssertFalse(runtime.isAvailable)
-        XCTAssertEqual(runtime.unavailableReason, "CoreML embedding runtime staged: implementation missing")
-        XCTAssertEqual(runtime.availabilityStatus, "staged: implementation missing")
+        XCTAssertEqual(runtime.unavailableReason, "CoreML embedding runtime is experimental and is excluded from Release routing.")
+        XCTAssertEqual(runtime.availabilityStatus, "experimental runtime excluded from Release routing")
     }
 
 
     func testCoreMLNilModelUnavailableReason() {
         let runtime = CoreMLRuntimeAdapter(modelURL: nil)
         XCTAssertFalse(runtime.isAvailable)
-        XCTAssertEqual(runtime.unavailableReason, "CoreML embedding runtime staged: implementation missing")
-        XCTAssertEqual(runtime.availabilityStatus, "staged: implementation missing")
+        XCTAssertEqual(runtime.unavailableReason, "CoreML embedding runtime is experimental and is excluded from Release routing.")
+        XCTAssertEqual(runtime.availabilityStatus, "experimental runtime excluded from Release routing")
     }
 
     func testCoreMLStagedEmbeddingDoesNotLookLikeEmptyEmbeddingSuccess() async {
@@ -42,8 +42,8 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         do {
             let vector = try await runtime.embed(request: EmbeddingRequest(text: "hello", dimensions: nil))
             XCTFail("CoreML embed should not return empty success vector: \(vector)")
-        } catch CoreMLRuntimeError.embeddingExtractionNotImplemented {
-            // Expected while the adapter is staged.
+        } catch CoreMLRuntimeError.experimentalRuntimeDisabled {
+            // Expected while the adapter is experimental.
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
@@ -55,14 +55,14 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         do {
             _ = try await runtime.embed(request: EmbeddingRequest(text: "hello", dimensions: nil))
             XCTFail("CoreML embed should not return an empty success vector for missing model")
-        } catch CoreMLRuntimeError.embeddingExtractionNotImplemented {
-            // Expected while the adapter is staged.
+        } catch CoreMLRuntimeError.experimentalRuntimeDisabled {
+            // Expected while the adapter is experimental.
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
     }
 
-    func testCapabilityMatrixMarksStagedAdaptersNonSelectable() {
+    func testCapabilityMatrixMarksExperimentalAdaptersNonSelectable() {
         let matrix = AssistantRuntimeCapabilityMatrix.current(
             foundation: FoundationModelsRuntimeAdapter(),
             llama: LlamaRuntimeAdapter(isAvailable: false),
@@ -73,12 +73,12 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         let foundation = matrix.row(for: .foundationModels)
         XCTAssertEqual(foundation?.generationSupported, false)
         XCTAssertEqual(foundation?.generationSelectable, false)
-        XCTAssertTrue(foundation?.status.contains("staged") == true || foundation?.status.contains("framework unavailable") == true)
+        XCTAssertEqual(foundation?.status, "experimental runtime excluded from Release routing")
 
         let coreML = matrix.row(for: .coreML)
         XCTAssertEqual(coreML?.embeddingSupported, false)
         XCTAssertEqual(coreML?.embeddingSelectable, false)
-        XCTAssertEqual(coreML?.status, "staged: implementation missing")
+        XCTAssertEqual(coreML?.status, "experimental runtime excluded from Release routing")
 
         XCTAssertEqual(matrix.selectableGenerationRuntimes, [.deterministicFallback])
         XCTAssertEqual(matrix.selectableEmbeddingRuntimes, [])

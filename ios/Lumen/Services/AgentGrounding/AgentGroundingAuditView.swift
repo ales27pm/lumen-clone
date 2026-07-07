@@ -357,6 +357,7 @@ public struct AgentGroundingAuditView: View {
             )
 
             var finalText = ""
+            #if DEBUG
             let events = await AssistantKernel.shared.runLegacyAgentBridge(
                 req,
                 options: .init(
@@ -388,6 +389,9 @@ public struct AgentGroundingAuditView: View {
                     break
                 }
             }
+            #else
+            finalText = "Legacy bridge smoke test is excluded from Release builds."
+            #endif
 
             guard !Task.isCancelled else { return }
 

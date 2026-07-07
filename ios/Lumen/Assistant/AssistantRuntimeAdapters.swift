@@ -5,15 +5,12 @@ import CoreML
 
 enum LocalRuntimeError: LocalizedError, Sendable, Equatable {
     case unavailable(String)
-    case generationNotImplemented(AssistantRuntimeKind)
 
     var errorDescription: String? {
         switch self {
         case .unavailable(let reason):
             let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? "Local runtime unavailable: no reason provided." : "Local runtime unavailable: \(trimmed)"
-        case .generationNotImplemented(let kind):
-            return "Local runtime generation is not implemented for \(kind.rawValue)."
         }
     }
 }
@@ -32,7 +29,7 @@ enum CoreMLRuntimeError: Error, Sendable, Equatable {
     case modelNotFound
     case incompatibleModel(String)
     case shapeMismatch
-    case embeddingExtractionNotImplemented
+    case experimentalRuntimeDisabled
     case computeFailure(String)
 }
 
@@ -78,11 +75,11 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
             ),
             AssistantRuntimeCapabilityRow(
                 kind: fallback.kind,
-                generationSupported: true,
+                generationSupported: fallback.isAvailable,
                 generationSelectable: fallback.isAvailable,
                 embeddingSupported: false,
                 embeddingSelectable: false,
-                status: "limited local fallback",
+                status: fallback.availabilityStatus,
                 unavailableReason: fallback.unavailableReason
             ),
             AssistantRuntimeCapabilityRow(
@@ -112,19 +109,33 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
 
 struct DeterministicFallbackRuntime: LocalTextGenerationRuntime {
     let kind: AssistantRuntimeKind = .deterministicFallback
-    let isAvailable: Bool = true
-    let unavailableReason: String? = nil
+    let isAvailable: Bool
+    let unavailableReason: String?
     private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
 
     init(generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil) {
         self.generateHandler = generateHandler
+        #if DEBUG
+        self.isAvailable = true
+        self.unavailableReason = nil
+        #else
+        self.isAvailable = false
+        self.unavailableReason = "Diagnostic deterministic runtime is excluded from Release routing."
+        #endif
+    }
+
+    var availabilityStatus: String {
+        isAvailable ? "debug diagnostic only" : "excluded from Release routing"
     }
 
     func generate(request: TextGenerationRequest) async throws -> String {
+        guard isAvailable else {
+            throw LocalRuntimeError.unavailable(unavailableReason ?? "Diagnostic deterministic runtime is disabled.")
+        }
         if let generateHandler {
             return try await generateHandler(request)
         }
-        return "Lumen is running in limited local mode."
+        return "Diagnostic deterministic runtime response."
     }
 
     func handleMemoryPressure() async {}
@@ -160,7 +171,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         if generateHandler != nil {
             self.unavailableReason = nil
         } else if isAvailable {
-            self.unavailableReason = unavailableReason ?? "llama text runtime staged: generation adapter missing"
+            self.unavailableReason = unavailableReason ?? "llama text runtime unavailable: generation adapter missing"
         } else {
             self.unavailableReason = unavailableReason
         }
@@ -234,19 +245,13 @@ struct FoundationModelsRuntimeAdapter: LocalTextGenerationRuntime {
     let supportsGeneration: Bool = false
 
     init(unavailableReason: String? = nil) {
-        if #available(iOS 26.0, *) {
-            self.isAvailable = false
-            self.availabilityStatus = "staged: implementation missing"
-            self.unavailableReason = unavailableReason ?? "FoundationModels generation is staged: implementation missing"
-        } else {
-            self.isAvailable = false
-            self.availabilityStatus = "framework unavailable: requires iOS 26 or later"
-            self.unavailableReason = "FoundationModels framework unavailable: requires iOS 26 or later"
-        }
+        self.isAvailable = false
+        self.availabilityStatus = "experimental runtime excluded from Release routing"
+        self.unavailableReason = unavailableReason ?? "FoundationModels generation is experimental and is excluded from Release routing."
     }
 
     func generate(request: TextGenerationRequest) async throws -> String {
-        throw LocalRuntimeError.generationNotImplemented(.foundationModels)
+        throw LocalRuntimeError.unavailable(unavailableReason ?? "FoundationModels runtime is disabled.")
     }
 
     func handleMemoryPressure() async {}
@@ -268,7 +273,7 @@ struct CoreMLRuntimeAdapter: LocalEmbeddingRuntime {
     }
 
     var unavailableReason: String? {
-        guard supportsEmbeddings else { return "CoreML embedding runtime staged: implementation missing" }
+        guard supportsEmbeddings else { return "CoreML embedding runtime is experimental and is excluded from Release routing." }
         #if canImport(CoreML)
         guard let modelURL else { return "No Core ML embedding model configured" }
         return FileManager.default.fileExists(atPath: modelURL.path) ? nil : "Configured Core ML model file is missing"
@@ -279,7 +284,7 @@ struct CoreMLRuntimeAdapter: LocalEmbeddingRuntime {
 
     var availabilityStatus: String {
         #if canImport(CoreML)
-        guard supportsEmbeddings else { return "staged: implementation missing" }
+        guard supportsEmbeddings else { return "experimental runtime excluded from Release routing" }
         guard let modelURL else { return "model missing: not configured" }
         return FileManager.default.fileExists(atPath: modelURL.path) ? "available" : "model missing: configured file missing"
         #else
@@ -288,7 +293,7 @@ struct CoreMLRuntimeAdapter: LocalEmbeddingRuntime {
     }
 
     func embed(request: EmbeddingRequest) async throws -> [Float] {
-        guard supportsEmbeddings else { throw CoreMLRuntimeError.embeddingExtractionNotImplemented }
+        guard supportsEmbeddings else { throw CoreMLRuntimeError.experimentalRuntimeDisabled }
         #if canImport(CoreML)
         guard let modelURL else { throw CoreMLRuntimeError.modelNotConfigured }
         guard FileManager.default.fileExists(atPath: modelURL.path) else { throw CoreMLRuntimeError.modelNotFound }
@@ -296,7 +301,7 @@ struct CoreMLRuntimeAdapter: LocalEmbeddingRuntime {
         config.computeUnits = .cpuAndNeuralEngine
         do {
             _ = try MLModel(contentsOf: modelURL, configuration: config)
-            throw CoreMLRuntimeError.embeddingExtractionNotImplemented
+            throw CoreMLRuntimeError.experimentalRuntimeDisabled
         } catch let error as CoreMLRuntimeError {
             throw error
         } catch {

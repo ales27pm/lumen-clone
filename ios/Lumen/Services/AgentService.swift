@@ -1561,6 +1561,7 @@ final class AgentService {
     }
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        #if DEBUG
         if options.diagnosticsEnabled, options.allowDeterministicCompatibility {
             return LegacyAgentCompatibilityBridge.runSlotAgentCompatibility(req, options: options)
         }
@@ -1572,6 +1573,7 @@ final class AgentService {
             compatibilityOptions.preventDoubleGrounding = true
             return LegacyAgentCompatibilityBridge.runSlotAgentCompatibility(req, options: compatibilityOptions)
         }
+        #endif
 
         return AsyncStream { continuation in
             let task = Task { @MainActor in
@@ -1886,30 +1888,42 @@ final class AgentService {
 
             // Action path
             if let action = actionToExecute {
-                let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
-                guard let _ = ToolRegistry.find(id: canonicalActionTool) else {
-                    let obs = AgentStep(kind: .observation, content: "Unknown tool: \(action.tool). Emit a final turn instead.", toolID: canonicalActionTool)
+                let validation = StructuredToolCallValidator.validate(action: action, availableTools: req.availableTools)
+                let validatedCall: ValidatedStructuredToolCall
+                switch validation {
+                case .success(let call):
+                    validatedCall = call
+                case .failure(let error):
+                    let canonicalActionTool = ToolRouteGuard.canonicalToolID(action.tool)
+                    let obs = AgentStep(
+                        kind: .observation,
+                        content: "Tool call schema rejected: \(error.diagnostic). Emit a corrected action or final turn.",
+                        toolID: canonicalActionTool,
+                        toolArgs: action.args.stringCoerced
+                    )
                     steps.append(obs)
                     continuation.yield(.step(obs))
                     scratchpad += "\nAction: \(action.displayContent)\nObservation: \(compactScratchpadObservation(obs.content))"
-                    if let locationObservation = currentLocationScratchpadContext(from: obs.content) {
-                        scratchpad += "\nContext: \(locationObservation)"
-                    }
                     continue
                 }
-                if executedActionKeys.contains(action.dedupeKey) {
-                    let reflection = AgentStep(kind: .reflection, content: "Duplicate tool call blocked: \(action.displayContent). Synthesizing answer from observations.")
+                let canonicalActionTool = validatedCall.canonicalToolID
+                let validatedAction = AgentAction(
+                    tool: canonicalActionTool,
+                    args: AgentJSONArguments(stringDictionary: validatedCall.arguments)
+                )
+                if executedActionKeys.contains(validatedAction.dedupeKey) {
+                    let reflection = AgentStep(kind: .reflection, content: "Duplicate tool call blocked: \(validatedAction.displayContent). Synthesizing answer from observations.")
                     steps.append(reflection)
                     continuation.yield(.step(reflection))
                     finalAnswer = await synthesizeFallback(req: req, observations: observations, reason: .duplicate)
                     continuation.yield(.finalDelta(finalAnswer))
                     break stepsLoop
                 }
-                executedActionKeys.insert(action.dedupeKey)
+                executedActionKeys.insert(validatedAction.dedupeKey)
 
                 if ToolRouteGuard.requiresUserApproval(canonicalActionTool) {
-                    let approval = Self.approvalBoundaryFinal(for: canonicalActionTool, action: action)
-                    let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+                    let approval = Self.approvalBoundaryFinal(for: canonicalActionTool, action: validatedAction)
+                    let step = AgentStep(kind: .approvalBoundary, content: approval, toolID: canonicalActionTool, toolArgs: validatedCall.arguments)
                     steps.append(step)
                     continuation.yield(.step(step))
                     finalAnswer = approval
@@ -1917,23 +1931,17 @@ final class AgentService {
                     break stepsLoop
                 }
 
-                let actionStep = AgentStep(kind: .action, content: action.displayContent, toolID: canonicalActionTool, toolArgs: action.args.stringCoerced)
+                let actionStep = AgentStep(kind: .action, content: validatedAction.displayContent, toolID: canonicalActionTool, toolArgs: validatedCall.arguments)
                 steps.append(actionStep)
                 continuation.yield(.step(actionStep))
 
-                let isEnabled = req.availableTools.contains { ToolRouteGuard.canonicalToolID($0.id) == canonicalActionTool }
-                let result: String
-                if !isEnabled {
-                    result = "Tool \(canonicalActionTool) is disabled. Enable it in Tools."
-                } else {
-                    result = await SecureToolRegistry.shared.executeLegacyTool(
-                        canonicalActionTool,
-                        arguments: action.args,
-                        approval: .autonomous,
-                        conversationID: req.conversationID,
-                        turnID: req.turnID
-                    )
-                }
+                let result = await SecureToolRegistry.shared.executeLegacyTool(
+                    canonicalActionTool,
+                    arguments: validatedAction.args,
+                    approval: .autonomous,
+                    conversationID: req.conversationID,
+                    turnID: req.turnID
+                )
 
                 let obs = AgentStep(kind: .observation, content: result, toolID: canonicalActionTool)
                 steps.append(obs)
@@ -1945,7 +1953,7 @@ final class AgentService {
                 }
 
                 if let phoneContinuation = Self.phoneCallContinuationAfterContactSearchIfNeeded(
-                    actionTool: action.tool,
+                    actionTool: validatedAction.tool,
                     observation: result,
                     prompt: req.userMessage,
                     availableToolIDs: Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
@@ -2246,7 +2254,6 @@ final class AgentService {
             || lower.contains("contacts are unavailable")
             || lower.contains("phone call tools unavailable")
             || lower.contains("phone call tools are unavailable")
-            || lower.contains("limited local mode")
     }
 
     #if DEBUG

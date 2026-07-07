@@ -36,7 +36,7 @@ final class AssistantKernelTextTurnRemediationTests: XCTestCase {
 
         let output = try await kernel.runTextTurn(context)
 
-        XCTAssertEqual(output, "Lumen is running in limited local mode.")
+        XCTAssertEqual(output, "Diagnostic deterministic runtime response.")
         XCTAssertEqual(kernel.selectRuntime(for: context), .deterministicFallback)
     }
 

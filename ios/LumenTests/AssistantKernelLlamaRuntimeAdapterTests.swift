@@ -35,7 +35,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         XCTAssertEqual(router.runtime(for: context), .llama)
     }
 
-    func testRunTextTurnFallsBackWhenSelectedLlamaBecomesUnavailable() async throws {
+    func testRunTextTurnPropagatesSelectedLlamaUnavailable() async throws {
         let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil) { _ in
             throw LocalRuntimeError.unavailable("controlled no loaded chat model")
         }
@@ -49,12 +49,17 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
             thermalState: .nominal
         )
 
-        let output = try await kernel.runTextTurn(context)
-
-        XCTAssertEqual(output, "Lumen is running in limited local mode.")
+        do {
+            _ = try await kernel.runTextTurn(context)
+            XCTFail("Expected selected runtime failure to propagate")
+        } catch LocalRuntimeError.unavailable(let reason) {
+            XCTAssertEqual(reason, "controlled no loaded chat model")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
-    func testRunTextTurnMetersFallbackFailureAfterLlamaUnavailable() async throws {
+    func testRunTextTurnMetersSelectedRuntimeFailure() async throws {
         let metricsURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("assistant-kernel-fallback-failure-\(UUID().uuidString).jsonl")
         defer { try? FileManager.default.removeItem(at: metricsURL) }
@@ -62,10 +67,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil) { _ in
             throw LocalRuntimeError.unavailable("controlled no loaded chat model")
         }
-        let fallback = DeterministicFallbackRuntime { _ in
-            throw LocalRuntimeError.unavailable("controlled fallback unavailable")
-        }
-        let router = AssistantRuntimeRouter(llama: adapter, fallback: fallback)
+        let router = AssistantRuntimeRouter(llama: adapter)
         let kernel = AssistantKernel(router: router, metricsStore: RuntimeMetricsStore(fileURL: metricsURL))
         let context = AssistantTurnContext(
             task: .chat,
@@ -77,16 +79,16 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
 
         do {
             _ = try await kernel.runTextTurn(context)
-            XCTFail("Expected deterministic fallback failure to propagate")
+            XCTFail("Expected runtime failure to propagate")
         } catch LocalRuntimeError.unavailable(let reason) {
-            XCTAssertEqual(reason, "controlled fallback unavailable")
+            XCTAssertEqual(reason, "controlled no loaded chat model")
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
 
         let metrics = try await RuntimeMetricsStore(fileURL: metricsURL).recentMetrics(limit: 1)
-        XCTAssertEqual(metrics.last?.runtimeName, AssistantRuntimeKind.deterministicFallback.rawValue)
-        XCTAssertEqual(metrics.last?.policySummary, "fallback_after_llama_unavailable")
+        XCTAssertEqual(metrics.last?.runtimeName, AssistantRuntimeKind.llama.rawValue)
+        XCTAssertEqual(metrics.last?.policySummary, "llama available")
         XCTAssertEqual(metrics.last?.success, false)
         XCTAssertEqual(metrics.last?.errorCode, "runtime_unavailable")
     }

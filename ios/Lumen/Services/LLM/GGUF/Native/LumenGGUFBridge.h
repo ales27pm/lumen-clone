@@ -10,11 +10,10 @@ extern "C" {
 #endif
 
 /*
- Future C ABI boundary for the Lumen GGUF backend.
+ C ABI boundary for a compiled Lumen GGUF backend.
 
- This header intentionally has no implementation in this patch. The next native
- backend patch can wire these declarations to llama.cpp without changing the
- Swift-side lifecycle and streaming contracts.
+ Release builds may register the GGUF engine only when these declarations are
+ backed by a linked native implementation.
  */
 
 typedef struct lumen_gguf_context lumen_gguf_context_t;

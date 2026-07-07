@@ -198,14 +198,14 @@ def check_staged_system_adapters() -> None:
     diagnostics_provider = read(DIAGNOSTICS_PROVIDER)
     require(
         "let supportsGeneration: Bool = false" in adapters
-        and "FoundationModels generation is staged: implementation missing" in adapters,
-        "FoundationModels adapter must remain explicitly staged until generation is implemented.",
+        and "FoundationModels generation is experimental and is excluded from Release routing." in adapters,
+        "FoundationModels adapter must remain explicitly experimental until generation is implemented.",
     )
     require(
         "let supportsEmbeddings: Bool = false" in adapters
-        and "CoreML embedding runtime staged: implementation missing" in adapters
-        and "throw CoreMLRuntimeError.embeddingExtractionNotImplemented" in adapters,
-        "CoreML embedding adapter must remain explicitly staged and must throw instead of returning fake embeddings.",
+        and "CoreML embedding runtime is experimental and is excluded from Release routing." in adapters
+        and "throw CoreMLRuntimeError.experimentalRuntimeDisabled" in adapters,
+        "CoreML embedding adapter must remain explicitly experimental and must throw instead of returning fake embeddings.",
     )
     require(
         "foundation.supportsGeneration, foundation.isAvailable" in router,
@@ -233,7 +233,18 @@ def check_staged_system_adapters() -> None:
         "struct AssistantRuntimeCapabilityMatrix" in adapters
         and "generationSelectable: foundation.supportsGeneration && foundation.isAvailable" in adapters
         and "embeddingSelectable: coreML.supportsEmbeddings && coreML.isAvailable" in adapters,
-        "Runtime adapter capability matrix must make staged generation/embedding non-selectability explicit.",
+        "Runtime adapter capability matrix must make experimental generation/embedding non-selectability explicit.",
+    )
+    require(
+        "allowDiagnosticFallbackSelection: Bool = Self.defaultAllowDiagnosticFallbackSelection" in router
+        and "#if DEBUG" in router
+        and "return false" in router,
+        "Runtime router must make deterministic diagnostic fallback non-selectable by default in Release.",
+    )
+    require(
+        "Diagnostic deterministic runtime is excluded from Release routing." in adapters
+        and "\"excluded from Release routing\"" in adapters,
+        "Deterministic fallback must be an excluded Release runtime, not a production assistant backend.",
     )
     require(
         "runtimeCapabilityRows" in dashboard and "Runtime Capabilities" in dashboard,
