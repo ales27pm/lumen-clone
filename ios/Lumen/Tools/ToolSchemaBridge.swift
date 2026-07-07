@@ -123,11 +123,11 @@ nonisolated enum StructuredToolCallValidator {
         let contract = ToolRegistry.find(id: canonicalToolID)?.capabilityContract.arguments ?? []
         let contractByName = Dictionary(uniqueKeysWithValues: contract.map { ($0.name, $0) })
         let allowedNames = Set(contractByName.keys)
-        let allowedAliasNames = aliasesAllowedDuringNormalization(for: canonicalToolID)
+        let allowedAliasNames = ToolRouteGuard.aliasesAllowedDuringNormalization(for: canonicalToolID)
 
         let extras = Set(normalized.keys).subtracting(allowedNames).subtracting(allowedAliasNames)
         if !extras.isEmpty {
-            return .failure(.extraArguments(tool: canonicalToolID, arguments: Array(extras)))
+            return .failure(.extraArguments(tool: canonicalToolID, arguments: extras.sorted()))
         }
 
         for argument in contract where argument.required {
@@ -163,29 +163,4 @@ nonisolated enum StructuredToolCallValidator {
         }
     }
 
-    private static func aliasesAllowedDuringNormalization(for canonicalToolID: String) -> Set<String> {
-        switch canonicalToolID {
-        case "maps.search":
-            return ["location", "destination", "place", "nearby"]
-        case "maps.directions":
-            return ["query", "location", "place"]
-        case "weather":
-            return ["query"]
-        case "web.search":
-            return ["q", "term", "search"]
-        case "web.fetch":
-            return ["uri", "link", "query"]
-        case "outlook.messages.search":
-            return ["q", "term", "search", "subject", "from"]
-        case "outlook.message.read", "outlook.attachments.list", "outlook.message.mark_read",
-             "outlook.message.mark_unread", "outlook.message.move", "outlook.message.archive",
-             "outlook.message.delete", "outlook.message.reply", "outlook.message.reply_all",
-             "outlook.message.forward":
-            return ["messageID", "message"]
-        case "outlook.draft.create", "outlook.mail.send":
-            return ["recipient", "recipients", "email", "message", "text", "content", "comment"]
-        default:
-            return []
-        }
-    }
 }

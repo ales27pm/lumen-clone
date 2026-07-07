@@ -54,7 +54,7 @@ struct AssistantRuntimeRouter {
             if allowDiagnosticFallbackSelection, fallback.isAvailable {
                 return .init(runtime: .deterministicFallback, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : (decision.denialReason ?? "heavy runtime disallowed"))
             }
-            return .init(runtime: .llama, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : (decision.denialReason ?? "heavy runtime disallowed"))
+            return .init(runtime: .unavailable, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : (decision.denialReason ?? "heavy runtime disallowed"))
         case .chat, .agentPlan, .toolDecision, .summarization, .memoryExtraction, .speechCommandParsing:
             if context.prefersFoundationModels, foundation.supportsGeneration, foundation.isAvailable, decision.allowHeavyRuntime, context.isForeground, !DiskWriteBudget.shared.isGenerationActive() {
                 return .init(runtime: .foundationModels, reason: "preferred on-device foundation runtime")
@@ -65,7 +65,7 @@ struct AssistantRuntimeRouter {
             if allowDiagnosticFallbackSelection, fallback.isAvailable {
                 return .init(runtime: .deterministicFallback, reason: decision.allowHeavyRuntime ? "no capable runtime" : (decision.denialReason ?? "heavy runtime disallowed"))
             }
-            return .init(runtime: .llama, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : (decision.denialReason ?? "heavy runtime disallowed"))
+            return .init(runtime: .unavailable, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : (decision.denialReason ?? "heavy runtime disallowed"))
         }
     }
 

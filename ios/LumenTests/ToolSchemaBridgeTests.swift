@@ -42,12 +42,69 @@ final class ToolSchemaBridgeTests: XCTestCase {
         XCTAssertEqual(result.failure, .extraArguments(tool: "web.search", arguments: ["deleteAfter"]))
     }
 
+    func testStructuredToolCallValidatorSortsExtraArgumentPayload() {
+        let action = AgentAction(tool: "web.search", args: [
+            "query": .string("swift"),
+            "zExtra": .string("z"),
+            "aExtra": .string("a")
+        ])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.failure, .extraArguments(tool: "web.search", arguments: ["aExtra", "zExtra"]))
+    }
+
     func testStructuredToolCallValidatorAcceptsValidPayloadAndNormalizesAlias() {
         let action = AgentAction(tool: "web.search", args: ["q": .string("swift concurrency")])
         let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
 
         XCTAssertEqual(result.success?.canonicalToolID, "web.search")
         XCTAssertEqual(result.success?.arguments["query"], "swift concurrency")
+    }
+
+    func testStructuredToolCallValidatorAcceptsWeatherCityAlias() {
+        let action = AgentAction(tool: "weather", args: ["city": .string("Montreal")])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.success?.canonicalToolID, "weather")
+        XCTAssertEqual(result.success?.arguments["location"], "Montreal")
+    }
+
+    func testStructuredToolCallValidatorAcceptsMessageDraftAliases() {
+        let action = AgentAction(tool: "messages.draft", args: [
+            "recipient": .string("Alex"),
+            "message": .string("Running late")
+        ])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.success?.canonicalToolID, "messages.draft")
+        XCTAssertEqual(result.success?.arguments["to"], "Alex")
+        XCTAssertEqual(result.success?.arguments["body"], "Running late")
+    }
+
+    func testStructuredToolCallValidatorAcceptsMailDraftAliasesWithoutSubject() {
+        let action = AgentAction(tool: "mail.draft", args: [
+            "recipient": .string("alex@example.com"),
+            "text": .string("Status update")
+        ])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.success?.canonicalToolID, "mail.draft")
+        XCTAssertEqual(result.success?.arguments["to"], "alex@example.com")
+        XCTAssertEqual(result.success?.arguments["body"], "Status update")
+    }
+
+    func testStructuredToolCallValidatorAcceptsOutlookForwardAliases() {
+        let action = AgentAction(tool: "outlook.message.forward", args: [
+            "id": .string("msg-1"),
+            "recipient": .string("alex@example.com"),
+            "comment": .string("FYI")
+        ])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.success?.canonicalToolID, "outlook.message.forward")
+        XCTAssertEqual(result.success?.arguments["messageId"], "msg-1")
+        XCTAssertEqual(result.success?.arguments["to"], "alex@example.com")
+        XCTAssertEqual(result.success?.arguments["body"], "FYI")
     }
 
     func testPromptGroundingRendererCanonicalizesSecureToolAliases() {

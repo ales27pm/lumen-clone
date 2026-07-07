@@ -1146,7 +1146,7 @@ nonisolated enum E2ETestRunner {
                         }
                     }
                     #else
-                    failures.append("Legacy bridge E2E path is excluded from Release builds.")
+                    await event("skipped", "Legacy bridge E2E path is excluded from Release builds.")
                     #endif
                 }
                 let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)

@@ -2081,6 +2081,12 @@ final class AgentService {
             return
         }
 
+        if finalAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           steps.contains(where: { $0.content.hasPrefix("Tool call schema rejected:") }) {
+            finalAnswer = "I could not run that tool because the generated tool call did not pass schema validation after retry."
+            continuation.yield(.finalDelta(finalAnswer))
+        }
+
         finalAnswer = Self.postprocessStructuredFinalAnswer(
             finalAnswer,
             req: req,

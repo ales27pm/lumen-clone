@@ -33,9 +33,9 @@ Run the local Python validation set:
 
 ```sh
 git diff --check
-python -m compileall tools scripts
-uv run --python 3.12 pytest -m "not slow and not e2e"
-cd tools/lumen_manifest_crawler && uv run --python 3.12 pytest --collect-only
+python3 -m compileall tools scripts
+uv run --python 3.12 --with pytest pytest -m "not slow and not e2e"
+cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only
 ```
 
 Run the stable simulator compile checkpoint:
@@ -84,6 +84,10 @@ files, so checkout size does not double while older tooling paths still work.
 
 ## Reference Docs
 
+- `AGENTS.md`
+- `ios/AGENTS.md`
+- `docs/AGENTS.md`
+- `tools/lumen_manifest_crawler/AGENTS.md`
 - `docs/VALIDATION.md`
 - `docs/DEVELOPER_WORKFLOW.md`
 - `docs/DEVELOPER_IMPROVE_FRAMEWORK.md`

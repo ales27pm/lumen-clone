@@ -390,7 +390,7 @@ public struct AgentGroundingAuditView: View {
                 }
             }
             #else
-            finalText = "Legacy bridge smoke test is excluded from Release builds."
+            errorMessage = "Legacy bridge smoke test is excluded from Release builds."
             #endif
 
             guard !Task.isCancelled else { return }

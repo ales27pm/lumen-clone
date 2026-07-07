@@ -5,6 +5,7 @@ enum AssistantRuntimeKind: String, Sendable {
     case coreML
     case llama
     case deterministicFallback
+    case unavailable
 }
 
 struct TextGenerationRequest: Sendable {

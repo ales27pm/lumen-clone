@@ -1,5 +1,7 @@
 This repository is an iOS app plus local validation and dataset tooling.
 
+Use `AGENTS.md` as the canonical agent instruction file.
+
 Start with `README.md` for layout and common checks. Prefer the repo scripts
 over ad hoc commands when validating:
 

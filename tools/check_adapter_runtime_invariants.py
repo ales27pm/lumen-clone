@@ -236,9 +236,12 @@ def check_staged_system_adapters() -> None:
         "Runtime adapter capability matrix must make experimental generation/embedding non-selectability explicit.",
     )
     require(
-        "allowDiagnosticFallbackSelection: Bool = Self.defaultAllowDiagnosticFallbackSelection" in router
-        and "#if DEBUG" in router
-        and "return false" in router,
+        re.search(
+            r"allowDiagnosticFallbackSelection:\s*Bool\s*=\s*Self\.defaultAllowDiagnosticFallbackSelection[\s\S]{0,800}"
+            r"defaultAllowDiagnosticFallbackSelection[\s\S]{0,240}#if DEBUG[\s\S]{0,120}return true[\s\S]{0,120}#else[\s\S]{0,120}return false",
+            router,
+        )
+        is not None,
         "Runtime router must make deterministic diagnostic fallback non-selectable by default in Release.",
     )
     require(
