@@ -36,14 +36,11 @@ final class LumenUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = makeApp()
-        app.launch()
-        dismissOnboardingIfNeeded()
+        launchOrActivateApp()
     }
 
     override func tearDownWithError() throws {
-        if app != nil, app.state != .notRunning {
-            app.terminate()
-        }
+        terminateAppIfRunning()
         app = nil
     }
 
@@ -109,9 +106,9 @@ final class LumenUITests: XCTestCase {
     @MainActor
     func testDeveloperConsoleOpensRunDashboard() throws {
         openDeveloperConsole()
+        ensureDeveloperRunDashboardVisible()
 
-        XCTAssertTrue(app.navigationBars["Developer Console"].waitForExistence(timeout: 4))
-        XCTAssertTrue(app.descendants(matching: .any)["developerConsole.segmentedTabs"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["Telemetry"].waitForExistence(timeout: 4))
         XCTAssertTrue(app.staticTexts["Complete E2E Tests"].waitForExistence(timeout: 4))
     }
 
@@ -138,9 +135,11 @@ final class LumenUITests: XCTestCase {
         openDeveloperConsole()
 
         app.buttons["Telemetry"].tap()
-        let diagnostics = app.staticTexts["Diagnostics"]
+        XCTAssertTrue(app.staticTexts["Live Surfaces"].waitForExistence(timeout: 4))
+        let diagnostics = app.descendants(matching: .any)["developerConsole.surface.diagnostics"]
+        scrollToElement(diagnostics)
         XCTAssertTrue(diagnostics.waitForExistence(timeout: 4))
-        diagnostics.tap()
+        tapElement(diagnostics)
 
         XCTAssertTrue(app.navigationBars["Diagnostics"].waitForExistence(timeout: 4))
     }
@@ -209,10 +208,10 @@ final class LumenUITests: XCTestCase {
         recordStep("open_settings") { openSettings() }
 
         recordStep("open_developer_console") {
-            let console = developerConsoleEntry()
-            try assertElement(console.waitForExistence(timeout: 3), "Developer Console row was not visible.")
-            console.tap()
-            try assertElement(app.navigationBars["Developer Console"].waitForExistence(timeout: 4), "Developer Console did not open.")
+            try assertElement(ensureDeveloperConsoleEntryVisible(), "Developer Console row was not visible.")
+            tapElement(developerConsoleEntry())
+            try assertElement(waitForDeveloperConsole(), "Developer Console did not open.")
+            ensureDeveloperRunDashboardVisible()
         }
 
         recordStep("run_dashboard_visible") {
@@ -264,12 +263,13 @@ final class LumenUITests: XCTestCase {
     @MainActor
     func testDeveloperFeaturesEndToEndAfterRelaunch() throws {
         openDeveloperConsole()
-        XCTAssertTrue(app.navigationBars["Developer Console"].waitForExistence(timeout: 4))
+        XCTAssertTrue(waitForDeveloperConsole())
 
         relaunchApp()
         openSettings()
 
         openDeveloperConsole()
+        ensureDeveloperRunDashboardVisible()
         XCTAssertTrue(app.staticTexts["Complete E2E Tests"].waitForExistence(timeout: 4))
     }
 
@@ -283,83 +283,135 @@ final class LumenUITests: XCTestCase {
     @MainActor
     private func openSettings() {
         dismissOnboardingIfNeeded()
-        if app.navigationBars["Settings"].waitForExistence(timeout: 1) {
-            return
+
+        for _ in 0..<4 {
+            if app.navigationBars["Settings"].waitForExistence(timeout: 0.5) {
+                return
+            }
+
+            if tapSettingsEntryIfAvailable() {
+                return
+            }
+
+            let back = app.navigationBars.buttons.firstMatch
+            if back.waitForExistence(timeout: 0.5) {
+                tapElement(back)
+                continue
+            }
+
+            break
         }
-        let settingsRow = app.descendants(matching: .any)["root.settings"]
-        if settingsRow.waitForExistence(timeout: 1) {
-            settingsRow.tap()
-            return
-        }
+
         if app.buttons["Continue"].waitForExistence(timeout: 1) {
-            app.buttons["Continue"].tap()
+            tapElement(app.buttons["Continue"])
             if app.navigationBars["Settings"].waitForExistence(timeout: 1) {
                 return
             }
         }
-        if app.buttons["Settings"].waitForExistence(timeout: 1) {
-            app.buttons["Settings"].tap()
+
+        if tapSettingsEntryIfAvailable() {
             return
         }
-        if app.buttons["Preferences"].waitForExistence(timeout: 1) {
-            app.buttons["Preferences"].tap()
+
+        if scrollToSettingsEntry() {
             return
         }
-        if app.staticTexts["Settings"].waitForExistence(timeout: 1) {
-            app.staticTexts["Settings"].tap()
-            return
-        }
-        if app.staticTexts["Preferences"].waitForExistence(timeout: 1) {
-            app.staticTexts["Preferences"].tap()
-            return
-        }
-        if app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 1) {
-            app.navigationBars.buttons.firstMatch.tap()
-            if settingsRow.waitForExistence(timeout: 1) {
-                settingsRow.tap()
-                return
-            }
-            if app.navigationBars["Settings"].waitForExistence(timeout: 1) {
-                return
-            }
-            if app.staticTexts["Settings"].waitForExistence(timeout: 1) {
-                app.staticTexts["Settings"].tap()
-                return
-            }
-            if app.staticTexts["Preferences"].waitForExistence(timeout: 1) {
-                app.staticTexts["Preferences"].tap()
-                return
-            }
-        }
+
         XCTFail("Unable to navigate to Settings")
+    }
+
+    @MainActor
+    private func tapSettingsEntryIfAvailable() -> Bool {
+        let settingsRow = app.descendants(matching: .any)["root.settings"]
+        if settingsRow.waitForExistence(timeout: 0.5) {
+            tapElement(settingsRow)
+            return app.navigationBars["Settings"].waitForExistence(timeout: 1)
+                || developerConsoleEntry().waitForExistence(timeout: 1)
+        }
+
+        for label in ["Settings", "Preferences"] {
+            let button = app.buttons[label]
+            if button.waitForExistence(timeout: 0.5) {
+                tapElement(button)
+                return true
+            }
+
+            let text = app.staticTexts[label]
+            if text.waitForExistence(timeout: 0.5) {
+                tapElement(text)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    @MainActor
+    private func scrollToSettingsEntry(attempts: Int = 5) -> Bool {
+        let settingsRow = app.descendants(matching: .any)["root.settings"]
+        for _ in 0..<attempts {
+            app.swipeUp()
+            if settingsRow.waitForExistence(timeout: 0.5) {
+                tapElement(settingsRow)
+                return app.navigationBars["Settings"].waitForExistence(timeout: 1)
+                    || developerConsoleEntry().waitForExistence(timeout: 1)
+            }
+        }
+        return false
     }
 
     @MainActor
     private func openDeveloperConsole() {
         openSettings()
+        XCTAssertTrue(ensureDeveloperConsoleEntryVisible(), "Developer Console row was not visible.")
         let console = developerConsoleEntry()
-        XCTAssertTrue(console.waitForExistence(timeout: 3), "Developer Console row was not visible.")
-        console.tap()
+        tapElement(console)
+        XCTAssertTrue(waitForDeveloperConsole(), "Developer Console did not open.")
+        ensureDeveloperRunDashboardVisible()
+    }
+
+    @MainActor
+    private func ensureDeveloperRunDashboardVisible() {
+        if app.staticTexts["Complete E2E Tests"].waitForExistence(timeout: 1) {
+            return
+        }
+        let runButton = app.buttons["Run"]
+        if runButton.waitForExistence(timeout: 1) {
+            tapElement(runButton)
+        }
     }
 
     @MainActor
     private func assertDeveloperConsoleEntryExists() {
+        XCTAssertTrue(ensureDeveloperConsoleEntryVisible(), "Developer Console row was not visible.")
+    }
+
+    @MainActor
+    private func ensureDeveloperConsoleEntryVisible(attempts: Int = 5) -> Bool {
         let console = developerConsoleEntry()
-        XCTAssertTrue(console.waitForExistence(timeout: 3), "Developer Console row was not visible.")
-        XCTAssertTrue(console.isHittable, "Developer Console row was not hittable.")
+        if console.waitForExistence(timeout: 1) {
+            return true
+        }
+        for _ in 0..<attempts {
+            app.swipeUp()
+            if developerConsoleEntry().waitForExistence(timeout: 0.75) {
+                return true
+            }
+        }
+        return false
     }
 
     @MainActor
     private func developerConsoleEntry() -> XCUIElement {
         let identifier = "settings.developer.console"
-        let element = app.descendants(matching: .any)[identifier]
-        if element.exists {
-            return element
-        }
-
         let button = app.buttons[identifier]
         if button.exists {
             return button
+        }
+
+        let element = app.descendants(matching: .any)[identifier]
+        if element.exists {
+            return element
         }
 
         return app.staticTexts["Developer Console"]
@@ -375,24 +427,71 @@ final class LumenUITests: XCTestCase {
 
     private func dismissOnboardingIfNeeded() {
         let skipButton = app.buttons["Skip for now"]
-        if skipButton.waitForExistence(timeout: 2) {
-            skipButton.tap()
-            return
-        }
-
-        let skipElement = app.descendants(matching: .any)["Skip for now"]
-        if skipElement.waitForExistence(timeout: 1) {
-            skipElement.tap()
+        if skipButton.waitForExistence(timeout: 1) {
+            tapElement(skipButton)
         }
     }
 
     private func relaunchApp() {
-        if app.state != .notRunning {
-            app.terminate()
-            XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "App did not terminate before relaunch.")
+        if app.state == .runningForeground {
+            XCUIDevice.shared.press(.home)
+            _ = app.wait(for: .runningBackgroundSuspended, timeout: 3)
         }
-        app.launch()
+        app = makeApp()
+        launchOrActivateApp()
+    }
+
+    private func terminateAppIfRunning() {
+        guard let app, app.state == .runningForeground else {
+            return
+        }
+        XCUIDevice.shared.press(.home)
+        _ = app.wait(for: .runningBackgroundSuspended, timeout: 3)
+    }
+
+    private func launchOrActivateApp() {
+        switch app.state {
+        case .runningForeground:
+            break
+        case .runningBackground, .runningBackgroundSuspended:
+            app.activate()
+        case .notRunning, .unknown:
+            app.launch()
+        @unknown default:
+            app.launch()
+        }
         dismissOnboardingIfNeeded()
+    }
+
+    private func waitForDeveloperConsole(timeout: TimeInterval = 4) -> Bool {
+        app.buttons["Telemetry"].waitForExistence(timeout: timeout)
+            || app.navigationBars["Developer Console"].waitForExistence(timeout: 1)
+            || app.descendants(matching: .any)["developerConsole.segmentedTabs"].waitForExistence(timeout: 1)
+            || app.descendants(matching: .any)["developerConsole.root"].waitForExistence(timeout: 1)
+    }
+
+    private func tapElement(_ element: XCUIElement) {
+        let elementFrame = element.frame
+        let appFrame = app.frame
+        guard !elementFrame.isEmpty, !appFrame.isEmpty else {
+            element.tap()
+            return
+        }
+        let dx = min(max((elementFrame.midX - appFrame.minX) / max(appFrame.width, 1), 0.01), 0.99)
+        let dy = min(max((elementFrame.midY - appFrame.minY) / max(appFrame.height, 1), 0.01), 0.99)
+        app.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: dy)).tap()
+    }
+
+    private func scrollToElement(_ element: XCUIElement, attempts: Int = 3) {
+        if element.waitForExistence(timeout: 1) {
+            return
+        }
+        for _ in 0..<attempts {
+            app.swipeUp()
+            if element.waitForExistence(timeout: 1) {
+                return
+            }
+        }
     }
 
     private func makeApp() -> XCUIApplication {

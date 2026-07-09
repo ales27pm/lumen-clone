@@ -2499,19 +2499,19 @@ final class AgentService {
         - Keep thought under 12 words and final concise.
         """
 
-        let appPrompt = Self.boundedStructuredContextNote(sanitizeSystemPromptForStructuredOutput(req.systemPrompt))
-        if !appPrompt.isEmpty {
-            sys += "\n\nContext note, lower priority than JSON/tool rules:\n"
-            sys += appPrompt
-            sys += "\n"
-        }
-
         if !req.availableTools.isEmpty {
             sys += "\nAvailable tools:\n"
             sys += Self.compactStructuredToolList(req.availableTools, userMessage: req.userMessage)
             sys += "\n"
         } else {
             sys += "\nNo tools are available. Emit final JSON only.\n"
+        }
+
+        let appPrompt = Self.boundedStructuredContextNote(sanitizeSystemPromptForStructuredOutput(req.systemPrompt))
+        if !appPrompt.isEmpty {
+            sys += "\nContext note, lower priority than JSON/tool rules:\n"
+            sys += appPrompt
+            sys += "\n"
         }
 
         sys += "\nRouting hints: current web/research -> web.search; local files/notes -> rag.search; save user preference -> memory.save; recall stored memory -> memory.recall; weather -> weather; draft email -> mail.draft; scheduled agent run -> trigger.create. Do not include attachment bodies or local source snippets in this routing turn."
