@@ -335,6 +335,71 @@ final class AssistantKernelRunContractTests: XCTestCase {
         XCTAssertNil(generatedRequest)
     }
 
+    func testNativeToolTurnApprovalRequiredActionsStopBeforeExecution() async {
+        let cases: [(prompt: String, expectedToolID: String)] = [
+            ("Text 5551234567 that I am late.", "messages.draft"),
+            ("Email alex@example.com with subject Update and body Hello.", "mail.draft"),
+            ("Set an appointment called Dentist in 30 minutes in my calendar.", "calendar.create"),
+            ("Schedule a trigger to summarize reminders in 10 minutes.", "trigger.create"),
+            ("Call 5551234567.", "phone.call"),
+            ("Schedule an alarm called Test in 10 minutes.", "alarm.schedule"),
+            ("Mark Outlook message about q3 as read.", "outlook.message.mark_read")
+        ]
+
+        for testCase in cases {
+            let capture = RequestCapture()
+            let router = AssistantRuntimeRouter(
+                llama: .init(generateHandler: { request in
+                    await capture.record(request)
+                    return "text runtime should not run"
+                })
+            )
+            let kernel = AssistantKernel(router: router)
+            let request = AgentKernelRequest(
+                userMessage: testCase.prompt,
+                task: .chat,
+                source: .chat,
+                options: AgentKernelOptions(
+                    allowHeavyRuntime: true,
+                    allowDegradedMode: true,
+                    requireUserVisibleFinal: true,
+                    diagnosticsEnabled: true,
+                    maxSteps: 3,
+                    prefersFoundationModels: false
+                )
+            )
+
+            var finalText: String?
+            var doneSteps: [AgentStep] = []
+            var invocations: [ToolInvocation] = []
+            var results: [ToolResult] = []
+            for await event in kernel.run(request, modelContext: nil) {
+                switch event {
+                case .final(let text):
+                    finalText = text
+                case .toolInvocation(let invocation):
+                    invocations.append(invocation)
+                case .toolResult(let result):
+                    results.append(result)
+                case .done(_, let steps):
+                    doneSteps = steps
+                default:
+                    break
+                }
+            }
+
+            let approvalStep = doneSteps.first { $0.kind == .approvalBoundary && $0.toolID == testCase.expectedToolID }
+            XCTAssertNotNil(approvalStep, "Expected approval boundary for \(testCase.expectedToolID) from prompt: \(testCase.prompt)")
+            XCTAssertEqual(approvalStep?.toolArgs?.isEmpty, false)
+            XCTAssertTrue(finalText?.contains("Approval required for \(testCase.expectedToolID)") == true)
+            XCTAssertFalse(doneSteps.contains { $0.kind == .action && $0.toolID == testCase.expectedToolID })
+            XCTAssertTrue(invocations.isEmpty, "Approval boundary must stop before any tool invocation for \(testCase.expectedToolID)")
+            XCTAssertTrue(results.isEmpty, "Approval boundary must stop before any tool result for \(testCase.expectedToolID)")
+            let generatedRequest = await capture.snapshot()
+            XCTAssertNil(generatedRequest)
+        }
+    }
+
     func testAgentKernelOptionsClampMaxSteps() {
         let options = AgentKernelOptions(
             allowHeavyRuntime: true,
