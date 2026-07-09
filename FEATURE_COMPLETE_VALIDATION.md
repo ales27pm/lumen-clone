@@ -82,6 +82,8 @@ The latest live-E2E preflight workflow pass fixed a bad gate rather than masking
 
 The latest planner/schema parity pass fixed deterministic plans that were still emitting string values for numeric and boolean schema fields. Outlook list/search limits, Outlook unread filters, calendar start offsets, alarm durations, trigger relative schedules, and photo-index month windows now emit typed `AgentJSONValue` values that pass `StructuredToolCallValidator`; photo indexing also supplies the required default `months: 6` argument.
 
+The latest native approval-boundary pass fixed the remaining known-bad native tool path for approval-required actions. Native kernel chat turns now stop after validation, emit an `.approvalBoundary` step with the validated canonical tool ID and arguments, return approval-required final text, and do not emit `toolInvocation`, `toolResult`, or execute `SecureToolRegistry` for message, mail, calendar, trigger, phone, alarm, or Outlook mutation actions before user approval.
+
 This is not a claim that every future product target is complete. The Release product surface now excludes experimental or legacy paths that are not release-safe, and documents those exclusions explicitly. Hardware, TestFlight, signed archive/export, and real model/device checks still require Apple credentials and physical device coverage.
 
 ## Files Changed
@@ -97,6 +99,11 @@ Follow-up kernel tool execution files:
 - Native kernel execution: `ios/Lumen/Assistant/AssistantKernel+Streaming.swift`
 - Voice routing: `ios/Lumen/Voice/VoiceCommandRouter.swift`
 - Tests: `ios/LumenTests/AssistantKernelRunContractTests.swift`, `ios/LumenTests/AgentKernelBoundaryGuardTests.swift`
+
+Follow-up native approval-boundary files:
+
+- Native kernel approval boundary: `ios/Lumen/Assistant/AssistantKernel+Streaming.swift`
+- Approval boundary regression test: `ios/LumenTests/AssistantKernelRunContractTests.swift`
 
 Follow-up tool JSON hardening files:
 
@@ -976,6 +983,12 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 | `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO` after planner/schema parity | Passed: `TEST BUILD SUCCEEDED`; log: `/tmp/lumen-build-for-testing-planner-schema.log` |
 | `xcrun simctl boot 8C613E1F-22F1-4A0E-88B9-01031856659B` plus SpringBoard/backboardd probe before focused planner tests | Passed: probe ready after 1 second without waiting on the long System App bootstatus path |
 | `xcodebuild test-without-building -xctestrun /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Lumen_Lumen_iphonesimulator26.2-x86_64.xctestrun -destination 'platform=iOS Simulator,id=8C613E1F-22F1-4A0E-88B9-01031856659B' -only-testing:LumenTests/DeterministicToolPlannerTests` after planner/schema parity | Inconclusive; two compiled-output attempts stalled before XCTest execution. The first never booted the dedicated simulator; the second followed the SpringBoard/backboardd readiness probe but remained stuck in Xcode test-manager handoff with repeated `IDERunDestination: Supported platforms for the buildables in the current scheme is empty` warnings. No executed XCTest pass is claimed. |
+| `git diff --check` after native approval-boundary gating | Passed |
+| `python3 tools/check_release_hardening.py` after native approval-boundary gating | Passed |
+| `python3 tools/check_agent_kernel_boundary.py --strict` after native approval-boundary gating | Passed; only documented DEBUG/transition bridge allowlist entries remained |
+| `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO` after native approval-boundary gating | Passed: `TEST BUILD SUCCEEDED`; log: `/tmp/lumen-build-for-testing-approval-boundary-final.log` |
+| `xcrun simctl boot 8C613E1F-22F1-4A0E-88B9-01031856659B` plus SpringBoard/backboardd probe before focused approval-boundary test | Passed: probe ready after 1 second without waiting on the long System App bootstatus path |
+| `xcodebuild test-without-building -xctestrun /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Lumen_Lumen_iphonesimulator26.2-x86_64.xctestrun -destination 'platform=iOS Simulator,id=8C613E1F-22F1-4A0E-88B9-01031856659B' -only-testing:LumenTests/AssistantKernelRunContractTests/testNativeToolTurnApprovalRequiredActionsStopBeforeExecution -parallel-testing-enabled NO -jobs 1` after native approval-boundary gating | Passed: executed 1 XCTest with 0 failures; `TEST EXECUTE SUCCEEDED`; log: `/tmp/lumen-approval-boundary-test-without-building-final.log` |
 
 ## Remaining DEBUG-Only Experimental Items
 
@@ -986,7 +999,7 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 
 ## Remaining Release Evidence Gaps
 
-- Executed XCTest proof for the new native kernel tool-turn tests is still missing because the simulator runner hung during launch/install. The non-launching `build-for-testing` checkpoint passed.
+- Executed XCTest proof now exists for the new native approval-boundary regression test using `test-without-building` on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
 - Full simulator XCTest proof for the current follow-up remains missing; the attempted full `xcodebuild test` run was interrupted after it stopped producing output.
 - Executed XCTest proof for the new RAG/memory diagnostic tests is still missing; the non-launching `build-for-testing` checkpoint compiled them successfully.
 - Executed XCTest proof for the new privacy/logging redaction tests is still missing; the non-launching `build-for-testing` checkpoint compiled them successfully.

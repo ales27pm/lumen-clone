@@ -294,6 +294,18 @@ extension AssistantKernel: AgentKernelRunning {
                 turnID: request.turnID,
                 createdAt: Date()
             )
+            if ToolRouteGuard.requiresUserApproval(validatedCall.canonicalToolID) {
+                let approval = Self.approvalBoundaryFinal(for: validatedCall.canonicalToolID)
+                appendStep(AgentStep(
+                    kind: .approvalBoundary,
+                    content: approval,
+                    toolID: validatedCall.canonicalToolID,
+                    toolArgs: validatedCall.arguments
+                ))
+                finalText = approval
+                events.append(.final(finalText))
+                return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
+            }
             appendStep(AgentStep(
                 kind: .action,
                 content: "\(validatedCall.canonicalToolID)(validated)",
@@ -325,6 +337,29 @@ extension AssistantKernel: AgentKernelRunning {
         }
         events.append(.final(finalText))
         return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
+    }
+
+    private nonisolated static func approvalBoundaryFinal(for toolID: String) -> String {
+        switch toolID {
+        case "messages.draft":
+            return "Approval required for messages.draft. I did not prepare or send the message yet."
+        case "mail.draft":
+            return "Approval required for mail.draft. I did not prepare or send the email yet."
+        case "calendar.create":
+            return "Approval required for calendar.create. I did not create an event yet."
+        case "trigger.create":
+            return "Approval required for trigger.create. I did not schedule an agent run yet."
+        case "phone.call":
+            return "Approval required for phone.call. I did not place the call yet."
+        case "alarm.request_authorization":
+            return "Approval required for alarm.request_authorization. I did not request alarm authorization yet."
+        case "alarm.schedule", "alarm.countdown", "alarm.pause", "alarm.resume", "alarm.stop", "alarm.snooze", "alarm.cancel":
+            return "Approval required for \(toolID). I did not change alarms yet."
+        case let id where id.hasPrefix("outlook."):
+            return "Approval required for \(toolID). I did not modify Outlook mail yet."
+        default:
+            return "Approval required for \(toolID). I did not run it yet."
+        }
     }
 
     private static func userVisibleToolObservation(toolID: String, result: ToolResult) -> String {
