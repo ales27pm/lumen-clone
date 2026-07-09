@@ -130,9 +130,9 @@ final class BackgroundTaskPolicyTests: XCTestCase {
 
         let metrics = try await store.recentMetrics(limit: 4)
         XCTAssertEqual(metrics.map(\.taskKind), [
+            BackgroundTaskKind.selfImprovement.rawValue,
             BackgroundTaskKind.memoryConsolidation.rawValue,
             BackgroundTaskKind.ragMaintenance.rawValue,
-            BackgroundTaskKind.selfImprovement.rawValue,
             BackgroundTaskKind.modelHousekeeping.rawValue
         ])
         XCTAssertEqual(metrics[0].errorCode, "background_policy_denied")

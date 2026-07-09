@@ -165,16 +165,16 @@ final class BackgroundOrchestrator {
 
     func runProcessingMaintenance(until deadline: Date) async {
         guard !Task.isCancelled else { return }
+        guard await continueProcessing(before: .selfImprovement, deadline: deadline) else { return }
+        await runSelfImprovementIfAllowed(until: deadline)
+
+        guard !Task.isCancelled else { return }
         guard await continueProcessing(before: .memoryConsolidation, deadline: deadline) else { return }
         await runMemoryConsolidationIfAllowed()
 
         guard !Task.isCancelled else { return }
         guard await continueProcessing(before: .ragMaintenance, deadline: deadline) else { return }
         await runRAGMaintenanceIfAllowed()
-
-        guard !Task.isCancelled else { return }
-        guard await continueProcessing(before: .selfImprovement, deadline: deadline) else { return }
-        await runSelfImprovementIfAllowed(until: deadline)
 
         guard !Task.isCancelled else { return }
         guard await continueProcessing(before: .modelHousekeeping, deadline: deadline) else { return }
