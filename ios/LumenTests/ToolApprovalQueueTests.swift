@@ -3,6 +3,49 @@ import XCTest
 
 @MainActor
 final class ToolApprovalQueueTests: XCTestCase {
+    func testApprovalBoundaryStepCreatesPendingToolMessageForChatView() {
+        let step = AgentStep(
+            kind: .approvalBoundary,
+            content: "Approval required before running mail.draft.",
+            toolID: "mail.draft",
+            toolArgs: [
+                "to": "sam@example.com",
+                "subject": "Timeline",
+                "body": "Status green"
+            ]
+        )
+
+        guard let message = ChatApprovalBoundaryMapper.pendingToolMessage(for: step) else {
+            XCTFail("Expected approval boundary step to create a pending tool message")
+            return
+        }
+
+        XCTAssertEqual(message.messageRole, .tool)
+        XCTAssertEqual(message.toolName, "mail.draft")
+        XCTAssertEqual(message.status, .pendingApproval)
+        XCTAssertNil(message.toolResult)
+
+        let parsed = ToolApprovalPayloadCodec.parseLooseArguments(message.content)
+        XCTAssertEqual(parsed["to"], "sam@example.com")
+        XCTAssertEqual(parsed["subject"], "Timeline")
+        XCTAssertEqual(parsed["body"], "Status green")
+
+        guard let pendingActionID = ToolApprovalPayloadCodec.pendingActionID(from: parsed) else {
+            XCTFail("Expected pending action id in serialized approval payload")
+            return
+        }
+        guard let pending = ToolApprovalQueue.shared.resolve(pendingActionID) else {
+            XCTFail("Expected queued approval action to be resolvable")
+            return
+        }
+        XCTAssertEqual(pending.toolID, "mail.draft")
+        XCTAssertEqual(pending.arguments.stringCoerced["to"], "sam@example.com")
+        XCTAssertEqual(pending.arguments.stringCoerced["subject"], "Timeline")
+        XCTAssertEqual(pending.arguments.stringCoerced["body"], "Status green")
+
+        XCTAssertNotNil(ToolApprovalQueue.shared.consume(pendingActionID, matchingToolID: "mail.draft"))
+    }
+
     func testPendingApprovalPayloadCarriesQueueIDAndConsumesExactArgumentsOnce() {
         let pending = ToolApprovalQueue.shared.enqueue(
             toolID: "mail.draft",
