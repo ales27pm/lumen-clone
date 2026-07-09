@@ -111,10 +111,9 @@ final class BackgroundOrchestrator {
             await appendSharedContainerUnavailable(taskKind: .memoryConsolidation)
             return
         }
-        let context = ModelContext(container)
-        await MemoryConsolidator.consolidate(
-            context: context,
-            metricsStore: metrics,
+        await Self.performMemoryConsolidation(
+            container: container,
+            metrics: metrics,
             promoteQueuedCaptures: decision.allowModelLoading
         )
     }
@@ -134,9 +133,13 @@ final class BackgroundOrchestrator {
             await appendSharedContainerUnavailable(taskKind: .ragMaintenance)
             return
         }
-        let context = ModelContext(container)
-        let result = await RAGEngine().maintenance(context: context)
-        try? await metrics.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: "background", taskKind: "ragMaintenance", modelIDHash: nil, policySummary: result.metricSummary, latencyMs: nil, success: result.success, errorCode: result.success ? nil : "maintenance_failed", thermalState: .from(processThermalState: ProcessInfo.processInfo.thermalState), lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled, memoryWarningCount: MemoryPressureMonitor.shared.warningCount))
+        let result = await Self.performRAGMaintenance(container: container)
+        await appendMetric(
+            taskKind: .ragMaintenance,
+            policySummary: result.metricSummary,
+            success: result.success,
+            errorCode: result.success ? nil : "maintenance_failed"
+        )
     }
 
     func runModelHousekeepingIfAllowed() async {
@@ -161,15 +164,19 @@ final class BackgroundOrchestrator {
     }
 
     func runProcessingMaintenance(until deadline: Date) async {
+        guard !Task.isCancelled else { return }
         guard await continueProcessing(before: .memoryConsolidation, deadline: deadline) else { return }
         await runMemoryConsolidationIfAllowed()
 
+        guard !Task.isCancelled else { return }
         guard await continueProcessing(before: .ragMaintenance, deadline: deadline) else { return }
         await runRAGMaintenanceIfAllowed()
 
+        guard !Task.isCancelled else { return }
         guard await continueProcessing(before: .selfImprovement, deadline: deadline) else { return }
         await runSelfImprovementIfAllowed(until: deadline)
 
+        guard !Task.isCancelled else { return }
         guard await continueProcessing(before: .modelHousekeeping, deadline: deadline) else { return }
         await runModelHousekeepingIfAllowed()
     }
@@ -189,29 +196,48 @@ final class BackgroundOrchestrator {
             await appendSharedContainerUnavailable(taskKind: .selfImprovement)
             return
         }
-        let context = ModelContext(container)
-        await SelfImprovementLoop.shared.run(
+        let startedAt = Date()
+        let outcome = await SelfImprovementLoop.shared.run(
             trigger: .backgroundProcessing,
-            context: context,
+            container: container,
             deadline: deadline
         )
+        await appendSelfImprovementOutcomeMetric(outcome, latencyMs: Int(Date().timeIntervalSince(startedAt) * 1000))
     }
 
     private func handleBackgroundTask(_ task: BGTask, runProcessingWork: Bool) async {
         schedule()
-        task.expirationHandler = { task.setTaskCompleted(success: false) }
-        guard let container = SharedContainer.shared else {
-            await appendSharedContainerUnavailable(taskKind: .triggerScan)
-            task.setTaskCompleted(success: true)
-            return
+        let completion = BackgroundTaskCompletion(task: task)
+        let work = Task { () -> Bool in
+            guard let container = SharedContainer.shared else {
+                await appendSharedContainerUnavailable(taskKind: .triggerScan)
+                return true
+            }
+            let deadline = Date().addingTimeInterval(4.5)
+            let context = ModelContext(container)
+            do {
+                try Task.checkCancellation()
+                await runTriggerScan(context: context)
+                try Task.checkCancellation()
+                if runProcessingWork, Date() < deadline {
+                    await runProcessingMaintenance(until: deadline)
+                }
+                try Task.checkCancellation()
+                return true
+            } catch is CancellationError {
+                return false
+            } catch {
+                return false
+            }
         }
-        let deadline = Date().addingTimeInterval(4.5)
-        let context = ModelContext(container)
-        await runTriggerScan(context: context)
-        if runProcessingWork, Date() < deadline {
-            await runProcessingMaintenance(until: deadline)
+        task.expirationHandler = {
+            work.cancel()
+            Task { @MainActor in
+                completion.complete(success: false)
+            }
         }
-        task.setTaskCompleted(success: true)
+        let success = await work.value
+        completion.complete(success: success)
     }
 
     private func triggerScanDecision() -> BackgroundTaskDecision {
@@ -221,7 +247,7 @@ final class BackgroundOrchestrator {
             lowPowerMode: snapshot.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled,
             thermalState: snapshot.thermalState ?? .unknown,
             isForeground: snapshot.scenePhase == .active,
-            backgroundAgentsEnabled: true,
+            backgroundAgentsEnabled: SettingsSnapshot.loadFromDisk().agentModeEnabled,
             requiresNetwork: false,
             estimatedCost: 1
         ))
@@ -248,7 +274,7 @@ final class BackgroundOrchestrator {
             lowPowerMode: snapshot.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled,
             thermalState: snapshot.thermalState ?? .unknown,
             isForeground: snapshot.scenePhase == .active,
-            backgroundAgentsEnabled: true,
+            backgroundAgentsEnabled: SettingsSnapshot.loadFromDisk().agentModeEnabled,
             requiresNetwork: requiresNetwork,
             estimatedCost: estimatedCost
         ))
@@ -266,14 +292,68 @@ final class BackgroundOrchestrator {
             runtimeName: "background",
             taskKind: taskKind.rawValue,
             modelIDHash: nil,
-            policySummary: policySummary,
+            policySummary: PersistentRuntimeDiagnosticsRedactor.redact(policySummary),
             latencyMs: latencyMs,
             success: success,
-            errorCode: errorCode,
+            errorCode: errorCode.map(PersistentRuntimeDiagnosticsRedactor.safeCode),
             thermalState: .from(processThermalState: ProcessInfo.processInfo.thermalState),
             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
             memoryWarningCount: MemoryPressureMonitor.shared.warningCount
         ))
+    }
+
+    nonisolated private static func performMemoryConsolidation(
+        container: ModelContainer,
+        metrics: RuntimeMetricsStore,
+        promoteQueuedCaptures: Bool
+    ) async {
+        let context = ModelContext(container)
+        await MemoryConsolidator.consolidate(
+            context: context,
+            metricsStore: metrics,
+            promoteQueuedCaptures: promoteQueuedCaptures
+        )
+    }
+
+    nonisolated private static func performRAGMaintenance(container: ModelContainer) async -> RAGMaintenanceResult {
+        let context = ModelContext(container)
+        return await RAGEngine().maintenance(context: context)
+    }
+
+    private func appendSelfImprovementOutcomeMetric(_ outcome: SelfImprovementOutcome, latencyMs: Int) async {
+        switch outcome {
+        case .applied(let summary):
+            await appendMetric(
+                taskKind: .selfImprovement,
+                policySummary: "self-improvement applied: \(summary)",
+                success: true,
+                latencyMs: latencyMs
+            )
+        case .skipped(let reason):
+            await appendMetric(
+                taskKind: .selfImprovement,
+                policySummary: "skipped: \(reason)",
+                success: true,
+                errorCode: reason,
+                latencyMs: latencyMs
+            )
+        case .cancelled:
+            await appendMetric(
+                taskKind: .selfImprovement,
+                policySummary: "cancelled",
+                success: false,
+                errorCode: "cancelled",
+                latencyMs: latencyMs
+            )
+        case .failed(let code):
+            await appendMetric(
+                taskKind: .selfImprovement,
+                policySummary: "failed: \(code)",
+                success: false,
+                errorCode: code,
+                latencyMs: latencyMs
+            )
+        }
     }
 
     private func appendSharedContainerUnavailable(taskKind: BackgroundTaskKind) async {
@@ -291,10 +371,26 @@ final class BackgroundOrchestrator {
                 taskKind: taskKind,
                 policySummary: "skipped: background processing deadline expired",
                 success: true,
-                errorCode: "background_deadline_expired"
+                errorCode: "deadline_exceeded"
             )
             return false
         }
         return true
+    }
+}
+
+@MainActor
+private final class BackgroundTaskCompletion {
+    private let task: BGTask
+    private var didComplete = false
+
+    init(task: BGTask) {
+        self.task = task
+    }
+
+    func complete(success: Bool) {
+        guard !didComplete else { return }
+        didComplete = true
+        task.setTaskCompleted(success: success)
     }
 }

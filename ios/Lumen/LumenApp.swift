@@ -278,8 +278,8 @@ struct LumenApp: App {
 
     private func startAppLaunchSelfImprovement() {
         guard !LumenLaunchArguments.isUITesting else { return }
-        Task(priority: .utility) { @MainActor in
-            await SelfImprovementLoop.shared.run(trigger: .appLaunch, context: nil)
+        Task(priority: .utility) {
+            await SelfImprovementLoop.shared.run(trigger: .appLaunch, container: nil)
         }
     }
 }

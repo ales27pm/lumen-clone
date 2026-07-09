@@ -41,6 +41,22 @@ final class BackgroundTaskPolicyTests: XCTestCase {
         XCTAssertEqual(d.maxTokens, 0)
     }
 
+    func testBackgroundAgentsDisabledDeniesSelfImprovement() {
+        let d = BackgroundTaskPolicy.decide(.init(taskKind: .selfImprovement, lowPowerMode: false, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: false, requiresNetwork: false, estimatedCost: 2))
+        XCTAssertFalse(d.allow)
+        XCTAssertFalse(d.allowModelLoading)
+        XCTAssertEqual(d.maxTokens, 0)
+        XCTAssertEqual(d.denyReason, "background agents disabled")
+    }
+
+    func testLowPowerDeniesBackgroundSelfImprovement() {
+        let d = BackgroundTaskPolicy.decide(.init(taskKind: .selfImprovement, lowPowerMode: true, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 2))
+        XCTAssertFalse(d.allow)
+        XCTAssertFalse(d.allowModelLoading)
+        XCTAssertEqual(d.maxTokens, 0)
+        XCTAssertEqual(d.denyReason, "low power background mode")
+    }
+
     func testLowPowerDeniesBackgroundMaintenanceEvenWithoutNetwork() {
         let d = BackgroundTaskPolicy.decide(.init(taskKind: .memoryConsolidation, lowPowerMode: true, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 2))
         XCTAssertFalse(d.allow)
@@ -173,7 +189,7 @@ final class BackgroundTaskPolicyTests: XCTestCase {
 
         let metric = try await store.recentMetrics(limit: 1).last
         XCTAssertEqual(metric?.taskKind, BackgroundTaskKind.memoryConsolidation.rawValue)
-        XCTAssertEqual(metric?.errorCode, "background_deadline_expired")
+        XCTAssertEqual(metric?.errorCode, "deadline_exceeded")
         #endif
     }
 

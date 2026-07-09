@@ -149,10 +149,10 @@ actor SelfImprovementCoordinator {
     }
 }
 
-@MainActor
 final class SelfImprovementLoop {
-    typealias NowProvider = @MainActor () -> Date
-    typealias Maintenance = @MainActor (SelfImprovementTrigger, ModelContext?, Date?) async throws -> SelfImprovementMaintenanceResult
+    typealias NowProvider = () -> Date
+    typealias Maintenance = (SelfImprovementTrigger, ModelContainer?, Date?) async throws -> SelfImprovementMaintenanceResult
+    typealias BackgroundAgentsEnabledProvider = () -> Bool
 
     static let shared = SelfImprovementLoop()
 
@@ -161,22 +161,25 @@ final class SelfImprovementLoop {
     private let config: SelfImprovementConfig
     private let now: NowProvider
     private let maintenance: Maintenance
+    private let backgroundAgentsEnabled: BackgroundAgentsEnabledProvider
 
     init(
         coordinator: SelfImprovementCoordinator = SelfImprovementCoordinator(),
         metricsStore: RuntimeMetricsStore = .shared,
         config: SelfImprovementConfig = .default,
         now: @escaping NowProvider = { Date() },
+        backgroundAgentsEnabled: @escaping BackgroundAgentsEnabledProvider = { SettingsSnapshot.loadFromDisk().agentModeEnabled },
         maintenance: Maintenance? = nil
     ) {
         self.coordinator = coordinator
         self.metricsStore = metricsStore
         self.config = config
         self.now = now
+        self.backgroundAgentsEnabled = backgroundAgentsEnabled
         self.maintenance = maintenance ?? { trigger, context, deadline in
             try await Self.defaultMaintenance(
                 trigger: trigger,
-                context: context,
+                container: context,
                 deadline: deadline,
                 metricsStore: metricsStore,
                 metricCompactionMaxEntries: config.metricCompactionMaxEntries
@@ -187,23 +190,25 @@ final class SelfImprovementLoop {
     @discardableResult
     func run(
         trigger: SelfImprovementTrigger,
-        context: ModelContext?,
+        container: ModelContainer?,
         deadline: Date? = nil,
         force: Bool = false
     ) async -> SelfImprovementOutcome {
         let startedAt = now()
-        guard deadline.map({ startedAt < $0 }) ?? true else {
-            await coordinator.skip(reason: "deadline_expired")
+        let configuredDeadline = startedAt.addingTimeInterval(max(0, config.maxRunDurationSeconds))
+        let effectiveDeadline = deadline.map { min($0, configuredDeadline) } ?? configuredDeadline
+        guard startedAt < effectiveDeadline else {
+            await coordinator.skip(reason: "deadline_exceeded")
             await appendMetric(
-                summary: "skipped: deadline_expired trigger=\(trigger.rawValue)",
+                summary: "skipped: deadline_exceeded trigger=\(trigger.rawValue)",
                 success: true,
-                errorCode: "deadline_expired",
+                errorCode: "deadline_exceeded",
                 latencyMs: 0
             )
-            return .skipped("deadline_expired")
+            return .skipped("deadline_exceeded")
         }
 
-        guard policyAllows(trigger: trigger) else {
+        guard await policyAllows(trigger: trigger) else {
             await coordinator.skip(reason: "policy_denied")
             await appendMetric(
                 summary: "skipped: policy_denied trigger=\(trigger.rawValue)",
@@ -228,10 +233,10 @@ final class SelfImprovementLoop {
 
         do {
             try Task.checkCancellation()
-            try checkDeadline(startedAt: startedAt, deadline: deadline)
-            let result = try await maintenance(trigger, context, deadline)
+            try checkDeadline(startedAt: startedAt, deadline: effectiveDeadline)
+            let result = try await maintenance(trigger, container, effectiveDeadline)
             try Task.checkCancellation()
-            try checkDeadline(startedAt: startedAt, deadline: deadline)
+            try checkDeadline(startedAt: startedAt, deadline: effectiveDeadline)
 
             let finishedAt = now()
             await coordinator.success(
@@ -243,7 +248,7 @@ final class SelfImprovementLoop {
             await appendMetric(
                 summary: "trigger=\(trigger.rawValue); \(result.summary)",
                 success: true,
-                errorCode: nil,
+                errorCode: result.applied ? nil : result.summary,
                 latencyMs: Int(finishedAt.timeIntervalSince(startedAt) * 1000)
             )
             return result.applied ? .applied(result.summary) : .skipped(result.summary)
@@ -262,15 +267,15 @@ final class SelfImprovementLoop {
                 runID: runID,
                 now: finishedAt,
                 cooldown: config.cooldownSeconds,
-                reason: "deadline_expired"
+                reason: "deadline_exceeded"
             )
             await appendMetric(
-                summary: "skipped: deadline_expired trigger=\(trigger.rawValue)",
+                summary: "skipped: deadline_exceeded trigger=\(trigger.rawValue)",
                 success: true,
-                errorCode: "deadline_expired",
+                errorCode: "deadline_exceeded",
                 latencyMs: Int(finishedAt.timeIntervalSince(startedAt) * 1000)
             )
-            return .skipped("deadline_expired")
+            return .skipped("deadline_exceeded")
         } catch {
             let code = Self.errorCode(for: error)
             await coordinator.failure(
@@ -290,14 +295,14 @@ final class SelfImprovementLoop {
         }
     }
 
-    private func policyAllows(trigger: SelfImprovementTrigger) -> Bool {
-        let snapshot = ResourceBudgetGate.diagnosticSnapshot()
+    private func policyAllows(trigger: SelfImprovementTrigger) async -> Bool {
+        let snapshot = await MainActor.run { ResourceBudgetGate.diagnosticSnapshot() }
         let decision = BackgroundTaskPolicy.decide(.init(
             taskKind: .selfImprovement,
             lowPowerMode: snapshot.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled,
             thermalState: snapshot.thermalState ?? .unknown,
             isForeground: trigger.isForeground,
-            backgroundAgentsEnabled: true,
+            backgroundAgentsEnabled: backgroundAgentsEnabled(),
             requiresNetwork: false,
             estimatedCost: 2
         ))
@@ -325,10 +330,10 @@ final class SelfImprovementLoop {
             runtimeName: "selfImprovement",
             taskKind: BackgroundTaskKind.selfImprovement.rawValue,
             modelIDHash: nil,
-            policySummary: summary,
+            policySummary: Self.sanitizedSummary(summary),
             latencyMs: latencyMs,
             success: success,
-            errorCode: errorCode,
+            errorCode: errorCode.map(PersistentRuntimeDiagnosticsRedactor.safeCode),
             thermalState: .from(processThermalState: ProcessInfo.processInfo.thermalState),
             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
             memoryWarningCount: MemoryPressureMonitor.shared.warningCount
@@ -337,17 +342,21 @@ final class SelfImprovementLoop {
 
     private static func defaultMaintenance(
         trigger: SelfImprovementTrigger,
-        context: ModelContext?,
+        container: ModelContainer?,
         deadline: Date?,
         metricsStore: RuntimeMetricsStore,
         metricCompactionMaxEntries: Int
     ) async throws -> SelfImprovementMaintenanceResult {
-        guard let context else {
+        guard let container else {
             return .skipped("shared_container_unavailable")
         }
+        let context = ModelContext(container)
+        try Task.checkCancellation()
         try checkDeadline(deadline)
 
+        try Task.checkCancellation()
         let snapshot = await buildSnapshot(trigger: trigger, context: context)
+        try Task.checkCancellation()
         try checkDeadline(deadline)
         let rendered = SelfModelContextProvider.render(snapshot, maxChars: trigger.isForeground ? 1_200 : 700)
         try Task.checkCancellation()
@@ -375,6 +384,7 @@ final class SelfImprovementLoop {
 
         try checkDeadline(deadline)
         try? await metricsStore.compact(maxEntries: metricCompactionMaxEntries)
+        try Task.checkCancellation()
         try checkDeadline(deadline)
 
         let summary = [
@@ -403,14 +413,15 @@ final class SelfImprovementLoop {
             thermalState: ProcessInfo.processInfo.thermalState,
             prefersFoundationModels: false,
             allowHeavyRuntime: false,
-            maxTokens: 128
+            maxTokens: 0
         )
         let budget = ContextBudgetAllocator.allocate(for: turn, maxInputTokens: 512)
+        let permissionRegistry = await MainActor.run { PermissionRegistry.shared }
         let toolContext = ToolExecutionContext(
             isForeground: trigger.isForeground,
             appState: nil,
             modelContext: context,
-            permissionRegistry: .shared,
+            permissionRegistry: permissionRegistry,
             metricsStore: .shared
         )
         let tools = await SecureToolRegistry.shared.availableDefinitions(context: toolContext, source: trigger.toolSource)
@@ -435,5 +446,9 @@ final class SelfImprovementLoop {
             }
         }
         return RuntimeMetricErrorSanitizer.code(for: error)
+    }
+
+    private static func sanitizedSummary(_ summary: String) -> String {
+        PersistentRuntimeDiagnosticsRedactor.redact(summary)
     }
 }
