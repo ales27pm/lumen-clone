@@ -3,8 +3,8 @@ import XCTest
 
 @MainActor
 final class BackgroundDiagnosticsTests: XCTestCase {
-    func testContainsEntitlementWarningsField() async {
-        let snap = await DiagnosticsProvider().collect()
+    func testCachedSnapshotContainsEntitlementWarningsField() {
+        let snap = DiagnosticsProvider().cachedSnapshot()
         XCTAssertNotNil(snap.background.entitlementWarnings)
     }
 }

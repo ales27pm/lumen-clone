@@ -10,15 +10,19 @@ SIM_NAME="${SIM_NAME:-Lumen Focused Test iPhone}"
 SIM_RUNTIME="${SIM_RUNTIME:-com.apple.CoreSimulator.SimRuntime.iOS-26-3}"
 SIM_DEVICE_TYPE="${SIM_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPhone-17}"
 ONLY_TESTING="${ONLY_TESTING:-LumenTests/AgentGroundingRegressionTests}"
+FULL_TEST_SUITE="${FULL_TEST_SUITE:-0}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$ROOT/build/DerivedData-FocusedSimulatorTests}"
 PREBOOT_SIMULATOR="${PREBOOT_SIMULATOR:-1}"
-TEST_TIMEOUT_SECONDS="${TEST_TIMEOUT_SECONDS:-900}"
+TEST_TIMEOUT_SECONDS="${TEST_TIMEOUT_SECONDS:-2400}"
 SIM_BOOT_TIMEOUT_SECONDS="${SIM_BOOT_TIMEOUT_SECONDS:-1200}"
-SIM_BOOTSTATUS_POLL_SECONDS="${SIM_BOOTSTATUS_POLL_SECONDS:-60}"
+SIM_BOOTSTATUS_POLL_SECONDS="${SIM_BOOTSTATUS_POLL_SECONDS:-5}"
 SIM_READY_PROBE_TIMEOUT_SECONDS="${SIM_READY_PROBE_TIMEOUT_SECONDS:-20}"
 SIMCTL_LIST_TIMEOUT_SECONDS="${SIMCTL_LIST_TIMEOUT_SECONDS:-30}"
+UNINSTALL_TIMEOUT_SECONDS="${UNINSTALL_TIMEOUT_SECONDS:-30}"
+XCODE_DESTINATION_TIMEOUT_SECONDS="${XCODE_DESTINATION_TIMEOUT_SECONDS:-600}"
 AGENT_GROUNDING_RESOURCE_MODE="${AGENT_GROUNDING_RESOURCE_MODE:-minimal}"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.27pm.lumenclone}"
+UITEST_RUNNER_BUNDLE_ID="${UITEST_RUNNER_BUNDLE_ID:-com.27pm.lumenclone.uitests.xctrunner}"
 UNINSTALL_BEFORE_TEST="${UNINSTALL_BEFORE_TEST:-1}"
 USE_DISPOSABLE_SIMULATOR="${USE_DISPOSABLE_SIMULATOR:-0}"
 DELETE_CREATED_SIMULATOR="${DELETE_CREATED_SIMULATOR:-1}"
@@ -31,7 +35,7 @@ EXTRA_XCODEBUILD_ARGS=()
 
 usage() {
   cat <<'EOF'
-Usage: scripts/run_focused_simulator_tests.sh [--repair-core-simulator] [--only-testing TEST_ID] [--] [xcodebuild args...]
+Usage: scripts/run_focused_simulator_tests.sh [--repair-core-simulator] [--full-suite] [--only-testing TEST_ID] [--] [xcodebuild args...]
 
 Environment:
   SIM_UDID             Use an existing simulator UDID. Disables disposable simulator creation.
@@ -39,20 +43,27 @@ Environment:
   SIM_RUNTIME          Runtime identifier. Default: com.apple.CoreSimulator.SimRuntime.iOS-26-3
   SIM_DEVICE_TYPE      Device type identifier. Default: com.apple.CoreSimulator.SimDeviceType.iPhone-17
   ONLY_TESTING         xcodebuild -only-testing value. Default: LumenTests/AgentGroundingRegressionTests
+  FULL_TEST_SUITE      Set to 1 to run every test target in the scheme. Default: 0.
   DERIVED_DATA_PATH    DerivedData path. Default: build/DerivedData-FocusedSimulatorTests
   PREBOOT_SIMULATOR    Set to 1 to boot before testing. Default: 1.
-  TEST_TIMEOUT_SECONDS Timeout for simulator test execution. Default: 900.
+  TEST_TIMEOUT_SECONDS Timeout for simulator test execution. Default: 2400.
   SIM_BOOT_TIMEOUT_SECONDS
                        Timeout for simulator bootstatus. Default: 1200.
   SIM_BOOTSTATUS_POLL_SECONDS
-                       Poll interval for bootstatus before probing readiness. Default: 60.
+                       Short bootstatus poll after readiness probe misses. Default: 5.
   SIM_READY_PROBE_TIMEOUT_SECONDS
                        Timeout for alternate SpringBoard/backboardd readiness probe. Default: 20.
   SIMCTL_LIST_TIMEOUT_SECONDS
                        Timeout for informational simctl list calls. Default: 30.
+  UNINSTALL_TIMEOUT_SECONDS
+                       Timeout for stale app uninstall before tests. Default: 30.
+  XCODE_DESTINATION_TIMEOUT_SECONDS
+                       Timeout for xcodebuild destination resolution. Default: 600.
   AGENT_GROUNDING_RESOURCE_MODE
                        full, minimal, or skip for AgentGrounding resources. Default: minimal.
   APP_BUNDLE_ID        App bundle to uninstall before tests. Default: com.27pm.lumenclone.
+  UITEST_RUNNER_BUNDLE_ID
+                       UI test runner bundle to terminate before tests. Default: com.27pm.lumenclone.uitests.xctrunner.
   UNINSTALL_BEFORE_TEST
                        Set to 0 to keep the existing simulator app install. Default: 1.
   USE_DISPOSABLE_SIMULATOR
@@ -109,6 +120,35 @@ print_mobileinstallation_diagnostics() {
   rg "Data Migration Failed|Installing <MIInstallable|Install Successful|Install successful|Preflight/Patch|Info.plist missing" "$log_file" \
     | tail -n 60 \
     || true
+}
+
+terminate_bundle_if_running() {
+  local udid="$1"
+  local bundle_id="$2"
+
+  run_with_timeout "$SIMCTL_LIST_TIMEOUT_SECONDS" xcrun simctl terminate "$udid" "$bundle_id" 2>/dev/null || true
+}
+
+kill_stale_simulator_app_processes() {
+  local udid="$1"
+  local device_container="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Containers/Bundle/Application"
+  local process_path
+  local pid
+
+  for process_path in "Lumen.app/Lumen" "LumenUITests-Runner.app/LumenUITests-Runner"; do
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
+      kill -9 "$pid" 2>/dev/null || true
+    done < <(pgrep -f "${device_container}.*/${process_path}" 2>/dev/null || true)
+  done
+}
+
+clear_test_app_runtime() {
+  local udid="$1"
+
+  terminate_bundle_if_running "$udid" "$APP_BUNDLE_ID"
+  terminate_bundle_if_running "$udid" "$UITEST_RUNNER_BUNDLE_ID"
+  kill_stale_simulator_app_processes "$udid"
 }
 
 attach_simulator_ui() {
@@ -181,6 +221,12 @@ wait_for_simulator_ready() {
   local boot_status
 
   while (( SECONDS < deadline )); do
+    if probe_simulator_ready "$udid"; then
+      echo "== Simulator readiness probe succeeded =="
+      echo "The device is Booted and SpringBoard/backboardd are running."
+      return 0
+    fi
+
     poll_seconds="$SIM_BOOTSTATUS_POLL_SECONDS"
     if (( SECONDS + poll_seconds > deadline )); then
       poll_seconds=$((deadline - SECONDS))
@@ -210,7 +256,7 @@ wait_for_simulator_ready() {
 latest_xctestrun() {
   local products_dir="$DERIVED_DATA_PATH/Build/Products"
   [[ -d "$products_dir" ]] || return 1
-  find "$products_dir" -name '*.xctestrun' ! -name '*.focused.xctestrun' -type f -print0 \
+  find "$products_dir" -name '*.xctestrun' ! -name '*.focused.xctestrun' ! -name '*.serial.xctestrun' -type f -print0 \
     | xargs -0 stat -f '%m %N' 2>/dev/null \
     | sort -nr \
     | head -1 \
@@ -296,6 +342,36 @@ with destination.open("wb") as handle:
 PY
 }
 
+prepare_full_xctestrun() {
+  local source_path="$1"
+  local destination_path="$2"
+
+  /usr/bin/python3 - "$source_path" "$destination_path" <<'PY'
+import plistlib
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+
+with source.open("rb") as handle:
+    data = plistlib.load(handle)
+
+kept = 0
+for configuration in data.get("TestConfigurations", []):
+    for target in configuration.get("TestTargets", []):
+        target["ParallelizationEnabled"] = False
+        kept += 1
+
+if kept == 0:
+    raise SystemExit(f"{source} does not contain any test targets")
+
+destination.parent.mkdir(parents=True, exist_ok=True)
+with destination.open("wb") as handle:
+    plistlib.dump(data, handle, sort_keys=False)
+PY
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repair-core-simulator)
@@ -305,6 +381,10 @@ while [[ $# -gt 0 ]]; do
     --only-testing)
       ONLY_TESTING="${2:?missing value for --only-testing}"
       shift 2
+      ;;
+    --full-suite)
+      FULL_TEST_SUITE=1
+      shift
       ;;
     --help|-h)
       usage
@@ -323,18 +403,32 @@ while [[ $# -gt 0 ]]; do
 done
 
 CREATED_SIMULATOR_UDID=""
-cleanup_created_simulator() {
+UDID=""
+cleanup_simulator_test_runtime() {
+  local status=$?
+  if [[ -n "${UDID:-}" ]]; then
+    clear_test_app_runtime "$UDID"
+  fi
+
   if [[ -n "$CREATED_SIMULATOR_UDID" && "$DELETE_CREATED_SIMULATOR" == "1" ]]; then
     echo "== Deleting disposable simulator =="
     run_with_timeout "$SIMCTL_LIST_TIMEOUT_SECONDS" xcrun simctl shutdown "$CREATED_SIMULATOR_UDID" 2>/dev/null || true
     run_with_timeout "$SIMCTL_LIST_TIMEOUT_SECONDS" xcrun simctl delete "$CREATED_SIMULATOR_UDID" 2>/dev/null || true
   fi
+
+  exit "$status"
 }
-trap cleanup_created_simulator EXIT
+trap cleanup_simulator_test_runtime EXIT
 
 if [[ "$REPAIR_CORE_SIMULATOR" == "1" ]]; then
   echo "== Repairing CoreSimulator service state =="
   pkill -9 -x Simulator 2>/dev/null || true
+  pkill -9 -x testmanagerd 2>/dev/null || true
+  pkill -9 -x xctest 2>/dev/null || true
+  pkill -9 -x axassetsd 2>/dev/null || true
+  pkill -9 -x AccessibilityUIServer 2>/dev/null || true
+  pkill -9 -f 'CoreSimulator/Devices/.*/Lumen.app/Lumen' 2>/dev/null || true
+  pkill -9 -f 'CoreSimulator/Devices/.*/LumenUITests-Runner.app/LumenUITests-Runner' 2>/dev/null || true
   pkill -9 -x launchd_sim 2>/dev/null || true
   pkill -9 -f '/Library/Developer/CoreSimulator/Volumes/' 2>/dev/null || true
   pkill -9 -f 'com.apple.CoreSimulator.CoreSimulatorService' 2>/dev/null || true
@@ -424,10 +518,14 @@ if [[ "$PREWARM_ONLY" == "1" ]]; then
   exit 0
 fi
 
+echo "== Clearing stale test app runtime =="
+clear_test_app_runtime "$UDID"
+
 COMMON_XCODEBUILD_ARGS=(
   -project "$PROJECT"
   -scheme "$SCHEME"
   -destination "platform=iOS Simulator,id=$UDID"
+  -destination-timeout "$XCODE_DESTINATION_TIMEOUT_SECONDS"
   -enableCodeCoverage NO
   -parallel-testing-enabled NO
   -parallel-testing-worker-count 1
@@ -455,32 +553,52 @@ if [[ -z "$XCTESTRUN_PATH" ]]; then
   exit 1
 fi
 
-ONLY_TESTING_TARGET="${ONLY_TESTING%%/*}"
-FOCUSED_XCTESTRUN_PATH="$DERIVED_DATA_PATH/Build/Products/${SCHEME}-${ONLY_TESTING_TARGET}.focused.xctestrun"
+if [[ "$FULL_TEST_SUITE" == "1" ]]; then
+  FULL_XCTESTRUN_PATH="$DERIVED_DATA_PATH/Build/Products/${SCHEME}-full-suite.serial.xctestrun"
+  TEST_XCTESTRUN_PATH="$FULL_XCTESTRUN_PATH"
+  echo "== Preparing full-suite xctestrun =="
+  echo "Source: $XCTESTRUN_PATH"
+  echo "Preserving every test target from the scheme and disabling target parallelization."
+  prepare_full_xctestrun "$XCTESTRUN_PATH" "$FULL_XCTESTRUN_PATH"
+else
+  ONLY_TESTING_TARGET="${ONLY_TESTING%%/*}"
+  FOCUSED_XCTESTRUN_PATH="$DERIVED_DATA_PATH/Build/Products/${SCHEME}-${ONLY_TESTING_TARGET}.focused.xctestrun"
+  TEST_XCTESTRUN_PATH="$FOCUSED_XCTESTRUN_PATH"
 
-echo "== Preparing focused xctestrun =="
-echo "Source: $XCTESTRUN_PATH"
-echo "Target: $ONLY_TESTING_TARGET"
-prepare_focused_xctestrun "$XCTESTRUN_PATH" "$FOCUSED_XCTESTRUN_PATH" "$ONLY_TESTING_TARGET"
+  echo "== Preparing focused xctestrun =="
+  echo "Source: $XCTESTRUN_PATH"
+  echo "Target: $ONLY_TESTING_TARGET"
+  prepare_focused_xctestrun "$XCTESTRUN_PATH" "$FOCUSED_XCTESTRUN_PATH" "$ONLY_TESTING_TARGET"
+fi
 
 if [[ "$UNINSTALL_BEFORE_TEST" == "1" && -z "$CREATED_SIMULATOR_UDID" ]]; then
   echo "== Removing stale simulator app install =="
-  xcrun simctl uninstall "$UDID" "$APP_BUNDLE_ID" 2>/dev/null || true
+  if ! run_with_timeout "$UNINSTALL_TIMEOUT_SECONDS" xcrun simctl uninstall "$UDID" "$APP_BUNDLE_ID" 2>/dev/null; then
+    echo "Stale app uninstall did not complete within ${UNINSTALL_TIMEOUT_SECONDS}s; continuing with test install."
+  fi
 elif [[ -n "$CREATED_SIMULATOR_UDID" ]]; then
   echo "== Stale app uninstall skipped for disposable simulator =="
 fi
 
 TEST_ARGS=(
   test-without-building
-  -xctestrun "$FOCUSED_XCTESTRUN_PATH"
+  -xctestrun "$TEST_XCTESTRUN_PATH"
   -destination "platform=iOS Simulator,id=$UDID"
-  -only-testing:"$ONLY_TESTING"
+  -destination-timeout "$XCODE_DESTINATION_TIMEOUT_SECONDS"
   -parallel-testing-enabled NO
   -parallel-testing-worker-count 1
   -maximum-concurrent-test-simulator-destinations 1
 )
 
-echo "== Running focused tests =="
+if [[ "$FULL_TEST_SUITE" != "1" ]]; then
+  TEST_ARGS+=("-only-testing:$ONLY_TESTING")
+fi
+
+if [[ "$FULL_TEST_SUITE" == "1" ]]; then
+  echo "== Running full simulator test suite =="
+else
+  echo "== Running focused tests =="
+fi
 echo "Simulator execution is bounded by TEST_TIMEOUT_SECONDS=${TEST_TIMEOUT_SECONDS}."
 printf 'xcodebuild'
 printf ' %q' "${TEST_ARGS[@]}"

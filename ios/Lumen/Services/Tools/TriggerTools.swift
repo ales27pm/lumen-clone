@@ -29,7 +29,11 @@ enum TriggerTools {
         }
         trigger.nextFireAt = trigger.computeNextFire()
         ctx.insert(trigger)
-        try? ctx.save()
+        do {
+            try ctx.save()
+        } catch {
+            return triggerSaveFailureMessage(operation: "create", error: error)
+        }
         await TriggerScheduler.shared.requestPermission()
         TriggerScheduler.shared.scheduleBackgroundRefresh()
         let when = trigger.nextFireAt?.formatted(date: .abbreviated, time: .shortened) ?? "background"
@@ -39,7 +43,12 @@ enum TriggerTools {
     static func list() async -> String {
         guard let container = SharedContainer.shared else { return "Store unavailable." }
         let ctx = ModelContext(container)
-        let all = (try? ctx.fetch(FetchDescriptor<Trigger>())) ?? []
+        let all: [Trigger]
+        do {
+            all = try ctx.fetch(FetchDescriptor<Trigger>())
+        } catch {
+            return triggerFetchFailureMessage(error: error)
+        }
         if all.isEmpty { return "No scheduled runs." }
         return all.map { t in
             let next = t.nextFireAt?.formatted(date: .abbreviated, time: .shortened) ?? (t.isPaused ? "paused" : "—")
@@ -54,7 +63,12 @@ enum TriggerTools {
         }
         guard let container = SharedContainer.shared else { return "Store unavailable." }
         let ctx = ModelContext(container)
-        let all = (try? ctx.fetch(FetchDescriptor<Trigger>())) ?? []
+        let all: [Trigger]
+        do {
+            all = try ctx.fetch(FetchDescriptor<Trigger>())
+        } catch {
+            return triggerFetchFailureMessage(error: error)
+        }
         let matches: [Trigger]
         if UUID(uuidString: token) != nil {
             matches = all.filter { $0.id.uuidString.caseInsensitiveCompare(token) == .orderedSame }
@@ -68,7 +82,19 @@ enum TriggerTools {
             return "No trigger matching \"\(token)\"."
         }
         ctx.delete(m)
-        try? ctx.save()
+        do {
+            try ctx.save()
+        } catch {
+            return triggerSaveFailureMessage(operation: "cancel", error: error)
+        }
         return "Cancelled \"\(m.title)\"."
+    }
+
+    static func triggerFetchFailureMessage(error: Error) -> String {
+        "Trigger fetch failed (\(RuntimeMetricErrorSanitizer.code(for: error)))."
+    }
+
+    static func triggerSaveFailureMessage(operation: String, error: Error) -> String {
+        "Trigger \(operation) failed: persistence save failed (\(RuntimeMetricErrorSanitizer.code(for: error)))."
     }
 }

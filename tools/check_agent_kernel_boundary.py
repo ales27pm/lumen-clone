@@ -36,6 +36,13 @@ DOCUMENTED_COMPATIBILITY_BRIDGES = {
             "compatibility responses; remove when those paths are kernel-native"
         ),
     },
+    "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift": {
+        "AgentService.shared.run": (
+            "kernel-owned production entrypoint for model-backed structured "
+            "agent turns while the Agent Kernel owns routing and evidence "
+            "correlation around the mature AgentService stream"
+        ),
+    },
 }
 
 

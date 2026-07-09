@@ -337,10 +337,20 @@ struct VoiceModeView: View {
             saveVoiceConversationIfBudgetAllows(estimatedBytes: persistedFinal.utf8.count + text.utf8.count + 4096)
 
             if appState.autoMemory, persistedFinal.count > 60, isSafeToStoreMemory(userText: text, assistantText: persistedFinal, routing: routing) {
-                try? await MemoryStore.remember(
+                let memoryResult = await MemoryStore.rememberWithDiagnostics(
                     "User asked: \(text). Assistant: \(String(persistedFinal.prefix(160)))",
                     kind: .conversation, source: "voice", context: modelContext
                 )
+                if memoryResult.mode != "stored" {
+                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .fallbackUsed, values: [
+                        "surface": "voice",
+                        "operation": "auto_memory",
+                        "memoryMode": memoryResult.mode,
+                        "memoryDiagnostic": memoryResult.diagnostic ?? "none",
+                        "promptSHA256": RuntimeFallbackLogger.promptHash(text),
+                        "promptChars": String(text.count)
+                    ]))
+                }
                 let transient = stepsBuffer.filter { $0.kind == .observation || $0.kind == .action }.map(\.content)
                 await MemoryStore.extractAndStore(userText: text, assistantText: persistedFinal, transientTexts: transient, context: modelContext)
             }

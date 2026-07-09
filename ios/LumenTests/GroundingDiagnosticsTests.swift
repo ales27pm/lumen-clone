@@ -3,8 +3,8 @@ import XCTest
 
 @MainActor
 final class GroundingDiagnosticsTests: XCTestCase {
-    func testGroundingMetadataOnly() async {
-        let snap = await DiagnosticsProvider().collect()
+    func testGroundingMetadataOnly() {
+        let snap = DiagnosticsProvider().cachedSnapshot()
         XCTAssertNotNil(snap.grounding.contextSource)
     }
 }

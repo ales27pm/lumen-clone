@@ -159,10 +159,12 @@ public struct RuntimeToolArgument: Codable, Hashable, Sendable {
     public let name: String
     public let type: String
     public let required: Bool
+    public let allowedValues: [String]?
 
-    public init(name: String, type: String, required: Bool = true) {
+    public init(name: String, type: String, required: Bool = true, allowedValues: [String]? = nil) {
         self.name = name
         self.type = type
         self.required = required
+        self.allowedValues = allowedValues
     }
 }

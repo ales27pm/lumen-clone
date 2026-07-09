@@ -116,14 +116,14 @@ final class AssistantKernelRunContractTests: XCTestCase {
             requireUserVisibleFinal: true,
             diagnosticsEnabled: false,
             maxSteps: 3,
-            prefersFoundationModels: true,
+            prefersFoundationModels: false,
             temperature: 0.21,
             topP: 0.82,
             repetitionPenalty: 1.18,
             maxTokens: 384
         )
         let request = AgentKernelRequest(
-            userMessage: "Use the attached notes and my preferences.",
+            userMessage: "Draft a concise paragraph about alpine weather patterns.",
             history: [
                 AgentKernelMessage(messageRole: .user, content: "Earlier user turn"),
                 AgentKernelMessage(messageRole: .assistant, content: "Earlier assistant answer")
@@ -131,7 +131,7 @@ final class AssistantKernelRunContractTests: XCTestCase {
             systemPrompt: "Answer in bullets.",
             relevantMemories: [memory],
             attachments: [attachment],
-            task: .chat,
+            task: .summarization,
             source: .chat,
             options: options
         )
@@ -182,12 +182,12 @@ final class AssistantKernelRunContractTests: XCTestCase {
         XCTAssertFalse(sawDiagnostic)
     }
 
-    func testBackgroundTriggerToolIntentUsesBackgroundSafeBridge() async {
+    func testBackgroundTriggerToolIntentUsesNativeBackgroundSafeExecution() async {
         let capture = RequestCapture()
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { request in
                 await capture.record(request)
-                return "background trigger should use the tool bridge"
+                return "background trigger should use native tool execution"
             })
         )
         let kernel = AssistantKernel(router: router)
@@ -207,12 +207,18 @@ final class AssistantKernelRunContractTests: XCTestCase {
             options: options
         )
 
-        var bridgeMetadata: [String: String]?
+        var routingMetadata: [String: String]?
         var doneSteps: [AgentStep] = []
+        var invocation: ToolInvocation?
+        var result: ToolResult?
         for await event in kernel.run(request, modelContext: nil) {
             switch event {
-            case .diagnostic(let diagnostic) where diagnostic.stage == "tool-routing-bridge":
-                bridgeMetadata = diagnostic.metadata
+            case .diagnostic(let diagnostic) where diagnostic.stage == "native-tool-routing":
+                routingMetadata = diagnostic.metadata
+            case .toolInvocation(let emitted):
+                invocation = emitted
+            case .toolResult(let emitted):
+                result = emitted
             case .done(_, let steps):
                 doneSteps = steps
             default:
@@ -220,8 +226,11 @@ final class AssistantKernelRunContractTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(bridgeMetadata?["mode"], "background-safe")
-        XCTAssertTrue(bridgeMetadata?["availableToolIDs"]?.contains("memory.recall") == true)
+        XCTAssertEqual(routingMetadata?["mode"], "background-safe")
+        XCTAssertTrue(routingMetadata?["availableToolIDs"]?.contains("memory.recall") == true)
+        XCTAssertEqual(invocation?.toolID, "memory.recall")
+        XCTAssertEqual(invocation?.source, .backgroundTrigger)
+        XCTAssertEqual(result?.status, .unavailable)
         XCTAssertTrue(doneSteps.contains { $0.kind == .action && $0.toolID == "memory.recall" })
         let generatedRequest = await capture.snapshot()
         XCTAssertNil(generatedRequest)
@@ -257,7 +266,7 @@ final class AssistantKernelRunContractTests: XCTestCase {
         var doneSteps: [AgentStep] = []
         for await event in kernel.run(request, modelContext: nil) {
             switch event {
-            case .diagnostic(let diagnostic) where diagnostic.stage == "background-tool-bridge":
+            case .diagnostic(let diagnostic) where diagnostic.stage == "background-tool-execution":
                 skipDiagnostic = diagnostic.metadata
             case .final(let text):
                 finalText = text
@@ -268,7 +277,7 @@ final class AssistantKernelRunContractTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(skipDiagnostic?["status"], BackgroundToolBridgeAssessment.Status.noBackgroundSafeRoutedTools.rawValue)
+        XCTAssertEqual(skipDiagnostic?["status"], BackgroundToolExecutionAssessment.Status.noBackgroundSafeRoutedTools.rawValue)
         XCTAssertTrue(finalText?.contains("no routed tool is allowed to run in background") == true)
         XCTAssertTrue(doneSteps.contains { $0.kind == .observation && $0.content.contains("no routed tool is allowed to run in background") })
         let generatedRequest = await capture.snapshot()
@@ -302,11 +311,14 @@ final class AssistantKernelRunContractTests: XCTestCase {
         )
 
         var doneSteps: [AgentStep] = []
-        var bridgeMetadata: [String: String]?
+        var routingMetadata: [String: String]?
+        var invocation: ToolInvocation?
         for await event in kernel.run(request, modelContext: nil) {
             switch event {
-            case .diagnostic(let diagnostic) where diagnostic.stage == "tool-routing-bridge":
-                bridgeMetadata = diagnostic.metadata
+            case .diagnostic(let diagnostic) where diagnostic.stage == "native-tool-routing":
+                routingMetadata = diagnostic.metadata
+            case .toolInvocation(let emitted):
+                invocation = emitted
             case .done(_, let steps):
                 doneSteps = steps
             default:
@@ -315,8 +327,10 @@ final class AssistantKernelRunContractTests: XCTestCase {
         }
 
         let contactAction = doneSteps.first { $0.kind == .action && $0.toolID == "contacts.search" }
-        XCTAssertEqual(bridgeMetadata?["referenceRewrite"], "true")
+        XCTAssertEqual(routingMetadata?["referenceRewrite"], "true")
         XCTAssertEqual(contactAction?.toolArgs?["query"], "Alexis Boulet")
+        XCTAssertEqual(invocation?.toolID, "contacts.search")
+        XCTAssertEqual(invocation?.source, .modelProposed)
         let generatedRequest = await capture.snapshot()
         XCTAssertNil(generatedRequest)
     }

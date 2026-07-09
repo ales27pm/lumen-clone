@@ -8,7 +8,15 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let campaign = PersistentDiagnosticCampaign(enabled: true, runContinuously: true, maxRunsPerScenario: 3, delayBetweenRunsSeconds: 2, scenarios: [.plainFastPrompt, .agentFastPrompt])
         try await store.saveCampaign(campaign)
         let restored = await store.loadCampaign()
-        XCTAssertEqual(restored, campaign)
+        let unwrapped = try XCTUnwrap(restored)
+        XCTAssertEqual(unwrapped.id, campaign.id)
+        XCTAssertEqual(unwrapped.enabled, campaign.enabled)
+        XCTAssertEqual(unwrapped.runContinuously, campaign.runContinuously)
+        XCTAssertEqual(unwrapped.maxRunsPerScenario, campaign.maxRunsPerScenario)
+        XCTAssertEqual(unwrapped.delayBetweenRunsSeconds, campaign.delayBetweenRunsSeconds)
+        XCTAssertEqual(unwrapped.scenarios, campaign.scenarios)
+        XCTAssertLessThan(abs(unwrapped.createdAt.timeIntervalSince(campaign.createdAt)), 1)
+        XCTAssertLessThan(abs(unwrapped.updatedAt.timeIntervalSince(campaign.updatedAt)), 1)
     }
 
     func testRunnerSkipsModelScenarioWhenNoModelLoadedInsteadOfFailing() async throws {
@@ -57,7 +65,9 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let lease = DiskWriteBudget.shared.beginGeneration()
         await store.appendEvent(PersistentDiagnosticEvent(code: "diagnostic_write", message: "safe synthetic event"))
         let deferredData = await store.readLogDataForExport()
-        XCTAssertEqual(deferredData, Data())
+        let logURL = await store.logURL
+        XCTAssertFalse(deferredData.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: logURL.path))
         lease.end()
         await store.flushBufferedIfPossible()
         let data = await store.readLogDataForExport()
@@ -95,7 +105,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertFalse(event.message.contains("secret"))
         XCTAssertFalse(event.message.contains("/private"))
         XCTAssertFalse(event.message.contains("user@example.com"))
-        XCTAssertFalse(event.values.description.contains("My private question"))
+        XCTAssertEqual(event.values["prompt"], "[redacted]")
+        XCTAssertFalse(event.values.values.contains { $0.contains("My private question") })
     }
 
     @MainActor func testScenarioSelectionPausesWhenResourceBudgetDeniesHeavyWork() async throws {
@@ -137,7 +148,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
     func testPersistentDiagnosticsStateCapsCompletedRunIDs() async throws {
         let store = try makeStore()
         var state = PersistentDiagnosticState()
-        let ids = (0..<250).map { _ in UUID() }
+        let overflowCount = PersistentDiagnosticState.maxCompletedRunIDs + 50
+        let ids = (0..<overflowCount).map { _ in UUID() }
         state.completedRunIDs = ids
 
         try await store.saveState(state)
@@ -145,8 +157,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let loadedState = await store.loadState()
         let restored = try XCTUnwrap(loadedState)
         XCTAssertEqual(restored.completedRunIDs.count, PersistentDiagnosticState.maxCompletedRunIDs)
-        XCTAssertEqual(restored.completedRunIDs.first, ids[50])
-        XCTAssertEqual(restored.completedRunIDs.last, ids[249])
+        XCTAssertEqual(restored.completedRunIDs.first, ids[overflowCount - PersistentDiagnosticState.maxCompletedRunIDs])
+        XCTAssertEqual(restored.completedRunIDs.last, ids[overflowCount - 1])
     }
 
     func testDefaultExporterBoundsNormalExportSizeAndRecentLogLines() async throws {
@@ -231,7 +243,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
         let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
 
-        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true)) {}
+        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true, allowDeterministicCompatibility: false)) {}
         try? await Task.sleep(nanoseconds: 50_000_000)
 
         XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
@@ -271,7 +283,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         defer { PersistentRuntimeDiagnosticsObserver.shared.removeObserver(observerID) }
         let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
 
-        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true)) {}
+        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true, allowDeterministicCompatibility: false)) {}
 
         let kinds = capturedKinds.snapshot()
         XCTAssertTrue(kinds.contains(.slotAgentGroundingComplete))

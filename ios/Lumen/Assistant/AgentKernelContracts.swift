@@ -242,8 +242,8 @@ protocol AgentKernelRunning: AnyObject {
 }
 
 extension AgentKernelEvent {
-    /// Temporary compatibility shim while ChatView/Voice/Headless entrypoints
-    /// are migrated from `AgentEvent` to kernel-native events.
+    /// Temporary event-shape adapter while UI entrypoints finish adopting
+    /// kernel-native events directly.
     nonisolated var legacyAgentEvent: AgentEvent? {
         switch self {
         case .step(let step):

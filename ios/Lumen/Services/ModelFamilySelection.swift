@@ -25,7 +25,7 @@ nonisolated enum LumenModelFamily: String, CaseIterable, Identifiable, Codable, 
     var description: String {
         switch self {
         case .qwen25:
-            return "Stable Qwen2.5 baseline fleet: Qwen2.5 chat base plus lightweight embedding fallback."
+            return "Stable Qwen2.5 baseline fleet: Qwen2.5 chat base plus lightweight embedding support."
         case .qwen3:
             return "Fast Qwen3 adapter runtime: one shared chat base, role-specific LoRA GGUF adapters, and the Qwen3 embedding candidate."
         }
@@ -48,7 +48,7 @@ nonisolated extension LumenModelFleetCatalog {
     static var qwen25BootstrapModels: [CatalogModel] {
         [
             CatalogModel(id: "fleet-bootstrap-qwen2.5-chat-base-q4", name: "Qwen2.5 Bootstrap Chat Base", repoId: "Qwen/Qwen2.5-1.5B-Instruct-GGUF", fileName: "qwen2.5-1.5b-instruct-q4_k_m.gguf", parameters: "1.5B", quantization: "Q4_K_M", sizeBytes: 1_117_000_000, role: .chat, description: "Qwen2.5 baseline shared chat base. Use this family as the rollback/baseline candidate.", tags: ["bootstrap", "qwen2.5", "baseline", "shared-base"]),
-            CatalogModel(id: "fleet-bootstrap-qwen2.5-embedding-fallback-nomic-q4", name: "Qwen2.5 Bootstrap Embedding Fallback — Nomic", repoId: "nomic-ai/nomic-embed-text-v1.5-GGUF", fileName: "nomic-embed-text-v1.5.Q4_K_M.gguf", parameters: "137M", quantization: "Q4_K_M", sizeBytes: 85_000_000, role: .embedding, description: "Small embedding fallback for the Qwen2.5 baseline family.", tags: ["bootstrap", "qwen2.5", "embedding", "fallback", "nomic"]),
+            CatalogModel(id: "fleet-bootstrap-qwen2.5-embedding-nomic-q4", name: "Qwen2.5 Bootstrap Embedding — Nomic", repoId: "nomic-ai/nomic-embed-text-v1.5-GGUF", fileName: "nomic-embed-text-v1.5.Q4_K_M.gguf", parameters: "137M", quantization: "Q4_K_M", sizeBytes: 85_000_000, role: .embedding, description: "Small embedding model for the Qwen2.5 baseline family.", tags: ["bootstrap", "qwen2.5", "embedding", "nomic"]),
         ]
     }
 

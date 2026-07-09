@@ -18,6 +18,17 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testMemoryRememberWithDiagnosticsSkipsEmptyContent() async throws {
+        let container = try ModelContainer(for: MemoryItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+
+        let result = await MemoryStore.rememberWithDiagnostics("   \n", kind: .fact, source: "test", context: context)
+
+        XCTAssertEqual(result.mode, "skipped")
+        XCTAssertEqual(result.diagnostic, "empty_content")
+    }
+
+    @MainActor
     func testRAGStoreFailedSaveSurfacesFailure() {
         let failed = RAGStore.auditPersistence(operation: "test", scope: "RAGChunk") {
             throw SaveError()
@@ -51,6 +62,33 @@ final class PersistenceAuditTests: XCTestCase {
         XCTAssertNil(failed)
         XCTAssertEqual(pending.count, 1)
         XCTAssertEqual(RAGVectorIndex.shared.count, 0)
+    }
+
+    @MainActor
+    func testRAGVectorIndexLoadFailureIsDiagnosticAndRetryable() {
+        RAGVectorIndex.shared.invalidate()
+
+        let failed = RAGVectorIndex.shared.ensureLoadedForTests {
+            throw SaveError()
+        }
+
+        XCTAssertEqual(failed.mode, "failed")
+        XCTAssertEqual(failed.loadedCount, 0)
+        XCTAssertTrue(failed.diagnostic?.hasPrefix("rag_vector_index_fetch_failed:") == true)
+        XCTAssertEqual(RAGVectorIndex.shared.count, 0)
+    }
+
+    @MainActor
+    func testMemoryVectorIndexLoadFailureIsDiagnosticAndRetryable() {
+        MemoryVectorIndex.shared.invalidate()
+
+        let failed = MemoryVectorIndex.shared.ensureLoadedForTests {
+            throw SaveError()
+        }
+
+        XCTAssertEqual(failed.mode, "failed")
+        XCTAssertEqual(failed.loadedCount, 0)
+        XCTAssertTrue(failed.diagnostic?.hasPrefix("memory_vector_index_fetch_failed:") == true)
     }
 
     @MainActor
@@ -98,7 +136,7 @@ final class PersistenceAuditTests: XCTestCase {
         let context = ModelContext(container)
 
         let result = await MemoryStore.extractAndStore(
-            userText: "I love deterministic diagnostics.",
+            userText: "I prefer deterministic diagnostics.",
             assistantText: "",
             context: context
         )
@@ -121,7 +159,98 @@ final class PersistenceAuditTests: XCTestCase {
 
         XCTAssertEqual(result.indexedCount, 0)
         XCTAssertEqual(result.mode, .failed)
-        XCTAssertEqual(result.diagnostic, "file_read_failed")
+        XCTAssertTrue(result.diagnostic?.hasPrefix("file_read_failed:") == true)
+        XCTAssertFalse(result.diagnostic?.contains(missingURL.path) == true)
+    }
+
+    @MainActor
+    func testRAGFileExtractionDistinguishesReadFailureFromDecodeFailure() {
+        let rawPath = "/private/raw/rag/secret.rtf"
+        let url = URL(fileURLWithPath: rawPath)
+        let readFailure = RAGStore.extractFileTextWithDiagnosticsForTests(
+            url: url,
+            readData: { _ in
+                throw NSError(domain: rawPath, code: 7)
+            },
+            attributedString: { _, _ in NSAttributedString(string: "unused") },
+            pdfText: { _ in "unused" }
+        )
+
+        XCTAssertEqual(readFailure.mode, .failed)
+        XCTAssertTrue(readFailure.diagnostic?.hasPrefix("rtf_read_failed:") == true)
+        XCTAssertFalse(readFailure.diagnostic?.contains(rawPath) == true)
+
+        let decodeFailure = RAGStore.extractFileTextWithDiagnosticsForTests(
+            url: url,
+            readData: { _ in Data("{\\rtf1 malformed".utf8) },
+            attributedString: { _, _ in
+                throw NSError(domain: rawPath, code: 8)
+            },
+            pdfText: { _ in "unused" }
+        )
+
+        XCTAssertEqual(decodeFailure.mode, .failed)
+        XCTAssertTrue(decodeFailure.diagnostic?.hasPrefix("rtf_decode_failed:") == true)
+        XCTAssertFalse(decodeFailure.diagnostic?.contains(rawPath) == true)
+        XCTAssertNotEqual(readFailure.diagnostic, decodeFailure.diagnostic)
+    }
+
+    @MainActor
+    func testRAGFileExtractionDistinguishesPDFOpenFailure() {
+        let rawPath = "/private/raw/rag/secret.pdf"
+        let url = URL(fileURLWithPath: rawPath)
+        let result = RAGStore.extractFileTextWithDiagnosticsForTests(
+            url: url,
+            readData: { _ in Data() },
+            attributedString: { _, _ in NSAttributedString(string: "unused") },
+            pdfText: { _ in
+                throw NSError(domain: rawPath, code: 11)
+            }
+        )
+
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("pdf_open_failed:") == true)
+        XCTAssertFalse(result.diagnostic?.contains(rawPath) == true)
+    }
+
+    @MainActor
+    func testRAGCountsAndChunksDiagnosticAPIsDistinguishLoadedEmptyStore() throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+
+        let counts = RAGStore.countsWithDiagnostics(context: context)
+        let chunks = RAGStore.chunksWithDiagnostics(for: .note, context: context)
+
+        XCTAssertEqual(counts.mode, "loaded")
+        XCTAssertNil(counts.diagnostic)
+        XCTAssertTrue(counts.counts.isEmpty)
+        XCTAssertEqual(chunks.mode, "loaded")
+        XCTAssertNil(chunks.diagnostic)
+        XCTAssertTrue(chunks.chunks.isEmpty)
+    }
+
+    @MainActor
+    func testMemoryRecallNormalizationPreservesEmptyQueryDiagnostic() async throws {
+        let container = try ModelContainer(for: MemoryItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let routing = IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
+
+        let result = await MemoryRecall.recallAndNormalizeWithDiagnostics(query: "   ", routing: routing, context: context, limit: 8)
+
+        XCTAssertTrue(result.items.isEmpty)
+        XCTAssertEqual(result.mode, "empty_query")
+        XCTAssertEqual(result.diagnostic, "empty_query")
+    }
+
+    @MainActor
+    func testMemoryExportFailureDoesNotReturnEmptyArraySuccess() {
+        let result = MemoryStore.exportJSONWithDiagnosticsForTests {
+            throw SaveError()
+        }
+
+        XCTAssertNil(result.json)
+        XCTAssertEqual(result.mode, "failed")
+        XCTAssertTrue(result.diagnostic?.hasPrefix("export_failed:") == true)
     }
 
     @MainActor
@@ -135,6 +264,41 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testTriggerPersistenceFailureDoesNotRenderAsNoResult() {
+        let error = NSError(domain: "SwiftData", code: 9, userInfo: [NSLocalizedDescriptionKey: "raw trigger database path"])
+        let rendered = TriggerScheduler.triggerPersistenceFailureMessage(error: error)
+
+        XCTAssertTrue(rendered.contains("persistence save failed"))
+        XCTAssertFalse(rendered.contains("No result"))
+        XCTAssertFalse(rendered.contains("raw trigger database path"))
+    }
+
+    @MainActor
+    func testTriggerFetchFailureIsExplicitAndSanitized() {
+        let error = NSError(domain: "SwiftData", code: 14, userInfo: [NSLocalizedDescriptionKey: "raw trigger fetch database path"])
+        let rendered = TriggerScheduler.triggerFetchFailureMessage(error: error)
+
+        XCTAssertTrue(rendered.contains("Trigger fetch failed"))
+        XCTAssertFalse(rendered.contains("No result"))
+        XCTAssertFalse(rendered.contains("No scheduled runs"))
+        XCTAssertFalse(rendered.contains("raw trigger fetch database path"))
+    }
+
+    @MainActor
+    func testTriggerToolPersistenceMessagesAreExplicitAndSanitized() {
+        let error = NSError(domain: "SwiftData", code: 11, userInfo: [NSLocalizedDescriptionKey: "raw trigger tool database path"])
+        let fetch = TriggerTools.triggerFetchFailureMessage(error: error)
+        let save = TriggerTools.triggerSaveFailureMessage(operation: "create", error: error)
+
+        XCTAssertTrue(fetch.contains("Trigger fetch failed"))
+        XCTAssertTrue(save.contains("persistence save failed"))
+        XCTAssertFalse(fetch.contains("No scheduled runs"))
+        XCTAssertFalse(save.contains("Scheduled"))
+        XCTAssertFalse(fetch.contains("raw trigger tool database path"))
+        XCTAssertFalse(save.contains("raw trigger tool database path"))
+    }
+
+    @MainActor
     func testModelLaunchBootstrapFailedSaveSurfacesFailure() {
         let failed = ModelLaunchBootstrap.auditPersistence(operation: "test", scope: "StoredModel") {
             throw SaveError()
@@ -142,5 +306,59 @@ final class PersistenceAuditTests: XCTestCase {
         XCTAssertFalse(failed)
         let ok = ModelLaunchBootstrap.auditPersistence(operation: "test", scope: "StoredModel") {}
         XCTAssertTrue(ok)
+    }
+
+    @MainActor
+    func testModelCatalogFetchFailureMessageIsExplicitAndSanitized() {
+        let error = NSError(domain: "SwiftData", code: 10, userInfo: [NSLocalizedDescriptionKey: "raw model database path"])
+        let rendered = ModelLaunchBootstrap.modelCatalogFetchFailureMessage(error: error)
+
+        XCTAssertTrue(rendered.contains("Model catalog fetch failed"))
+        XCTAssertFalse(rendered.contains("0 /"))
+        XCTAssertFalse(rendered.contains("raw model database path"))
+    }
+
+    @MainActor
+    func testRemCycleModelCatalogFetchFailureIsDiagnosticAndSanitized() {
+        let error = NSError(domain: "SwiftData", code: 12, userInfo: [NSLocalizedDescriptionKey: "raw rem model database path"])
+        let snapshot = RemCycleService.storedModelCatalogSnapshotForTests {
+            throw error
+        }
+
+        XCTAssertTrue(snapshot.stored.isEmpty)
+        XCTAssertTrue(snapshot.diagnostic?.contains("Model catalog fetch failed") == true)
+        XCTAssertFalse(snapshot.diagnostic?.contains("0 /") == true)
+        XCTAssertFalse(snapshot.diagnostic?.contains("raw rem model database path") == true)
+
+        let report = RemCycleReport(
+            id: UUID(),
+            createdAt: Date(),
+            reason: "test",
+            runnableV1: false,
+            missingSlots: [],
+            assignedSlots: [],
+            storedModelCount: snapshot.stored.count,
+            modelCatalogDiagnostic: snapshot.diagnostic,
+            activeChatModelID: nil,
+            activeEmbeddingModelID: nil,
+            parseFailureSummary: "",
+            parseNoiseSummary: ""
+        )
+
+        XCTAssertEqual(report.modelCatalogDiagnostic, snapshot.diagnostic)
+    }
+
+    @MainActor
+    func testModelLoadSnapshotFetchFailureIsDiagnosticAndSanitized() {
+        let error = NSError(domain: "SwiftData", code: 13, userInfo: [NSLocalizedDescriptionKey: "raw settings model database path"])
+        let result = ModelLoader.modelLoadSnapshotForTests(appState: AppState()) {
+            throw error
+        }
+
+        XCTAssertNil(result.snapshot)
+        XCTAssertFalse(result.isReady)
+        XCTAssertTrue(result.diagnostic?.contains("Model catalog fetch failed") == true)
+        XCTAssertFalse(result.diagnostic?.contains("0 /") == true)
+        XCTAssertFalse(result.diagnostic?.contains("raw settings model database path") == true)
     }
 }

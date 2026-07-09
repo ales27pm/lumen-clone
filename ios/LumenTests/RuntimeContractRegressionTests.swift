@@ -64,6 +64,104 @@ struct ExecutorPreflightTests {
         #expect(result.diagnosticsMetadata["failureKind"] == "adapterPathMissing")
         #expect(result.diagnosticsSummary.contains("failureKind=adapterPathMissing"))
     }
+
+    @Test func smokeProbeUsesProductionAgentJSONContract() {
+        let request = ExecutorRuntimePreflight.smokeProbeRequestForTests(attempt: 0)
+
+        #expect(request.modelName == "agent-json")
+        #expect(request.maxTokens >= 64)
+        #expect(request.userMessage.contains(#"{"final":"ok"}"#))
+        #expect(request.seed != nil)
+
+        guard case .constrainedJSON(let schema) = request.responseFormat else {
+            Issue.record("Expected constrained JSON response format")
+            return
+        }
+        #expect(schema == AgentService.structuredAgentResponseSchema)
+    }
+
+    @Test func smokeProbeAcceptsProductionFinalTurn() {
+        let result = ExecutorRuntimePreflight.evaluateSmokeProbeTextForTests(#"{"final":"ok"}"#)
+
+        #expect(result.passed)
+        #expect(result.smokeProbeSucceeded)
+        #expect(result.failureKind == nil)
+        #expect(result.reason.contains("agent JSON smoke probe passed"))
+    }
+
+    @Test func smokeProbeClassifiesEmptyJSONObjectShellAsRetryableParseFailure() {
+        let result = ExecutorRuntimePreflight.evaluateSmokeProbeTextForTests("{\n\n\n}")
+
+        #expect(!result.passed)
+        #expect(result.failureKind == "smokeProbeParseError")
+        #expect(result.reason.contains("parseError=missingActionOrFinal"))
+        #expect(result.reason.contains("outputPrefix={"))
+    }
+
+    @Test func readinessPassedSmokeProbeParseErrorDoesNotBlockRuntimePreflight() {
+        let readiness = ExecutorRuntimePreflightResult(
+            passed: true,
+            reason: "executor runtime ready",
+            modelFamily: "qwen3",
+            runtimeKind: "adapter-first",
+            baseModelPath: "/tmp/lumen-qwen3.gguf",
+            baseModelExists: true,
+            adapterPath: "/tmp/executor.lora",
+            adapterExists: true,
+            activeAdapterSlot: "executor",
+            resourceGateAllowed: true,
+            ensureReadySucceeded: true,
+            smokeProbeSucceeded: false
+        )
+        let malformedProbe = ExecutorRuntimePreflightResult(
+            passed: false,
+            reason: "attempt=2/2; parseError=missingActionOrFinal; outputPrefix={",
+            ensureReadySucceeded: false,
+            smokeProbeSucceeded: false,
+            failureKind: "smokeProbeParseError"
+        )
+
+        let result = readiness.withSmokeProbeResult(malformedProbe)
+
+        #expect(result.passed)
+        #expect(result.ensureReadySucceeded)
+        #expect(!result.smokeProbeSucceeded)
+        #expect(result.failureKind == "smokeProbeParseError")
+        #expect(result.reason.contains("runtime readiness passed"))
+        #expect(!result.reason.contains("executor preflight failed"))
+    }
+
+    @Test func readinessPassedSmokeProbeNoOutputStillBlocksRuntimePreflight() {
+        let readiness = ExecutorRuntimePreflightResult(
+            passed: true,
+            reason: "executor runtime ready",
+            modelFamily: "qwen3",
+            runtimeKind: "adapter-first",
+            baseModelPath: "/tmp/lumen-qwen3.gguf",
+            baseModelExists: true,
+            adapterPath: "/tmp/executor.lora",
+            adapterExists: true,
+            activeAdapterSlot: "executor",
+            resourceGateAllowed: true,
+            ensureReadySucceeded: true,
+            smokeProbeSucceeded: false
+        )
+        let noOutputProbe = ExecutorRuntimePreflightResult(
+            passed: false,
+            reason: "attempt=2/2; empty output",
+            ensureReadySucceeded: false,
+            smokeProbeSucceeded: false,
+            failureKind: "smokeProbeEmptyOutput"
+        )
+
+        let result = readiness.withSmokeProbeResult(noOutputProbe)
+
+        #expect(!result.passed)
+        #expect(result.ensureReadySucceeded)
+        #expect(!result.smokeProbeSucceeded)
+        #expect(result.failureKind == "smokeProbeEmptyOutput")
+        #expect(result.reason.contains("executor preflight failed: agent JSON smoke probe failed"))
+    }
 }
 
 struct AgentJsonRuntimeClassificationTests {
@@ -302,5 +400,62 @@ struct StrictVsProductionFallbackTests {
         #expect(training.allowsMemoryPressureContinuation)
         #expect(production.allowDeterministicCompatibility)
         #expect(production.allowParseFailureDeterministicRecovery)
+    }
+
+    @MainActor
+    @Test func productionResourceBudgetDenialEmitsErrorNotDeterministicFinal() async {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .serious,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+
+        let request = AgentRequest(
+            systemPrompt: "",
+            history: [],
+            userMessage: "Tell me the weather",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 64,
+            maxSteps: 1,
+            availableTools: ToolRegistry.all.filter { $0.id == "weather.current" },
+            relevantMemories: []
+        )
+        let options = LegacyAgentRunOptions(
+            groundingMode: .slotAgent,
+            allowDegradedGrounding: true,
+            preventDoubleGrounding: true,
+            diagnosticsEnabled: false,
+            allowDeterministicCompatibility: true,
+            allowParseFailureDeterministicRecovery: true,
+            allowsMemoryPressureContinuation: false
+        )
+
+        var errorMessages: [String] = []
+        var sawFinalDelta = false
+        var sawDone = false
+        for await event in SlotAgentService.shared.run(request, options: options) {
+            switch event {
+            case .error(let message):
+                errorMessages.append(message)
+            case .finalDelta:
+                sawFinalDelta = true
+            case .done:
+                sawDone = true
+            default:
+                break
+            }
+        }
+
+        #expect(errorMessages == [SlotAgentService.resourceBudgetDeniedMessage()])
+        #expect(!sawFinalDelta)
+        #expect(!sawDone)
+        #expect(!errorMessages.joined().lowercased().contains("deterministic"))
+        #endif
     }
 }

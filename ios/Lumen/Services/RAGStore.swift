@@ -8,13 +8,17 @@ import OSLog
 enum RAGStore {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
 
+    private static func sourceLogID(_ value: String) -> String {
+        String(RuntimeFallbackLogger.promptHash(value).prefix(12))
+    }
+
     private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
         guard DiskWriteBudget.shared.canWrite(bytes: 128 * 1024, category: .rag) else { return }
         do {
             try context.save()
             DiskWriteBudget.shared.recordWrite(bytes: 128 * 1024, category: .rag)
         } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
     }
@@ -45,7 +49,7 @@ enum RAGStore {
             try save()
             return true
         } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return false
         }
     }
@@ -58,6 +62,18 @@ enum RAGStore {
 
     struct SearchResult {
         let matches: [(chunk: RAGChunk, score: Double)]
+        let mode: String
+        let diagnostic: String?
+    }
+
+    struct CountsResult {
+        let counts: [RAGSourceType: Int]
+        let mode: String
+        let diagnostic: String?
+    }
+
+    struct ChunkListResult {
+        let chunks: [RAGChunk]
         let mode: String
         let diagnostic: String?
     }
@@ -87,6 +103,17 @@ enum RAGStore {
         var didIndexAllChunks: Bool {
             mode == .indexed
         }
+    }
+
+    struct FileExtractionResult: Equatable {
+        let text: String?
+        let sourceType: RAGSourceType?
+        let mode: IndexMode
+        let diagnostic: String?
+    }
+
+    private enum FileExtractionError: Error, Equatable {
+        case pdfOpenFailed
     }
 
     static func search(
@@ -124,7 +151,7 @@ enum RAGStore {
         do {
             queryVec = try await AppLlamaService.shared.embed(trimmed)
         } catch {
-            logger.error("rag_embedding_failed op=search error=\(String(describing: error), privacy: .public)")
+            logger.error("rag_embedding_failed op=search error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             let fallback = lexicalSearchResult(query: trimmed, context: context, allowed: allowed, limit: limit)
             return SearchResult(
                 matches: fallback.matches,
@@ -145,7 +172,8 @@ enum RAGStore {
             )
         }
 
-        RAGVectorIndex.shared.ensureLoaded(context: context)
+        let vectorLoad = RAGVectorIndex.shared.ensureLoaded(context: context)
+        var diagnostic = vectorLoad.diagnostic
 
         let k = min(max(limit * candidatePoolMultiplier, limit + 4), maxCandidatePool)
 
@@ -159,7 +187,9 @@ enum RAGStore {
         let resolvedCandidates = resolvedVectorCandidatesResult(vectorHits: vectorHits, context: context)
         var candidates = resolvedCandidates.candidates
         let vectorCandidateCount = candidates.count
-        var diagnostic = resolvedCandidates.diagnostic
+        if let resolvedDiagnostic = resolvedCandidates.diagnostic {
+            diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: resolvedDiagnostic) } ?? resolvedDiagnostic
+        }
 
         if candidates.count < limit {
             // Lexical backfill: keyword overlap as a rescue path when embeddings
@@ -237,7 +267,7 @@ enum RAGStore {
             all = try context.fetch(descriptor)
         } catch {
             let diagnostic = "lexical_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("rag_fetch_failed op=lexicalSearch diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("rag_fetch_failed op=lexicalSearch diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return LexicalSearchResult(matches: [], diagnostic: diagnostic)
         }
         var scored: [(RAGChunk, Double)] = []
@@ -295,7 +325,7 @@ enum RAGStore {
             chunks = try context.fetch(FetchDescriptor<RAGChunk>())
         } catch {
             let diagnostic = "semantic_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("rag_fetch_failed op=resolveVectorCandidates diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("rag_fetch_failed op=resolveVectorCandidates diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return ([:], diagnostic)
         }
         var byID: [PersistentIdentifier: RAGChunk] = [:]
@@ -307,16 +337,21 @@ enum RAGStore {
     }
 
     static func counts(context: ModelContext) -> [RAGSourceType: Int] {
+        countsWithDiagnostics(context: context).counts
+    }
+
+    static func countsWithDiagnostics(context: ModelContext) -> CountsResult {
         let all: [RAGChunk]
         do {
             all = try context.fetch(FetchDescriptor<RAGChunk>())
         } catch {
-            logger.error("rag_fetch_failed op=counts error=\(String(describing: error), privacy: .public)")
-            return [:]
+            let diagnostic = "counts_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("rag_fetch_failed op=counts diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return CountsResult(counts: [:], mode: "failed", diagnostic: diagnostic)
         }
         var out: [RAGSourceType: Int] = [:]
         for c in all { out[c.kind, default: 0] += 1 }
-        return out
+        return CountsResult(counts: out, mode: "loaded", diagnostic: nil)
     }
 
     static func wipe(_ type: RAGSourceType?, context: ModelContext) throws {
@@ -333,37 +368,68 @@ enum RAGStore {
     }
 
     static func chunks(for type: RAGSourceType, context: ModelContext) -> [RAGChunk] {
+        chunksWithDiagnostics(for: type, context: context).chunks
+    }
+
+    static func chunksWithDiagnostics(for type: RAGSourceType, context: ModelContext) -> ChunkListResult {
         let raw: [RAGChunk]
         do {
             raw = try context.fetch(FetchDescriptor<RAGChunk>())
         } catch {
-            logger.error("rag_fetch_failed op=chunks type=\(type.rawValue, privacy: .public) error=\(String(describing: error), privacy: .public)")
-            return []
+            let diagnostic = "chunks_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("rag_fetch_failed op=chunks type=\(type.rawValue, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return ChunkListResult(chunks: [], mode: "failed", diagnostic: diagnostic)
         }
-        return raw.filter { $0.kind == type }.sorted { $0.createdAt > $1.createdAt }
+        return ChunkListResult(
+            chunks: raw.filter { $0.kind == type }.sorted { $0.createdAt > $1.createdAt },
+            mode: "loaded",
+            diagnostic: nil
+        )
     }
 
     // MARK: - File / PDF indexing
 
     static func indexImportedFiles(context: ModelContext, progress: ((Double) -> Void)? = nil) async -> Int {
+        await indexImportedFilesWithDiagnostics(context: context, progress: progress).indexedCount
+    }
+
+    static func indexImportedFilesWithDiagnostics(context: ModelContext, progress: ((Double) -> Void)? = nil) async -> IndexResult {
         do {
             try wipe(.file, context: context)
             try wipe(.pdf, context: context)
         } catch {
-            logger.error("persist_failed op=indexImportedFiles.cleanup scope=RAGChunk error=\(String(describing: error), privacy: .public)")
-            return 0
+            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("persist_failed op=indexImportedFiles.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
-        let files = FileStore.importedFiles()
+        let imports = FileStore.importedFilesWithDiagnostics()
+        if imports.mode == "failed" {
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: imports.diagnostic ?? "imports_list_failed")
+        }
+        let files = imports.files
+        guard !files.isEmpty else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: imports.diagnostic ?? "no_imported_files")
+        }
         var total = 0
+        var degraded = 0
+        var diagnostics: [String] = []
         for (idx, url) in files.enumerated() {
             let result = await indexFileWithDiagnostics(url: url, context: context)
             total += result.indexedCount
             if result.didIndexAllChunks == false {
-                logger.error("rag_index_file_degraded op=indexImportedFiles source=\(url.lastPathComponent, privacy: .public) status=\(result.mode.rawValue, privacy: .public) diagnostic=\(result.diagnostic ?? "none", privacy: .public)")
+                degraded += 1
+                if let diagnostic = result.diagnostic, diagnostics.count < 3 {
+                    diagnostics.append(diagnostic)
+                }
+                logger.error("rag_index_file_degraded op=indexImportedFiles source_hash=\(Self.sourceLogID(url.lastPathComponent), privacy: .public) status=\(result.mode.rawValue, privacy: .public) diagnostic=\(result.diagnostic ?? "none", privacy: .public)")
             }
             progress?(Double(idx + 1) / Double(max(1, files.count)))
         }
-        return total
+        if degraded > 0 {
+            let diagnostic = diagnostics.isEmpty ? "file_index_failed" : diagnostics.joined(separator: ";")
+            return IndexResult(indexedCount: total, mode: total > 0 ? .partial : .failed, diagnostic: diagnostic)
+        }
+        return IndexResult(indexedCount: total, mode: .indexed, diagnostic: nil)
     }
 
     static func indexFile(url: URL, context: ModelContext) async -> Int {
@@ -372,42 +438,9 @@ enum RAGStore {
 
     static func indexFileWithDiagnostics(url: URL, context: ModelContext) async -> IndexResult {
         let name = url.lastPathComponent
-        let ext = url.pathExtension.lowercased()
-        let text: String
-        let type: RAGSourceType
-
-        if ext == "pdf" {
-            guard let pdf = PDFDocument(url: url) else {
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "pdf_open_failed")
-            }
-            var combined = ""
-            for i in 0..<pdf.pageCount {
-                combined += pdf.page(at: i)?.string ?? ""
-                combined += "\n\n"
-            }
-            text = combined
-            type = .pdf
-        } else if ext == "rtf" || ext == "rtfd" {
-            guard let data = try? Data(contentsOf: url),
-                  let attr = try? NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil) else {
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "rtf_read_failed")
-            }
-            text = attr.string
-            type = .file
-        } else {
-            guard let data = try? Data(contentsOf: url) else {
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "file_read_failed")
-            }
-            if let utf8 = String(data: data, encoding: .utf8) {
-                text = utf8
-            } else if let ascii = String(data: data, encoding: .isoLatin1) {
-                text = ascii
-            } else if let attr = try? NSAttributedString(data: data, options: [:], documentAttributes: nil) {
-                text = attr.string
-            } else {
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "text_decode_failed")
-            }
-            type = .file
+        let extracted = extractFileTextWithDiagnostics(url: url)
+        guard extracted.mode != .failed, let text = extracted.text, let type = extracted.sourceType else {
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: extracted.diagnostic ?? "file_extraction_failed")
         }
 
         RAGVectorIndex.shared.ensureLoaded(context: context)
@@ -429,11 +462,11 @@ enum RAGStore {
                 emb = try await AppLlamaService.shared.embed(piece)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-                logger.error("rag_embedding_failed op=indexFile source=\(name, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                logger.error("rag_embedding_failed op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: diagnostic)
             }
             guard !emb.isEmpty else {
-                logger.error("rag_embedding_empty op=indexFile source=\(name, privacy: .public)")
+                logger.error("rag_embedding_empty op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public)")
                 return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "embedding_empty")
             }
             let chunk = RAGChunk(content: piece, sourceType: type, sourceName: name, sourceRef: url.path, chunkIndex: i, embedding: emb)
@@ -441,7 +474,7 @@ enum RAGStore {
             pendingVectors.append((id: chunk.persistentModelID, bucket: type.rawValue, vector: emb))
             if i % 8 == 7 {
                 guard let appendedCount = persistAndAppendVectors(context: context, operation: "indexFile.batch", pending: &pendingVectors) else {
-                    logger.error("rag_index_partial_failure op=indexFile source=\(name, privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count + 1, privacy: .public)")
+                    logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count + 1, privacy: .public)")
                     return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
                 }
                 persistedCount += appendedCount
@@ -449,7 +482,7 @@ enum RAGStore {
             count += 1
         }
         guard let appendedCount = persistAndAppendVectors(context: context, operation: "indexFile.complete", pending: &pendingVectors) else {
-            logger.error("rag_index_partial_failure op=indexFile source=\(name, privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count, privacy: .public)")
+            logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count, privacy: .public)")
             return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
         }
         persistedCount += appendedCount
@@ -459,18 +492,100 @@ enum RAGStore {
         return IndexResult(indexedCount: persistedCount, mode: .indexed, diagnostic: nil)
     }
 
+    static func extractFileTextWithDiagnosticsForTests(
+        url: URL,
+        readData: (URL) throws -> Data,
+        attributedString: (Data, [NSAttributedString.DocumentReadingOptionKey: Any]) throws -> NSAttributedString,
+        pdfText: @escaping (URL) throws -> String
+    ) -> FileExtractionResult {
+        extractFileTextWithDiagnostics(
+            url: url,
+            readData: readData,
+            attributedString: attributedString,
+            pdfText: pdfText
+        )
+    }
+
+    private static func extractFileTextWithDiagnostics(
+        url: URL,
+        readData: (URL) throws -> Data = { try Data(contentsOf: $0) },
+        attributedString: (Data, [NSAttributedString.DocumentReadingOptionKey: Any]) throws -> NSAttributedString = { data, options in
+            try NSAttributedString(data: data, options: options, documentAttributes: nil)
+        },
+        pdfText: ((URL) throws -> String)? = nil
+    ) -> FileExtractionResult {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" {
+            do {
+                let text = try pdfText?(url) ?? extractPDFText(url: url)
+                return FileExtractionResult(text: text, sourceType: .pdf, mode: .indexed, diagnostic: nil)
+            } catch {
+                return FileExtractionResult(text: nil, sourceType: nil, mode: .failed, diagnostic: "pdf_open_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+            }
+        }
+
+        let data: Data
+        do {
+            data = try readData(url)
+        } catch {
+            let prefix = (ext == "rtf" || ext == "rtfd") ? "rtf_read_failed" : "file_read_failed"
+            return FileExtractionResult(text: nil, sourceType: nil, mode: .failed, diagnostic: "\(prefix):\(RuntimeMetricErrorSanitizer.code(for: error))")
+        }
+
+        if ext == "rtf" || ext == "rtfd" {
+            do {
+                let attr = try attributedString(data, [.documentType: NSAttributedString.DocumentType.rtf])
+                return FileExtractionResult(text: attr.string, sourceType: .file, mode: .indexed, diagnostic: nil)
+            } catch {
+                return FileExtractionResult(text: nil, sourceType: nil, mode: .failed, diagnostic: "rtf_decode_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+            }
+        }
+
+        if let utf8 = String(data: data, encoding: .utf8) {
+            return FileExtractionResult(text: utf8, sourceType: .file, mode: .indexed, diagnostic: nil)
+        }
+        if let ascii = String(data: data, encoding: .isoLatin1) {
+            return FileExtractionResult(text: ascii, sourceType: .file, mode: .indexed, diagnostic: nil)
+        }
+        do {
+            let attr = try attributedString(data, [:])
+            return FileExtractionResult(text: attr.string, sourceType: .file, mode: .indexed, diagnostic: nil)
+        } catch {
+            return FileExtractionResult(text: nil, sourceType: nil, mode: .failed, diagnostic: "text_decode_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+        }
+    }
+
+    private static func extractPDFText(url: URL) throws -> String {
+        guard let pdf = PDFDocument(url: url) else {
+            throw FileExtractionError.pdfOpenFailed
+        }
+        var combined = ""
+        for i in 0..<pdf.pageCount {
+            combined += pdf.page(at: i)?.string ?? ""
+            combined += "\n\n"
+        }
+        return combined
+    }
+
     // MARK: - Photos metadata
 
     static func indexPhotos(monthsBack: Int = 6, context: ModelContext) async -> Int {
+        await indexPhotosWithDiagnostics(monthsBack: monthsBack, context: context).indexedCount
+    }
+
+    static func indexPhotosWithDiagnostics(monthsBack: Int = 6, context: ModelContext) async -> IndexResult {
         let status = await withCheckedContinuation { (cont: CheckedContinuation<PHAuthorizationStatus, Never>) in
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { cont.resume(returning: $0) }
         }
-        guard status == .authorized || status == .limited else { return 0 }
+        guard status == .authorized || status == .limited else {
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "photos_permission_denied:\(photoAuthorizationDiagnostic(status))")
+        }
         do {
             try wipe(.photo, context: context)
         } catch {
-            logger.error("persist_failed op=indexPhotos.cleanup scope=RAGChunk error=\(String(describing: error), privacy: .public)")
-            return 0
+            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("persist_failed op=indexPhotos.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
         RAGVectorIndex.shared.ensureLoaded(context: context)
 
@@ -483,6 +598,9 @@ enum RAGStore {
 
         var assets: [PHAsset] = []
         fetch.enumerateObjects { a, _, _ in assets.append(a) }
+        guard !assets.isEmpty else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_photo_library")
+        }
 
         var selfieIDs: Set<String> = []
         let selfieAlbums = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .smartAlbumSelfPortraits, options: nil)
@@ -502,6 +620,7 @@ enum RAGStore {
         var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
+        let totalBuckets = buckets.count
         for (month, items) in buckets {
             if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexPhotos") { break }
             let favorites = items.filter(\.isFavorite).count
@@ -526,12 +645,13 @@ enum RAGStore {
             do {
                 emb = try await AppLlamaService.shared.embed(summary)
             } catch {
-                logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) error=\(String(describing: error), privacy: .public)")
-                return 0
+                let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
             }
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexPhotos source=\(month, privacy: .public)")
-                return 0
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
             }
             let chunk = RAGChunk(content: summary, sourceType: .photo, sourceName: "Photos \(month)", sourceRef: month, chunkIndex: 0, embedding: emb)
             context.insert(chunk)
@@ -540,16 +660,26 @@ enum RAGStore {
         }
         guard let persistedCount = persistAndAppendVectors(context: context, operation: "indexPhotos.complete", pending: &pendingVectors) else {
             logger.error("rag_index_partial_failure op=indexPhotos persisted=0 attempted=\(count, privacy: .public)")
-            return 0
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "persist_failed")
         }
-        return persistedCount
+        if persistedCount < totalBuckets {
+            return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
+        }
+        return IndexResult(indexedCount: persistedCount, mode: .indexed, diagnostic: nil)
     }
 
     // MARK: - Notes (plain text import via share)
 
     static func indexNote(title: String, body: String, context: ModelContext) async -> Int {
+        await indexNoteWithDiagnostics(title: title, body: body, context: context).indexedCount
+    }
+
+    static func indexNoteWithDiagnostics(title: String, body: String, context: ModelContext) async -> IndexResult {
         RAGVectorIndex.shared.ensureLoaded(context: context)
         let pieces = chunkText(body)
+        guard !pieces.isEmpty else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_text")
+        }
         var count = 0
         var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
@@ -560,12 +690,13 @@ enum RAGStore {
             do {
                 emb = try await AppLlamaService.shared.embed(piece)
             } catch {
-                logger.error("rag_embedding_failed op=indexNote source=\(title, privacy: .public) error=\(String(describing: error), privacy: .public)")
-                return 0
+                let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                logger.error("rag_embedding_failed op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
             }
             guard !emb.isEmpty else {
-                logger.error("rag_embedding_empty op=indexNote source=\(title, privacy: .public)")
-                return 0
+                logger.error("rag_embedding_empty op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public)")
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
             }
             let chunk = RAGChunk(content: piece, sourceType: .note, sourceName: title, sourceRef: nil, chunkIndex: i, embedding: emb)
             context.insert(chunk)
@@ -573,10 +704,13 @@ enum RAGStore {
             count += 1
         }
         guard let persistedCount = persistAndAppendVectors(context: context, operation: "indexNote.complete", pending: &pendingVectors) else {
-            logger.error("rag_index_partial_failure op=indexNote source=\(title, privacy: .public) persisted=0 attempted=\(count, privacy: .public)")
-            return 0
+            logger.error("rag_index_partial_failure op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) persisted=0 attempted=\(count, privacy: .public)")
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "persist_failed")
         }
-        return persistedCount
+        if persistedCount < pieces.count {
+            return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
+        }
+        return IndexResult(indexedCount: persistedCount, mode: .indexed, diagnostic: nil)
     }
 
     static func embeddingRuntimeAvailable() async -> Bool {
@@ -588,8 +722,25 @@ enum RAGStore {
             }
             return true
         } catch {
-            logger.error("rag_embedding_failed op=readiness error=\(String(describing: error), privacy: .public)")
+            logger.error("rag_embedding_failed op=readiness error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return false
+        }
+    }
+
+    private static func photoAuthorizationDiagnostic(_ status: PHAuthorizationStatus) -> String {
+        switch status {
+        case .authorized:
+            return "authorized"
+        case .limited:
+            return "limited"
+        case .denied:
+            return "denied"
+        case .restricted:
+            return "restricted"
+        case .notDetermined:
+            return "not_determined"
+        @unknown default:
+            return "unknown"
         }
     }
 

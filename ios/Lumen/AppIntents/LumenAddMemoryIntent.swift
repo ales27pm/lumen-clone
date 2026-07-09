@@ -33,8 +33,8 @@ struct LumenAddMemoryIntent: AppIntent {
         } catch {
             do {
                 let queued = try MemoryCaptureQueue.enqueue(content: body, kind: .fact, source: "app-intent-pending")
-                let pending = (try? MemoryCaptureQueue.pendingCount()) ?? 1
-                return .result(value: Self.queuedMessage(pendingCount: pending, retryCount: queued.retryCount))
+                let pending = MemoryCaptureQueue.pendingCountWithDiagnostics()
+                return .result(value: Self.queuedMessage(pendingCount: pending.count, pendingDiagnostic: pending.diagnostic, retryCount: queued.retryCount))
             } catch {
                 return .result(value: LumenIntentResultRenderer.degraded("memory capture failed"))
             }
@@ -57,9 +57,13 @@ struct LumenAddMemoryIntent: AppIntent {
         return "Memory saved. Also indexed \(drained) pending memory capture\(drained == 1 ? "" : "s")."
     }
 
-    static func queuedMessage(pendingCount: Int, retryCount: Int) -> String {
+    static func queuedMessage(pendingCount: Int?, pendingDiagnostic: String? = nil, retryCount: Int) -> String {
         let retrySuffix = retryCount > 0 ? " Retry count: \(retryCount)." : ""
-        return "Memory captured locally for later indexing. Pending captures: \(max(1, pendingCount)).\(retrySuffix)"
+        if let pendingCount {
+            return "Memory captured locally for later indexing. Pending captures: \(max(1, pendingCount)).\(retrySuffix)"
+        }
+        let diagnosticSuffix = pendingDiagnostic.map { " Diagnostic: \($0)." } ?? ""
+        return "Memory captured locally for later indexing. Pending captures: unknown.\(diagnosticSuffix)\(retrySuffix)"
     }
 }
 #endif

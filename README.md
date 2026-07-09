@@ -43,17 +43,25 @@ Run the stable simulator compile checkpoint:
 ```sh
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
   build-for-testing \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-When CoreSimulator is healthy enough for XCTest execution:
+When CoreSimulator is healthy enough for focused XCTest execution, prefer the bounded runner:
+
+```sh
+bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/<SuiteName>
+```
+
+When a compiled `.xctestrun` already exists, use `xcodebuild test-without-building` for focused reruns instead of recompiling.
+
+Only run full simulator XCTest when the task requires full execution proof:
 
 ```sh
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
   test \
   CODE_SIGNING_ALLOWED=NO
 ```
@@ -73,6 +81,16 @@ Validate generated JSONL artifacts and compatibility aliases:
 python3 scripts/check-generated-jsonl-artifacts.py
 ```
 
+## Release Submission
+
+Use the repo-native App Store Connect lane only when a release upload is explicitly requested:
+
+```sh
+bash scripts/build_and_submit_appstoreconnect.sh
+```
+
+Before submitting, ensure `CURRENT_PROJECT_VERSION` in `ios/Lumen.xcodeproj/project.pbxproj` is higher than the latest uploaded build. Treat App Store Connect upload output as authoritative: success requires `UPLOAD SUCCEEDED with no errors` plus a `Delivery UUID`; duplicate-build or `ENTITY_ERROR` output is a failed upload even if a wrapper script continues.
+
 ## Generated Artifacts
 
 Generated manifests and datasets are deterministic pipeline outputs, not
@@ -91,6 +109,7 @@ files, so checkout size does not double while older tooling paths still work.
 - `docs/VALIDATION.md`
 - `docs/DEVELOPER_WORKFLOW.md`
 - `docs/DEVELOPER_IMPROVE_FRAMEWORK.md`
+- `docs/RELEASE_WORKFLOW.md`
 - `docs/RUNTIME_AUDIT_BOUNDARIES.md`
 - `docs/RUNTIME_STATUS_MATRIX.md`
 - `FEATURE_COMPLETE_VALIDATION.md`

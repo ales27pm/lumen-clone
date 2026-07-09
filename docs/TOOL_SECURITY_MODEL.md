@@ -21,23 +21,23 @@ Rules enforced:
 - Output is bounded by `SafeToolOutputLimiter`.
 - Tool metrics are recorded to `RuntimeMetricsStore` without raw payload logging.
 
-Legacy bridge:
-- Legacy `Services/ToolExecutor.swift` remains active for existing agent pipelines.
-- New `ToolRegistry` is integrated through `AssistantKernel.executeTool(...)` as the migration path.
-- No silent schema divergence: mapping remains explicit by tool IDs while migration proceeds.
+Secure execution:
+- `SecureToolRegistry` is the execution boundary for kernel, headless, approval-confirmed, and migrated agent tool calls.
+- Tool command execution canonicalizes tool IDs and arguments before calling `ToolRegistry`/`ToolInvocation`.
+- No silent schema divergence: mapping remains explicit by tool IDs and schema validation must pass before execution.
 
 Deferred tools:
 - camera/microphone capture and file-import tools are intentionally deferred until explicit foreground user flows + approval UI integration are completed.
 
-## Legacy bridge status
-Headless path now maps secure tool definitions via `LegacyToolSchemaBridge` and injects only background-safe tool definitions. Legacy `ToolExecutor` remains active for backward compatibility and is the main remaining migration risk.
+## Background Tool Execution Status
+Headless path maps secure tool definitions through `ToolSchemaBridge` and exposes only background-safe tool definitions. Requests that need foreground approval, personal-data permissions, external network tools, or clarification are skipped with explicit diagnostic reasons.
 
-## Legacy secure execution
-`SecureToolRegistry.executeLegacyTool(...)` wraps remaining legacy tool execution:
+## Secure Command Execution
+`SecureToolRegistry.executeToolCommand(...)` wraps string-command tool requests:
 - mapped secure tools route via `ToolRegistry`/`ToolInvocation`
-- unknown sensitive/network/destructive-looking tool IDs are denied
-- only explicit read-only allowlist can run through legacy fallback
+- unknown sensitive/network/destructive-looking tool IDs are denied by registry or approval policy
+- background execution is limited to explicit read-only or permission-read tools that declare background support
 
-Legacy bypass status:
-- Reduced: migrated execution points call `SecureToolRegistry.executeLegacyTool(...)`.
-- Remaining: unmigrated legacy prompt/request paths may still expose legacy tool metadata until full coordinator adoption.
+Bypass status:
+- Migrated execution points call `SecureToolRegistry.executeToolCommand(...)` or native `SecureToolRegistry.execute(...)`.
+- Release-visible headless/background paths use secure tool definitions and do not fall through to unchecked tool execution.

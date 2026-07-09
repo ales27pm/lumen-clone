@@ -3,14 +3,30 @@ import SwiftData
 
 @MainActor
 enum MemoryRecall {
+    struct NormalizedRecallResult {
+        let items: [MemoryContextItem]
+        let mode: String
+        let diagnostic: String?
+    }
+
     static func recallAndNormalize(
         query: String,
         routing: IntentRoutingDecision,
         context: ModelContext,
         limit: Int = 8
     ) async -> [MemoryContextItem] {
-        let rawItems = await MemoryStore.recall(query: query, context: context, limit: limit)
-        return rawItems.compactMap { item in
+        await recallAndNormalizeWithDiagnostics(query: query, routing: routing, context: context, limit: limit).items
+    }
+
+    static func recallAndNormalizeWithDiagnostics(
+        query: String,
+        routing: IntentRoutingDecision,
+        context: ModelContext,
+        limit: Int = 8
+    ) async -> NormalizedRecallResult {
+        let result = await MemoryStore.recallWithDiagnostics(query: query, context: context, limit: limit)
+        let rawItems = result.items
+        let items = rawItems.compactMap { item -> MemoryContextItem? in
             guard !MemoryStore.isExpired(item) else { return nil }
             let content = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !content.isEmpty else { return nil }
@@ -24,6 +40,7 @@ enum MemoryRecall {
                 topic: item.topic
             )
         }
+        return NormalizedRecallResult(items: items, mode: result.mode, diagnostic: result.diagnostic)
     }
 
     private static func scope(for item: MemoryItem) -> MemoryContextItem.Scope {

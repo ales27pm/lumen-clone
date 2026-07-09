@@ -223,12 +223,107 @@ nonisolated struct TraceTokenUsage: Codable, Sendable, Equatable, Hashable {
     }
 }
 
+nonisolated extension DeveloperTrace {
+    func redactedForPersistence() -> DeveloperTrace {
+        DeveloperTrace(
+            id: id,
+            createdAt: createdAt,
+            conversationID: conversationID,
+            messageID: messageID,
+            modelName: modelName,
+            systemPrompt: systemPrompt.map { AgentDiagnosticFileRedactor.summary(label: "systemPrompt", text: $0) },
+            developerPrompt: developerPrompt.map { AgentDiagnosticFileRedactor.summary(label: "developerPrompt", text: $0) },
+            userPrompt: AgentDiagnosticFileRedactor.summary(label: "userPrompt", text: userPrompt),
+            resolvedContext: resolvedContext.map(\.redactedForPersistence),
+            retrievedMemory: retrievedMemory.map(\.redactedForPersistence),
+            toolPlan: toolPlan.map(\.redactedForPersistence),
+            toolCalls: toolCalls.map(\.redactedForPersistence),
+            agentMessages: agentMessages.map(\.redactedForPersistence),
+            rawModelOutput: AgentDiagnosticFileRedactor.summary(label: "rawModelOutput", text: rawModelOutput),
+            reasoningText: reasoningText.map { AgentDiagnosticFileRedactor.summary(label: "reasoningText", text: $0) },
+            visibleAnswer: AgentDiagnosticFileRedactor.summary(label: "visibleAnswer", text: visibleAnswer),
+            parserWarnings: parserWarnings.map { AgentDiagnosticFileRedactor.summary(label: "parserWarning", text: $0) },
+            tokenUsage: tokenUsage,
+            finishReason: finishReason,
+            error: error.map { AgentDiagnosticFileRedactor.summary(label: "error", text: $0) }
+        )
+    }
+}
+
+private nonisolated extension TraceContextItem {
+    var redactedForPersistence: TraceContextItem {
+        TraceContextItem(
+            id: id,
+            role: role,
+            title: title.map { AgentDiagnosticFileRedactor.summary(label: "title", text: $0) },
+            content: AgentDiagnosticFileRedactor.summary(label: "content", text: content),
+            source: source.map { AgentDiagnosticFileRedactor.summary(label: "source", text: $0) },
+            metadata: AgentDiagnosticFileRedactor.redactedMap(metadata)
+        )
+    }
+}
+
+private nonisolated extension TraceMemoryItem {
+    var redactedForPersistence: TraceMemoryItem {
+        TraceMemoryItem(
+            id: id,
+            content: AgentDiagnosticFileRedactor.summary(label: "memory", text: content),
+            scope: scope,
+            authority: authority,
+            createdAt: createdAt,
+            expiresAt: expiresAt,
+            source: source.map { AgentDiagnosticFileRedactor.summary(label: "source", text: $0) },
+            topic: topic.map { AgentDiagnosticFileRedactor.summary(label: "topic", text: $0) }
+        )
+    }
+}
+
+private nonisolated extension TraceToolPlanItem {
+    var redactedForPersistence: TraceToolPlanItem {
+        TraceToolPlanItem(
+            id: id,
+            toolID: toolID,
+            reason: reason.map { AgentDiagnosticFileRedactor.summary(label: "reason", text: $0) },
+            requiresApproval: requiresApproval,
+            arguments: AgentDiagnosticFileRedactor.redactedMap(arguments)
+        )
+    }
+}
+
+private nonisolated extension TraceToolCall {
+    var redactedForPersistence: TraceToolCall {
+        TraceToolCall(
+            id: id,
+            toolID: toolID,
+            arguments: AgentDiagnosticFileRedactor.redactedMap(arguments),
+            status: status,
+            result: result.map { AgentDiagnosticFileRedactor.summary(label: "result", text: $0) },
+            startedAt: startedAt,
+            completedAt: completedAt,
+            error: error.map { AgentDiagnosticFileRedactor.summary(label: "error", text: $0) }
+        )
+    }
+}
+
+private nonisolated extension TraceAgentMessage {
+    var redactedForPersistence: TraceAgentMessage {
+        TraceAgentMessage(
+            id: id,
+            role: role,
+            content: AgentDiagnosticFileRedactor.summary(label: "message", text: content),
+            toolID: toolID,
+            metadata: AgentDiagnosticFileRedactor.redactedMap(metadata),
+            createdAt: createdAt
+        )
+    }
+}
+
 nonisolated enum DeveloperTraceCodec {
     static func encode(_ trace: DeveloperTrace) -> String? {
         #if DEBUG
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(trace) else { return nil }
+        guard let data = try? encoder.encode(trace.redactedForPersistence()) else { return nil }
         return String(data: data, encoding: .utf8)
         #else
         return nil

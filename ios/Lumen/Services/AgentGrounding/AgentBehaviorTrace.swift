@@ -421,6 +421,92 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
     }
 }
 
+nonisolated extension AgentBehaviorTrace {
+    func redactedForPersistentDiagnostics() -> AgentBehaviorTrace {
+        AgentBehaviorTrace(
+            id: id,
+            createdAt: createdAt,
+            event: event,
+            slot: slot,
+            stage: stage,
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: intent,
+            promptPrefix: AgentDiagnosticFileRedactor.summary(label: "prompt", text: promptPrefix),
+            rawOutputPrefix: AgentDiagnosticFileRedactor.summary(label: "rawOutput", text: rawOutputPrefix),
+            selectedToolID: selectedToolID,
+            toolArguments: AgentDiagnosticFileRedactor.redactedMap(toolArguments),
+            allowedToolIDs: allowedToolIDs,
+            requiresApproval: requiresApproval,
+            approvalMode: approvalMode,
+            parseError: parseError,
+            emittedFinalInActionTurn: emittedFinalInActionTurn,
+            modelFamily: modelFamily,
+            baseModelPath: baseModelPath.map { AgentDiagnosticFileRedactor.summary(label: "baseModelPath", text: $0) },
+            adapterID: adapterID,
+            adapterSlot: adapterSlot,
+            adapterPath: adapterPath.map { AgentDiagnosticFileRedactor.summary(label: "adapterPath", text: $0) },
+            adapterApplied: adapterApplied,
+            adapterScale: adapterScale,
+            adapterFailureReason: adapterFailureReason,
+            generationElapsedMs: generationElapsedMs,
+            firstTokenLatencyMs: firstTokenLatencyMs,
+            outputTokenCount: outputTokenCount,
+            estimatedPromptTokenCount: estimatedPromptTokenCount,
+            preFirstTokenMs: preFirstTokenMs,
+            messageBuildMs: messageBuildMs,
+            decodeMs: decodeMs,
+            tokensPerSecond: tokensPerSecond,
+            ensureReadyMs: ensureReadyMs,
+            adapterActivationMs: adapterActivationMs,
+            runtimePath: runtimePath.map { AgentDiagnosticFileRedactor.summary(label: "runtimePath", text: $0) },
+            activeAdapterSlot: activeAdapterSlot,
+            maxTokensRequested: maxTokensRequested,
+            maxTokensEffective: maxTokensEffective,
+            promptCharCount: promptCharCount,
+            accelerationDiagnostic: accelerationDiagnostic,
+            accelerationDiagnostics: accelerationDiagnostics,
+            emptyOutputReason: emptyOutputReason,
+            streamStarted: streamStarted,
+            selectedRuntime: selectedRuntime,
+            selectedAdapter: selectedAdapter,
+            modelIdentifier: modelIdentifier,
+            modelLoaded: modelLoaded,
+            stopSequences: stopSequences.map { AgentDiagnosticFileRedactor.summary(label: "stop", text: $0) },
+            temperature: temperature,
+            topP: topP,
+            cancellationStateBeforeStream: cancellationStateBeforeStream,
+            firstChunkReceived: firstChunkReceived,
+            textChunkCount: textChunkCount,
+            finalChunkReceived: finalChunkReceived,
+            streamTerminationReason: streamTerminationReason,
+            finalizerAccepted: finalizerAccepted,
+            finalizerRejectionReason: finalizerRejectionReason,
+            finalValidatorAcceptedCandidate: finalValidatorAcceptedCandidate,
+            finalValidatorReplacementSource: finalValidatorReplacementSource,
+            finalValidatorRejectionReason: finalValidatorRejectionReason,
+            selfModel: selfModel
+        )
+    }
+}
+
+nonisolated enum AgentDiagnosticFileRedactor {
+    static func summary(label: String, text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return "\(label)_chars=\(trimmed.count);sha256=\(String(RuntimeFallbackLogger.promptHash(trimmed).prefix(16)))"
+    }
+
+    static func redactedMap(_ values: [String: String]) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: values.map { key, value in
+            (key, summary(label: key, text: value))
+        })
+    }
+}
+
 nonisolated struct AgentBehaviorAuditReport: Codable, Sendable, Hashable {
     let passed: Bool
     let score: Double
@@ -511,7 +597,7 @@ nonisolated enum AgentBehaviorTraceRecorder {
             let url = directory.appendingPathComponent(fileName, isDirectory: false)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(trace)
+            let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
             var line = data
             line.append(0x0A)
             guard DiskWriteBudget.shared.canWrite(bytes: line.count, category: .diagnostics) else { return }

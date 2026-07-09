@@ -49,12 +49,10 @@ struct AppStartupCoordinatorTests {
             }
         )
 
-        guard case .failed(let context) = coordinator.state else {
-            Issue.record("Expected failed state")
+        guard case .ready = coordinator.state else {
+            Issue.record("Expected ready state after detached bootstrap failure")
             return
         }
-        #expect(context.stage == .bootstrap)
-        #expect(!context.domain.isEmpty)
     }
 
     @Test func retryAfterFailureTransitionsToReady() async throws {

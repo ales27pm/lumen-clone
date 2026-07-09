@@ -10,8 +10,8 @@ final class PhotosToolsTests: XCTestCase {
 
         let range = PhotosTools.previousDayRange(now: now, calendar: calendar)
 
-        XCTAssertEqual(range.0, Date(timeIntervalSince1970: 1_699_920_000))
-        XCTAssertEqual(range.1, Date(timeIntervalSince1970: 1_699_920_000 + 86_400))
+        XCTAssertEqual(range.0, Date(timeIntervalSince1970: 1_699_833_600))
+        XCTAssertEqual(range.1, Date(timeIntervalSince1970: 1_699_920_000))
     }
 
     func testPreviousDayRangeFallsBackWhenDateMathFails() {

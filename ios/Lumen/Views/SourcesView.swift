@@ -150,7 +150,11 @@ struct SourcesView: View {
             var total = 0
             var failures: [String] = []
             for u in urls {
-                guard let dest = FileStore.importFile(from: u) else { continue }
+                let imported = FileStore.importFileWithDiagnostics(from: u)
+                guard let dest = imported.url else {
+                    failures.append("import failed: \(imported.diagnostic ?? "import_failed")")
+                    continue
+                }
                 let result = await RAGStore.indexFileWithDiagnostics(url: dest, context: modelContext)
                 total += result.indexedCount
                 if result.didIndexAllChunks == false, let diagnostic = result.diagnostic {
@@ -168,16 +172,16 @@ struct SourcesView: View {
     private func reindexFiles() {
         Task {
             busy = true; defer { busy = false }
-            let n = await RAGStore.indexImportedFiles(context: modelContext)
-            status = "Reindexed \(n) chunks from imported files."
+            let result = await RAGStore.indexImportedFilesWithDiagnostics(context: modelContext)
+            status = MemoryTools.ragIndexFilesMessage(from: result)
         }
     }
 
     private func reindexPhotos() {
         Task {
             busy = true; defer { busy = false }
-            let n = await RAGStore.indexPhotos(monthsBack: 6, context: modelContext)
-            status = n == 0 ? "Couldn't index photos (permission denied or empty)." : "Indexed \(n) monthly photo summaries."
+            let result = await RAGStore.indexPhotosWithDiagnostics(monthsBack: 6, context: modelContext)
+            status = MemoryTools.ragIndexPhotosMessage(from: result)
         }
     }
 }
@@ -256,7 +260,11 @@ struct SourceDetailView: View {
     }
 
     private func reload() {
-        items = RAGStore.chunks(for: type, context: modelContext)
+        let result = RAGStore.chunksWithDiagnostics(for: type, context: modelContext)
+        items = result.chunks
+        if result.mode == "failed", let diagnostic = result.diagnostic {
+            status = "Could not load \(type.label.lowercased()) chunks. Diagnostic: \(diagnostic)."
+        }
     }
 }
 
@@ -266,6 +274,7 @@ struct AddNoteSheet: View {
     @State private var title = ""
     @State private var body_ = ""
     @State private var saving = false
+    @State private var status: String?
 
     var body: some View {
         NavigationStack {
@@ -281,6 +290,11 @@ struct AddNoteSheet: View {
                 Section {
                     Button("Save & index") { save() }
                         .disabled(title.isEmpty || body_.isEmpty || saving)
+                    if let status {
+                        Text(status)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
                 }
             }
             .navigationTitle("Add Note")
@@ -296,9 +310,13 @@ struct AddNoteSheet: View {
     private func save() {
         Task {
             saving = true
-            _ = await RAGStore.indexNote(title: title, body: body_, context: modelContext)
+            let result = await RAGStore.indexNoteWithDiagnostics(title: title, body: body_, context: modelContext)
             saving = false
-            dismiss()
+            if result.mode == .indexed || result.mode == .partial {
+                dismiss()
+            } else {
+                status = "Could not index note. Diagnostic: \(MemoryTools.diagnosticText(result.diagnostic))."
+            }
         }
     }
 }

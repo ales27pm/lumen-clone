@@ -60,32 +60,32 @@ actor SlotModelRuntimeCoordinator {
         for (index, candidate) in orderedCandidates.enumerated() {
             await Task.yield()
             let path = candidate.resolvedPath
-            logger.info("transition event=attempt role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
+            logger.info("transition event=attempt role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private)")
             guard FileManager.default.fileExists(atPath: path) else {
-                logger.info("transition event=skip_missing role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
+                logger.info("transition event=skip_missing role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private)")
                 continue
             }
 
             do {
                 await AppLlamaService.shared.unloadAllChat()
                 try await AppLlamaService.shared.loadChatModel(path: path, contextSize: contextSize)
-                logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
+                logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private)")
                 return candidate.id.uuidString
             } catch {
                 if isContextInitFailed(error) {
                     do {
-                        logger.info("transition event=retry_context_2048 role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
+                        logger.info("transition event=retry_context_2048 role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private)")
                         await AppLlamaService.shared.unloadAllChat()
                         try await AppLlamaService.shared.loadChatModel(path: path, contextSize: 2048)
-                        logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) context=2048")
+                        logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidate.id.uuidString, preferredID: preferredID), privacy: .public) role=chat model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private) context=2048")
                         return candidate.id.uuidString
                     } catch {
-                        logger.error("transition event=retry_context_2048_failed role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) error=\(String(describing: error), privacy: .public)")
-                        logger.error("transition event=failed_candidate role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                        logger.error("transition event=retry_context_2048_failed role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+                        logger.error("transition event=failed_candidate role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                         continue
                     }
                 }
-                logger.error("transition event=failed_candidate role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                logger.error("transition event=failed_candidate role=chat index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 continue
             }
         }
@@ -109,9 +109,9 @@ actor SlotModelRuntimeCoordinator {
         for (index, candidate) in orderedCandidates.enumerated() {
             await Task.yield()
             let path = ModelStorage.resolvedModelURL(from: candidate.localPath, fileName: candidate.fileName).path
-            logger.info("transition event=attempt role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
+            logger.info("transition event=attempt role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private)")
             guard FileManager.default.fileExists(atPath: path) else {
-                logger.info("transition event=skip_missing role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public)")
+                logger.info("transition event=skip_missing role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private)")
                 continue
             }
 
@@ -119,10 +119,10 @@ actor SlotModelRuntimeCoordinator {
                 try await AppLlamaService.shared.loadEmbeddingModel(path: path)
                 let candidateID = candidate.id.uuidString
                 await MainActor.run { appState.activeEmbeddingModelID = candidateID }
-                logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidateID, preferredID: preferredID), privacy: .public) role=embedding model_id=\(candidateID, privacy: .public) path=\(path, privacy: .public)")
+                logger.info("transition event=\(self.selectionEvent(index: index, candidateID: candidateID, preferredID: preferredID), privacy: .public) role=embedding model_id=\(candidateID, privacy: .public) path=\(path, privacy: .private)")
                 return true
             } catch {
-                logger.error("transition event=failed_candidate role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                logger.error("transition event=failed_candidate role=embedding index=\(index, privacy: .public) model_id=\(candidate.id.uuidString, privacy: .public) path=\(path, privacy: .private) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 continue
             }
         }
@@ -302,7 +302,7 @@ actor SlotModelRuntimeCoordinator {
             do {
                 try await AppLlamaService.shared.loadSharedChatModel(path: assignment.localPath, contextSize: contextSize)
             } catch {
-                logger.error("shared_base_load_failed slot=\(slot.rawValue, privacy: .public) path=\(assignment.localPath, privacy: .public) context=\(self.contextSize, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                logger.error("shared_base_load_failed slot=\(slot.rawValue, privacy: .public) path=\(assignment.localPath, privacy: .private) context=\(self.contextSize, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 if contextSize > 2048 {
                     try await AppLlamaService.shared.loadSharedChatModel(path: assignment.localPath, contextSize: 2048)
                 } else {
@@ -321,7 +321,7 @@ actor SlotModelRuntimeCoordinator {
             return Int(Date().timeIntervalSince(activationStart) * 1000)
         }
         guard FileManager.default.fileExists(atPath: adapterPath) else {
-            logger.error("role_adapter_missing slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .public)")
+            logger.error("role_adapter_missing slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .private)")
             await AppLlamaService.shared.clearActiveRoleAdapter()
             throw LlamaError.modelFileNotFound(adapterPath)
         }
@@ -330,10 +330,10 @@ actor SlotModelRuntimeCoordinator {
             let loadedNow = try await AppLlamaService.shared.loadRoleAdapterIfNeeded(slot: slot, path: adapterPath, scale: assignment.adapterScale)
             let activatedNow = try await AppLlamaService.shared.activateRoleAdapterIfNeeded(slot: slot)
             if loadedNow || activatedNow {
-                logger.info("role_adapter_activation_performed slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .public)")
+                logger.info("role_adapter_activation_performed slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .private)")
             }
         } catch {
-            logger.error("role_adapter_activation_failed slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("role_adapter_activation_failed slot=\(slot.rawValue, privacy: .public) path=\(adapterPath, privacy: .private) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             await AppLlamaService.shared.unloadRoleAdapter(slot: slot)
             throw error
         }
@@ -366,7 +366,7 @@ actor SlotModelRuntimeCoordinator {
                 contextSize: contextSize
             )
         } catch {
-            logger.error("slot_model_load_failed slot=\(slot.rawValue, privacy: .public) path=\(assignment.localPath, privacy: .public) context=\(self.contextSize, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("slot_model_load_failed slot=\(slot.rawValue, privacy: .public) path=\(assignment.localPath, privacy: .private) context=\(self.contextSize, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             if contextSize > 2048 {
                 await AppLlamaService.shared.unloadAllChat()
                 try await AppLlamaService.shared.loadChatModel(
@@ -387,7 +387,7 @@ actor SlotModelRuntimeCoordinator {
                 try await ensureReady(slot: slot)
                 return true
             } catch {
-                logger.error("primary_slot_ready_failed slot=\(slot.rawValue, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                logger.error("primary_slot_ready_failed slot=\(slot.rawValue, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 continue
             }
         }
@@ -407,7 +407,15 @@ actor SlotModelRuntimeCoordinator {
     }
 
     private func orderedCandidates(candidates: [StoredModel], preferredID: String?) -> [StoredModel] {
-        let pool = candidates.filter { ModelFileIntegrity.validateInstalledFile($0) }
+        var pool: [StoredModel] = []
+        for candidate in candidates {
+            switch ModelFileIntegrity.validateInstalledFileWithDiagnostics(candidate) {
+            case .success:
+                pool.append(candidate)
+            case .failure(let failure):
+                logger.error("transition event=skip_invalid_artifact role=embedding model_id=\(candidate.id.uuidString, privacy: .public) diagnostic=\(failure.diagnosticCode, privacy: .public)")
+            }
+        }
         var ordered: [StoredModel] = []
         if let preferredID, let preferred = pool.first(where: { $0.id.uuidString == preferredID }) {
             ordered.append(preferred)

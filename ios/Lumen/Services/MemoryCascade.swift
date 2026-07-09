@@ -5,6 +5,7 @@ nonisolated struct MemoryCascadeResult: Sendable {
     let ephemeral: [MemoryContextItem]
     let vectorized: [MemoryContextItem]
     let condensed: [MemoryContextItem]
+    let diagnostics: [String]
 
     var promptFragments: [MemoryContextItem] {
         var fragments: [MemoryContextItem] = []
@@ -30,7 +31,12 @@ enum MemoryCascade {
                 return MemoryContextItem(content: compact, scope: .currentTurn, authority: .referenceOnly, createdAt: nil, expiresAt: nil, source: "tier1-ephemeral", topic: nil)
             }
 
-        let tier2 = await MemoryStore.recall(query: query, context: context, limit: 8)
+        var diagnostics: [String] = []
+        let vectorRecall = await MemoryStore.recallWithDiagnostics(query: query, context: context, limit: 8)
+        if let diagnostic = vectorRecall.diagnostic {
+            diagnostics.append("vectorized:\(diagnostic)")
+        }
+        let tier2 = vectorRecall.items
             .filter { $0.source != "rem-condensed" }
             .compactMap { item -> MemoryContextItem? in
                 let compact = compactAndTrim(item.content, maxLength: 260)
@@ -42,8 +48,14 @@ enum MemoryCascade {
         let condensedDescriptor = FetchDescriptor<MemoryItem>(
             predicate: #Predicate<MemoryItem> { $0.source == "rem-condensed" }
         )
-        let condensedItems = ((try? context.fetch(condensedDescriptor)) ?? []).filter { item in
-            !MemoryStore.isExpired(item)
+        let condensedItems: [MemoryItem]
+        do {
+            condensedItems = try context.fetch(condensedDescriptor).filter { item in
+                !MemoryStore.isExpired(item)
+            }
+        } catch {
+            diagnostics.append("condensed_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+            condensedItems = []
         }
 
         let rankedTier3 = condensedItems
@@ -67,7 +79,8 @@ enum MemoryCascade {
         return MemoryCascadeResult(
             ephemeral: tier1,
             vectorized: tier2,
-            condensed: Array(rankedTier3)
+            condensed: Array(rankedTier3),
+            diagnostics: diagnostics
         )
     }
 

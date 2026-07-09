@@ -10,9 +10,11 @@ final class DiagnosticsProviderPassiveTests: XCTestCase {
     }
 
     func testDiagnosticsIntentCannotTriggerModelLoad() async {
-        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
+        ResourceBudgetGate.testSnapshotOverride = .init(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .serious, recentMemoryWarningCount: 0, lastMemoryWarningAt: nil)
         XCTAssertFalse(ModelLoader.canStartModelLoad(intent: .diagnostics))
-        _ = await DiagnosticsProvider().collect()
+        let provider = DiagnosticsProvider()
+        _ = await provider.collect()
+        XCTAssertEqual(provider.explicitCollectionCount, 1)
         XCTAssertFalse(ModelLoader.canStartModelLoad(intent: .diagnostics))
     }
 }

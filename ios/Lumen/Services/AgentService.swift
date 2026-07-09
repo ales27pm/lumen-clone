@@ -154,6 +154,17 @@ nonisolated struct AgentTurn: Sendable {
     var isStructured: Bool { action != nil || (final?.isEmpty == false) }
 }
 
+private func strictToolExecutableTurn(_ turn: AgentTurn) -> AgentTurn {
+    guard turn.hadNoise, turn.action != nil else { return turn }
+    return AgentTurn(
+        thought: nil,
+        action: nil,
+        final: nil,
+        parseError: .noisyOutput,
+        hadNoise: true
+    )
+}
+
 nonisolated enum AgentTurnParseError: String, Error, Sendable, Codable {
     case empty
     case noJSONObject
@@ -288,6 +299,9 @@ private nonisolated enum AgentJSONCandidateSelector {
                 }
                 return .failure(ranges.count > 1 ? .multipleJSONObjects : .invalidJSONObject)
             }
+            if ranges.count > 1, !candidateErrors.isEmpty, candidates.allSatisfy({ $0.score == 0 }) {
+                return .failure(.multipleJSONObjects)
+            }
 
             candidates.sort { lhs, rhs in
                 if lhs.score != rhs.score { return lhs.score > rhs.score }
@@ -383,8 +397,8 @@ private nonisolated enum AgentJSONCandidateSelector {
 
     private static func scoreCandidate(object: [String: Any]) -> Int {
         var score = 0
-        if object["action"] != nil || object["tool"] != nil { score += 4 }
-        if object["final"] != nil || object["final_answer"] != nil || object["answer"] != nil { score += 4 }
+        if object["action"] is [String: Any] || object["tool"] is String { score += 4 }
+        if object["final"] is String || object["final_answer"] is String || object["answer"] is String { score += 4 }
         if object["thought"] != nil || object["reasoning"] != nil { score += 2 }
         if object["args"] != nil || object["arguments"] != nil || object["input"] != nil { score += 1 }
         return score
@@ -803,6 +817,49 @@ nonisolated struct AgentParseNoiseTrace: Codable, Sendable {
     let suffixNoise: String?
 }
 
+nonisolated extension AgentParseFailureTrace {
+    func redactedForPersistentDiagnostics() -> AgentParseFailureTrace {
+        AgentParseFailureTrace(
+            id: id,
+            createdAt: createdAt,
+            parseError: parseError,
+            modelName: modelName,
+            temperature: temperature,
+            topP: topP,
+            maxTokens: maxTokens,
+            stepIndex: stepIndex,
+            systemPromptPrefix: AgentDiagnosticFileRedactor.summary(label: "systemPrompt", text: systemPromptPrefix),
+            userTurnPrefix: AgentDiagnosticFileRedactor.summary(label: "userTurn", text: userTurnPrefix),
+            rawOutputPrefix: AgentDiagnosticFileRedactor.summary(label: "rawOutput", text: rawOutputPrefix),
+            streamedThoughtPrefix: AgentDiagnosticFileRedactor.summary(label: "streamedThought", text: streamedThoughtPrefix),
+            streamedFinalPrefix: AgentDiagnosticFileRedactor.summary(label: "streamedFinal", text: streamedFinalPrefix),
+            selectedJSONPrefix: selectedJSONPrefix.map { AgentDiagnosticFileRedactor.summary(label: "selectedJSON", text: $0) },
+            prefixNoise: prefixNoise.map { AgentDiagnosticFileRedactor.summary(label: "prefixNoise", text: $0) },
+            suffixNoise: suffixNoise.map { AgentDiagnosticFileRedactor.summary(label: "suffixNoise", text: $0) }
+        )
+    }
+}
+
+nonisolated extension AgentParseNoiseTrace {
+    func redactedForPersistentDiagnostics() -> AgentParseNoiseTrace {
+        AgentParseNoiseTrace(
+            id: id,
+            createdAt: createdAt,
+            modelName: modelName,
+            temperature: temperature,
+            topP: topP,
+            maxTokens: maxTokens,
+            stepIndex: stepIndex,
+            systemPromptPrefix: AgentDiagnosticFileRedactor.summary(label: "systemPrompt", text: systemPromptPrefix),
+            userTurnPrefix: AgentDiagnosticFileRedactor.summary(label: "userTurn", text: userTurnPrefix),
+            rawOutputPrefix: AgentDiagnosticFileRedactor.summary(label: "rawOutput", text: rawOutputPrefix),
+            selectedJSONPrefix: selectedJSONPrefix.map { AgentDiagnosticFileRedactor.summary(label: "selectedJSON", text: $0) },
+            prefixNoise: prefixNoise.map { AgentDiagnosticFileRedactor.summary(label: "prefixNoise", text: $0) },
+            suffixNoise: suffixNoise.map { AgentDiagnosticFileRedactor.summary(label: "suffixNoise", text: $0) }
+        )
+    }
+}
+
 nonisolated enum AgentNoiseInspector {
     struct Snapshot: Sendable {
         let selectedJSON: String?
@@ -849,7 +906,7 @@ nonisolated enum AgentParseFailureRecorder {
             let url = directory.appendingPathComponent("agent-parse-failures.jsonl", isDirectory: false)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(trace)
+            let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
             var line = data
             line.append(0x0A)
 
@@ -884,7 +941,7 @@ nonisolated enum AgentParseNoiseRecorder {
             let url = directory.appendingPathComponent("agent-parse-noise.jsonl", isDirectory: false)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(trace)
+            let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
             var line = data
             line.append(0x0A)
 
@@ -1449,6 +1506,8 @@ final class AgentService {
     private nonisolated static let contextWindowExceededRawOutputPrefix = "Prompt exceeded context window before generation"
     private nonisolated static let structuredAgentModelSlot: LumenModelSlot = .executor
     nonisolated static let structuredAgentResponseSchema = #"{"type":"object","oneOf":[{"required":["action"],"properties":{"thought":{"type":"string"},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}},"additionalProperties":false},{"required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}]}"#
+    nonisolated static let structuredAgentActionResponseSchema = #"{"type":"object","required":["action"],"properties":{"thought":{"type":"string"},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}}},"additionalProperties":false}"#
+    nonisolated static let structuredAgentFinalResponseSchema = #"{"type":"object","required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}"#
 
     private struct StructuredTurnGenerationDiagnostics: Sendable {
         let generationElapsedMs: Int
@@ -1562,10 +1621,10 @@ final class AgentService {
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
         #if DEBUG
-        if options.diagnosticsEnabled, options.allowDeterministicCompatibility {
+        if options.diagnosticsEnabled, options.allowsDeterministicCompatibilityExecution {
             return LegacyAgentCompatibilityBridge.runSlotAgentCompatibility(req, options: options)
         }
-        if options.allowDeterministicCompatibility,
+        if options.allowsDeterministicCompatibilityExecution,
            SlotAgentService.canCompleteThroughDeterministicCompatibility(req) {
             var compatibilityOptions = options
             compatibilityOptions.groundingMode = .slotAgent
@@ -1613,7 +1672,11 @@ final class AgentService {
                 modelName: "agent-json",
                 relevantMemories: [],
                 attachments: [],
-                responseFormat: .constrainedJSON(schema: Self.structuredAgentResponseSchema),
+                responseFormat: Self.structuredAgentResponseFormat(
+                    req: req,
+                    stepIndex: stepIndex,
+                    hasObservations: !observations.isEmpty
+                ),
                 allowsMemoryPressureContinuation: options.allowsMemoryPressureContinuation
             )
 
@@ -1759,6 +1822,51 @@ final class AgentService {
                         ))
                         completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: retryGenReq.id)
                     }
+                } else if firstAttemptTurn.parseError == .missingActionOrFinal,
+                          scanner.final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                          Self.shouldForceActionSchema(req: req, stepIndex: stepIndex, hasObservations: !observations.isEmpty) {
+                    recordParseFailure(
+                        req: req,
+                        parseError: .missingActionOrFinal,
+                        raw: raw,
+                        scanner: scanner,
+                        systemPrompt: sys,
+                        userTurn: userTurn,
+                        stepIndex: stepIndex
+                    )
+
+                    let retryGenReq = Self.agentJSONMissingDecisionRetryRequest(
+                        from: genReq,
+                        userTurn: userTurn,
+                        rawOutput: raw
+                    )
+                    let retryPreflight = await preflightAgentJSONPrompt(retryGenReq)
+                    genReq = retryGenReq
+                    preflight = retryPreflight
+                    completedPayload = nil
+                    if !retryPreflight.fits {
+                        raw = Self.contextWindowExceededRawOutputPrefix
+                        forcedParseError = .contextWindowExceeded
+                    } else {
+                        scanner = StreamingJSONScanner()
+                        raw = ""
+                        streamedFinalLen = 0
+                        firstTokenLatencyMs = nil
+                        outputChunks = 0
+                        streamStarted = false
+                        finalChunkReceived = false
+                        generationStartedAt = Date()
+
+                        streamStarted = true
+                        applyStreamOutcome(await Self.runStructuredAgentStream(
+                            retryGenReq,
+                            generationStartedAt: generationStartedAt,
+                            continuation: continuation,
+                            thoughtStepID: thoughtStepID,
+                            thoughtStepYielded: thoughtStepYielded
+                        ))
+                        completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: retryGenReq.id)
+                    }
                 }
             }
 
@@ -1768,7 +1876,7 @@ final class AgentService {
                 .map { AgentTurn(thought: nil, action: nil, final: nil, parseError: $0, hadNoise: false) }
                 ?? Self.runtimeFailureParseError(from: raw)
                     .map { AgentTurn(thought: nil, action: nil, final: nil, parseError: $0, hadNoise: false) }
-                ?? AgentTurnParser.parse(raw)
+                ?? strictToolExecutableTurn(AgentTurnParser.parse(raw))
             let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             let localEmptyReason = trimmedRaw.isEmpty
                 ? runtimePreflightFailureReason ?? Self.agentJSONEmptyStreamReason(
@@ -1935,7 +2043,7 @@ final class AgentService {
                 steps.append(actionStep)
                 continuation.yield(.step(actionStep))
 
-                let result = await SecureToolRegistry.shared.executeLegacyTool(
+                let result = await SecureToolRegistry.shared.executeToolCommand(
                     canonicalActionTool,
                     arguments: validatedAction.args,
                     approval: .autonomous,
@@ -2375,10 +2483,8 @@ final class AgentService {
         var sys = """
         You are Lumen's structured routing executor. Emit one raw JSON object only.
 
-        Response format contract: output exactly one valid JSON object matching this schema:
-        \(Self.structuredAgentResponseSchema)
-
-        Schemas:
+        The runtime attaches the active JSON schema for this turn. Follow that active schema exactly.
+        Possible schemas:
         {"thought":"short","action":{"tool":"tool.id","args":{}}}
         {"thought":"short","final":"user-facing answer"}
 
@@ -2503,6 +2609,10 @@ final class AgentService {
                 out += "Observation: \(locationObservation)"
             }
             out += "\n\nEmit the next JSON object now. If the observations already answer the user, choose final. If another tool is absolutely required, action must be an object like {\"tool\":\"tool.id\",\"args\":{}}; never emit action as a string."
+        } else if Self.shouldForceActionSchema(req: req, stepIndex: stepIndex, hasObservations: false) {
+            out += "\n\nEmit the first JSON object now. This tool-backed request requires an action before any final answer. Use exactly one available tool id. Do not emit final or {}."
+        } else if req.availableTools.isEmpty {
+            out += "\n\nEmit the first JSON object now. No tools are available, so emit final only."
         } else {
             out += "\n\nEmit the first JSON object now. Choose either action or final."
         }
@@ -2555,6 +2665,7 @@ final class AgentService {
         {"action":{"tool":"<allowed tool id>","args":{...}}}
         or:
         {"final":"<concise user-facing answer>"}
+        /no_think
         Start the response with { and finish after the matching }.
         """
     }
@@ -2602,6 +2713,53 @@ final class AgentService {
         Use only the schema forms below. Do not include schema, required, status, approvalPrompt, or tool metadata fields.
         {"action":{"tool":"<allowed tool id>","args":{}}}
         {"final":"<concise user-facing answer>"}
+        /no_think
+        Start with { and finish after the matching }. Output JSON only.
+        """
+    }
+
+    private nonisolated static func agentJSONMissingDecisionRetryRequest(
+        from request: GenerateRequest,
+        userTurn: String,
+        rawOutput: String
+    ) -> GenerateRequest {
+        GenerateRequest(
+            sessionID: request.sessionID,
+            systemPrompt: request.systemPrompt,
+            history: request.history,
+            userMessage: agentJSONMissingDecisionRetryUserTurn(from: userTurn, rawOutput: rawOutput),
+            temperature: min(request.temperature, 0.02),
+            topP: min(request.topP, 0.35),
+            repetitionPenalty: max(request.repetitionPenalty, 1.05),
+            maxTokens: min(max(request.maxTokens, structuredTurnMinTokenCap), structuredTurnMaxTokenCap),
+            modelName: request.modelName,
+            relevantMemories: request.relevantMemories,
+            attachments: request.attachments,
+            responseFormat: .constrainedJSON(schema: Self.structuredAgentActionResponseSchema),
+            seed: request.seed.map { $0 &+ 11 },
+            developerTraceModeEnabled: request.developerTraceModeEnabled,
+            reasoningCaptureEnabled: request.reasoningCaptureEnabled,
+            reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters,
+            allowsMemoryPressureContinuation: request.allowsMemoryPressureContinuation
+        )
+    }
+
+    private nonisolated static func agentJSONMissingDecisionRetryUserTurn(
+        from userTurn: String,
+        rawOutput: String
+    ) -> String {
+        let clipped = String(AgentThinkBlockSanitizer.redactedForDiagnostics(rawOutput)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(300))
+        return """
+        \(compactAgentJSONUserTurnForPreflight(userTurn))
+
+        Previous live agent-json attempt emitted a JSON object with no action or final:
+        \(clipped)
+
+        This turn requires a tool action before any final answer. Emit exactly one action JSON object now.
+        Use one available tool id only. Do not emit {}, final, prose, markdown, schema, status, approvalPrompt, or tool metadata fields.
+        {"action":{"tool":"<allowed tool id>","args":{}}}
         /no_think
         Start with { and finish after the matching }. Output JSON only.
         """
@@ -2655,6 +2813,30 @@ final class AgentService {
         )
     }
 
+    private nonisolated static func structuredAgentResponseFormat(
+        req: AgentRequest,
+        stepIndex: Int,
+        hasObservations: Bool
+    ) -> LLMResponseFormat {
+        if shouldForceActionSchema(req: req, stepIndex: stepIndex, hasObservations: hasObservations) {
+            return .constrainedJSON(schema: Self.structuredAgentActionResponseSchema)
+        }
+        if req.availableTools.isEmpty {
+            return .constrainedJSON(schema: Self.structuredAgentFinalResponseSchema)
+        }
+        return .constrainedJSON(schema: Self.structuredAgentResponseSchema)
+    }
+
+    private nonisolated static func shouldForceActionSchema(
+        req: AgentRequest,
+        stepIndex: Int,
+        hasObservations: Bool
+    ) -> Bool {
+        guard stepIndex == 0, !hasObservations, !req.availableTools.isEmpty else { return false }
+        let routing = IntentRouter.classify(Self.sanitizedStructuredUserMessage(req.userMessage))
+        return IntentRouter.intentRequiresTool(routing) && !routing.requiresClarification
+    }
+
     private nonisolated static func truncateSystemPromptForAgentJSONPreflight(_ systemPrompt: String) -> String {
         String(systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_200))
     }
@@ -2677,6 +2859,7 @@ final class AgentService {
         \(requestText)
 
         Emit one JSON object now: action with an available tool, or final if no tool is needed.
+        /no_think
         """
     }
 
@@ -2847,8 +3030,31 @@ final class AgentService {
     /// Prepares a system prompt for structured JSON output by removing internal grounding markers and lines containing blocked formatting directives.
     /// - Returns: The sanitized system prompt with internal grounding removed and lines mentioning markdown, code fences, headings, or step-by-step instructions filtered out.
     private func sanitizeSystemPromptForStructuredOutput(_ systemPrompt: String) -> String {
-        let trimmed = Self.stripInternalGrounding(from: systemPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = Self.stripInternalGrounding(from: systemPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
+        let removableClauses = [
+            #"(?im)\bUse fenced code blocks?\.?\s*"#,
+            #"(?im),?\s*and structure answers with headings\.?\s*"#,
+            #"(?im)\bThink step[- ]by[- ]step\.?\s*"#
+        ]
+        let exactFormattingClauses = [
+            "Use fenced code blocks.",
+            "Use fenced code blocks",
+            ", and structure answers with headings.",
+            ", and structure answers with headings",
+            " and structure answers with headings.",
+            " and structure answers with headings",
+            "Think step-by-step.",
+            "Think step-by-step",
+            "Think step by step.",
+            "Think step by step"
+        ]
+        for clause in exactFormattingClauses {
+            trimmed = trimmed.replacingOccurrences(of: clause, with: "")
+        }
+        for pattern in removableClauses {
+            trimmed = trimmed.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
 
         let blockedPhrases = [
             "markdown",
@@ -3048,12 +3254,28 @@ final class AgentService {
         req: AgentRequest,
         options: LegacyAgentRunOptions
     ) async -> (text: String, steps: [AgentStep])? {
-        guard options.allowDeterministicCompatibility,
-              options.allowParseFailureDeterministicRecovery else {
+        guard options.allowsParseFailureDeterministicRecoveryExecution else {
             return nil
         }
         let prompt = sanitizedStructuredUserMessage(req.userMessage)
         guard !prompt.isEmpty else { return nil }
+
+        if let approvalRecovery = deterministicApprovalBoundaryRecovery(req: req, prompt: prompt) {
+            RuntimeFallbackLogger.record(
+                source: "agent-service-structured-turn",
+                primaryBehavior: "parse model output as structured agent turn",
+                fallbackBehavior: "recover with deterministic approval-boundary action",
+                reason: "parse-failure-deterministic-approval-recovery",
+                consequence: "model-backed turn was preserved but repaired with policy-scoped approval boundary",
+                values: [
+                    "turnID": req.turnID?.uuidString ?? "none",
+                    "conversationID": req.conversationID?.uuidString ?? "none",
+                    "promptSHA256": RuntimeFallbackLogger.promptHash(req.userMessage),
+                    "stepCount": String(approvalRecovery.steps.count)
+                ]
+            )
+            return approvalRecovery
+        }
 
         let routing = await IntentClassifierService.shared.route(prompt)
         guard routing.intent != .unknown else { return nil }
@@ -3069,7 +3291,7 @@ final class AgentService {
             allowDegradedGrounding: options.allowDegradedGrounding,
             preventDoubleGrounding: options.preventDoubleGrounding,
             diagnosticsEnabled: options.diagnosticsEnabled || options.groundingMode == .slotAgent,
-            allowDeterministicCompatibility: options.allowDeterministicCompatibility,
+            allowDeterministicCompatibility: options.allowsDeterministicCompatibilityExecution,
             allowParseFailureDeterministicRecovery: options.allowParseFailureDeterministicRecovery,
             allowsMemoryPressureContinuation: options.allowsMemoryPressureContinuation
         )
@@ -3107,6 +3329,85 @@ final class AgentService {
             ]
         )
         return (text, recovery.steps)
+    }
+
+    private nonisolated static func deterministicApprovalBoundaryRecovery(
+        req: AgentRequest,
+        prompt: String
+    ) -> (text: String, steps: [AgentStep])? {
+        let routing = IntentRouter.classify(prompt)
+        guard IntentRouter.intentRequiresTool(routing), !routing.requiresClarification else { return nil }
+
+        let requestToolIDs = Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let availableToolIDs = requestToolIDs.intersection(routing.allowedToolIDs)
+        guard !availableToolIDs.isEmpty else { return nil }
+
+        let plannedActions = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: availableToolIDs
+        )
+        let approvalAction = plannedActions.first { action in
+            ToolRouteGuard.requiresUserApproval(ToolRouteGuard.canonicalToolID(action.tool))
+        } ?? deterministicApprovalFallbackAction(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs)
+        guard let action = approvalAction else { return nil }
+        let canonicalToolID = ToolRouteGuard.canonicalToolID(action.tool)
+        guard ToolRouteGuard.requiresUserApproval(canonicalToolID) else { return nil }
+
+        let text = approvalBoundaryFinal(for: canonicalToolID, action: action)
+
+        let step = AgentStep(
+            kind: .approvalBoundary,
+            content: text,
+            toolID: canonicalToolID,
+            toolArgs: action.args.stringCoerced
+        )
+        return (text, [step])
+    }
+
+    private nonisolated static func deterministicApprovalFallbackAction(
+        routing: IntentRoutingDecision,
+        prompt: String,
+        availableToolIDs: Set<String>
+    ) -> AgentAction? {
+        guard routing.intent == .alarm else { return nil }
+
+        let kind = AlarmCommandClassifier.classifyAlarmCommandKind(prompt)
+        let toolID: String
+        switch kind {
+        case .requestAuthorization:
+            toolID = "alarm.request_authorization"
+        case .schedule:
+            toolID = "alarm.schedule"
+        case .countdown:
+            toolID = "alarm.countdown"
+        case .cancel:
+            toolID = "alarm.cancel"
+        case .pause:
+            toolID = "alarm.pause"
+        case .resume:
+            toolID = "alarm.resume"
+        case .stop:
+            toolID = "alarm.stop"
+        case .snooze:
+            toolID = "alarm.snooze"
+        case .authorizationStatus, .list, .unknown:
+            return nil
+        }
+
+        guard availableToolIDs.contains(toolID), ToolRouteGuard.requiresUserApproval(toolID) else { return nil }
+
+        var args: AgentJSONArguments = [:]
+        if toolID == "alarm.schedule" {
+            args["title"] = .string("Alarm")
+            if let duration = RelativeDuration.parse(from: prompt) {
+                args["inMinutes"] = .string(String(duration.minutesCeiled))
+            }
+        } else if toolID == "alarm.countdown", let duration = RelativeDuration.parse(from: prompt) {
+            args["title"] = .string("Countdown")
+            args["durationSeconds"] = .string(String(duration.seconds))
+        }
+        return AgentAction(tool: toolID, args: args)
     }
 
     private nonisolated static func isGenericParseRecoveryText(_ text: String) -> Bool {
@@ -3163,8 +3464,42 @@ final class AgentService {
         agentJSONIncompleteOutputRetryRequest(from: request, userTurn: userTurn, rawOutput: rawOutput)
     }
 
+    nonisolated static func agentJSONMissingDecisionRetryUserTurnForTests(
+        from userTurn: String,
+        rawOutput: String
+    ) -> String {
+        agentJSONMissingDecisionRetryUserTurn(from: userTurn, rawOutput: rawOutput)
+    }
+
+    nonisolated static func agentJSONMissingDecisionRetryRequestForTests(
+        from request: GenerateRequest,
+        userTurn: String,
+        rawOutput: String
+    ) -> GenerateRequest {
+        agentJSONMissingDecisionRetryRequest(from: request, userTurn: userTurn, rawOutput: rawOutput)
+    }
+
+    nonisolated static func structuredAgentResponseFormatSchemaForTests(
+        req: AgentRequest,
+        stepIndex: Int = 0,
+        hasObservations: Bool = false
+    ) -> String {
+        guard case .constrainedJSON(let schema) = structuredAgentResponseFormat(
+            req: req,
+            stepIndex: stepIndex,
+            hasObservations: hasObservations
+        ) else {
+            return ""
+        }
+        return schema
+    }
+
     nonisolated static func agentJSONContextCompactionRequestForTests(from request: GenerateRequest) -> GenerateRequest {
         agentJSONContextCompactionRequest(from: request)
+    }
+
+    nonisolated static func strictToolExecutableTurnForTests(_ turn: AgentTurn) -> AgentTurn {
+        strictToolExecutableTurn(turn)
     }
 
     func recordAgentModelTurnTraceForTests(
@@ -3778,6 +4113,7 @@ final class AgentService {
         case .failure:
             return nil
         case .success(let selection):
+            guard !selection.hadUnsupportedNoise else { return nil }
             let allowed = Array(Set(req.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })).sorted()
             guard allowed.count == 1, let tool = allowed.first else { return nil }
             let actionObject = (selection.object["action"] as? [String: Any]) ?? selection.object
@@ -3934,8 +4270,10 @@ final class AgentService {
         let knownNoisePatterns = [
             #"(?im)^\s*Generation error:.*(?:\R|$)"#,
             #"(?im)^\s*The operation couldn[’']t be completed\..*(?:\R|$)"#,
-            #"(?im)^\s*\(SwiftLlama\.LlamaError error \d+\)\.?(?:\R|$)"#,
+            #"(?im)^\s*\(SwiftLlama\.LlamaError error \d+\.?\)\.?\s+No valid JSON object found in raw model output\..*(?:\R|$)"#,
+            #"(?im)^\s*\(SwiftLlama\.LlamaError error \d+\.?\)\.?(?:\R|$)"#,
             #"(?im)^\s*I hit an internal formatting issue and repaired it into a plain answer\..*(?:\R|$)"#,
+            #"(?im)^.*Prefix noise:\s*Generation error:.*(?:\R|$)"#,
             #"(?im)^\s*Prefix noise:.*(?:\R|$)"#,
             #"(?im)^\s*Suffix noise:.*(?:\R|$)"#,
             #"(?im)^\s*No valid JSON object found in raw model output\..*(?:\R|$)"#

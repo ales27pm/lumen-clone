@@ -89,6 +89,7 @@ class ToolArgumentManifest(BaseModel):
     name: str
     type: str
     required: bool = True
+    allowedValues: list[str] | None = None
     description: str | None = None
     source: str | None = None
 

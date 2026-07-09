@@ -209,3 +209,43 @@ def test_tool_argument_contract_catalog_overrides_description_inference():
     ]
     assert "false" not in {arg.name for tool in manifest.tools for arg in tool.arguments}
     assert all(not (arg.description or "").startswith("Inferred") for tool in manifest.tools for arg in tool.arguments)
+
+
+def test_tool_argument_contract_catalog_extracts_enum_allowed_values():
+    text = '''
+    private nonisolated enum ToolArgumentContractCatalog {
+      static func arguments(for toolID: String) -> [ToolArgumentDefinition] {
+        switch ToolRouteGuard.canonicalToolID(toolID) {
+        case "trigger.create":
+          return [
+            .init("title"),
+            .init("prompt"),
+            .init("schedule", type: .enumeration, allowedValues: ["absolute", "interval", "relative"]),
+            .init("inMinutes", type: .number, required: false)
+          ]
+        default:
+          return []
+        }
+      }
+    }
+
+    enum ToolRegistry {
+      static let all: [ToolDefinition] = [
+        ToolDefinition(
+          id: "trigger.create",
+          name: "Schedule Agent Run",
+          description: "Schedule a background agent run. Args: title, prompt, schedule, optional inMinutes.",
+          requiresApproval: true,
+          permissionKey: nil
+        )
+      ]
+    }
+    '''
+    manifest = AgentBehaviorManifest()
+    ToolDefinitionExtractor().extract(SwiftFile(Path("ToolDefinition.swift"), "ToolDefinition.swift", text), manifest)
+
+    tool = manifest.tools[0]
+    schedule = next(arg for arg in tool.arguments if arg.name == "schedule")
+    assert schedule.type == "enum"
+    assert schedule.required is True
+    assert schedule.allowedValues == ["absolute", "interval", "relative"]

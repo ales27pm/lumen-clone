@@ -48,17 +48,21 @@ nonisolated struct PendingMemoryCapture: Codable, Equatable, Identifiable, Senda
 nonisolated struct MemoryCaptureDrainResult: Equatable, Sendable {
     let attempted: Int
     let promoted: Int
-    let remaining: Int
+    let remaining: Int?
     let skippedReason: String?
     let lastError: String?
 
-    static func skipped(remaining: Int, reason: String) -> MemoryCaptureDrainResult {
+    var remainingDescription: String {
+        remaining.map(String.init) ?? "unknown"
+    }
+
+    static func skipped(remaining: Int?, reason: String, lastError: String? = nil) -> MemoryCaptureDrainResult {
         MemoryCaptureDrainResult(
             attempted: 0,
             promoted: 0,
             remaining: remaining,
             skippedReason: reason,
-            lastError: nil
+            lastError: lastError
         )
     }
 }
@@ -168,14 +172,12 @@ enum MemoryCaptureQueue {
         fileURL: URL? = nil
     ) async -> MemoryCaptureDrainResult {
         guard allowPromotion else {
-            let remaining = (try? pendingCount(fileURL: fileURL)) ?? 0
-            return .skipped(remaining: remaining, reason: "promotion_not_allowed")
+            return skippedDrainResult(reason: "promotion_not_allowed", fileURL: fileURL)
         }
 
         let hasEmbeddingRuntime = await AppLlamaService.shared.hasSemanticEmbeddingRuntime
         guard hasEmbeddingRuntime else {
-            let remaining = (try? pendingCount(fileURL: fileURL)) ?? 0
-            return .skipped(remaining: remaining, reason: "embedding_runtime_unavailable")
+            return skippedDrainResult(reason: "embedding_runtime_unavailable", fileURL: fileURL)
         }
 
         return await drain(maxItems: maxItems, fileURL: fileURL) { capture in
@@ -196,8 +198,7 @@ enum MemoryCaptureQueue {
     ) async -> MemoryCaptureDrainResult {
         let boundedLimit = max(0, maxItems)
         guard boundedLimit > 0 else {
-            let remaining = (try? pendingCount(fileURL: fileURL)) ?? 0
-            return .skipped(remaining: remaining, reason: "empty_drain_limit")
+            return skippedDrainResult(reason: "empty_drain_limit", fileURL: fileURL)
         }
 
         do {
@@ -228,7 +229,17 @@ enum MemoryCaptureQueue {
                 }
             }
 
-            try savePending(remainder, fileURL: url)
+            do {
+                try savePending(remainder, fileURL: url)
+            } catch {
+                return MemoryCaptureDrainResult(
+                    attempted: attempted,
+                    promoted: promoted,
+                    remaining: nil,
+                    skippedReason: "queue_save_failed",
+                    lastError: sanitizedErrorCode(for: error)
+                )
+            }
             return MemoryCaptureDrainResult(
                 attempted: attempted,
                 promoted: promoted,
@@ -237,15 +248,27 @@ enum MemoryCaptureQueue {
                 lastError: lastError
             )
         } catch {
-            let remaining = (try? pendingCount(fileURL: fileURL)) ?? 0
             return MemoryCaptureDrainResult(
                 attempted: 0,
                 promoted: 0,
-                remaining: remaining,
+                remaining: nil,
                 skippedReason: "queue_io_failed",
                 lastError: sanitizedErrorCode(for: error)
             )
         }
+    }
+
+    static func pendingCountWithDiagnostics(fileURL: URL? = nil) -> (count: Int?, diagnostic: String?) {
+        do {
+            return (try pendingCount(fileURL: fileURL), nil)
+        } catch {
+            return (nil, "pending_count_failed:\(sanitizedErrorCode(for: error))")
+        }
+    }
+
+    private static func skippedDrainResult(reason: String, fileURL: URL?) -> MemoryCaptureDrainResult {
+        let pending = pendingCountWithDiagnostics(fileURL: fileURL)
+        return .skipped(remaining: pending.count, reason: reason, lastError: pending.diagnostic)
     }
 
     nonisolated static func sanitizedErrorCode(for error: Error) -> String {

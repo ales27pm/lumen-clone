@@ -11,7 +11,7 @@ Lumen retains existing `TriggerScheduler` identifiers:
 - `runTriggerScan()` delegates to `TriggerScheduler.fireDueTriggers` without requiring the chat runtime to be loaded.
 - BG processing runs trigger scan first, then attempts local memory dedupe, current RAG maintenance, and model housekeeping while the short background deadline remains.
 - background trigger scans may run background-safe local tool-only prompts, but they do not authorize loading model assets.
-- `BackgroundToolBridgePolicy` produces a structured assessment before tool-only execution. Requests that need clarification, external/web tools, foreground approval, missing permissions, or unsupported bridge mappings are skipped with an explicit reason instead of falling through to background model work.
+- `BackgroundToolExecutionPolicy` produces a structured assessment before tool-only execution. Requests that need clarification, external/web tools, foreground approval, missing permissions, or unsupported tool mappings are skipped with an explicit reason instead of falling through to background model work.
 - background tool execution denies/degrades when permission is missing or not yet determined; it never initiates foreground permission prompts from a background task.
 - deterministic local maintenance, such as memory dedupe and current RAG maintenance, is governed by `BackgroundTaskPolicy` instead of the heavy-model gate and records skip metrics when the budget or container is unavailable.
 - model housekeeping is a background-safe cleanup pass that unloads optional chat slots and records which slots were released; it never authorizes model loading.

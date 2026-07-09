@@ -29,6 +29,26 @@ def test_unsupported_argument_type_failure():
     assert any(f.code == "unsupported_argument_type" for f in report.failures)
 
 
+def test_enum_argument_type_is_supported():
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="trigger.create",
+                arguments=[
+                    ToolArgumentManifest(
+                        name="schedule",
+                        type="enum",
+                        required=True,
+                        allowedValues=["absolute", "interval", "relative"],
+                    )
+                ],
+            )
+        ]
+    )
+    report = validate_manifest(manifest)
+    assert not any(f.code == "unsupported_argument_type" for f in report.failures)
+
+
 def test_inferred_tool_argument_contract_is_hard_failure():
     manifest = AgentBehaviorManifest(
         tools=[

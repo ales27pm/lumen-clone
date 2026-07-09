@@ -12,7 +12,7 @@ enum MemoryStore {
             try context.save()
             DiskWriteBudget.shared.recordWrite(bytes: 64 * 1024, category: .memory)
         } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
     }
@@ -22,7 +22,7 @@ enum MemoryStore {
             try save()
             return true
         } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return false
         }
     }
@@ -51,6 +51,17 @@ enum MemoryStore {
         let diagnostics: [String]
     }
 
+    struct ExportResult {
+        let json: String?
+        let mode: String
+        let diagnostic: String?
+    }
+
+    struct RememberResult {
+        let mode: String
+        let diagnostic: String?
+    }
+
     static func recall(query: String, context: ModelContext, limit: Int = 5) async -> [MemoryItem] {
         await recallWithDiagnostics(query: query, context: context, limit: limit).items
     }
@@ -75,7 +86,7 @@ enum MemoryStore {
         do {
             queryVec = try await AppLlamaService.shared.embed(trimmed)
         } catch {
-            logger.error("memory_embedding_failed op=recall error=\(String(describing: error), privacy: .public)")
+            logger.error("memory_embedding_failed op=recall error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             let fallback = lexicalRecallResult(query: trimmed, context: context, limit: limit)
             return RecallResult(
                 items: fallback.items,
@@ -101,7 +112,7 @@ enum MemoryStore {
             availableItems = try context.fetch(FetchDescriptor<MemoryItem>())
         } catch {
             let diagnostic = "fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("memory_fetch_failed op=recall diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("memory_fetch_failed op=recall diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return RecallResult(items: [], mode: "failed", diagnostic: diagnostic)
         }
         guard !availableItems.isEmpty else {
@@ -109,7 +120,8 @@ enum MemoryStore {
         }
         let itemByID = Dictionary(uniqueKeysWithValues: availableItems.map { ($0.persistentModelID, $0) })
 
-        MemoryVectorIndex.shared.ensureLoaded(context: context)
+        let vectorLoad = MemoryVectorIndex.shared.ensureLoaded(context: context)
+        var diagnostic = vectorLoad.diagnostic
         var results: [MemoryItem] = []
         results.reserveCapacity(limit)
         var seenIds: Set<PersistentIdentifier> = []
@@ -140,20 +152,27 @@ enum MemoryStore {
 
         if sawStaleVectorID {
             MemoryVectorIndex.shared.invalidate()
-            MemoryVectorIndex.shared.ensureLoaded(context: context)
+            let reload = MemoryVectorIndex.shared.ensureLoaded(context: context)
+            if let reloadDiagnostic = reload.diagnostic {
+                diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: reloadDiagnostic) } ?? reloadDiagnostic
+            }
         }
         if results.count < limit {
             let existingIDs = Set(results.map(\.persistentModelID))
             let backfill = lexicalRecallResult(query: trimmed, context: context, limit: limit - results.count, excluding: existingIDs)
             results.append(contentsOf: backfill.items)
             if !backfill.items.isEmpty {
-                return RecallResult(items: results, mode: "semantic_with_lexical_backfill", diagnostic: backfill.diagnostic)
+                if let backfillDiagnostic = backfill.diagnostic {
+                    diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: backfillDiagnostic) } ?? backfillDiagnostic
+                }
+                return RecallResult(items: results, mode: "semantic_with_lexical_backfill", diagnostic: diagnostic)
             }
-            if let diagnostic = backfill.diagnostic {
+            if let backfillDiagnostic = backfill.diagnostic {
+                diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: backfillDiagnostic) } ?? backfillDiagnostic
                 return RecallResult(items: results, mode: "semantic", diagnostic: diagnostic)
             }
         }
-        return RecallResult(items: results, mode: "semantic", diagnostic: nil)
+        return RecallResult(items: results, mode: "semantic", diagnostic: diagnostic)
     }
 
     static func lexicalRecall(
@@ -184,7 +203,7 @@ enum MemoryStore {
             availableItems = try context.fetch(FetchDescriptor<MemoryItem>())
         } catch {
             let diagnostic = "lexical_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("memory_fetch_failed op=lexicalRecall diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("memory_fetch_failed op=lexicalRecall diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return LexicalRecallResult(items: [], diagnostic: diagnostic)
         }
         let now = Date()
@@ -221,18 +240,46 @@ enum MemoryStore {
     }
 
     static func remember(_ content: String, kind: MemoryKind = .fact, source: String = "manual", topic: String? = nil, context: ModelContext) async throws {
+        _ = try await rememberResult(content, kind: kind, source: source, topic: topic, context: context)
+    }
+
+    @discardableResult
+    static func rememberWithDiagnostics(
+        _ content: String,
+        kind: MemoryKind = .fact,
+        source: String = "manual",
+        topic: String? = nil,
+        context: ModelContext
+    ) async -> RememberResult {
+        do {
+            return try await rememberResult(content, kind: kind, source: source, topic: topic, context: context)
+        } catch {
+            let diagnostic = "remember_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("memory_store_failed op=remember source=\(source, privacy: .public) kind=\(kind.rawValue, privacy: .public) diagnostic=\(diagnostic, privacy: .public)")
+            return RememberResult(mode: "failed", diagnostic: diagnostic)
+        }
+    }
+
+    private static func rememberResult(_ content: String, kind: MemoryKind, source: String, topic: String?, context: ModelContext) async throws -> RememberResult {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        if let existing = try? context.fetch(FetchDescriptor<MemoryItem>()) {
+        guard !trimmed.isEmpty else {
+            return RememberResult(mode: "skipped", diagnostic: "empty_content")
+        }
+        do {
+            let existing = try context.fetch(FetchDescriptor<MemoryItem>())
             if existing.contains(where: { $0.content.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-                return
+                return RememberResult(mode: "skipped", diagnostic: "duplicate_memory")
             }
+        } catch {
+            let diagnostic = "duplicate_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("memory_fetch_failed op=remember.duplicate_check diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            throw error
         }
         let embedding: [Double]
         do {
             embedding = try await AppLlamaService.shared.embed(trimmed)
         } catch {
-            logger.error("memory_embedding_failed op=remember error=\(String(describing: error), privacy: .public)")
+            logger.error("memory_embedding_failed op=remember error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
         guard !embedding.isEmpty else {
@@ -253,6 +300,7 @@ enum MemoryStore {
         try persist(context, operation: "remember.insert", scope: "MemoryItem")
         MemoryVectorIndex.shared.ensureLoaded(context: context)
         MemoryVectorIndex.shared.append(id: item.persistentModelID, isPinned: item.isPinned, vector: embedding)
+        return RememberResult(mode: "stored", diagnostic: nil)
     }
 
     @discardableResult
@@ -280,7 +328,7 @@ enum MemoryStore {
                 failed += 1
                 let diagnostic = "remember_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 diagnostics.append(diagnostic)
-                logger.error("memory_auto_store_failed op=extractAndStore diagnostic=\(diagnostic, privacy: .public) error=\(String(describing: error), privacy: .public)")
+                logger.error("memory_auto_store_failed op=extractAndStore diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             }
         }
         return AutoExtractionResult(
@@ -309,16 +357,38 @@ enum MemoryStore {
     }
 
     static func exportJSON(context: ModelContext) -> String {
+        let result = exportJSONWithDiagnostics(context: context)
+        if let json = result.json {
+            return json
+        }
+        let diagnostic = result.diagnostic ?? "unknown"
+        return #"{"error":"memory_export_failed","diagnostic":"\#(diagnostic)"}"#
+    }
+
+    static func exportJSONWithDiagnostics(context: ModelContext) -> ExportResult {
+        exportJSONWithDiagnostics(fetch: { try context.fetch(FetchDescriptor<MemoryItem>()) })
+    }
+
+    static func exportJSONWithDiagnosticsForTests(fetch: () throws -> [MemoryItem]) -> ExportResult {
+        exportJSONWithDiagnostics(fetch: fetch)
+    }
+
+    private static func exportJSONWithDiagnostics(fetch: () throws -> [MemoryItem]) -> ExportResult {
         do {
-            return try exportJSONThrowing(context: context)
+            return ExportResult(json: try exportJSON(items: fetch()), mode: "exported", diagnostic: nil)
         } catch {
-            logger.error("memory_export_failed op=exportJSON error=\(String(describing: error), privacy: .public)")
-            return "[]"
+            let diagnostic = "export_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("memory_export_failed op=exportJSON diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return ExportResult(json: nil, mode: "failed", diagnostic: diagnostic)
         }
     }
 
     static func exportJSONThrowing(context: ModelContext) throws -> String {
         let all = try context.fetch(FetchDescriptor<MemoryItem>())
+        return try exportJSON(items: all)
+    }
+
+    private static func exportJSON(items all: [MemoryItem]) throws -> String {
         struct Export: Codable { let content: String; let kind: String; let topic: String?; let pinned: Bool; let createdAt: Date }
         let items = all.map { Export(content: $0.content, kind: $0.kind, topic: $0.topic, pinned: $0.isPinned, createdAt: $0.createdAt) }
         let enc = JSONEncoder()

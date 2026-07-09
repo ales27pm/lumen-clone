@@ -26,6 +26,18 @@ struct RAGSearchTool: LocalTool {
             let limit = context.isForeground ? limitRaw : min(limitRaw, 6)
             guard let mc = context.modelContext else { return .init(invocationID: invocation.id, status: .unavailable, displayText: "RAG storage unavailable.", modelText: "RAG unavailable.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "no_model_context", errorCode: "unavailable") }
             let output = await Self.searchRows(query: q, limit: limit, source: source, minScore: minScore, outputBudgetChars: definition.maxOutputCharacters, modelContext: mc)
+            if let failureDiagnostic = output.failureDiagnostic {
+                return .init(
+                    invocationID: invocation.id,
+                    status: .failed,
+                    displayText: "RAG search failed.",
+                    modelText: "RAG search failed.",
+                    structuredPayload: ["diagnostic": failureDiagnostic, "mode": output.mode],
+                    privacyLevel: .moderate,
+                    metricsSummary: output.mode,
+                    errorCode: "rag_search_failed"
+                )
+            }
             let rows = output.rows
             let mode = output.mode
             let txt = rows.isEmpty ? "No matching RAG chunks found." : rows.joined(separator: "\n")
@@ -41,39 +53,15 @@ struct RAGSearchTool: LocalTool {
     /// Searches local RAG chunks and returns ranked, deduplicated results.
     /// - Returns: A tuple containing formatted chunk rows and the search mode ("semantic" or "lexical").
     @MainActor
-    private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, outputBudgetChars: Int, modelContext: ModelContext) async -> (rows: [String], mode: String, diagnosticsPayload: [String: String]) {
-        var results = await RAGEngine().retrieve(query: query, limit: limit, context: modelContext)
-        var mode = results.first?.retrievalMode ?? "empty"
+    private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, outputBudgetChars: Int, modelContext: ModelContext) async -> (rows: [String], mode: String, diagnosticsPayload: [String: String], failureDiagnostic: String?) {
+        let retrieval = await RAGEngine().retrieveWithDiagnostics(query: query, limit: limit, context: modelContext)
+        var results = retrieval.results
+        let mode = retrieval.mode
         if let source {
             results = results.filter { $0.source.title.localizedCaseInsensitiveContains(source) || ($0.source.ref?.localizedCaseInsensitiveContains(source) ?? false) }
         }
-        if results.isEmpty {
-            mode = "lexical"
-            let all = (try? modelContext.fetch(FetchDescriptor<RAGChunk>())) ?? []
-            let terms = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
-            let lexicalResults: [(chunk: RAGChunk, score: Double)] = all.compactMap { c -> (chunk: RAGChunk, score: Double)? in
-                if let source, !(c.sourceName.localizedCaseInsensitiveContains(source) || (c.sourceRef?.localizedCaseInsensitiveContains(source) ?? false)) { return nil }
-                let text = c.content.lowercased()
-                let hits = terms.filter { text.contains($0) }.count
-                guard hits > 0 else { return nil }
-                return (chunk: c, score: Double(hits) / Double(max(1, terms.count)))
-            }
-            .sorted { $0.score > $1.score }
-            .prefix(limit)
-            .map { $0 }
-            results = lexicalResults.map { item in
-                RAGRetrievalResult(
-                    chunkID: item.chunk.id,
-                    source: .init(id: item.chunk.sourceRef ?? item.chunk.id.uuidString, type: item.chunk.sourceType, title: item.chunk.sourceName, ref: item.chunk.sourceRef),
-                    excerpt: item.chunk.content.count > 260 ? String(item.chunk.content.prefix(260)) + "..." : item.chunk.content,
-                    score: item.score,
-                    retrievalMode: mode,
-                    offsetStart: nil,
-                    offsetEnd: nil
-                )
-            }
-        }
         if let minScore { results = results.filter { $0.score >= minScore } }
+        let failureDiagnostic = isFailureDiagnostic(retrieval.diagnostic) ? (retrieval.diagnostic ?? "unknown") : nil
 
         var seen = Set<String>()
         let deduped = results.filter { item in
@@ -88,7 +76,11 @@ struct RAGSearchTool: LocalTool {
         let rows = context.selected.map { e in
             return "- [\(e.chunkID.uuidString.prefix(8))] \(e.source.title) | score=\(String(format:"%.2f", e.score)) | \(e.excerpt)"
         }
-        return (rows, mode, diagnosticsPayload(for: context, dedupedCount: deduped.count))
+        var payload = diagnosticsPayload(for: context, dedupedCount: deduped.count)
+        if let diagnostic = retrieval.diagnostic {
+            payload["diagnostic"] = diagnostic
+        }
+        return (rows, mode, payload, failureDiagnostic)
     }
 
     private static func diagnosticsPayload(for context: RAGContextResult, dedupedCount: Int) -> [String: String] {
@@ -101,5 +93,13 @@ struct RAGSearchTool: LocalTool {
             "estimatedTokens": "\(context.totalTokens)",
             "confidence": String(format: "%.2f", context.confidence)
         ]
+    }
+
+    private static func isFailureDiagnostic(_ diagnostic: String?) -> Bool {
+        guard let diagnostic else { return false }
+        return diagnostic.contains("fetch_failed")
+            || diagnostic.contains("persist_failed")
+            || diagnostic.contains("permission_denied")
+            || diagnostic.contains("corrupt")
     }
 }

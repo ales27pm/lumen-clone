@@ -1,10 +1,10 @@
 import Foundation
 import SwiftData
 
-/// Headless compatibility runner for AppIntent and scheduled trigger entrypoints.
+/// Headless runner for AppIntent and scheduled trigger entrypoints.
 ///
 /// This preserves the existing `(text, steps)` return shape while routing the
-/// actual turn through `AssistantKernel.run(...)`. It should remain a thin bridge;
+/// actual turn through `AssistantKernel.run(...)`. It should remain a thin adapter;
 /// new orchestration logic belongs in Agent Kernel stages, not here.
 @MainActor
 enum HeadlessAgentKernelRunner {
@@ -15,7 +15,12 @@ enum HeadlessAgentKernelRunner {
         maxSteps: Int? = nil,
         source: AgentKernelSource = .appIntent
     ) async -> (text: String, steps: [AgentStep]) {
-        let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        let stored: [StoredModel]
+        do {
+            stored = try fetchStoredModels(context: context)
+        } catch {
+            return (storedModelFetchFailureMessage(error: error), [])
+        }
         let fleet = LumenModelFleetResolver.resolveV1(appState: appState, storedModels: stored)
         return await run(
             prompt: prompt,
@@ -34,7 +39,12 @@ enum HeadlessAgentKernelRunner {
         maxSteps: Int? = nil,
         source: AgentKernelSource = .trigger
     ) async -> (text: String, steps: [AgentStep]) {
-        let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        let stored: [StoredModel]
+        do {
+            stored = try fetchStoredModels(context: context)
+        } catch {
+            return (storedModelFetchFailureMessage(error: error), [])
+        }
         let fleet = LumenModelFleetResolver.resolveV1(settings: settings, storedModels: stored)
         return await run(
             prompt: prompt,
@@ -44,6 +54,15 @@ enum HeadlessAgentKernelRunner {
             source: source,
             fleetSnapshot: fleet
         )
+    }
+
+    static func storedModelFetchFailureMessage(error: Error) -> String {
+        let errorCode = RuntimeMetricErrorSanitizer.code(for: error)
+        return "Headless agent skipped: model catalog fetch failed (\(errorCode))."
+    }
+
+    private static func fetchStoredModels(context: ModelContext) throws -> [StoredModel] {
+        try context.fetch(FetchDescriptor<StoredModel>())
     }
 
     private static func run(
@@ -75,7 +94,7 @@ enum HeadlessAgentKernelRunner {
         guard !cancellationToken.isCancelled, !Task.isCancelled else { return ("", []) }
         let heavyModelAllowed = source != .trigger || ResourceBudgetGate.allowsHeavyModelWork(reason: ModelLoadIntent.background.rawValue)
         let backgroundToolAssessment = source == .trigger
-            ? await BackgroundToolBridgePolicy.assess(
+            ? await BackgroundToolExecutionPolicy.assess(
                 prompt: executionPrompt,
                 routing: routing,
                 modelContext: context
@@ -192,7 +211,7 @@ enum HeadlessAgentKernelRunner {
             : fleetSnapshot.missingSlots.map(\.displayName).joined(separator: ", ")
 
         let fleetPrompt = """
-        Lumen model fleet v1 is enabled as an explicit role pipeline compatibility contract. The Agent Kernel is now the orchestration boundary; slot-specific behavior must be expressed through kernel stages and runtime adapters.
+        Lumen model fleet v1 is enabled as an explicit role pipeline contract. The Agent Kernel is now the orchestration boundary; slot-specific behavior must be expressed through kernel stages and runtime adapters.
 
         Role contracts:
         \(contracts)

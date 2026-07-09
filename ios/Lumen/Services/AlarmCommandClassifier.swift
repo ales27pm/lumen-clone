@@ -67,7 +67,7 @@ nonisolated struct RelativeDuration: Sendable, Equatable {
 
     static func containsExplicitRelativeSyntax(_ text: String) -> Bool {
         normalized(text).range(
-            of: #"(?i)\b(?:in|for|after)\s+\S+\s+\S+"#,
+            of: #"(?i)\b(?:in|for|after)\s+\S+\s+(seconds?|secs?|sec|minutes?|mins?|min|hours?|hrs?|hr|days?)\b"#,
             options: .regularExpression
         ) != nil
     }

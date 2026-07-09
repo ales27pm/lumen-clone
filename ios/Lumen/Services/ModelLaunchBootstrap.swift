@@ -7,6 +7,7 @@ nonisolated struct LiveRuntimeArtifactReadiness: Sendable, Equatable {
     let required: Int
     let missingAdapterSlots: [String]
     let missingArtifactFileNames: [String]
+    let diagnostic: String?
 }
 
 @MainActor
@@ -15,7 +16,7 @@ enum ModelLaunchBootstrap {
 
     private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
         do { try context.save() } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
     }
@@ -25,8 +26,22 @@ enum ModelLaunchBootstrap {
             try save()
             return true
         } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return false
+        }
+    }
+
+    static func modelCatalogFetchFailureMessage(error: Error) -> String {
+        "Model catalog fetch failed (\(RuntimeMetricErrorSanitizer.code(for: error)))."
+    }
+
+    private static func fetchStoredModels(context: ModelContext, operation: String, appState: AppState? = nil) -> [StoredModel]? {
+        do {
+            return try context.fetch(FetchDescriptor<StoredModel>())
+        } catch {
+            logger.error("fetch_failed op=\(operation, privacy: .public) scope=StoredModel error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            appState?.runtime.updateBootStep(id: "models", detail: modelCatalogFetchFailureMessage(error: error), state: .warning)
+            return nil
         }
     }
 
@@ -55,7 +70,9 @@ enum ModelLaunchBootstrap {
         }
 
         // Fetch all stored models once to avoid repeated O(n) fetches in the loop below.
-        let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        guard let allStored = fetchStoredModels(context: context, operation: "repairFleet", appState: appState) else {
+            return
+        }
 
         let missing = missingModels(from: models, allStored: allStored)
         let missingBytes = missing.reduce(Int64(0)) { $0 + $1.sizeBytes }
@@ -115,15 +132,23 @@ enum ModelLaunchBootstrap {
         guard appState.autoDownloadFleetModels else {
             appState.runtime.updateBootStep(id: "models", detail: "Fleet auto-download disabled", state: .warning)
             linkExistingFleetFiles(appState: appState, context: context)
-            return readyArtifactCount(for: models, context: context) >= models.count
+            guard let ready = readyArtifactCount(for: models, context: context, operation: "prepareLiveRuntimeArtifacts.autoDownloadDisabled", appState: appState) else {
+                return false
+            }
+            return ready >= models.count
         }
         guard !appState.confirmFleetDownloads else {
             appState.runtime.updateBootStep(id: "models", detail: "Fleet download waiting for manual repair", state: .warning)
             linkExistingFleetFiles(appState: appState, context: context)
-            return readyArtifactCount(for: models, context: context) >= models.count
+            guard let ready = readyArtifactCount(for: models, context: context, operation: "prepareLiveRuntimeArtifacts.confirmFleetDownloads", appState: appState) else {
+                return false
+            }
+            return ready >= models.count
         }
 
-        let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        guard let allStored = fetchStoredModels(context: context, operation: "prepareLiveRuntimeArtifacts", appState: appState) else {
+            return false
+        }
         let missing = missingModels(from: models, allStored: allStored)
         let missingBytes = missing.reduce(Int64(0)) { $0 + $1.sizeBytes }
         let requiredBytes = max(0, missingBytes + (missing.isEmpty ? 0 : storageSafetyBufferBytes))
@@ -135,13 +160,18 @@ enum ModelLaunchBootstrap {
                 state: .warning
             )
             linkExistingFleetFiles(appState: appState, context: context)
-            return readyArtifactCount(for: models, context: context) >= models.count
+            guard let ready = readyArtifactCount(for: models, context: context, operation: "prepareLiveRuntimeArtifacts.storagePressure", appState: appState) else {
+                return false
+            }
+            return ready >= models.count
         }
 
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         var startedDownloads = startMissingLiveRuntimeDownloads(models: models, appState: appState, context: context)
         while !Task.isCancelled {
-            let readyCount = readyArtifactCount(for: models, context: context)
+            guard let readyCount = readyArtifactCount(for: models, context: context, operation: "prepareLiveRuntimeArtifacts.pollReady", appState: appState) else {
+                return false
+            }
             if readyCount >= models.count {
                 appState.runtime.updateBootStep(id: "models", detail: "\(family.shortLabel): \(readyCount) / \(models.count) live runtime artifacts ready", state: .complete)
                 return true
@@ -221,7 +251,15 @@ enum ModelLaunchBootstrap {
 
     static func liveRuntimeArtifactReadinessDetails(context: ModelContext, family: LumenModelFamily = LumenModelFamily.persistedSelected) -> LiveRuntimeArtifactReadiness {
         let models = liveRuntimeModelsForInstall(family: family)
-        let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        guard let stored = fetchStoredModels(context: context, operation: "liveRuntimeArtifactReadinessDetails") else {
+            return LiveRuntimeArtifactReadiness(
+                ready: 0,
+                required: models.count,
+                missingAdapterSlots: [],
+                missingArtifactFileNames: [],
+                diagnostic: "model_catalog_fetch_failed"
+            )
+        }
         let missingFiles = missingModels(from: models, allStored: stored).map(\.fileName).sorted()
         var missingAdapterSlots: [String] = []
         if family == .qwen3 {
@@ -235,15 +273,18 @@ enum ModelLaunchBootstrap {
             }.sorted()
         }
         return LiveRuntimeArtifactReadiness(
-            ready: readyArtifactCount(for: models, context: context),
+            ready: readyArtifactCount(for: models, stored: stored),
             required: models.count,
             missingAdapterSlots: missingAdapterSlots,
-            missingArtifactFileNames: missingFiles
+            missingArtifactFileNames: missingFiles,
+            diagnostic: nil
         )
     }
 
     private static func startMissingLiveRuntimeDownloads(models: [CatalogModel], appState: AppState, context: ModelContext) -> Int {
-        let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        guard let allStored = fetchStoredModels(context: context, operation: "startMissingLiveRuntimeDownloads", appState: appState) else {
+            return 0
+        }
         var started = 0
         for model in missingModels(from: models, allStored: allStored) {
             switch ensureModelPresent(model, expectedFleetCount: models.count, appState: appState, context: context, allStored: allStored) {
@@ -301,7 +342,9 @@ enum ModelLaunchBootstrap {
 
         ModelDownloader.shared.start(model) { localURL in
             Task { @MainActor in
-                let freshStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+                guard let freshStored = fetchStoredModels(context: context, operation: "downloadCompletion", appState: appState) else {
+                    return
+                }
                 let stored: StoredModel
                 if let existing = storedModel(for: model, in: freshStored) {
                     activateIfNeeded(existing, appState: appState)
@@ -321,11 +364,16 @@ enum ModelLaunchBootstrap {
     }
 
     private static func linkExistingFleetFiles(appState: AppState, context: ModelContext) {
+        guard var allStored = fetchStoredModels(context: context, operation: "linkExistingFleetFiles", appState: appState) else {
+            return
+        }
         for model in fleetModelsForInstall() {
             let localURL = ModelDownloader.shared.localURL(for: model)
             guard FileManager.default.fileExists(atPath: localURL.path) else { continue }
-            if storedModel(for: model, context: context) == nil {
-                _ = insertStoredModel(for: model, localURL: localURL, appState: appState, context: context)
+            if storedModel(for: model, in: allStored) == nil {
+                if let inserted = insertStoredModel(for: model, localURL: localURL, appState: appState, context: context) {
+                    allStored.append(inserted)
+                }
             }
         }
     }
@@ -343,7 +391,9 @@ enum ModelLaunchBootstrap {
     }
 
     private static func loadIfSelected(_ stored: StoredModel, appState: AppState, context: ModelContext) async {
-        let allStored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        guard let allStored = fetchStoredModels(context: context, operation: "loadIfSelected", appState: appState) else {
+            return
+        }
         switch stored.modelRole {
         case .chat:
             guard appState.activeChatModelID == stored.id.uuidString else { return }
@@ -357,7 +407,9 @@ enum ModelLaunchBootstrap {
     }
 
     private static func updateFleetBootProgress(expectedCount: Int, appState: AppState, context: ModelContext) {
-        let readyCount = readyFleetArtifactCount(context: context)
+        guard let readyCount = readyFleetArtifactCount(context: context, appState: appState) else {
+            return
+        }
         let state: BootStepState = readyCount >= expectedCount ? .complete : .running
         appState.runtime.updateBootStep(
             id: "models",
@@ -366,12 +418,18 @@ enum ModelLaunchBootstrap {
         )
     }
 
-    private static func readyFleetArtifactCount(context: ModelContext) -> Int {
-        readyArtifactCount(for: fleetModelsForInstall(), context: context)
+    private static func readyFleetArtifactCount(context: ModelContext, appState: AppState) -> Int? {
+        readyArtifactCount(for: fleetModelsForInstall(), context: context, operation: "readyFleetArtifactCount", appState: appState)
     }
 
-    private static func readyArtifactCount(for models: [CatalogModel], context: ModelContext) -> Int {
-        let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+    private static func readyArtifactCount(for models: [CatalogModel], context: ModelContext, operation: String, appState: AppState? = nil) -> Int? {
+        guard let stored = fetchStoredModels(context: context, operation: operation, appState: appState) else {
+            return nil
+        }
+        return readyArtifactCount(for: models, stored: stored)
+    }
+
+    private static func readyArtifactCount(for models: [CatalogModel], stored: [StoredModel]) -> Int {
         return models.reduce(0) { count, model in
             let localReady = FileManager.default.fileExists(atPath: ModelDownloader.shared.localURL(for: model).path)
             let storedReady = storedModel(for: model, in: stored).map(storedModelFileExists) ?? false
@@ -384,7 +442,9 @@ enum ModelLaunchBootstrap {
     }
 
     private static func storedModel(for catalog: CatalogModel, context: ModelContext) -> StoredModel? {
-        let models = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
+        guard let models = fetchStoredModels(context: context, operation: "storedModel") else {
+            return nil
+        }
         return storedModel(for: catalog, in: models)
     }
 
@@ -410,7 +470,7 @@ enum ModelLaunchBootstrap {
         do {
             try persist(context, operation: "insertStoredModel", scope: "StoredModel")
         } catch {
-            logger.error("persist_blocked op=insertStoredModel scope=StoredModel error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_blocked op=insertStoredModel scope=StoredModel error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             context.delete(stored)
             return nil
         }

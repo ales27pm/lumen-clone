@@ -279,6 +279,7 @@ EXPORT_DIR="build/export-${SCHEME_SAFE}-${TIMESTAMP}"
 EXPORT_OPTIONS_PLIST="build/export-options-${SCHEME_SAFE}-${TIMESTAMP}.plist"
 LOG_DIR="build/logs"
 EXPORT_LOG="$LOG_DIR/export-${SCHEME_SAFE}-${TIMESTAMP}.log"
+UPLOAD_LOG="$LOG_DIR/upload-${SCHEME_SAFE}-${TIMESTAMP}.log"
 
 mkdir -p build "$LOG_DIR"
 
@@ -410,9 +411,14 @@ else
   UPLOAD_CMD+=(--username "$APPLE_ID" --password @env:APP_SPECIFIC_PASSWORD)
 fi
 
-if ! "${UPLOAD_CMD[@]}"; then
+set +e
+"${UPLOAD_CMD[@]}" 2>&1 | tee "$UPLOAD_LOG"
+upload_status=${PIPESTATUS[0]}
+set -e
+
+if [[ "$upload_status" -ne 0 ]] || rg -q 'ERROR:|Failed to upload|ENTITY_ERROR|must be higher than|validation errors' "$UPLOAD_LOG"; then
   unset APP_SPECIFIC_PASSWORD || true
-  fail "Upload failed. Fix the App Store Connect validation errors above, then rerun the upload."
+  fail "Upload failed. Full upload log: $UPLOAD_LOG"
 fi
 unset APP_SPECIFIC_PASSWORD || true
 bold "✅ Upload complete. Check App Store Connect for processing status."

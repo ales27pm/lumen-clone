@@ -38,6 +38,14 @@ struct IntentClassifierPolicyTests {
         #expect(result.intent == .calendar)
     }
 
+    @Test func highConfidenceModelDoesNotOverrideApprovalSensitiveAlarmFallback() {
+        let fallback = DeterministicIntentFallback.classify("Set an alarm for tomorrow at 7.")
+        let model = IntentClassificationResult(intent: .calendar, confidence: 0.92, alternatives: [], requiresClarification: false, clarificationPrompt: nil, source: .bundledModel, diagnostics: nil)
+        let result = IntentClassifierPolicy.resolve(modelResult: model, deterministic: fallback)
+        #expect(result.intent == .alarm)
+        #expect(result.source == .policyMerged)
+    }
+
     @Test func closeModelAlternativesAskClarification() {
         let fallback = IntentClassificationResult(intent: .maps, confidence: 0.60, alternatives: [], requiresClarification: false, clarificationPrompt: nil, source: .deterministicFallback, diagnostics: nil)
         let model = IntentClassificationResult(
@@ -174,7 +182,7 @@ struct IntentClassifierPolicyTests {
         let alarm = await IntentClassifierService.shared.classify("Set an alarm")
         #expect(alarm.intent == .alarm)
         #expect(alarm.requiresClarification)
-        #expect(alarm.clarificationPrompt == "What time or duration should I use?")
+        #expect(alarm.clarificationPrompt == "What time should I use for the alarm?")
 
         let email = await IntentClassifierService.shared.classify("Email Sarah")
         #expect(email.intent == .emailDraft)

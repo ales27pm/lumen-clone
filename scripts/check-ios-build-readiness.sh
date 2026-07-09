@@ -45,8 +45,12 @@ echo "== Generated JSONL artifact checks =="
 python3 scripts/check-generated-jsonl-artifacts.py
 
 echo "== Static privacy/build-hardening checks =="
-if rg "${READINESS_RG_EXCLUDES[@]}" -n "TODO|stub|placeholder" ios/Lumen ios/LumenTests docs; then
-  echo "Found TODO/stub/placeholder markers. Review above; some may be literal test/prompt text." >&2
+if rg "${READINESS_RG_EXCLUDES[@]}" -n -e "TODO" -e "FIXME" -e "XXX" -e "stub" -e "not implemented" -e "not-implemented" -e "unimplemented" ios/Lumen; then
+  echo "Found production unfinished markers in ios/Lumen. Remove them from Release source or guard them behind DEBUG." >&2
+  exit 1
+fi
+if rg "${READINESS_RG_EXCLUDES[@]}" -n -e "placeholder" ios/LumenTests docs; then
+  echo "Found placeholder markers in tests/docs. Review above; some may be literal test/prompt text or historical notes." >&2
 fi
 if ! rg "${READINESS_RG_EXCLUDES[@]}" -n "import AppIntents|AppIntent|AppShortcutsProvider" ios/Lumen/AppIntents >/dev/null; then
   echo "warning: no AppIntents references found under ios/Lumen/AppIntents." >&2

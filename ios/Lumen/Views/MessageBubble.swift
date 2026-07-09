@@ -253,7 +253,17 @@ struct MessageBubble: View {
         let snippet = String(cleaned.prefix(400))
         let ctx = modelContext
         Task { @MainActor in
-            try? await MemoryStore.remember(snippet, kind: .fact, source: "bookmark", context: ctx)
+            let result = await MemoryStore.rememberWithDiagnostics(snippet, kind: .fact, source: "bookmark", context: ctx)
+            if result.mode != "stored" {
+                PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .fallbackUsed, values: [
+                    "surface": "message_bubble",
+                    "operation": "bookmark_memory",
+                    "memoryMode": result.mode,
+                    "memoryDiagnostic": result.diagnostic ?? "none",
+                    "contentSHA256": RuntimeFallbackLogger.promptHash(snippet),
+                    "contentChars": String(snippet.count)
+                ]))
+            }
         }
     }
 }
@@ -564,7 +574,7 @@ struct ToolCallCard: View {
 
         message.toolStatus = ToolStatus.running.rawValue
         Task {
-            let result = await SecureToolRegistry.shared.executeLegacyTool(
+            let result = await SecureToolRegistry.shared.executeToolCommand(
                 toolID,
                 arguments: AgentJSONArguments(stringDictionary: args),
                 approval: .userApproved,

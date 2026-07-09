@@ -30,6 +30,7 @@ Nested instruction files:
 - Do not rely on prompt-only constraints for structured tool calling. Validate generated tool calls before execution.
 - Do not log raw prompts, raw user documents, raw memory contents, or raw tool arguments unless the user explicitly exports diagnostics.
 - Do not claim live runtime, device, TestFlight, or model-backed validation unless fresh evidence was actually produced.
+- Learn from run to run. When a validated failure exposes a bad workflow assumption, update the default procedure and do not repeat the same mistake in later runs.
 
 ## Validation Policy
 
@@ -64,20 +65,30 @@ Stable Xcode compile checkpoint:
 ```bash
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
   build-for-testing \
   CODE_SIGNING_ALLOWED=NO
 ```
+
+Use the dedicated `Lumen Focused Test iPhone` simulator when it exists. A generic simulator destination is acceptable for non-launching compile checks, but executed XCTest requires a concrete simulator.
 
 Only run full simulator XCTest when needed and when CoreSimulator is healthy:
 
 ```bash
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
   test \
   CODE_SIGNING_ALLOWED=NO
 ```
+
+Optimized simulator workflow:
+
+- Prefer `build-for-testing` first.
+- Reuse the compiled `.xctestrun` with `test-without-building` for focused simulator reruns instead of recompiling.
+- Prefer the SpringBoard/backboardd readiness probe over waiting for a long `simctl bootstatus -b` System App timeout. Treat `bootstatus` as an opportunistic short check, not the only readiness signal.
+- Keep simulator execution bounded. The repo defaults `TEST_TIMEOUT_SECONDS=2400` for focused and validation wrapper runs.
+- If simulator install/launch/test-manager handoff stalls, report it as an environment boundary and keep compile/build-for-testing evidence separate from executed XCTest evidence.
 
 For release-readiness claims, also document manual checks that cannot be proven locally: signed archive/export, entitlement inspection, privacy manifest validation, TestFlight or real-device smoke test, real-device local model load, live tool calls, live RAG, live memory, voice, and AppIntent flows.
 
@@ -88,6 +99,13 @@ Commands and flows agents must not run unless the user explicitly asks:
 - Do not run App Store Connect upload or release scripts such as `scripts/build_and_submit_appstoreconnect.sh`.
 - Do not run unbounded simulator launch/test loops. Prefer `build-for-testing` first.
 - Do not run broad cleanup commands that delete generated artifacts, DerivedData, or simulator state without stating the impact first.
+
+When the user explicitly asks to build and submit:
+
+- Use `bash scripts/build_and_submit_appstoreconnect.sh`; do not rely on the executable bit.
+- Check or bump `CURRENT_PROJECT_VERSION` before archiving. The submitted `CFBundleVersion` must be higher than the latest App Store Connect upload.
+- Treat App Store Connect upload output as authoritative. If `altool` prints validation errors, duplicate-build errors, `ENTITY_ERROR`, or `Failed to upload`, the upload failed even if the process exits cleanly.
+- Report the archive path, IPA path, `CFBundleVersion`, and `Delivery UUID` only when the terminal output includes `UPLOAD SUCCEEDED with no errors`.
 
 ## Runtime And Tool-Calling Rules
 

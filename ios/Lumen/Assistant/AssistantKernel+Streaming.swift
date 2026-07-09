@@ -23,13 +23,13 @@ extension AssistantKernel: AgentKernelRunning {
                 )
                 let effectiveUserMessage = referenceResolution.rewrittenPrompt
 
-                if request.supportsDeterministicToolBridge {
+                if request.supportsDeterministicToolExecution {
                     let routing = IntentRouter.classify(effectiveUserMessage)
                     if IntentRouter.intentRequiresTool(routing) {
-                        let backgroundAssessment: BackgroundToolBridgeAssessment?
+                        let backgroundAssessment: BackgroundToolExecutionAssessment?
                         let availableTools: [ToolDefinition]
-                        if request.requiresBackgroundSafeToolBridge {
-                            let assessment = await BackgroundToolBridgePolicy.assess(
+                        if request.requiresBackgroundSafeToolExecution {
+                            let assessment = await BackgroundToolExecutionPolicy.assess(
                                 prompt: effectiveUserMessage,
                                 routing: routing,
                                 modelContext: modelContext,
@@ -40,7 +40,7 @@ extension AssistantKernel: AgentKernelRunning {
                             availableTools = assessment.availableTools
                         } else {
                             backgroundAssessment = nil
-                            availableTools = await toolBridgeAvailableTools(
+                            availableTools = await toolExecutionAvailableTools(
                                 for: request,
                                 userMessage: effectiveUserMessage,
                                 routing: routing,
@@ -51,7 +51,7 @@ extension AssistantKernel: AgentKernelRunning {
                         if let backgroundAssessment, !backgroundAssessment.canRunWithoutLoadedTextRuntime {
                             if request.options.diagnosticsEnabled {
                                 continuation.yield(.diagnostic(.init(
-                                    stage: "background-tool-bridge",
+                                    stage: "background-tool-execution",
                                     message: backgroundAssessment.skipMessage,
                                     metadata: backgroundAssessment.diagnosticMetadata.merging([
                                         "source": request.source.rawValue,
@@ -66,60 +66,19 @@ extension AssistantKernel: AgentKernelRunning {
                             return
                         }
 
-                        if request.options.diagnosticsEnabled {
-                            continuation.yield(.diagnostic(.init(
-                                stage: "tool-routing-bridge",
-                                message: "Routing tool-backed \(String(describing: request.task)) turn through deterministic legacy bridge",
-                                metadata: [
-                                    "intent": routing.intent.rawValue,
-                                    "allowedToolIDs": routing.allowedToolIDs.sorted().joined(separator: ","),
-                                    "availableToolIDs": availableTools.map(\.id).sorted().joined(separator: ","),
-                                    "mode": request.requiresBackgroundSafeToolBridge ? "background-safe" : "foreground",
-                                    "source": request.source.rawValue,
-                                    "referenceRewrite": String(referenceResolution.hasRewrite)
-                                ]
-                            )))
-                        }
-
-                        let legacyRequest = AgentRequest(
-                            systemPrompt: request.systemPrompt,
-                            history: historyTuples,
+                        let outcome = await runNativeToolTurn(
+                            request: request,
                             userMessage: effectiveUserMessage,
-                            temperature: request.options.temperature,
-                            topP: request.options.topP,
-                            repetitionPenalty: request.options.repetitionPenalty,
-                            maxTokens: request.options.maxTokens,
-                            maxSteps: request.options.maxSteps,
+                            routing: routing,
                             availableTools: availableTools,
-                            relevantMemories: request.relevantMemories,
-                            attachments: request.attachments,
-                            conversationID: request.conversationID,
-                            turnID: request.turnID
+                            referenceWasRewritten: referenceResolution.hasRewrite,
+                            modelContext: modelContext
                         )
-                        let groundingMode: LegacyAgentRunOptions.GroundingMode = request.source == .trigger ? .headlessTrigger : .slotAgent
-                        let legacyOptions = LegacyAgentRunOptions(
-                            modelContext: modelContext,
-                            conversationID: request.conversationID,
-                            turnID: request.turnID,
-                            groundingMode: groundingMode,
-                            allowDegradedGrounding: request.options.allowDegradedMode,
-                            preventDoubleGrounding: true,
-                            diagnosticsEnabled: true
-                        )
-
-                        #if DEBUG
-                        let bridgedEvents = request.requiresBackgroundSafeToolBridge
-                            ? LegacyAgentCompatibilityBridge.runSlotAgentKernelCompatibility(legacyRequest, options: legacyOptions)
-                            : runLegacyAgentBridge(legacyRequest, options: legacyOptions)
-                        for await bridgedEvent in bridgedEvents {
-                            continuation.yield(bridgedEvent)
+                        for event in outcome.events {
+                            continuation.yield(event)
                         }
-                        #else
-                        let message = "Tool-capable agent turns are excluded from this Release build until native kernel tool execution is available."
-                        emitStep(.observation, message)
-                        continuation.yield(.final(message))
-                        continuation.yield(.done(finalText: message, steps: emittedSteps))
-                        #endif
+                        emittedSteps.append(contentsOf: outcome.steps)
+                        continuation.yield(.done(finalText: outcome.finalText, steps: emittedSteps))
                         continuation.finish()
                         return
                     }
@@ -227,30 +186,170 @@ extension AssistantKernel: AgentKernelRunning {
         }
     }
 
+    #if DEBUG
     func runLegacyAgentBridge(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentKernelEvent> {
-        #if DEBUG
         LegacyAgentCompatibilityBridge.runLegacyAgentService(request, options: options)
-        #else
-        AsyncStream { continuation in
-            let message = "Legacy agent bridge is excluded from Release builds."
-            continuation.yield(.error(message))
-            continuation.finish()
-        }
-        #endif
+    }
+    #endif
+
+    private struct NativeToolTurnOutcome {
+        let finalText: String
+        let steps: [AgentStep]
+        let events: [AgentKernelEvent]
     }
 
-    private func toolBridgeAvailableTools(
+    private func runNativeToolTurn(
+        request: AgentKernelRequest,
+        userMessage: String,
+        routing: IntentRoutingDecision,
+        availableTools: [ToolDefinition],
+        referenceWasRewritten: Bool,
+        modelContext: ModelContext?
+    ) async -> NativeToolTurnOutcome {
+        var steps: [AgentStep] = []
+        var events: [AgentKernelEvent] = []
+        func appendStep(_ step: AgentStep) {
+            steps.append(step)
+            events.append(.step(step))
+        }
+
+        if request.options.diagnosticsEnabled {
+            events.append(.diagnostic(.init(
+                stage: "native-tool-routing",
+                message: "Routing tool-backed \(String(describing: request.task)) turn through native kernel tool execution",
+                metadata: [
+                    "intent": routing.intent.rawValue,
+                    "allowedToolIDs": routing.allowedToolIDs.sorted().joined(separator: ","),
+                    "availableToolIDs": availableTools.map(\.id).sorted().joined(separator: ","),
+                    "mode": request.requiresBackgroundSafeToolExecution ? "background-safe" : "foreground",
+                    "source": request.source.rawValue,
+                    "referenceRewrite": String(referenceWasRewritten)
+                ]
+            )))
+        }
+
+        if routing.requiresClarification, let clarification = routing.clarificationPrompt {
+            let step = AgentStep(kind: .observation, content: clarification)
+            appendStep(step)
+            events.append(.final(clarification))
+            return NativeToolTurnOutcome(finalText: clarification, steps: steps, events: events)
+        }
+
+        guard !availableTools.isEmpty else {
+            let message = "No approved tool is available for this \(routing.intent.rawValue) request."
+            appendStep(AgentStep(kind: .observation, content: message))
+            events.append(.final(message))
+            return NativeToolTurnOutcome(finalText: message, steps: steps, events: events)
+        }
+
+        let availableToolIDs = Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let plannedActions = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: userMessage,
+            availableToolIDs: availableToolIDs
+        )
+        guard !plannedActions.isEmpty else {
+            let message = "I could not determine a validated tool action for this \(routing.intent.rawValue) request."
+            appendStep(AgentStep(kind: .observation, content: message))
+            events.append(.final(message))
+            return NativeToolTurnOutcome(finalText: message, steps: steps, events: events)
+        }
+
+        let maxActions = max(1, request.options.maxSteps)
+        var finalText = ""
+        var executedKeys: Set<String> = []
+        for action in plannedActions.prefix(maxActions) {
+            let validation = StructuredToolCallValidator.validate(action: action, availableTools: availableTools)
+            let validatedCall: ValidatedStructuredToolCall
+            switch validation {
+            case .success(let call):
+                validatedCall = call
+            case .failure(let error):
+                let canonical = ToolRouteGuard.canonicalToolID(action.tool)
+                let message = "Tool call schema rejected: \(error.diagnostic)."
+                appendStep(AgentStep(kind: .observation, content: message, toolID: canonical))
+                finalText = "I could not run that tool because its generated arguments failed validation."
+                events.append(.final(finalText))
+                return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
+            }
+
+            let validatedAction = AgentAction(
+                tool: validatedCall.canonicalToolID,
+                args: AgentJSONArguments(stringDictionary: validatedCall.arguments)
+            )
+            guard !executedKeys.contains(validatedAction.dedupeKey) else {
+                finalText = "Duplicate tool call blocked: \(validatedAction.tool)."
+                appendStep(AgentStep(kind: .reflection, content: finalText, toolID: validatedAction.tool))
+                events.append(.final(finalText))
+                return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
+            }
+            executedKeys.insert(validatedAction.dedupeKey)
+
+            let invocation = ToolInvocation(
+                id: UUID(),
+                toolID: validatedCall.canonicalToolID,
+                arguments: validatedCall.arguments,
+                source: request.toolInvocationSource,
+                conversationID: request.conversationID,
+                turnID: request.turnID,
+                createdAt: Date()
+            )
+            appendStep(AgentStep(
+                kind: .action,
+                content: "\(validatedCall.canonicalToolID)(validated)",
+                toolID: validatedCall.canonicalToolID,
+                toolArgs: validatedCall.arguments
+            ))
+            events.append(.toolInvocation(invocation))
+
+            let context = ToolExecutionContext(
+                isForeground: request.source.isForeground,
+                appState: nil,
+                modelContext: modelContext,
+                permissionRegistry: .shared,
+                metricsStore: metricsStore
+            )
+            let result = await toolRegistry.execute(invocation, context: context)
+            events.append(.toolResult(result))
+            let observationText = Self.userVisibleToolObservation(toolID: validatedCall.canonicalToolID, result: result)
+            appendStep(AgentStep(kind: .observation, content: observationText, toolID: validatedCall.canonicalToolID))
+            finalText = observationText
+
+            if result.status != .success {
+                break
+            }
+        }
+
+        if finalText.isEmpty {
+            finalText = "Native tool execution finished without a user-visible result."
+        }
+        events.append(.final(finalText))
+        return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
+    }
+
+    private static func userVisibleToolObservation(toolID: String, result: ToolResult) -> String {
+        let text = result.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { return text }
+        let modelText = result.modelText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !modelText.isEmpty { return modelText }
+        if let errorCode = result.errorCode, !errorCode.isEmpty {
+            return "\(toolID) finished with status \(result.status.rawValue): \(errorCode)."
+        }
+        return "\(toolID) finished with status \(result.status.rawValue) and no user-visible output."
+    }
+
+    private func toolExecutionAvailableTools(
         for request: AgentKernelRequest,
         userMessage: String,
         routing: IntentRoutingDecision,
         modelContext: ModelContext?
     ) async -> [ToolDefinition] {
         let routedIDs = Set(routing.allowedToolIDs.map { ToolRouteGuard.canonicalToolID($0) })
-        guard request.requiresBackgroundSafeToolBridge else {
+        guard request.requiresBackgroundSafeToolExecution else {
             return ToolRegistry.all.filter { routedIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
         }
 
-        return await BackgroundToolBridgePolicy.availableTools(
+        return await BackgroundToolExecutionPolicy.availableTools(
             for: userMessage,
             routing: routing,
             modelContext: modelContext,
@@ -261,11 +360,22 @@ extension AssistantKernel: AgentKernelRunning {
 }
 
 private extension AgentKernelRequest {
-    var supportsDeterministicToolBridge: Bool {
+    var supportsDeterministicToolExecution: Bool {
         task == .chat || task == .backgroundTrigger
     }
 
-    var requiresBackgroundSafeToolBridge: Bool {
+    var requiresBackgroundSafeToolExecution: Bool {
         task == .backgroundTrigger || source == .trigger
+    }
+
+    var toolInvocationSource: ToolInvocationSource {
+        switch source {
+        case .trigger:
+            return .backgroundTrigger
+        case .appIntent:
+            return .appIntent
+        case .chat, .voice, .diagnostics, .benchmark:
+            return .modelProposed
+        }
     }
 }

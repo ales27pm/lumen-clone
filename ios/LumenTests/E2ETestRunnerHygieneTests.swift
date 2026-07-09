@@ -1099,7 +1099,8 @@ struct E2ETestRunnerHygieneTests {
             readyArtifactCount: 1,
             requiredArtifactCount: 6,
             missingAdapterSlots: ["executor"],
-            missingArtifactFileNames: ["lumen-executor-lora.gguf"]
+            missingArtifactFileNames: ["lumen-executor-lora.gguf"],
+            diagnostic: "model_catalog_fetch_failed"
         )
 
         #expect(report.passed == 0)
@@ -1111,9 +1112,33 @@ struct E2ETestRunnerHygieneTests {
         #expect(result.metadata["readyArtifactCount"] == "1")
         #expect(result.metadata["requiredArtifactCount"] == "6")
         #expect(result.metadata["missingAdapterSlots"] == "executor")
+        #expect(result.metadata["diagnostic"] == "model_catalog_fetch_failed")
         #expect(result.failures[0].contains("role adapters"))
         #expect(result.finalText.contains("1 / 6 live runtime artifacts ready"))
         #expect(result.finalText.contains("Missing adapter slots: executor"))
+        #expect(result.finalText.contains("Diagnostic: model_catalog_fetch_failed"))
+    }
+
+    @Test func liveModelCatalogFetchPreflightReportIsSingleActionableFailure() {
+        let started = Date(timeIntervalSince1970: 30)
+        let finished = Date(timeIntervalSince1970: 40)
+        let report = E2ETestRunner.liveModelCatalogFetchBlockedReport(
+            startedAt: started,
+            finishedAt: finished,
+            diagnostic: "Model catalog fetch failed (swiftdata_13)."
+        )
+
+        #expect(report.passed == 0)
+        #expect(report.failed == 1)
+        #expect(report.results.count == 1)
+        let result = report.results[0]
+        #expect(result.scenarioID == "live-model-catalog-preflight")
+        #expect(result.metadata["failureKind"] == "liveModelCatalogFetchFailed")
+        #expect(result.metadata["diagnostic"] == "Model catalog fetch failed (swiftdata_13).")
+        #expect(result.failures == ["Live E2E model setup could not fetch the stored model catalog."])
+        #expect(result.finalText.contains("Model catalog fetch failed before live scenarios ran."))
+        #expect(result.finalText.contains("swiftdata_13"))
+        #expect(!result.finalText.contains("no chat model loaded"))
     }
 
     @Test func deterministicCompatibilityToolTraceCountsAsPolicyFirstEvidenceOnlyWhenAllowed() {
@@ -1196,7 +1221,7 @@ struct E2ETestRunnerHygieneTests {
 
         #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(since: startedAt, prompt: prompt))
         let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(since: startedAt, prompt: prompt)
-        #expect(message.contains("agent-json emitted empty output"))
+        #expect(message.contains("model stream returned no tokens"))
         #expect(message.contains("parseError=empty"))
         #expect(message.contains("stage=agent-json-step-0"))
         #expect(message.contains("runtimePath=agent-model"))

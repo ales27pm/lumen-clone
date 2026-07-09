@@ -5,7 +5,7 @@ actor GGUFEngine: LLMEngine {
     nonisolated let displayName = "GGUF Local Engine"
     nonisolated let capabilities = LLMEngineCapabilities.localGGUF
 
-    private let nativeBridge: any GGUFNativeBridge
+    private let nativeBridge: (any GGUFNativeBridge)?
     private var loadedModel: LocalLLMModel?
     private var loadedProfile: InferenceProfile?
     private var activeRequestID: UUID?
@@ -21,7 +21,7 @@ actor GGUFEngine: LLMEngine {
             #if DEBUG
             self.nativeBridge = UnavailableGGUFNativeBridge()
             #else
-            preconditionFailure("GGUFEngine requires a compiled native bridge in Release builds.")
+            self.nativeBridge = nil
             #endif
         }
     }
@@ -29,6 +29,10 @@ actor GGUFEngine: LLMEngine {
     func load(model: LocalLLMModel, profile: InferenceProfile) async throws {
         guard model.backend == .gguf else {
             throw LLMEngineError.backendUnavailable(model.backend.rawValue)
+        }
+
+        guard let nativeBridge else {
+            throw LLMEngineError.backendUnavailable("GGUF native backend is not compiled.")
         }
 
         await cancelActiveGenerationAndWait()
@@ -71,7 +75,7 @@ actor GGUFEngine: LLMEngine {
         lifecycleTransitionInProgress = true
         defer { lifecycleTransitionInProgress = false }
 
-        await nativeBridge.unload()
+        await nativeBridge?.unload()
         loadedModel = nil
         loadedProfile = nil
         activeRequestID = nil
@@ -102,7 +106,7 @@ actor GGUFEngine: LLMEngine {
     func cancelCurrentGeneration() async {
         guard let activeRequestID else { return }
         cancelledRequestIDs.insert(activeRequestID)
-        await nativeBridge.cancel()
+        await nativeBridge?.cancel()
     }
 
     private func runGeneration(
@@ -113,6 +117,11 @@ actor GGUFEngine: LLMEngine {
 
         guard lifecycleTransitionInProgress == false else {
             continuation.finish(throwing: LLMEngineError.generationAlreadyRunning)
+            return
+        }
+
+        guard let nativeBridge else {
+            continuation.finish(throwing: LLMEngineError.backendUnavailable("GGUF native backend is not compiled."))
             return
         }
 
@@ -272,7 +281,7 @@ actor GGUFEngine: LLMEngine {
         if let activeRequestID {
             cancelledRequestIDs.insert(activeRequestID)
         }
-        await nativeBridge.cancel()
+        await nativeBridge?.cancel()
         await waitForActiveGenerationToFinish()
     }
 

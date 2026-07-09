@@ -334,7 +334,7 @@ enum CalendarTools {
             try store.save(reminder, commit: true)
             return "Added reminder: \"\(title)\"."
         } catch {
-            return "Couldn't add reminder: \(error.localizedDescription)"
+            return reminderFailureMessage(action: "add")
         }
     }
 
@@ -352,7 +352,11 @@ enum CalendarTools {
                 }
             }
         } catch {
-            return "Couldn't load reminders: \(error.localizedDescription)"
+            return reminderFailureMessage(action: "load")
         }
+    }
+
+    nonisolated static func reminderFailureMessage(action: String) -> String {
+        "I couldn't \(action) reminders right now. Try again later."
     }
 }

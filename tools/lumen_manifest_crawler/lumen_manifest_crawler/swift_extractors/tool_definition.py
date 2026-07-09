@@ -108,11 +108,13 @@ class ToolDefinitionExtractor(SwiftExtractor):
                 continue
             arg_type = clean_swift_string(argument_value(arg_block, "type")) or "string"
             required = bool_value(argument_value(arg_block, "required"), True)
+            allowed_values = self._extract_allowed_values(arg_block)
             args.append(
                 ToolArgumentManifest(
                     name=name,
                     type=self._normalize_type(arg_type),
                     required=required,
+                    allowedValues=allowed_values,
                     description="Declared in ToolDefinition capability contract.",
                     source=source,
                 )
@@ -177,6 +179,7 @@ class ToolDefinitionExtractor(SwiftExtractor):
                         type=self._normalize_type(arg_type or "string"),
                         required=not bool_value(argument_value(arg_block, "optional"), False)
                         and bool_value(argument_value(arg_block, "required"), True),
+                        allowedValues=self._extract_allowed_values(arg_block),
                         description=clean_swift_string(argument_value(arg_block, "description")),
                         source=source,
                     )
@@ -316,11 +319,21 @@ class ToolDefinitionExtractor(SwiftExtractor):
             "object": "object",
             "dictionary": "object",
             "dict": "object",
+            "enum": "enum",
+            "enumeration": "enum",
             "nil": "null",
             "none": "null",
             "null": "null",
         }
         return mapping.get(value, value or "string")
+
+    @staticmethod
+    def _extract_allowed_values(block: str) -> list[str] | None:
+        raw = argument_value(block, "allowedValues")
+        if not raw:
+            return None
+        values = [value for value in string_literals(raw) if value]
+        return values or None
 
     @staticmethod
     def _looks_like_tool_id(value: str) -> bool:

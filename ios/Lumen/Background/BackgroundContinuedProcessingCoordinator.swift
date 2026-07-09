@@ -44,7 +44,7 @@ final class BackgroundContinuedProcessingCoordinator {
             return BackgroundContinuedProcessingLease(identifier: request.identifier, submissionToken: submissionToken)
         } catch {
             lastSubmissionStatus = "submit_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.warning("continued_processing_submit_failed error=\(String(describing: error), privacy: .public)")
+            logger.warning("continued_processing_submit_failed error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return nil
         }
     }

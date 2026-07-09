@@ -184,7 +184,28 @@ nonisolated struct AttachmentRenderState: Sendable, Hashable {
     let name: String
     let includedChars: Int
     let totalChars: Int
+    let mode: String
+    let diagnostic: String?
+
+    init(
+        id: UUID,
+        name: String,
+        includedChars: Int,
+        totalChars: Int,
+        mode: String = "loaded",
+        diagnostic: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.includedChars = includedChars
+        self.totalChars = totalChars
+        self.mode = mode
+        self.diagnostic = diagnostic
+    }
+
     var truncated: Bool { includedChars < totalChars }
+    var extractionFailed: Bool { mode == "failed" }
+    var emptyExtractedText: Bool { diagnostic == "empty_attachment_text" }
 }
 
 /// Result of running the prompt assembler on a request.
@@ -320,17 +341,22 @@ nonisolated enum PromptAssembler {
     ) -> (String, [AttachmentRenderState]) {
         guard !attachments.isEmpty else { return ("", []) }
 
-        struct Loaded { let attachment: ChatAttachment; let raw: String }
+        struct Loaded {
+            let attachment: ChatAttachment
+            let text: String
+            let mode: String
+            let diagnostic: String?
+        }
         let loaded: [Loaded] = attachments.map {
-            let raw = AttachmentResolver.rawExtractText($0)
+            let extraction = AttachmentResolver.extractTextWithDiagnostics($0)
             let prepared: String
             switch normalization {
             case .preserveRaw:
-                prepared = raw
+                prepared = extraction.text ?? ""
             case .agentRouting:
-                prepared = normalizeForAgentRouting(raw)
+                prepared = normalizeForAgentRouting(extraction.text ?? "")
             }
-            return Loaded(attachment: $0, raw: prepared)
+            return Loaded(attachment: $0, text: prepared, mode: extraction.mode, diagnostic: extraction.diagnostic)
         }
 
         if share <= 0 {
@@ -340,7 +366,9 @@ nonisolated enum PromptAssembler {
                     id: $0.attachment.id,
                     name: $0.attachment.name,
                     includedChars: 0,
-                    totalChars: $0.raw.count
+                    totalChars: $0.text.count,
+                    mode: $0.mode,
+                    diagnostic: $0.diagnostic
                 )
             }
             return ("", states)
@@ -352,13 +380,17 @@ nonisolated enum PromptAssembler {
         states.reserveCapacity(loaded.count)
 
         for (i, item) in loaded.enumerated() {
-            let totalCount = item.raw.count
-            let included = truncateHead(item.raw, maxChars: perFileCap)
+            let totalCount = item.text.count
+            let included = truncateHead(item.text, maxChars: perFileCap)
             let trimmed = included.trimmingCharacters(in: .whitespacesAndNewlines)
 
             out += "\n--- Attachment \(i + 1): \(item.attachment.name) (\(item.attachment.kind.rawValue)) ---\n"
-            if trimmed.isEmpty {
-                out += "[Could not extract text from this file.]\n"
+            if item.mode == "failed" {
+                out += "[Could not extract text from this file. Diagnostic: \(item.diagnostic ?? "attachment_extract_failed").]\n"
+            } else if item.diagnostic == "empty_attachment_text" {
+                out += "[Attachment contains no extractable text.]\n"
+            } else if trimmed.isEmpty {
+                out += "[Attachment content was empty after normalization.]\n"
             } else {
                 out += trimmed
                 if included.count < totalCount {
@@ -373,7 +405,9 @@ nonisolated enum PromptAssembler {
                 id: item.attachment.id,
                 name: item.attachment.name,
                 includedChars: min(included.count, totalCount),
-                totalChars: totalCount
+                totalChars: totalCount,
+                mode: item.mode,
+                diagnostic: item.diagnostic
             ))
         }
         out += "--- End attachments ---\n"

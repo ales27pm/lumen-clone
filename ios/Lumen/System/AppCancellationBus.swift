@@ -59,7 +59,9 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
         cancellers = Array(categoryTasks.values)
         tasks[category] = nil
         lock.unlock()
-        cancellers.forEach { $0() }
+        for cancel in cancellers {
+            cancel()
+        }
     }
 
     func cancelAllSceneSensitive() {
@@ -71,7 +73,9 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
         let cancellers = drainSceneSensitiveCancellers()
         guard !cancellers.isEmpty else { return }
         Task.detached(priority: priority) {
-            cancellers.forEach { $0() }
+            for cancel in cancellers {
+                cancel()
+            }
         }
     }
 
@@ -114,6 +118,15 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
         defer { lock.unlock() }
         return tasks[category]?.count ?? 0
     }
+
+    #if DEBUG
+    func resetForTesting() {
+        lock.lock()
+        tasks.removeAll()
+        cancellationRequestedReason = nil
+        lock.unlock()
+    }
+    #endif
 
     private func drainSceneSensitiveCancellers() -> [@Sendable () -> Void] {
         let cancellers: [@Sendable () -> Void]

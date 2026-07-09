@@ -60,7 +60,7 @@ final class AppStartupCoordinator {
                 do {
                     try await capturedBootstrap(capturedAppState, ctx)
                 } catch {
-                    Logger(subsystem: "ai.lumen.app", category: "startup").warning("Background bootstrap completed with error: \(error.localizedDescription, privacy: .public)")
+                    Logger(subsystem: "ai.lumen.app", category: "startup").warning("Background bootstrap completed with error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 }
             }
         } catch {
@@ -120,6 +120,14 @@ final class AppStartupCoordinator {
 
     static func ensureDirectoryExists(_ url: URL, fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    nonisolated static func uiTestingBootstrap(appState: AppState, ctx: ModelContext) async throws {
+        await MainActor.run {
+            appState.runtime.updateBootStep(id: "grounding", detail: "Skipped for UI tests", state: .complete)
+            appState.runtime.updateBootStep(id: "triggers", detail: "Skipped for UI tests", state: .complete)
+            appState.runtime.dismissBootSplash()
+        }
     }
 
     private static func makeContainer(isStoredInMemoryOnly: Bool) throws -> ModelContainer {
@@ -189,7 +197,7 @@ final class AppStartupCoordinator {
                 appState.runtime.updateBootStep(id: "grounding", detail: "Bundled agent grounding resources ready", state: .complete)
             }
         } catch {
-            Logger(subsystem: "ai.lumen.app", category: "startup").warning("Grounding resources unavailable: \(error.localizedDescription, privacy: .public). Continuing in limited mode.")
+            Logger(subsystem: "ai.lumen.app", category: "startup").warning("Grounding resources unavailable error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public). Continuing in limited mode.")
             await MainActor.run {
                 appState.runtime.updateBootStep(id: "grounding", detail: "Grounding resources unavailable — limited mode", state: .complete)
             }
@@ -249,13 +257,27 @@ struct LumenApp: App {
             }
             .task {
                 guard case .loading = startup.state else { return }
-                await startup.initialize(appState: appState)
+                if LumenLaunchArguments.isUITesting {
+                    await startup.initialize(appState: appState, bootstrap: AppStartupCoordinator.uiTestingBootstrap)
+                } else {
+                    await startup.initialize(appState: appState)
+                }
                 if case .ready(let container) = startup.state {
                     SharedContainer.shared = container
-                    await PersistentRuntimeDiagnosticsRunner.shared.resumeIfEnabled()
+                    if LumenLaunchArguments.isUITesting {
+                        appState.runtime.dismissBootSplash()
+                    } else {
+                        await PersistentRuntimeDiagnosticsRunner.shared.resumeIfEnabled()
+                    }
                 }
             }
         }
+    }
+}
+
+enum LumenLaunchArguments {
+    static var isUITesting: Bool {
+        ProcessInfo.processInfo.arguments.contains("--lumen-ui-tests")
     }
 }
 

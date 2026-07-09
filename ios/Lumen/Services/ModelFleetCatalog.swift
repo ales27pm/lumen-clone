@@ -23,7 +23,7 @@ nonisolated enum LumenModelFleetCatalog {
             quantization: "Q4_K_M",
             sizeBytes: 450_000_000,
             role: .embedding,
-            description: "Qwen3 embedding candidate for source-map, memory, RAG, runtime repair, and tool-schema retrieval. Keep fallback enabled until eval gates pass.",
+            description: "Qwen3 embedding candidate for source-map, memory, RAG, runtime repair, and tool-schema retrieval.",
             tags: ["fleet-v1", "adapter-first", "embedding", "qwen3", "candidate"]
         )
     ]
@@ -50,7 +50,7 @@ nonisolated enum LumenModelFleetCatalog {
             quantization: "Q4_K_M",
             sizeBytes: 1_150_000_000,
             role: .chat,
-            description: "Optional release-baked Executor artifact for strict tool JSON when adapter loading is unavailable.",
+            description: "Optional release-baked Executor artifact for strict tool JSON in merged-artifact deployments.",
             tags: ["fleet-v1", "release-bake", "optional", "gguf", "executor", "structured"]
         ),
         CatalogModel(
@@ -62,7 +62,7 @@ nonisolated enum LumenModelFleetCatalog {
             quantization: "Q4_K_M",
             sizeBytes: 1_150_000_000,
             role: .chat,
-            description: "Optional release-baked Mouth artifact for user-facing responses when adapter loading is unavailable.",
+            description: "Optional release-baked Mouth artifact for user-facing responses in merged-artifact deployments.",
             tags: ["fleet-v1", "release-bake", "optional", "gguf", "mouth"]
         ),
         CatalogModel(
@@ -74,7 +74,7 @@ nonisolated enum LumenModelFleetCatalog {
             quantization: "Q4_K_M",
             sizeBytes: 1_150_000_000,
             role: .chat,
-            description: "Optional release-baked Mimicry artifact for style adaptation when adapter loading is unavailable.",
+            description: "Optional release-baked Mimicry artifact for style adaptation in merged-artifact deployments.",
             tags: ["fleet-v1", "release-bake", "optional", "gguf", "mimicry"]
         ),
         CatalogModel(
@@ -86,7 +86,7 @@ nonisolated enum LumenModelFleetCatalog {
             quantization: "Q4_K_M",
             sizeBytes: 1_150_000_000,
             role: .chat,
-            description: "Optional release-baked REM artifact for reflection and repair when adapter loading is unavailable.",
+            description: "Optional release-baked REM artifact for reflection and repair in merged-artifact deployments.",
             tags: ["fleet-v1", "release-bake", "optional", "gguf", "rem", "idle"]
         ),
     ]
@@ -141,8 +141,8 @@ nonisolated enum LumenModelFleetCatalog {
             quantization: "Q4_K_M",
             sizeBytes: 85_000_000,
             role: .embedding,
-            description: "Semantic memory fallback model for recall and codebase knowledge chunks.",
-            tags: ["fleet-v1", "memory", "embedding", "fallback", "tiny"]
+            description: "Semantic memory model for recall and codebase knowledge chunks.",
+            tags: ["fleet-v1", "memory", "embedding", "tiny"]
         )
     ]
 
@@ -156,8 +156,8 @@ nonisolated enum LumenModelFleetCatalog {
             quantization: "Q4_K_M",
             sizeBytes: 1_117_000_000,
             role: .chat,
-            description: "Recommended dedicated v1 orchestrator fallback while adapter-first role artifacts are evaluated.",
-            tags: ["fleet-v1", "cortex", "coder", "fallback"]
+            description: "Recommended dedicated v1 orchestrator while adapter-first role artifacts are evaluated.",
+            tags: ["fleet-v1", "cortex", "coder"]
         ),
         CatalogModel(
             id: "fleet-v1-phi3.5-mini-q4",
@@ -169,7 +169,7 @@ nonisolated enum LumenModelFleetCatalog {
             sizeBytes: 2_390_000_000,
             role: .chat,
             description: "Heavier idle-only reasoning model for advanced self-improvement cycles.",
-            tags: ["fleet-v1", "rem", "idle-only", "fallback"]
+            tags: ["fleet-v1", "rem", "idle-only"]
         )
     ]
 

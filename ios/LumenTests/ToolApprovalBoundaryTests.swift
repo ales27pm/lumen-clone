@@ -58,6 +58,8 @@ struct ToolApprovalBoundaryTests {
         #expect(alarmArgs["repeats"]?.type == "bool")
         #expect(triggerArgs["inMinutes"]?.type == "number")
         #expect(triggerArgs["intervalSeconds"]?.type == "number")
+        #expect(triggerArgs["schedule"]?.type == "enum")
+        #expect(triggerArgs["schedule"]?.allowedValues == ["absolute", "interval", "relative"])
     }
 
     @Test func finalizerRejectsApprovalToolObservationWithoutTrustedApproval() throws {

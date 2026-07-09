@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-nonisolated struct BackgroundToolBridgeAssessment: Sendable, Equatable {
+nonisolated struct BackgroundToolExecutionAssessment: Sendable, Equatable {
     enum Status: String, Sendable, Equatable {
         case runnable
         case notToolBacked
@@ -9,7 +9,7 @@ nonisolated struct BackgroundToolBridgeAssessment: Sendable, Equatable {
         case noRoutedTools
         case noBackgroundSafeRoutedTools
         case blockedByCurrentPolicy
-        case bridgeMappingUnavailable
+        case toolMappingUnavailable
     }
 
     let status: Status
@@ -41,8 +41,8 @@ nonisolated struct BackgroundToolBridgeAssessment: Sendable, Equatable {
             return "Background trigger skipped: no routed tool is allowed to run in background."
         case .blockedByCurrentPolicy:
             return "Background trigger skipped: routed background tools are blocked by current permissions or runtime policy."
-        case .bridgeMappingUnavailable:
-            return "Background trigger skipped: routed background tools are not available in the compatibility bridge."
+        case .toolMappingUnavailable:
+            return "Background trigger skipped: routed background tools are not available to the background tool runner."
         }
     }
 
@@ -63,16 +63,16 @@ nonisolated struct BackgroundToolBridgeAssessment: Sendable, Equatable {
 }
 
 @MainActor
-enum BackgroundToolBridgePolicy {
+enum BackgroundToolExecutionPolicy {
     static func assess(
         prompt: String,
         routing providedRouting: IntentRoutingDecision? = nil,
         modelContext: ModelContext?,
         toolRegistry: SecureToolRegistry? = nil,
         metricsStore: RuntimeMetricsStore? = nil
-    ) async -> BackgroundToolBridgeAssessment {
+    ) async -> BackgroundToolExecutionAssessment {
         let routing = providedRouting ?? IntentRouter.classify(prompt)
-        let routedIDs = BackgroundToolBridgeAssessment.sortedCanonicalIDs(Array(routing.allowedToolIDs))
+        let routedIDs = BackgroundToolExecutionAssessment.sortedCanonicalIDs(Array(routing.allowedToolIDs))
         guard IntentRouter.intentRequiresTool(routing) else {
             return .init(
                 status: .notToolBacked,
@@ -106,7 +106,7 @@ enum BackgroundToolBridgePolicy {
 
         let routedIDSet = Set(routedIDs)
         let registry = toolRegistry ?? .shared
-        let backgroundCapableIDs = BackgroundToolBridgeAssessment.sortedCanonicalIDs(
+        let backgroundCapableIDs = BackgroundToolExecutionAssessment.sortedCanonicalIDs(
             registry.definitions()
                 .filter { definition in
                     definition.supportsBackgroundExecution
@@ -126,9 +126,9 @@ enum BackgroundToolBridgePolicy {
             context: context,
             source: .backgroundTrigger
         )
-        let policyAllowedIDs = BackgroundToolBridgeAssessment.sortedCanonicalIDs(backgroundDefinitions.map(\.id))
-        let bridgedDefinitions = ToolSchemaBridge.toCatalogToolDefinitions(backgroundDefinitions)
-        let availableTools = bridgedDefinitions
+        let policyAllowedIDs = BackgroundToolExecutionAssessment.sortedCanonicalIDs(backgroundDefinitions.map(\.id))
+        let catalogDefinitions = ToolSchemaBridge.toCatalogToolDefinitions(backgroundDefinitions)
+        let availableTools = catalogDefinitions
             .filter { routedIDSet.contains(ToolRouteGuard.canonicalToolID($0.id)) }
             .reduce(into: [ToolDefinition]()) { output, tool in
                 let canonical = ToolRouteGuard.canonicalToolID(tool.id)
@@ -137,7 +137,7 @@ enum BackgroundToolBridgePolicy {
             }
             .sorted { $0.id < $1.id }
 
-        let status: BackgroundToolBridgeAssessment.Status
+        let status: BackgroundToolExecutionAssessment.Status
         if !availableTools.isEmpty {
             status = .runnable
         } else if Set(backgroundCapableIDs).intersection(routedIDSet).isEmpty {
@@ -145,7 +145,7 @@ enum BackgroundToolBridgePolicy {
         } else if Set(policyAllowedIDs).intersection(routedIDSet).isEmpty {
             status = .blockedByCurrentPolicy
         } else {
-            status = .bridgeMappingUnavailable
+            status = .toolMappingUnavailable
         }
 
         return .init(

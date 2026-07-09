@@ -102,7 +102,7 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .maps, allowedToolIDs: ["location.current"], requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["alarm", "set an alarm", "set alarm", "countdown", "timer", "snooze", "pause alarm", "resume alarm", "stop alarm", "cancel alarm", "alarm authorization"]) {
+        if matchesAny(text, ["alarm", "set an alarm", "set alarm", "countdown", "timer", "snooze", "pause alarm", "resume alarm", "stop alarm", "cancel alarm", "alarm authorization", "wake me", "wake us"]) {
             return IntentRoutingDecision(intent: .alarm, allowedToolIDs: alarmToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
@@ -550,7 +550,8 @@ nonisolated enum IntentRouter {
         if matchesAny(text, [
             "calendar", "create event", "create an event", "add event", "add an event",
             "new event", "calendar event", "at 5", "tomorrow at",
-            "list events", "upcoming events", "book an appointment", "schedule a meeting", "schedule an event"
+            "list events", "upcoming events", "next meeting", "schedule today", "appointments tomorrow",
+            "book an appointment", "schedule a meeting", "schedule an event", "schedule appointments"
         ]) {
             return true
         }

@@ -8,6 +8,17 @@ final class SecureToolRegistryTests: XCTestCase {
     }
 
     @MainActor
+    func testDuplicateToolIDsAreReportedWithoutCrashing() async {
+        let registry = SecureToolRegistry(tools: [
+            DuplicateToolForRegistryTest(),
+            DuplicateToolForRegistryTest()
+        ])
+
+        XCTAssertEqual(registry.duplicateDefinitionIDs(), ["duplicate.test"])
+        XCTAssertEqual(registry.definitions().map(\.id), ["duplicate.test"])
+    }
+
+    @MainActor
     func testBackgroundHidesSensitive() async {
         let ctx = ToolExecutionContext(isForeground: false, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: RuntimeMetricsStore.shared)
         let defs = await SecureToolRegistry.shared.availableDefinitions(context: ctx, source: .backgroundTrigger)
@@ -113,6 +124,30 @@ final class SecureToolRegistryTests: XCTestCase {
         }
     }
 
+    func testAlarmFailureMessagesAreSanitized() {
+        let messages = [
+            AlarmTools.authorizationFailureMessage(),
+            AlarmTools.readFailureMessage(),
+            AlarmTools.mutationFailureMessage(actionName: "cancel"),
+            AlarmTools.schedulingFailureMessage(),
+            AlarmTools.countdownFailureMessage()
+        ]
+
+        for message in messages {
+            XCTAssertTrue(message.localizedCaseInsensitiveContains("failed"))
+            XCTAssertFalse(message.localizedCaseInsensitiveContains("localizedDescription"))
+            XCTAssertFalse(message.localizedCaseInsensitiveContains("raw provider boom"))
+        }
+    }
+
+    func testHealthAuthorizationFailureMessageIsSanitized() {
+        let message = HealthTools.authorizationFailureMessage()
+
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("health"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("localizedDescription"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("raw provider boom"))
+    }
+
 
     func testMediaToolsAreNotBackgroundReadOnly() async {
         let definitions = await SecureToolRegistry.shared.definitions()
@@ -180,7 +215,7 @@ final class SecureToolRegistryTests: XCTestCase {
     func testLegacyBridgeMapsConfirmedApprovalToUserApprovedSource() async {
         let registry = SecureToolRegistry(tools: [CapturingApprovalTool()])
 
-        let result = await registry.executeLegacyTool(
+        let result = await registry.executeToolCommand(
             "capture.approval",
             arguments: AgentJSONArguments(stringDictionary: [:]),
             approval: .userApproved
@@ -193,7 +228,7 @@ final class SecureToolRegistryTests: XCTestCase {
     func testLegacyBridgeDoesNotTreatAutonomousExecutionAsApproval() async {
         let registry = SecureToolRegistry(tools: [CapturingApprovalTool()])
 
-        let result = await registry.executeLegacyTool(
+        let result = await registry.executeToolCommand(
             "capture.approval",
             arguments: AgentJSONArguments(stringDictionary: [:]),
             approval: .autonomous

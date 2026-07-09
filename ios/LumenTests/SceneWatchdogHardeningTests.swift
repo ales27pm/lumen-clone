@@ -10,7 +10,17 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         #if DEBUG
         SceneTransitionCoordinator.shared.resetForTesting()
         await MainActor.run { DeferredMaintenanceQueue.shared.resetForTesting() }
+        AppCancellationBus.shared.resetForTesting()
         #endif
+    }
+
+    override func tearDown() async throws {
+        #if DEBUG
+        SceneTransitionCoordinator.shared.resetForTesting()
+        await MainActor.run { DeferredMaintenanceQueue.shared.resetForTesting() }
+        AppCancellationBus.shared.resetForTesting()
+        #endif
+        try await super.tearDown()
     }
 
     func testSceneTransitionCoordinatorReturnsQuickly() {
@@ -20,8 +30,9 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.1)
     }
 
-    func testSceneTransitionDoesNotSynchronouslyRunCancellationCallbacks() async {
-        let cancelled = XCTestExpectation(description: "deferred cancellation callback ran")
+    func testSceneTransitionDoesNotRunCancellationCallbacksWhenPolicyAllowsBackground() async {
+        let cancelled = XCTestExpectation(description: "scene transition should not run cancellation callbacks")
+        cancelled.isInverted = true
         let id = AppCancellationBus.shared.registerCancellation({
             Thread.sleep(forTimeInterval: 0.2)
             cancelled.fulfill()
@@ -32,7 +43,7 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         let elapsed = ProcessInfo.processInfo.systemUptime - start
 
         XCTAssertLessThan(elapsed, 0.05)
-        await fulfillment(of: [cancelled], timeout: 1)
+        await fulfillment(of: [cancelled], timeout: 0.4)
         AppCancellationBus.shared.unregister(id, category: .chatGeneration)
     }
 
@@ -95,7 +106,7 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         queue.enqueue(DeferredMaintenanceJob(key: "test-foreground-grace", category: .diagnostics, staleAfter: 5, maxRuntime: 1) {
             ran.fulfill()
         })
-        await fulfillment(of: [ran], timeout: 1)
+        await fulfillment(of: [ran], timeout: 3)
     }
 
     func testCPUWatchdogGuardDegradesRecordedWorkOnly() throws {

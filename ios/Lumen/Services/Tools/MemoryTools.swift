@@ -9,19 +9,24 @@ enum MemoryTools {
         let k = MemoryKind(rawValue: kind) ?? .fact
         guard let container = SharedContainer.shared else { return "Memory unavailable." }
         let ctx = ModelContext(container)
-        do {
-            try await MemoryStore.remember(trimmed, kind: k, source: "agent", context: ctx)
-            return "Saved: \(trimmed)"
-        } catch {
-            return "Failed to save memory: \(error.localizedDescription)"
-        }
+        let result = await MemoryStore.rememberWithDiagnostics(trimmed, kind: k, source: "agent", context: ctx)
+        return saveMessage(from: result)
     }
 
     static func recall(query: String) async -> String {
         guard let container = SharedContainer.shared else { return "Memory unavailable." }
         let ctx = ModelContext(container)
-        let items = await MemoryStore.recall(query: query, context: ctx, limit: 5)
-        if items.isEmpty { return "No matching memories." }
+        let result = await MemoryStore.recallWithDiagnostics(query: query, context: ctx, limit: 5)
+        let items = result.items
+        if items.isEmpty {
+            if result.mode == "failed", let diagnostic = result.diagnostic {
+                return "Memory recall failed. Diagnostic: \(diagnostic)."
+            }
+            if let diagnostic = result.diagnostic, diagnostic != "empty_store" {
+                return "No matching memories. Diagnostic: \(diagnostic)."
+            }
+            return result.diagnostic == "empty_store" ? "No memories saved yet." : "No matching memories."
+        }
         return items.map { "• \($0.content)" }.joined(separator: "\n")
     }
 
@@ -31,14 +36,24 @@ enum MemoryTools {
         guard let container = SharedContainer.shared else { return "RAG store unavailable." }
         let ctx = ModelContext(container)
         let expandedQuery = expandRAGQueryIfNeeded(trimmed)
-        let results = await RAGEngine().retrieve(query: expandedQuery, limit: limit, context: ctx)
+        let retrieval = await RAGEngine().retrieveWithDiagnostics(query: expandedQuery, limit: limit, context: ctx)
+        let results = retrieval.results
         if results.isEmpty {
-            let counts = RAGStore.counts(context: ctx)
-            let totalIndexed = counts.values.reduce(0, +)
-            if totalIndexed == 0 {
-                return "No matching files found for '\(trimmed)'. Your local index appears empty. Import or create local files/notes, then run reindex files."
+            if retrieval.mode == "failed" || isFailureDiagnostic(retrieval.diagnostic) {
+                return "RAG search failed. Diagnostic: \(diagnosticText(retrieval.diagnostic))."
             }
-            return "No matching files found for '\(trimmed)'. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again."
+            let countResult = RAGStore.countsWithDiagnostics(context: ctx)
+            if countResult.mode == "failed" || isFailureDiagnostic(countResult.diagnostic) {
+                return "RAG search failed while checking the index. Diagnostic: \(diagnosticText(countResult.diagnostic))."
+            }
+            let totalIndexed = countResult.counts.values.reduce(0, +)
+            if totalIndexed == 0 {
+                return "No matching files found. Your local index appears empty. Import or create local files/notes, then run reindex files."
+            }
+            if let diagnostic = retrieval.diagnostic {
+                return "No matching files found. Search completed with diagnostic: \(diagnostic)."
+            }
+            return "No matching files found. Try a narrower query (file name, module name, or service/component keywords), or add more project notes before searching again."
         }
         return results.enumerated().map { idx, r in
             let kind = RAGSourceType(rawValue: r.source.type)?.label ?? r.source.type
@@ -63,11 +78,8 @@ enum MemoryTools {
         guard embeddingReady else {
             return "RAG indexing failed: embedding model is unavailable. Load a local embedding model, then run reindex files."
         }
-        let n = await RAGStore.indexImportedFiles(context: ctx)
-        if n == 0 {
-            return "RAG indexing failed: no chunks were indexed. Check embedding model readiness and imported file contents."
-        }
-        return "Indexed \(n) chunks from imported files."
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(context: ctx)
+        return ragIndexFilesMessage(from: result)
     }
 
     static func ragIndexPhotos(months: Int) async -> String {
@@ -77,8 +89,63 @@ enum MemoryTools {
         guard embeddingReady else {
             return "RAG photo indexing failed: embedding model is unavailable. Load a local embedding model, then try again."
         }
-        let n = await RAGStore.indexPhotos(monthsBack: max(1, months), context: ctx)
-        if n == 0 { return "Couldn't index photos (permission denied, empty library, or embedding failure)." }
-        return "Indexed \(n) monthly photo summaries."
+        let result = await RAGStore.indexPhotosWithDiagnostics(monthsBack: max(1, months), context: ctx)
+        return ragIndexPhotosMessage(from: result)
+    }
+
+    static func ragIndexFilesMessage(from result: RAGStore.IndexResult) -> String {
+        switch result.mode {
+        case .indexed:
+            return "Indexed \(result.indexedCount) chunks from imported files."
+        case .skipped:
+            return "RAG indexing skipped. Diagnostic: \(diagnosticText(result.diagnostic))."
+        case .partial:
+            return "RAG indexing partially completed: indexed \(result.indexedCount) chunks. Diagnostic: \(diagnosticText(result.diagnostic))."
+        case .failed:
+            return "RAG indexing failed. Diagnostic: \(diagnosticText(result.diagnostic))."
+        }
+    }
+
+    static func ragIndexPhotosMessage(from result: RAGStore.IndexResult) -> String {
+        switch result.mode {
+        case .indexed:
+            return "Indexed \(result.indexedCount) monthly photo summaries."
+        case .skipped:
+            return "RAG photo indexing skipped. Diagnostic: \(diagnosticText(result.diagnostic))."
+        case .partial:
+            return "RAG photo indexing partially completed: indexed \(result.indexedCount) monthly summaries. Diagnostic: \(diagnosticText(result.diagnostic))."
+        case .failed:
+            return "RAG photo indexing failed. Diagnostic: \(diagnosticText(result.diagnostic))."
+        }
+    }
+
+    static func saveMessage(from result: MemoryStore.RememberResult) -> String {
+        switch result.mode {
+        case "stored":
+            return "Saved memory."
+        case "skipped" where result.diagnostic == "duplicate_memory":
+            return "Memory already saved."
+        case "skipped" where result.diagnostic == "empty_content":
+            return "Need content."
+        case "skipped":
+            return "Memory save skipped. Diagnostic: \(diagnosticText(result.diagnostic))."
+        case "failed":
+            return "Memory save failed. Diagnostic: \(diagnosticText(result.diagnostic))."
+        default:
+            return "Memory save did not complete. Diagnostic: \(diagnosticText(result.diagnostic))."
+        }
+    }
+
+    static func diagnosticText(_ diagnostic: String?) -> String {
+        let trimmed = diagnostic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "unknown" : trimmed
+    }
+
+    private static func isFailureDiagnostic(_ diagnostic: String?) -> Bool {
+        guard let diagnostic else { return false }
+        return diagnostic.contains("fetch_failed")
+            || diagnostic.contains("persist_failed")
+            || diagnostic.contains("permission_denied")
+            || diagnostic.contains("corrupt")
     }
 }

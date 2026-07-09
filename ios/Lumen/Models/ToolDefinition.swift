@@ -5,21 +5,31 @@ nonisolated enum ToolArgumentValueType: String, Sendable {
     case string
     case number
     case bool
+    case array
+    case object
+    case enumeration = "enum"
 }
 
 nonisolated struct ToolArgumentDefinition: Hashable, Sendable {
     let name: String
     let type: ToolArgumentValueType
     let required: Bool
+    let allowedValues: Set<String>?
 
-    init(_ name: String, type: ToolArgumentValueType = .string, required: Bool = true) {
+    init(
+        _ name: String,
+        type: ToolArgumentValueType = .string,
+        required: Bool = true,
+        allowedValues: Set<String>? = nil
+    ) {
         self.name = name
         self.type = type
         self.required = required
+        self.allowedValues = allowedValues
     }
 
     var runtimeArgument: RuntimeToolArgument {
-        RuntimeToolArgument(name: name, type: type.rawValue, required: required)
+        RuntimeToolArgument(name: name, type: type.rawValue, required: required, allowedValues: allowedValues?.sorted())
     }
 }
 
@@ -190,7 +200,7 @@ private nonisolated enum ToolArgumentContractCatalog {
             return [
                 .init("title"),
                 .init("prompt"),
-                .init("schedule"),
+                .init("schedule", type: .enumeration, allowedValues: ["absolute", "interval", "relative"]),
                 .init("inMinutes", type: .number, required: false),
                 .init("atTime", required: false),
                 .init("intervalSeconds", type: .number, required: false),

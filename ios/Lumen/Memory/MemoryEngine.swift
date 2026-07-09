@@ -3,8 +3,19 @@ import SwiftData
 
 @MainActor
 final class MemoryEngine {
+    struct SearchResult {
+        let items: [MemoryItem]
+        let mode: String
+        let diagnostic: String?
+    }
+
     func search(query: String, limit: Int, context: ModelContext) async -> [MemoryItem] {
-        await MemoryStore.recall(query: query, context: context, limit: limit)
+        await searchWithDiagnostics(query: query, limit: limit, context: context).items
+    }
+
+    func searchWithDiagnostics(query: String, limit: Int, context: ModelContext) async -> SearchResult {
+        let result = await MemoryStore.recallWithDiagnostics(query: query, context: context, limit: limit)
+        return SearchResult(items: result.items, mode: result.mode, diagnostic: result.diagnostic)
     }
 
     func buildContext(query: String, budget: Int, context: ModelContext) -> MemoryContextResult {

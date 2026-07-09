@@ -239,6 +239,9 @@ nonisolated enum ImproveLoopSampleGate {
 
     private static func gateTrace(_ trace: AgentBehaviorTrace, sourceCommit: String?) -> ImproveLoopTrainingSample {
         let combined = [trace.promptPrefix, trace.rawOutputPrefix, trace.selectedToolID ?? "", trace.parseError ?? ""].joined(separator: "\n")
+        if trace.event == .toolAction, selectedToolIsAllowedAfterCanonicalization(trace) {
+            return makeTraceSample(trace, disposition: .regressionTest, type: .deterministicRegression, rejectionReason: nil, sourceCommit: sourceCommit)
+        }
         if let rejection = rejectionReason(for: combined) {
             return makeTraceSample(trace, disposition: .quarantined, type: sampleType(forRejection: rejection), rejectionReason: rejection, sourceCommit: sourceCommit)
         }
@@ -279,6 +282,13 @@ nonisolated enum ImproveLoopSampleGate {
             sourceCommit: sourceCommit,
             sourceTraceID: trace.id
         )
+    }
+
+    private static func selectedToolIsAllowedAfterCanonicalization(_ trace: AgentBehaviorTrace) -> Bool {
+        guard let selectedToolID = trace.selectedToolID else { return false }
+        let selected = ToolRouteGuard.canonicalToolID(selectedToolID)
+        let allowed = Set(trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
+        return allowed.contains(selected)
     }
 
     private static func gateStaticScenario(_ result: RuntimeScenarioResult, sourceCommit: String?) -> ImproveLoopTrainingSample {

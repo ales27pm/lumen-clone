@@ -11,6 +11,167 @@ struct AgentGroundingRegressionTests {
         "outlook.message.delete", "outlook.message.reply", "outlook.message.reply_all", "outlook.message.forward"
     ]
 
+    @Test func persistentAgentBehaviorTraceRedactsRawPromptOutputArgumentsAndPaths() {
+        let trace = AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            event: .toolAction,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            intent: "mail",
+            promptPrefix: "Email Sarah the launch password is swordfish.",
+            rawOutputPrefix: #"{"tool":"outlook.mail.send","arguments":{"body":"swordfish"}}"#,
+            selectedToolID: "outlook.mail.send",
+            toolArguments: ["body": "launch password is swordfish", "to": "sarah@example.com"],
+            allowedToolIDs: ["outlook.mail.send"],
+            requiresApproval: true,
+            approvalMode: "foreground",
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            baseModelPath: "/private/var/mobile/Containers/Data/model.gguf",
+            adapterPath: "/private/var/mobile/Containers/Data/adapter.gguf",
+            runtimePath: "/private/var/mobile/Containers/Data/model.gguf",
+            promptCharCount: 44
+        )
+
+        let redacted = trace.redactedForPersistentDiagnostics()
+
+        #expect(!redacted.promptPrefix.contains("swordfish"))
+        #expect(!redacted.rawOutputPrefix.contains("outlook.mail.send"))
+        #expect(!redacted.toolArguments.description.contains("sarah@example.com"))
+        #expect(!(redacted.baseModelPath ?? "").contains("/private"))
+        #expect(!(redacted.adapterPath ?? "").contains("/private"))
+        #expect(!(redacted.runtimePath ?? "").contains("/private"))
+        #expect(redacted.promptPrefix.contains("sha256="))
+        #expect(redacted.toolArguments["body"]?.contains("sha256=") == true)
+        #expect(redacted.selectedToolID == "outlook.mail.send")
+        #expect(redacted.promptCharCount == 44)
+    }
+
+    @Test func persistentAgentParseTracesRedactRawPromptAndModelOutput() {
+        let failure = AgentParseFailureTrace(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            parseError: "malformed_json",
+            modelName: "agent-json",
+            temperature: 0,
+            topP: 1,
+            maxTokens: 128,
+            stepIndex: 1,
+            systemPromptPrefix: "System prompt with private policy",
+            userTurnPrefix: "User asks about secret account 1234",
+            rawOutputPrefix: "Raw model output with secret account 1234",
+            streamedThoughtPrefix: "Hidden reasoning",
+            streamedFinalPrefix: "Visible final",
+            selectedJSONPrefix: #"{"arguments":{"body":"secret account 1234"}}"#,
+            prefixNoise: "prefix secret",
+            suffixNoise: "suffix secret"
+        )
+        let noise = AgentParseNoiseTrace(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            modelName: "agent-json",
+            temperature: 0,
+            topP: 1,
+            maxTokens: 128,
+            stepIndex: 1,
+            systemPromptPrefix: "System prompt with private policy",
+            userTurnPrefix: "User asks about secret account 1234",
+            rawOutputPrefix: "Raw model output with secret account 1234",
+            selectedJSONPrefix: #"{"arguments":{"body":"secret account 1234"}}"#,
+            prefixNoise: "prefix secret",
+            suffixNoise: "suffix secret"
+        )
+
+        let redactedFailure = failure.redactedForPersistentDiagnostics()
+        let redactedNoise = noise.redactedForPersistentDiagnostics()
+
+        #expect(!redactedFailure.systemPromptPrefix.contains("private policy"))
+        #expect(!redactedFailure.userTurnPrefix.contains("1234"))
+        #expect(!redactedFailure.rawOutputPrefix.contains("Raw model output"))
+        #expect(!(redactedFailure.selectedJSONPrefix ?? "").contains("secret account"))
+        #expect(redactedFailure.parseError == "malformed_json")
+        #expect(redactedFailure.rawOutputPrefix.contains("sha256="))
+        #expect(!redactedNoise.userTurnPrefix.contains("1234"))
+        #expect((redactedNoise.selectedJSONPrefix ?? "").contains("sha256="))
+    }
+
+    @Test func developerTraceCodecRedactsPromptsMemoryToolArgumentsAndAttachmentPathsBeforePersistence() throws {
+        let rawPath = "/private/var/mobile/Containers/Data/Application/secret-folder/launch-plan.txt"
+        let trace = DeveloperTrace(
+            conversationID: UUID(),
+            messageID: UUID(),
+            modelName: "chat",
+            systemPrompt: "System prompt with internal launch password",
+            developerPrompt: "Developer prompt with private policy",
+            userPrompt: "Summarize Sarah's launch plan and password.",
+            resolvedContext: [
+                TraceContextItem(
+                    role: "attachment",
+                    title: "launch-plan.txt",
+                    content: "Attachment contains the launch password.",
+                    source: rawPath,
+                    metadata: ["name": "launch-plan.txt", "path": rawPath]
+                )
+            ],
+            retrievedMemory: [
+                TraceMemoryItem(
+                    content: "Sarah password memory",
+                    scope: "conversation",
+                    authority: "referenceOnly",
+                    createdAt: nil,
+                    expiresAt: nil,
+                    source: rawPath,
+                    topic: "Sarah"
+                )
+            ],
+            toolPlan: [
+                TraceToolPlanItem(
+                    toolID: "outlook.mail.send",
+                    reason: "Email Sarah the launch password",
+                    requiresApproval: true,
+                    arguments: ["body": "launch password"]
+                )
+            ],
+            toolCalls: [
+                TraceToolCall(
+                    toolID: "outlook.mail.send",
+                    arguments: ["body": "launch password"],
+                    status: "success",
+                    result: "Sent to sarah@example.com"
+                )
+            ],
+            agentMessages: [
+                TraceAgentMessage(
+                    role: "assistant",
+                    content: "The launch password is swordfish.",
+                    toolID: nil,
+                    metadata: ["raw": "swordfish"]
+                )
+            ],
+            rawModelOutput: "Raw model output with swordfish",
+            reasoningText: "Hidden reasoning about swordfish",
+            visibleAnswer: "Visible answer with swordfish",
+            parserWarnings: ["warning mentions swordfish"],
+            tokenUsage: nil,
+            finishReason: "stop",
+            error: "error mentions swordfish"
+        )
+
+        let encoded = try #require(DeveloperTraceCodec.encode(trace))
+
+        #expect(!encoded.contains("swordfish"))
+        #expect(!encoded.contains("launch password"))
+        #expect(!encoded.contains("launch-plan.txt"))
+        #expect(!encoded.contains(rawPath))
+        #expect(encoded.contains("sha256="))
+        #expect(encoded.contains("outlook.mail.send"))
+        let decoded = try #require(DeveloperTraceCodec.decode(encoded))
+        #expect(decoded.userPrompt.contains("sha256="))
+        #expect(decoded.resolvedContext.first?.source?.contains("sha256=") == true)
+        #expect(decoded.toolCalls.first?.arguments["body"]?.contains("sha256=") == true)
+    }
+
     @MainActor
     @Test func runtimeAuditorHasNoUnmanifestedOutlookToolsWhenManifestContainsThem() async throws {
         let tools = Self.outlookTools.map { RuntimeToolDefinition(id: $0) }
@@ -92,7 +253,7 @@ struct AgentGroundingRegressionTests {
         let mailDraft = try #require(tools.first(where: { $0.id == "mail.draft" }))
         let mailArgs = Dictionary(uniqueKeysWithValues: mailDraft.arguments.map { ($0.name, $0) })
         #expect(mailArgs["to"]?.required == true)
-        #expect(mailArgs["subject"]?.required == true)
+        #expect(mailArgs["subject"]?.required == false)
         #expect(mailArgs["body"]?.required == true)
         #expect(mailArgs["recipient"]?.required == false)
         #expect(mailArgs["email"]?.required == false)
@@ -1615,6 +1776,36 @@ extension AgentGroundingRegressionTests {
         #expect(repaired.action.args["query"]?.stringValue == "Swift concurrency best practices")
     }
 
+    @Test func noisyActionTurnIsNotExecutableEvenWhenParserFindsAction() throws {
+        let raw = "Here is the JSON:\n{\"action\":{\"tool\":\"web.search\",\"args\":{\"query\":\"Swift concurrency\"}}}"
+        let parsed = AgentTurnParser.parse(raw)
+        let executable = AgentService.strictToolExecutableTurnForTests(parsed)
+
+        #expect(parsed.parseError == nil)
+        #expect(parsed.action?.tool == "web.search")
+        #expect(parsed.hadNoise)
+        #expect(executable.parseError == .noisyOutput)
+        #expect(executable.action == nil)
+    }
+
+    @Test func noisyMissingActionToolDoesNotRepairToAllowedTool() throws {
+        let raw = #"Here is the JSON: {"thought":"search","action":{"args":{"query":"Swift concurrency best practices"}}}"#
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for Swift concurrency best practices.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 128,
+            maxSteps: 2,
+            availableTools: ToolRegistry.all.filter { ToolRouteGuard.canonicalToolID($0.id) == "web.search" },
+            relevantMemories: []
+        )
+
+        #expect(AgentService.repairMissingToolActionForTests(raw: raw, req: req) == nil)
+    }
+
     @Test func missingActionToolDoesNotRepairWhenMultipleToolsAreAllowed() throws {
         let raw = #"{"thought":"search","action":{"args":{"query":"Swift concurrency best practices"}}}"#
         let req = AgentRequest(
@@ -1705,6 +1896,50 @@ extension AgentGroundingRegressionTests {
         #expect(prompt.contains("/no_think"))
     }
 
+    @Test func firstToolRequiredAgentJSONTurnUsesActionOnlySchema() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "What is the weather here and should I carry an umbrella?",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 384,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+
+        let schema = AgentService.structuredAgentResponseFormatSchemaForTests(req: req)
+
+        #expect(schema == AgentService.structuredAgentActionResponseSchema)
+        #expect(schema.contains(#""required":["action"]"#))
+        #expect(!schema.contains(#""oneOf""#))
+        #expect(!schema.contains(#""final""#))
+    }
+
+    @Test func directChatAgentJSONTurnWithoutToolsUsesFinalOnlySchema() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Explain precision and recall in plain English.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 384,
+            maxSteps: 3,
+            availableTools: [],
+            relevantMemories: []
+        )
+
+        let schema = AgentService.structuredAgentResponseFormatSchemaForTests(req: req)
+
+        #expect(schema == AgentService.structuredAgentFinalResponseSchema)
+        #expect(schema.contains(#""required":["final"]"#))
+        #expect(!schema.contains(#""oneOf""#))
+        #expect(!schema.contains(#""action""#))
+    }
+
     @Test func agentJSONIncompleteOutputRetryPromptRequiresFreshValidJSONOnly() {
         let firstTurn = "User request:\nSet a reminder for 6 PM.\n\nEmit the first JSON object now. Choose either action or final."
         let raw = "<think>\n</think>\n{\""
@@ -1769,6 +2004,71 @@ extension AgentGroundingRegressionTests {
         #expect(prompt.contains(#""oneOf""#))
         #expect(prompt.contains(#""action""#))
         #expect(prompt.contains(#""final""#))
+        #expect(prompt.contains("/no_think"))
+    }
+
+    @Test func agentJSONMissingDecisionRetryPromptForcesActionOnly() {
+        let firstTurn = "User request:\nWhat is the weather here?\n\nEmit the first JSON object now. Choose either action or final."
+        let raw = "{\n}\n"
+
+        let retryTurn = AgentService.agentJSONMissingDecisionRetryUserTurnForTests(
+            from: firstTurn,
+            rawOutput: raw
+        )
+
+        #expect(retryTurn.contains("User request:"))
+        #expect(retryTurn.contains("What is the weather here?"))
+        #expect(retryTurn.contains("no action or final"))
+        #expect(retryTurn.contains("requires a tool action before any final answer"))
+        #expect(retryTurn.contains(#"{"action":{"tool":"<allowed tool id>","args":{}}}"#))
+        #expect(retryTurn.contains("Do not emit {}, final, prose"))
+        #expect(retryTurn.contains("Output JSON only"))
+    }
+
+    @Test func agentJSONMissingDecisionRetryRequestUsesActionOnlySchemaAndFreshID() async {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "What is the weather here and should I carry an umbrella?",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 384,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all,
+            relevantMemories: []
+        )
+        let systemPrompt = await AgentService.shared.structuredSystemPromptForTests(req: req)
+        let userTurn = await AgentService.shared.structuredAgentUserTurnForTests(req: req)
+        let base = GenerateRequest(
+            systemPrompt: systemPrompt,
+            history: [],
+            userMessage: userTurn,
+            temperature: 0.2,
+            topP: 0.9,
+            repetitionPenalty: 1,
+            maxTokens: 512,
+            modelName: "agent-json",
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentActionResponseSchema)
+        )
+
+        let retry = AgentService.agentJSONMissingDecisionRetryRequestForTests(
+            from: base,
+            userTurn: base.userMessage,
+            rawOutput: "{\n}\n"
+        )
+        let result = await AppLlamaService.shared.buildMessagesForTesting(req: retry, contextSize: 2048, slot: .executor)
+        let prompt = result.messages.map(\.content).joined(separator: "\n")
+
+        #expect(retry.id != base.id)
+        #expect(retry.responseFormat == .constrainedJSON(schema: AgentService.structuredAgentActionResponseSchema))
+        #expect(retry.temperature <= 0.02)
+        #expect(retry.topP <= 0.35)
+        #expect(prompt.contains("Previous live agent-json attempt emitted a JSON object with no action or final"))
+        #expect(prompt.contains("This turn requires a tool action"))
+        #expect(prompt.contains(#""required":["action"]"#))
+        #expect(!prompt.contains(#""oneOf""#))
         #expect(prompt.contains("/no_think"))
     }
 

@@ -499,16 +499,16 @@ nonisolated enum InAppDatasetPackageExporter {
 
     private static func exportTrace(_ trace: AgentBehaviorTrace) -> InAppDatasetTraceExport {
         InAppDatasetTraceExport(
-            id: trace.id,
+            id: redactedTraceID(for: trace),
             createdAt: trace.createdAt,
             event: trace.event,
             slot: safeCode(trace.slot),
             stage: safeCode(trace.stage),
             scenarioID: trace.scenarioID.map { sanitizedSnippet($0, limit: 160) },
-            e2eRunID: trace.e2eRunID,
-            agentRunID: trace.agentRunID,
-            conversationID: trace.conversationID,
-            turnID: trace.turnID,
+            e2eRunID: nil,
+            agentRunID: nil,
+            conversationID: nil,
+            turnID: nil,
             intent: trace.intent.map(safeCode),
             promptPrefix: sanitizedSnippet(trace.promptPrefix),
             rawOutputPrefix: sanitizedSnippet(trace.rawOutputPrefix),
@@ -561,24 +561,38 @@ nonisolated enum InAppDatasetPackageExporter {
             finalizerAccepted: trace.finalizerAccepted,
             finalizerRejectionReason: trace.finalizerRejectionReason.map(safeCode),
             finalValidatorAcceptedCandidate: trace.finalValidatorAcceptedCandidate,
-            finalValidatorReplacementSource: trace.finalValidatorReplacementSource.map(safeCode),
+            finalValidatorReplacementSource: trace.finalValidatorReplacementSource.map(safeIdentifier),
             finalValidatorRejectionReason: trace.finalValidatorRejectionReason.map(safeCode),
             selfModel: redactedSelfModelSummary(trace.selfModel)
         )
+    }
+
+    private static func redactedTraceID(for trace: AgentBehaviorTrace) -> UUID {
+        let seed = [
+            trace.createdAt.timeIntervalSince1970.description,
+            trace.event.rawValue,
+            trace.slot,
+            trace.stage,
+            trace.selectedToolID ?? "",
+            trace.modelIdentifier ?? ""
+        ].joined(separator: "|")
+        let hex = RuntimeFallbackLogger.promptHash(seed)
+        let prefix = String(hex.prefix(12)).padding(toLength: 12, withPad: "0", startingAt: 0)
+        return UUID(uuidString: "00000000-0000-4000-8000-\(prefix)") ?? UUID(uuidString: "00000000-0000-4000-8000-000000000000")!
     }
 
     private static func redactedSelfModelSummary(_ summary: AgentBehaviorTrace.SelfModelDecisionSummary?) -> AgentBehaviorTrace.SelfModelDecisionSummary? {
         guard let summary else { return nil }
         return AgentBehaviorTrace.SelfModelDecisionSummary(
             included: summary.included,
-            schemaVersion: summary.schemaVersion.map(safeCode),
-            mode: summary.mode.map(safeCode),
-            activeSlot: summary.activeSlot.map(safeCode),
-            sourceIDs: summary.sourceIDs.map { sanitizedSnippet($0, limit: 120) },
-            runtimeEvidenceSourceLayer: summary.runtimeEvidenceSourceLayer.map(safeCode),
+            schemaVersion: summary.schemaVersion.map(safeIdentifier),
+            mode: summary.mode.map(safeIdentifier),
+            activeSlot: summary.activeSlot.map(safeIdentifier),
+            sourceIDs: summary.sourceIDs.map(safeIdentifier),
+            runtimeEvidenceSourceLayer: summary.runtimeEvidenceSourceLayer.map(safeIdentifier),
             selectedToolID: summary.selectedToolID.map(ToolRouteGuard.canonicalToolID),
             requiresApproval: summary.requiresApproval,
-            approvalMode: summary.approvalMode.map(safeCode)
+            approvalMode: summary.approvalMode.map(safeIdentifier)
         )
     }
 

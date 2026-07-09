@@ -273,6 +273,8 @@ struct AddMemorySheet: View {
     @State private var kind: MemoryKind = .fact
     @State private var topic: String = ""
     @State private var pinned: Bool = false
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -295,24 +297,20 @@ struct AddMemorySheet: View {
                 Section {
                     Toggle("Pin this memory", isOn: $pinned)
                 }
+                if let saveError {
+                    Section {
+                        Text(saveError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
                 Section {
                     Button("Save") {
                         Task {
-                            try? await MemoryStore.remember(
-                                content,
-                                kind: kind,
-                                source: "manual",
-                                topic: topic.isEmpty ? nil : topic,
-                                context: modelContext
-                            )
-                            if pinned, let saved = try? modelContext.fetch(FetchDescriptor<MemoryItem>()).first(where: { $0.content == content.trimmingCharacters(in: .whitespaces) }) {
-                                saved.isPinned = true
-                                try? modelContext.save()
-                            }
-                            dismiss()
+                            await saveMemory()
                         }
                     }
-                    .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
             .navigationTitle("Add Memory")
@@ -320,8 +318,48 @@ struct AddMemorySheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
             }
         }
+    }
+
+    @MainActor
+    private func saveMemory() async {
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContent.isEmpty else { return }
+        isSaving = true
+        saveError = nil
+        defer { isSaving = false }
+
+        let result = await MemoryStore.rememberWithDiagnostics(
+            trimmedContent,
+            kind: kind,
+            source: "manual",
+            topic: topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : topic.trimmingCharacters(in: .whitespacesAndNewlines),
+            context: modelContext
+        )
+        guard result.mode != "failed" else {
+            saveError = "Could not save memory. Diagnostic: \(result.diagnostic ?? "unknown")."
+            return
+        }
+
+        if pinned {
+            do {
+                let saved = try modelContext.fetch(FetchDescriptor<MemoryItem>()).first { item in
+                    item.content.caseInsensitiveCompare(trimmedContent) == .orderedSame
+                }
+                guard let saved else {
+                    saveError = "Memory saved, but pinning failed. Diagnostic: saved_memory_not_found."
+                    return
+                }
+                saved.isPinned = true
+                try modelContext.save()
+            } catch {
+                saveError = "Memory saved, but pinning failed. Diagnostic: pin_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))."
+                return
+            }
+        }
+        dismiss()
     }
 }

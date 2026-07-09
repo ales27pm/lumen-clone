@@ -6,7 +6,7 @@
 bash scripts/check-lumen-integration-gate.sh
 bash scripts/check-ios-build-readiness.sh
 bash scripts/validate_lumen_ios.sh
-RUN_SIMULATOR_TESTS=1 TEST_TIMEOUT_SECONDS=900 bash scripts/validate_lumen_ios.sh
+RUN_SIMULATOR_TESTS=1 TEST_TIMEOUT_SECONDS=2400 bash scripts/validate_lumen_ios.sh
 bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/AgentGroundingRegressionTests
 python3 -m lumen_manifest_crawler framework status --root .
 python3 -m lumen_manifest_crawler framework plan --root .
@@ -19,7 +19,8 @@ python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent
 - **Portable validation** is static-source safe and works in non-git ZIP/export, Linux/Codex, and macOS environments. It can skip Git-only and Xcode-only checks with explicit reasons.
 - **Local validation** adds repo-aware checks such as `git diff --check` when a git worktree is present.
 - **Release-candidate validation** requires `xcodebuild` and `scripts/validate_lumen_ios.sh`. By default this performs `build-for-testing` on a generic iOS Simulator destination with minimal AgentGrounding resources and skips simulator XCTest execution, because full simulator handoff is not deterministic on every Xcode/CoreSimulator stack. If Xcode is unavailable, the report must say skipped or failed. It must not claim compile validation passed.
-- **Simulator XCTest validation** is opt-in. Use `RUN_SIMULATOR_TESTS=1` for the full validation script or `scripts/run_focused_simulator_tests.sh` for a pinned focused test. Focused simulator runs use a reusable warmed simulator by default, minimal AgentGrounding resources, a focused `.xctestrun`, disabled parallel workers, and bounded boot/test phases. Set `PREWARM_ONLY=1` to create/boot the reusable simulator without running tests. Set `USE_DISPOSABLE_SIMULATOR=1` only when isolation is worth paying the first-boot migration cost. The focused runner accepts normal `bootstatus` completion or, when `bootstatus` stalls at System App, a Booted device with SpringBoard and backboardd running.
+- **Simulator XCTest validation** is opt-in. Use `RUN_SIMULATOR_TESTS=1` for the full validation script or `scripts/run_focused_simulator_tests.sh` for a pinned focused test. Focused simulator runs use the dedicated `Lumen Focused Test iPhone` simulator by default, minimal AgentGrounding resources, a focused `.xctestrun`, disabled parallel workers, and bounded boot/test phases. Set `PREWARM_ONLY=1` to create/boot the reusable simulator without running tests. Set `USE_DISPOSABLE_SIMULATOR=1` only when isolation is worth paying the first-boot migration cost. The focused runner accepts normal `bootstatus` completion or, when `bootstatus` stalls at System App, a Booted device with SpringBoard and backboardd running.
+- **Optimized simulator reruns** should reuse compiled products. Run `build-for-testing` once, locate the produced `.xctestrun`, then use `xcodebuild test-without-building -xctestrun ... -only-testing:LumenTests/<Suite>` for focused reruns. Do not recompile just to rerun a narrow simulator suite.
 - **CoreSimulator runtime health** matters. On this host the recurring focused-runner blocker was CoreSimulator runtime/device readiness, visible as simulator-runtime `Info.plist missing` lines, slow MobileInstallation `Preflight/Patch` timings, and fresh simulators spending more than 7 minutes in `bootstatus` migration before XCTest could start. `simctl runtime list -v`, `simctl runtime verify`, and direct `codesign --verify` can disagree on cryptex-mounted simulator runtimes, so the focused runner pins an installed runtime and treats a Booted device with SpringBoard and backboardd running as usable even when `bootstatus` does not reach terminal readiness. Runtime cleanup, `xcodebuild -downloadPlatform iOS`, dyld-cache rebuilds, prewarming a reusable simulator, and attaching Simulator.app before `bootstatus` are host repair tools before treating simulator XCTest timeout as an app regression.
 - **Runtime validation** comes from exported runtime audit/TestFlight/E2E evidence. Missing runtime evidence is not a runtime pass, and simulator XCTest success is not a substitute for live runtime evidence.
 - **Training/HF validation** is opt-in and never runs by default.
@@ -43,6 +44,13 @@ xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS
 xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=iPhone 16' test CODE_SIGNING_ALLOWED=NO
 ```
 
+On this host, prefer the dedicated simulator when it is available:
+
+```bash
+xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO
+bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/<SuiteName>
+```
+
 Release submission validation also requires credentialed or physical-device checks:
 
 - signed archive and export
@@ -54,6 +62,25 @@ Release submission validation also requires credentialed or physical-device chec
 - live RAG indexing and search
 - live memory extraction and storage
 - voice/AppIntent flows that are enabled in the submitted build
+
+## App Store Connect Submission Evidence
+
+Use the repo-native submission lane only when explicitly requested:
+
+```bash
+bash scripts/build_and_submit_appstoreconnect.sh
+```
+
+Before archiving, confirm `CURRENT_PROJECT_VERSION` in `ios/Lumen.xcodeproj/project.pbxproj` is higher than the latest uploaded build number or provide a fresh timestamp-style override accepted by the release lane. After upload, require all of these before documenting success:
+
+- archive completed with `** ARCHIVE SUCCEEDED **`
+- export completed with `** EXPORT SUCCEEDED **`
+- archived and exported `CFBundleVersion` match the intended build number
+- entitlement checks passed for the archive and exported IPA
+- upload output contains `UPLOAD SUCCEEDED with no errors`
+- upload output includes a `Delivery UUID`
+
+If the upload log contains `ERROR:`, `Failed to upload`, `ENTITY_ERROR`, or a duplicate-build/version rejection, document the submission as failed and fix the root cause before retrying.
 
 ## Failure Flags
 

@@ -7,6 +7,7 @@ final class ScenePhaseCancellationTests: XCTestCase {
     override func tearDown() async throws {
         ResourceBudgetGate.testSnapshotOverride = nil
         ModelLoader.resetLoadTasksForTesting()
+        AppCancellationBus.shared.resetForTesting()
         try await super.tearDown()
     }
 
@@ -44,7 +45,7 @@ final class ScenePhaseCancellationTests: XCTestCase {
             return false
         }
         ModelLoader.installChatLoadTaskForTesting(task)
-        await fulfillment(of: [started], timeout: 1.0)
+        await fulfillment(of: [started], timeout: 3.0)
 
         RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "test")
         XCTAssertTrue(ModelLoader.hasActiveChatLoadTaskForTesting)

@@ -1,18 +1,114 @@
 import Foundation
 
 nonisolated enum ModelStorage {
-    enum StorageError: Error, Equatable {
+    struct ModelFilesResult {
+        let directory: URL?
+        let files: [URL]
+        let mode: String
+        let diagnostic: String?
+    }
+
+    enum StorageError: LocalizedError, Equatable {
         case documentDirectoryUnavailable
         case persistentDirectoryUnavailable
+        case directoryCreationFailed(String)
+        case contentsUnavailable(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .documentDirectoryUnavailable:
+                return "The documents directory is unavailable."
+            case .persistentDirectoryUnavailable:
+                return "No persistent app data directory is available."
+            case .directoryCreationFailed(let path):
+                return "Could not create the model directory at \(path)."
+            case .contentsUnavailable:
+                return "Could not list model files."
+            }
+        }
     }
 
     static func modelsDirectoryURL(fileManager: FileManager = .default) -> URL {
-        guard let base = try? persistentBaseDirectoryURL(fileManager: fileManager) else {
-            preconditionFailure("ModelStorage requires a persistent app data directory")
+        guard let directory = try? modelsDirectoryURLOrThrow(fileManager: fileManager) else {
+            return unavailableModelsDirectoryURL(fileManager: fileManager)
         }
-        let directory = base.appendingPathComponent("Models", isDirectory: true)
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    static func modelsDirectoryURLOrThrow(fileManager: FileManager = .default) throws -> URL {
+        let base = try persistentBaseDirectoryURL(fileManager: fileManager)
+        return try modelsDirectoryURL(base: base, fileManager: fileManager)
+    }
+
+    static func modelFilesWithDiagnostics(fileManager fm: FileManager = .default) -> ModelFilesResult {
+        modelFilesWithDiagnostics(
+            modelsDirectory: { try modelsDirectoryURLOrThrow(fileManager: fm) },
+            contents: { directory in
+                try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            }
+        )
+    }
+
+    static func modelFilesWithDiagnosticsForTests(
+        modelsDirectory: () throws -> URL,
+        contents: (URL) throws -> [URL]
+    ) -> ModelFilesResult {
+        modelFilesWithDiagnostics(modelsDirectory: modelsDirectory, contents: contents)
+    }
+
+    static func modelsDirectoryURLOrThrow(
+        documentDirectories: [URL],
+        applicationSupportDirectories: [URL],
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        let base = try persistentBaseDirectoryURL(
+            documentDirectories: documentDirectories,
+            applicationSupportDirectories: applicationSupportDirectories
+        )
+        return try modelsDirectoryURL(base: base, fileManager: fileManager)
+    }
+
+    private static func modelsDirectoryURL(base: URL, fileManager: FileManager) throws -> URL {
+        let directory = base.appendingPathComponent("Models", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            throw StorageError.directoryCreationFailed(directory.path)
+        }
+        return directory
+    }
+
+    private static func modelFilesWithDiagnostics(
+        modelsDirectory: () throws -> URL,
+        contents: (URL) throws -> [URL]
+    ) -> ModelFilesResult {
+        let directory: URL
+        do {
+            directory = try modelsDirectory()
+        } catch {
+            return ModelFilesResult(
+                directory: nil,
+                files: [],
+                mode: "failed",
+                diagnostic: "models_directory_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            )
+        }
+        do {
+            let files = try contents(directory)
+            return ModelFilesResult(
+                directory: directory,
+                files: files,
+                mode: "loaded",
+                diagnostic: files.isEmpty ? "empty_models_directory" : nil
+            )
+        } catch {
+            return ModelFilesResult(
+                directory: directory,
+                files: [],
+                mode: "failed",
+                diagnostic: "models_list_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            )
+        }
     }
 
     static func persistentBaseDirectoryURL(fileManager: FileManager = .default) throws -> URL {
@@ -40,8 +136,21 @@ nonisolated enum ModelStorage {
     }
 
     static func resumeDirectoryURL(fileManager: FileManager = .default) -> URL {
-        let directory = modelsDirectoryURL(fileManager: fileManager).appendingPathComponent(".resume", isDirectory: true)
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard let directory = try? resumeDirectoryURLOrThrow(fileManager: fileManager) else {
+            return unavailableModelsDirectoryURL(fileManager: fileManager)
+                .appendingPathComponent(".resume", isDirectory: true)
+        }
+        return directory
+    }
+
+    static func resumeDirectoryURLOrThrow(fileManager: FileManager = .default) throws -> URL {
+        let directory = try modelsDirectoryURLOrThrow(fileManager: fileManager)
+            .appendingPathComponent(".resume", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            throw StorageError.directoryCreationFailed(directory.path)
+        }
         return directory
     }
 
@@ -68,5 +177,11 @@ nonisolated enum ModelStorage {
         }
 
         return storedURL
+    }
+
+    private static func unavailableModelsDirectoryURL(fileManager: FileManager) -> URL {
+        fileManager.temporaryDirectory
+            .appendingPathComponent("LumenPersistentDirectoryUnavailable", isDirectory: true)
+            .appendingPathComponent("Models", isDirectory: true)
     }
 }

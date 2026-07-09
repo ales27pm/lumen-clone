@@ -12,7 +12,7 @@ from typing import Any
 
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ValidationFailure, ValidationReport, ValidationWarning
 
-DEFAULT_SUPPORTED_JSON_TYPES = {"string", "double", "int", "bool", "array", "object", "null", "number"}
+DEFAULT_SUPPORTED_JSON_TYPES = {"string", "double", "int", "bool", "array", "object", "null", "number", "enum"}
 VAGUE_TYPES = {"any", "unknown", "dictionary", "dict"}
 SUPPORTED_PERMISSION_KINDS = {"calendar", "reminders", "contacts", "location", "microphone", "speech", "camera", "photos", "motion", "health", "notifications", "alarms"}
 SUPPORTED_CONFIRMATION_MODES = {"none", "userApproval"}

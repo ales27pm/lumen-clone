@@ -3,8 +3,8 @@ import XCTest
 
 @MainActor
 final class DiagnosticsProviderTests: XCTestCase {
-    func testCollectReturnsStructuredSnapshots() async {
-        let snap = await DiagnosticsProvider().collect()
+    func testCachedSnapshotReturnsStructuredSnapshots() {
+        let snap = DiagnosticsProvider().cachedSnapshot()
         XCTAssertFalse(snap.permissions.domains.isEmpty)
         XCTAssertFalse(snap.build.bundleIdentifier.isEmpty)
         XCTAssertFalse(snap.build.bundleVersion.isEmpty)

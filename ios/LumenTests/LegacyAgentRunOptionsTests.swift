@@ -12,4 +12,15 @@ final class LegacyAgentRunOptionsTests: XCTestCase {
         XCTAssertTrue(o.preventDoubleGrounding)
         XCTAssertFalse(o.diagnosticsEnabled)
     }
+
+    func testDeterministicCompatibilityExecutionIsDebugOnly() {
+        let o = LegacyAgentRunOptions.default
+        #if DEBUG
+        XCTAssertTrue(o.allowsDeterministicCompatibilityExecution)
+        XCTAssertTrue(o.allowsParseFailureDeterministicRecoveryExecution)
+        #else
+        XCTAssertFalse(o.allowsDeterministicCompatibilityExecution)
+        XCTAssertFalse(o.allowsParseFailureDeterministicRecoveryExecution)
+        #endif
+    }
 }
