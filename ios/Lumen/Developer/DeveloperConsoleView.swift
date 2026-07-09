@@ -40,6 +40,7 @@ struct DeveloperConsoleView: View {
             .padding(.horizontal, 20)
             .padding(.top, 14)
             .padding(.bottom, 28)
+            .accessibilityIdentifier("developerConsole.root")
         }
         .scrollIndicators(.visible)
         .scrollContentBackground(.hidden)
@@ -269,6 +270,7 @@ private struct DeveloperRunDashboard: View {
                 )
             }
         }
+        .accessibilityIdentifier("developerConsole.runDashboard")
     }
 
     private func isComplete(_ action: DeveloperWorkflowAction) -> Bool {
@@ -301,6 +303,7 @@ private struct DeveloperTelemetryDashboard: View {
             DeveloperSectionHeader(title: "Live Surfaces", subtitle: "Open the runtime tools that produce the dashboard signals.")
             DeveloperSurfaceGrid()
         }
+        .accessibilityIdentifier("developerConsole.telemetryDashboard")
     }
 }
 
@@ -320,6 +323,7 @@ private struct DeveloperE2ECommandCenter: View {
                 title: "Complete E2E Tests",
                 subtitle: "Run standard and training validation from the canonical runner, then export the live E2E JSON evidence layer."
             )
+            .accessibilityIdentifier("developerConsole.completeE2EHeader")
 
             DeveloperE2ESummaryPanel(model: model)
 
@@ -663,6 +667,7 @@ private struct DeveloperReportsSection: View {
                 }
             }
         }
+        .accessibilityIdentifier("developerConsole.reports")
     }
 }
 
@@ -697,26 +702,31 @@ private struct DeveloperSurfaceGrid: View {
             } label: {
                 DeveloperSurfaceTile(title: "Control Tower", subtitle: "Workflow timeline", systemImage: "scope", tint: Theme.accent)
             }
+            .accessibilityIdentifier("developerConsole.surface.controltower")
             NavigationLink {
                 DiagnosticsView()
             } label: {
                 DeveloperSurfaceTile(title: "Diagnostics", subtitle: "Device state", systemImage: "stethoscope", tint: .cyan)
             }
+            .accessibilityIdentifier("developerConsole.surface.diagnostics")
             NavigationLink {
                 E2ETestRunnerView(initialRunMode: .standard)
             } label: {
                 DeveloperSurfaceTile(title: "E2E Tests", subtitle: "Live suites", systemImage: "testtube.2", tint: .green)
             }
+            .accessibilityIdentifier("developerConsole.surface.e2etests")
             NavigationLink {
                 DeveloperGroundingDestination()
             } label: {
                 DeveloperSurfaceTile(title: "Grounding", subtitle: "Evidence audit", systemImage: "point.3.connected.trianglepath.dotted", tint: .orange)
             }
+            .accessibilityIdentifier("developerConsole.surface.grounding")
             NavigationLink {
                 DeveloperRuntimeDestination()
             } label: {
                 DeveloperSurfaceTile(title: "Runtime", subtitle: "Meters", systemImage: "gauge.with.dots.needle.50percent", tint: .purple)
             }
+            .accessibilityIdentifier("developerConsole.surface.runtime")
         }
         .buttonStyle(.plain)
     }
@@ -1116,6 +1126,11 @@ private struct DeveloperReportButton: View {
             .dashboardCard(cornerRadius: 16)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("developerConsole.report.\(Self.identifierSuffix(for: title))")
+    }
+
+    private static func identifierSuffix(for title: String) -> String {
+        title.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 }
 
