@@ -167,8 +167,42 @@ final class BackgroundOrchestrator {
         guard await continueProcessing(before: .ragMaintenance, deadline: deadline) else { return }
         await runRAGMaintenanceIfAllowed()
 
+        guard await continueProcessing(before: .selfImprovement, deadline: deadline) else { return }
+        await runSelfImprovementIfAllowed(until: deadline)
+
         guard await continueProcessing(before: .modelHousekeeping, deadline: deadline) else { return }
         await runModelHousekeepingIfAllowed()
+    }
+
+    func runSelfImprovementIfAllowed(until deadline: Date) async {
+        let decision = maintenanceDecision(taskKind: .selfImprovement, estimatedCost: 2)
+        guard decision.allow else {
+            await appendMetric(
+                taskKind: .selfImprovement,
+                policySummary: "skipped: \(decision.denyReason ?? "background policy denied")",
+                success: true,
+                errorCode: "background_policy_denied"
+            )
+            return
+        }
+        guard let container = SharedContainer.shared else {
+            await appendSharedContainerUnavailable(taskKind: .selfImprovement)
+            return
+        }
+        let context = ModelContext(container)
+        let outcome = await SelfImprovementLoop.shared.run(
+            trigger: .backgroundProcessing,
+            context: context,
+            deadline: deadline
+        )
+        if case .failed(let code) = outcome {
+            await appendMetric(
+                taskKind: .selfImprovement,
+                policySummary: "self-improvement failed",
+                success: false,
+                errorCode: code
+            )
+        }
     }
 
     private func handleBackgroundTask(_ task: BGTask, runProcessingWork: Bool) async {

@@ -33,6 +33,14 @@ final class BackgroundTaskPolicyTests: XCTestCase {
         XCTAssertEqual(d.maxSteps, 1)
     }
 
+    func testBackgroundSelfImprovementAllowedWithoutModelLoading() {
+        let d = BackgroundTaskPolicy.decide(.init(taskKind: .selfImprovement, lowPowerMode: false, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 2))
+        XCTAssertTrue(d.allow)
+        XCTAssertFalse(d.allowModelLoading)
+        XCTAssertEqual(d.maxSteps, 3)
+        XCTAssertEqual(d.maxTokens, 0)
+    }
+
     func testLowPowerDeniesBackgroundMaintenanceEvenWithoutNetwork() {
         let d = BackgroundTaskPolicy.decide(.init(taskKind: .memoryConsolidation, lowPowerMode: true, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 2))
         XCTAssertFalse(d.allow)
@@ -104,17 +112,19 @@ final class BackgroundTaskPolicyTests: XCTestCase {
 
         await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(1))
 
-        let metrics = try await store.recentMetrics(limit: 3)
+        let metrics = try await store.recentMetrics(limit: 4)
         XCTAssertEqual(metrics.map(\.taskKind), [
             BackgroundTaskKind.memoryConsolidation.rawValue,
             BackgroundTaskKind.ragMaintenance.rawValue,
+            BackgroundTaskKind.selfImprovement.rawValue,
             BackgroundTaskKind.modelHousekeeping.rawValue
         ])
         XCTAssertEqual(metrics[0].errorCode, "background_policy_denied")
         XCTAssertEqual(metrics[1].errorCode, "background_policy_denied")
-        XCTAssertNil(metrics[2].errorCode)
-        XCTAssertTrue(metrics[2].success)
-        XCTAssertEqual(metrics[2].policySummary, "optional chat slot cleanup; unloaded=none")
+        XCTAssertEqual(metrics[2].errorCode, "background_policy_denied")
+        XCTAssertNil(metrics[3].errorCode)
+        XCTAssertTrue(metrics[3].success)
+        XCTAssertEqual(metrics[3].policySummary, "optional chat slot cleanup; unloaded=none")
         XCTAssertTrue(housekeepingDidRun)
         #endif
     }

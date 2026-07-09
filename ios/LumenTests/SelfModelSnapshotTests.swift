@@ -105,4 +105,37 @@ final class SelfModelSnapshotTests: XCTestCase {
         XCTAssertEqual(section.privacyLevel, .low)
         XCTAssertTrue(section.sourceIDs.contains("selfModelSnapshot/0.1.0"))
     }
+
+    func testSelfImprovementMaintenanceSnapshotDoesNotExposeRawPromptOrLoadedRuntime() {
+        let turn = AssistantTurnContext(
+            task: .backgroundTrigger,
+            input: "secret raw prompt should not enter self-improvement snapshot",
+            isForeground: true,
+            lowPowerMode: false,
+            thermalState: .nominal,
+            prefersFoundationModels: false,
+            allowHeavyRuntime: false,
+            maxTokens: 128
+        )
+        let budget = ContextBudgetAllocator.allocate(for: turn, maxInputTokens: 512)
+        let snapshot = SelfModelSnapshotBuilder.build(
+            turn: turn,
+            budget: budget,
+            selectedRuntime: .init(runtime: .unavailable, reason: "self-improvement runtime maintenance does not load models"),
+            tools: [
+                DeviceStatusTool().definition,
+                OpenURLTool().definition
+            ],
+            availableBackendKinds: [],
+            activeSlot: .rem,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        let rendered = SelfModelContextProvider.render(snapshot, maxChars: 2_000)
+
+        XCTAssertEqual(snapshot.agent.activeSlot, LumenModelSlot.rem.rawValue)
+        XCTAssertEqual(snapshot.runtime.selectedRuntime, AssistantRuntimeKind.unavailable.rawValue)
+        XCTAssertEqual(snapshot.runtime.availableBackendKinds, [])
+        XCTAssertEqual(snapshot.runtime.embeddingAvailable, false)
+        XCTAssertFalse(rendered.contains("secret raw prompt"))
+    }
 }

@@ -52,6 +52,7 @@ Current static/source-verified progress:
 | Improve-loop self-model scenario queue | Generated | `generated/agent_improvement_loop/testflight_scenarios.jsonl` includes `sourceFamily: self_model_eval` scenarios in the bounded TestFlight queue. |
 | Improve-loop repair ingestion | Implemented in crawler tests | `tools/lumen_manifest_crawler/tests/test_self_model_dataset.py` proves self-model runtime failures become `runtime_audit_repairs` and reach REM fine-tuning. |
 | Runtime trace/export self-model decisions | Implemented in source | `AgentBehaviorTrace.SelfModelDecisionSummary` and `InAppDatasetTraceExport.selfModel` export schema/mode/source-layer/tool/approval summary without full snapshot payload. |
+| Runtime self-improvement maintenance loop | Implemented in source | `SelfImprovementLoop` runs app-launch/background local maintenance with actor-isolated coordination, cooldown/circuit-breaker state, bounded `SelfModelSnapshot` generation, redacted metrics, and no opportunistic model loading. |
 | Self-model eval answer scoring | Implemented as static harness | `lumen_manifest_crawler score-self-model-eval --answers <answers.jsonl>` scores exported answers against `self_model_eval` expectations for unknown tools, approval bypass, evidence honesty, privacy, and repair-sample behavior. |
 | Self-model score-report ingestion | Implemented in crawler tests | `self_model_eval_score.v1` reports are ingested as non-live runtime audit input and failed/missing scenarios become `runtime_audit_repairs` for REM/improve-loop training. |
 
@@ -62,6 +63,7 @@ Still open before calling the feature useful:
 - Feed real local-model or TestFlight answer exports into the scoring harness and record quantitative pass/fail for tool boundary accuracy, slot routing accuracy, no invented tool IDs, runtime evidence honesty, privacy, latency, energy/thermal behavior, and repair usefulness.
 - Ingest the resulting score report in a real improvement-loop run using `--runtime-audit <score-report.json>` and confirm the generated repair samples improve the next local/TestFlight pass.
 - Keep generated static reports separate from live runtime evidence; generated self-model eval records are coverage inputs, not proof that the model answered correctly.
+- Keep runtime self-improvement maintenance separate from offline improve-loop training: the app-launch/background loop may consolidate local state and diagnostics, but it does not generate adapters, modify model weights, upload artifacts, or write generated training datasets.
 
 Latest attached runtime evidence, `2026-06-29T03:06Z`, keeps those gates open:
 
