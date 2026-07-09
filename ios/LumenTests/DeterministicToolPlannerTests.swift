@@ -2,17 +2,39 @@ import Testing
 @testable import Lumen
 
 struct DeterministicToolPlannerTests {
+    private func validated(_ action: AgentAction?, availableTools: [ToolDefinition] = ToolRegistry.all) throws -> ValidatedStructuredToolCall {
+        let action = try #require(action)
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: availableTools)
+        guard case .success(let validated) = result else {
+            Issue.record("Planned action \(action.tool) failed validation: \(String(describing: result))")
+            throw PlannerValidationFailure()
+        }
+        return validated
+    }
+
+    private func validateAll(_ actions: [AgentAction], availableTools: [ToolDefinition] = ToolRegistry.all) throws {
+        for action in actions {
+            _ = try validated(action, availableTools: availableTools)
+        }
+    }
+
+    private struct PlannerValidationFailure: Error {}
+
     @Test func outlookReadNewEmailsPlansList() async throws {
         let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.messages.list"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Read new emails", availableToolIDs: ["outlook.messages.list"])
         #expect(action?.tool == "outlook.messages.list")
         #expect(action?.args["limit"]?.stringValue == "10")
+        #expect(action?.args["limit"] == .number(10))
+        _ = try validated(action)
     }
 
     @Test func outlookUnreadPlansListUnread() async throws {
         let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.messages.list"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Check unread emails", availableToolIDs: ["outlook.messages.list"])
         #expect(action?.args["unreadOnly"]?.stringValue == "true")
+        #expect(action?.args["unreadOnly"] == .bool(true))
+        _ = try validated(action)
     }
 
     @Test func outlookLatestPlansListBeforeRead() async throws {
@@ -20,8 +42,10 @@ struct DeterministicToolPlannerTests {
         let steps = DeterministicToolPlanner.planSteps(routing: routing, prompt: "Read the latest email", availableToolIDs: ["outlook.messages.list", "outlook.message.read"])
         #expect(steps.map(\.tool) == ["outlook.messages.list", "outlook.message.read"])
         #expect(steps.first?.args["limit"]?.stringValue == "1")
+        #expect(steps.first?.args["limit"] == .number(1))
         #expect(steps.last?.args["messageId"]?.stringValue == "latest")
         #expect(steps.last?.args["id"]?.stringValue == "latest")
+        try validateAll(steps)
     }
 
     @Test func outlookLatestPlansReadOnlyWhenListUnavailable() async throws {
@@ -53,6 +77,8 @@ struct DeterministicToolPlannerTests {
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Check unread emails", availableToolIDs: ["outlook.message.read", "outlook.messages.list"])
         #expect(action?.tool == "outlook.messages.list")
         #expect(action?.args["unreadOnly"]?.stringValue == "true")
+        #expect(action?.args["unreadOnly"] == .bool(true))
+        _ = try validated(action)
     }
 
     @Test func nearbyQueryExtractionAvoidsNearMeTail() async throws {
@@ -90,6 +116,7 @@ struct DeterministicToolPlannerTests {
             )
             #expect(routing.intent == expectedIntent, "Prompt \(prompt) routed as \(routing.intent.rawValue)")
             #expect(steps.map(\.tool) == expectedTools, "Prompt \(prompt) planned \(steps.map(\.tool))")
+            try validateAll(steps)
         }
     }
 
@@ -180,6 +207,8 @@ struct DeterministicToolPlannerTests {
         #expect(countdown.map(\.tool) == ["alarm.countdown"])
         #expect(countdown.first?.args["title"]?.stringValue == "Focus")
         #expect(countdown.first?.args["durationSeconds"]?.stringValue == "300")
+        #expect(countdown.first?.args["durationSeconds"] == .number(300))
+        try validateAll(countdown)
 
         let schedulePrompt = "Schedule an alarm called Test in 10 minutes."
         let scheduleRouting = IntentRouter.classify(schedulePrompt)
@@ -191,6 +220,8 @@ struct DeterministicToolPlannerTests {
         #expect(schedule.map(\.tool) == ["alarm.schedule"])
         #expect(schedule.first?.args["title"]?.stringValue == "Test")
         #expect(schedule.first?.args["inMinutes"]?.stringValue == "10")
+        #expect(schedule.first?.args["inMinutes"] == .number(10))
+        try validateAll(schedule)
     }
 
     @Test func alarmExplicitSecondsNeverFallsThroughToSixtyMinuteDefault() async throws {
@@ -210,7 +241,9 @@ struct DeterministicToolPlannerTests {
             #expect(routing.intent == .alarm)
             #expect(steps.map(\.tool) == ["alarm.countdown"], "Prompt \(prompt) planned \(steps.map(\.tool))")
             #expect(steps.first?.args["durationSeconds"]?.stringValue == "10")
+            #expect(steps.first?.args["durationSeconds"] == .number(10))
             #expect(steps.first?.args["inMinutes"]?.stringValue != "60")
+            try validateAll(steps)
         }
     }
 
@@ -224,6 +257,8 @@ struct DeterministicToolPlannerTests {
         )
         #expect(schedule.map(\.tool) == ["alarm.schedule"])
         #expect(schedule.first?.args["inMinutes"]?.stringValue == "2")
+        #expect(schedule.first?.args["inMinutes"] == .number(2))
+        try validateAll(schedule)
 
         let timerPrompt = "Start a timer for 10 seconds."
         let timerRouting = IntentRouter.classify(timerPrompt)
@@ -234,6 +269,8 @@ struct DeterministicToolPlannerTests {
         )
         #expect(timer.map(\.tool) == ["alarm.countdown"])
         #expect(timer.first?.args["durationSeconds"]?.stringValue == "10")
+        #expect(timer.first?.args["durationSeconds"] == .number(10))
+        try validateAll(timer)
 
         let invalidPrompt = "Set alarm in bananas."
         let invalidRouting = IntentRouter.classify(invalidPrompt)
@@ -256,6 +293,8 @@ struct DeterministicToolPlannerTests {
         #expect(steps.map(\.tool) == ["alarm.schedule"])
         #expect(steps.first?.args["inMinutes"]?.stringValue == "10080")
         #expect(steps.first?.args["inMinutes"]?.stringValue != "60")
+        #expect(steps.first?.args["inMinutes"] == .number(10080))
+        try validateAll(steps)
     }
 
     @Test func memoryRecallQueryStripsGenericFirstPersonPrefix() async throws {
@@ -365,7 +404,9 @@ struct DeterministicToolPlannerTests {
         #expect(action?.tool == "trigger.create")
         #expect(action?.args["title"]?.stringValue == "Reminder summary")
         #expect(action?.args["prompt"]?.stringValue.contains("summarize reminders") == true)
-        #expect(action?.args["schedule"]?.stringValue == "once")
+        #expect(action?.args["schedule"]?.stringValue == "relative")
+        #expect(action?.args["inMinutes"] == .number(120))
+        _ = try validated(action)
     }
 
     @Test func calendarAppointmentTomorrowMorningPlansCreateNotList() async throws {
@@ -379,6 +420,12 @@ struct DeterministicToolPlannerTests {
         #expect(action?.tool == "calendar.create")
         #expect(action?.args["title"]?.stringValue == "Appointment")
         #expect(Int(action?.args["startsInMinutes"]?.stringValue ?? "0") ?? 0 > 0)
+        guard case .number(let startsInMinutes)? = action?.args["startsInMinutes"] else {
+            Issue.record("calendar.create startsInMinutes must be numeric")
+            return
+        }
+        #expect(startsInMinutes > 0)
+        _ = try validated(action)
     }
 
     @Test func calendarUpcomingPromptStillPlansList() async throws {
@@ -448,6 +495,8 @@ struct DeterministicToolPlannerTests {
         #expect(routing.intent == .calendar)
         #expect(action?.tool == "calendar.create")
         #expect(action?.args["startsInMinutes"]?.stringValue == baseline?.args["startsInMinutes"]?.stringValue)
+        #expect(action?.args["startsInMinutes"] == baseline?.args["startsInMinutes"])
+        _ = try validated(action)
     }
 
 
@@ -501,6 +550,8 @@ struct DeterministicToolPlannerTests {
         let countdownRouting = IntentRouter.classify("Start a countdown timer for 10 minutes")
         let countdown = DeterministicToolPlanner.plan(routing: countdownRouting, prompt: "Start a countdown timer for 10 minutes", availableToolIDs: countdownRouting.allowedToolIDs)
         #expect(countdown?.args["durationSeconds"]?.stringValue == "600")
+        #expect(countdown?.args["durationSeconds"] == .number(600))
+        _ = try validated(countdown)
 
         let pauseRouting = IntentRouter.classify("Pause alarm 00000000-0000-0000-0000-000000000000")
         let pause = DeterministicToolPlanner.plan(routing: pauseRouting, prompt: "Pause alarm 00000000-0000-0000-0000-000000000000", availableToolIDs: pauseRouting.allowedToolIDs)
@@ -549,6 +600,54 @@ struct DeterministicToolPlannerTests {
         )
         #expect(named?.tool == "trigger.cancel")
         #expect(named?.args["id"]?.stringValue == "morning summary")
+    }
+
+    @Test func plannerOutputsValidateAgainstStructuredToolSchemas() async throws {
+        let cases = [
+            "Check unread emails",
+            "Search Outlook for invoice",
+            "Set an appointment for tomorrow morning at nine in my calendar",
+            "Start a countdown timer for 10 minutes",
+            "Schedule an alarm called Test in 10 minutes",
+            "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            "Reindex photo metadata.",
+            "Reindex photo metadata for the last 3 months."
+        ]
+
+        for prompt in cases {
+            let routing = IntentRouter.classify(prompt)
+            let steps = DeterministicToolPlanner.planSteps(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(!steps.isEmpty, "Prompt \(prompt) produced no plan")
+            try validateAll(steps)
+        }
+    }
+
+    @Test func ragPhotoIndexPlannerIncludesNumericMonthWindow() async throws {
+        let defaultPrompt = "Reindex photo metadata."
+        let defaultRouting = IntentRouter.classify(defaultPrompt)
+        let defaultAction = DeterministicToolPlanner.plan(
+            routing: defaultRouting,
+            prompt: defaultPrompt,
+            availableToolIDs: defaultRouting.allowedToolIDs
+        )
+        #expect(defaultAction?.tool == "rag.index_photos")
+        #expect(defaultAction?.args["months"] == .number(6))
+        _ = try validated(defaultAction)
+
+        let explicitPrompt = "Reindex photo metadata for the last 3 months."
+        let explicitRouting = IntentRouter.classify(explicitPrompt)
+        let explicitAction = DeterministicToolPlanner.plan(
+            routing: explicitRouting,
+            prompt: explicitPrompt,
+            availableToolIDs: explicitRouting.allowedToolIDs
+        )
+        #expect(explicitAction?.tool == "rag.index_photos")
+        #expect(explicitAction?.args["months"] == .number(3))
+        _ = try validated(explicitAction)
     }
 
 }

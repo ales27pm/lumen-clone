@@ -41,8 +41,8 @@ nonisolated enum DeterministicToolPlanner {
             guard let url = firstURL(in: prompt) else { return nil }
             return AgentAction(tool: canonical, args: ["url": .string(url)])
         case "outlook.messages.list":
-            var args: AgentJSONArguments = ["limit": .string("10")]
-            if text.contains("unread") { args["unreadOnly"] = .string("true") }
+            var args: AgentJSONArguments = ["limit": intArgument(10)]
+            if text.contains("unread") { args["unreadOnly"] = .bool(true) }
             return AgentAction(tool: canonical, args: args)
         case "outlook.message.read", "outlook.attachments.list", "outlook.message.mark_read", "outlook.message.mark_unread", "outlook.message.archive", "outlook.message.delete":
             return AgentAction(tool: canonical, args: outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest"))
@@ -61,7 +61,7 @@ nonisolated enum DeterministicToolPlanner {
             return AgentAction(tool: canonical, args: args)
         case "outlook.messages.search":
             let query = extractOutlookSearchQuery(from: prompt)
-            return query.isEmpty ? nil : AgentAction(tool: canonical, args: ["query": .string(query), "limit": .string("10")])
+            return query.isEmpty ? nil : AgentAction(tool: canonical, args: ["query": .string(query), "limit": intArgument(10)])
         case "outlook.draft.create", "outlook.mail.send":
             var args: AgentJSONArguments = ["subject": .string(extractOutlookSubject(from: prompt)), "body": .string(extractOutlookBody(from: prompt) ?? "")]
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
@@ -108,7 +108,7 @@ nonisolated enum DeterministicToolPlanner {
             let canonical = ToolRouteGuard.canonicalToolID(single.tool)
             if outlookMessageReferenceToolIDs.contains(canonical), availableToolIDs.contains("outlook.messages.list"), needsFreshOutlookMessageContext(action: single, prompt: text) {
                 return [
-                    AgentAction(tool: "outlook.messages.list", args: ["limit": .string("1")]),
+                    AgentAction(tool: "outlook.messages.list", args: ["limit": intArgument(1)]),
                     single
                 ]
             }
@@ -209,7 +209,7 @@ nonisolated enum DeterministicToolPlanner {
             if isCalendarCreateIntent(text) {
                 return action("calendar.create", [
                     "title": .string(extractCalendarTitle(from: prompt)),
-                    "startsInMinutes": .string(String(calendarStartOffsetMinutes(from: text) ?? 60))
+                    "startsInMinutes": intArgument(calendarStartOffsetMinutes(from: text) ?? 60)
                 ])
             }
             if isCalendarReadIntent(text) { return action("calendar.list") }
@@ -248,7 +248,9 @@ nonisolated enum DeterministicToolPlanner {
             }
             return nil
         case .rag:
-            if containsAny(text, ["index photos", "index photo", "reindex photos", "reindex photo", "photo metadata", "photo retrieval index"]) { return action("rag.index_photos") }
+            if containsAny(text, ["index photos", "index photo", "reindex photos", "reindex photo", "photo metadata", "photo retrieval index"]) {
+                return action("rag.index_photos", ["months": intArgument(extractMonthWindow(from: text) ?? 6)])
+            }
             if containsAny(text, ["reindex", "index files", "file retrieval index", "refresh retrieval index"]) { return action("rag.index_files") }
             if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
                 let query = expandRAGQueryIfNeeded(originalPrompt: prompt)
@@ -287,19 +289,19 @@ nonisolated enum DeterministicToolPlanner {
                 guard let seconds = countdownDurationSeconds(from: text) else { return nil }
                 return action("alarm.countdown", [
                     "title": .string(extractAlarmTitle(from: prompt, fallback: "Countdown")),
-                    "durationSeconds": .string(String(seconds))
+                    "durationSeconds": intArgument(seconds)
                 ])
             case .schedule:
                 if let duration = RelativeDuration.parse(from: text), duration.unit == .seconds {
                     return action("alarm.countdown", [
                         "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
-                        "durationSeconds": .string(String(duration.seconds))
+                        "durationSeconds": intArgument(duration.seconds)
                     ])
                 }
                 guard let minutes = calendarStartOffsetMinutes(from: text) else { return nil }
                 return action("alarm.schedule", [
                     "title": .string(extractAlarmTitle(from: prompt, fallback: "Alarm")),
-                    "inMinutes": .string(String(minutes))
+                    "inMinutes": intArgument(minutes)
                 ])
             case .unknown:
                 return nil
@@ -317,11 +319,11 @@ nonisolated enum DeterministicToolPlanner {
                 var args: AgentJSONArguments = [
                     "title": .string(extractTriggerTitle(from: prompt)),
                     "prompt": .string(extractTriggerPrompt(from: prompt)),
-                    "schedule": .string("once")
+                    "schedule": .string("relative")
                 ]
-                if text.contains("tonight") { args["inMinutes"] = .string("120") }
-                else if let minutes = calendarStartOffsetMinutes(from: text) { args["inMinutes"] = .string(String(minutes)) }
-                else { args["inMinutes"] = .string("60") }
+                if text.contains("tonight") { args["inMinutes"] = intArgument(120) }
+                else if let minutes = calendarStartOffsetMinutes(from: text) { args["inMinutes"] = intArgument(minutes) }
+                else { args["inMinutes"] = intArgument(60) }
                 return action("trigger.create", args)
             }
             return nil
@@ -353,18 +355,18 @@ nonisolated enum DeterministicToolPlanner {
         if containsAny(text, ["attachment", "attachments", "paperclip"]) { return action("outlook.attachments.list", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if containsAny(text, ["search", "find", "invoice"]) {
             let q = extractOutlookSearchQuery(from: prompt)
-            if !q.isEmpty { return action("outlook.messages.search", ["query": .string(q), "limit": .string("10")]) }
+            if !q.isEmpty { return action("outlook.messages.search", ["query": .string(q), "limit": intArgument(10)]) }
         }
         if !text.contains("move") && containsAny(text, ["new emails", "new email", "unread emails", "unread email", "inbox"]) {
-            var args: AgentJSONArguments = ["limit": .string("10")]
-            if text.contains("unread") { args["unreadOnly"] = .string("true") }
+            var args: AgentJSONArguments = ["limit": intArgument(10)]
+            if text.contains("unread") { args["unreadOnly"] = .bool(true) }
             return action("outlook.messages.list", args)
         }
         if containsAny(text, ["mark", "set"]) && text.contains("unread") { return action("outlook.message.mark_unread", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if containsAny(text, ["mark", "set"]) && text.contains("read") { return action("outlook.message.mark_read", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if !containsAny(text, ["move", "archive", "delete", "trash", "mark", "set", "reply", "respond", "forward"]) && isLatestOutlookReadIntent(text) {
             return action("outlook.message.read", outlookMessageReadArgs("latest"))
-                ?? action("outlook.messages.list", ["limit": .string("1")])
+                ?? action("outlook.messages.list", ["limit": intArgument(1)])
         }
         if containsAny(text, ["reply all", "reply-all", "respond to all"]) {
             var args = outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")
@@ -400,13 +402,14 @@ nonisolated enum DeterministicToolPlanner {
             if let to = extractEmailAddress(from: prompt) { args["to"] = .string(to) }
             return action("outlook.draft.create", args)
         }
-        var args: AgentJSONArguments = ["limit": .string("10")]
-        if text.contains("unread") { args["unreadOnly"] = .string("true") }
+        var args: AgentJSONArguments = ["limit": intArgument(10)]
+        if text.contains("unread") { args["unreadOnly"] = .bool(true) }
         return action("outlook.messages.list", args)
     }
 
     private static func normalized(_ text: String) -> String { text.lowercased().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool { needles.contains { value.contains($0) } }
+    private static func intArgument(_ value: Int) -> AgentJSONValue { .number(Double(value)) }
 
     private static func expandRAGQueryIfNeeded(originalPrompt: String) -> String {
         let base = extractWebQuery(from: originalPrompt)
@@ -437,6 +440,13 @@ nonisolated enum DeterministicToolPlanner {
               let range = Range(match.range(at: 1), in: text),
               let value = Int(text[range]) else { return nil }
         return max(1, min(value, 24 * 60))
+    }
+
+    private static func extractMonthWindow(from text: String) -> Int? {
+        if let value = firstCapture(in: text, pattern: #"(?i)\b(?:last|past|previous|for)\s+(\d+)\s+months?\b"#).flatMap(Int.init) {
+            return max(1, min(value, 60))
+        }
+        return nil
     }
 
     private static func countdownDurationSeconds(from text: String) -> Int? {
