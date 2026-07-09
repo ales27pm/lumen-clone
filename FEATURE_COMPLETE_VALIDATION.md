@@ -84,6 +84,8 @@ The latest planner/schema parity pass fixed deterministic plans that were still 
 
 The latest native approval-boundary pass fixed the remaining known-bad native tool path for approval-required actions. Native kernel chat turns now stop after validation, emit an `.approvalBoundary` step with the validated canonical tool ID and arguments, return approval-required final text, and do not emit `toolInvocation`, `toolResult`, or execute `SecureToolRegistry` for message, mail, calendar, trigger, phone, alarm, or Outlook mutation actions before user approval.
 
+The latest strict-boundary pass removed the Release-compiled `StructuredAgentKernelExecutor` bridge to `AgentService.shared.run`. Live E2E model-backed probes now enter through `AssistantKernel.run(...)`, `check_agent_kernel_boundary.py --strict` fails on documented compatibility entries unless the legacy call is inside `#if DEBUG`, and scanner regression tests cover DEBUG versus Release branch detection.
+
 This is not a claim that every future product target is complete. The Release product surface now excludes experimental or legacy paths that are not release-safe, and documents those exclusions explicitly. Hardware, TestFlight, signed archive/export, and real model/device checks still require Apple credentials and physical device coverage.
 
 ## Files Changed
@@ -104,6 +106,14 @@ Follow-up native approval-boundary files:
 
 - Native kernel approval boundary: `ios/Lumen/Assistant/AssistantKernel+Streaming.swift`
 - Approval boundary regression test: `ios/LumenTests/AssistantKernelRunContractTests.swift`
+
+Follow-up strict-boundary files:
+
+- Live E2E kernel entrypoint: `ios/Lumen/Services/E2ETestRunner.swift`
+- Removed Release bridge: `ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift`
+- Boundary guard: `tools/check_agent_kernel_boundary.py`
+- Tests: `ios/LumenTests/AgentKernelBoundaryGuardTests.swift`, `tools/pipeline/tests/test_check_agent_kernel_boundary.py`
+- Shipped-state docs: `docs/AGENT_KERNEL_MIGRATION_STATUS.md`, `docs/LEGACY_AGENT_MIGRATION.md`, `docs/CODEX_NATIVE_ASSISTANT_AUDIT.md`
 
 Follow-up tool JSON hardening files:
 
@@ -989,6 +999,17 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 | `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO` after native approval-boundary gating | Passed: `TEST BUILD SUCCEEDED`; log: `/tmp/lumen-build-for-testing-approval-boundary-final.log` |
 | `xcrun simctl boot 8C613E1F-22F1-4A0E-88B9-01031856659B` plus SpringBoard/backboardd probe before focused approval-boundary test | Passed: probe ready after 1 second without waiting on the long System App bootstatus path |
 | `xcodebuild test-without-building -xctestrun /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Lumen_Lumen_iphonesimulator26.2-x86_64.xctestrun -destination 'platform=iOS Simulator,id=8C613E1F-22F1-4A0E-88B9-01031856659B' -only-testing:LumenTests/AssistantKernelRunContractTests/testNativeToolTurnApprovalRequiredActionsStopBeforeExecution -parallel-testing-enabled NO -jobs 1` after native approval-boundary gating | Passed: executed 1 XCTest with 0 failures; `TEST EXECUTE SUCCEEDED`; log: `/tmp/lumen-approval-boundary-test-without-building-final.log` |
+| `git diff --check` after strict boundary enforcement | Passed |
+| `python3 -m compileall tools scripts` after strict boundary enforcement | Passed |
+| `python3 tools/check_release_hardening.py` after strict boundary enforcement | Passed |
+| `python3 tools/check_agent_kernel_boundary.py --strict` after strict boundary enforcement | Passed; remaining documented calls are inside the DEBUG-only `LegacyAgentCompatibilityBridge` |
+| `uv run --python 3.12 pytest tools/pipeline/tests/test_check_agent_kernel_boundary.py` after strict boundary enforcement | Passed: 3 passed |
+| `bash scripts/check-lumen-integration-gate.sh` after strict boundary enforcement | Passed; advisory placeholder/logging review lines still printed by readiness checks |
+| `uv run --python 3.12 pytest -m "not slow and not e2e"` after strict boundary enforcement | Passed: 249 passed, 31 deselected |
+| `cd tools/lumen_manifest_crawler && uv run --python 3.12 pytest --collect-only` after strict boundary enforcement | Passed: 189 tests collected |
+| `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=iPhone 16' build-for-testing CODE_SIGNING_ALLOWED=NO` after strict boundary enforcement | Passed: `TEST BUILD SUCCEEDED`; log: `/tmp/lumen-build-for-testing-strict-boundary.log` |
+| `xcrun simctl boot 710EFEFE-73D8-400B-B5D1-D5F43662B536` plus SpringBoard/backboardd probe before focused boundary tests | Passed: probe ready after 1 second without waiting on the long System App bootstatus path |
+| `xcodebuild test-without-building -xctestrun /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Lumen_Lumen_iphonesimulator26.2-x86_64.xctestrun -destination 'platform=iOS Simulator,id=710EFEFE-73D8-400B-B5D1-D5F43662B536' -only-testing:LumenTests/AgentKernelBoundaryGuardTests -parallel-testing-enabled NO -jobs 1` after strict boundary enforcement | Passed: executed 4 XCTest cases with 0 failures; `TEST EXECUTE SUCCEEDED`; log: `/tmp/lumen-boundary-guard-test-without-building.log` |
 
 ## Remaining DEBUG-Only Experimental Items
 
@@ -1000,6 +1021,7 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 ## Remaining Release Evidence Gaps
 
 - Executed XCTest proof now exists for the new native approval-boundary regression test using `test-without-building` on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
+- Executed XCTest proof now exists for the strict Agent Kernel boundary guard tests using `test-without-building` on `iPhone 16`; broader full-suite simulator XCTest proof is still missing.
 - Full simulator XCTest proof for the current follow-up remains missing; the attempted full `xcodebuild test` run was interrupted after it stopped producing output.
 - Executed XCTest proof for the new RAG/memory diagnostic tests is still missing; the non-launching `build-for-testing` checkpoint compiled them successfully.
 - Executed XCTest proof for the new privacy/logging redaction tests is still missing; the non-launching `build-for-testing` checkpoint compiled them successfully.

@@ -36,13 +36,6 @@ DOCUMENTED_COMPATIBILITY_BRIDGES = {
             "compatibility responses; remove when those paths are kernel-native"
         ),
     },
-    "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift": {
-        "AgentService.shared.run": (
-            "kernel-owned production entrypoint for model-backed structured "
-            "agent turns while the Agent Kernel owns routing and evidence "
-            "correlation around the mature AgentService stream"
-        ),
-    },
 }
 
 
@@ -58,13 +51,29 @@ def iter_swift_files(roots: list[pathlib.Path]):
             yield from root.rglob("*.swift")
 
 
-def scan_file(path: pathlib.Path) -> list[tuple[int, str, str]]:
+def scan_file(path: pathlib.Path) -> list[tuple[int, str, str, bool]]:
     text = path.read_text(encoding="utf-8")
-    findings: list[tuple[int, str, str]] = []
+    findings: list[tuple[int, str, str, bool]] = []
+    conditional_stack: list[bool] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if re.match(r"#if\s+DEBUG\b", stripped):
+            conditional_stack.append(True)
+            continue
+        if stripped.startswith("#elseif") and conditional_stack:
+            conditional_stack[-1] = bool(re.match(r"#elseif\s+DEBUG\b", stripped))
+            continue
+        if stripped.startswith("#else") and conditional_stack:
+            conditional_stack[-1] = False
+            continue
+        if stripped.startswith("#endif") and conditional_stack:
+            conditional_stack.pop()
+            continue
+
+        is_debug_only = any(conditional_stack)
         for label, pattern in LEGACY_PATTERNS.items():
             if pattern.search(line):
-                findings.append((line_number, label, line.strip()))
+                findings.append((line_number, label, stripped, is_debug_only))
     return findings
 
 
@@ -83,10 +92,13 @@ def main() -> int:
         findings = scan_file(path)
         if not findings:
             continue
-        for line_number, label, line in findings:
+        for line_number, label, line, is_debug_only in findings:
             record = f"{rel}:{line_number}: {label}: {line}"
             if label in DOCUMENTED_COMPATIBILITY_BRIDGES.get(rel, {}):
-                legacy_inventory.append(record)
+                if args.strict and not is_debug_only:
+                    violations.append(record)
+                else:
+                    legacy_inventory.append(record)
             else:
                 violations.append(record)
 
@@ -94,7 +106,7 @@ def main() -> int:
         print("Agent Kernel boundary violations detected:", file=sys.stderr)
         for item in violations:
             print(f"  {item}", file=sys.stderr)
-        print("\nRoute new work through AssistantKernel.run(...) or add a temporary allowlist entry with a removal PR.", file=sys.stderr)
+        print("\nRoute new work through AssistantKernel.run(...) or keep temporary bridges DEBUG-only.", file=sys.stderr)
         return 1
 
     print("Agent Kernel boundary guard passed.")

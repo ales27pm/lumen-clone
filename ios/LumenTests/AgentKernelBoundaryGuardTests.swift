@@ -4,10 +4,8 @@ import XCTest
 
 final class AgentKernelBoundaryGuardTests: XCTestCase {
     private let bridgePath = "ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift"
-    private let structuredExecutorPath = "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift"
     private let allowedRuntimeBoundaryPaths: Set<String> = [
-        "ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift",
-        "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift"
+        "ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift"
     ]
     private let legacyMarkers = [
         "AgentService.shared.run",
@@ -60,31 +58,23 @@ final class AgentKernelBoundaryGuardTests: XCTestCase {
         XCTAssertEqual(bridge.occurrenceCount(of: "for await event in AgentService.shared.run"), 1)
         XCTAssertEqual(bridge.occurrenceCount(of: "SlotAgentService.shared.run(request, options: options)"), 2)
         XCTAssertTrue(guardPolicy.contains("\"ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift\""))
-        XCTAssertTrue(guardPolicy.contains("\"ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift\""))
+        XCTAssertFalse(guardPolicy.contains("\"ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift\""))
         XCTAssertTrue(guardPolicy.contains("\"AgentService.shared.run\""))
         XCTAssertTrue(guardPolicy.contains("\"SlotAgentService.shared.run\""))
+        XCTAssertTrue(guardPolicy.contains("if args.strict and not is_debug_only"))
         XCTAssertFalse(guardPolicy.contains("ALLOWED_MIGRATION_FILES"))
     }
 
-    func testStructuredAgentKernelExecutorIsNarrowlyAllowlisted() throws {
-        let repo = repoRoot()
-        let executorURL = repo.appendingPathComponent(structuredExecutorPath)
-        let executor = try String(contentsOf: executorURL, encoding: .utf8)
-
-        XCTAssertEqual(executor.occurrenceCount(of: "AgentService.shared.run"), 1)
-        XCTAssertFalse(executor.contains("SlotAgentService.shared.run"))
-        XCTAssertFalse(executor.contains("RolePipelineAgentService.shared.run"))
-        XCTAssertFalse(executor.contains("runLegacyAgentBridge"))
-    }
-
-    func testLiveE2ERunnerUsesReleaseModelBackedStructuredAgentExecutor() throws {
+    func testLiveE2ERunnerUsesAssistantKernelBoundary() throws {
         let repo = repoRoot()
         let runnerURL = repo.appendingPathComponent("ios/Lumen/Services/E2ETestRunner.swift")
         let runner = try String(contentsOf: runnerURL, encoding: .utf8)
 
-        XCTAssertTrue(runner.contains("StructuredAgentKernelExecutor.runModelBackedAgent(req, options: runOptions)"))
+        XCTAssertTrue(runner.contains("AssistantKernel.shared.run(kernelRequest, modelContext: nil)"))
+        XCTAssertTrue(runner.contains("strictLiveAgentKernelRequest("))
         XCTAssertFalse(runner.contains("Kernel migration E2E probe is DEBUG-only."))
         XCTAssertFalse(runner.contains("runLegacyAgentBridge(req, options: runOptions)"))
+        XCTAssertFalse(runner.contains("StructuredAgentKernelExecutor.runModelBackedAgent"))
     }
 
     func testReleaseToolTurnsAreNotExcludedAtKernelOrVoiceBoundary() throws {
