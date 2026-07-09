@@ -472,20 +472,7 @@ struct ChatView: View {
         #endif
         conversation.messages.append(assistantMsg)
         if let approvalStep = sanitizedSteps.first(where: { $0.kind == .approvalBoundary }),
-           let toolID = approvalStep.toolID {
-            let toolArgs = approvalStep.toolArgs ?? [:]
-            let pending = ToolApprovalQueue.shared.enqueue(
-                toolID: toolID,
-                toolName: ToolRegistry.find(id: toolID)?.name ?? toolID,
-                arguments: toolArgs
-            )
-            let pendingToolMessage = ChatMessage(
-                role: .tool,
-                content: serializedToolArgs(ToolApprovalPayloadCodec.displayArguments(for: pending, visibleArguments: toolArgs)),
-                toolName: toolID,
-                toolStatus: .pendingApproval,
-                toolResult: nil
-            )
+           let pendingToolMessage = ChatApprovalBoundaryMapper.pendingToolMessage(for: approvalStep) {
             conversation.messages.append(pendingToolMessage)
         }
         streamingText = ""
@@ -537,10 +524,6 @@ struct ChatView: View {
         #else
         return false
         #endif
-    }
-
-    private func serializedToolArgs(_ args: [String: String]) -> String {
-        ToolApprovalPayloadCodec.serialize(args)
     }
 
     private func runPlain(turnID: UUID, requestID: UUID, text: String, memories: [MemoryContextItem], attachments: [ChatAttachment]) async {

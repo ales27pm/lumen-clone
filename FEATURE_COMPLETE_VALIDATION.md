@@ -84,6 +84,8 @@ The latest planner/schema parity pass fixed deterministic plans that were still 
 
 The latest native approval-boundary pass fixed the remaining known-bad native tool path for approval-required actions. Native kernel chat turns now stop after validation, emit an `.approvalBoundary` step with the validated canonical tool ID and arguments, return approval-required final text, and do not emit `toolInvocation`, `toolResult`, or execute `SecureToolRegistry` for message, mail, calendar, trigger, phone, alarm, or Outlook mutation actions before user approval.
 
+The latest Chat approval UI mapping pass connected that native approval-boundary step to persisted chat state. `ChatView` now converts the sanitized `.approvalBoundary` step into a pending `.tool` `ChatMessage`, enqueues the canonical tool ID plus exact validated arguments in `ToolApprovalQueue`, and includes the `pendingActionID` payload required for the approval UI to verify and execute the queued action after user confirmation.
+
 The latest strict-boundary pass removed the Release-compiled `StructuredAgentKernelExecutor` bridge to `AgentService.shared.run`. Live E2E model-backed probes now enter through `AssistantKernel.run(...)`, `check_agent_kernel_boundary.py --strict` fails on documented compatibility entries unless the legacy call is inside `#if DEBUG`, and scanner regression tests cover DEBUG versus Release branch detection.
 
 This is not a claim that every future product target is complete. The Release product surface now excludes experimental or legacy paths that are not release-safe, and documents those exclusions explicitly. Hardware, TestFlight, signed archive/export, and real model/device checks still require Apple credentials and physical device coverage.
@@ -106,6 +108,12 @@ Follow-up native approval-boundary files:
 
 - Native kernel approval boundary: `ios/Lumen/Assistant/AssistantKernel+Streaming.swift`
 - Approval boundary regression test: `ios/LumenTests/AssistantKernelRunContractTests.swift`
+
+Follow-up Chat approval UI mapping files:
+
+- Chat approval persistence: `ios/Lumen/Views/ChatView.swift`
+- Approval payload mapper and queue integration: `ios/Lumen/Models/ToolApprovalState.swift`
+- Approval mapper regression test: `ios/LumenTests/ToolApprovalQueueTests.swift`
 
 Follow-up strict-boundary files:
 
@@ -1010,6 +1018,10 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 | `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=iPhone 16' build-for-testing CODE_SIGNING_ALLOWED=NO` after strict boundary enforcement | Passed: `TEST BUILD SUCCEEDED`; log: `/tmp/lumen-build-for-testing-strict-boundary.log` |
 | `xcrun simctl boot 710EFEFE-73D8-400B-B5D1-D5F43662B536` plus SpringBoard/backboardd probe before focused boundary tests | Passed: probe ready after 1 second without waiting on the long System App bootstatus path |
 | `xcodebuild test-without-building -xctestrun /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Lumen_Lumen_iphonesimulator26.2-x86_64.xctestrun -destination 'platform=iOS Simulator,id=710EFEFE-73D8-400B-B5D1-D5F43662B536' -only-testing:LumenTests/AgentKernelBoundaryGuardTests -parallel-testing-enabled NO -jobs 1` after strict boundary enforcement | Passed: executed 4 XCTest cases with 0 failures; `TEST EXECUTE SUCCEEDED`; log: `/tmp/lumen-boundary-guard-test-without-building.log` |
+| `git diff --check` after Chat approval UI mapping | Passed |
+| `python3 tools/check_release_hardening.py` after Chat approval UI mapping | Passed |
+| `python3 tools/check_agent_kernel_boundary.py --strict` after Chat approval UI mapping | Passed; remaining documented calls are inside the DEBUG-only `LegacyAgentCompatibilityBridge` |
+| `SIM_UDID=8C613E1F-22F1-4A0E-88B9-01031856659B TEST_TIMEOUT_SECONDS=3600 SIM_BOOT_TIMEOUT_SECONDS=1200 SIM_READY_PROBE_TIMEOUT_SECONDS=20 bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/ToolApprovalQueueTests/testApprovalBoundaryStepCreatesPendingToolMessageForChatView` after Chat approval UI mapping | Passed with `pipefail`: dedicated `Lumen Focused Test iPhone` readiness probe succeeded without the long System App wait, `TEST BUILD SUCCEEDED`, and `TEST EXECUTE SUCCEEDED`; executed 1 XCTest with 0 failures. Log: `/tmp/lumen-chat-approval-mapper-focused-clean.log`; result bundle: `~/Library/Developer/Xcode/DerivedData/Lumen-chhvizdiogdwpghffmgflhfgheel/Logs/Test/Test-Lumen-2026.07.09_03-17-54--0400.xcresult` |
 
 ## Remaining DEBUG-Only Experimental Items
 
@@ -1021,6 +1033,7 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 ## Remaining Release Evidence Gaps
 
 - Executed XCTest proof now exists for the new native approval-boundary regression test using `test-without-building` on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
+- Executed XCTest proof now exists for the Chat approval UI mapping regression test using the bounded focused simulator runner on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
 - Executed XCTest proof now exists for the strict Agent Kernel boundary guard tests using `test-without-building` on `iPhone 16`; broader full-suite simulator XCTest proof is still missing.
 - Full simulator XCTest proof for the current follow-up remains missing; the attempted full `xcodebuild test` run was interrupted after it stopped producing output.
 - Executed XCTest proof for the new RAG/memory diagnostic tests is still missing; the non-launching `build-for-testing` checkpoint compiled them successfully.

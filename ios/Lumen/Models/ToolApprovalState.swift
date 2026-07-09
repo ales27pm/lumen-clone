@@ -126,6 +126,40 @@ nonisolated enum ApprovalBoundaryFormatter {
     }
 }
 
+@MainActor
+enum ChatApprovalBoundaryMapper {
+    static func pendingToolMessage(
+        for step: AgentStep,
+        queue: ToolApprovalQueue? = nil
+    ) -> ChatMessage? {
+        guard step.kind == .approvalBoundary,
+              let rawToolID = step.toolID else {
+            return nil
+        }
+
+        let approvalQueue = queue ?? .shared
+        let toolID = ToolRouteGuard.canonicalToolID(rawToolID)
+        let toolArgs = step.toolArgs ?? [:]
+        let pending = approvalQueue.enqueue(
+            toolID: toolID,
+            toolName: ToolRegistry.find(id: toolID)?.name ?? toolID,
+            arguments: toolArgs
+        )
+        return ChatMessage(
+            role: .tool,
+            content: ToolApprovalPayloadCodec.serialize(
+                ToolApprovalPayloadCodec.displayArguments(
+                    for: pending,
+                    visibleArguments: toolArgs
+                )
+            ),
+            toolName: toolID,
+            toolStatus: .pendingApproval,
+            toolResult: nil
+        )
+    }
+}
+
 nonisolated enum ToolApprovalPayloadCodec {
     static let pendingActionIDKey = "pendingActionID"
     static let legacyPendingActionIDKey = "pending_action_id"
