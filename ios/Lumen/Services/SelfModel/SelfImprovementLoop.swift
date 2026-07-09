@@ -28,6 +28,11 @@ enum SelfImprovementOutcome: Sendable, Equatable {
     case cancelled
 }
 
+enum SelfImprovementMaintenanceMode: Sendable, Equatable {
+    case fullLocalMaintenance
+    case snapshotOnly
+}
+
 enum SelfImprovementLoopError: Error, Equatable {
     case deadlineExceeded
     case maintenanceFailed(String)
@@ -151,7 +156,7 @@ actor SelfImprovementCoordinator {
 
 final class SelfImprovementLoop {
     typealias NowProvider = () -> Date
-    typealias Maintenance = (SelfImprovementTrigger, ModelContainer?, Date?) async throws -> SelfImprovementMaintenanceResult
+    typealias Maintenance = (SelfImprovementTrigger, ModelContainer?, Date?, SelfImprovementMaintenanceMode) async throws -> SelfImprovementMaintenanceResult
     typealias BackgroundAgentsEnabledProvider = () -> Bool
 
     static let shared = SelfImprovementLoop()
@@ -176,11 +181,12 @@ final class SelfImprovementLoop {
         self.config = config
         self.now = now
         self.backgroundAgentsEnabled = backgroundAgentsEnabled
-        self.maintenance = maintenance ?? { trigger, context, deadline in
+        self.maintenance = maintenance ?? { trigger, context, deadline, mode in
             try await Self.defaultMaintenance(
                 trigger: trigger,
                 container: context,
                 deadline: deadline,
+                mode: mode,
                 metricsStore: metricsStore,
                 metricCompactionMaxEntries: config.metricCompactionMaxEntries
             )
@@ -192,9 +198,11 @@ final class SelfImprovementLoop {
         trigger: SelfImprovementTrigger,
         container: ModelContainer?,
         deadline: Date? = nil,
+        maintenanceMode: SelfImprovementMaintenanceMode = .fullLocalMaintenance,
         force: Bool = false
     ) async -> SelfImprovementOutcome {
         let startedAt = now()
+        let resolvedMaintenanceMode: SelfImprovementMaintenanceMode = trigger == .backgroundProcessing ? .snapshotOnly : maintenanceMode
         let configuredDeadline = startedAt.addingTimeInterval(max(0, config.maxRunDurationSeconds))
         let effectiveDeadline = deadline.map { min($0, configuredDeadline) } ?? configuredDeadline
         guard startedAt < effectiveDeadline else {
@@ -234,7 +242,7 @@ final class SelfImprovementLoop {
         do {
             try Task.checkCancellation()
             try checkDeadline(startedAt: startedAt, deadline: effectiveDeadline)
-            let result = try await maintenance(trigger, container, effectiveDeadline)
+            let result = try await maintenance(trigger, container, effectiveDeadline, resolvedMaintenanceMode)
             try Task.checkCancellation()
             try checkDeadline(startedAt: startedAt, deadline: effectiveDeadline)
 
@@ -344,6 +352,7 @@ final class SelfImprovementLoop {
         trigger: SelfImprovementTrigger,
         container: ModelContainer?,
         deadline: Date?,
+        mode: SelfImprovementMaintenanceMode,
         metricsStore: RuntimeMetricsStore,
         metricCompactionMaxEntries: Int
     ) async throws -> SelfImprovementMaintenanceResult {
@@ -364,9 +373,9 @@ final class SelfImprovementLoop {
 
         let memorySummary: String
         let ragSummary: String
-        if trigger == .backgroundProcessing {
-            memorySummary = "already_run"
-            ragSummary = "already_run"
+        if mode == .snapshotOnly {
+            memorySummary = "skipped_snapshot_only"
+            ragSummary = "skipped_snapshot_only"
         } else {
             await MemoryConsolidator.consolidate(context: context, metricsStore: metricsStore, promoteQueuedCaptures: false)
             try Task.checkCancellation()

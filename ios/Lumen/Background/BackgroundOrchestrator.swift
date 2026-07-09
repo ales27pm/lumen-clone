@@ -200,7 +200,8 @@ final class BackgroundOrchestrator {
         let outcome = await SelfImprovementLoop.shared.run(
             trigger: .backgroundProcessing,
             container: container,
-            deadline: deadline
+            deadline: deadline,
+            maintenanceMode: .snapshotOnly
         )
         await appendSelfImprovementOutcomeMetric(outcome, latencyMs: Int(Date().timeIntervalSince(startedAt) * 1000))
     }
