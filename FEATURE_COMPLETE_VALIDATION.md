@@ -80,6 +80,8 @@ The latest native tool error privacy pass removed the same raw localized provide
 
 The latest live-E2E preflight workflow pass fixed a bad gate rather than masking a runtime failure. Executor readiness remains fatal for missing adapters, unavailable models, budget denial, and no-output runtime failures, but a malformed generative JSON smoke-probe response after readiness passes is now recorded as non-fatal telemetry so the actual live scenario can run. The App Store Connect lane also now treats upload-log validation errors as failed submissions even if the upload tool exits cleanly, and the submitted build number was bumped before the replacement upload.
 
+The latest planner/schema parity pass fixed deterministic plans that were still emitting string values for numeric and boolean schema fields. Outlook list/search limits, Outlook unread filters, calendar start offsets, alarm durations, trigger relative schedules, and photo-index month windows now emit typed `AgentJSONValue` values that pass `StructuredToolCallValidator`; photo indexing also supplies the required default `months: 6` argument.
+
 This is not a claim that every future product target is complete. The Release product surface now excludes experimental or legacy paths that are not release-safe, and documents those exclusions explicitly. Hardware, TestFlight, signed archive/export, and real model/device checks still require Apple credentials and physical device coverage.
 
 ## Files Changed
@@ -340,6 +342,11 @@ Follow-up native tool error privacy files:
 - Native tool privacy regression tests: `ios/LumenTests/SecureToolRegistryTests.swift`, `ios/LumenTests/ContactsLookupToolPolicyTests.swift`
 - Release hardening gate/tests: `tools/check_release_hardening.py`, `tools/pipeline/tests/test_check_release_hardening.py`
 
+Follow-up planner/schema parity files:
+
+- Deterministic typed tool planning: `ios/Lumen/Services/DeterministicToolPlanner.swift`
+- Planner/schema regression tests: `ios/LumenTests/DeterministicToolPlannerTests.swift`
+
 ## Previous Gaps Closed
 
 - Production-selectable deterministic fallback: Release routing no longer selects the deterministic runtime by default; DEBUG can still exercise it for diagnostics.
@@ -560,6 +567,7 @@ Follow-up native tool error privacy files:
 - AppIntent trigger policy tests now assert empty run-trigger results render a degraded diagnostic instead of `"No result."`, and Release hardening tests reject restoring that generic fallback.
 - Calendar policy tests now assert reminder failure text is sanitized, and Release hardening tests reject raw `error.localizedDescription` in `CalendarTools`.
 - Secure tool registry and contacts policy tests now assert alarm, health, and contacts failure text is sanitized, and Release hardening tests reject raw `error.localizedDescription` in `AlarmTools`, `HealthTools`, and `ContactsTools`.
+- Deterministic planner tests now validate representative planned actions through `StructuredToolCallValidator` and assert numeric/bool schema values for Outlook, calendar, alarm, trigger, and RAG photo-index arguments.
 
 ## Commands Run
 
@@ -962,6 +970,12 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 | `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO` on 2026-07-08 after preflight/upload workflow hardening | Passed: `TEST BUILD SUCCEEDED` |
 | `xcodebuild test-without-building -xctestrun ... -destination 'platform=iOS Simulator,id=8C613E1F-22F1-4A0E-88B9-01031856659B' -only-testing:LumenTests/ExecutorPreflightTests` on 2026-07-08 | Passed: Swift Testing executed 7 `ExecutorPreflightTests` with 0 failures after simulator readiness was established through the SpringBoard/backboardd probe. |
 | `bash scripts/build_and_submit_appstoreconnect.sh` on 2026-07-08 after bumping `CURRENT_PROJECT_VERSION` to `20260708192500` | Passed: archive/export/Info.plist/entitlement checks succeeded, upload reported `UPLOAD SUCCEEDED with no errors`, Delivery UUID `e1158bc3-6d83-47f5-aa18-2494f24733fe`. |
+| `git diff --check` after planner/schema parity | Passed |
+| `python3 tools/check_release_hardening.py` after planner/schema parity | Passed |
+| `python3 tools/check_agent_kernel_boundary.py --strict` after planner/schema parity | Passed |
+| `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO` after planner/schema parity | Passed: `TEST BUILD SUCCEEDED`; log: `/tmp/lumen-build-for-testing-planner-schema.log` |
+| `xcrun simctl boot 8C613E1F-22F1-4A0E-88B9-01031856659B` plus SpringBoard/backboardd probe before focused planner tests | Passed: probe ready after 1 second without waiting on the long System App bootstatus path |
+| `xcodebuild test-without-building -xctestrun /Users/ales27pm/Library/Developer/Xcode/DerivedData/Lumen-gafqarfynlsuiseecxqmygoyalln/Build/Products/Lumen_Lumen_iphonesimulator26.2-x86_64.xctestrun -destination 'platform=iOS Simulator,id=8C613E1F-22F1-4A0E-88B9-01031856659B' -only-testing:LumenTests/DeterministicToolPlannerTests` after planner/schema parity | Inconclusive; two compiled-output attempts stalled before XCTest execution. The first never booted the dedicated simulator; the second followed the SpringBoard/backboardd readiness probe but remained stuck in Xcode test-manager handoff with repeated `IDERunDestination: Supported platforms for the buildables in the current scheme is empty` warnings. No executed XCTest pass is claimed. |
 
 ## Remaining DEBUG-Only Experimental Items
 
@@ -1001,6 +1015,7 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 - Executed XCTest proof for the new trigger AppIntent no-result renderer tests is still missing until the simulator launch/install path is stable; the dedicated-device non-launching `build-for-testing` checkpoint compiled them successfully.
 - Executed XCTest proof for the new calendar reminder privacy test is still missing until the simulator launch/install path is stable; the dedicated-device non-launching `build-for-testing` checkpoint compiled it successfully.
 - Executed XCTest proof for the new alarm, health, and contacts privacy tests is still missing until the simulator launch/install path is stable; the dedicated-device non-launching `build-for-testing` checkpoint compiled them successfully.
+- Executed XCTest proof for the new planner/schema parity tests is still missing. The dedicated simulator reached SpringBoard/backboardd readiness through the probe fallback, but `test-without-building` stalled in Xcode's test-manager handoff before any XCTest output; the non-launching `build-for-testing` checkpoint compiled the tests successfully.
 - Fresh executed proof now exists for `ExecutorPreflightTests`, but the attached live E2E weather scenario was not rerun after the preflight gate fix in this documentation pass. Do not claim live model-backed scenario success until a new report proves it.
 - Live device/TestFlight evidence is still needed for model-backed tool-call loops, voice, AppIntent, RAG, memory, permissions, and real local model artifacts.
 - The native kernel path currently executes validated intent-planned tool actions and surfaces the tool result honestly; model-driven post-tool synthesis still needs live runtime evidence before claiming full parity with every shipped workflow.
