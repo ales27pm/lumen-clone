@@ -11,7 +11,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         defer { ResourceBudgetGate.testSnapshotOverride = nil }
         let store = metricsStore()
         var runCount = 0
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _ in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _, _ in
             runCount += 1
             try await Task.sleep(nanoseconds: 50_000_000)
             return .applied("test_applied")
@@ -35,7 +35,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         defer { ResourceBudgetGate.testSnapshotOverride = nil }
         let store = metricsStore()
         var now = Date(timeIntervalSince1970: 100)
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 60), now: { now }, maintenance: { _, _, _ in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 60), now: { now }, maintenance: { _, _, _, _ in
             .applied("test_applied")
         })
 
@@ -57,7 +57,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         let loop = SelfImprovementLoop(
             metricsStore: store,
             config: .init(cooldownSeconds: 0, failureThreshold: 2, circuitOpenSeconds: 600),
-            maintenance: { _, _, _ in throw TestFailure() }
+            maintenance: { _, _, _, _ in throw TestFailure() }
         )
 
         let first = await loop.run(trigger: .test, container: nil)
@@ -77,7 +77,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         defer { ResourceBudgetGate.testSnapshotOverride = nil }
         let store = metricsStore()
         let cancellationProbe = TestCancellationProbe()
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _ in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _, _ in
             if await cancellationProbe.consumeShouldCancel() {
                 throw CancellationError()
             }
@@ -98,7 +98,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         ResourceBudgetGate.testSnapshotOverride = nominalSnapshot()
         defer { ResourceBudgetGate.testSnapshotOverride = nil }
         let store = metricsStore()
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _ in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _, _ in
             throw RawPromptFailure()
         })
 
@@ -120,7 +120,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         defer { ResourceBudgetGate.testSnapshotOverride = nil }
         let store = metricsStore()
         var now = Date(timeIntervalSince1970: 100)
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0, maxRunDurationSeconds: 5), now: { now }, maintenance: { _, _, _ in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0, maxRunDurationSeconds: 5), now: { now }, maintenance: { _, _, _, _ in
             now = Date(timeIntervalSince1970: 106)
             return .applied("finished_after_deadline")
         })
@@ -144,7 +144,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         let store = metricsStore()
         var didRunMaintenance = false
         let now = Date(timeIntervalSince1970: 100)
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), now: { now }, maintenance: { _, _, _ in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), now: { now }, maintenance: { _, _, _, _ in
             didRunMaintenance = true
             return .applied("should_not_run")
         })
@@ -166,7 +166,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         let store = metricsStore()
         let now = Date(timeIntervalSince1970: 100)
         var receivedDeadline: Date?
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0, maxRunDurationSeconds: 5), now: { now }, maintenance: { _, _, deadline in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0, maxRunDurationSeconds: 5), now: { now }, maintenance: { _, _, deadline, _ in
             receivedDeadline = deadline
             return .applied("bounded")
         })
@@ -188,7 +188,7 @@ final class SelfImprovementLoopTests: XCTestCase {
             metricsStore: store,
             config: .init(cooldownSeconds: 0),
             backgroundAgentsEnabled: { false },
-            maintenance: { _, _, _ in .applied("should_not_run") }
+            maintenance: { _, _, _, _ in .applied("should_not_run") }
         )
 
         let outcome = await loop.run(trigger: .backgroundProcessing, container: nil)
@@ -206,7 +206,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         ResourceBudgetGate.testSnapshotOverride = nominalSnapshot()
         defer { ResourceBudgetGate.testSnapshotOverride = nil }
         let store = metricsStore()
-        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _ in
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _, _ in
             .applied("prompt=secret raw prompt path=/Users/example/private/file.txt")
         })
 
@@ -228,14 +228,14 @@ final class SelfImprovementLoopTests: XCTestCase {
         let container = try inMemoryContainer()
         let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0))
 
-        let outcome = await loop.run(trigger: .backgroundProcessing, container: container)
+        let outcome = await loop.run(trigger: .backgroundProcessing, container: container, maintenanceMode: .snapshotOnly)
 
         guard case .applied(let summary) = outcome else {
             XCTFail("Expected applied background maintenance, got \(outcome)")
             return
         }
-        XCTAssertTrue(summary.contains("memory=already_run"))
-        XCTAssertTrue(summary.contains("rag=already_run"))
+        XCTAssertTrue(summary.contains("memory=skipped_snapshot_only"))
+        XCTAssertTrue(summary.contains("rag=skipped_snapshot_only"))
         #endif
     }
 
