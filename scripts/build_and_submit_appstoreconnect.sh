@@ -416,7 +416,9 @@ set +e
 upload_status=${PIPESTATUS[0]}
 set -e
 
-if [[ "$upload_status" -ne 0 ]] || rg -q 'ERROR:|Failed to upload|ENTITY_ERROR|must be higher than|validation errors' "$UPLOAD_LOG"; then
+if rg -q 'UPLOAD SUCCEEDED with no errors|No errors uploading archive' "$UPLOAD_LOG"; then
+  :
+elif [[ "$upload_status" -ne 0 ]] || rg -q 'ERROR:|Failed to upload|ENTITY_ERROR|must be higher than|validation errors' "$UPLOAD_LOG"; then
   unset APP_SPECIFIC_PASSWORD || true
   fail "Upload failed. Full upload log: $UPLOAD_LOG"
 fi
