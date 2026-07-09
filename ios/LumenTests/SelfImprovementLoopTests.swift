@@ -156,6 +156,24 @@ final class SelfImprovementLoopTests: XCTestCase {
         #endif
     }
 
+    @MainActor
+    func testAppLaunchWithoutContextSkipsHeavyMaintenance() async throws {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = nominalSnapshot()
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let store = metricsStore()
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0))
+
+        let outcome = await loop.run(trigger: .appLaunch, context: nil)
+        let metrics = try await store.recentMetrics(limit: 1)
+
+        XCTAssertEqual(outcome, .skipped("shared_container_unavailable"))
+        XCTAssertEqual(metrics.last?.taskKind, BackgroundTaskKind.selfImprovement.rawValue)
+        XCTAssertEqual(metrics.last?.success, true)
+        XCTAssertTrue(metrics.last?.policySummary.contains("shared_container_unavailable") == true)
+        #endif
+    }
+
     private func metricsStore() -> RuntimeMetricsStore {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("self-improvement-\(UUID().uuidString).jsonl")
