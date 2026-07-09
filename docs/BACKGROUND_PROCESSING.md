@@ -9,7 +9,7 @@ Lumen retains existing `TriggerScheduler` identifiers:
 - launch startup calls the orchestrator facade, while `TriggerScheduler` remains the single owner of BGTaskScheduler identifiers and registration.
 - BG refresh and processing callbacks delegate to `BackgroundOrchestrator` so leases, metrics, and policy checks are applied in one place.
 - `runTriggerScan()` delegates to `TriggerScheduler.fireDueTriggers` without requiring the chat runtime to be loaded.
-- BG processing runs trigger scan first, then attempts local memory dedupe, current RAG maintenance, runtime self-improvement maintenance, and model housekeeping while the short background deadline remains.
+- BG processing runs trigger scan first, then attempts runtime self-improvement snapshot maintenance, local memory dedupe, current RAG maintenance, and model housekeeping while the short background deadline remains.
 - BG task expiration cancels the in-flight trigger/maintenance task and completes the BG task exactly once. Cancellation or expiration is recorded as failed completion; policy skips and local-only no-op outcomes complete successfully.
 - background trigger scans may run background-safe local tool-only prompts, but they do not authorize loading model assets.
 - `BackgroundToolExecutionPolicy` produces a structured assessment before tool-only execution. Requests that need clarification, external/web tools, foreground approval, missing permissions, or unsupported tool mappings are skipped with an explicit reason instead of falling through to background model work.
