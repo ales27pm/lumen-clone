@@ -126,7 +126,7 @@ terminate_bundle_if_running() {
   local udid="$1"
   local bundle_id="$2"
 
-  run_with_timeout "$SIMCTL_LIST_TIMEOUT_SECONDS" xcrun simctl terminate "$udid" "$bundle_id" 2>/dev/null || true
+  run_with_timeout "$UNINSTALL_TIMEOUT_SECONDS" xcrun simctl terminate "$udid" "$bundle_id" 2>/dev/null || true
 }
 
 kill_stale_simulator_app_processes() {
@@ -219,6 +219,7 @@ wait_for_simulator_ready() {
   local deadline=$((SECONDS + SIM_BOOT_TIMEOUT_SECONDS))
   local poll_seconds
   local boot_status
+  local bootstatus_unreliable=0
 
   while (( SECONDS < deadline )); do
     if probe_simulator_ready "$udid"; then
@@ -235,12 +236,20 @@ wait_for_simulator_ready() {
       break
     fi
 
-    set +e
-    run_with_timeout "$poll_seconds" xcrun simctl bootstatus "$udid" -b
-    boot_status=$?
-    set -e
-    if [[ "$boot_status" == "0" ]]; then
-      return 0
+    if [[ "$bootstatus_unreliable" == "0" ]]; then
+      set +e
+      run_with_timeout "$poll_seconds" xcrun simctl bootstatus "$udid" -b
+      boot_status=$?
+      set -e
+      if [[ "$boot_status" == "0" ]]; then
+        return 0
+      fi
+      if [[ "$boot_status" == "124" ]]; then
+        bootstatus_unreliable=1
+        echo "== bootstatus timed out; using readiness probe fallback for the rest of this boot wait =="
+      fi
+    else
+      sleep "$poll_seconds"
     fi
 
     if probe_simulator_ready "$udid"; then

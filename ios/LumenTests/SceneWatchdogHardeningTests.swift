@@ -47,6 +47,23 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         AppCancellationBus.shared.unregister(id, category: .chatGeneration)
     }
 
+    func testSceneTransitionDoesNotSynchronouslyRunDiagnosticObservers() async {
+        let observerStarted = XCTestExpectation(description: "diagnostic observer ran")
+        let observerID = PersistentRuntimeDiagnosticsObserver.shared.addObserver { signal in
+            guard signal.kind == .sceneTransition else { return }
+            observerStarted.fulfill()
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        defer { PersistentRuntimeDiagnosticsObserver.shared.removeObserver(observerID) }
+
+        let start = ProcessInfo.processInfo.systemUptime
+        SceneTransitionCoordinator.shared.handleScenePhaseChange(.background)
+        let elapsed = ProcessInfo.processInfo.systemUptime - start
+
+        XCTAssertLessThan(elapsed, 0.05)
+        await fulfillment(of: [observerStarted], timeout: 1)
+    }
+
     func testCancellationBusCancelsSceneSensitiveTasksSynchronously() async {
         let cancelled = XCTestExpectation(description: "task cancelled")
         let task = Task<Void, Never> {
