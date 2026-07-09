@@ -74,7 +74,7 @@ struct ChatHomeView: View {
             if conversations.isEmpty {
                 createConversation()
             }
-            if storedModels.isEmpty {
+            if storedModels.isEmpty && !LumenLaunchArguments.isUITesting {
                 showingOnboarding = true
             }
         }

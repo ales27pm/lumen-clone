@@ -102,4 +102,36 @@ final class RAGSearchToolTests: XCTestCase {
         XCTAssertEqual(result.matches.count, 1)
         XCTAssertEqual(result.matches.first?.chunk.sourceName, "notes")
     }
+
+    @MainActor func testRAGEngineRetrievePreservesEmptyLimitDiagnostic() async throws {
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let ctx = ModelContext(container)
+
+        let result = await RAGEngine().retrieveWithDiagnostics(query: "architecture", limit: 0, context: ctx)
+
+        XCTAssertTrue(result.results.isEmpty)
+        XCTAssertEqual(result.mode, "empty_limit")
+        XCTAssertEqual(result.diagnostic, "empty_limit")
+    }
+
+    @MainActor func testRAGEngineRetrievePreservesEmbeddingFallbackDiagnostic() async throws {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let ctx = ModelContext(container)
+
+        let result = await RAGEngine().retrieveWithDiagnostics(query: "no matches here", limit: 3, context: ctx)
+
+        XCTAssertTrue(result.results.isEmpty)
+        XCTAssertEqual(result.mode, "lexical_fallback")
+        XCTAssertEqual(result.diagnostic, "rag.search: lowPowerMode=true")
+    }
 }

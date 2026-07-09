@@ -529,6 +529,7 @@ struct LumenTests {
         let now = Date(timeIntervalSince1970: 2_000_000)
         let lines = [
             try makeParseFailureTraceLine(parseError: "invalidJSONObject", prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-172_800)),
+            try makeParseFailureTraceLine(parseError: "missingActionOrFinal", prefixNoise: "beta", suffixNoise: "two", createdAt: now.addingTimeInterval(-200_000)),
             try makeParseFailureTraceLine(parseError: "invalidJSONObject", prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-36_000)),
             try makeParseFailureTraceLine(parseError: "invalidJSONObject", prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-3_600)),
             try makeParseFailureTraceLine(parseError: "invalidJSONObject", prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-600)),
@@ -536,8 +537,8 @@ struct LumenTests {
         ]
         let summary = AgentParseFailureSummaryLoader.load(fromJSONLText: lines.joined(separator: "\n"), topN: 5)
 
-        #expect(summary.decodedLines == 5)
-        #expect(summary.recentLineWindowSize == 5)
+        #expect(summary.decodedLines == 6)
+        #expect(summary.recentLineWindowSize == 6)
         #expect(summary.recent24hCount == 4)
         #expect(summary.recent24hTopEntries.count == 2)
         #expect(summary.recent24hTopEntries[0].parseError == "invalidJSONObject")
@@ -551,6 +552,7 @@ struct LumenTests {
         let lines = [
             try makeParseNoiseTraceLine(modelName: "agent-json", stepIndex: 1, prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-200_000)),
             try makeParseNoiseTraceLine(modelName: "agent-json", stepIndex: 1, prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-180_000)),
+            try makeParseNoiseTraceLine(modelName: "agent-thought", stepIndex: 1, prefixNoise: "beta", suffixNoise: "two", createdAt: now.addingTimeInterval(-170_000)),
             try makeParseNoiseTraceLine(modelName: "agent-json", stepIndex: 1, prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-1_000)),
             try makeParseNoiseTraceLine(modelName: "agent-json", stepIndex: 1, prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-500)),
             try makeParseNoiseTraceLine(modelName: "agent-json", stepIndex: 1, prefixNoise: "alpha", suffixNoise: "one", createdAt: now.addingTimeInterval(-100)),
@@ -558,8 +560,8 @@ struct LumenTests {
         ]
         let summary = AgentParseNoiseSummaryLoader.load(fromJSONLText: lines.joined(separator: "\n"), topN: 5)
 
-        #expect(summary.decodedLines == 6)
-        #expect(summary.recentLineWindowSize == 6)
+        #expect(summary.decodedLines == 7)
+        #expect(summary.recentLineWindowSize == 7)
         #expect(summary.recent24hCount == 4)
         #expect(summary.recent24hTopEntries.count == 2)
         #expect(summary.recent24hTopEntries[0].modelName == "agent-json")

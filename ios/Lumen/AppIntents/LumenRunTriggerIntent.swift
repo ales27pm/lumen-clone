@@ -41,8 +41,16 @@ struct LumenRunTriggerIntent: AppIntent {
         if let reason = LumenIntentPolicy.openAppReason(forHeadlessPrompt: trigger.prompt) {
             return .result(value: LumenIntentResultRenderer.openAppRequired(reason))
         }
-        let result = await TriggerScheduler.shared.runTrigger(trigger, context: ctx, settings: SettingsSnapshot.loadFromDisk(), notify: false) ?? "No result."
-        return .result(value: String(result.prefix(500)))
+        let result = await TriggerScheduler.shared.runTrigger(trigger, context: ctx, settings: SettingsSnapshot.loadFromDisk(), notify: false)
+        return .result(value: Self.renderedTriggerResult(result))
+    }
+
+    static func renderedTriggerResult(_ result: String?) -> String {
+        let trimmed = result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else {
+            return LumenIntentResultRenderer.degraded("trigger returned empty result")
+        }
+        return String(trimmed.prefix(500))
     }
 }
 #endif

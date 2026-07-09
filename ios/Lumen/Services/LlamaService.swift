@@ -323,7 +323,7 @@ private final class LlamaRuntimeLogCapture: @unchecked Sendable {
         }
         lock.unlock()
 
-        logger.info("event=llama.cpp.log \(line, privacy: .public)")
+        logger.info("event=llama.cpp.log \(line, privacy: .private)")
     }
 
     nonisolated func snapshot() -> [String] {
@@ -754,7 +754,7 @@ final actor AppLlamaService {
         if sharedChatBasePath == path, sharedChatRuntime != nil { return }
         guard FileManager.default.fileExists(atPath: path) else { throw LlamaError.modelFileNotFound(path) }
         logger.info(
-            "event=llama.chat.runtime_init_start path=\(path, privacy: .public) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public) gpu_target_layers=999"
+            "event=llama.chat.runtime_init_start path=\(path, privacy: .private) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public) gpu_target_layers=999"
         )
         do {
             sharedChatRuntime = try AdapterChatRuntime(path: path, contextSize: contextSize, batchSize: batchSize)
@@ -765,11 +765,11 @@ final actor AppLlamaService {
                 )
             }
             logger.info(
-                "event=llama.chat.runtime_init_success path=\(path, privacy: .public) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public)"
+                "event=llama.chat.runtime_init_success path=\(path, privacy: .private) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public)"
             )
         } catch {
             logger.error(
-                "event=llama.chat.runtime_init_failure path=\(path, privacy: .public) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public) message=\(error.localizedDescription, privacy: .public) fallback=cpu_or_nonoffload"
+                "event=llama.chat.runtime_init_failure path=\(path, privacy: .private) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public) fallback=cpu_or_nonoffload"
             )
             throw error
         }
@@ -1513,7 +1513,7 @@ final actor AppLlamaService {
                         let loadedPath = slotLoadedPath ?? fallbackLoadedPath ?? "none"
                         let adapterPath = await self.roleAdapterPath(for: slot) ?? "none"
                         logger.error(
-                            "event=llama.chat.empty_output slot=\(slot.rawValue, privacy: .public) model_name=\(groundedRequest.modelName, privacy: .public) reason=\(emptyOutputReason, privacy: .public) requested_tokens=\(req.maxTokens, privacy: .public) effective_tokens=\(groundedRequest.maxTokens, privacy: .public) runtime_path=\(readyMetrics.runtimePath, privacy: .public) active_adapter_slot=\(readyMetrics.activeAdapterSlot ?? "none", privacy: .public) loaded_path=\(loadedPath, privacy: .public) adapter_path=\(adapterPath, privacy: .public) cancelled=\(Task.isCancelled ? "true" : "false", privacy: .public)"
+                            "event=llama.chat.empty_output slot=\(slot.rawValue, privacy: .public) model_name=\(groundedRequest.modelName, privacy: .public) reason=\(emptyOutputReason, privacy: .public) requested_tokens=\(req.maxTokens, privacy: .public) effective_tokens=\(groundedRequest.maxTokens, privacy: .public) runtime_path=\(readyMetrics.runtimePath, privacy: .public) active_adapter_slot=\(readyMetrics.activeAdapterSlot ?? "none", privacy: .public) loaded_path=\(loadedPath, privacy: .private) adapter_path=\(adapterPath, privacy: .private) cancelled=\(Task.isCancelled ? "true" : "false", privacy: .public)"
                         )
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .llamaEmptyOutput, values: [
                             "slot": slot.rawValue,

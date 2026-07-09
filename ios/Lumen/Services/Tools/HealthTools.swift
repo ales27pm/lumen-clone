@@ -20,7 +20,7 @@ enum HealthTools {
         do {
             try await healthStore.requestAuthorization(toShare: [], read: readTypes)
         } catch {
-            return "Couldn't request Health access: \(error.localizedDescription)"
+            return authorizationFailureMessage()
         }
 
         let cal = Calendar.current
@@ -88,5 +88,9 @@ enum HealthTools {
             }
             healthStore.execute(q)
         }
+    }
+
+    nonisolated static func authorizationFailureMessage() -> String {
+        "Couldn't request Health access right now. Try again later."
     }
 }

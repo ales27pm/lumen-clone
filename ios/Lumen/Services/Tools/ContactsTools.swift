@@ -23,8 +23,12 @@ enum ContactsTools {
                 return "• \(name) — \(phone)"
             }.joined(separator: "\n")
         } catch {
-            return "Couldn't search contacts: \(error.localizedDescription)"
+            return searchFailureMessage()
         }
+    }
+
+    nonisolated static func searchFailureMessage() -> String {
+        "Couldn't search contacts right now. Try again later."
     }
 
     static func call(number: String) async -> String {

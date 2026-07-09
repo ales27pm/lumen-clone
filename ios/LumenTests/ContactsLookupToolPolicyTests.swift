@@ -31,4 +31,12 @@ final class ContactsLookupToolPolicyTests: XCTestCase {
         XCTAssertEqual(res.errorCode, "provider_error")
         XCTAssertFalse(res.modelText.contains("ContactsTest"))
     }
+
+    func testContactsToolFailureMessageIsSanitized() {
+        let message = ContactsTools.searchFailureMessage()
+
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("contacts"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("localizedDescription"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("raw provider boom"))
+    }
 }

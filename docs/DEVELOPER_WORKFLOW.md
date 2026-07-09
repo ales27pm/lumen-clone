@@ -24,6 +24,14 @@ This command coordinates existing validation, manifest, runtime-audit, improveme
 6. **Optional macOS/Xcode validation** runs `scripts/validate_lumen_ios.sh` only when Xcode is available, or when `--with-xcode` requires it. Portable/Linux/ZIP environments mark this phase as skipped, not passed.
 7. **Optional training/HF profile** remains opt-in. `--with-training-plan` prints the `ubuntu-preflight`, `train-adapters`, `convert-adapters`, `hf-resolve`, and `hf-upload-dry-run` jobs. `--run-training` is required to execute them.
 
+## Learned Local Defaults
+
+- Use `build-for-testing` as the deterministic Xcode checkpoint before simulator execution.
+- For focused simulator proof, reuse the compiled `.xctestrun` with `test-without-building`; do not recompile the app for every narrow rerun.
+- Prefer the dedicated `Lumen Focused Test iPhone` simulator. If `bootstatus -b` stalls at System App but the device is Booted and SpringBoard/backboardd are running, use the readiness-probe path and keep the run bounded.
+- Keep release workflow evidence strict: App Store Connect submission is complete only after `UPLOAD SUCCEEDED with no errors` and a `Delivery UUID`; archive/export success alone is not upload success.
+- When a run exposes a repeatable failure mode, update the docs or agent instructions before treating the work as done.
+
 ## Pass/Fail Semantics
 
 The final report always separates:

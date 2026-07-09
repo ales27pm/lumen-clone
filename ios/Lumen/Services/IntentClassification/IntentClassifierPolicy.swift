@@ -6,6 +6,11 @@ nonisolated enum IntentClassifierPolicy {
         if modelResult.requiresClarification {
             return sanitized(modelResult, source: .bundledModel)
         }
+        if modelResult.intent != fallback.intent,
+           isApprovalSensitive(fallback.intent),
+           fallback.confidence >= 0.85 {
+            return sanitized(fallback, source: .policyMerged)
+        }
         if let clarification = clarificationForAmbiguousModelResult(modelResult, fallback: fallback) {
             return sanitized(clarification, source: .policyMerged)
         }

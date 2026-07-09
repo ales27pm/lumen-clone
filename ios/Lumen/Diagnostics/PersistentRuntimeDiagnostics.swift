@@ -373,8 +373,24 @@ nonisolated enum PersistentRuntimeDiagnosticsRedactor {
 
     static func redact(_ values: [String: String]) -> [String: String] {
         Dictionary(uniqueKeysWithValues: values.map { key, value in
-            (safeCode(key), String(redact(value).prefix(maxValueChars)))
+            let safeKey = safeCode(key)
+            let redactedValue: String
+            if isSensitiveValueKey(safeKey), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                redactedValue = "[redacted]"
+            } else {
+                redactedValue = String(redact(value).prefix(maxValueChars))
+            }
+            return (safeKey, redactedValue)
         })
+    }
+
+    private static func isSensitiveValueKey(_ key: String) -> Bool {
+        switch key {
+        case "prompt", "memory", "file", "path", "content", "body", "text":
+            return true
+        default:
+            return false
+        }
     }
 }
 

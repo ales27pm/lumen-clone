@@ -18,6 +18,18 @@ nonisolated struct LegacyAgentRunOptions: @unchecked Sendable {
     var allowParseFailureDeterministicRecovery: Bool = true
     var allowsMemoryPressureContinuation: Bool = false
 
+    var allowsDeterministicCompatibilityExecution: Bool {
+        #if DEBUG
+        allowDeterministicCompatibility
+        #else
+        false
+        #endif
+    }
+
+    var allowsParseFailureDeterministicRecoveryExecution: Bool {
+        allowsDeterministicCompatibilityExecution && allowParseFailureDeterministicRecovery
+    }
+
     static var `default`: LegacyAgentRunOptions {
         .init(modelContext: nil, conversationID: nil, turnID: nil, groundingMode: .foregroundChat, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: false)
     }

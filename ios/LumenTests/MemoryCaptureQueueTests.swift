@@ -57,7 +57,7 @@ final class MemoryCaptureQueueTests: XCTestCase {
 
         XCTAssertEqual(result.attempted, 1)
         XCTAssertEqual(result.promoted, 1)
-        XCTAssertEqual(result.remaining, 1)
+        XCTAssertEqual(result.remaining, .some(1))
         XCTAssertNil(result.skippedReason)
         XCTAssertEqual(promoted, ["first"])
         XCTAssertEqual(try MemoryCaptureQueue.loadPending(fileURL: fileURL).map(\.content), ["second"])
@@ -80,7 +80,7 @@ final class MemoryCaptureQueueTests: XCTestCase {
         let pending = try MemoryCaptureQueue.loadPending(fileURL: fileURL)
         XCTAssertEqual(result.attempted, 1)
         XCTAssertEqual(result.promoted, 0)
-        XCTAssertEqual(result.remaining, 2)
+        XCTAssertEqual(result.remaining, .some(2))
         XCTAssertNotNil(result.lastError)
         XCTAssertEqual(pending.map(\.content), ["first", "second"])
         XCTAssertEqual(pending.first?.retryCount, 1)
@@ -99,7 +99,23 @@ final class MemoryCaptureQueueTests: XCTestCase {
         }
 
         XCTAssertEqual(result.skippedReason, "empty_drain_limit")
-        XCTAssertEqual(result.remaining, 1)
+        XCTAssertEqual(result.remaining, .some(1))
+    }
+
+    @MainActor
+    func testDrainSkipDoesNotConvertQueueReadFailureToZeroRemaining() async throws {
+        let fileURL = temporaryQueueURL()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try Data("not-json".utf8).write(to: fileURL, options: [.atomic])
+
+        let result = await MemoryCaptureQueue.drain(maxItems: 0, fileURL: fileURL) { _ in
+            XCTFail("zero-limit drain must not promote")
+        }
+
+        XCTAssertEqual(result.skippedReason, "empty_drain_limit")
+        XCTAssertNil(result.remaining)
+        XCTAssertTrue(result.lastError?.hasPrefix("pending_count_failed:") == true)
+        XCTAssertFalse(result.lastError?.contains(fileURL.path) == true)
     }
 
     @MainActor

@@ -33,6 +33,50 @@ struct LLMModelStorageTests {
         }
     }
 
+    @Test func modelFileIntegrityMissingFileFailureIsSanitizedAndDiagnostic() {
+        let rawPath = "/private/raw/lumen/models/missing.gguf"
+
+        let result = ModelFileIntegrity.validateInstalledFileWithDiagnostics(
+            localPath: rawPath,
+            fileName: "missing.gguf",
+            expectedSizeBytes: 1
+        )
+
+        guard case .failure(let failure) = result else {
+            Issue.record("Expected missing model file to fail integrity validation")
+            return
+        }
+        #expect(failure.errorDescription == "Model file is missing.")
+        #expect(failure.diagnosticCode.hasPrefix("file_missing:path_sha256="))
+        #expect(!failure.localizedDescription.contains(rawPath))
+        #expect(!failure.diagnosticCode.contains(rawPath))
+        #expect(ModelFileIntegrity.validateInstalledFile(localPath: rawPath, fileName: "missing.gguf", expectedSizeBytes: 1) == false)
+    }
+
+    @Test func modelFileIntegrityInvalidGGUFMagicIsDistinctAndSanitized() throws {
+        let temp = try makeTemporaryStorage()
+        defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
+        let modelURL = temp.baseDirectory.appendingPathComponent("not-a-model.gguf")
+        var data = Data(count: 16 * 1024 * 1024)
+        data.replaceSubrange(0..<4, with: Data([0x4e, 0x4f, 0x50, 0x45]))
+        try data.write(to: modelURL)
+
+        let result = ModelFileIntegrity.validateInstalledFileWithDiagnostics(
+            localPath: modelURL.path,
+            fileName: "not-a-model.gguf",
+            expectedSizeBytes: 1
+        )
+
+        guard case .failure(let failure) = result else {
+            Issue.record("Expected invalid GGUF magic to fail integrity validation")
+            return
+        }
+        #expect(failure.errorDescription == "Downloaded file is not a GGUF model.")
+        #expect(failure.diagnosticCode.hasPrefix("invalid_gguf_magic:path_sha256="))
+        #expect(!failure.localizedDescription.contains(modelURL.path))
+        #expect(!failure.diagnosticCode.contains(modelURL.path))
+    }
+
     @Test func modelStorageRegistersTinyIntentRecord() async throws {
         let temp = try makeTemporaryStorage()
         defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
@@ -252,14 +296,20 @@ struct LLMModelStorageTests {
 
         #expect(entry?.backend == .tinyIntent)
         #expect(entry?.recommendedUse == .tinyIntent)
+        #expect(entry?.tags.contains("fallback") == false)
+        #expect(entry?.notes?.localizedCaseInsensitiveContains("fallback") == false)
     }
 
     @Test func builtInNomicDescriptorDoesNotAdvertiseEmbeddingExecution() {
         let entry = BuiltInModelCatalog.entry(id: "nomic-embed-text-local")
 
+        #if DEBUG
         #expect(entry?.backend == .gguf)
         #expect(entry?.recommendedUse != .embedding)
         #expect(entry?.tags.contains("embedding") == false)
+        #else
+        #expect(entry == nil)
+        #endif
     }
 
     @Test func modelCatalogSourceDecodesUnknownTypeAsUnknown() throws {

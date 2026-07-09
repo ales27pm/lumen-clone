@@ -107,7 +107,7 @@ nonisolated enum SelfModelSnapshotBuilder {
         let availableToolIDs = sortedTools.map { ToolRouteGuard.canonicalToolID($0.id) }
         let approvalToolIDs = sortedTools
             .filter { requiresApprovalSummary($0) }
-            .map { ToolRouteGuard.canonicalToolID($0.id) }
+            .flatMap { approvalSummaryIDs($0) }
         let backgroundSafeToolIDs = sortedTools
             .filter { isBackgroundSafeSummary($0) }
             .map { ToolRouteGuard.canonicalToolID($0.id) }
@@ -198,6 +198,14 @@ nonisolated enum SelfModelSnapshotBuilder {
 
     private static func requiresApprovalSummary(_ definition: SecureToolDefinition) -> Bool {
         definition.requiresUserApproval || definition.category == .sensitiveAction || definition.category == .destructiveAction
+    }
+
+    private static func approvalSummaryIDs(_ definition: SecureToolDefinition) -> [String] {
+        let canonical = ToolRouteGuard.canonicalToolID(definition.id)
+        if canonical == definition.id {
+            return [canonical]
+        }
+        return [definition.id, canonical]
     }
 
     private static func isBackgroundSafeSummary(_ definition: SecureToolDefinition) -> Bool {

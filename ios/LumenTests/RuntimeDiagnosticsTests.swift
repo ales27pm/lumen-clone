@@ -3,8 +3,8 @@ import XCTest
 
 @MainActor
 final class RuntimeDiagnosticsTests: XCTestCase {
-    func testMetricSummariesBounded() async {
-        let snap = await DiagnosticsProvider().collect()
+    func testMetricSummariesBounded() {
+        let snap = DiagnosticsProvider().cachedSnapshot()
         XCTAssertLessThanOrEqual(snap.runtime.recentMetricSummaries.count, 5)
     }
 }

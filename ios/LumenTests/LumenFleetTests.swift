@@ -55,6 +55,37 @@ struct LumenFleetTests {
         #expect(embedding.acceptsRuntimePath("coreML"))
     }
 
+    @Test func releaseVisibleModelCatalogsDoNotAdvertiseFallbackSurfaces() {
+        let forbidden = ["fallback", "unavailable", "mock", "staged", "not implemented", "unimplemented"]
+        let catalogText = LumenModelFamily.allCases.map { family in
+            [
+                family.id,
+                family.displayName,
+                family.shortLabel,
+                family.description,
+            ].joined(separator: " ")
+        } + LumenModelFleetCatalog.allFleetModels.map { model in
+            ([
+                model.id,
+                model.name,
+                model.description,
+            ] + model.tags).joined(separator: " ")
+        } + LumenModelFleetCatalog.selectableBootstrapModels.map { model in
+            ([
+                model.id,
+                model.name,
+                model.description,
+            ] + model.tags).joined(separator: " ")
+        }
+
+        for text in catalogText {
+            let lower = text.lowercased()
+            for marker in forbidden {
+                #expect(!lower.contains(marker), "Release catalog text contains \(marker): \(text)")
+            }
+        }
+    }
+
     @Test @MainActor func resolverAssignsAllTextSlotsFromSingleSharedAdapterFirstBase() async throws {
         let chat = StoredModel(
             name: "Fleet v1 Adapter Base — Qwen 2.5 1.5B",

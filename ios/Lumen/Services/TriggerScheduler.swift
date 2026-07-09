@@ -33,7 +33,7 @@ final class TriggerScheduler {
 
     private func persist(_ context: ModelContext, operation: String, scope: String) throws {
         do { try context.save() } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
     }
@@ -43,7 +43,7 @@ final class TriggerScheduler {
             try save()
             return true
         } catch {
-            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error=\(String(describing: error), privacy: .public)")
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return false
         }
     }
@@ -86,18 +86,25 @@ final class TriggerScheduler {
 
     // MARK: - Firing
 
-    func fireDueTriggers(context: ModelContext, appState: AppState) async {
+    @discardableResult
+    func fireDueTriggers(context: ModelContext, appState: AppState) async -> String? {
         await fireDueTriggers(context: context, settings: appState.snapshot)
     }
 
-    func fireDueTriggers(context: ModelContext, settings: SettingsSnapshot) async {
-        guard !isRunning else { return }
+    @discardableResult
+    func fireDueTriggers(context: ModelContext, settings: SettingsSnapshot) async -> String? {
+        guard !isRunning else { return nil }
         let deadline = Date().addingTimeInterval(4.5)
         isRunning = true
         defer { isRunning = false }
 
         let now = Date()
-        guard let all = try? context.fetch(FetchDescriptor<Trigger>()) else { return }
+        let all: [Trigger]
+        do {
+            all = try context.fetch(FetchDescriptor<Trigger>())
+        } catch {
+            return Self.triggerFetchFailureMessage(error: error)
+        }
         for t in all where !t.isPaused {
             guard Date() < deadline else { break }
             if let next = t.nextFireAt ?? t.computeNextFire(from: now), next <= now.addingTimeInterval(30) {
@@ -106,7 +113,12 @@ final class TriggerScheduler {
                 t.nextFireAt = t.computeNextFire(from: now)
             }
         }
-        do { try persist(context, operation: "fireDueTriggers", scope: "Trigger") } catch { return }
+        do {
+            try persist(context, operation: "fireDueTriggers", scope: "Trigger")
+        } catch {
+            return Self.triggerPersistenceFailureMessage(error: error)
+        }
+        return nil
     }
 
     @discardableResult
@@ -120,12 +132,26 @@ final class TriggerScheduler {
         trigger.lastRunAt = Date()
         trigger.lastResult = result.text
         updateNextFireAfterRun(for: trigger)
-        do { try persist(context, operation: "runTrigger", scope: "Trigger") } catch { return nil }
+        do {
+            try persist(context, operation: "runTrigger", scope: "Trigger")
+        } catch {
+            return Self.triggerPersistenceFailureMessage(error: error)
+        }
 
         if notify {
             await postNotification(trigger: trigger, body: result.text)
         }
         return result.text
+    }
+
+    static func triggerPersistenceFailureMessage(error: Error) -> String {
+        let errorCode = RuntimeMetricErrorSanitizer.code(for: error)
+        return "Trigger failed: persistence save failed (\(errorCode))."
+    }
+
+    static func triggerFetchFailureMessage(error: Error) -> String {
+        let errorCode = RuntimeMetricErrorSanitizer.code(for: error)
+        return "Trigger fetch failed (\(errorCode))."
     }
 
     private func updateNextFireAfterRun(for trigger: Trigger) {
@@ -151,13 +177,24 @@ final class TriggerScheduler {
 
     // MARK: - Local scheduling (user-facing, best-effort while app is alive or via background refresh)
 
-    func refreshNextFireTimes(context: ModelContext) {
-        guard let all = try? context.fetch(FetchDescriptor<Trigger>()) else { return }
+    @discardableResult
+    func refreshNextFireTimes(context: ModelContext) -> String? {
+        let all: [Trigger]
+        do {
+            all = try context.fetch(FetchDescriptor<Trigger>())
+        } catch {
+            return Self.triggerFetchFailureMessage(error: error)
+        }
         let now = Date()
         for t in all {
             t.nextFireAt = t.isPaused ? nil : t.computeNextFire(from: now)
         }
-do { try persist(context, operation: "refreshNextFireTimes", scope: "Trigger") } catch { return }
+        do {
+            try persist(context, operation: "refreshNextFireTimes", scope: "Trigger")
+        } catch {
+            return Self.triggerPersistenceFailureMessage(error: error)
+        }
+        return nil
     }
 
     // MARK: - Calendar helpers

@@ -442,7 +442,7 @@ actor PersistentRuntimeDiagnosticsRunner {
             mutable.metrics.generationElapsedMs = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
             mutable.finishedAt = Date()
             mutable.status = .skipped
-            mutable.events.append(PersistentDiagnosticEvent(code: "legacy_bridge_excluded_release", message: "Legacy bridge live diagnostic is excluded from Release builds"))
+            mutable.events.append(PersistentDiagnosticEvent(code: "kernel_migration_probe_debug_only", message: "Kernel migration live diagnostic is DEBUG-only"))
             #endif
             return mutable
         }
@@ -471,7 +471,7 @@ actor PersistentRuntimeDiagnosticsRunner {
                 #else
                 mutable.status = .skipped
                 mutable.finishedAt = Date()
-                mutable.events.append(PersistentDiagnosticEvent(code: "legacy_bridge_excluded_release", message: "Legacy bridge cancellation diagnostic is excluded from Release builds"))
+                mutable.events.append(PersistentDiagnosticEvent(code: "kernel_migration_probe_debug_only", message: "Kernel migration cancellation diagnostic is DEBUG-only"))
                 #endif
                 return mutable
             }

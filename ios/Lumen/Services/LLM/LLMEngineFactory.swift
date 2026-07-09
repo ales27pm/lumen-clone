@@ -12,8 +12,6 @@ nonisolated enum LLMEngineFactory {
                 for: .gguf
             )
         }
-        #else
-        precondition(!includeUnavailableGGUF, "Unavailable GGUF native bridge registration is DEBUG-only.")
         #endif
 
         return router

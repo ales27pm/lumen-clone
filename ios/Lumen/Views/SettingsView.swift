@@ -45,6 +45,10 @@ struct SettingsView: View {
                     }
                 }
 
+                if LumenLaunchArguments.isUITesting {
+                    developerSection
+                }
+
                 Section {
                     Picker("Model family", selection: $selectedModelFamily) {
                         ForEach(LumenModelFamily.allCases) { family in
@@ -137,21 +141,8 @@ struct SettingsView: View {
                     Toggle("Auto-remember", isOn: Binding(get: { state.autoMemory }, set: { state.autoMemory = $0 }))
                 }
 
-                Section("Developer") {
-                    #if DEBUG
-                    Toggle("Developer trace mode", isOn: Binding(get: { state.developerTraceModeEnabled }, set: { state.developerTraceModeEnabled = $0 }))
-                        .accessibilityIdentifier("settings.developer.traceMode")
-                    Toggle("Capture reasoning", isOn: Binding(get: { state.developerReasoningCaptureEnabled }, set: { state.developerReasoningCaptureEnabled = $0 }))
-                        .disabled(!state.developerTraceModeEnabled)
-                        .accessibilityIdentifier("settings.developer.reasoningCapture")
-                    #endif
-
-                    NavigationLink {
-                        DeveloperConsoleView()
-                    } label: {
-                        Label("Developer Console", systemImage: "wrench.and.screwdriver")
-                    }
-                    .accessibilityIdentifier("settings.developer.console")
+                if !LumenLaunchArguments.isUITesting {
+                    developerSection
                 }
 
                 Section {
@@ -197,6 +188,26 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private var developerSection: some View {
+        Section("Developer") {
+            #if DEBUG
+            Toggle("Developer trace mode", isOn: Binding(get: { appState.developerTraceModeEnabled }, set: { appState.developerTraceModeEnabled = $0 }))
+                .accessibilityIdentifier("settings.developer.traceMode")
+            Toggle("Capture reasoning", isOn: Binding(get: { appState.developerReasoningCaptureEnabled }, set: { appState.developerReasoningCaptureEnabled = $0 }))
+                .disabled(!appState.developerTraceModeEnabled)
+                .accessibilityIdentifier("settings.developer.reasoningCapture")
+            #endif
+
+            NavigationLink {
+                DeveloperConsoleView()
+            } label: {
+                Label("Developer Console", systemImage: "wrench.and.screwdriver")
+            }
+            .accessibilityIdentifier("settings.developer.console")
+        }
+    }
+
     private var currentVoiceName: String {
         if let id = appState.voiceID,
            let v = VoiceCatalog.available().first(where: { $0.id == id }) {
@@ -229,16 +240,23 @@ struct SettingsView: View {
     }
 
     private var logsText: String {
-        let modelsDirectory = ModelStorage.modelsDirectoryURL()
-        let imported = FileStore.importedFiles()
-        let modelFiles = (try? FileManager.default.contentsOfDirectory(at: modelsDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let modelFilesResult = ModelStorage.modelFilesWithDiagnostics()
+        let importedFilesResult = FileStore.importedFilesWithDiagnostics()
         return """
         Last launch diagnostics:
-        • Imported files: \(imported.count)
-        • Model files: \(modelFiles.count)
-        • Models path: \(modelsDirectory.path)
+        • Imported files: \(importedFilesResult.files.count)
+        • Imported files mode: \(importedFilesResult.mode)
+        • Imported files diagnostic: \(importedFilesResult.diagnostic ?? "none")
+        • Model files: \(modelFilesResult.files.count)
+        • Model files mode: \(modelFilesResult.mode)
+        • Model files diagnostic: \(modelFilesResult.diagnostic ?? "none")
+        • Models path: \(modelFilesResult.directory.map(pathSummary) ?? "unavailable")
         \(parseFailureSummary)
         """
+    }
+
+    private func pathSummary(_ url: URL) -> String {
+        "path_sha256=\(String(RuntimeFallbackLogger.promptHash(url.path).prefix(16)))"
     }
 
     private var debugText: String {
@@ -284,12 +302,12 @@ struct SettingsView: View {
 
     private func runDeveloperChecks() {
         let fm = FileManager.default
-        let modelsDirectory = ModelStorage.modelsDirectoryURL(fileManager: fm)
-        let canReadModels = fm.isReadableFile(atPath: modelsDirectory.path)
-        let canWriteModels = fm.isWritableFile(atPath: modelsDirectory.path)
-        let importsDirectory = FileStore.importsDirectory
-        let canReadImports = fm.isReadableFile(atPath: importsDirectory.path)
-        let canWriteImports = fm.isWritableFile(atPath: importsDirectory.path)
+        let modelFilesResult = ModelStorage.modelFilesWithDiagnostics(fileManager: fm)
+        let canReadModels = modelFilesResult.directory.map { fm.isReadableFile(atPath: $0.path) } ?? false
+        let canWriteModels = modelFilesResult.directory.map { fm.isWritableFile(atPath: $0.path) } ?? false
+        let importedFilesResult = FileStore.importedFilesWithDiagnostics(fileManager: fm)
+        let canReadImports = importedFilesResult.directory.map { fm.isReadableFile(atPath: $0.path) } ?? false
+        let canWriteImports = importedFilesResult.directory.map { fm.isWritableFile(atPath: $0.path) } ?? false
         let e2eDirectory = try? E2ETestLogStore.reportsDirectory()
         let canWriteE2E = e2eDirectory.map { fm.isWritableFile(atPath: $0.path) } ?? false
 
@@ -305,7 +323,7 @@ struct SettingsView: View {
         let summary = checks
             .map { check in "• \(check.0): \(check.1 ? "PASS" : "FAIL")" }
             .joined(separator: "\n")
-        developerAlertMessage = "\(passed)/\(checks.count) checks passed\n\n\(summary)"
+        developerAlertMessage = "\(passed)/\(checks.count) checks passed\n\n\(summary)\n\nModels diagnostic: \(modelFilesResult.diagnostic ?? modelFilesResult.mode)\nImports diagnostic: \(importedFilesResult.diagnostic ?? importedFilesResult.mode)"
         showDeveloperAlert = true
     }
 
@@ -589,7 +607,8 @@ struct E2ETestRunnerView: View {
                     readyArtifactCount: readiness.ready,
                     requiredArtifactCount: readiness.required,
                     missingAdapterSlots: readiness.missingAdapterSlots,
-                    missingArtifactFileNames: readiness.missingArtifactFileNames
+                    missingArtifactFileNames: readiness.missingArtifactFileNames,
+                    diagnostic: readiness.diagnostic
                 )
                 E2ETestLogStore.writeLatest(report)
                 latestReport = report
@@ -599,7 +618,22 @@ struct E2ETestRunnerView: View {
                 exportError = "Live runtime artifacts are not ready. Keep the app open until model downloads complete, then rerun E2E."
                 return
             }
-            let modelLoadSnapshot = makeModelLoadSnapshot()
+            let modelLoadSnapshotResult = ModelLoader.modelLoadSnapshot(appState: appState, context: modelContext)
+            guard let modelLoadSnapshot = modelLoadSnapshotResult.snapshot else {
+                let diagnostic = modelLoadSnapshotResult.diagnostic ?? "model_catalog_fetch_failed"
+                let report = E2ETestRunner.liveModelCatalogFetchBlockedReport(
+                    startedAt: runStartedAt ?? Date(),
+                    finishedAt: Date(),
+                    diagnostic: diagnostic
+                )
+                E2ETestLogStore.writeLatest(report)
+                latestReport = report
+                reportText = report.summaryText
+                isRunning = false
+                runStartedAt = nil
+                exportError = "Live E2E model catalog fetch failed. Resolve the local model store issue, then rerun E2E."
+                return
+            }
             reportText = mode.runningLabel
 
             Task.detached(priority: .userInitiated) {
@@ -642,12 +676,6 @@ struct E2ETestRunnerView: View {
     @MainActor
     private func refreshResourceSnapshot() {
         resourceSnapshot = ResourceBudgetGate.diagnosticSnapshot()
-    }
-
-    @MainActor
-    private func makeModelLoadSnapshot() -> ModelLoadSnapshot {
-        let stored = (try? modelContext.fetch(FetchDescriptor<StoredModel>())) ?? []
-        return ModelLoadSnapshot(appState: appState, stored: stored)
     }
 
     private func exportLatestReport() {

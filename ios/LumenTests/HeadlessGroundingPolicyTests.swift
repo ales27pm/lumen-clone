@@ -1,13 +1,22 @@
 import XCTest
-import SwiftData
 @testable import Lumen
 
 final class HeadlessGroundingPolicyTests: XCTestCase {
     @MainActor func testBackgroundToolsFiltered() async throws {
-        let schema = Schema([MemoryItem.self, RAGChunk.self]); let c = try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
-        let ctx = ModelContext(c)
-        let turn = AssistantTurnContext(task: .backgroundTrigger, input: "status", isForeground: false, lowPowerMode: true, thermalState: .nominal)
-        let out = try await LegacyGroundingBridge().build(userMessage: "status", conversationID: nil, turnID: nil, history: [], modelContext: ctx, turn: turn)
-        XCTAssertFalse(out.secureTools.contains { $0.id == "open.url" })
+        let routing = IntentRoutingDecision(
+            intent: .webSearch,
+            allowedToolIDs: ["open.url"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        let assessment = await BackgroundToolExecutionPolicy.assess(
+            prompt: "open https://example.com",
+            routing: routing,
+            modelContext: nil
+        )
+
+        XCTAssertEqual(assessment.status, .noBackgroundSafeRoutedTools)
+        XCTAssertFalse(assessment.availableTools.contains { $0.id == "open.url" })
     }
 }

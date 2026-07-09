@@ -40,6 +40,7 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
         case invalidRepoPathCharacters
         case invalidFileNameCharacters
         case invalidURLComponents
+        case persistentDirectoryUnavailable
 
         var errorDescription: String? {
             switch self {
@@ -48,6 +49,7 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
             case .invalidRepoPathCharacters: return "Repository path contains invalid characters."
             case .invalidFileNameCharacters: return "File name contains invalid characters."
             case .invalidURLComponents: return "Could not build a valid download URL."
+            case .persistentDirectoryUnavailable: return "No persistent model directory is available."
             }
         }
     }

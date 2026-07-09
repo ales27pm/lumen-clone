@@ -39,7 +39,7 @@ enum AlarmTools {
                 let state = try await AlarmManager.shared.requestAuthorization()
                 return "Alarm authorization result: \(String(describing: state))."
             } catch {
-                return "Alarm authorization failed: \(error.localizedDescription)"
+                return authorizationFailureMessage()
             }
         }
 #endif
@@ -101,7 +101,7 @@ enum AlarmTools {
                     "• id=\(alarm.id.uuidString); state=\(String(describing: alarm.state))"
                 }.joined(separator: "\n")
             } catch {
-                return "Unable to read alarms: \(error.localizedDescription)"
+                return readFailureMessage()
             }
         }
 #endif
@@ -173,7 +173,7 @@ enum AlarmTools {
                 try operation(uuid)
                 return "Alarm \(actionName) completed for \(uuid.uuidString)."
             } catch {
-                return "Alarm \(actionName) failed: \(error.localizedDescription)"
+                return mutationFailureMessage(actionName: actionName)
             }
         }
 #endif
@@ -197,7 +197,7 @@ enum AlarmTools {
                 let alarm = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
                 return "Alarm scheduled: id=\(alarm.id.uuidString); title=\"\(title)\"; fireDate=\(fireDate.formatted(date: .abbreviated, time: .shortened)); state=\(String(describing: alarm.state))."
             } catch {
-                return "Alarm scheduling failed: \(error.localizedDescription)"
+                return schedulingFailureMessage()
             }
         }
 #endif
@@ -219,7 +219,7 @@ enum AlarmTools {
                 let alarm = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
                 return "Alarm countdown scheduled: id=\(alarm.id.uuidString); title=\"\(title)\"; durationSeconds=\(durationSeconds); state=\(String(describing: alarm.state))."
             } catch {
-                return "Alarm countdown failed: \(error.localizedDescription)"
+                return countdownFailureMessage()
             }
         }
 #endif
@@ -262,6 +262,26 @@ enum AlarmTools {
 
     nonisolated static var missingUsageDescriptionMessage: String {
         "AlarmKit availability: unavailable (missing NSAlarmKitUsageDescription in the installed app bundle)."
+    }
+
+    nonisolated static func authorizationFailureMessage() -> String {
+        "Alarm authorization failed. Try again later."
+    }
+
+    nonisolated static func readFailureMessage() -> String {
+        "Alarm read failed. Try again later."
+    }
+
+    nonisolated static func mutationFailureMessage(actionName: String) -> String {
+        "Alarm \(actionName) failed. Try again later."
+    }
+
+    nonisolated static func schedulingFailureMessage() -> String {
+        "Alarm scheduling failed. Try again later."
+    }
+
+    nonisolated static func countdownFailureMessage() -> String {
+        "Alarm countdown failed. Try again later."
     }
 
     private nonisolated static func alarmUsageDescriptionPresent() -> Bool {

@@ -46,3 +46,5 @@ Useful command recap:
 ## Evidence Rules
 
 Developer-cycle reports and runtime audit artifacts are evidence, not proof by naming. Inspect the artifact shape before querying it, and distinguish skipped, failed, passed, and missing evidence states.
+
+When crawler or developer-cycle output exposes a repeatable workflow failure, update the relevant runbook or validation note instead of leaving future runs to rediscover the same failure mode.

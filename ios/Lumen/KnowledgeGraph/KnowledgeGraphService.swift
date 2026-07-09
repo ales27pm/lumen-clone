@@ -165,7 +165,7 @@ actor KnowledgeGraphService {
     }
 
     func queryWithGNN(query: String) async -> [KGNode] {
-        logger.info("GNN reasoning for query: \(query)")
+        logger.info("GNN reasoning for query_chars=\(query.count, privacy: .public)")
         let terms = Self.queryTerms(query)
         guard !terms.isEmpty else { return [] }
 

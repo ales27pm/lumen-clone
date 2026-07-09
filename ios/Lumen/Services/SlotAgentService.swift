@@ -104,17 +104,17 @@ final class SlotAgentService {
                         Self.emitContinuationFinished(path: "cancel")
                         return
                     case .fallback:
-                        Self.emitChatTrace(req: req, phase: "fallback", values: ["reason": "resource-budget-fallback"])
-                        RuntimeFallbackLogger.record(
-                            source: "slot-agent-budget",
-                            primaryBehavior: "run local model-backed slot agent",
-                            fallbackBehavior: "return deterministic compatibility response",
-                            reason: "resource-budget-fallback",
-                            consequence: "wanted primary agent behavior did not run",
-                            values: Self.requestFallbackValues(req)
-                        )
-                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-fallback"]))
                         if options.diagnosticsEnabled {
+                            Self.emitChatTrace(req: req, phase: "fallback", values: ["reason": "resource-budget-diagnostic-fallback"])
+                            RuntimeFallbackLogger.record(
+                                source: "slot-agent-budget-diagnostics",
+                                primaryBehavior: "run local model-backed slot agent",
+                                fallbackBehavior: "run deterministic diagnostic compatibility path",
+                                reason: "resource-budget-diagnostic-fallback",
+                                consequence: "diagnostic probe did not run primary model-backed behavior",
+                                values: Self.requestFallbackValues(req)
+                            )
+                            PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentFallback, values: ["reason": "resource-budget-diagnostic-fallback"]))
                             let response = await Self.deterministicCompatibilityResponse(original: req, effective: req, options: options)
                             Self.emitDeterministicAnswerBuilt(path: "diagnostic-fallback")
                             for step in response.steps {
@@ -128,20 +128,18 @@ final class SlotAgentService {
                             Self.emitContinuationFinished(path: "diagnostic-fallback")
                             return
                         }
-                        let text = Self.deterministicCompatibilityFallback()
-                        Self.emitDeterministicAnswerBuilt(path: "fallback")
-                        continuation.yield(.finalDelta(text))
-                        continuation.yield(.done(finalText: text, steps: []))
-                        Self.emitDoneYielded(path: "fallback")
-                        Self.emitSlotAgentEnd(path: "fallback")
+                        let text = Self.resourceBudgetDeniedMessage()
+                        Self.emitChatTrace(req: req, phase: "resource_budget_denied", values: ["reason": "resource-budget-denied-before-agent-run"])
+                        PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentCancel, values: ["reason": "resource-budget-denied-before-agent-run"]))
+                        continuation.yield(.error(text))
                         continuation.finish()
-                        Self.emitContinuationFinished(path: "fallback")
+                        Self.emitContinuationFinished(path: "resource-budget-denied")
                         return
                     case .allow:
                         break
                     }
 
-                    if options.allowDeterministicCompatibility,
+                    if options.allowsDeterministicCompatibilityExecution,
                        Self.canCompleteThroughDeterministicCompatibility(req) {
                         Self.emitChatTrace(req: req, phase: "path", values: ["path": "deterministic-compatibility"])
                         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .slotAgentPath, values: ["path": "deterministic-compatibility"]))
@@ -443,7 +441,17 @@ final class SlotAgentService {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lower = trimmed.lowercased()
-        if lower.contains("<think") || lower.contains("<analysis") || lower.contains("<reasoning") || lower.contains("chain_of_thought") { return nil }
+        if lower.contains("<lumen_web_payload") || lower.contains("\"kind\":\"searchresults\"") {
+            return nil
+        }
+        if lower.contains("<think") || lower.contains("<analysis") || lower.contains("<reasoning") || lower.contains("chain_of_thought") {
+            let sanitizedOutput = FinalOutputSanitizer.sanitizeUserVisibleText(trimmed)
+            let sanitized = sanitizedOutput.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if sanitized == FinalOutputSanitizer.fallback, !sanitizedOutput.removedArtifacts.isEmpty {
+                return nil
+            }
+            return sanitized.isEmpty ? nil : String(sanitized.prefix(1_200))
+        }
         return String(trimmed.prefix(1_200))
     }
 
@@ -625,7 +633,7 @@ final class SlotAgentService {
         // finals. Those empty finals are exactly what the grounding audit reports as
         // `missing_required_tool_action`.
         if options.diagnosticsEnabled
-            || (options.allowDeterministicCompatibility && canCompleteThroughDeterministicCompatibility(req)) {
+            || (options.allowsDeterministicCompatibilityExecution && canCompleteThroughDeterministicCompatibility(req)) {
             return .allow
         }
 
@@ -710,8 +718,8 @@ final class SlotAgentService {
         )
     }
 
-    nonisolated static func deterministicCompatibilityFallback() -> String {
-        "I can’t safely start the full agent pipeline right now. Please try again when the app is active and the device has cooled down."
+    nonisolated static func resourceBudgetDeniedMessage() -> String {
+        "Agent runtime blocked: resource budget denied local model execution before the agent run started. No tool was executed."
     }
 
     private struct DeterministicCompatibilityResponse: Sendable {
@@ -1258,7 +1266,12 @@ final class SlotAgentService {
             return diagnosticObservation
         }
 
-        let result = await SecureToolRegistry.shared.executeLegacyTool(
+        if options.diagnosticsEnabled,
+           let diagnosticObservation = diagnosticsObservationWithoutExecution(toolID: toolID, action: action) {
+            return diagnosticObservation
+        }
+
+        let result = await SecureToolRegistry.shared.executeToolCommand(
             toolID,
             arguments: action.args,
             approval: .autonomous,
@@ -1285,6 +1298,23 @@ final class SlotAgentService {
             return "File retrieval index diagnostics: rag.index_files action selected correctly."
         case "rag.index_photos":
             return "Photo metadata index diagnostics: rag.index_photos action selected correctly."
+        case "trigger.list":
+            return "Scheduled triggers: Diagnostic trigger listing is unavailable, but the trigger.list action was selected correctly."
+        default:
+            return nil
+        }
+    }
+
+    private nonisolated static func diagnosticsObservationWithoutExecution(toolID: String, action: AgentAction) -> String? {
+        let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
+
+        switch canonicalTool {
+        case "memory.save":
+            let remembered = diagnosticsRememberedPreference(from: action.args.stringCoerced["content"] ?? "")
+            return "Saved preference to memory. I remember that \(remembered)."
+        case "memory.recall":
+            let query = action.args.stringCoerced["query"] ?? "memory"
+            return "Memory recall result: \(query)."
         default:
             return nil
         }

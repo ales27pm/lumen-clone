@@ -80,7 +80,7 @@ nonisolated struct ExecutorRuntimePreflightResult: Sendable, Equatable {
         if probe.passed {
             return ExecutorRuntimePreflightResult(
                 passed: true,
-                reason: "\(reason); tiny JSON smoke probe passed",
+                reason: "\(reason); \(probe.reason)",
                 slot: slot,
                 modelFamily: modelFamily,
                 runtimeKind: runtimeKind,
@@ -96,9 +96,28 @@ nonisolated struct ExecutorRuntimePreflightResult: Sendable, Equatable {
                 failureKind: nil
             )
         }
+        if probe.isNonFatalSmokeProbeFormattingFailure {
+            return ExecutorRuntimePreflightResult(
+                passed: true,
+                reason: "\(reason); agent JSON smoke probe produced malformed structured output after runtime readiness passed; \(probe.reason)",
+                slot: slot,
+                modelFamily: modelFamily,
+                runtimeKind: runtimeKind,
+                baseModelPath: baseModelPath,
+                baseModelExists: baseModelExists,
+                adapterPath: adapterPath,
+                adapterExists: adapterExists,
+                activeAdapterSlot: activeAdapterSlot,
+                resourceGateAllowed: resourceGateAllowed,
+                budgetReason: budgetReason,
+                ensureReadySucceeded: ensureReadySucceeded,
+                smokeProbeSucceeded: false,
+                failureKind: probe.failureKind
+            )
+        }
         return ExecutorRuntimePreflightResult(
             passed: false,
-            reason: "executor preflight failed: tiny JSON smoke probe failed; slot=.executor; \(probe.reason)",
+            reason: "executor preflight failed: agent JSON smoke probe failed; slot=.executor; \(probe.reason)",
             slot: slot,
             modelFamily: modelFamily,
             runtimeKind: runtimeKind,
@@ -114,10 +133,15 @@ nonisolated struct ExecutorRuntimePreflightResult: Sendable, Equatable {
             failureKind: probe.failureKind ?? "smokeProbeFailed"
         )
     }
+
+    private var isNonFatalSmokeProbeFormattingFailure: Bool {
+        failureKind == "smokeProbeParseError"
+    }
 }
 
 nonisolated enum ExecutorRuntimePreflight {
     private static let budgetReason = "strict-live-training.executor-preflight"
+    private static let smokeProbeAttemptCount = 2
 
     static func run() async -> ExecutorRuntimePreflightResult {
         let readiness = await checkReadiness(allowsLoadedMemoryPressureContinuation: true)
@@ -363,20 +387,68 @@ nonisolated enum ExecutorRuntimePreflight {
     #endif
 
     private static func smokeProbe(slot: LumenModelSlot) async -> ExecutorRuntimePreflightResult {
-        let request = GenerateRequest(
-            systemPrompt: "Return only valid JSON.",
+        var lastFailure: ExecutorRuntimePreflightResult?
+        for attempt in 0..<smokeProbeAttemptCount {
+            let request = smokeProbeRequest(attempt: attempt)
+            let result = await runSmokeProbeAttempt(request: request, slot: slot, attempt: attempt)
+            if result.passed { return result }
+            lastFailure = result
+            if !shouldRetrySmokeProbe(result) { break }
+        }
+        return lastFailure ?? .init(
+            passed: false,
+            reason: "smoke probe did not run",
+            failureKind: "smokeProbeNotRun"
+        )
+    }
+
+    private static func smokeProbeRequest(attempt: Int) -> GenerateRequest {
+        GenerateRequest(
+            systemPrompt: smokeProbeSystemPrompt(attempt: attempt),
             history: [],
-            userMessage: #"Return exactly {"final":"ok"}"#,
+            userMessage: smokeProbeUserMessage(attempt: attempt),
             temperature: 0,
             topP: 0.1,
             repetitionPenalty: 1,
-            maxTokens: 24,
-            modelName: "executor-preflight-json",
+            maxTokens: attempt == 0 ? 64 : 96,
+            modelName: "agent-json",
             relevantMemories: [],
             attachments: [],
-            responseFormat: .constrainedJSON(schema: #"{"type":"object","required":["final"],"properties":{"final":{"const":"ok"}}}"#),
+            responseFormat: .constrainedJSON(schema: AgentService.structuredAgentResponseSchema),
+            seed: UInt32(17 + attempt),
             allowsMemoryPressureContinuation: true
         )
+    }
+
+    private static func smokeProbeSystemPrompt(attempt: Int) -> String {
+        var lines = [
+            "You are validating Lumen's executor structured JSON channel.",
+            "Output exactly one JSON object that matches the production agent turn schema.",
+            #"Valid final response: {"final":"ok"}"#,
+            "Do not output an empty object, schema, markdown, comments, or extra text."
+        ]
+        if attempt > 0 {
+            lines.append("This is a retry after malformed structured output. Emit the valid final response now.")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func smokeProbeUserMessage(attempt: Int) -> String {
+        if attempt > 0 {
+            return #"Retry executor JSON channel validation. Emit exactly {"final":"ok"} and nothing else. /no_think"#
+        }
+        return #"Emit exactly {"final":"ok"} and nothing else. /no_think"#
+    }
+
+    private static func shouldRetrySmokeProbe(_ result: ExecutorRuntimePreflightResult) -> Bool {
+        result.failureKind == "smokeProbeEmptyOutput" || result.failureKind == "smokeProbeParseError"
+    }
+
+    private static func runSmokeProbeAttempt(
+        request: GenerateRequest,
+        slot: LumenModelSlot,
+        attempt: Int
+    ) async -> ExecutorRuntimePreflightResult {
         var raw = ""
         var streamStarted = false
         var firstChunkReceived = false
@@ -391,17 +463,50 @@ nonisolated enum ExecutorRuntimePreflight {
             }
         }
         let payload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: request.id)
+        return evaluateSmokeProbeText(
+            raw,
+            payload: payload,
+            streamStarted: streamStarted,
+            firstChunkReceived: firstChunkReceived,
+            attempt: attempt
+        )
+    }
+
+    private static func evaluateSmokeProbeText(
+        _ raw: String,
+        payload: CompletedGenerationTracePayload?,
+        streamStarted: Bool,
+        firstChunkReceived: Bool,
+        attempt: Int
+    ) -> ExecutorRuntimePreflightResult {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let attemptSummary = "attempt=\(attempt + 1)/\(smokeProbeAttemptCount)"
         guard !text.isEmpty else {
             let reason = payload?.emptyOutputReason ?? "empty"
-            return .init(passed: false, reason: "emptyOutputReason=\(reason); outputTokens=0; streamStarted=\(payload?.streamStarted ?? streamStarted); firstChunkReceived=\(payload?.firstChunkReceived ?? firstChunkReceived)", failureKind: "smokeProbeEmptyOutput")
+            return .init(passed: false, reason: "\(attemptSummary); emptyOutputReason=\(reason); outputTokens=0; streamStarted=\(payload?.streamStarted ?? streamStarted); firstChunkReceived=\(payload?.firstChunkReceived ?? firstChunkReceived)", failureKind: "smokeProbeEmptyOutput")
         }
         let parsed = AgentTurnParser.parse(text)
         guard parsed.parseError == nil else {
-            return .init(passed: false, reason: "parseError=\(parsed.parseError?.rawValue ?? "unknown"); outputPrefix=\(ModelOutputSanitizer.boundedPrefix(text, limit: 160))", failureKind: "smokeProbeParseError")
+            return .init(passed: false, reason: "\(attemptSummary); parseError=\(parsed.parseError?.rawValue ?? "unknown"); outputPrefix=\(ModelOutputSanitizer.boundedPrefix(text, limit: 160))", failureKind: "smokeProbeParseError")
         }
-        return .init(passed: true, reason: "tiny JSON smoke probe passed", smokeProbeSucceeded: true)
+        return .init(passed: true, reason: "agent JSON smoke probe passed; \(attemptSummary)", smokeProbeSucceeded: true)
     }
+
+    #if DEBUG
+    static func smokeProbeRequestForTests(attempt: Int) -> GenerateRequest {
+        smokeProbeRequest(attempt: attempt)
+    }
+
+    static func evaluateSmokeProbeTextForTests(_ raw: String, attempt: Int = 0) -> ExecutorRuntimePreflightResult {
+        evaluateSmokeProbeText(
+            raw,
+            payload: nil,
+            streamStarted: true,
+            firstChunkReceived: !raw.isEmpty,
+            attempt: attempt
+        )
+    }
+    #endif
 
     private static func result(
         passed: Bool,

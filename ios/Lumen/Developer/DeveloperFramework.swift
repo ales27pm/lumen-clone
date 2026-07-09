@@ -482,16 +482,20 @@ final class DeveloperConsoleModel {
     }
 
     func logsText() -> String {
-        let modelsDirectory = ModelStorage.modelsDirectoryURL()
-        let imported = FileStore.importedFiles()
-        let modelFiles = (try? FileManager.default.contentsOfDirectory(at: modelsDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let imported = FileStore.importedFilesWithDiagnostics()
+        let modelFiles = ModelStorage.modelFilesWithDiagnostics()
+        let modelsPathSummary = modelFiles.directory.map(Self.pathSummary) ?? "unavailable"
         return """
         Last launch diagnostics:
-        • Imported files: \(imported.count)
-        • Model files: \(modelFiles.count)
-        • Models path: \(modelsDirectory.path)
+        • Imported files: \(imported.files.count) (\(imported.mode), diagnostic=\(imported.diagnostic ?? "none"))
+        • Model files: \(modelFiles.files.count) (\(modelFiles.mode), diagnostic=\(modelFiles.diagnostic ?? "none"))
+        • Models path: \(modelsPathSummary)
         \(AgentParseFailureSummaryLoader.developerText(topN: 5))
         """
+    }
+
+    private static func pathSummary(_ url: URL) -> String {
+        "path_sha256=\(String(RuntimeFallbackLogger.promptHash(url.path).prefix(16)))"
     }
 
     func debugText(appState: AppState) -> String {

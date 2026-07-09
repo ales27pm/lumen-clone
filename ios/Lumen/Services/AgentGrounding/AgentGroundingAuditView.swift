@@ -392,7 +392,7 @@ public struct AgentGroundingAuditView: View {
             #else
             await MainActor.run {
                 guard liveTraceSmokeRunID == runID else { return }
-                errorMessage = "Legacy bridge smoke test is excluded from Release builds."
+                errorMessage = "Kernel migration smoke test is DEBUG-only."
             }
             #endif
 

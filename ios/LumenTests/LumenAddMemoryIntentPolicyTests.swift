@@ -23,6 +23,20 @@ final class LumenAddMemoryIntentPolicyTests: XCTestCase {
         }
     }
 
+    func testQueuedMessageDoesNotInventPendingCountWhenUnknown() {
+        if #available(iOS 16.0, *) {
+            let message = LumenAddMemoryIntent.queuedMessage(
+                pendingCount: nil,
+                pendingDiagnostic: "pending_count_failed:decode_failed",
+                retryCount: 1
+            )
+            XCTAssertEqual(
+                message,
+                "Memory captured locally for later indexing. Pending captures: unknown. Diagnostic: pending_count_failed:decode_failed. Retry count: 1."
+            )
+        }
+    }
+
     func testSavedMessageIncludesPromotedPendingCaptures() {
         if #available(iOS 16.0, *) {
             let message = LumenAddMemoryIntent.savedMessage(drained: 2)

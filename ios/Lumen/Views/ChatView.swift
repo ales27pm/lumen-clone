@@ -77,6 +77,7 @@ struct ChatView: View {
     @State private var didApplyInitialDraft = false
     @State private var showVoiceMode = false
     @State private var showFilePicker = false
+    @State private var fileImportMessage: String?
     @State private var attachments: [ChatAttachment] = []
     @State private var attachmentPreview: [UUID: AttachmentRenderState] = [:]
     @FocusState private var isFocused: Bool
@@ -167,17 +168,35 @@ struct ChatView: View {
             allowedContentTypes: [.plainText, .pdf, .text, .utf8PlainText, .rtf, .commaSeparatedText, .json, .xml, .html, .sourceCode, UTType(filenameExtension: "md") ?? .plainText],
             allowsMultipleSelection: true
         ) { result in
-            if case .success(let urls) = result {
+            switch result {
+            case .success(let urls):
                 for url in urls {
-                    if let dest = FileStore.importFile(from: url),
-                       let attachment = AttachmentResolver.make(from: dest),
-                       !attachments.contains(where: { $0.path == attachment.path }) {
+                    let imported = FileStore.importFileWithDiagnostics(from: url)
+                    guard let dest = imported.url else {
+                        fileImportMessage = importFailureMessage(diagnostic: imported.diagnostic)
+                        continue
+                    }
+                    guard let attachment = AttachmentResolver.make(from: dest) else {
+                        fileImportMessage = "The file was imported, but attachment metadata could not be read."
+                        continue
+                    }
+                    if !attachments.contains(where: { $0.path == attachment.path }) {
                         attachments.append(attachment)
                     }
                 }
                 if !urls.isEmpty { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
                 recomputeAttachmentPreview()
+            case .failure(let error):
+                fileImportMessage = "The file picker failed. Diagnostic: picker_failed:\(RuntimeMetricErrorSanitizer.code(for: error))."
             }
+        }
+        .alert("File import failed", isPresented: Binding(
+            get: { fileImportMessage != nil },
+            set: { if !$0 { fileImportMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { fileImportMessage = nil }
+        } message: {
+            Text(fileImportMessage ?? "")
         }
         .onChange(of: draft) { _, _ in recomputeAttachmentPreview() }
         .onChange(of: scenePhase) { _, phase in
@@ -185,6 +204,10 @@ struct ChatView: View {
         }
         .onAppear(perform: applyInitialDraftIfNeeded)
         .onDisappear { stopForSceneTransition() }
+    }
+
+    private func importFailureMessage(diagnostic: String?) -> String {
+        "Could not import the selected file. Diagnostic: \(diagnostic ?? "import_failed")."
     }
 
     private var conversationHeader: some View {
@@ -471,7 +494,8 @@ struct ChatView: View {
         generationController.clearIfCurrent(requestID, for: conversation.id)
 
         if appState.autoMemory, persistedFinal.count > 60, isSafeToStoreMemory(userText: text, assistantText: persistedFinal, routing: routing) {
-            try? await MemoryStore.remember("User asked: \(text). Assistant: \(String(persistedFinal.prefix(160)))", kind: .conversation, source: "chat", context: modelContext)
+            let memoryResult = await MemoryStore.rememberWithDiagnostics("User asked: \(text). Assistant: \(String(persistedFinal.prefix(160)))", kind: .conversation, source: "chat", context: modelContext)
+            recordAutoMemoryResult(memoryResult, surface: "chat", turnID: turnID, userText: text, path: "chat-view-kernel")
             let transient = sanitizedSteps.filter { $0.kind == .observation || $0.kind == .action }.map(\.content)
             await MemoryStore.extractAndStore(userText: text, assistantText: persistedFinal, transientTexts: transient, context: modelContext)
         }
@@ -479,6 +503,23 @@ struct ChatView: View {
         conversation.updatedAt = Date()
         saveConversationIfBudgetAllows(estimatedBytes: persistedFinal.utf8.count + 4096)
         appState.isGenerating = false
+    }
+
+
+    private func recordAutoMemoryResult(
+        _ result: MemoryStore.RememberResult,
+        surface: String,
+        turnID: UUID,
+        userText: String,
+        path: String
+    ) {
+        guard result.mode != "stored" else { return }
+        emitChatViewTrace(turnID: turnID, phase: "auto_memory_\(result.mode)", text: userText, values: [
+            "path": path,
+            "surface": surface,
+            "memoryMode": result.mode,
+            "memoryDiagnostic": result.diagnostic ?? "none"
+        ])
     }
 
 
@@ -589,7 +630,8 @@ struct ChatView: View {
         generationController.clearIfCurrent(requestID, for: conversation.id)
 
         if appState.autoMemory, finalized.count > 60 {
-            try? await MemoryStore.remember("User asked: \(text). Assistant said: \(finalized.prefix(140))", kind: .conversation, source: "chat", context: modelContext)
+            let memoryResult = await MemoryStore.rememberWithDiagnostics("User asked: \(text). Assistant said: \(finalized.prefix(140))", kind: .conversation, source: "chat", context: modelContext)
+            recordAutoMemoryResult(memoryResult, surface: "chat", turnID: turnID, userText: text, path: "chat-view-plain")
         }
 
         conversation.updatedAt = Date()
@@ -752,19 +794,20 @@ struct ChatView: View {
             TraceContextItem(
                 role: item.role.rawValue,
                 title: "History",
-                content: item.content,
+                content: "history_chars=\(item.content.count);sha256=\(String(chatTraceSHA256(item.content).prefix(16)))",
                 source: "conversation"
             )
         }
         let attachmentItems = attachments.map { attachment in
             TraceContextItem(
                 role: "attachment",
-                title: attachment.name,
+                title: "Attachment",
                 content: "Attachment included in prompt assembly.",
-                source: attachment.path,
+                source: "attachment_path_sha256=\(String(chatTraceSHA256(attachment.path).prefix(16)))",
                 metadata: [
                     "kind": attachment.kind.rawValue,
-                    "byteSize": String(attachment.byteSize)
+                    "byteSize": String(attachment.byteSize),
+                    "nameSHA256": String(chatTraceSHA256(attachment.name).prefix(16))
                 ]
             )
         }
@@ -773,13 +816,13 @@ struct ChatView: View {
 
     private func traceMemoryItem(_ item: MemoryContextItem) -> TraceMemoryItem {
         TraceMemoryItem(
-            content: item.content,
+            content: AgentDiagnosticFileRedactor.summary(label: "memory", text: item.content),
             scope: item.scope.rawValue,
             authority: item.authority.rawValue,
             createdAt: item.createdAt,
             expiresAt: item.expiresAt,
-            source: item.source,
-            topic: item.topic
+            source: item.source.map { AgentDiagnosticFileRedactor.summary(label: "source", text: $0) },
+            topic: item.topic.map { AgentDiagnosticFileRedactor.summary(label: "topic", text: $0) }
         )
     }
 
@@ -893,7 +936,11 @@ struct AttachmentChip: View {
             Image(systemName: attachment.kind.icon).font(.caption).foregroundStyle(Theme.textSecondary)
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.name).font(.caption).foregroundStyle(Theme.textPrimary).lineLimit(1).truncationMode(.middle)
-                if let state, state.truncated { Text(truncationLabel(state)).font(.caption2).foregroundStyle(.orange) }
+                if let state, let label = stateLabel(state) {
+                    Text(label)
+                        .font(.caption2)
+                        .foregroundStyle(state.extractionFailed ? Color.red : Color.orange)
+                }
             }
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
@@ -909,8 +956,21 @@ struct AttachmentChip: View {
         .frame(minHeight: 44)
         .background(Theme.surfaceHigh)
         .clipShape(.rect(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder((state?.truncated ?? false) ? Color.orange.opacity(0.6) : Theme.border, lineWidth: 1) }
+        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(borderColor, lineWidth: 1) }
         .frame(maxWidth: 240)
+    }
+
+    private var borderColor: Color {
+        if state?.extractionFailed == true { return Color.red.opacity(0.65) }
+        if state?.truncated == true || state?.emptyExtractedText == true { return Color.orange.opacity(0.6) }
+        return Theme.border
+    }
+
+    private func stateLabel(_ s: AttachmentRenderState) -> String? {
+        if s.extractionFailed { return "Unreadable" }
+        if s.emptyExtractedText { return "No extractable text" }
+        if s.truncated { return truncationLabel(s) }
+        return nil
     }
 
     private func truncationLabel(_ s: AttachmentRenderState) -> String {

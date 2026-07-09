@@ -11,6 +11,7 @@ This directory describes Lumen architecture, runtime state, validation, privacy,
 - Keep experimental or DEBUG-only behavior clearly separated from shipped Release behavior.
 - When a capability needs physical hardware, Apple credentials, TestFlight, real local model artifacts, or live runtime exports, document it as manual validation still required.
 - Prefer exact states and recovery actions over vague wording. For runtime readiness, use states such as model missing, downloading, verifying, ready, corrupt, incompatible, failed to load, degraded, offline usable, or offline blocked.
+- Carry forward validated workflow lessons. If a report or release run exposes a repeated failure mode, update the relevant runbook instead of leaving future agents to rediscover it.
 
 ## Validation Docs
 
@@ -22,6 +23,8 @@ Keep these files aligned when validation requirements change:
 - `../FEATURE_COMPLETE_VALIDATION.md`
 
 Validation summaries should say what actually ran, what passed, what failed, and what was skipped. If `python` is unavailable and `python3` was used, record both facts.
+
+Release/upload summaries must distinguish archive/export success from App Store Connect acceptance. Do not document a submission as complete unless the upload output includes `UPLOAD SUCCEEDED with no errors` and a `Delivery UUID`; `altool` validation errors in the log mean the upload failed even when a wrapper script continues.
 
 ## Documentation Checks
 

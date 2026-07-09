@@ -238,7 +238,7 @@ extension FinalOutputSanitizerTests {
         #expect(!first.lowercased().contains("<thi"))
         #expect(!second.lowercased().contains("think"))
         #expect(final.text == "Hello world")
-        #expect(remainingDelta.isEmpty)
+        #expect(remainingDelta == "Hello world")
     }
 
     @Test func streamingSanitizerWithholdsSplitPayloadMarker() {
@@ -278,10 +278,10 @@ extension FinalOutputSanitizerTests {
         let finalization = sanitizer.finish()
         switch finalization {
         case let .append(final, remainingDelta):
-            #expect(streamed == "Hello")
-            #expect(remainingDelta == " world")
+            #expect(streamed.isEmpty)
+            #expect(remainingDelta == "Hello\n\nworld")
             #expect(streamed + remainingDelta == final.text)
-            #expect(final.text == "Hello world")
+            #expect(final.text == "Hello\n\nworld")
         case .replace:
             Issue.record("Expected append finalization for whitespace normalization case")
         }

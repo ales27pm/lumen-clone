@@ -245,7 +245,7 @@ final class MicrosoftGraphAuthManager {
         MSALGlobalConfig.loggerConfig.logLevel = .warning
         MSALGlobalConfig.loggerConfig.setLogCallback { level, message, containsPII in
             guard !containsPII else { return }
-            Logger(subsystem: "ai.lumen.microsoftgraph", category: "msal").debug("[MSAL \(level.rawValue, privacy: .public)] \(message ?? "", privacy: .public)")
+            Logger(subsystem: "ai.lumen.microsoftgraph", category: "msal").debug("[MSAL \(level.rawValue, privacy: .public)] \(message ?? "", privacy: .private)")
         }
     }()
 

@@ -1,7 +1,8 @@
 import Foundation
 
 enum BuiltInModelCatalog {
-    static let all: [ModelCatalogEntry] = [
+    static let all: [ModelCatalogEntry] = {
+        var entries: [ModelCatalogEntry] = [
         ModelCatalogEntry(
             id: "builtin.tiny-intent",
             displayName: "Tiny Intent",
@@ -10,8 +11,8 @@ enum BuiltInModelCatalog {
             source: .bundled,
             contextLength: 512,
             minimumRecommendedTier: .constrained,
-            tags: ["builtin", "fallback", "intent"],
-            notes: "Deterministic local rules engine for intent-style fallback routing."
+            tags: ["builtin", "intent"],
+            notes: "Bundled local rules engine for intent classification support."
         ),
         ModelCatalogEntry(
             id: "qwen2.5-1.5b-instruct-q4-k-m-gguf",
@@ -51,8 +52,11 @@ enum BuiltInModelCatalog {
             minimumRecommendedTier: .balanced,
             tags: ["gguf", "llama", "instruct", "q4"],
             notes: "Descriptor-level context metadata is high; active context is policy-limited before loading."
-        ),
-        ModelCatalogEntry(
+        )
+        ]
+
+        #if DEBUG
+        entries.append(ModelCatalogEntry(
             id: "nomic-embed-text-local",
             displayName: "Nomic Embed Text Local",
             backend: .gguf,
@@ -61,9 +65,12 @@ enum BuiltInModelCatalog {
             contextLength: 8_192,
             minimumRecommendedTier: .balanced,
             tags: ["local"],
-            notes: "Catalog descriptor for future local embedding support; embedding execution is not implemented yet."
-        )
-    ]
+            notes: "DEBUG-only catalog descriptor for local embedding diagnostics."
+        ))
+        #endif
+
+        return entries
+    }()
 
     static func entry(id: String) -> ModelCatalogEntry? {
         all.first { $0.id == id }

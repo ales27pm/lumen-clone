@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 /// Explicit Agent Kernel compatibility boundary for legacy agent services.
@@ -58,3 +59,4 @@ private extension AgentEvent {
         }
     }
 }
+#endif

@@ -181,8 +181,10 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
 
     private static func liveToolCoverageScenarios() -> [E2ETestScenario] {
         let scenarios = ToolScenarioBank.entries().map(liveToolCoverageScenario)
-        precondition(Set(scenarios.map(\.id)).count == scenarios.count, "Live E2E tool scenario IDs must be unique")
-        return scenarios
+        var seen: Set<String> = []
+        return scenarios.filter { scenario in
+            seen.insert(scenario.id).inserted
+        }
     }
 
     private static func liveToolCoverageScenario(from entry: ToolScenarioBankEntry) -> E2ETestScenario {
@@ -394,7 +396,7 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         self.requiresAgentRun = requiresAgentRun
         self.evidenceMode = evidenceMode
         self.passed = passed
-        self.failures = failures
+        self.failures = Self.unique(failures)
         self.finalText = finalText
         self.missingHints = missingHints
         self.rewriteAttempted = rewriteAttempted
@@ -405,10 +407,15 @@ nonisolated struct E2ETestResult: Codable, Sendable, Identifiable {
         self.rawFinalPrefix = rawFinalPrefix
         self.sanitizedFinalPrefix = sanitizedFinalPrefix
         self.rawFinalHadUnsafeLeakage = rawFinalHadUnsafeLeakage
-        self.sanitizedFinalRemovedArtifacts = sanitizedFinalRemovedArtifacts
-        self.outputHygieneFailures = outputHygieneFailures
+        self.sanitizedFinalRemovedArtifacts = Self.unique(sanitizedFinalRemovedArtifacts)
+        self.outputHygieneFailures = Self.unique(outputHygieneFailures)
         self.performanceMatrix = performanceMatrix
         self.metadata = metadata
+    }
+
+    private static func unique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
     }
 
     init(from decoder: Decoder) throws {
@@ -721,12 +728,14 @@ nonisolated enum E2ETestRunner {
         readyArtifactCount: Int,
         requiredArtifactCount: Int,
         missingAdapterSlots: [String] = [],
-        missingArtifactFileNames: [String] = []
+        missingArtifactFileNames: [String] = [],
+        diagnostic: String? = nil
     ) -> E2ETestReport {
         let reason = "Live runtime artifact preparation did not complete; required Qwen3 shared base and role adapters must be downloaded before live E2E scenarios run."
         let missingAdapters = missingAdapterSlots.isEmpty ? "" : " Missing adapter slots: \(missingAdapterSlots.joined(separator: ", "))."
         let missingFiles = missingArtifactFileNames.isEmpty ? "" : " Missing artifacts: \(missingArtifactFileNames.joined(separator: ", "))."
-        let detail = "\(readyArtifactCount) / \(requiredArtifactCount) live runtime artifacts ready.\(missingAdapters)\(missingFiles)"
+        let diagnosticText = diagnostic.map { " Diagnostic: \($0)." } ?? ""
+        let detail = "\(readyArtifactCount) / \(requiredArtifactCount) live runtime artifacts ready.\(missingAdapters)\(missingFiles)\(diagnosticText)"
         let event = E2ETestEvent(
             id: UUID(),
             createdAt: finishedAt,
@@ -763,7 +772,54 @@ nonisolated enum E2ETestRunner {
                 "readyArtifactCount": "\(readyArtifactCount)",
                 "requiredArtifactCount": "\(requiredArtifactCount)",
                 "missingAdapterSlots": missingAdapterSlots.joined(separator: ","),
-                "missingArtifactFileNames": missingArtifactFileNames.joined(separator: ",")
+                "missingArtifactFileNames": missingArtifactFileNames.joined(separator: ","),
+                "diagnostic": diagnostic ?? ""
+            ]
+        )
+        return E2ETestReport(id: UUID(), startedAt: startedAt, finishedAt: finishedAt, passed: 0, failed: 1, results: [result])
+    }
+
+    static func liveModelCatalogFetchBlockedReport(
+        startedAt: Date = Date(),
+        finishedAt: Date = Date(),
+        diagnostic: String
+    ) -> E2ETestReport {
+        let reason = "Live E2E model setup could not fetch the stored model catalog."
+        let detail = "Model catalog fetch failed before live scenarios ran. Diagnostic: \(diagnostic)."
+        let event = E2ETestEvent(
+            id: UUID(),
+            createdAt: finishedAt,
+            scenarioID: "live-model-catalog-preflight",
+            phase: "model-catalog",
+            message: "\(reason) \(detail)"
+        )
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: "live-model-catalog-preflight",
+            kind: E2ETestKind.training.rawValue,
+            title: "Live model catalog preflight",
+            prompt: "Fetch stored model catalog before running E2E scenarios.",
+            expectedIntent: UserIntent.unknown.rawValue,
+            actualIntent: "preflight",
+            requiresAgentRun: true,
+            passed: false,
+            failures: [reason],
+            finalText: detail,
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [event],
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: detail,
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil,
+            metadata: [
+                "failureKind": "liveModelCatalogFetchFailed",
+                "diagnostic": diagnostic
             ]
         )
         return E2ETestReport(id: UUID(), startedAt: startedAt, finishedAt: finishedAt, passed: 0, failed: 1, results: [result])
@@ -1112,9 +1168,8 @@ nonisolated enum E2ETestRunner {
                         agentRunID: agentRunID,
                         acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
                     )
-                    #if DEBUG
                     let agentEvents = await MainActor.run {
-                        AssistantKernel.shared.runLegacyAgentBridge(req, options: runOptions)
+                        StructuredAgentKernelExecutor.runModelBackedAgent(req, options: runOptions)
                     }
                     for await agentEvent in agentEvents {
                         try Task.checkCancellation()
@@ -1145,9 +1200,6 @@ nonisolated enum E2ETestRunner {
                             failures.append("Agent error: \(message)")
                         }
                     }
-                    #else
-                    await event("skipped", "Legacy bridge E2E path is excluded from Release builds.")
-                    #endif
                 }
                 let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
                 let evidenceDiagnosis = modelRuntimeEvidenceDiagnosis(

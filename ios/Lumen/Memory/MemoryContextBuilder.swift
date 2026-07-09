@@ -10,6 +10,7 @@ struct MemoryContextResult {
     let sourceIDs: [UUID]
     let tierCounts: [String: Int]
     let hierarchyPassApplied: Bool
+    let diagnostic: String?
 
     init(
         selected: [MemoryItem],
@@ -19,7 +20,8 @@ struct MemoryContextResult {
         reasons: [UUID: String],
         sourceIDs: [UUID],
         tierCounts: [String: Int] = [:],
-        hierarchyPassApplied: Bool = false
+        hierarchyPassApplied: Bool = false,
+        diagnostic: String? = nil
     ) {
         self.selected = selected
         self.totalChars = max(0, totalChars)
@@ -29,6 +31,7 @@ struct MemoryContextResult {
         self.sourceIDs = sourceIDs
         self.tierCounts = tierCounts
         self.hierarchyPassApplied = hierarchyPassApplied
+        self.diagnostic = diagnostic
     }
 }
 
@@ -52,7 +55,19 @@ enum MemoryContextBuilder {
     @MainActor
     static func build(query: String, budgetChars: Int, context: ModelContext) -> MemoryContextResult {
         let budgetChars = max(0, budgetChars)
-        let all = (try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []
+        let all: [MemoryItem]
+        do {
+            all = try context.fetch(FetchDescriptor<MemoryItem>())
+        } catch {
+            return MemoryContextResult(
+                selected: [],
+                totalChars: 0,
+                candidateCount: 0,
+                reasons: [:],
+                sourceIDs: [],
+                diagnostic: "fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            )
+        }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let hasQuery = !q.isEmpty
         let terms = queryTerms(q)

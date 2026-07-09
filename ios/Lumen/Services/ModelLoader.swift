@@ -20,6 +20,13 @@ nonisolated struct ModelLoadSnapshot: Sendable {
     }
 }
 
+nonisolated struct ModelLoadSnapshotResult: Sendable {
+    let snapshot: ModelLoadSnapshot?
+    let diagnostic: String?
+
+    var isReady: Bool { snapshot != nil && diagnostic == nil }
+}
+
 nonisolated struct StoredModelLoadItem: Identifiable, Sendable, Hashable {
     let id: UUID
     let name: String
@@ -82,7 +89,7 @@ enum ModelLoader {
         case .userChat, .userVoice:
             return ResourceBudgetGate.allowsForegroundModelLoad(reason: intent.rawValue)
         case .diagnostics, .background:
-            return ResourceBudgetGate.allowsHeavyModelWork(reason: intent.rawValue)
+            return false
         case .appStartup:
             return false
         }
@@ -96,7 +103,11 @@ enum ModelLoader {
     #if DEBUG
     static func installChatLoadTaskForTesting(_ task: Task<Bool, Never>) {
         chatLoadTask = PendingChatModelLoad(task: Task {
-            ChatLoadResult(loaded: await task.value, selectedChatModelID: nil)
+            await withTaskCancellationHandler {
+                ChatLoadResult(loaded: await task.value, selectedChatModelID: nil)
+            } onCancel: {
+                task.cancel()
+            }
         })
     }
 
@@ -111,6 +122,35 @@ enum ModelLoader {
         embedLoadTask = nil
     }
     #endif
+
+    static func modelLoadSnapshot(appState: AppState, context: ModelContext) -> ModelLoadSnapshotResult {
+        modelLoadSnapshot(appState: appState) {
+            try context.fetch(FetchDescriptor<StoredModel>())
+        }
+    }
+
+    static func modelLoadSnapshotForTests(appState: AppState, fetch: () throws -> [StoredModel]) -> ModelLoadSnapshotResult {
+        modelLoadSnapshot(appState: appState, fetch: fetch)
+    }
+
+    static func modelCatalogFetchFailureMessage(error: Error) -> String {
+        ModelLaunchBootstrap.modelCatalogFetchFailureMessage(error: error)
+    }
+
+    private static func modelLoadSnapshot(appState: AppState, fetch: () throws -> [StoredModel]) -> ModelLoadSnapshotResult {
+        do {
+            return ModelLoadSnapshotResult(
+                snapshot: ModelLoadSnapshot(appState: appState, stored: try fetch()),
+                diagnostic: nil
+            )
+        } catch {
+            return ModelLoadSnapshotResult(
+                snapshot: nil,
+                diagnostic: modelCatalogFetchFailureMessage(error: error)
+            )
+        }
+    }
+
     static func syncChat(appState: AppState, stored: [StoredModel]) async {
         await ensureFleetChatLoaded(appState: appState, stored: stored, intent: .appStartup)
     }

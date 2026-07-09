@@ -453,8 +453,8 @@ nonisolated enum DeterministicToolPlanner {
     }
 
     private static func alarmMutationArgs(from prompt: String) -> AgentJSONArguments {
-        if let uuid = firstUUID(in: prompt) { return ["id": .string(uuid)] }
         let title = extractAlarmTitle(from: prompt, fallback: "")
+        if title.isEmpty, let uuid = firstUUID(in: prompt) { return ["id": .string(uuid)] }
         if !title.isEmpty, let uuid = lookupAlarmUUIDByTitle(title) { return ["id": .string(uuid)] }
         return [:]
     }

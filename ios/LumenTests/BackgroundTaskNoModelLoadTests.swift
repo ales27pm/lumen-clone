@@ -16,7 +16,7 @@ final class BackgroundTaskNoModelLoadTests: XCTestCase {
     }
 
     func testBackgroundSafeMemoryRecallCanRunWithoutLoadedModel() async {
-        let assessment = await BackgroundToolBridgePolicy.assess(
+        let assessment = await BackgroundToolExecutionPolicy.assess(
             prompt: "what do you remember about my workshop preferences",
             modelContext: nil
         )
@@ -27,7 +27,7 @@ final class BackgroundTaskNoModelLoadTests: XCTestCase {
     }
 
     func testNetworkPromptCannotRunWithoutLoadedModelInBackground() async {
-        let assessment = await BackgroundToolBridgePolicy.assess(
+        let assessment = await BackgroundToolExecutionPolicy.assess(
             prompt: "search the web for the latest iOS background task docs",
             modelContext: nil
         )
@@ -39,7 +39,7 @@ final class BackgroundTaskNoModelLoadTests: XCTestCase {
     }
 
     func testForegroundClarificationPromptCannotRunAsBackgroundToolOnly() async {
-        let assessment = await BackgroundToolBridgePolicy.assess(
+        let assessment = await BackgroundToolExecutionPolicy.assess(
             prompt: "send email",
             modelContext: nil
         )

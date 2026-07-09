@@ -28,7 +28,7 @@ final class VoiceServiceAudioStartupTests: XCTestCase {
         XCTAssertTrue(VoiceService.shared.lastError?.contains("Voice input is unavailable") == true)
         XCTAssertEqual(observed.signals.last?.values["source"], "carplay-voice-start")
         XCTAssertEqual(observed.signals.last?.values["phase"], "audio-input-readiness")
-        XCTAssertEqual(observed.signals.last?.values["isInputAvailable"], "false")
+        XCTAssertEqual(observed.signals.last?.values["isinputavailable"], "false")
     }
 
     func testInvalidInputFormatFailsBeforeTapInstallOrEngineStart() async {

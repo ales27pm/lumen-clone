@@ -10,9 +10,21 @@ struct RAGMaintenanceResult: Sendable, Equatable {
 final class RAGEngine {
     private let indexer = RAGIndexer()
 
+    struct RetrieveResult {
+        let results: [RAGRetrievalResult]
+        let mode: String
+        let diagnostic: String?
+    }
+
     func retrieve(query: String, limit: Int, context: ModelContext) async -> [RAGRetrievalResult] {
+        await retrieveWithDiagnostics(query: query, limit: limit, context: context).results
+    }
+
+    func retrieveWithDiagnostics(query: String, limit: Int, context: ModelContext) async -> RetrieveResult {
         let boundedLimit = max(0, limit)
-        guard boundedLimit > 0 else { return [] }
+        guard boundedLimit > 0 else {
+            return RetrieveResult(results: [], mode: "empty_limit", diagnostic: "empty_limit")
+        }
 
         let candidateLimit = min(max(boundedLimit * 3, boundedLimit + 8), 60)
         let search = await RAGStore.searchWithDiagnostics(query: query, context: context, limit: candidateLimit)
@@ -31,7 +43,7 @@ final class RAGEngine {
             )
         }
         var seen = Set<String>()
-        return mapped
+        let results = mapped
             .sorted { lhs, rhs in
                 if lhs.score == rhs.score {
                     return lhs.excerpt.count > rhs.excerpt.count
@@ -46,6 +58,8 @@ final class RAGEngine {
             }
             .prefix(boundedLimit)
             .map { $0 }
+        let mode = results.first?.retrievalMode ?? search.mode
+        return RetrieveResult(results: results, mode: mode, diagnostic: search.diagnostic)
     }
 
     func buildContext(query: String, budget: Int, context: ModelContext) async -> RAGContextResult {

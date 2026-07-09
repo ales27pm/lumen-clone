@@ -35,6 +35,31 @@ final class ToolSchemaBridgeTests: XCTestCase {
         XCTAssertEqual(result.failure, .invalidArgumentType(tool: "rag.search", argument: "limit", expected: .number))
     }
 
+    func testStructuredToolCallValidatorRejectsNestedObjectForStringAlias() {
+        let action = AgentAction(tool: "web.search", args: ["q": .object(["term": .string("swift")])])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.failure, .invalidArgumentType(tool: "web.search", argument: "query", expected: .string))
+    }
+
+    func testStructuredToolCallValidatorRejectsArrayForNumericArgument() {
+        let action = AgentAction(tool: "rag.search", args: ["query": .string("swift"), "limit": .array([.number(3)])])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.failure, .invalidArgumentType(tool: "rag.search", argument: "limit", expected: .number))
+    }
+
+    func testStructuredToolCallValidatorRejectsEnumValueOutsideContract() {
+        let action = AgentAction(tool: "trigger.create", args: [
+            "title": .string("Review"),
+            "prompt": .string("Review reminders"),
+            "schedule": .string("whenever")
+        ])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.failure, .invalidEnumValue(tool: "trigger.create", argument: "schedule", allowed: ["absolute", "interval", "relative"]))
+    }
+
     func testStructuredToolCallValidatorRejectsExtraDangerousArguments() {
         let action = AgentAction(tool: "web.search", args: ["query": .string("swift"), "deleteAfter": .bool(true)])
         let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
@@ -105,6 +130,18 @@ final class ToolSchemaBridgeTests: XCTestCase {
         XCTAssertEqual(result.success?.arguments["messageId"], "msg-1")
         XCTAssertEqual(result.success?.arguments["to"], "alex@example.com")
         XCTAssertEqual(result.success?.arguments["body"], "FYI")
+    }
+
+    func testStructuredToolCallValidatorAcceptsTriggerScheduleEnum() {
+        let action = AgentAction(tool: "trigger.create", args: [
+            "title": .string("Review"),
+            "prompt": .string("Review reminders"),
+            "schedule": .string("relative")
+        ])
+        let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)
+
+        XCTAssertEqual(result.success?.canonicalToolID, "trigger.create")
+        XCTAssertEqual(result.success?.arguments["schedule"], "relative")
     }
 
     func testPromptGroundingRendererCanonicalizesSecureToolAliases() {

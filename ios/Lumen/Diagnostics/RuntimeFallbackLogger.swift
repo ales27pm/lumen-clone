@@ -25,11 +25,19 @@ private nonisolated final class RuntimeFallbackEmissionGate: @unchecked Sendable
         lastEmissionDate = date
         return true
     }
+
+    func resetForTesting() {
+        lock.lock()
+        lastSignature = nil
+        lastEmissionDate = nil
+        lock.unlock()
+    }
 }
 
 nonisolated enum RuntimeFallbackLogger {
     private static let emissionGate = RuntimeFallbackEmissionGate()
 
+    @discardableResult
     static func record(
         source: String,
         primaryBehavior: String,
@@ -37,7 +45,7 @@ nonisolated enum RuntimeFallbackLogger {
         reason: String,
         consequence: String,
         values: [String: String] = [:]
-    ) {
+    ) -> Bool {
         var payload = LumenTrainedModelRuntimeRegistry.selected.traceValues
         payload["schemaVersion"] = "lumen.runtime_fallback/1.0.0"
         payload["source"] = source
@@ -50,14 +58,21 @@ nonisolated enum RuntimeFallbackLogger {
         }
 
         let signature = fallbackSignature(source: source, fallbackBehavior: fallbackBehavior, reason: reason, values: payload)
-        guard emissionGate.shouldEmit(signature: signature) else { return }
+        guard emissionGate.shouldEmit(signature: signature) else { return false }
 
         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .fallbackUsed, values: payload))
+        return true
     }
 
     static func promptHash(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+
+    #if DEBUG
+    static func resetForTesting() {
+        emissionGate.resetForTesting()
+    }
+    #endif
 
     private static func fallbackSignature(
         source: String,

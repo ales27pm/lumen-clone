@@ -85,7 +85,8 @@ final class DeferredMaintenanceQueue {
     }
 
     func canRunNow(now: Date = Date()) -> Bool {
-        ResourceBudgetGate.allowsMaintenance(reason: "deferred-maintenance")
+        scenePhase == .active
+        && ResourceBudgetGate.allowsMaintenance(reason: "deferred-maintenance")
         && now.timeIntervalSince(lastForegroundActivation) >= foregroundGrace
         && !isChatOrVoiceGateActive(now: now)
     }

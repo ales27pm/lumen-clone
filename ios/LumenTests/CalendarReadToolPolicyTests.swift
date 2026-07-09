@@ -78,6 +78,14 @@ final class CalendarReadToolPolicyTests: XCTestCase {
         XCTAssertFalse(result.modelText.localizedCaseInsensitiveContains("raw provider boom"))
     }
 
+    func testReminderFailureMessageIsSanitized() {
+        let message = CalendarTools.reminderFailureMessage(action: "load")
+
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("reminders"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("localizedDescription"))
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("raw provider boom"))
+    }
+
     func testMalformedArgumentsFailBeforeProviderRead() async {
         let provider = FakeCalendarEventProvider(state: .granted, records: [])
         let result = await CalendarTools.listEventsResult(arguments: ["limit": "50"], provider: provider)

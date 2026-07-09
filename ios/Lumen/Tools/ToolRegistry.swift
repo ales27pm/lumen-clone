@@ -5,6 +5,7 @@ import SwiftData
 final class SecureToolRegistry {
     static let shared = SecureToolRegistry()
     private let tools: [ToolID: any LocalTool]
+    private let duplicateToolIDs: [ToolID]
 
     private static var defaultTools: [any LocalTool] {
         [
@@ -24,14 +25,21 @@ final class SecureToolRegistry {
 
     init(tools: [any LocalTool]? = nil) {
         var map: [ToolID: any LocalTool] = [:]
+        var duplicates: [ToolID] = []
         for tool in tools ?? Self.defaultTools {
-            precondition(map[tool.definition.id] == nil, "Duplicate secure tool id: \(tool.definition.id)")
+            guard map[tool.definition.id] == nil else {
+                duplicates.append(tool.definition.id)
+                continue
+            }
             map[tool.definition.id] = tool
         }
         self.tools = map
+        self.duplicateToolIDs = duplicates.sorted()
     }
 
     func definitions() -> [SecureToolDefinition] { tools.values.map(\.definition).sorted { $0.id < $1.id } }
+
+    func duplicateDefinitionIDs() -> [ToolID] { duplicateToolIDs }
 
     func availableDefinitions(context: ToolExecutionContext, source: ToolInvocationSource) async -> [SecureToolDefinition] {
         let states = await context.permissionRegistry.diagnostics()
@@ -44,7 +52,8 @@ final class SecureToolRegistry {
     }
 
     func execute(_ invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
-        guard let tool = tools[invocation.toolID] else {
+        let executionToolID = Self.preferredExecutionToolID(for: invocation.toolID)
+        guard let tool = tools[executionToolID] ?? tools[invocation.toolID] else {
             let result = ToolResult(invocationID: invocation.id, status: .unavailable, displayText: "Tool unavailable.", modelText: "Tool unavailable.", structuredPayload: nil, privacyLevel: .low, metricsSummary: "missing_tool", errorCode: "missing_tool")
             _ = await ToolMetricsRecorder(store: context.metricsStore).record(toolID: invocation.toolID, status: result.status, success: false, errorCode: result.errorCode, memoryWarningCount: MemoryPressureMonitor.shared.warningCount)
             return result
@@ -68,7 +77,24 @@ final class SecureToolRegistry {
         }
     }
 
-    func executeLegacyTool(
+    private nonisolated static func preferredExecutionToolID(for toolID: ToolID) -> ToolID {
+        switch ToolRouteGuard.canonicalToolID(toolID) {
+        case "calendar.list":
+            return "calendar.read"
+        case "contacts.search":
+            return "contacts.lookup"
+        case "location.current":
+            return "position.snapshot"
+        case "memory.recall":
+            return "memory.search"
+        case "rag.search":
+            return "rag.search.secure"
+        default:
+            return toolID
+        }
+    }
+
+    func executeToolCommand(
         _ rawToolID: String,
         arguments: AgentJSONArguments,
         approval: ToolExecutionApproval,

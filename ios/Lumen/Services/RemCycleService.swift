@@ -16,8 +16,10 @@ enum RemCycleService {
     }
 
     static func run(context: ModelContext, appState: AppState, reason: String, createdAt: Date = Date()) async {
-        let stored = (try? context.fetch(FetchDescriptor<StoredModel>())) ?? []
-        let fleet = LumenModelFleetResolver.resolveV1(appState: appState, storedModels: stored)
+        let catalog = storedModelCatalogSnapshot {
+            try context.fetch(FetchDescriptor<StoredModel>())
+        }
+        let fleet = LumenModelFleetResolver.resolveV1(appState: appState, storedModels: catalog.stored)
         // Detached tasks are intentional here so parse-summary file IO does not inherit
         // the @MainActor isolation of this service. The loaders read immutable snapshots
         // and return Sendable Strings without touching SwiftData/AppState/UI state.
@@ -35,7 +37,8 @@ enum RemCycleService {
             runnableV1: fleet.isRunnableV1,
             missingSlots: fleet.missingSlots.map(\.rawValue),
             assignedSlots: fleet.assignments.keys.map(\.rawValue).sorted(),
-            storedModelCount: stored.count,
+            storedModelCount: catalog.stored.count,
+            modelCatalogDiagnostic: catalog.diagnostic,
             activeChatModelID: appState.activeChatModelID,
             activeEmbeddingModelID: appState.activeEmbeddingModelID,
             parseFailureSummary: parseSummary,
@@ -83,6 +86,30 @@ enum RemCycleService {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }
+
+    static func modelCatalogFetchFailureMessage(error: Error) -> String {
+        ModelLaunchBootstrap.modelCatalogFetchFailureMessage(error: error)
+    }
+
+    static func storedModelCatalogSnapshotForTests(fetch: () throws -> [StoredModel]) -> RemStoredModelCatalogSnapshot {
+        storedModelCatalogSnapshot(fetch: fetch)
+    }
+
+    private static func storedModelCatalogSnapshot(fetch: () throws -> [StoredModel]) -> RemStoredModelCatalogSnapshot {
+        do {
+            return RemStoredModelCatalogSnapshot(stored: try fetch(), diagnostic: nil)
+        } catch {
+            return RemStoredModelCatalogSnapshot(
+                stored: [],
+                diagnostic: modelCatalogFetchFailureMessage(error: error)
+            )
+        }
+    }
+}
+
+struct RemStoredModelCatalogSnapshot {
+    let stored: [StoredModel]
+    let diagnostic: String?
 }
 
 nonisolated struct RemCycleReport: Codable, Sendable {
@@ -93,6 +120,7 @@ nonisolated struct RemCycleReport: Codable, Sendable {
     let missingSlots: [String]
     let assignedSlots: [String]
     let storedModelCount: Int
+    let modelCatalogDiagnostic: String?
     let activeChatModelID: String?
     let activeEmbeddingModelID: String?
     let parseFailureSummary: String

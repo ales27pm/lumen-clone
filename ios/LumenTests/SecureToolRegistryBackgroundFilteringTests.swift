@@ -13,4 +13,24 @@ final class SecureToolRegistryBackgroundFilteringTests: XCTestCase {
         XCTAssertFalse(defs.contains(where: {$0.id == "position.snapshot"}))
         XCTAssertFalse(defs.contains(where: {$0.id == "open.url"}))
     }
+
+    @MainActor
+    func testCatalogMemoryRecallExecutesSecureMemorySearchImplementation() async {
+        let ctx = ToolExecutionContext(isForeground: false, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: .shared)
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "memory.recall",
+            arguments: ["query": "workshop preferences"],
+            source: .backgroundTrigger,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+
+        let result = await SecureToolRegistry.shared.execute(invocation, context: ctx)
+
+        XCTAssertEqual(result.status, .unavailable)
+        XCTAssertEqual(result.metricsSummary, "no_model_context")
+        XCTAssertEqual(result.errorCode, "unavailable")
+    }
 }

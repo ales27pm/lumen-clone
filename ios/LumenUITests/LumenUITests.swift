@@ -35,46 +35,42 @@ final class LumenUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        app = XCUIApplication()
+        app = makeApp()
         app.launch()
         dismissOnboardingIfNeeded()
     }
 
     override func tearDownWithError() throws {
+        if app != nil, app.state != .notRunning {
+            app.terminate()
+        }
         app = nil
     }
 
     @MainActor
     func testDeveloperSectionIsVisibleInSettings() throws {
         openSettings()
-        assertDeveloperRowsExist()
+        assertDeveloperConsoleEntryExists()
     }
 
     @MainActor
-    func testDeveloperRowsDisplayInRequestedOrder() throws {
+    func testDeveloperConsoleEntryFollowsDebugToggles() throws {
         openSettings()
-        let order = [
-            "settings.developer.runTests",
-            "settings.developer.logs",
-            "settings.developer.debug",
-            "settings.developer.diagnostic"
-        ]
-        var previousMinY: CGFloat = 0
-        for (index, identifier) in order.enumerated() {
-            let row = developerRow(identifier)
-            XCTAssertTrue(row.waitForExistence(timeout: 3), "Missing row: \(identifier)")
-            let currentMinY = row.frame.minY
-            if index > 0 {
-                XCTAssertGreaterThan(currentMinY, previousMinY, "Row order is incorrect for \(identifier)")
-            }
-            previousMinY = currentMinY
-        }
+        let traceMode = app.switches["settings.developer.traceMode"]
+        let reasoningCapture = app.switches["settings.developer.reasoningCapture"]
+        let console = developerConsoleEntry()
+
+        XCTAssertTrue(traceMode.waitForExistence(timeout: 3))
+        XCTAssertTrue(reasoningCapture.waitForExistence(timeout: 3))
+        XCTAssertTrue(console.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(reasoningCapture.frame.minY, traceMode.frame.minY)
+        XCTAssertGreaterThan(console.frame.minY, reasoningCapture.frame.minY)
     }
 
     @MainActor
-    func testDeveloperRowsRemainAccessibleAfterNavigationAwayAndBack() throws {
+    func testDeveloperConsoleEntryRemainsAccessibleAfterNavigationAwayAndBack() throws {
         openSettings()
-        assertDeveloperRowsExist()
+        assertDeveloperConsoleEntryExists()
 
         if app.buttons["Chat"].exists {
             app.buttons["Chat"].tap()
@@ -83,89 +79,70 @@ final class LumenUITests: XCTestCase {
         }
 
         openSettings()
-        assertDeveloperRowsExist()
+        assertDeveloperConsoleEntryExists()
     }
 
     @MainActor
-    func testDeveloperRowsAreVisibleAfterAppRelaunch() throws {
+    func testDeveloperConsoleEntryIsVisibleAfterAppRelaunch() throws {
         openSettings()
-        assertDeveloperRowsExist()
+        assertDeveloperConsoleEntryExists()
 
-        app.terminate()
-        app.launch()
-        dismissOnboardingIfNeeded()
+        relaunchApp()
 
         openSettings()
-        assertDeveloperRowsExist()
+        assertDeveloperConsoleEntryExists()
     }
 
     @MainActor
-    func testDeveloperRowsRemainHittableAfterScroll() throws {
+    func testDeveloperConsoleEntryRemainsHittableAfterScroll() throws {
         openSettings()
-        assertDeveloperRowsExist()
+        assertDeveloperConsoleEntryExists()
 
         app.swipeUp()
         app.swipeDown()
 
-        let identifiers = [
-            "settings.developer.runTests",
-            "settings.developer.logs",
-            "settings.developer.debug",
-            "settings.developer.diagnostic"
-        ]
-        for identifier in identifiers {
-            let row = developerRow(identifier)
-            XCTAssertTrue(row.waitForExistence(timeout: 3), "Missing row: \(identifier)")
-            XCTAssertTrue(row.isHittable, "Row is not hittable: \(identifier)")
-        }
+        let console = developerConsoleEntry()
+        XCTAssertTrue(console.waitForExistence(timeout: 3))
+        XCTAssertTrue(console.isHittable)
     }
 
     @MainActor
-    func testRunTestsButtonPresentsResultsAlert() throws {
-        openSettings()
+    func testDeveloperConsoleOpensRunDashboard() throws {
+        openDeveloperConsole()
 
-        let runTests = developerRow("settings.developer.runTests")
-        XCTAssertTrue(runTests.waitForExistence(timeout: 3))
-        runTests.tap()
-
-        let alert = app.alerts["Run tests"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 4))
-        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "checks passed")).firstMatch.exists)
-        alert.buttons["OK"].tap()
-        XCTAssertFalse(alert.exists)
+        XCTAssertTrue(app.navigationBars["Developer Console"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.descendants(matching: .any)["developerConsole.segmentedTabs"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Complete E2E Tests"].waitForExistence(timeout: 4))
     }
 
     @MainActor
-    func testLogsNavigationOpensLogsScreen() throws {
-        openSettings()
+    func testDeveloperConsoleTelemetryTabOpens() throws {
+        openDeveloperConsole()
 
-        let logs = developerRow("settings.developer.logs")
-        XCTAssertTrue(logs.waitForExistence(timeout: 3))
-        logs.tap()
-
-        XCTAssertTrue(app.navigationBars["Logs"].waitForExistence(timeout: 4))
+        app.buttons["Telemetry"].tap()
+        XCTAssertTrue(app.staticTexts["Live Telemetry"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Live Surfaces"].waitForExistence(timeout: 4))
     }
 
     @MainActor
-    func testDebugNavigationOpensDebugScreen() throws {
-        openSettings()
+    func testDeveloperConsoleReportsTabOpens() throws {
+        openDeveloperConsole()
 
-        let debug = developerRow("settings.developer.debug")
-        XCTAssertTrue(debug.waitForExistence(timeout: 3))
-        debug.tap()
-
-        XCTAssertTrue(app.navigationBars["Debug"].waitForExistence(timeout: 4))
+        app.buttons["Reports"].tap()
+        XCTAssertTrue(app.staticTexts["Reports"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Runtime debug text"].waitForExistence(timeout: 4))
     }
 
     @MainActor
-    func testDiagnosticNavigationOpensDiagnosticScreen() throws {
-        openSettings()
+    func testDeveloperConsoleSurfaceNavigationOpensDiagnostics() throws {
+        openDeveloperConsole()
 
-        let diagnostic = developerRow("settings.developer.diagnostic")
-        XCTAssertTrue(diagnostic.waitForExistence(timeout: 3))
-        diagnostic.tap()
+        app.buttons["Telemetry"].tap()
+        let diagnostics = app.staticTexts["Diagnostics"]
+        XCTAssertTrue(diagnostics.waitForExistence(timeout: 4))
+        diagnostics.tap()
 
-        XCTAssertTrue(app.navigationBars["Diagnostic"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.navigationBars["Diagnostics"].waitForExistence(timeout: 4))
     }
 
     @MainActor
@@ -231,45 +208,30 @@ final class LumenUITests: XCTestCase {
 
         recordStep("open_settings") { openSettings() }
 
-        recordStep("run_tests_alert") {
-            let runTests = developerRow("settings.developer.runTests")
-            try assertElement(runTests.waitForExistence(timeout: 3), "Run Tests row was not visible.")
-            runTests.tap()
-
-            let runTestsAlert = app.alerts["Run tests"]
-            try assertElement(runTestsAlert.waitForExistence(timeout: 4), "Run tests alert did not appear.")
-            try assertElement(
-                runTestsAlert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "checks passed")).firstMatch.exists,
-                "Run tests alert did not include a passing checks message."
-            )
-            runTestsAlert.buttons["OK"].tap()
+        recordStep("open_developer_console") {
+            let console = developerConsoleEntry()
+            try assertElement(console.waitForExistence(timeout: 3), "Developer Console row was not visible.")
+            console.tap()
+            try assertElement(app.navigationBars["Developer Console"].waitForExistence(timeout: 4), "Developer Console did not open.")
         }
 
-        recordStep("open_logs") {
-            let logs = developerRow("settings.developer.logs")
-            try assertElement(logs.waitForExistence(timeout: 3), "Logs row was not visible.")
-            logs.tap()
-            try assertElement(app.navigationBars["Logs"].waitForExistence(timeout: 4), "Logs screen did not open.")
-            goBackIfNeeded()
+        recordStep("run_dashboard_visible") {
+            try assertElement(app.staticTexts["Complete E2E Tests"].waitForExistence(timeout: 4), "Run dashboard was not visible.")
+            try assertElement(app.staticTexts["Standard"].exists, "Standard E2E card was not visible.")
+            try assertElement(app.staticTexts["Training"].exists, "Training E2E card was not visible.")
         }
 
-        recordStep("open_debug") {
-            let debug = developerRow("settings.developer.debug")
-            try assertElement(debug.waitForExistence(timeout: 3), "Debug row was not visible.")
-            debug.tap()
-            try assertElement(app.navigationBars["Debug"].waitForExistence(timeout: 4), "Debug screen did not open.")
-            goBackIfNeeded()
+        recordStep("telemetry_tab_visible") {
+            app.buttons["Telemetry"].tap()
+            try assertElement(app.staticTexts["Live Telemetry"].waitForExistence(timeout: 4), "Telemetry tab did not open.")
+            try assertElement(app.staticTexts["Live Surfaces"].exists, "Live surfaces section was not visible.")
         }
 
-        recordStep("open_diagnostic") {
-            let diagnostic = developerRow("settings.developer.diagnostic")
-            try assertElement(diagnostic.waitForExistence(timeout: 3), "Diagnostic row was not visible.")
-            diagnostic.tap()
-            try assertElement(app.navigationBars["Diagnostic"].waitForExistence(timeout: 4), "Diagnostic screen did not open.")
-            goBackIfNeeded()
+        recordStep("reports_tab_visible") {
+            app.buttons["Reports"].tap()
+            try assertElement(app.staticTexts["Runtime debug text"].waitForExistence(timeout: 4), "Reports tab did not show runtime debug report.")
+            try assertElement(app.staticTexts["Recent logs"].exists, "Reports tab did not show recent logs report.")
         }
-
-        recordStep("rows_still_visible") { assertDeveloperRowsExist() }
 
         let runEnd = Date()
         let totalMs = Int(runEnd.timeIntervalSince(runStart) * 1_000)
@@ -301,48 +263,71 @@ final class LumenUITests: XCTestCase {
 
     @MainActor
     func testDeveloperFeaturesEndToEndAfterRelaunch() throws {
-        openSettings()
-        assertDeveloperRowsExist()
+        openDeveloperConsole()
+        XCTAssertTrue(app.navigationBars["Developer Console"].waitForExistence(timeout: 4))
 
-        app.terminate()
-        app.launch()
-        dismissOnboardingIfNeeded()
+        relaunchApp()
         openSettings()
 
-        let runTests = developerRow("settings.developer.runTests")
-        XCTAssertTrue(runTests.waitForExistence(timeout: 3))
-        runTests.tap()
-        let runTestsAlert = app.alerts["Run tests"]
-        XCTAssertTrue(runTestsAlert.waitForExistence(timeout: 4))
-        runTestsAlert.buttons["OK"].tap()
-
-        let logs = developerRow("settings.developer.logs")
-        XCTAssertTrue(logs.waitForExistence(timeout: 3))
-        logs.tap()
-        XCTAssertTrue(app.navigationBars["Logs"].waitForExistence(timeout: 4))
+        openDeveloperConsole()
+        XCTAssertTrue(app.staticTexts["Complete E2E Tests"].waitForExistence(timeout: 4))
     }
 
     @MainActor
     func testLaunchPerformance() throws {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
+            makeApp().launch()
         }
     }
 
     @MainActor
     private func openSettings() {
-        if app.buttons["Settings"].waitForExistence(timeout: 4) {
+        dismissOnboardingIfNeeded()
+        if app.navigationBars["Settings"].waitForExistence(timeout: 1) {
+            return
+        }
+        let settingsRow = app.descendants(matching: .any)["root.settings"]
+        if settingsRow.waitForExistence(timeout: 1) {
+            settingsRow.tap()
+            return
+        }
+        if app.buttons["Continue"].waitForExistence(timeout: 1) {
+            app.buttons["Continue"].tap()
+            if app.navigationBars["Settings"].waitForExistence(timeout: 1) {
+                return
+            }
+        }
+        if app.buttons["Settings"].waitForExistence(timeout: 1) {
             app.buttons["Settings"].tap()
             return
         }
-        if app.staticTexts["Settings"].waitForExistence(timeout: 4) {
+        if app.buttons["Preferences"].waitForExistence(timeout: 1) {
+            app.buttons["Preferences"].tap()
+            return
+        }
+        if app.staticTexts["Settings"].waitForExistence(timeout: 1) {
             app.staticTexts["Settings"].tap()
             return
         }
-        if app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 4) {
+        if app.staticTexts["Preferences"].waitForExistence(timeout: 1) {
+            app.staticTexts["Preferences"].tap()
+            return
+        }
+        if app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 1) {
             app.navigationBars.buttons.firstMatch.tap()
-            if app.staticTexts["Settings"].waitForExistence(timeout: 4) {
+            if settingsRow.waitForExistence(timeout: 1) {
+                settingsRow.tap()
+                return
+            }
+            if app.navigationBars["Settings"].waitForExistence(timeout: 1) {
+                return
+            }
+            if app.staticTexts["Settings"].waitForExistence(timeout: 1) {
                 app.staticTexts["Settings"].tap()
+                return
+            }
+            if app.staticTexts["Preferences"].waitForExistence(timeout: 1) {
+                app.staticTexts["Preferences"].tap()
                 return
             }
         }
@@ -350,15 +335,23 @@ final class LumenUITests: XCTestCase {
     }
 
     @MainActor
-    private func assertDeveloperRowsExist() {
-        XCTAssertTrue(developerRow("settings.developer.runTests").waitForExistence(timeout: 3))
-        XCTAssertTrue(developerRow("settings.developer.logs").waitForExistence(timeout: 3))
-        XCTAssertTrue(developerRow("settings.developer.debug").waitForExistence(timeout: 3))
-        XCTAssertTrue(developerRow("settings.developer.diagnostic").waitForExistence(timeout: 3))
+    private func openDeveloperConsole() {
+        openSettings()
+        let console = developerConsoleEntry()
+        XCTAssertTrue(console.waitForExistence(timeout: 3), "Developer Console row was not visible.")
+        console.tap()
     }
 
     @MainActor
-    private func developerRow(_ identifier: String) -> XCUIElement {
+    private func assertDeveloperConsoleEntryExists() {
+        let console = developerConsoleEntry()
+        XCTAssertTrue(console.waitForExistence(timeout: 3), "Developer Console row was not visible.")
+        XCTAssertTrue(console.isHittable, "Developer Console row was not hittable.")
+    }
+
+    @MainActor
+    private func developerConsoleEntry() -> XCUIElement {
+        let identifier = "settings.developer.console"
         let element = app.descendants(matching: .any)[identifier]
         if element.exists {
             return element
@@ -369,7 +362,7 @@ final class LumenUITests: XCTestCase {
             return button
         }
 
-        return app.staticTexts[identifier]
+        return app.staticTexts["Developer Console"]
     }
 
     @MainActor
@@ -381,10 +374,31 @@ final class LumenUITests: XCTestCase {
     }
 
     private func dismissOnboardingIfNeeded() {
-        let skip = app.buttons["Skip for now"]
-        if skip.waitForExistence(timeout: 2) {
-            skip.tap()
+        let skipButton = app.buttons["Skip for now"]
+        if skipButton.waitForExistence(timeout: 2) {
+            skipButton.tap()
+            return
         }
+
+        let skipElement = app.descendants(matching: .any)["Skip for now"]
+        if skipElement.waitForExistence(timeout: 1) {
+            skipElement.tap()
+        }
+    }
+
+    private func relaunchApp() {
+        if app.state != .notRunning {
+            app.terminate()
+            XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "App did not terminate before relaunch.")
+        }
+        app.launch()
+        dismissOnboardingIfNeeded()
+    }
+
+    private func makeApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments.append("--lumen-ui-tests")
+        return app
     }
 
     private func attachDashboardReport(_ report: DashboardSummary) {

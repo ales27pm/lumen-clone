@@ -349,10 +349,14 @@ nonisolated enum FinalOutputSanitizer {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > fallback.count else { return (source, false) }
         guard trimmed.lowercased().hasPrefix(fallback.lowercased()) else { return (source, false) }
-        let remainder = trimmed.dropFirst(fallback.count)
-            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".:;-—–*")))
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".:;-—–*"))
+        let remainderStart = trimmed[trimmed.index(trimmed.startIndex, offsetBy: fallback.count)...]
+            .drop(while: { character in
+                character.unicodeScalars.allSatisfy { separators.contains($0) }
+            })
+        let remainder = String(remainderStart)
         guard !remainder.isEmpty else { return (source, false) }
-        return (String(remainder), true)
+        return (remainder, true)
     }
 
     private static func containsRawToolPayloadMarker(_ lowercasedText: String) -> Bool {
@@ -377,7 +381,7 @@ nonisolated enum FinalOutputSanitizer {
     }
 
     private static func removingRawToolPayloadMarkerLines(from source: String) -> (text: String, removedAny: Bool) {
-        let pattern = #"(?im)^.*("kind"\s*:\s*"searchresults"|"mediakind"\s*:\s*"page"|"sourcepageurl").*$"#
+        let pattern = #"(?im)^.*("kind"\s*:\s*"searchresults"|"mediakind"\s*:\s*"page"|"sourcepageurl").*(?:\n|$)"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
             return (source, false)
         }

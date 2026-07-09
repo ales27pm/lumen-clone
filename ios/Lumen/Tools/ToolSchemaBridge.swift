@@ -71,6 +71,7 @@ nonisolated enum StructuredToolCallValidationError: Error, Equatable, Sendable {
     case toolNotAvailable(String)
     case missingRequiredArgument(tool: String, argument: String)
     case invalidArgumentType(tool: String, argument: String, expected: ToolArgumentValueType)
+    case invalidEnumValue(tool: String, argument: String, allowed: [String])
     case extraArguments(tool: String, arguments: [String])
 
     var diagnostic: String {
@@ -83,6 +84,8 @@ nonisolated enum StructuredToolCallValidationError: Error, Equatable, Sendable {
             return "missing_required_argument:\(tool).\(argument)"
         case .invalidArgumentType(let tool, let argument, let expected):
             return "invalid_argument_type:\(tool).\(argument):expected_\(expected.rawValue)"
+        case .invalidEnumValue(let tool, let argument, let allowed):
+            return "invalid_enum_value:\(tool).\(argument):allowed_\(allowed.sorted().joined(separator: "|"))"
         case .extraArguments(let tool, let arguments):
             return "extra_arguments:\(tool):\(arguments.sorted().joined(separator: ","))"
         }
@@ -114,16 +117,16 @@ nonisolated enum StructuredToolCallValidator {
             rawToolID: action.tool,
             arguments: action.args.stringCoerced
         )
-        let rawByKey = action.args.reduce(into: AgentJSONArguments()) { partial, entry in
-            partial[entry.key] = entry.value
-        }
-        let normalizedValues = normalized.reduce(into: AgentJSONArguments()) { partial, entry in
-            partial[entry.key] = rawByKey[entry.key] ?? .string(entry.value)
-        }
         let contract = ToolRegistry.find(id: canonicalToolID)?.capabilityContract.arguments ?? []
         let contractByName = Dictionary(uniqueKeysWithValues: contract.map { ($0.name, $0) })
         let allowedNames = Set(contractByName.keys)
         let allowedAliasNames = ToolRouteGuard.aliasesAllowedDuringNormalization(for: canonicalToolID)
+        let normalizedValues = normalizedJSONArguments(
+            canonicalToolID: canonicalToolID,
+            normalized: normalized,
+            rawArguments: action.args,
+            allowedAliasNames: allowedAliasNames
+        )
 
         let extras = Set(normalized.keys).subtracting(allowedNames).subtracting(allowedAliasNames)
         if !extras.isEmpty {
@@ -142,6 +145,15 @@ nonisolated enum StructuredToolCallValidator {
             guard isValue(value, compatibleWith: definition.type) else {
                 return .failure(.invalidArgumentType(tool: canonicalToolID, argument: name, expected: definition.type))
             }
+            if definition.type == .enumeration,
+               let allowedValues = definition.allowedValues,
+               case .string(let rawValue) = value {
+                let normalizedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let normalizedAllowedValues = Set(allowedValues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+                guard normalizedAllowedValues.contains(normalizedValue) else {
+                    return .failure(.invalidEnumValue(tool: canonicalToolID, argument: name, allowed: allowedValues.sorted()))
+                }
+            }
         }
 
         return .success(ValidatedStructuredToolCall(
@@ -158,8 +170,36 @@ nonisolated enum StructuredToolCallValidator {
             return true
         case (.bool, .bool):
             return true
+        case (.array, .array):
+            return true
+        case (.object, .object):
+            return true
+        case (.enumeration, .string):
+            return true
         default:
             return false
+        }
+    }
+
+    private static func normalizedJSONArguments(
+        canonicalToolID: String,
+        normalized: [String: String],
+        rawArguments: AgentJSONArguments,
+        allowedAliasNames: Set<String>
+    ) -> AgentJSONArguments {
+        normalized.reduce(into: AgentJSONArguments()) { partial, entry in
+            if let raw = rawArguments[entry.key] {
+                partial[entry.key] = raw
+                return
+            }
+            if let alias = allowedAliasNames.sorted().first(where: { alias in
+                guard rawArguments[alias]?.stringValue == entry.value else { return false }
+                return true
+            }) {
+                partial[entry.key] = rawArguments[alias]
+                return
+            }
+            partial[entry.key] = .string(entry.value)
         }
     }
 

@@ -1,6 +1,13 @@
 import Foundation
 import SwiftData
 import Accelerate
+import OSLog
+
+nonisolated struct VectorIndexLoadResult: Sendable, Equatable {
+    let loadedCount: Int
+    let mode: String
+    let diagnostic: String?
+}
 
 /// In-memory, pre-normalized Float32 vector index with Accelerate-accelerated search.
 ///
@@ -18,6 +25,7 @@ import Accelerate
 @MainActor
 final class RAGVectorIndex {
     static let shared = RAGVectorIndex()
+    private static let logger = Logger(subsystem: "ai.lumen.app", category: "vector-index")
 
     private var ids: [PersistentIdentifier] = []
     private var buckets: [String] = []
@@ -38,10 +46,29 @@ final class RAGVectorIndex {
         loaded = false
     }
 
-    func ensureLoaded(context: ModelContext) {
-        guard !loaded else { return }
+    @discardableResult
+    func ensureLoaded(context: ModelContext) -> VectorIndexLoadResult {
+        ensureLoaded(fetch: { try context.fetch(FetchDescriptor<RAGChunk>()) })
+    }
+
+    @discardableResult
+    func ensureLoadedForTests(fetch: () throws -> [RAGChunk]) -> VectorIndexLoadResult {
+        ensureLoaded(fetch: fetch)
+    }
+
+    private func ensureLoaded(fetch: () throws -> [RAGChunk]) -> VectorIndexLoadResult {
+        guard !loaded else {
+            return VectorIndexLoadResult(loadedCount: ids.count, mode: "already_loaded", diagnostic: nil)
+        }
+        let fetched: [RAGChunk]
+        do {
+            fetched = try fetch()
+        } catch {
+            let diagnostic = "rag_vector_index_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            Self.logger.error("vector_index_load_failed kind=rag diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return VectorIndexLoadResult(loadedCount: 0, mode: "failed", diagnostic: diagnostic)
+        }
         loaded = true
-        let fetched = (try? context.fetch(FetchDescriptor<RAGChunk>())) ?? []
         ids.reserveCapacity(fetched.count)
         buckets.reserveCapacity(fetched.count)
         var d = 0
@@ -51,6 +78,7 @@ final class RAGVectorIndex {
             appendRow(id: c.persistentModelID, bucket: c.sourceType, vector: c.embedding, expectedDim: d)
         }
         dim = d
+        return VectorIndexLoadResult(loadedCount: ids.count, mode: "loaded", diagnostic: nil)
     }
 
     func append(id: PersistentIdentifier, bucket: String, vector: [Double]) {
@@ -149,6 +177,7 @@ final class RAGVectorIndex {
 @MainActor
 final class MemoryVectorIndex {
     static let shared = MemoryVectorIndex()
+    private static let logger = Logger(subsystem: "ai.lumen.app", category: "vector-index")
 
     private var ids: [PersistentIdentifier] = []
     private var pinned: [Bool] = []
@@ -166,10 +195,29 @@ final class MemoryVectorIndex {
         loaded = false
     }
 
-    func ensureLoaded(context: ModelContext) {
-        guard !loaded else { return }
+    @discardableResult
+    func ensureLoaded(context: ModelContext) -> VectorIndexLoadResult {
+        ensureLoaded(fetch: { try context.fetch(FetchDescriptor<MemoryItem>()) })
+    }
+
+    @discardableResult
+    func ensureLoadedForTests(fetch: () throws -> [MemoryItem]) -> VectorIndexLoadResult {
+        ensureLoaded(fetch: fetch)
+    }
+
+    private func ensureLoaded(fetch: () throws -> [MemoryItem]) -> VectorIndexLoadResult {
+        guard !loaded else {
+            return VectorIndexLoadResult(loadedCount: ids.count, mode: "already_loaded", diagnostic: nil)
+        }
+        let fetched: [MemoryItem]
+        do {
+            fetched = try fetch()
+        } catch {
+            let diagnostic = "memory_vector_index_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            Self.logger.error("vector_index_load_failed kind=memory diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return VectorIndexLoadResult(loadedCount: 0, mode: "failed", diagnostic: diagnostic)
+        }
         loaded = true
-        let fetched = (try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []
         var d = 0
         for m in fetched where !m.embedding.isEmpty {
             if d == 0 { d = m.embedding.count }
@@ -177,6 +225,7 @@ final class MemoryVectorIndex {
             append(id: m.persistentModelID, isPinned: m.isPinned, vector: m.embedding, expectedDim: d)
         }
         dim = d
+        return VectorIndexLoadResult(loadedCount: ids.count, mode: "loaded", diagnostic: nil)
     }
 
     func append(id: PersistentIdentifier, isPinned: Bool, vector: [Double]) {

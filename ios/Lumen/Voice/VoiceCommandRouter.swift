@@ -37,41 +37,6 @@ enum VoiceAgentRuntimeBridge {
     ) -> AsyncStream<AgentKernelEvent> {
         let gatedMemories = MemoryGate.filter(intent: routing.intent, items: memories, userMessage: text)
         let effectiveMaxTokens = maxTokens ?? appState.maxTokens
-        let availableTools = enabledTools(for: routing, appState: appState)
-
-        if shouldUseLegacyToolPath(routing: routing, availableTools: availableTools) {
-            #if DEBUG
-            let request = makeLegacyAgentRequest(
-                text: text,
-                appState: appState,
-                history: history,
-                relevantMemories: gatedMemories,
-                availableTools: availableTools,
-                conversationID: conversationID,
-                turnID: turnID,
-                maxTokens: effectiveMaxTokens
-            )
-            let options = LegacyAgentRunOptions(
-                modelContext: modelContext,
-                conversationID: conversationID,
-                turnID: turnID,
-                groundingMode: .foregroundChat,
-                allowDegradedGrounding: true,
-                preventDoubleGrounding: true,
-                diagnosticsEnabled: false
-            )
-            return AssistantKernel.shared.runLegacyAgentBridge(request, options: options)
-            #else
-            return AsyncStream { continuation in
-                let message = "Tool-capable voice turns are excluded from this Release build until native kernel tool execution is available."
-                continuation.yield(.final(message))
-                continuation.yield(.done(finalText: message, steps: [
-                    AgentStep(kind: .observation, content: message)
-                ]))
-                continuation.finish()
-            }
-            #endif
-        }
 
         let request = makeKernelRequest(
             text: text,
@@ -119,40 +84,4 @@ enum VoiceAgentRuntimeBridge {
         )
     }
 
-    private static func makeLegacyAgentRequest(
-        text: String,
-        appState: AppState,
-        history: [(role: MessageRole, content: String)],
-        relevantMemories: [MemoryContextItem],
-        availableTools: [ToolDefinition],
-        conversationID: UUID,
-        turnID: UUID,
-        maxTokens: Int
-    ) -> AgentRequest {
-        AgentRequest(
-            systemPrompt: appState.systemPrompt,
-            history: history,
-            userMessage: text,
-            temperature: appState.temperature,
-            topP: appState.topP,
-            repetitionPenalty: appState.repetitionPenalty,
-            maxTokens: maxTokens,
-            maxSteps: appState.maxAgentSteps,
-            availableTools: availableTools,
-            relevantMemories: relevantMemories,
-            attachments: [],
-            conversationID: conversationID,
-            turnID: turnID
-        )
-    }
-
-    private static func enabledTools(for routing: IntentRoutingDecision, appState: AppState) -> [ToolDefinition] {
-        ToolRegistry.all.filter { tool in
-            appState.enabledToolIDs.contains(tool.id) && IntentRouter.isToolAllowed(tool.id, for: routing)
-        }
-    }
-
-    private static func shouldUseLegacyToolPath(routing: IntentRoutingDecision, availableTools: [ToolDefinition]) -> Bool {
-        IntentRouter.intentRequiresTool(routing) && !availableTools.isEmpty
-    }
 }

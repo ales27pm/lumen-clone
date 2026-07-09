@@ -25,6 +25,8 @@ final class ModelDownloader: NSObject {
 
     static var modelsDirectory: URL { ModelStorage.modelsDirectoryURL() }
     private static var resumeDirectory: URL { ModelStorage.resumeDirectoryURL() }
+    private static func modelsDirectoryOrThrow() throws -> URL { try ModelStorage.modelsDirectoryURLOrThrow() }
+    private static func resumeDirectoryOrThrow() throws -> URL { try ModelStorage.resumeDirectoryURLOrThrow() }
 
     func localURL(for model: CatalogModel) -> URL { Self.modelsDirectory.appendingPathComponent(model.fileName) }
 
@@ -52,8 +54,17 @@ final class ModelDownloader: NSObject {
             return .success(())
         }
 
-        if isDownloaded(model) {
-            onComplete(localURL(for: model))
+        let destination: URL
+        do {
+            destination = try Self.modelsDirectoryOrThrow().appendingPathComponent(model.fileName)
+        } catch {
+            Self.logger.error("download_start_failed model_id=\(model.id, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            NotificationCenter.default.post(name: .modelDownloaderInfo, object: nil, userInfo: ["message": "Could not start download for \(model.name): persistent model directory unavailable."])
+            return .failure(.persistentDirectoryUnavailable)
+        }
+
+        if case .success = ModelFileIntegrity.validateDownloadedCatalogFile(model, at: destination) {
+            onComplete(destination)
             progresses[model.id] = DownloadProgress(fractionCompleted: 1, bytesReceived: model.sizeBytes, totalBytes: model.sizeBytes, state: .completed)
             return .success(())
         }
@@ -68,7 +79,7 @@ final class ModelDownloader: NSObject {
             guard case .success(let downloadURL) = urlResult else {
                 let error: CatalogModel.DownloadURLError
                 if case .failure(let err) = urlResult { error = err } else { error = .invalidURLComponents }
-                Self.logger.error("download_start_failed model_id=\(model.id, privacy: .public) reason=\(String(describing: error), privacy: .public)")
+                Self.logger.error("download_start_failed model_id=\(model.id, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 completionHandlers[model.id] = nil
                 NotificationCenter.default.post(name: .modelDownloaderInfo, object: nil, userInfo: ["message": "Could not start download for \(model.name): \(error.localizedDescription)"])
                 return .failure(error)
@@ -77,7 +88,7 @@ final class ModelDownloader: NSObject {
         }
         progresses[model.id] = DownloadProgress(fractionCompleted: progresses[model.id]?.fractionCompleted ?? 0, bytesReceived: progresses[model.id]?.bytesReceived ?? 0, totalBytes: model.sizeBytes, state: .downloading)
         sessions[model.id] = task
-        targets[task.taskIdentifier] = (model, localURL(for: model), onComplete)
+        targets[task.taskIdentifier] = (model, destination, onComplete)
         resumeData[model.id] = nil
         task.resume()
         return .success(())
@@ -124,17 +135,20 @@ final class ModelDownloader: NSObject {
     }
 
     private func persistResume(_ data: Data, for model: CatalogModel) {
-        let url = Self.resumeDirectory.appendingPathComponent("\(model.id).resume")
+        guard let resumeDirectory = try? Self.resumeDirectoryOrThrow() else { return }
+        let url = resumeDirectory.appendingPathComponent("\(model.id).resume")
         try? data.write(to: url)
     }
 
     private func loadPersistedResume(for model: CatalogModel) -> Data? {
-        let url = Self.resumeDirectory.appendingPathComponent("\(model.id).resume")
+        guard let resumeDirectory = try? Self.resumeDirectoryOrThrow() else { return nil }
+        let url = resumeDirectory.appendingPathComponent("\(model.id).resume")
         return try? Data(contentsOf: url)
     }
 
     private func clearPersistedResume(for model: CatalogModel) {
-        let url = Self.resumeDirectory.appendingPathComponent("\(model.id).resume")
+        guard let resumeDirectory = try? Self.resumeDirectoryOrThrow() else { return }
+        let url = resumeDirectory.appendingPathComponent("\(model.id).resume")
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -174,14 +188,19 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode
         let mimeType = downloadTask.response?.mimeType
         let fm = FileManager.default
-        let modelsDir = ModelStorage.modelsDirectoryURL(fileManager: fm)
-        let staging = modelsDir.appendingPathComponent(".staging-\(UUID().uuidString)")
-        try? fm.removeItem(at: staging)
+        let modelsDirResult = Result { try ModelStorage.modelsDirectoryURLOrThrow(fileManager: fm) }
         let movedURL: URL?
-        do {
-            try fm.moveItem(at: location, to: staging)
-            movedURL = staging
-        } catch {
+        switch modelsDirResult {
+        case .success(let modelsDir):
+            let staging = modelsDir.appendingPathComponent(".staging-\(UUID().uuidString)")
+            try? fm.removeItem(at: staging)
+            do {
+                try fm.moveItem(at: location, to: staging)
+                movedURL = staging
+            } catch {
+                movedURL = nil
+            }
+        case .failure:
             movedURL = nil
         }
 
@@ -189,6 +208,11 @@ extension ModelDownloader: URLSessionDownloadDelegate {
             let fileManager = FileManager.default
             guard let entry = targets[taskId] else {
                 if let moved = movedURL { try? fileManager.removeItem(at: moved) }
+                return
+            }
+
+            if case .failure(let error) = modelsDirResult {
+                failDownload(taskID: taskId, model: entry.model, message: "Persistent model directory unavailable: \(error.localizedDescription)")
                 return
             }
 

@@ -5,7 +5,7 @@ struct RootView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
     @Query private var storedModels: [StoredModel]
-    @State private var selection: MenuItem? = .chat
+    @State private var selection: MenuItem? = LumenLaunchArguments.isUITesting ? .settings : .chat
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     enum MenuSection: String, Identifiable, CaseIterable {
@@ -75,6 +75,19 @@ struct RootView: View {
             case .triggers: return "alarm"
             case .tools: return "wrench.and.screwdriver"
             case .settings: return "gearshape"
+            }
+        }
+        var accessibilityIdentifier: String {
+            switch self {
+            case .chat: return "root.chat"
+            case .outlook: return "root.outlook"
+            case .models: return "root.models"
+            case .memory: return "root.memory"
+            case .sources: return "root.sources"
+            case .philosophies: return "root.philosophies"
+            case .triggers: return "root.triggers"
+            case .tools: return "root.tools"
+            case .settings: return "root.settings"
             }
         }
     }
@@ -194,5 +207,6 @@ private struct LumenSidebarRow: View {
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(item.accessibilityIdentifier)
     }
 }
