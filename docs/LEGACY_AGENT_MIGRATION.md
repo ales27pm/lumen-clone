@@ -8,9 +8,9 @@ For a per-surface view of which entrypoints are live, partial, bridged, or plann
 - `AgentRunner` headless path builds bounded grounding sections and secure-tool availability before constructing `AgentRequest`.
 
 ## Still legacy
-- `AgentService`, `SlotAgentService`, and `RolePipelineAgentService` still execute through legacy planning/execution loops and legacy `ToolExecutor`.
-- Migration is additive; behavior is preserved.
-- `LegacyAgentCompatibilityBridge` remains the documented boundary for compatibility paths that still need legacy event streams: kernel-internal tool-required chat routing, tool-capable voice routing, live diagnostics/E2E probes, grounding audit smoke tests, and slot-agent deterministic compatibility responses.
+- `AgentService`, `SlotAgentService`, and `RolePipelineAgentService` still exist for migration history, tests, and DEBUG-only probes.
+- Chat, voice, and live E2E model-backed Release paths enter through `AssistantKernel.run(...)` instead of the legacy bridge.
+- `LegacyAgentCompatibilityBridge` remains DEBUG-only for diagnostic migration probes and deterministic compatibility responses while those probes are replaced with native kernel equivalents.
 
 ## Tool schema bridge
 - `LegacyToolSchemaBridge` maps secure tool definitions into legacy `ToolDefinition` shape.

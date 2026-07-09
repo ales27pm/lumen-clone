@@ -115,8 +115,8 @@
 
 - `ChatView.runAgent(...)` now enters through `AssistantKernel.shared.run(...)` and reduces native `AgentKernelEvent` values with `ChatKernelEventReducer`.
 - `AgentKernelEvent.legacyAgentEvent` no longer feeds ChatView.
-- `LegacyAgentCompatibilityBridge` remains for documented compatibility paths, including kernel-internal tool-required chat routing, tool-capable voice routing, live diagnostics/E2E probes, and grounding audit smoke tests.
-- Voice routing remains mixed: `VoiceCommandRouter` can still adapt kernel events back to `AgentEvent` and tool-capable voice can still use `runLegacyAgentBridge(...)`.
+- `LegacyAgentCompatibilityBridge` remains DEBUG-only for documented diagnostic compatibility paths, including persistent runtime diagnostics and grounding audit smoke tests.
+- Voice routing enters through `AssistantKernel.run(...)`; tool-capable voice turns reuse the same native kernel tool boundary as chat.
 - This update does not claim all legacy services are removed or that the app is production-ready without Xcode/device validation.
 
 ## Background tool-only trigger update

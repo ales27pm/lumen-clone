@@ -1069,27 +1069,11 @@ nonisolated enum E2ETestRunner {
             if modelLoaded {
                 let enabledCanonicalToolIDs = Set(config.enabledToolIDs.map(ToolRouteGuard.canonicalToolID))
                 let forbiddenCanonicalToolIDs = Set(scenario.forbiddenToolIDs.map(ToolRouteGuard.canonicalToolID))
-                let req = AgentRequest(
-                    systemPrompt: config.systemPrompt,
-                    history: [],
-                    userMessage: scenario.prompt,
-                    temperature: min(config.temperature, 0.3),
-                    topP: config.topP,
-                    repetitionPenalty: config.repetitionPenalty,
-                    maxTokens: min(config.maxTokens, 512),
-                    maxSteps: min(config.maxAgentSteps, 3),
-                    availableTools: ToolRegistry.all.filter { tool in
-                        let canonical = ToolRouteGuard.canonicalToolID(tool.id)
-                        return enabledCanonicalToolIDs.contains(canonical) && IntentRouter.isToolAllowed(canonical, for: routing)
-                    },
-                    relevantMemories: [],
-                    conversationID: conversationID,
-                    turnID: turnID,
-                    scenarioID: scenario.id,
-                    e2eRunID: e2eRunID,
-                    agentRunID: agentRunID
-                )
-                await event("tools", "available=\(req.availableTools.map(\.id).sorted().joined(separator: ","))")
+                let availableTools = ToolRegistry.all.filter { tool in
+                    let canonical = ToolRouteGuard.canonicalToolID(tool.id)
+                    return enabledCanonicalToolIDs.contains(canonical) && IntentRouter.isToolAllowed(canonical, for: routing)
+                }
+                await event("tools", "available=\(availableTools.map(\.id).sorted().joined(separator: ","))")
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
                 await Task.yield()
@@ -1141,7 +1125,7 @@ nonisolated enum E2ETestRunner {
                     let shouldEnableNetworkAccess = shouldTemporarilyEnableNetworkAccess(
                         scenario: scenario,
                         routing: routing,
-                        availableToolIDs: req.availableTools.map(\.id)
+                        availableToolIDs: availableTools.map(\.id)
                     )
                     let previousNetworkAccessGranted: Bool
                     if shouldEnableNetworkAccess {
@@ -1160,16 +1144,15 @@ nonisolated enum E2ETestRunner {
                             }
                         }
                     }
-                    let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
-                    let runOptions = strictLiveAgentRunOptions(
-                        req: req,
-                        scenario: scenario,
-                        e2eRunID: e2eRunID,
-                        agentRunID: agentRunID,
-                        acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence
+                    let kernelRequest = strictLiveAgentKernelRequest(
+                        prompt: scenario.prompt,
+                        systemPrompt: config.systemPrompt,
+                        config: config,
+                        conversationID: conversationID,
+                        turnID: turnID
                     )
                     let agentEvents = await MainActor.run {
-                        StructuredAgentKernelExecutor.runModelBackedAgent(req, options: runOptions)
+                        AssistantKernel.shared.run(kernelRequest, modelContext: nil)
                     }
                     for await agentEvent in agentEvents {
                         try Task.checkCancellation()
@@ -1787,6 +1770,37 @@ nonisolated enum E2ETestRunner {
         guard scenario.requiresAgentRun, routing.intent == .webSearch else { return false }
         let canonicalAvailable = Set(availableToolIDs.map(ToolRouteGuard.canonicalToolID))
         return canonicalAvailable.contains("web.search") || canonicalAvailable.contains("web.fetch")
+    }
+
+    private nonisolated static func strictLiveAgentKernelRequest(
+        prompt: String,
+        systemPrompt: String,
+        config: E2ERunConfig,
+        conversationID: UUID,
+        turnID: UUID
+    ) -> AgentKernelRequest {
+        AgentKernelRequest(
+            conversationID: conversationID,
+            turnID: turnID,
+            userMessage: prompt,
+            history: [],
+            systemPrompt: systemPrompt,
+            relevantMemories: [],
+            task: .chat,
+            source: .diagnostics,
+            options: AgentKernelOptions(
+                allowHeavyRuntime: true,
+                allowDegradedMode: false,
+                requireUserVisibleFinal: true,
+                diagnosticsEnabled: true,
+                maxSteps: min(config.maxAgentSteps, 3),
+                prefersFoundationModels: false,
+                temperature: min(config.temperature, 0.3),
+                topP: config.topP,
+                repetitionPenalty: config.repetitionPenalty,
+                maxTokens: min(config.maxTokens, 512)
+            )
+        )
     }
 
     private nonisolated static func strictLiveAgentRunOptions(
