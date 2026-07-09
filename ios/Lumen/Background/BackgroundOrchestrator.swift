@@ -190,19 +190,11 @@ final class BackgroundOrchestrator {
             return
         }
         let context = ModelContext(container)
-        let outcome = await SelfImprovementLoop.shared.run(
+        await SelfImprovementLoop.shared.run(
             trigger: .backgroundProcessing,
             context: context,
             deadline: deadline
         )
-        if case .failed(let code) = outcome {
-            await appendMetric(
-                taskKind: .selfImprovement,
-                policySummary: "self-improvement failed",
-                success: false,
-                errorCode: code
-            )
-        }
     }
 
     private func handleBackgroundTask(_ task: BGTask, runProcessingWork: Bool) async {
