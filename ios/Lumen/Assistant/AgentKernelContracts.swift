@@ -1,6 +1,42 @@
 import Foundation
 import SwiftData
 
+nonisolated struct AgentTraceCorrelation: Codable, Sendable, Equatable, Hashable {
+    let scenarioID: String?
+    let e2eRunID: UUID?
+    let agentRunID: UUID?
+    let conversationID: UUID?
+    let turnID: UUID?
+
+    init(
+        scenarioID: String? = nil,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil
+    ) {
+        self.scenarioID = scenarioID
+        self.e2eRunID = e2eRunID
+        self.agentRunID = agentRunID
+        self.conversationID = conversationID
+        self.turnID = turnID
+    }
+
+    var diagnosticText: String {
+        [
+            "scenarioID=\(scenarioID ?? "nil")",
+            "e2eRunID=\(e2eRunID?.uuidString ?? "nil")",
+            "agentRunID=\(agentRunID?.uuidString ?? "nil")",
+            "conversationID=\(conversationID?.uuidString ?? "nil")",
+            "turnID=\(turnID?.uuidString ?? "nil")"
+        ].joined(separator: ",")
+    }
+
+    var hasAnyIdentifier: Bool {
+        scenarioID?.isEmpty == false || e2eRunID != nil || agentRunID != nil || conversationID != nil || turnID != nil
+    }
+}
+
 /// Canonical request envelope for the Agent Kernel migration.
 ///
 /// All user-visible, voice, AppIntent, trigger, diagnostic, and benchmark turns
@@ -19,6 +55,7 @@ nonisolated struct AgentKernelRequest: Sendable, Equatable, Identifiable {
     let task: AssistantTaskKind
     let source: AgentKernelSource
     let options: AgentKernelOptions
+    let traceCorrelation: AgentTraceCorrelation?
 
     init(
         id: UUID = UUID(),
@@ -31,7 +68,8 @@ nonisolated struct AgentKernelRequest: Sendable, Equatable, Identifiable {
         attachments: [ChatAttachment] = [],
         task: AssistantTaskKind = .chat,
         source: AgentKernelSource = .chat,
-        options: AgentKernelOptions = .chat
+        options: AgentKernelOptions = .chat,
+        traceCorrelation: AgentTraceCorrelation? = nil
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -44,6 +82,7 @@ nonisolated struct AgentKernelRequest: Sendable, Equatable, Identifiable {
         self.task = task
         self.source = source
         self.options = options
+        self.traceCorrelation = traceCorrelation
     }
 }
 
@@ -106,6 +145,7 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
     let topP: Double
     let repetitionPenalty: Double
     let maxTokens: Int
+    let forceModelBackedToolPlanning: Bool
 
     init(
         allowHeavyRuntime: Bool,
@@ -117,7 +157,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         temperature: Double = 0.7,
         topP: Double = 0.9,
         repetitionPenalty: Double = 1.1,
-        maxTokens: Int = 1024
+        maxTokens: Int = 1024,
+        forceModelBackedToolPlanning: Bool = false
     ) {
         self.allowHeavyRuntime = allowHeavyRuntime
         self.allowDegradedMode = allowDegradedMode
@@ -129,6 +170,7 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         self.topP = min(max(topP, 0.0), 1.0)
         self.repetitionPenalty = min(max(repetitionPenalty, 0.1), 3.0)
         self.maxTokens = max(1, maxTokens)
+        self.forceModelBackedToolPlanning = forceModelBackedToolPlanning
     }
 
     init(from decoder: Decoder) throws {
@@ -143,7 +185,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
             temperature: try container.decodeIfPresent(Double.self, forKey: .temperature) ?? 0.7,
             topP: try container.decodeIfPresent(Double.self, forKey: .topP) ?? 0.9,
             repetitionPenalty: try container.decodeIfPresent(Double.self, forKey: .repetitionPenalty) ?? 1.1,
-            maxTokens: try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? 1024
+            maxTokens: try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? 1024,
+            forceModelBackedToolPlanning: try container.decodeIfPresent(Bool.self, forKey: .forceModelBackedToolPlanning) ?? false
         )
     }
 
@@ -158,6 +201,7 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         case topP
         case repetitionPenalty
         case maxTokens
+        case forceModelBackedToolPlanning
     }
 
     static let chat = AgentKernelOptions(

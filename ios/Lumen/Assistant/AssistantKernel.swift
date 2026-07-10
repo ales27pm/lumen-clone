@@ -113,13 +113,93 @@ final class AssistantKernel {
         do {
             let output = try await generateText(request: request, runtime: selection.runtime)
             let latency = Int(Date().timeIntervalSince(start) * 1000)
+            recordTextModelTurnIfNeeded(
+                context: context,
+                selection: selection,
+                output: output,
+                latencyMs: latency,
+                parseError: nil
+            )
             try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: true, errorCode: nil, thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
             return output
         } catch {
             let latency = Int(Date().timeIntervalSince(start) * 1000)
+            recordTextModelTurnIfNeeded(
+                context: context,
+                selection: selection,
+                output: "generation failed: \(RuntimeMetricErrorSanitizer.code(for: error))",
+                latencyMs: latency,
+                parseError: RuntimeMetricErrorSanitizer.code(for: error)
+            )
             try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: false, errorCode: RuntimeMetricErrorSanitizer.code(for: error), thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
             throw error
         }
+    }
+
+    private func recordTextModelTurnIfNeeded(
+        context: AssistantTurnContext,
+        selection: AssistantRuntimeRouter.Selection,
+        output: String,
+        latencyMs: Int,
+        parseError: String?
+    ) {
+        guard selection.runtime != .deterministicFallback,
+              selection.runtime != .unavailable,
+              selection.runtime != .coreML else {
+            return
+        }
+        let correlation = context.traceCorrelation
+        let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawOutputPrefix = ModelOutputSanitizer.boundedPrefix(
+            trimmedOutput.isEmpty ? "generation completed without text" : trimmedOutput,
+            limit: 1600
+        )
+        let runtimePath: String
+        let adapterSlot: String?
+        switch selection.runtime {
+        case .llama:
+            runtimePath = "agent-model"
+            adapterSlot = LumenModelSlot.mouth.rawValue
+        case .foundationModels:
+            runtimePath = AssistantRuntimeKind.foundationModels.rawValue
+            adapterSlot = nil
+        case .coreML, .deterministicFallback, .unavailable:
+            return
+        }
+        let outputTokens = trimmedOutput.isEmpty ? 0 : trimmedOutput.split(whereSeparator: \.isWhitespace).count
+        AgentBehaviorTraceEmitter.recordModelTurn(
+            correlation: correlation,
+            slot: "mouth",
+            stage: "chat-text-turn",
+            intent: String(describing: context.task),
+            prompt: context.input,
+            rawOutput: rawOutputPrefix,
+            allowedToolIDs: context.allowedToolIDs,
+            requiresApproval: false,
+            parseError: parseError,
+            emittedFinalInActionTurn: true,
+            modelFamily: selection.runtime.rawValue,
+            adapterSlot: adapterSlot,
+            generationElapsedMs: latencyMs,
+            outputTokenCount: outputTokens,
+            runtimePath: runtimePath,
+            activeAdapterSlot: adapterSlot,
+            maxTokensRequested: context.maxTokens,
+            maxTokensEffective: context.maxTokens,
+            promptCharCount: context.input.count,
+            emptyOutputReason: trimmedOutput.isEmpty ? "chat-text-turn-completed-without-text" : nil,
+            streamStarted: true,
+            selectedRuntime: selection.runtime.rawValue,
+            selectedAdapter: adapterSlot,
+            modelIdentifier: selection.runtime.rawValue,
+            modelLoaded: parseError == nil,
+            temperature: context.temperature,
+            topP: context.topP,
+            firstChunkReceived: !trimmedOutput.isEmpty,
+            textChunkCount: trimmedOutput.isEmpty ? 0 : 1,
+            finalChunkReceived: true,
+            streamTerminationReason: parseError == nil ? "stop" : "error"
+        )
     }
 
     private func generateText(request: TextGenerationRequest, runtime: AssistantRuntimeKind) async throws -> String {

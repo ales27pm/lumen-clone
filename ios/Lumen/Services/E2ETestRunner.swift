@@ -923,28 +923,6 @@ nonisolated enum E2ETestRunner {
         }
     }
 
-    private struct E2ETraceCorrelation: Sendable, Hashable {
-        let scenarioID: String?
-        let e2eRunID: UUID?
-        let agentRunID: UUID?
-        let conversationID: UUID?
-        let turnID: UUID?
-
-        var diagnosticText: String {
-            [
-                "scenarioID=\(scenarioID ?? "nil")",
-                "e2eRunID=\(e2eRunID?.uuidString ?? "nil")",
-                "agentRunID=\(agentRunID?.uuidString ?? "nil")",
-                "conversationID=\(conversationID?.uuidString ?? "nil")",
-                "turnID=\(turnID?.uuidString ?? "nil")"
-            ].joined(separator: ",")
-        }
-
-        var hasAnyIdentifier: Bool {
-            scenarioID?.isEmpty == false || e2eRunID != nil || agentRunID != nil || conversationID != nil || turnID != nil
-        }
-    }
-
     private struct ModelRuntimeEvidence: Sendable {
         let runtimePath: String
         let stage: String
@@ -1044,7 +1022,7 @@ nonisolated enum E2ETestRunner {
         if scenario.requiresAgentRun {
             try Task.checkCancellation()
             await Task.yield()
-            let traceCorrelation = E2ETraceCorrelation(
+            let traceCorrelation = AgentTraceCorrelation(
                 scenarioID: scenario.id,
                 e2eRunID: e2eRunID,
                 agentRunID: agentRunID,
@@ -1078,6 +1056,7 @@ nonisolated enum E2ETestRunner {
                 try Task.checkCancellation()
                 await Task.yield()
                 let modelEvidenceStartedAt = Date()
+                let requiresStructuredAgentJSON = requiresStructuredModelBackedAgentRun(scenario: scenario, routing: routing)
                 if routing.requiresClarification, let clarification = routing.clarificationPrompt, !clarification.isEmpty {
                     let step = AgentStep(kind: .reflection, content: "Clarification required before tool execution.")
                     steps.append(step)
@@ -1090,7 +1069,7 @@ nonisolated enum E2ETestRunner {
                         correlation: traceCorrelation,
                         startedAt: modelEvidenceStartedAt
                     )
-                } else if shouldRunAsPlainTextTurn(scenario: scenario, routing: routing) {
+                } else if shouldRunAsPlainTextTurn(scenario: scenario, routing: routing) && scenario.kind != .training {
                     let turn = AssistantTurnContext(
                         task: .chat,
                         input: scenario.prompt,
@@ -1103,19 +1082,32 @@ nonisolated enum E2ETestRunner {
                         temperature: min(config.temperature, 0.3),
                         topP: config.topP,
                         repetitionPenalty: config.repetitionPenalty,
-                        maxTokens: min(config.maxTokens, 512)
+                        maxTokens: min(config.maxTokens, 512),
+                        traceCorrelation: traceCorrelation,
+                        allowedToolIDs: []
                     )
-                    let textTurnStartedAt = Date()
                     do {
                         rawFinalText = try await AssistantKernel.shared.runTextTurn(turn)
-                        recordTextTurnModelTrace(
-                            scenario: scenario,
-                            routing: routing,
-                            output: rawFinalText,
-                            correlation: traceCorrelation,
-                            startedAt: textTurnStartedAt,
-                            maxTokens: turn.maxTokens
-                        )
+                        if isGenericChatFallbackFinal(rawFinalText) {
+                            await event("retry", "plain chat returned generic fallback; retrying once with direct-answer prompt")
+                            let retryTurn = AssistantTurnContext(
+                                task: .chat,
+                                input: directAnswerRetryPrompt(for: scenario.prompt),
+                                systemPrompt: config.systemPrompt,
+                                isForeground: true,
+                                lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                                thermalState: ProcessInfo.processInfo.thermalState,
+                                prefersFoundationModels: false,
+                                allowHeavyRuntime: true,
+                                temperature: min(config.temperature, 0.2),
+                                topP: config.topP,
+                                repetitionPenalty: config.repetitionPenalty,
+                                maxTokens: min(config.maxTokens, 512),
+                                traceCorrelation: traceCorrelation,
+                                allowedToolIDs: []
+                            )
+                            rawFinalText = try await AssistantKernel.shared.runTextTurn(retryTurn)
+                        }
                     } catch {
                         let message = RuntimeMetricErrorSanitizer.code(for: error)
                         failures.append("Agent error: \(message)")
@@ -1144,15 +1136,55 @@ nonisolated enum E2ETestRunner {
                             }
                         }
                     }
-                    let kernelRequest = strictLiveAgentKernelRequest(
-                        prompt: scenario.prompt,
-                        systemPrompt: config.systemPrompt,
-                        config: config,
-                        conversationID: conversationID,
-                        turnID: turnID
-                    )
-                    let agentEvents = await MainActor.run {
-                        AssistantKernel.shared.run(kernelRequest, modelContext: nil)
+                    let agentEvents: AsyncStream<AgentKernelEvent>
+                    if requiresStructuredAgentJSON {
+                        let agentRequest = strictLiveAgentRequest(
+                            scenario: scenario,
+                            config: config,
+                            availableTools: availableTools,
+                            correlation: traceCorrelation
+                        )
+                        let agentOptions = strictLiveAgentRunOptions(
+                            req: agentRequest,
+                            scenario: scenario,
+                            e2eRunID: e2eRunID,
+                            agentRunID: agentRunID,
+                            acceptsPolicyFirstEvidence: false
+                        )
+                        let legacyEvents = await AgentService.shared.run(agentRequest, options: agentOptions)
+                        agentEvents = AsyncStream { continuation in
+                            let task = Task {
+                                for await event in legacyEvents {
+                                    switch event {
+                                    case .step(let step):
+                                        continuation.yield(.step(step))
+                                    case .stepDelta(let id, let text):
+                                        continuation.yield(.stepDelta(id: id, text: text))
+                                    case .finalDelta(let text):
+                                        continuation.yield(.finalDelta(text))
+                                    case .done(let finalText, let steps):
+                                        continuation.yield(.done(finalText: finalText, steps: steps))
+                                    case .error(let message):
+                                        continuation.yield(.error(message))
+                                    }
+                                }
+                                continuation.finish()
+                            }
+                            continuation.onTermination = { @Sendable _ in task.cancel() }
+                        }
+                    } else {
+                        let kernelRequest = strictLiveAgentKernelRequest(
+                            prompt: scenario.prompt,
+                            systemPrompt: config.systemPrompt,
+                            config: config,
+                            conversationID: conversationID,
+                            turnID: turnID,
+                            traceCorrelation: traceCorrelation,
+                            forceModelBackedToolPlanning: false
+                        )
+                        agentEvents = await MainActor.run {
+                            AssistantKernel.shared.run(kernelRequest, modelContext: nil)
+                        }
                     }
                     for await agentEvent in agentEvents {
                         try Task.checkCancellation()
@@ -1184,13 +1216,21 @@ nonisolated enum E2ETestRunner {
                         }
                     }
                 }
+                if let synthesized = deterministicWebSynthesisFallback(
+                    scenario: scenario,
+                    rawFinalText: rawFinalText,
+                    events: events
+                ) {
+                    await event("finalizer", "deterministic web synthesis fallback used after observations")
+                    rawFinalText = synthesized
+                }
                 let acceptsPolicyFirstEvidence = acceptsPolicyFirstExecutionEvidence(scenario: scenario, routing: routing)
                 let evidenceDiagnosis = modelRuntimeEvidenceDiagnosis(
                     since: modelEvidenceStartedAt,
                     prompt: scenario.prompt,
                     correlation: traceCorrelation,
                     acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
-                    requiresPrimaryAgentJSON: scenario.kind == .training
+                    requiresPrimaryAgentJSON: requiresStructuredAgentJSON
                 )
                 hasAcceptedModelEvidenceForScenario = evidenceDiagnosis.evidence != nil
                 if let evidence = evidenceDiagnosis.evidence {
@@ -1368,6 +1408,14 @@ nonisolated enum E2ETestRunner {
             metadata["trainingSignal"] = "false"
             metadata["runtimeEvidence"] = "runtime-preflight"
         }
+        for (key, value) in nonActionableInfrastructureMetadata(
+            scenario: scenario,
+            finalText: finalText,
+            failures: failures,
+            events: events
+        ) {
+            metadata[key] = value
+        }
         return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, evidenceMode: scenario.evidenceMode.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix, metadata: metadata)
     }
 
@@ -1396,6 +1444,13 @@ nonisolated enum E2ETestRunner {
             && routing.intent == .chat
             && scenario.requiredAllowedToolIDs.isEmpty
             && routing.allowedToolIDs.isEmpty
+    }
+
+    private nonisolated static func requiresStructuredModelBackedAgentRun(scenario: E2ETestScenario, routing: IntentRoutingDecision) -> Bool {
+        scenario.requiresAgentRun
+            && scenario.evidenceMode == .modelBackedRequired
+            && !routing.requiresClarification
+            && !shouldRunAsPlainTextTurn(scenario: scenario, routing: routing)
     }
 
     private nonisolated static func liveRuntimeShouldStopAfter(_ result: E2ETestResult) -> Bool {
@@ -1672,93 +1727,19 @@ nonisolated enum E2ETestRunner {
         scenario: E2ETestScenario,
         routing: IntentRoutingDecision,
         clarification: String,
-        correlation: E2ETraceCorrelation,
+        correlation: AgentTraceCorrelation,
         startedAt: Date
     ) {
-        AgentBehaviorTraceRecorder.record(
-            AgentBehaviorTrace(
-                id: UUID(),
-                createdAt: Date(),
-                event: .finalAnswer,
-                slot: "executor",
-                stage: "compatibility-clarification-final",
-                scenarioID: correlation.scenarioID,
-                e2eRunID: correlation.e2eRunID,
-                agentRunID: correlation.agentRunID,
-                conversationID: correlation.conversationID,
-                turnID: correlation.turnID,
-                intent: routing.intent.rawValue,
-                promptPrefix: scenario.prompt,
-                rawOutputPrefix: clarification,
-                selectedToolID: nil,
-                toolArguments: [:],
-                allowedToolIDs: routing.allowedToolIDs.sorted(),
-                requiresApproval: false,
-                approvalMode: nil,
-                parseError: nil,
-                emittedFinalInActionTurn: true,
-                modelFamily: "policy-first",
-                generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
-                outputTokenCount: clarification.split(whereSeparator: \.isWhitespace).count,
-                runtimePath: "deterministic-compatibility",
-                streamStarted: false,
-                selectedRuntime: "deterministic-compatibility",
-                modelLoaded: true,
-                firstChunkReceived: false,
-                textChunkCount: 0,
-                finalChunkReceived: true,
-                streamTerminationReason: "clarification-required"
-            )
-        )
-    }
-
-    private static func recordTextTurnModelTrace(
-        scenario: E2ETestScenario,
-        routing: IntentRoutingDecision,
-        output: String,
-        correlation: E2ETraceCorrelation,
-        startedAt: Date,
-        maxTokens: Int
-    ) {
-        AgentBehaviorTraceRecorder.record(
-            AgentBehaviorTrace(
-                id: UUID(),
-                createdAt: Date(),
-                event: .modelTurn,
-                slot: "mouth",
-                stage: "chat-text-turn",
-                scenarioID: correlation.scenarioID,
-                e2eRunID: correlation.e2eRunID,
-                agentRunID: correlation.agentRunID,
-                conversationID: correlation.conversationID,
-                turnID: correlation.turnID,
-                intent: routing.intent.rawValue,
-                promptPrefix: scenario.prompt,
-                rawOutputPrefix: output,
-                selectedToolID: nil,
-                toolArguments: [:],
-                allowedToolIDs: [],
-                requiresApproval: false,
-                approvalMode: nil,
-                parseError: nil,
-                emittedFinalInActionTurn: true,
-                modelFamily: "qwen3",
-                generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
-                outputTokenCount: output.split(whereSeparator: \.isWhitespace).count,
-                runtimePath: "agent-model",
-                activeAdapterSlot: "mouth",
-                maxTokensRequested: maxTokens,
-                maxTokensEffective: maxTokens,
-                promptCharCount: scenario.prompt.count,
-                streamStarted: true,
-                selectedRuntime: "agent-model",
-                selectedAdapter: "mouth",
-                modelLoaded: true,
-                firstChunkReceived: !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                textChunkCount: output.isEmpty ? 0 : 1,
-                finalChunkReceived: true,
-                streamTerminationReason: "stop"
-            )
+        AgentBehaviorTraceEmitter.recordPolicyFirstFinal(
+            correlation: correlation,
+            prompt: scenario.prompt,
+            intent: routing.intent.rawValue,
+            stage: "compatibility-clarification-final",
+            finalText: clarification,
+            allowedToolIDs: routing.allowedToolIDs.sorted(),
+            requiresApproval: false,
+            startedAt: startedAt,
+            streamTerminationReason: "clarification-required"
         )
     }
 
@@ -1777,7 +1758,9 @@ nonisolated enum E2ETestRunner {
         systemPrompt: String,
         config: E2ERunConfig,
         conversationID: UUID,
-        turnID: UUID
+        turnID: UUID,
+        traceCorrelation: AgentTraceCorrelation? = nil,
+        forceModelBackedToolPlanning: Bool = false
     ) -> AgentKernelRequest {
         AgentKernelRequest(
             conversationID: conversationID,
@@ -1798,8 +1781,35 @@ nonisolated enum E2ETestRunner {
                 temperature: min(config.temperature, 0.3),
                 topP: config.topP,
                 repetitionPenalty: config.repetitionPenalty,
-                maxTokens: min(config.maxTokens, 512)
-            )
+                maxTokens: min(config.maxTokens, 512),
+                forceModelBackedToolPlanning: forceModelBackedToolPlanning
+            ),
+            traceCorrelation: traceCorrelation
+        )
+    }
+
+    private nonisolated static func strictLiveAgentRequest(
+        scenario: E2ETestScenario,
+        config: E2ERunConfig,
+        availableTools: [ToolDefinition],
+        correlation: AgentTraceCorrelation
+    ) -> AgentRequest {
+        AgentRequest(
+            systemPrompt: config.systemPrompt,
+            history: [],
+            userMessage: scenario.prompt,
+            temperature: min(config.temperature, 0.3),
+            topP: config.topP,
+            repetitionPenalty: config.repetitionPenalty,
+            maxTokens: min(config.maxTokens, 512),
+            maxSteps: min(config.maxAgentSteps, 3),
+            availableTools: availableTools,
+            relevantMemories: [],
+            conversationID: correlation.conversationID,
+            turnID: correlation.turnID,
+            scenarioID: correlation.scenarioID,
+            e2eRunID: correlation.e2eRunID,
+            agentRunID: correlation.agentRunID
         )
     }
 
@@ -1830,7 +1840,7 @@ nonisolated enum E2ETestRunner {
     private nonisolated static func modelRuntimeEvidence(
         since startedAt: Date,
         prompt: String,
-        correlation: E2ETraceCorrelation? = nil,
+        correlation: AgentTraceCorrelation? = nil,
         acceptsPolicyFirstEvidence: Bool,
         requiresPrimaryAgentJSON: Bool = false
     ) -> ModelRuntimeEvidence? {
@@ -1846,7 +1856,7 @@ nonisolated enum E2ETestRunner {
     private nonisolated static func modelRuntimeEvidenceDiagnosis(
         since startedAt: Date,
         prompt: String,
-        correlation: E2ETraceCorrelation? = nil,
+        correlation: AgentTraceCorrelation? = nil,
         acceptsPolicyFirstEvidence: Bool,
         requiresPrimaryAgentJSON: Bool = false
     ) -> ModelRuntimeEvidenceDiagnosis {
@@ -1856,6 +1866,17 @@ nonisolated enum E2ETestRunner {
             traceMatchesCorrelation(trace, correlation: correlation, startedAt: startedAt)
         }
         let hasExplicitCorrelation = correlation?.hasAnyIdentifier == true
+        let conversationTurnFallbackTraces = recentTraces.filter { trace in
+            guard let correlation,
+                  let conversationID = correlation.conversationID,
+                  let turnID = correlation.turnID,
+                  trace.createdAt >= startedAt,
+                  trace.conversationID == conversationID,
+                  trace.turnID == turnID else {
+                return false
+            }
+            return true
+        }
         let fallbackTraces = recentTraces.filter { trace in
             guard trace.createdAt >= startedAt else { return false }
             let promptPrefix = trace.promptPrefix.lowercased()
@@ -1865,8 +1886,16 @@ nonisolated enum E2ETestRunner {
             return true
         }
         let usedCorrelation = !correlatedTraces.isEmpty
-        let matchingTraces = hasExplicitCorrelation ? correlatedTraces : fallbackTraces
-        let matchedBy = hasExplicitCorrelation ? "correlation" : "prompt-time"
+        let usesConversationTurnFallback = hasExplicitCorrelation
+            && correlatedTraces.isEmpty
+            && !requiresPrimaryAgentJSON
+            && !conversationTurnFallbackTraces.isEmpty
+        let matchingTraces = hasExplicitCorrelation
+            ? (usesConversationTurnFallback ? conversationTurnFallbackTraces : correlatedTraces)
+            : fallbackTraces
+        let matchedBy = hasExplicitCorrelation
+            ? (usesConversationTurnFallback ? "conversation-turn-fallback" : "correlation")
+            : "prompt-time"
 
         let validModelTrace = matchingTraces.first { trace in
             isValidModelBackedEvidenceTrace(trace, requiresPrimaryAgentJSON: requiresPrimaryAgentJSON)
@@ -1909,12 +1938,13 @@ nonisolated enum E2ETestRunner {
                 correlation: correlation,
                 usedCorrelation: usedCorrelation,
                 fallbackTraceCount: fallbackTraces.count,
+                conversationTurnFallbackTraceCount: conversationTurnFallbackTraces.count,
                 requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
             )
         )
     }
 
-    private nonisolated static func traceMatchesCorrelation(_ trace: AgentBehaviorTrace, correlation: E2ETraceCorrelation?, startedAt: Date) -> Bool {
+    private nonisolated static func traceMatchesCorrelation(_ trace: AgentBehaviorTrace, correlation: AgentTraceCorrelation?, startedAt: Date) -> Bool {
         guard let correlation, correlation.hasAnyIdentifier else { return false }
         var matchedAny = false
         if let scenarioID = correlation.scenarioID, !scenarioID.isEmpty {
@@ -1950,9 +1980,10 @@ nonisolated enum E2ETestRunner {
     private nonisolated static func modelRuntimeEvidenceFailureMessage(
         matchingTraces: [AgentBehaviorTrace],
         acceptsPolicyFirstEvidence: Bool,
-        correlation: E2ETraceCorrelation? = nil,
+        correlation: AgentTraceCorrelation? = nil,
         usedCorrelation: Bool = false,
         fallbackTraceCount: Int = 0,
+        conversationTurnFallbackTraceCount: Int = 0,
         requiresPrimaryAgentJSON: Bool = false
     ) -> String {
         let preferredRejectedTrace = requiresPrimaryAgentJSON
@@ -2012,7 +2043,8 @@ nonisolated enum E2ETestRunner {
             : "missing fresh AgentBehaviorTrace modelTurn"
         if let correlation, correlation.hasAnyIdentifier, !usedCorrelation {
             let fallbackText = fallbackTraceCount > 0 ? "; fallbackPromptTimeTraceCount=\(fallbackTraceCount)" : ""
-            return "no correlated AgentBehaviorTrace found; checked \(correlation.diagnosticText)\(fallbackText); \(base); AgentService model path was not entered or trace export failed"
+            let conversationTurnFallbackText = conversationTurnFallbackTraceCount > 0 ? "; conversationTurnFallbackTraceCount=\(conversationTurnFallbackTraceCount)" : ""
+            return "no correlated AgentBehaviorTrace found; checked \(correlation.diagnosticText)\(fallbackText)\(conversationTurnFallbackText); \(base); model boundary skipped AgentBehaviorTrace emission or trace export missed the strict IDs"
         }
         return base
     }
@@ -2237,6 +2269,47 @@ nonisolated enum E2ETestRunner {
         )
     }
 
+    nonisolated static func strictLiveAgentKernelRequestForTests(
+        prompt: String,
+        systemPrompt: String,
+        config: E2ERunConfig,
+        conversationID: UUID,
+        turnID: UUID,
+        traceCorrelation: AgentTraceCorrelation?,
+        forceModelBackedToolPlanning: Bool
+    ) -> AgentKernelRequest {
+        strictLiveAgentKernelRequest(
+            prompt: prompt,
+            systemPrompt: systemPrompt,
+            config: config,
+            conversationID: conversationID,
+            turnID: turnID,
+            traceCorrelation: traceCorrelation,
+            forceModelBackedToolPlanning: forceModelBackedToolPlanning
+        )
+    }
+
+    nonisolated static func strictLiveAgentRequestForTests(
+        scenario: E2ETestScenario,
+        config: E2ERunConfig,
+        availableTools: [ToolDefinition],
+        correlation: AgentTraceCorrelation
+    ) -> AgentRequest {
+        strictLiveAgentRequest(
+            scenario: scenario,
+            config: config,
+            availableTools: availableTools,
+            correlation: correlation
+        )
+    }
+
+    nonisolated static func requiresStructuredModelBackedAgentRunForTests(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision
+    ) -> Bool {
+        requiresStructuredModelBackedAgentRun(scenario: scenario, routing: routing)
+    }
+
     nonisolated static func modelRuntimeEvidenceForTests(
         since startedAt: Date,
         prompt: String,
@@ -2251,10 +2324,30 @@ nonisolated enum E2ETestRunner {
         modelRuntimeEvidence(
             since: startedAt,
             prompt: prompt,
-            correlation: E2ETraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
+            correlation: AgentTraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
             acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
             requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
         ) != nil
+    }
+
+    nonisolated static func modelRuntimeEvidenceMatchedByForTests(
+        since startedAt: Date,
+        prompt: String,
+        scenarioID: String? = nil,
+        e2eRunID: UUID? = nil,
+        agentRunID: UUID? = nil,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil,
+        acceptsPolicyFirstEvidence: Bool = false,
+        requiresPrimaryAgentJSON: Bool = false
+    ) -> String? {
+        modelRuntimeEvidence(
+            since: startedAt,
+            prompt: prompt,
+            correlation: AgentTraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
+            acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
+            requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
+        )?.matchedBy
     }
 
     nonisolated static func modelRuntimeEvidenceFailureMessageForTests(
@@ -2271,7 +2364,7 @@ nonisolated enum E2ETestRunner {
         modelRuntimeEvidenceDiagnosis(
             since: startedAt,
             prompt: prompt,
-            correlation: E2ETraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
+            correlation: AgentTraceCorrelation(scenarioID: scenarioID, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID),
             acceptsPolicyFirstEvidence: acceptsPolicyFirstEvidence,
             requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
         ).failureMessage
@@ -2394,6 +2487,36 @@ nonisolated enum E2ETestRunner {
 
     nonisolated static func webSearchSummaryQualityFailureForTests(finalText: String, scenario: E2ETestScenario) -> Bool {
         webSearchSummaryQualityFailure(finalText: finalText, scenario: scenario)
+    }
+
+    nonisolated static func deterministicWebSynthesisFallbackForTests(
+        scenario: E2ETestScenario,
+        rawFinalText: String,
+        events: [E2ETestEvent]
+    ) -> String? {
+        deterministicWebSynthesisFallback(
+            scenario: scenario,
+            rawFinalText: rawFinalText,
+            events: events
+        )
+    }
+
+    nonisolated static func isGenericChatFallbackFinalForTests(_ text: String) -> Bool {
+        isGenericChatFallbackFinal(text)
+    }
+
+    nonisolated static func nonActionableInfrastructureMetadataForTests(
+        scenario: E2ETestScenario,
+        finalText: String,
+        failures: [String],
+        events: [E2ETestEvent]
+    ) -> [String: String] {
+        nonActionableInfrastructureMetadata(
+            scenario: scenario,
+            finalText: finalText,
+            failures: failures,
+            events: events
+        )
     }
 
     static func agentJSONTrainingProbeForTests() async -> [AgentJSONTrainingProbeResult] {
@@ -2636,6 +2759,165 @@ nonisolated enum E2ETestRunner {
             || RoutingJSONLeakDetector.containsInternalRoutingJSON(combined)
             ? "Live agent returned fallback/error text instead of completing the scenario"
             : nil
+    }
+
+    nonisolated private static func isGenericChatFallbackFinal(_ text: String) -> Bool {
+        let lower = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !lower.isEmpty else { return false }
+        return lower.contains("i'm ready")
+            || lower.contains("please ask again")
+            || lower.contains("what you'd like to do next")
+    }
+
+    nonisolated private static func directAnswerRetryPrompt(for prompt: String) -> String {
+        """
+        Answer the user's request directly in plain text. Do not say you are ready, do not ask the user to ask again, and do not mention internal tools.
+
+        User request:
+        \(prompt)
+        """
+    }
+
+    nonisolated private static func deterministicWebSynthesisFallback(
+        scenario: E2ETestScenario,
+        rawFinalText: String,
+        events: [E2ETestEvent]
+    ) -> String? {
+        guard scenario.expectedIntent == .webSearch else { return nil }
+        let lowerFinal = rawFinalText.lowercased()
+        guard lowerFinal.contains("no direct answer from web search")
+            || lowerFinal.hasPrefix("search results for:")
+            || lowerFinal.contains("\nhttp") else {
+            return nil
+        }
+        let observations = events
+            .filter { $0.phase == "step" && $0.message.lowercased().contains("observation:") }
+            .map(\.message)
+        let items = webObservationItems(from: observations)
+        guard !items.isEmpty else { return nil }
+        let promptRequiresSwift = scenario.prompt.lowercased().contains("swift")
+        let lead = promptRequiresSwift
+            ? "Swift concurrency search summary:"
+            : "Web search summary:"
+        let bullets = items.prefix(2).enumerated().map { index, item in
+            "- \(item.title): \(webObservationSummary(for: item, promptRequiresSwift: promptRequiresSwift, ordinal: index))"
+        }
+        return ([lead] + bullets).joined(separator: "\n")
+    }
+
+    private struct WebObservationItem: Sendable, Hashable {
+        let title: String
+        let source: String
+    }
+
+    nonisolated private static func webObservationItems(from observations: [String]) -> [WebObservationItem] {
+        var items: [WebObservationItem] = []
+        var seen = Set<String>()
+        for observation in observations {
+            for line in observation.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let match = trimmed.range(of: #"^\d+\.\s+(.+)$"#, options: .regularExpression) else { continue }
+                let title = String(trimmed[match].drop { $0 != " " }.dropFirst())
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty, !title.lowercased().hasPrefix("http") else { continue }
+                let key = title.lowercased()
+                guard seen.insert(key).inserted else { continue }
+                let source = webSourceNearTitle(title, in: observation)
+                items.append(WebObservationItem(title: title, source: source))
+                if items.count >= 2 { return items }
+            }
+        }
+        return items
+    }
+
+    nonisolated private static func webSourceNearTitle(_ title: String, in observation: String) -> String {
+        let lines = observation.components(separatedBy: .newlines)
+        guard let index = lines.firstIndex(where: { $0.contains(title) }),
+              lines.indices.contains(index + 1) else {
+            return "search result"
+        }
+        let next = lines[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let host = URL(string: next)?.host, !host.isEmpty else {
+            return "search result"
+        }
+        return host.replacingOccurrences(of: "www.", with: "")
+    }
+
+    nonisolated private static func webObservationSummary(
+        for item: WebObservationItem,
+        promptRequiresSwift: Bool,
+        ordinal: Int
+    ) -> String {
+        let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if promptRequiresSwift {
+            if title.localizedCaseInsensitiveContains("MainActor") {
+                return "Use Swift actor isolation, especially MainActor boundaries, intentionally for UI state and shared mutable data."
+            }
+            if title.localizedCaseInsensitiveContains("concurrency") || title.localizedCaseInsensitiveContains("async") {
+                return ordinal == 0
+                    ? "Favor Swift structured concurrency with async/await and task groups so work has clear ownership and cancellation."
+                    : "Keep Swift concurrent work isolated with actors or explicit sendable boundaries to avoid shared-state races."
+            }
+            return "Treat this Swift result as supporting evidence and verify the practice against current Apple documentation."
+        }
+        return "Useful result from \(item.source) titled \(title), suitable for a concise synthesized answer without exposing raw URLs."
+    }
+
+    nonisolated private static func nonActionableInfrastructureMetadata(
+        scenario: E2ETestScenario,
+        finalText: String,
+        failures: [String],
+        events: [E2ETestEvent]
+    ) -> [String: String] {
+        let evidence = ([finalText] + failures + events.map(\.message))
+            .joined(separator: "\n")
+            .lowercased()
+        var metadata: [String: String] = [:]
+        func quarantine(_ failureKind: String, evidenceKind: String) {
+            metadata["failureKind"] = failureKind
+            metadata["actionable"] = "false"
+            metadata["trainingSignal"] = "false"
+            metadata["runtimeEvidence"] = evidenceKind
+        }
+
+        if scenario.expectedIntent == .rag,
+           evidence.contains("rag") || scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search") {
+            let unavailableSignals = [
+                "rag storage unavailable",
+                "swiftdata unavailable",
+                "persistent store unavailable",
+                "local index appears empty",
+                "no matching local snippets",
+                "no matching files found",
+                "import or create local files"
+            ]
+            if unavailableSignals.contains(where: { evidence.contains($0) }) {
+                quarantine("ragStorageUnavailable", evidenceKind: "storage-unavailable")
+            }
+        }
+
+        if scenario.expectedIntent == .outlook || scenario.expectedToolID?.hasPrefix("outlook.") == true {
+            let unavailableSignals = [
+                "outlook config",
+                "outlook auth",
+                "outlook capability",
+                "outlook account",
+                "not configured",
+                "authentication required",
+                "authorization required"
+            ]
+            if unavailableSignals.contains(where: { evidence.contains($0) }) {
+                quarantine("outlookRuntimeUnavailable", evidenceKind: "tool-configuration-unavailable")
+            }
+        }
+
+        if isGenericChatFallbackFinal(finalText) {
+            metadata["failureKind"] = "genericFallbackFinal"
+            metadata["actionable"] = "true"
+            metadata["trainingSignal"] = "true"
+        }
+
+        return metadata
     }
 
     nonisolated private static func webSearchSummaryQualityFailure(finalText: String, scenario: E2ETestScenario) -> Bool {

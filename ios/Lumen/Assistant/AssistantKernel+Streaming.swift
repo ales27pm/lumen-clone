@@ -101,7 +101,9 @@ extension AssistantKernel: AgentKernelRunning {
                     temperature: request.options.temperature,
                     topP: request.options.topP,
                     repetitionPenalty: request.options.repetitionPenalty,
-                    maxTokens: request.options.maxTokens
+                    maxTokens: request.options.maxTokens,
+                    traceCorrelation: request.traceCorrelation,
+                    allowedToolIDs: []
                 )
 
                 let runtimeSelection = selectRuntimeSelection(for: turn)
@@ -206,8 +208,39 @@ extension AssistantKernel: AgentKernelRunning {
         referenceWasRewritten: Bool,
         modelContext: ModelContext?
     ) async -> NativeToolTurnOutcome {
+        let policyTraceStartedAt = Date()
         var steps: [AgentStep] = []
         var events: [AgentKernelEvent] = []
+        let policyFirstAllowedToolIDs = Array(Set(
+            routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID)
+                + availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }
+        )).sorted()
+
+        func recordPolicyFirstFinal(
+            _ text: String,
+            stage: String = "compatibility-final",
+            selectedToolID: String? = nil,
+            toolArguments: [String: String] = [:],
+            requiresApproval: Bool? = nil,
+            approvalMode: String? = nil,
+            terminationReason: String = "stop"
+        ) {
+            AgentBehaviorTraceEmitter.recordPolicyFirstFinal(
+                correlation: request.traceCorrelation,
+                prompt: userMessage,
+                intent: routing.intent.rawValue,
+                stage: stage,
+                finalText: text,
+                selectedToolID: selectedToolID,
+                toolArguments: toolArguments,
+                allowedToolIDs: policyFirstAllowedToolIDs,
+                requiresApproval: requiresApproval,
+                approvalMode: approvalMode,
+                startedAt: policyTraceStartedAt,
+                streamTerminationReason: terminationReason
+            )
+        }
+
         func appendStep(_ step: AgentStep) {
             steps.append(step)
             events.append(.step(step))
@@ -231,6 +264,11 @@ extension AssistantKernel: AgentKernelRunning {
         if routing.requiresClarification, let clarification = routing.clarificationPrompt {
             let step = AgentStep(kind: .observation, content: clarification)
             appendStep(step)
+            recordPolicyFirstFinal(
+                clarification,
+                stage: "compatibility-clarification-final",
+                terminationReason: "clarification-required"
+            )
             events.append(.final(clarification))
             return NativeToolTurnOutcome(finalText: clarification, steps: steps, events: events)
         }
@@ -238,6 +276,11 @@ extension AssistantKernel: AgentKernelRunning {
         guard !availableTools.isEmpty else {
             let message = "No approved tool is available for this \(routing.intent.rawValue) request."
             appendStep(AgentStep(kind: .observation, content: message))
+            recordPolicyFirstFinal(
+                message,
+                stage: "compatibility-no-tool-final",
+                terminationReason: "no-approved-tool"
+            )
             events.append(.final(message))
             return NativeToolTurnOutcome(finalText: message, steps: steps, events: events)
         }
@@ -251,6 +294,11 @@ extension AssistantKernel: AgentKernelRunning {
         guard !plannedActions.isEmpty else {
             let message = "I could not determine a validated tool action for this \(routing.intent.rawValue) request."
             appendStep(AgentStep(kind: .observation, content: message))
+            recordPolicyFirstFinal(
+                message,
+                stage: "compatibility-no-action-final",
+                terminationReason: "no-validated-action"
+            )
             events.append(.final(message))
             return NativeToolTurnOutcome(finalText: message, steps: steps, events: events)
         }
@@ -269,6 +317,13 @@ extension AssistantKernel: AgentKernelRunning {
                 let message = "Tool call schema rejected: \(error.diagnostic)."
                 appendStep(AgentStep(kind: .observation, content: message, toolID: canonical))
                 finalText = "I could not run that tool because its generated arguments failed validation."
+                recordPolicyFirstFinal(
+                    finalText,
+                    stage: "compatibility-validation-rejected-final",
+                    selectedToolID: canonical,
+                    toolArguments: action.args.stringCoerced,
+                    terminationReason: "schema-validation-rejected"
+                )
                 events.append(.final(finalText))
                 return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
             }
@@ -280,10 +335,30 @@ extension AssistantKernel: AgentKernelRunning {
             guard !executedKeys.contains(validatedAction.dedupeKey) else {
                 finalText = "Duplicate tool call blocked: \(validatedAction.tool)."
                 appendStep(AgentStep(kind: .reflection, content: finalText, toolID: validatedAction.tool))
+                recordPolicyFirstFinal(
+                    finalText,
+                    stage: "compatibility-chain-stopped",
+                    selectedToolID: validatedAction.tool,
+                    toolArguments: validatedCall.arguments,
+                    terminationReason: "duplicate-tool-call"
+                )
                 events.append(.final(finalText))
                 return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
             }
             executedKeys.insert(validatedAction.dedupeKey)
+
+            let actionRequiresApproval = ToolRouteGuard.requiresUserApproval(validatedCall.canonicalToolID)
+            AgentBehaviorTraceEmitter.recordPolicyFirstToolAction(
+                correlation: request.traceCorrelation,
+                prompt: userMessage,
+                intent: routing.intent.rawValue,
+                selectedToolID: validatedCall.canonicalToolID,
+                toolArguments: validatedCall.arguments,
+                allowedToolIDs: policyFirstAllowedToolIDs,
+                requiresApproval: actionRequiresApproval,
+                approvalMode: actionRequiresApproval ? "approval-boundary" : nil,
+                startedAt: policyTraceStartedAt
+            )
 
             let invocation = ToolInvocation(
                 id: UUID(),
@@ -294,7 +369,7 @@ extension AssistantKernel: AgentKernelRunning {
                 turnID: request.turnID,
                 createdAt: Date()
             )
-            if ToolRouteGuard.requiresUserApproval(validatedCall.canonicalToolID) {
+            if actionRequiresApproval {
                 let approval = Self.approvalBoundaryFinal(for: validatedCall.canonicalToolID)
                 appendStep(AgentStep(
                     kind: .approvalBoundary,
@@ -303,6 +378,15 @@ extension AssistantKernel: AgentKernelRunning {
                     toolArgs: validatedCall.arguments
                 ))
                 finalText = approval
+                recordPolicyFirstFinal(
+                    finalText,
+                    stage: "compatibility-approval-final",
+                    selectedToolID: validatedCall.canonicalToolID,
+                    toolArguments: validatedCall.arguments,
+                    requiresApproval: true,
+                    approvalMode: "approval-boundary",
+                    terminationReason: "approval-required"
+                )
                 events.append(.final(finalText))
                 return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
             }
@@ -335,6 +419,7 @@ extension AssistantKernel: AgentKernelRunning {
         if finalText.isEmpty {
             finalText = "Native tool execution finished without a user-visible result."
         }
+        recordPolicyFirstFinal(finalText, stage: "compatibility-final")
         events.append(.final(finalText))
         return NativeToolTurnOutcome(finalText: finalText, steps: steps, events: events)
     }
@@ -396,7 +481,7 @@ extension AssistantKernel: AgentKernelRunning {
 
 private extension AgentKernelRequest {
     var supportsDeterministicToolExecution: Bool {
-        task == .chat || task == .backgroundTrigger
+        !options.forceModelBackedToolPlanning && (task == .chat || task == .backgroundTrigger)
     }
 
     var requiresBackgroundSafeToolExecution: Bool {
