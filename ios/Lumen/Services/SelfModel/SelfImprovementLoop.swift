@@ -188,7 +188,8 @@ final class SelfImprovementLoop {
                 deadline: deadline,
                 mode: mode,
                 metricsStore: metricsStore,
-                metricCompactionMaxEntries: config.metricCompactionMaxEntries
+                metricCompactionMaxEntries: config.metricCompactionMaxEntries,
+                now: now
             )
         }
     }
@@ -348,28 +349,30 @@ final class SelfImprovementLoop {
         ))
     }
 
+    @MainActor
     private static func defaultMaintenance(
         trigger: SelfImprovementTrigger,
         container: ModelContainer?,
         deadline: Date?,
         mode: SelfImprovementMaintenanceMode,
         metricsStore: RuntimeMetricsStore,
-        metricCompactionMaxEntries: Int
+        metricCompactionMaxEntries: Int,
+        now: @escaping NowProvider
     ) async throws -> SelfImprovementMaintenanceResult {
         guard let container else {
             return .skipped("shared_container_unavailable")
         }
         let context = ModelContext(container)
         try Task.checkCancellation()
-        try checkDeadline(deadline)
+        try checkDeadline(deadline, now: now)
 
         try Task.checkCancellation()
-        let snapshot = await buildSnapshot(trigger: trigger, context: context)
+        let snapshot = await buildSnapshot(trigger: trigger, context: context, now: now)
         try Task.checkCancellation()
-        try checkDeadline(deadline)
+        try checkDeadline(deadline, now: now)
         let rendered = SelfModelContextProvider.render(snapshot, maxChars: trigger.isForeground ? 1_200 : 700)
         try Task.checkCancellation()
-        try checkDeadline(deadline)
+        try checkDeadline(deadline, now: now)
 
         let memorySummary: String
         let ragSummary: String
@@ -379,22 +382,22 @@ final class SelfImprovementLoop {
         } else {
             await MemoryConsolidator.consolidate(context: context, metricsStore: metricsStore, promoteQueuedCaptures: false)
             try Task.checkCancellation()
-            try checkDeadline(deadline)
+            try checkDeadline(deadline, now: now)
 
             let rag = await RAGEngine().maintenance(context: context)
             guard rag.success else {
                 throw SelfImprovementLoopError.maintenanceFailed("rag_maintenance_failed")
             }
             try Task.checkCancellation()
-            try checkDeadline(deadline)
+            try checkDeadline(deadline, now: now)
             ragSummary = rag.metricSummary
             memorySummary = "dedupe"
         }
 
-        try checkDeadline(deadline)
+        try checkDeadline(deadline, now: now)
         try? await metricsStore.compact(maxEntries: metricCompactionMaxEntries)
         try Task.checkCancellation()
-        try checkDeadline(deadline)
+        try checkDeadline(deadline, now: now)
 
         let summary = [
             "snapshot=\(snapshot.schemaVersion)",
@@ -407,13 +410,18 @@ final class SelfImprovementLoop {
         return .applied(summary)
     }
 
-    private static func checkDeadline(_ deadline: Date?) throws {
-        if let deadline, Date() >= deadline {
+    private static func checkDeadline(_ deadline: Date?, now: NowProvider) throws {
+        if let deadline, now() >= deadline {
             throw SelfImprovementLoopError.deadlineExceeded
         }
     }
 
-    private static func buildSnapshot(trigger: SelfImprovementTrigger, context: ModelContext) async -> SelfModelSnapshot {
+    @MainActor
+    private static func buildSnapshot(
+        trigger: SelfImprovementTrigger,
+        context: ModelContext,
+        now: NowProvider
+    ) async -> SelfModelSnapshot {
         let turn = AssistantTurnContext(
             task: .backgroundTrigger,
             input: "",
@@ -441,7 +449,7 @@ final class SelfImprovementLoop {
             tools: tools,
             availableBackendKinds: [],
             activeSlot: .rem,
-            now: Date()
+            now: now()
         )
     }
 

@@ -93,7 +93,7 @@ final class BackgroundTaskPolicyTests: XCTestCase {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
-        await orchestrator.runMemoryConsolidationIfAllowed()
+        try await orchestrator.runMemoryConsolidationIfAllowed()
 
         let metric = try await store.recentMetrics(limit: 1).last
         XCTAssertEqual(metric?.runtimeName, "background")
@@ -126,7 +126,7 @@ final class BackgroundTaskPolicyTests: XCTestCase {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
-        await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(1))
+        try await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(1))
 
         let metrics = try await store.recentMetrics(limit: 4)
         XCTAssertEqual(metrics.map(\.taskKind), [
@@ -165,7 +165,7 @@ final class BackgroundTaskPolicyTests: XCTestCase {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
-        await orchestrator.runModelHousekeepingIfAllowed()
+        try await orchestrator.runModelHousekeepingIfAllowed()
 
         let metric = try await store.recentMetrics(limit: 1).last
         XCTAssertEqual(metric?.runtimeName, "background")
@@ -178,6 +178,46 @@ final class BackgroundTaskPolicyTests: XCTestCase {
     }
 
     @MainActor
+    func testModelHousekeepingRunsWhenAgentModeIsDisabled() async throws {
+        #if DEBUG
+        let agentModeKey = "agentModeEnabled"
+        let savedAgentMode = UserDefaults.standard.object(forKey: agentModeKey)
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("background-model-housekeeping-agent-disabled-\(UUID().uuidString).jsonl")
+        let store = RuntimeMetricsStore(fileURL: fileURL)
+        var housekeepingDidRun = false
+        let orchestrator = BackgroundOrchestrator(metricsStore: store, modelHousekeeping: {
+            housekeepingDidRun = true
+            return FleetRuntimeCleanupResult(unloadedSlots: [])
+        })
+        UserDefaults.standard.set(false, forKey: agentModeKey)
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer {
+            if let savedAgentMode {
+                UserDefaults.standard.set(savedAgentMode, forKey: agentModeKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: agentModeKey)
+            }
+            ResourceBudgetGate.testSnapshotOverride = nil
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+
+        try await orchestrator.runModelHousekeepingIfAllowed()
+
+        let metric = try await store.recentMetrics(limit: 1).last
+        XCTAssertTrue(housekeepingDidRun)
+        XCTAssertEqual(metric?.taskKind, BackgroundTaskKind.modelHousekeeping.rawValue)
+        XCTAssertNil(metric?.errorCode)
+        XCTAssertTrue(metric?.success == true)
+        #endif
+    }
+
+    @MainActor
     func testProcessingMaintenanceRecordsDeadlineSkip() async throws {
         #if DEBUG
         let fileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("background-deadline-\(UUID().uuidString).jsonl")
@@ -185,10 +225,10 @@ final class BackgroundTaskPolicyTests: XCTestCase {
         let orchestrator = BackgroundOrchestrator(metricsStore: store)
         defer { try? FileManager.default.removeItem(at: fileURL) }
 
-        await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(-1))
+        try await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(-1))
 
         let metric = try await store.recentMetrics(limit: 1).last
-        XCTAssertEqual(metric?.taskKind, BackgroundTaskKind.memoryConsolidation.rawValue)
+        XCTAssertEqual(metric?.taskKind, BackgroundTaskKind.selfImprovement.rawValue)
         XCTAssertEqual(metric?.errorCode, "deadline_exceeded")
         #endif
     }
