@@ -5,6 +5,7 @@ enum BackgroundTaskKind: String, Sendable {
     case memoryConsolidation
     case ragMaintenance
     case modelHousekeeping
+    case selfImprovement
 }
 
 struct BackgroundTaskPolicyInput: Sendable, Equatable {
@@ -39,11 +40,21 @@ enum BackgroundTaskPolicy {
             return .init(allow: false, denyReason: "low power background mode", maxSteps: 0, maxTokens: 0, allowModelLoading: false, allowNetwork: false)
         }
 
-        let allowModelLoading = input.isForeground && input.estimatedCost <= 5
+        let allowModelLoading = input.taskKind == .selfImprovement ? false : input.isForeground && input.estimatedCost <= 5
         let allowNetwork = input.requiresNetwork && !isLowPowerBackground
         if input.requiresNetwork && !allowNetwork {
             return .init(allow: false, denyReason: "network unavailable for required background task", maxSteps: 0, maxTokens: 0, allowModelLoading: false, allowNetwork: false)
         }
-        return .init(allow: true, denyReason: nil, maxSteps: input.taskKind == .triggerScan ? 2 : 1, maxTokens: 256, allowModelLoading: allowModelLoading, allowNetwork: allowNetwork)
+        let maxSteps: Int
+        switch input.taskKind {
+        case .triggerScan:
+            maxSteps = 2
+        case .selfImprovement:
+            maxSteps = 3
+        case .memoryConsolidation, .ragMaintenance, .modelHousekeeping:
+            maxSteps = 1
+        }
+        let maxTokens = input.taskKind == .selfImprovement ? 0 : 256
+        return .init(allow: true, denyReason: nil, maxSteps: maxSteps, maxTokens: maxTokens, allowModelLoading: allowModelLoading, allowNetwork: allowNetwork)
     }
 }

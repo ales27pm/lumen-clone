@@ -33,6 +33,30 @@ final class BackgroundTaskPolicyTests: XCTestCase {
         XCTAssertEqual(d.maxSteps, 1)
     }
 
+    func testBackgroundSelfImprovementAllowedWithoutModelLoading() {
+        let d = BackgroundTaskPolicy.decide(.init(taskKind: .selfImprovement, lowPowerMode: false, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 2))
+        XCTAssertTrue(d.allow)
+        XCTAssertFalse(d.allowModelLoading)
+        XCTAssertEqual(d.maxSteps, 3)
+        XCTAssertEqual(d.maxTokens, 0)
+    }
+
+    func testBackgroundAgentsDisabledDeniesSelfImprovement() {
+        let d = BackgroundTaskPolicy.decide(.init(taskKind: .selfImprovement, lowPowerMode: false, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: false, requiresNetwork: false, estimatedCost: 2))
+        XCTAssertFalse(d.allow)
+        XCTAssertFalse(d.allowModelLoading)
+        XCTAssertEqual(d.maxTokens, 0)
+        XCTAssertEqual(d.denyReason, "background agents disabled")
+    }
+
+    func testLowPowerDeniesBackgroundSelfImprovement() {
+        let d = BackgroundTaskPolicy.decide(.init(taskKind: .selfImprovement, lowPowerMode: true, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 2))
+        XCTAssertFalse(d.allow)
+        XCTAssertFalse(d.allowModelLoading)
+        XCTAssertEqual(d.maxTokens, 0)
+        XCTAssertEqual(d.denyReason, "low power background mode")
+    }
+
     func testLowPowerDeniesBackgroundMaintenanceEvenWithoutNetwork() {
         let d = BackgroundTaskPolicy.decide(.init(taskKind: .memoryConsolidation, lowPowerMode: true, thermalState: .nominal, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 2))
         XCTAssertFalse(d.allow)
@@ -69,7 +93,7 @@ final class BackgroundTaskPolicyTests: XCTestCase {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
-        await orchestrator.runMemoryConsolidationIfAllowed()
+        try await orchestrator.runMemoryConsolidationIfAllowed()
 
         let metric = try await store.recentMetrics(limit: 1).last
         XCTAssertEqual(metric?.runtimeName, "background")
@@ -102,19 +126,21 @@ final class BackgroundTaskPolicyTests: XCTestCase {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
-        await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(1))
+        try await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(1))
 
-        let metrics = try await store.recentMetrics(limit: 3)
+        let metrics = try await store.recentMetrics(limit: 4)
         XCTAssertEqual(metrics.map(\.taskKind), [
+            BackgroundTaskKind.selfImprovement.rawValue,
             BackgroundTaskKind.memoryConsolidation.rawValue,
             BackgroundTaskKind.ragMaintenance.rawValue,
             BackgroundTaskKind.modelHousekeeping.rawValue
         ])
         XCTAssertEqual(metrics[0].errorCode, "background_policy_denied")
         XCTAssertEqual(metrics[1].errorCode, "background_policy_denied")
-        XCTAssertNil(metrics[2].errorCode)
-        XCTAssertTrue(metrics[2].success)
-        XCTAssertEqual(metrics[2].policySummary, "optional chat slot cleanup; unloaded=none")
+        XCTAssertEqual(metrics[2].errorCode, "background_policy_denied")
+        XCTAssertNil(metrics[3].errorCode)
+        XCTAssertTrue(metrics[3].success)
+        XCTAssertEqual(metrics[3].policySummary, "optional chat slot cleanup; unloaded=none")
         XCTAssertTrue(housekeepingDidRun)
         #endif
     }
@@ -139,7 +165,7 @@ final class BackgroundTaskPolicyTests: XCTestCase {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
-        await orchestrator.runModelHousekeepingIfAllowed()
+        try await orchestrator.runModelHousekeepingIfAllowed()
 
         let metric = try await store.recentMetrics(limit: 1).last
         XCTAssertEqual(metric?.runtimeName, "background")
@@ -152,6 +178,46 @@ final class BackgroundTaskPolicyTests: XCTestCase {
     }
 
     @MainActor
+    func testModelHousekeepingRunsWhenAgentModeIsDisabled() async throws {
+        #if DEBUG
+        let agentModeKey = "agentModeEnabled"
+        let savedAgentMode = UserDefaults.standard.object(forKey: agentModeKey)
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("background-model-housekeeping-agent-disabled-\(UUID().uuidString).jsonl")
+        let store = RuntimeMetricsStore(fileURL: fileURL)
+        var housekeepingDidRun = false
+        let orchestrator = BackgroundOrchestrator(metricsStore: store, modelHousekeeping: {
+            housekeepingDidRun = true
+            return FleetRuntimeCleanupResult(unloadedSlots: [])
+        })
+        UserDefaults.standard.set(false, forKey: agentModeKey)
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer {
+            if let savedAgentMode {
+                UserDefaults.standard.set(savedAgentMode, forKey: agentModeKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: agentModeKey)
+            }
+            ResourceBudgetGate.testSnapshotOverride = nil
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+
+        try await orchestrator.runModelHousekeepingIfAllowed()
+
+        let metric = try await store.recentMetrics(limit: 1).last
+        XCTAssertTrue(housekeepingDidRun)
+        XCTAssertEqual(metric?.taskKind, BackgroundTaskKind.modelHousekeeping.rawValue)
+        XCTAssertNil(metric?.errorCode)
+        XCTAssertTrue(metric?.success == true)
+        #endif
+    }
+
+    @MainActor
     func testProcessingMaintenanceRecordsDeadlineSkip() async throws {
         #if DEBUG
         let fileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("background-deadline-\(UUID().uuidString).jsonl")
@@ -159,11 +225,11 @@ final class BackgroundTaskPolicyTests: XCTestCase {
         let orchestrator = BackgroundOrchestrator(metricsStore: store)
         defer { try? FileManager.default.removeItem(at: fileURL) }
 
-        await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(-1))
+        try await orchestrator.runProcessingMaintenance(until: Date().addingTimeInterval(-1))
 
         let metric = try await store.recentMetrics(limit: 1).last
-        XCTAssertEqual(metric?.taskKind, BackgroundTaskKind.memoryConsolidation.rawValue)
-        XCTAssertEqual(metric?.errorCode, "background_deadline_expired")
+        XCTAssertEqual(metric?.taskKind, BackgroundTaskKind.selfImprovement.rawValue)
+        XCTAssertEqual(metric?.errorCode, "deadline_exceeded")
         #endif
     }
 
