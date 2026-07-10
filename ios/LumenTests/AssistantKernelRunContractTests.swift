@@ -86,6 +86,46 @@ final class AssistantKernelRunContractTests: XCTestCase {
         XCTAssertEqual(runtimeMetadata["selectionReason"], "foregroundInteractive: heavyRuntime=false")
     }
 
+    func testForceModelBackedToolPlanningBypassesNativeToolShortcut() async {
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { request in
+                "model planned: \(request.prompt)"
+            })
+        )
+        let kernel = AssistantKernel(router: router)
+        let options = AgentKernelOptions(
+            allowHeavyRuntime: true,
+            allowDegradedMode: false,
+            requireUserVisibleFinal: true,
+            diagnosticsEnabled: true,
+            maxSteps: 2,
+            prefersFoundationModels: false,
+            forceModelBackedToolPlanning: true
+        )
+        let request = AgentKernelRequest(
+            userMessage: "What is the weather here?",
+            task: .chat,
+            source: .diagnostics,
+            options: options
+        )
+
+        var finalText = ""
+        var sawNativeToolRouting = false
+        for await event in kernel.run(request, modelContext: nil) {
+            switch event {
+            case .final(let text):
+                finalText = text
+            case .diagnostic(let diagnostic) where diagnostic.stage == "native-tool-routing":
+                sawNativeToolRouting = true
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(finalText, "model planned: What is the weather here?")
+        XCTAssertFalse(sawNativeToolRouting)
+    }
+
     func testKernelRunPreservesGroundingContextAndSamplingOptions() async {
         let capture = RequestCapture()
         let router = AssistantRuntimeRouter(
@@ -333,6 +373,62 @@ final class AssistantKernelRunContractTests: XCTestCase {
         XCTAssertEqual(invocation?.source, .modelProposed)
         let generatedRequest = await capture.snapshot()
         XCTAssertNil(generatedRequest)
+    }
+
+    func testPolicyFirstNativeToolTurnEmitsCorrelatedActionAndFinalTraces() async {
+        AgentBehaviorTraceRecorder.clear()
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "live-weather-direct",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID
+        )
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { _ in
+                "text runtime should not run"
+            })
+        )
+        let kernel = AssistantKernel(router: router)
+        let request = AgentKernelRequest(
+            conversationID: conversationID,
+            turnID: turnID,
+            userMessage: "What is the weather here?",
+            task: .chat,
+            source: .diagnostics,
+            options: AgentKernelOptions(
+                allowHeavyRuntime: true,
+                allowDegradedMode: true,
+                requireUserVisibleFinal: true,
+                diagnosticsEnabled: true,
+                maxSteps: 2,
+                prefersFoundationModels: false
+            ),
+            traceCorrelation: correlation
+        )
+
+        for await _ in kernel.run(request, modelContext: nil) {}
+
+        let traces = AgentBehaviorTraceRecorder.recent(limit: 10)
+            .filter { $0.scenarioID == "live-weather-direct" }
+        let actionTrace = traces.first { $0.event == .toolAction }
+        let finalTrace = traces.last { $0.event == .finalAnswer }
+        XCTAssertEqual(actionTrace?.runtimePath, "deterministic-compatibility")
+        XCTAssertEqual(actionTrace?.selectedToolID, "weather")
+        XCTAssertEqual(actionTrace?.e2eRunID, e2eRunID)
+        XCTAssertEqual(actionTrace?.agentRunID, agentRunID)
+        XCTAssertEqual(actionTrace?.conversationID, conversationID)
+        XCTAssertEqual(actionTrace?.turnID, turnID)
+        XCTAssertEqual(actionTrace?.modelLoaded, false)
+        XCTAssertEqual(finalTrace?.runtimePath, "deterministic-compatibility")
+        XCTAssertEqual(finalTrace?.event, .finalAnswer)
+        XCTAssertEqual(finalTrace?.e2eRunID, e2eRunID)
+        XCTAssertFalse(finalTrace?.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        AgentBehaviorTraceRecorder.clear()
     }
 
     func testNativeToolTurnApprovalRequiredActionsStopBeforeExecution() async {

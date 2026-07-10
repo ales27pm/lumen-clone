@@ -564,45 +564,50 @@ final class SlotAgentService {
         finalizerOutcome: ToolObservationFinalizationOutcome? = nil,
         finalValidationOutcome: FinalIntentValidationOutcome? = nil
     ) {
-        AgentBehaviorTraceRecorder.record(
-            AgentBehaviorTrace(
-                id: UUID(),
-                createdAt: Date(),
-                event: event,
-                slot: slot,
-                stage: stage,
-                scenarioID: req.scenarioID,
-                e2eRunID: req.e2eRunID,
-                agentRunID: req.agentRunID,
-                conversationID: req.conversationID,
-                turnID: req.turnID,
+        let correlation = AgentTraceCorrelation(
+            scenarioID: req.scenarioID,
+            e2eRunID: req.e2eRunID,
+            agentRunID: req.agentRunID,
+            conversationID: req.conversationID,
+            turnID: req.turnID
+        )
+        switch event {
+        case .toolAction:
+            AgentBehaviorTraceEmitter.recordPolicyFirstToolAction(
+                correlation: correlation,
+                prompt: req.userMessage,
                 intent: routing.intent.rawValue,
-                promptPrefix: ModelOutputSanitizer.boundedPrefix(req.userMessage, limit: 1200),
-                rawOutputPrefix: ModelOutputSanitizer.boundedPrefix(rawOutput, limit: 1600),
+                stage: stage,
+                selectedToolID: selectedToolID ?? "",
+                toolArguments: toolArguments,
+                allowedToolIDs: allowedToolIDs.sorted(),
+                requiresApproval: requiresApproval ?? false,
+                approvalMode: approvalMode,
+                startedAt: Date()
+            )
+        case .finalAnswer:
+            AgentBehaviorTraceEmitter.recordPolicyFirstFinal(
+                correlation: correlation,
+                prompt: req.userMessage,
+                intent: routing.intent.rawValue,
+                stage: stage,
+                finalText: rawOutput,
                 selectedToolID: selectedToolID,
                 toolArguments: toolArguments,
                 allowedToolIDs: allowedToolIDs.sorted(),
                 requiresApproval: requiresApproval,
                 approvalMode: approvalMode,
-                parseError: structuredTraceParseError(event: event, rawOutput: rawOutput),
-                emittedFinalInActionTurn: emittedFinalInActionTurn,
-                modelFamily: LumenModelFamily.persistedSelected.rawValue,
-                runtimePath: "deterministic-compatibility",
-                activeAdapterSlot: nil,
-                promptCharCount: req.userMessage.count,
+                startedAt: Date(),
+                streamTerminationReason: emittedFinalInActionTurn ? "stop" : "compatibility-final",
                 finalizerAccepted: finalizerOutcome?.accepted,
                 finalizerRejectionReason: finalizerOutcome?.rejectionReason,
                 finalValidatorAcceptedCandidate: finalValidationOutcome?.acceptedCandidate,
                 finalValidatorReplacementSource: finalValidationOutcome?.replacementSource,
-                finalValidatorRejectionReason: finalValidationOutcome?.rejectionReason,
-                selfModel: AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
-                    req.userMessage,
-                    selectedToolID: selectedToolID,
-                    requiresApproval: requiresApproval,
-                    approvalMode: approvalMode
-                )
+                finalValidatorRejectionReason: finalValidationOutcome?.rejectionReason
             )
-        )
+        case .modelTurn:
+            assertionFailure("Deterministic compatibility must not emit modelTurn traces")
+        }
     }
 
     /// Extracts the parser error string from tool-action structured output for tracing.

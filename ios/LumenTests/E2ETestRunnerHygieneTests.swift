@@ -1184,6 +1184,191 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func correlatedPolicyFirstTracesCountOnlyWhenScenarioAllowsPolicyFirstEvidence() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "live-alarm-countdown-direct",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID
+        )
+        AgentBehaviorTraceEmitter.recordPolicyFirstToolAction(
+            correlation: correlation,
+            prompt: "Start a timer for 10 minutes.",
+            intent: "alarm",
+            selectedToolID: "alarm.countdown",
+            toolArguments: ["duration": "600"],
+            allowedToolIDs: ["alarm.countdown"],
+            requiresApproval: false,
+            startedAt: startedAt
+        )
+        AgentBehaviorTraceEmitter.recordPolicyFirstFinal(
+            correlation: correlation,
+            prompt: "Start a timer for 10 minutes.",
+            intent: "alarm",
+            finalText: "Timer started for 10 minutes.",
+            selectedToolID: "alarm.countdown",
+            allowedToolIDs: ["alarm.countdown"],
+            startedAt: startedAt
+        )
+
+        #expect(E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "Start a timer for 10 minutes.",
+            scenarioID: "live-alarm-countdown-direct",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            acceptsPolicyFirstEvidence: true
+        ))
+        #expect(E2ETestRunner.modelRuntimeEvidenceMatchedByForTests(
+            since: startedAt,
+            prompt: "Start a timer for 10 minutes.",
+            scenarioID: "live-alarm-countdown-direct",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            acceptsPolicyFirstEvidence: true
+        ) == "correlation")
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: "Start a timer for 10 minutes.",
+            scenarioID: "live-alarm-countdown-direct",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            acceptsPolicyFirstEvidence: false
+        ))
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func trainingWebSearchWithObservationsSynthesizesSwiftSummary() {
+        #if DEBUG
+        let scenario = E2ETestScenario.trainingValidation.first { $0.id == "training-web-research" }!
+        let observation = E2ETestEvent(
+            id: UUID(),
+            createdAt: Date(),
+            scenarioID: scenario.id,
+            phase: "step",
+            message: """
+            observation: Search results for: two recent Swift concurrency best practices
+
+            1. Concurrency | Apple Developer Documentation
+            https://developer.apple.com/documentation/swift/concurrency
+
+            2. Swift 6.2 Concurrency in Practice: Default to MainActor, Escape on Purpose
+            https://example.com/swift-mainactor
+            """
+        )
+
+        let synthesized = E2ETestRunner.deterministicWebSynthesisFallbackForTests(
+            scenario: scenario,
+            rawFinalText: "No direct answer from web search. Try a different phrasing, or provide a URL to fetch directly.",
+            events: [observation]
+        )
+
+        #expect(synthesized?.contains("Swift") == true)
+        #expect(synthesized?.contains("structured concurrency") == true)
+        #expect(synthesized?.contains("https://") == false)
+        #expect(synthesized?.contains("No direct answer from web search") == false)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func genericChatFallbackIsDetectedForRetryAndClassification() {
+        #if DEBUG
+        #expect(E2ETestRunner.isGenericChatFallbackFinalForTests("I'm ready. Please ask again or tell me what you'd like to do next."))
+        #expect(!E2ETestRunner.isGenericChatFallbackFinalForTests("Precision is exactness and recall is coverage."))
+        let scenario = E2ETestScenario(
+            id: "normal-chat-no-forced-tool",
+            title: "Normal chat",
+            kind: .chat,
+            prompt: "Explain why a sharp chisel is safer than a dull one.",
+            expectedIntent: .chat,
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let metadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: scenario,
+            finalText: "I'm ready. Please ask again or tell me what you'd like to do next.",
+            failures: [],
+            events: []
+        )
+        #expect(metadata["failureKind"] == "genericFallbackFinal")
+        #expect(metadata["trainingSignal"] == "true")
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragAndOutlookUnavailableAreQuarantinedAsNonActionable() {
+        #if DEBUG
+        let ragScenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "RAG",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let ragMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: ragScenario,
+            finalText: "RAG storage unavailable: local index appears empty.",
+            failures: [],
+            events: []
+        )
+        #expect(ragMetadata["failureKind"] == "ragStorageUnavailable")
+        #expect(ragMetadata["actionable"] == "false")
+        #expect(ragMetadata["trainingSignal"] == "false")
+
+        let outlookScenario = E2ETestScenario(
+            id: "live-outlook-message-read-direct",
+            title: "Outlook",
+            kind: .toolGuard,
+            prompt: "Read my latest Outlook message.",
+            expectedIntent: .outlook,
+            requiredAllowedToolIDs: ["outlook.message.read"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: "outlook.message.read"
+        )
+        let outlookMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: outlookScenario,
+            finalText: "Outlook auth is not configured for this device.",
+            failures: [],
+            events: []
+        )
+        #expect(outlookMetadata["failureKind"] == "outlookRuntimeUnavailable")
+        #expect(outlookMetadata["actionable"] == "false")
+        #expect(outlookMetadata["trainingSignal"] == "false")
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func emptyAgentJsonModelTurnReportsPreciseEvidenceFailure() {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()
@@ -1298,6 +1483,233 @@ struct E2ETestRunnerHygieneTests {
         #expect(trace?.conversationID == conversationID)
         #expect(trace?.turnID == turnID)
         #expect(trace?.runtimePath == "agent-model")
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func strictLiveKernelRequestCarriesTraceCorrelationAndForceModelPlanning() {
+        #if DEBUG
+        let conversationID = UUID()
+        let turnID = UUID()
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "training-weather-grounded",
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: conversationID,
+            turnID: turnID
+        )
+        let config = E2ERunConfig(
+            systemPrompt: "sys",
+            temperature: 0.2,
+            topP: 0.8,
+            repetitionPenalty: 1.05,
+            maxTokens: 512,
+            maxAgentSteps: 3,
+            enabledToolIDs: ["weather", "location.current"]
+        )
+
+        let request = E2ETestRunner.strictLiveAgentKernelRequestForTests(
+            prompt: "What is the weather here?",
+            systemPrompt: "sys",
+            config: config,
+            conversationID: conversationID,
+            turnID: turnID,
+            traceCorrelation: correlation,
+            forceModelBackedToolPlanning: true
+        )
+
+        #expect(request.traceCorrelation == correlation)
+        #expect(request.conversationID == conversationID)
+        #expect(request.turnID == turnID)
+        #expect(request.options.forceModelBackedToolPlanning)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func strictLiveTrainingAgentRequestReceivesFullCorrelation() {
+        #if DEBUG
+        let scenario = E2ETestScenario.trainingValidation[0]
+        let correlation = AgentTraceCorrelation(
+            scenarioID: scenario.id,
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID()
+        )
+        let config = E2ERunConfig(
+            systemPrompt: "sys",
+            temperature: 0.2,
+            topP: 0.8,
+            repetitionPenalty: 1.05,
+            maxTokens: 512,
+            maxAgentSteps: 3,
+            enabledToolIDs: Set(scenario.requiredAllowedToolIDs)
+        )
+        let tools = ToolRegistry.all.filter { tool in
+            scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains(ToolRouteGuard.canonicalToolID(tool.id))
+        }
+
+        let request = E2ETestRunner.strictLiveAgentRequestForTests(
+            scenario: scenario,
+            config: config,
+            availableTools: tools,
+            correlation: correlation
+        )
+
+        #expect(request.scenarioID == correlation.scenarioID)
+        #expect(request.e2eRunID == correlation.e2eRunID)
+        #expect(request.agentRunID == correlation.agentRunID)
+        #expect(request.conversationID == correlation.conversationID)
+        #expect(request.turnID == correlation.turnID)
+        #expect(Set(request.availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }) == Set(scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID)))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func modelBackedWeatherRegressionRequiresStructuredAgentJSONRun() {
+        #if DEBUG
+        let scenario = E2ETestScenario.regression.first { $0.id == "weather-here-no-calendar" }!
+        let routing = IntentRoutingDecision(
+            intent: .weather,
+            allowedToolIDs: ["location.current", "weather"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        #expect(E2ETestRunner.requiresStructuredModelBackedAgentRunForTests(
+            scenario: scenario,
+            routing: routing
+        ))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func policyFirstLiveToolCoverageDoesNotRequireStructuredAgentJSONRun() {
+        #if DEBUG
+        let scenario = E2ETestScenario.allToolCoverage.first { $0.evidenceMode == .policyFirstAllowed }!
+        let routing = IntentRoutingDecision(
+            intent: scenario.expectedIntent,
+            allowedToolIDs: Set(scenario.requiredAllowedToolIDs),
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        #expect(!E2ETestRunner.requiresStructuredModelBackedAgentRunForTests(
+            scenario: scenario,
+            routing: routing
+        ))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func syntheticValidAgentJSONTracesPassEveryTrainingValidationEvidenceGate() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+
+        for scenario in E2ETestScenario.trainingValidation {
+            let e2eRunID = UUID()
+            let agentRunID = UUID()
+            let conversationID = UUID()
+            let turnID = UUID()
+            recordSyntheticTrainingTrace(
+                scenario: scenario,
+                e2eRunID: e2eRunID,
+                agentRunID: agentRunID,
+                conversationID: conversationID,
+                turnID: turnID
+            )
+            #expect(E2ETestRunner.modelRuntimeEvidenceForTests(
+                since: startedAt,
+                prompt: scenario.prompt,
+                scenarioID: scenario.id,
+                e2eRunID: e2eRunID,
+                agentRunID: agentRunID,
+                conversationID: conversationID,
+                turnID: turnID,
+                requiresPrimaryAgentJSON: true
+            ))
+            #expect(E2ETestRunner.modelRuntimeEvidenceMatchedByForTests(
+                since: startedAt,
+                prompt: scenario.prompt,
+                scenarioID: scenario.id,
+                e2eRunID: e2eRunID,
+                agentRunID: agentRunID,
+                conversationID: conversationID,
+                turnID: turnID,
+                requiresPrimaryAgentJSON: true
+            ) == "correlation")
+        }
+
+        AgentBehaviorTraceRecorder.clear()
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func trainingEvidenceRejectsDeterministicCompatibilityEvenWithCorrelation() {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        let startedAt = Date().addingTimeInterval(-1)
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        let scenario = E2ETestScenario.trainingValidation[0]
+        AgentBehaviorTraceRecorder.record(
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "agent",
+                stage: "agent-json-step-0",
+                scenarioID: scenario.id,
+                e2eRunID: e2eRunID,
+                agentRunID: agentRunID,
+                conversationID: conversationID,
+                turnID: turnID,
+                intent: scenario.expectedIntent.rawValue,
+                promptPrefix: scenario.prompt,
+                rawOutputPrefix: #"{"action":{"tool":"weather","args":{"location":"current"}}}"#,
+                selectedToolID: "weather",
+                toolArguments: ["location": "current"],
+                allowedToolIDs: ["location.current", "weather"],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: false,
+                runtimePath: "deterministic-compatibility",
+                modelLoaded: true
+            )
+        )
+
+        #expect(!E2ETestRunner.modelRuntimeEvidenceForTests(
+            since: startedAt,
+            prompt: scenario.prompt,
+            scenarioID: scenario.id,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            requiresPrimaryAgentJSON: true
+        ))
+        let message = E2ETestRunner.modelRuntimeEvidenceFailureMessageForTests(
+            since: startedAt,
+            prompt: scenario.prompt,
+            scenarioID: scenario.id,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            requiresPrimaryAgentJSON: true
+        )
+        #expect(message.contains("runtimePath was deterministic-compatibility"))
         AgentBehaviorTraceRecorder.clear()
         #else
         #expect(true)
@@ -1432,7 +1844,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(message.contains("no correlated AgentBehaviorTrace found"))
         #expect(message.contains("scenarioID=training-general-chat"))
         #expect(message.contains("e2eRunID=\(e2eRunID.uuidString)"))
-        #expect(message.contains("AgentService model path was not entered"))
+        #expect(message.contains("model boundary skipped AgentBehaviorTrace emission"))
         AgentBehaviorTraceRecorder.clear()
         #else
         #expect(true)
@@ -1752,6 +2164,68 @@ struct E2ETestResultExplicitInitializerTests {
         #expect(result.sanitizedFinalRemovedArtifacts == ["x"])
         #expect(result.outputHygieneFailures == ["H"])
     }
+}
+
+private func recordSyntheticTrainingTrace(
+    scenario: E2ETestScenario,
+    e2eRunID: UUID,
+    agentRunID: UUID,
+    conversationID: UUID,
+    turnID: UUID
+) {
+    let allowedToolIDs = scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).sorted()
+    let actionToolID = allowedToolIDs.first
+    let rawOutput: String
+    let toolArguments: [String: String]
+    if let actionToolID {
+        rawOutput = #"{"action":{"tool":"\#(actionToolID)","args":{}}}"#
+        toolArguments = [:]
+    } else {
+        rawOutput = #"{"final":"Precision is exactness and recall is coverage."}"#
+        toolArguments = [:]
+    }
+    AgentBehaviorTraceRecorder.record(
+        AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "agent",
+            stage: "agent-json-step-0",
+            scenarioID: scenario.id,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: scenario.expectedIntent.rawValue,
+            promptPrefix: scenario.prompt,
+            rawOutputPrefix: rawOutput,
+            selectedToolID: actionToolID,
+            toolArguments: toolArguments,
+            allowedToolIDs: allowedToolIDs,
+            requiresApproval: actionToolID.map(ToolRouteGuard.requiresUserApproval),
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: actionToolID == nil,
+            modelFamily: "qwen3",
+            adapterSlot: "executor",
+            generationElapsedMs: 42,
+            firstTokenLatencyMs: 3,
+            outputTokenCount: 8,
+            runtimePath: "agent-model",
+            activeAdapterSlot: "executor",
+            maxTokensRequested: 512,
+            maxTokensEffective: 512,
+            promptCharCount: scenario.prompt.count,
+            streamStarted: true,
+            selectedRuntime: "agent-model",
+            selectedAdapter: "executor",
+            modelLoaded: true,
+            firstChunkReceived: true,
+            textChunkCount: 1,
+            finalChunkReceived: true,
+            streamTerminationReason: "stop"
+        )
+    )
 }
 
 private final class ScenarioLoopThreadRecorder: @unchecked Sendable {

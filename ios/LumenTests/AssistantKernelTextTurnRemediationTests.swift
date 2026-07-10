@@ -55,4 +55,51 @@ final class AssistantKernelTextTurnRemediationTests: XCTestCase {
         XCTAssertEqual(kernel.selectRuntime(for: context), .llama)
     }
 
+    func testRunTextTurnRecordsCorrelatedModelTurnForRealRuntime() async throws {
+        AgentBehaviorTraceRecorder.clear()
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "training-general-chat",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID
+        )
+        let router = AssistantRuntimeRouter(
+            llama: .init(generateHandler: { request in
+                "model output for \(request.prompt)"
+            })
+        )
+        let kernel = AssistantKernel(router: router)
+        let context = AssistantTurnContext(
+            task: .chat,
+            input: "Explain precision and recall.",
+            isForeground: true,
+            lowPowerMode: false,
+            thermalState: .nominal,
+            prefersFoundationModels: false,
+            traceCorrelation: correlation,
+            allowedToolIDs: ["weather"]
+        )
+
+        _ = try await kernel.runTextTurn(context)
+
+        let trace = AgentBehaviorTraceRecorder.recent(limit: 1).last
+        XCTAssertEqual(trace?.event, .modelTurn)
+        XCTAssertEqual(trace?.stage, "chat-text-turn")
+        XCTAssertEqual(trace?.scenarioID, "training-general-chat")
+        XCTAssertEqual(trace?.e2eRunID, e2eRunID)
+        XCTAssertEqual(trace?.agentRunID, agentRunID)
+        XCTAssertEqual(trace?.conversationID, conversationID)
+        XCTAssertEqual(trace?.turnID, turnID)
+        XCTAssertEqual(trace?.runtimePath, "agent-model")
+        XCTAssertEqual(trace?.modelLoaded, true)
+        XCTAssertEqual(trace?.allowedToolIDs, ["weather"])
+        XCTAssertFalse(trace?.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        AgentBehaviorTraceRecorder.clear()
+    }
+
 }

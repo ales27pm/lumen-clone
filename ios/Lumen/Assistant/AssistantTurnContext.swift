@@ -29,6 +29,8 @@ struct AssistantTurnContext: Sendable, Equatable {
     let topP: Double
     let repetitionPenalty: Double
     let maxTokens: Int
+    let traceCorrelation: AgentTraceCorrelation?
+    let allowedToolIDs: [String]
 
     init(
         task: AssistantTaskKind,
@@ -45,7 +47,9 @@ struct AssistantTurnContext: Sendable, Equatable {
         temperature: Double = 0.7,
         topP: Double = 0.9,
         repetitionPenalty: Double = 1.1,
-        maxTokens: Int = 1024
+        maxTokens: Int = 1024,
+        traceCorrelation: AgentTraceCorrelation? = nil,
+        allowedToolIDs: [String] = []
     ) {
         self.task = task
         self.input = input
@@ -62,6 +66,8 @@ struct AssistantTurnContext: Sendable, Equatable {
         self.topP = topP
         self.repetitionPenalty = repetitionPenalty
         self.maxTokens = max(1, maxTokens)
+        self.traceCorrelation = traceCorrelation
+        self.allowedToolIDs = allowedToolIDs.map(ToolRouteGuard.canonicalToolID).sorted()
     }
 
     static func == (lhs: AssistantTurnContext, rhs: AssistantTurnContext) -> Bool {
@@ -82,6 +88,8 @@ struct AssistantTurnContext: Sendable, Equatable {
         lhs.temperature == rhs.temperature &&
         lhs.topP == rhs.topP &&
         lhs.repetitionPenalty == rhs.repetitionPenalty &&
-        lhs.maxTokens == rhs.maxTokens
+        lhs.maxTokens == rhs.maxTokens &&
+        lhs.traceCorrelation == rhs.traceCorrelation &&
+        lhs.allowedToolIDs == rhs.allowedToolIDs
     }
 }
