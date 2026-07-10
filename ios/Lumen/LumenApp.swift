@@ -242,7 +242,7 @@ struct LumenApp: App {
                         await startup.initialize(appState: appState)
                         if case .ready(let container) = startup.state {
                             SharedContainer.shared = container
-                            startAppLaunchSelfImprovement()
+                            startAppLaunchSelfImprovement(container: container)
                         }
                     } safeModeAction: {
                         startup.continueInLimitedMode(appState: appState)
@@ -269,17 +269,21 @@ struct LumenApp: App {
                         appState.runtime.dismissBootSplash()
                     } else {
                         await PersistentRuntimeDiagnosticsRunner.shared.resumeIfEnabled()
-                        startAppLaunchSelfImprovement()
+                        startAppLaunchSelfImprovement(container: container)
                     }
                 }
             }
         }
     }
 
-    private func startAppLaunchSelfImprovement() {
+    private func startAppLaunchSelfImprovement(container: ModelContainer) {
         guard !LumenLaunchArguments.isUITesting else { return }
         Task(priority: .utility) {
-            await SelfImprovementLoop.shared.run(trigger: .appLaunch, container: nil)
+            await SelfImprovementLoop.shared.run(
+                trigger: .appLaunch,
+                container: container,
+                maintenanceMode: .snapshotOnly
+            )
         }
     }
 }

@@ -240,6 +240,50 @@ final class SelfImprovementLoopTests: XCTestCase {
     }
 
     @MainActor
+    func testAppLaunchWithContainerRunsSnapshotMaintenance() async throws {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = nominalSnapshot()
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let store = metricsStore()
+        let container = try inMemoryContainer()
+        let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0))
+
+        let outcome = await loop.run(trigger: .appLaunch, container: container, maintenanceMode: .snapshotOnly)
+
+        guard case .applied(let summary) = outcome else {
+            XCTFail("Expected app launch snapshot maintenance, got \(outcome)")
+            return
+        }
+        XCTAssertTrue(summary.contains("memory=skipped_snapshot_only"))
+        XCTAssertTrue(summary.contains("rag=skipped_snapshot_only"))
+        #endif
+    }
+
+    @MainActor
+    func testDefaultMaintenanceUsesInjectedClockForDeadlineChecks() async throws {
+        #if DEBUG
+        ResourceBudgetGate.testSnapshotOverride = nominalSnapshot()
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let store = metricsStore()
+        let container = try inMemoryContainer()
+        let now = Date(timeIntervalSince1970: 100)
+        let loop = SelfImprovementLoop(
+            metricsStore: store,
+            config: .init(cooldownSeconds: 0, maxRunDurationSeconds: 5),
+            now: { now }
+        )
+
+        let outcome = await loop.run(trigger: .test, container: container, maintenanceMode: .snapshotOnly)
+
+        guard case .applied(let summary) = outcome else {
+            XCTFail("Expected injected-clock maintenance to apply, got \(outcome)")
+            return
+        }
+        XCTAssertTrue(summary.contains("metrics=compact"))
+        #endif
+    }
+
+    @MainActor
     func testAppLaunchWithoutContextSkipsHeavyMaintenance() async throws {
         #if DEBUG
         ResourceBudgetGate.testSnapshotOverride = nominalSnapshot()
