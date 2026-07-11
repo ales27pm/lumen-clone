@@ -471,10 +471,22 @@ struct AgentGroundingRegressionTests {
         let memoryUnavailable = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .memory,
             toolID: "memory.recall",
-            observation: "Memory unavailable.",
+            observation: "Memory unavailable. Diagnostic: swiftdata_shared_container_unavailable.",
             originalPrompt: "What do you remember?"
         )
         #expect(memoryUnavailable == "Memory unavailable.")
+        #expect(memoryUnavailable?.lowercased().contains("diagnostic") == false)
+
+        let multiFactMemory = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: """
+            - [A1] I prefer concise bullet points | kind=fact | score=0.90 | source=agent
+            - [A2] User's name is Alexis | kind=fact | score=0.88 | source=agent
+            """,
+            originalPrompt: "What do you remember?"
+        )
+        #expect(multiFactMemory == "I remember that you prefer concise bullet points; your name is Alexis.")
 
         let negatedPreference = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .memory,

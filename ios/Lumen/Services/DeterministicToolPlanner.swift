@@ -604,10 +604,8 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     }
 
     private static func calendarHour(from text: String) -> Int? {
-        if let value = firstCapture(in: text, pattern: #"(?i)\bat\s+([0-9]{1,2})(?::[0-9]{2})?\s*(?:am|pm)?"#), let raw = Int(value) {
-            let pm = text.contains("pm") || text.contains("afternoon") || text.contains("evening")
-            if pm, raw < 12 { return raw + 12 }
-            return raw == 12 && text.contains("am") ? 0 : min(max(raw, 0), 23)
+        if let clock = calendarClockTime(from: text) {
+            return clock.hour
         }
         let words = ["one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12]
         for (word, hour) in words where text.contains(" at \(word)") {
@@ -622,6 +620,13 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             return [
                 "schedule": .string("absolute"),
                 "atTime": .string(triggerTimeOfDay(from: text))
+            ]
+        }
+
+        if let intervalSeconds = recurringIntervalSeconds(from: text) {
+            return [
+                "schedule": .string("interval"),
+                "intervalSeconds": intArgument(intervalSeconds)
             ]
         }
 
@@ -652,12 +657,73 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     }
 
     private static func triggerTimeOfDay(from text: String) -> String {
+        if let clock = calendarClockTime(from: text) {
+            return String(format: "%02d:%02d", clock.hour, clock.minute)
+        }
         let hour = calendarHour(from: text)
             ?? (text.contains("morning") ? 9 : nil)
             ?? (text.contains("afternoon") ? 13 : nil)
             ?? (text.contains("evening") || text.contains("tonight") ? 18 : nil)
             ?? 9
         return String(format: "%02d:00", min(max(hour, 0), 23))
+    }
+
+    private static func calendarClockTime(from text: String) -> (hour: Int, minute: Int)? {
+        guard let regex = try? NSRegularExpression(pattern: #"(?i)\bat\s+([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)?"#) else {
+            return nil
+        }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 1,
+              let rawHour = Int(ns.substring(with: match.range(at: 1))) else {
+            return nil
+        }
+        let minute: Int
+        if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound {
+            minute = min(max(Int(ns.substring(with: match.range(at: 2))) ?? 0, 0), 59)
+        } else {
+            minute = 0
+        }
+        let suffix = (match.numberOfRanges > 3 && match.range(at: 3).location != NSNotFound)
+            ? ns.substring(with: match.range(at: 3)).lowercased()
+            : nil
+        var hour = rawHour
+        if suffix == "pm", hour < 12 {
+            hour += 12
+        } else if suffix == "am", hour == 12 {
+            hour = 0
+        } else if suffix == nil {
+            if (text.contains("pm") || text.contains("afternoon") || text.contains("evening")), hour < 12 {
+                hour += 12
+            }
+        }
+        return (min(max(hour, 0), 23), minute)
+    }
+
+    private static func recurringIntervalSeconds(from text: String) -> Int? {
+        guard let regex = try? NSRegularExpression(pattern: #"(?i)\bevery\s+(\d+)\s*(seconds?|secs?|sec|minutes?|mins?|min|hours?|hrs?|hr|days?)\b"#) else {
+            return nil
+        }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 2,
+              let value = Int(ns.substring(with: match.range(at: 1))) else {
+            return nil
+        }
+        let unit = ns.substring(with: match.range(at: 2)).lowercased()
+        let durationUnit: RelativeDuration.Unit
+        if unit.hasPrefix("sec") || unit.hasPrefix("second") {
+            durationUnit = .seconds
+        } else if unit.hasPrefix("min") || unit.hasPrefix("minute") {
+            durationUnit = .minutes
+        } else if unit.hasPrefix("hr") || unit.hasPrefix("hour") {
+            durationUnit = .hours
+        } else if unit.hasPrefix("day") {
+            durationUnit = .days
+        } else {
+            return nil
+        }
+        return RelativeDuration(value: max(1, value), unit: durationUnit).seconds
     }
 
     private static func extractMemoryRecallQuery(from prompt: String) -> String {
