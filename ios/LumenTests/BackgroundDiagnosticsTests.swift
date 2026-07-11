@@ -15,6 +15,12 @@ final class BackgroundDiagnosticsTests: XCTestCase {
             TriggerScheduler.continuedProcessingRegistrationIdentifier
         )
         XCTAssertTrue(snap.background.continuedProcessingRegistrationIdentifier.contains("*"))
+        XCTAssertNil(snap.background.continuedProcessingLastSubmittedIdentifier)
+        XCTAssertNil(snap.background.continuedProcessingRegistrationErrorDomain)
+        XCTAssertNil(snap.background.continuedProcessingRegistrationErrorCode)
+        XCTAssertNil(snap.background.continuedProcessingSubmitErrorDomain)
+        XCTAssertNil(snap.background.continuedProcessingSubmitErrorCode)
+        XCTAssertNil(snap.background.continuedProcessingRegisteredBeforeLaunchCompletion)
         XCTAssertEqual(snap.background.continuedProcessingExpectedEntitlementValue, "true")
     }
 }

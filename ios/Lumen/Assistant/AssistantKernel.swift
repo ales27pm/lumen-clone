@@ -249,6 +249,36 @@ final class AssistantKernel {
     }
 }
 
+extension AssistantKernel {
+    static func runEmbedding(
+        text: String,
+        sourceContext: AssistantTurnContext? = nil,
+        isForeground: Bool = true,
+        allowHeavyRuntime: Bool = true
+    ) async throws -> [Double] {
+        let context = AssistantTurnContext(
+            task: .embedding,
+            input: text,
+            systemPrompt: sourceContext?.systemPrompt ?? "",
+            history: sourceContext?.history ?? [],
+            relevantMemories: sourceContext?.relevantMemories ?? [],
+            attachments: sourceContext?.attachments ?? [],
+            isForeground: sourceContext?.isForeground ?? isForeground,
+            lowPowerMode: sourceContext?.lowPowerMode ?? ProcessInfo.processInfo.isLowPowerModeEnabled,
+            thermalState: sourceContext?.thermalState ?? ProcessInfo.processInfo.thermalState,
+            prefersFoundationModels: sourceContext?.prefersFoundationModels ?? true,
+            allowHeavyRuntime: sourceContext?.allowHeavyRuntime ?? allowHeavyRuntime,
+            temperature: sourceContext?.temperature ?? 0,
+            topP: sourceContext?.topP ?? 1,
+            repetitionPenalty: sourceContext?.repetitionPenalty ?? 1,
+            maxTokens: sourceContext?.maxTokens ?? 1,
+            traceCorrelation: sourceContext?.traceCorrelation,
+            allowedToolIDs: sourceContext?.allowedToolIDs ?? []
+        )
+        return try await shared.runEmbedding(context)
+    }
+}
+
 
 extension AssistantKernel {
     func executeTool(_ invocation: ToolInvocation, modelContext: ModelContext? = nil) async -> ToolResult {

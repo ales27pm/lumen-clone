@@ -165,6 +165,7 @@ extension IntentRouterTests {
             "Refresh file index.",
             "Rebuild file index.",
             "Update retrieval index.",
+            "Refresh retrieval index.",
             "Refresh the file retrieval index."
         ]
 
