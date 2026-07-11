@@ -72,8 +72,9 @@ final class AgentKernelBoundaryGuardTests: XCTestCase {
 
         XCTAssertTrue(runner.contains("AssistantKernel.shared.run(kernelRequest, modelContext: nil)"))
         XCTAssertTrue(runner.contains("strictLiveAgentKernelRequest("))
-        XCTAssertTrue(runner.contains("structuredMode: .requiredAgentJSON"))
-        XCTAssertTrue(runner.contains("forceModelBackedToolPlanning: true"))
+        XCTAssertTrue(runner.contains("forceModelBackedToolPlanning: requiresStructuredAgentJSON"))
+        XCTAssertTrue(runner.contains("structuredMode: requiresStructuredAgentJSON ? .requiredAgentJSON : .automatic"))
+        XCTAssertTrue(runner.contains("structuredAllowedToolIDs: requiresStructuredAgentJSON ? availableTools.map(\\.id) : []"))
         XCTAssertFalse(runner.contains("Kernel migration E2E probe is DEBUG-only."))
         XCTAssertFalse(runner.contains("runLegacyAgentBridge(req, options: runOptions)"))
         XCTAssertFalse(runner.contains("Structured live E2E agent-json diagnostics require DEBUG build."))

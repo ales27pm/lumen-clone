@@ -154,6 +154,14 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         ))
         XCTAssertTrue(emptyIndex.contains("RAG retrieval is unavailable"))
         XCTAssertFalse(emptyIndex.contains("Key modules"))
+
+        let unavailable = try XCTUnwrap(StructuredAgentKernelExecutor.deterministicObservationFallbackForTests(
+            observations: [("rag.search", "RAG storage unavailable.")],
+            intent: .rag
+        ))
+        XCTAssertEqual(unavailable, "RAG retrieval is unavailable right now. RAG storage unavailable.")
+        XCTAssertFalse(unavailable.contains("Summary\n"))
+        XCTAssertFalse(unavailable.contains("Key modules"))
         #endif
     }
 
@@ -285,6 +293,38 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         XCTAssertEqual(repair?.action.tool, "maps.search")
         XCTAssertEqual(repair?.action.args["query"]?.stringValue, "coffee")
         XCTAssertNotNil(repair?.reflection)
+        #endif
+    }
+
+    func testMapsSearchContinuesAfterNonSuccessLocationResult() throws {
+        #if DEBUG
+        let routing = IntentRoutingDecision(
+            intent: .maps,
+            allowedToolIDs: ["location.current", "maps.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let steps = [
+            AgentStep(kind: .action, content: "location.current", toolID: "location.current"),
+            AgentStep(kind: .observation, content: "Position snapshot is disabled in this build.", toolID: "location.current")
+        ]
+
+        XCTAssertTrue(StructuredAgentKernelExecutor.shouldContinueAfterNonSuccessToolResultForTests(
+            .unavailable,
+            routing: routing,
+            actionTool: "location.current",
+            prompt: "Find coffee near me.",
+            steps: steps,
+            availableToolIDs: ["location.current", "maps.search"]
+        ))
+        XCTAssertFalse(StructuredAgentKernelExecutor.shouldContinueAfterNonSuccessToolResultForTests(
+            .unavailable,
+            routing: routing,
+            actionTool: "rag.search",
+            prompt: "Find coffee near me.",
+            steps: steps,
+            availableToolIDs: ["location.current", "maps.search"]
+        ))
         #endif
     }
 

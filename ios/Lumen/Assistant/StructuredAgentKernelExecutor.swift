@@ -250,9 +250,24 @@ struct StructuredAgentKernelExecutor {
                 let observationStep = AgentStep(kind: .observation, content: observationText, toolID: validatedCall.canonicalToolID)
                 steps.append(observationStep)
                 continuation.yield(.step(observationStep))
+                if Self.shouldContinueAfterNonSuccessToolResult(
+                    result.status,
+                    routing: routing,
+                    actionTool: validatedCall.canonicalToolID,
+                    prompt: userMessage,
+                    steps: steps,
+                    availableToolIDs: availableToolIDs
+                ) {
+                    emit(.reflection, "Maps search continuation preserved after degraded location.current result.", toolID: validatedCall.canonicalToolID, steps: &steps, continuation: continuation)
+                    scratchpad += "\nAction: \(validatedAction.displayContent)\nObservation: \(Self.compactScratchpadObservation(observationText))"
+                    continue
+                }
                 if Self.shouldStopAfterToolResult(result.status) {
                     emit(.reflection, "Structured tool loop stopped after non-success \(validatedCall.canonicalToolID) result.", toolID: validatedCall.canonicalToolID, steps: &steps, continuation: continuation)
-                    finalAnswer = observationText
+                    finalAnswer = Self.deterministicObservationFallback(
+                        observations: [(validatedCall.canonicalToolID, observationText)],
+                        intent: routing.intent
+                    ) ?? observationText
                     break stepsLoop
                 }
                 observations.append((validatedCall.canonicalToolID, observationText))
@@ -866,6 +881,26 @@ private extension StructuredAgentKernelExecutor {
 
     static func shouldStopAfterToolResult(_ status: ToolResultStatus) -> Bool {
         status != .success
+    }
+
+    static func shouldContinueAfterNonSuccessToolResult(
+        _ status: ToolResultStatus,
+        routing: IntentRoutingDecision,
+        actionTool: String,
+        prompt: String,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> Bool {
+        guard status != .success,
+              ToolRouteGuard.canonicalToolID(actionTool) == "location.current" else {
+            return false
+        }
+        return nextRequiredMapsSearchAction(
+            routing: routing,
+            prompt: prompt,
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        ) != nil
     }
 
     static func phoneCallContinuationAfterContactObservation(
@@ -1679,6 +1714,24 @@ extension StructuredAgentKernelExecutor {
 
     static func shouldStopAfterToolResultForTests(_ status: ToolResultStatus) -> Bool {
         shouldStopAfterToolResult(status)
+    }
+
+    static func shouldContinueAfterNonSuccessToolResultForTests(
+        _ status: ToolResultStatus,
+        routing: IntentRoutingDecision,
+        actionTool: String,
+        prompt: String,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> Bool {
+        shouldContinueAfterNonSuccessToolResult(
+            status,
+            routing: routing,
+            actionTool: actionTool,
+            prompt: prompt,
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        )
     }
 
     static func phoneCallContinuationAfterContactObservationForTests(
