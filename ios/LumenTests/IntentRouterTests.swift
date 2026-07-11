@@ -158,14 +158,26 @@ extension IntentRouterTests {
     }
 
     @Test func ragIndexingPlansCorrectIndexTools() async throws {
-        let fileDecision = IntentRouter.classify("Refresh the file retrieval index.")
-        let fileAction = DeterministicToolPlanner.plan(
-            routing: fileDecision,
-            prompt: "Refresh the file retrieval index.",
-            availableToolIDs: fileDecision.allowedToolIDs
-        )
-        #expect(fileDecision.intent == .rag)
-        #expect(fileAction?.tool == "rag.index_files")
+        let filePrompts = [
+            "Reindex my imported files.",
+            "Reindex imported files.",
+            "Refresh imported files.",
+            "Refresh file index.",
+            "Rebuild file index.",
+            "Update retrieval index.",
+            "Refresh the file retrieval index."
+        ]
+
+        for prompt in filePrompts {
+            let fileDecision = IntentRouter.classify(prompt)
+            let fileAction = DeterministicToolPlanner.plan(
+                routing: fileDecision,
+                prompt: prompt,
+                availableToolIDs: fileDecision.allowedToolIDs
+            )
+            #expect(fileDecision.intent == .rag, "Prompt routed to \(fileDecision.intent)")
+            #expect(fileAction?.tool == "rag.index_files", "Prompt planned \(fileAction?.tool ?? "nil")")
+        }
 
         let photoDecision = IntentRouter.classify("Refresh the photo retrieval index.")
         let photoAction = DeterministicToolPlanner.plan(

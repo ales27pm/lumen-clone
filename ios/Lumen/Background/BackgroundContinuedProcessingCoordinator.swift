@@ -11,6 +11,14 @@ final class BackgroundContinuedProcessingCoordinator {
     private var pendingCompletions: [String: Bool] = [:]
     private var registeredTaskIdentifiers: Set<String> = []
     private(set) var lastSubmissionStatus: String = "not_requested"
+    private(set) var lastSubmittedIdentifier: String?
+    private(set) var lastRegistrationIdentifier: String = TriggerScheduler.continuedProcessingRegistrationIdentifier
+    private(set) var lastRegistrationErrorDomain: String?
+    private(set) var lastRegistrationErrorCode: Int?
+    private(set) var lastSubmitErrorDomain: String?
+    private(set) var lastSubmitErrorCode: Int?
+    private(set) var lastRegistrationBeforeAppLaunchCompletion: Bool?
+    private var appLaunchCompleted = false
 
     private init() {}
 
@@ -27,6 +35,7 @@ final class BackgroundContinuedProcessingCoordinator {
 
         let submissionToken = UUID().uuidString
         let identifier = TriggerScheduler.continuedProcessingIdentifier(for: submissionToken)
+        lastSubmittedIdentifier = identifier
         guard registerHandlerIfNeeded() else { return nil }
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
@@ -41,18 +50,29 @@ final class BackgroundContinuedProcessingCoordinator {
         do {
             try BGTaskScheduler.shared.submit(request)
             lastSubmissionStatus = request.requiredResources.contains(.gpu) ? "submitted_gpu" : "submitted_default"
+            lastSubmitErrorDomain = nil
+            lastSubmitErrorCode = nil
             return BackgroundContinuedProcessingLease(identifier: request.identifier, submissionToken: submissionToken)
         } catch {
             lastSubmissionStatus = "submit_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            let nsError = error as NSError
+            lastSubmitErrorDomain = nsError.domain
+            lastSubmitErrorCode = nsError.code
             logger.warning("continued_processing_submit_failed error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return nil
         }
     }
 
+    func markApplicationLaunchCompleted() {
+        appLaunchCompleted = true
+    }
+
     private func registerHandlerIfNeeded() -> Bool {
         guard #available(iOS 26.0, *) else { return false }
         let identifier = TriggerScheduler.continuedProcessingRegistrationIdentifier
+        lastRegistrationIdentifier = identifier
         guard !registeredTaskIdentifiers.contains(identifier) else { return true }
+        lastRegistrationBeforeAppLaunchCompletion = !appLaunchCompleted
         let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             Task { @MainActor in
                 self.attach(task)
@@ -60,8 +80,12 @@ final class BackgroundContinuedProcessingCoordinator {
         }
         if registered {
             registeredTaskIdentifiers.insert(identifier)
+            lastRegistrationErrorDomain = nil
+            lastRegistrationErrorCode = nil
         } else {
             lastSubmissionStatus = "registration_failed"
+            lastRegistrationErrorDomain = "BGTaskScheduler.register"
+            lastRegistrationErrorCode = 0
         }
         return registered
     }

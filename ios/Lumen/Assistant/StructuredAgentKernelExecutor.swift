@@ -135,6 +135,17 @@ struct StructuredAgentKernelExecutor {
                     continuation.yield(.step(reflection))
                 }
                 actionToExecute = repair.action
+                if let mapsRepair = Self.repairedMapsSearchActionIfNeeded(
+                    modelAction: actionToExecute,
+                    routing: routing,
+                    prompt: userMessage,
+                    steps: steps,
+                    availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                ) {
+                    steps.append(mapsRepair.reflection)
+                    continuation.yield(.step(mapsRepair.reflection))
+                    actionToExecute = mapsRepair.action
+                }
             } else if turn.final?.isEmpty == false,
                       let requiredMemoryAction = Self.nextRequiredMemoryAction(
                         memoryPlan: memoryCommandPlan,
@@ -143,6 +154,23 @@ struct StructuredAgentKernelExecutor {
                       ) {
                 emit(.reflection, "Memory save-then-recall invariant repaired a premature final before required memory actions completed.", steps: &steps, continuation: continuation)
                 actionToExecute = requiredMemoryAction
+            } else if turn.parseError != nil,
+                      let requiredMemoryAction = Self.nextRequiredMemoryAction(
+                        memoryPlan: memoryCommandPlan,
+                        steps: steps,
+                        availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                      ) {
+                emit(.reflection, "Memory save-then-recall invariant repaired malformed structured output into the next required memory action.", steps: &steps, continuation: continuation)
+                actionToExecute = requiredMemoryAction
+            } else if turn.final?.isEmpty == false || turn.parseError != nil,
+                      let requiredMapsAction = Self.nextRequiredMapsSearchAction(
+                        routing: routing,
+                        prompt: userMessage,
+                        steps: steps,
+                        availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                      ) {
+                emit(.reflection, "Maps search continuation repaired degraded location-only output into maps.search.", steps: &steps, continuation: continuation)
+                actionToExecute = requiredMapsAction
             }
 
             if let action = actionToExecute {
@@ -1029,6 +1057,48 @@ private extension StructuredAgentKernelExecutor {
         return requiredKeys.allSatisfy { action.args[$0]?.stringValue == required.args[$0]?.stringValue }
     }
 
+    static func repairedMapsSearchActionIfNeeded(
+        modelAction: AgentAction?,
+        routing: IntentRoutingDecision,
+        prompt: String,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> (action: AgentAction, reflection: AgentStep)? {
+        guard let required = nextRequiredMapsSearchAction(
+            routing: routing,
+            prompt: prompt,
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        ) else {
+            return nil
+        }
+        let modelTool = modelAction.map { ToolRouteGuard.canonicalToolID($0.tool) } ?? "none"
+        guard modelTool != "maps.search" else { return nil }
+        return (
+            required,
+            AgentStep(kind: .reflection, content: "Maps search continuation repaired \(modelTool) into maps.search after location observation.")
+        )
+    }
+
+    static func nextRequiredMapsSearchAction(
+        routing: IntentRoutingDecision,
+        prompt: String,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> AgentAction? {
+        guard routing.intent == .maps, availableToolIDs.contains("maps.search") else { return nil }
+        let actionToolIDs = steps.filter { $0.kind == .action }.compactMap(\.toolID).map(ToolRouteGuard.canonicalToolID)
+        guard actionToolIDs.contains("location.current"), !actionToolIDs.contains("maps.search") else { return nil }
+        let observationToolIDs = steps.filter { $0.kind == .observation }.compactMap(\.toolID).map(ToolRouteGuard.canonicalToolID)
+        guard observationToolIDs.contains("location.current") else { return nil }
+        return DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: availableToolIDs
+        )
+        .first { ToolRouteGuard.canonicalToolID($0.tool) == "maps.search" }
+    }
+
     static func memorySaveRecallFinalIfApplicable(routing: IntentRoutingDecision, prompt: String, steps: [AgentStep]) -> String? {
         guard routing.intent == .memory else { return nil }
         let actionSteps = steps.filter { $0.kind == .action }
@@ -1456,6 +1526,34 @@ extension StructuredAgentKernelExecutor {
         repairedMemoryActionIfNeeded(
             modelAction: modelAction,
             memoryPlan: memoryPlan,
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        )
+    }
+
+    static func nextRequiredMemoryActionForTests(
+        memoryPlan: MemoryCommandPlan?,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> AgentAction? {
+        nextRequiredMemoryAction(
+            memoryPlan: memoryPlan,
+            steps: steps,
+            availableToolIDs: availableToolIDs
+        )
+    }
+
+    static func repairedMapsSearchActionIfNeededForTests(
+        modelAction: AgentAction?,
+        routing: IntentRoutingDecision,
+        prompt: String,
+        steps: [AgentStep],
+        availableToolIDs: Set<String>
+    ) -> (action: AgentAction, reflection: AgentStep)? {
+        repairedMapsSearchActionIfNeeded(
+            modelAction: modelAction,
+            routing: routing,
+            prompt: prompt,
             steps: steps,
             availableToolIDs: availableToolIDs
         )
