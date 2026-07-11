@@ -58,7 +58,7 @@ final class AgentKernelBoundaryGuardTests: XCTestCase {
         XCTAssertEqual(bridge.occurrenceCount(of: "for await event in AgentService.shared.run"), 1)
         XCTAssertEqual(bridge.occurrenceCount(of: "SlotAgentService.shared.run(request, options: options)"), 2)
         XCTAssertTrue(guardPolicy.contains("\"ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift\""))
-        XCTAssertFalse(guardPolicy.contains("\"ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift\""))
+        XCTAssertTrue(guardPolicy.contains("StructuredAgentKernelExecutor.swift"))
         XCTAssertTrue(guardPolicy.contains("\"AgentService.shared.run\""))
         XCTAssertTrue(guardPolicy.contains("\"SlotAgentService.shared.run\""))
         XCTAssertTrue(guardPolicy.contains("if args.strict and not is_debug_only"))
@@ -72,9 +72,31 @@ final class AgentKernelBoundaryGuardTests: XCTestCase {
 
         XCTAssertTrue(runner.contains("AssistantKernel.shared.run(kernelRequest, modelContext: nil)"))
         XCTAssertTrue(runner.contains("strictLiveAgentKernelRequest("))
+        XCTAssertTrue(runner.contains("structuredMode: .requiredAgentJSON"))
+        XCTAssertTrue(runner.contains("forceModelBackedToolPlanning: true"))
         XCTAssertFalse(runner.contains("Kernel migration E2E probe is DEBUG-only."))
         XCTAssertFalse(runner.contains("runLegacyAgentBridge(req, options: runOptions)"))
-        XCTAssertFalse(runner.contains("StructuredAgentKernelExecutor.runModelBackedAgent"))
+        XCTAssertFalse(runner.contains("Structured live E2E agent-json diagnostics require DEBUG build."))
+        XCTAssertFalse(runner.contains("AgentService.shared.run(agentRequest"))
+    }
+
+    func testAssistantKernelRoutesRequiredAgentJSONToStructuredExecutor() throws {
+        let repo = repoRoot()
+        let kernelURL = repo.appendingPathComponent("ios/Lumen/Assistant/AssistantKernel+Streaming.swift")
+        let executorURL = repo.appendingPathComponent("ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift")
+        let contractsURL = repo.appendingPathComponent("ios/Lumen/Assistant/AgentKernelContracts.swift")
+        let kernel = try String(contentsOf: kernelURL, encoding: .utf8)
+        let executor = try String(contentsOf: executorURL, encoding: .utf8)
+        let contracts = try String(contentsOf: contractsURL, encoding: .utf8)
+
+        XCTAssertTrue(contracts.contains("case requiredAgentJSON"))
+        XCTAssertTrue(contracts.contains("let structuredMode: AgentStructuredMode"))
+        XCTAssertTrue(kernel.contains("request.options.structuredMode == .requiredAgentJSON"))
+        XCTAssertTrue(kernel.contains("StructuredAgentKernelExecutor(kernel: self, modelContext: modelContext)"))
+        XCTAssertTrue(executor.contains("AgentBehaviorTraceEmitter.recordModelTurn"))
+        XCTAssertTrue(executor.contains("runtimePath: \"agent-model\""))
+        XCTAssertTrue(executor.contains("StructuredToolCallValidator.validate"))
+        XCTAssertTrue(executor.contains("toolRegistry.execute"))
     }
 
     func testReleaseToolTurnsAreNotExcludedAtKernelOrVoiceBoundary() throws {

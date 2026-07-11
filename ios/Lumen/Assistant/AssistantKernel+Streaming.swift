@@ -14,6 +14,15 @@ extension AssistantKernel: AgentKernelRunning {
                     continuation.yield(.step(step))
                 }
 
+                if request.options.structuredMode == .requiredAgentJSON {
+                    let executor = StructuredAgentKernelExecutor(kernel: self, modelContext: modelContext)
+                    for await event in executor.run(request) {
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                    return
+                }
+
                 emitStep(.thought, "Agent Kernel accepted \(request.source.rawValue) turn for \(String(describing: request.task)).")
                 let historyTuples = request.history.map { (role: $0.role.messageRole, content: $0.content) }
                 let referenceResolution = ReferenceResolver.resolve(

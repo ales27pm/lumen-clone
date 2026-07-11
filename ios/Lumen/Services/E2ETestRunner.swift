@@ -1140,48 +1140,20 @@ nonisolated enum E2ETestRunner {
                     }
                     let agentEvents: AsyncStream<AgentKernelEvent>
                     if requiresStructuredAgentJSON {
-                        let agentRequest = strictLiveAgentRequest(
-                            scenario: scenario,
+                        let kernelRequest = strictLiveAgentKernelRequest(
+                            prompt: scenario.prompt,
+                            systemPrompt: config.systemPrompt,
                             config: config,
-                            availableTools: availableTools,
-                            correlation: traceCorrelation
+                            conversationID: conversationID,
+                            turnID: turnID,
+                            traceCorrelation: traceCorrelation,
+                            forceModelBackedToolPlanning: true,
+                            structuredMode: .requiredAgentJSON,
+                            structuredAllowedToolIDs: availableTools.map(\.id)
                         )
-                        let agentOptions = strictLiveAgentRunOptions(
-                            req: agentRequest,
-                            scenario: scenario,
-                            e2eRunID: e2eRunID,
-                            agentRunID: agentRunID,
-                            acceptsPolicyFirstEvidence: false
-                        )
-                        #if DEBUG
-                        let legacyEvents = await AgentService.shared.run(agentRequest, options: agentOptions)
-                        agentEvents = AsyncStream { continuation in
-                            let task = Task {
-                                for await event in legacyEvents {
-                                    switch event {
-                                    case .step(let step):
-                                        continuation.yield(.step(step))
-                                    case .stepDelta(let id, let text):
-                                        continuation.yield(.stepDelta(id: id, text: text))
-                                    case .finalDelta(let text):
-                                        continuation.yield(.finalDelta(text))
-                                    case .done(let finalText, let steps):
-                                        continuation.yield(.done(finalText: finalText, steps: steps))
-                                    case .error(let message):
-                                        continuation.yield(.error(message))
-                                    }
-                                }
-                                continuation.finish()
-                            }
-                            continuation.onTermination = { @Sendable _ in task.cancel() }
+                        agentEvents = await MainActor.run {
+                            AssistantKernel.shared.run(kernelRequest, modelContext: nil)
                         }
-                        #else
-                        _ = agentOptions
-                        agentEvents = AsyncStream { continuation in
-                            continuation.yield(.error("Structured live E2E agent-json diagnostics require DEBUG build."))
-                            continuation.finish()
-                        }
-                        #endif
                     } else {
                         let kernelRequest = strictLiveAgentKernelRequest(
                             prompt: scenario.prompt,
@@ -1845,7 +1817,9 @@ nonisolated enum E2ETestRunner {
         conversationID: UUID,
         turnID: UUID,
         traceCorrelation: AgentTraceCorrelation? = nil,
-        forceModelBackedToolPlanning: Bool = false
+        forceModelBackedToolPlanning: Bool = false,
+        structuredMode: AgentStructuredMode = .automatic,
+        structuredAllowedToolIDs: [String] = []
     ) -> AgentKernelRequest {
         AgentKernelRequest(
             conversationID: conversationID,
@@ -1867,7 +1841,9 @@ nonisolated enum E2ETestRunner {
                 topP: config.topP,
                 repetitionPenalty: config.repetitionPenalty,
                 maxTokens: min(config.maxTokens, 512),
-                forceModelBackedToolPlanning: forceModelBackedToolPlanning
+                forceModelBackedToolPlanning: forceModelBackedToolPlanning,
+                structuredMode: structuredMode,
+                structuredAllowedToolIDs: structuredAllowedToolIDs
             ),
             traceCorrelation: traceCorrelation
         )
