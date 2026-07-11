@@ -270,11 +270,48 @@ struct StructuredAgentKernelExecutor {
                     actionTool: validatedCall.canonicalToolID,
                     prompt: userMessage,
                     steps: steps,
-                    availableToolIDs: availableToolIDs
+                    availableToolIDs: availableToolIDs,
+                    stepIndex: stepIndex,
+                    maxSteps: maxSteps
                 ) {
                     emit(.reflection, "Maps search continuation preserved after degraded location.current result.", toolID: validatedCall.canonicalToolID, steps: &steps, continuation: continuation)
                     scratchpad += "\nAction: \(validatedAction.displayContent)\nObservation: \(Self.compactScratchpadObservation(observationText))"
                     continue
+                }
+                if result.status != .success,
+                   stepIndex >= maxSteps - 1,
+                   let mapsAction = Self.nextRequiredMapsSearchAction(
+                    routing: routing,
+                    prompt: userMessage,
+                    steps: steps,
+                    availableToolIDs: availableToolIDs
+                   ),
+                   case .success(let mapsCall) = StructuredToolCallValidator.validate(action: mapsAction, availableTools: availableTools) {
+                    emit(.reflection, "Final-step degraded location continued directly with maps.search.", toolID: "maps.search", steps: &steps, continuation: continuation)
+                    let mapsStep = AgentStep(kind: .action, content: mapsAction.displayContent, toolID: mapsCall.canonicalToolID, toolArgs: mapsCall.arguments)
+                    steps.append(mapsStep)
+                    continuation.yield(.step(mapsStep))
+                    let mapsInvocation = ToolInvocation(
+                        id: UUID(),
+                        toolID: mapsCall.canonicalToolID,
+                        arguments: mapsCall.arguments,
+                        source: request.toolInvocationSourceForStructuredAgent,
+                        conversationID: request.conversationID,
+                        turnID: request.turnID,
+                        createdAt: Date()
+                    )
+                    continuation.yield(.toolInvocation(mapsInvocation))
+                    let mapsResult = await kernel.toolRegistry.execute(mapsInvocation, context: context)
+                    continuation.yield(.toolResult(mapsResult))
+                    let mapsObservation = Self.userVisibleToolObservation(toolID: mapsCall.canonicalToolID, result: mapsResult)
+                    let mapsObservationStep = AgentStep(kind: .observation, content: mapsObservation, toolID: mapsCall.canonicalToolID)
+                    steps.append(mapsObservationStep)
+                    continuation.yield(.step(mapsObservationStep))
+                    if mapsResult.status == .success {
+                        observations.append((mapsCall.canonicalToolID, mapsObservation))
+                    }
+                    finalAnswer = mapsObservation
+                    break stepsLoop
                 }
                 if Self.shouldStopAfterToolResult(result.status) {
                     emit(.reflection, "Structured tool loop stopped after non-success \(validatedCall.canonicalToolID) result.", toolID: validatedCall.canonicalToolID, steps: &steps, continuation: continuation)
@@ -493,25 +530,31 @@ struct StructuredAgentKernelExecutor {
         var streamStarted = false
         if forcedParseError == nil {
             streamStarted = true
-            streamLoop: for await token in await AppLlamaService.shared.stream(genReq, slot: Self.structuredAgentModelSlot) {
-                if Task.isCancelled { break streamLoop }
-                switch token {
-                case .text(let text):
-                    if firstTokenLatencyMs == nil {
-                        firstTokenLatencyMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            do {
+                let stream = try await kernel.streamStructuredLlama(genReq, slot: Self.structuredAgentModelSlot)
+                streamLoop: for await token in stream {
+                    if Task.isCancelled { break streamLoop }
+                    switch token {
+                    case .text(let text):
+                        if firstTokenLatencyMs == nil {
+                            firstTokenLatencyMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+                        }
+                        if !text.isEmpty { textChunkCount += 1 }
+                        raw += text
+                    case .done:
+                        finalChunkReceived = true
+                        break streamLoop
                     }
-                    if !text.isEmpty { textChunkCount += 1 }
-                    raw += text
-                case .done:
-                    finalChunkReceived = true
-                    break streamLoop
                 }
+            } catch {
+                forcedParseError = .empty
+                preGenerationDenialReason = "structured-runtime-unavailable:\(RuntimeMetricErrorSanitizer.code(for: error))"
             }
         } else if forcedParseError == .contextWindowExceeded {
             raw = Self.contextWindowExceededRawOutputPrefix
         }
 
-        let payload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: genReq.id)
+        let payload = await kernel.takeCompletedStructuredLlamaTrace(requestID: genReq.id)
         let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let emptyReason = payload?.emptyOutputReason
             ?? (trimmedRaw.isEmpty ? preGenerationDenialReason : nil)
@@ -876,8 +919,7 @@ private extension StructuredAgentKernelExecutor {
         } else {
             return secure
         }
-        let secured = scoped.intersection(secure)
-        return secured.isEmpty ? scoped : secured
+        return scoped.intersection(secure)
     }
 
     static func shouldStopAfterFirstWebObservation(
@@ -983,10 +1025,13 @@ private extension StructuredAgentKernelExecutor {
         actionTool: String,
         prompt: String,
         steps: [AgentStep],
-        availableToolIDs: Set<String>
+        availableToolIDs: Set<String>,
+        stepIndex: Int,
+        maxSteps: Int
     ) -> Bool {
         guard status != .success,
-              ToolRouteGuard.canonicalToolID(actionTool) == "location.current" else {
+              ToolRouteGuard.canonicalToolID(actionTool) == "location.current",
+              stepIndex < maxSteps - 1 else {
             return false
         }
         return nextRequiredMapsSearchAction(
@@ -1044,7 +1089,7 @@ private extension StructuredAgentKernelExecutor {
             let observationText = weatherObservation?.isEmpty == false ? weatherObservation! : "the weather observation"
             return "Weather update: \(observationText). No precipitation was reported in the weather observation."
         }
-        if let memoryFinal = memorySaveRecallFinalIfApplicable(routing: routing, prompt: prompt, steps: steps) {
+        if let memoryFinal = memorySaveRecallFinalIfApplicable(routing: routing, prompt: prompt, steps: steps, observations: observations) {
             return memoryFinal
         }
         if routing.intent == .webSearch,
@@ -1393,11 +1438,18 @@ private extension StructuredAgentKernelExecutor {
         .first { ToolRouteGuard.canonicalToolID($0.tool) == "maps.search" }
     }
 
-    static func memorySaveRecallFinalIfApplicable(routing: IntentRoutingDecision, prompt: String, steps: [AgentStep]) -> String? {
+    static func memorySaveRecallFinalIfApplicable(
+        routing: IntentRoutingDecision,
+        prompt: String,
+        steps: [AgentStep],
+        observations: [(tool: String, result: String)]
+    ) -> String? {
         guard routing.intent == .memory else { return nil }
         let actionSteps = steps.filter { $0.kind == .action }
         let actionToolIDs = actionSteps.compactMap(\.toolID).map(ToolRouteGuard.canonicalToolID)
         guard actionToolIDs.contains("memory.save"), actionToolIDs.contains("memory.recall") else { return nil }
+        let successfulObservationToolIDs = Set(observations.map { ToolRouteGuard.canonicalToolID($0.tool) })
+        guard successfulObservationToolIDs.contains("memory.save"), successfulObservationToolIDs.contains("memory.recall") else { return nil }
         let lowerPrompt = prompt.lowercased()
         guard lowerPrompt.contains("tell me what you remembered")
             || lowerPrompt.contains("what you remembered")
@@ -1806,6 +1858,22 @@ extension StructuredAgentKernelExecutor {
         structuredToolSourceIDs(secureIDs: secureIDs, optionIDs: optionIDs, routingIDs: routingIDs)
     }
 
+    static func postprocessStructuredFinalAnswerForTests(
+        _ finalAnswer: String,
+        request: AgentKernelRequest,
+        availableTools: [ToolDefinition],
+        observations: [(tool: String, result: String)],
+        steps: [AgentStep]
+    ) -> String {
+        postprocessStructuredFinalAnswer(
+            finalAnswer,
+            request: request,
+            availableTools: availableTools,
+            observations: observations,
+            steps: steps
+        )
+    }
+
     static func shouldStopAfterToolResultForTests(_ status: ToolResultStatus) -> Bool {
         shouldStopAfterToolResult(status)
     }
@@ -1816,7 +1884,9 @@ extension StructuredAgentKernelExecutor {
         actionTool: String,
         prompt: String,
         steps: [AgentStep],
-        availableToolIDs: Set<String>
+        availableToolIDs: Set<String>,
+        stepIndex: Int = 0,
+        maxSteps: Int = 2
     ) -> Bool {
         shouldContinueAfterNonSuccessToolResult(
             status,
@@ -1824,7 +1894,9 @@ extension StructuredAgentKernelExecutor {
             actionTool: actionTool,
             prompt: prompt,
             steps: steps,
-            availableToolIDs: availableToolIDs
+            availableToolIDs: availableToolIDs,
+            stepIndex: stepIndex,
+            maxSteps: maxSteps
         )
     }
 

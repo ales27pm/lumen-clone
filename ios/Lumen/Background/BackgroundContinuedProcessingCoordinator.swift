@@ -4,7 +4,7 @@ import OSLog
 
 @MainActor
 final class BackgroundContinuedProcessingCoordinator {
-    static let shared = BackgroundContinuedProcessingCoordinator()
+    static let shared = BackgroundContinuedProcessingCoordinator(registrar: SystemBackgroundTaskRegistrar.shared)
 
     private let logger = Logger(subsystem: "ai.lumen.app", category: "background")
     private var activeTasks: [String: BGTask] = [:]
@@ -19,8 +19,11 @@ final class BackgroundContinuedProcessingCoordinator {
     private(set) var lastSubmitErrorCode: Int?
     private(set) var lastRegistrationBeforeAppLaunchCompletion: Bool?
     private var appLaunchCompleted = false
+    private let registrar: any BackgroundTaskRegistering
 
-    private init() {}
+    init(registrar: any BackgroundTaskRegistering) {
+        self.registrar = registrar
+    }
 
     var gpuSupported: Bool {
         guard #available(iOS 26.0, *) else { return false }
@@ -36,7 +39,7 @@ final class BackgroundContinuedProcessingCoordinator {
         let submissionToken = UUID().uuidString
         let identifier = TriggerScheduler.continuedProcessingIdentifier(for: submissionToken)
         lastSubmittedIdentifier = identifier
-        guard registerHandlerIfNeeded() else { return nil }
+        guard registerHandlerIfNeeded().succeeded else { return nil }
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
             title: title,
@@ -67,13 +70,29 @@ final class BackgroundContinuedProcessingCoordinator {
         appLaunchCompleted = true
     }
 
-    private func registerHandlerIfNeeded() -> Bool {
-        guard #available(iOS 26.0, *) else { return false }
+    @discardableResult
+    func registerHandlerBeforeApplicationLaunchCompletion() -> BackgroundTaskRegistrationOutcome {
+        registerHandlerIfNeeded()
+    }
+
+    @discardableResult
+    private func registerHandlerIfNeeded() -> BackgroundTaskRegistrationOutcome {
         let identifier = TriggerScheduler.continuedProcessingRegistrationIdentifier
+        guard #available(iOS 26.0, *) else {
+            return BackgroundTaskRegistrationOutcome(
+                identifier: identifier,
+                succeeded: false,
+                beforeApplicationLaunchCompletion: !appLaunchCompleted,
+                errorDomain: "BGTaskScheduler.unavailable",
+                errorCode: nil
+            )
+        }
         lastRegistrationIdentifier = identifier
-        guard !registeredTaskIdentifiers.contains(identifier) else { return true }
+        guard !registeredTaskIdentifiers.contains(identifier) else {
+            return BackgroundTaskRegistrationOutcome(identifier: identifier, succeeded: true, beforeApplicationLaunchCompletion: !appLaunchCompleted, errorDomain: nil, errorCode: nil)
+        }
         lastRegistrationBeforeAppLaunchCompletion = !appLaunchCompleted
-        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+        let registered = registrar.register(identifier: identifier) { task in
             Task { @MainActor in
                 self.attach(task)
             }
@@ -87,7 +106,13 @@ final class BackgroundContinuedProcessingCoordinator {
             lastRegistrationErrorDomain = "BGTaskScheduler.register"
             lastRegistrationErrorCode = 0
         }
-        return registered
+        return BackgroundTaskRegistrationOutcome(
+            identifier: identifier,
+            succeeded: registered,
+            beforeApplicationLaunchCompletion: !appLaunchCompleted,
+            errorDomain: lastRegistrationErrorDomain,
+            errorCode: lastRegistrationErrorCode
+        )
     }
 
     func complete(identifier: String, submissionToken: String, success: Bool) {

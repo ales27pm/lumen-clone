@@ -301,7 +301,7 @@ def test_ingestion_flags_e2e_no_model_fallback_as_invalid_evidence(tmp_path: Pat
     assert failure["e2eScenario"]["modelEvidenceRootCause"] is None
     assert "routing-only fallback is not valid E2E evidence" in failure["expected"][0]
     assert "Load the configured chat model" in failure["repairSample"]["correctedOutput"]
-    assert "AgentService" in failure["repairSample"]["correctedOutput"]
+    assert "AssistantKernel model-backed structured generation path" in failure["repairSample"]["correctedOutput"]
 
 
 def test_ingestion_flags_live_e2e_without_model_evidence_event(tmp_path: Path):

@@ -109,6 +109,18 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testStructuredToolScopeIsEmptyWhenSecureRegistryFiltersEveryRequestedTool() {
+        #if DEBUG
+        let sourceIDs = StructuredAgentKernelExecutor.structuredToolSourceIDsForTests(
+            secureIDs: ["weather"],
+            optionIDs: ["web.search"],
+            routingIDs: ["web.search"]
+        )
+
+        XCTAssertTrue(sourceIDs.isEmpty)
+        #endif
+    }
+
     func testNonSuccessToolResultStopsBeforeTrustedObservationReuse() {
         #if DEBUG
         XCTAssertTrue(StructuredAgentKernelExecutor.shouldStopAfterToolResultForTests(.failed))
@@ -435,7 +447,48 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             steps: steps,
             availableToolIDs: ["location.current", "maps.search"]
         ))
+        XCTAssertFalse(StructuredAgentKernelExecutor.shouldContinueAfterNonSuccessToolResultForTests(
+            .unavailable,
+            routing: routing,
+            actionTool: "location.current",
+            prompt: "Find coffee near me.",
+            steps: steps,
+            availableToolIDs: ["location.current", "maps.search"],
+            stepIndex: 1,
+            maxSteps: 2
+        ))
         #endif
+    }
+
+    func testMemoryFinalRequiresSuccessfulSaveAndRecallObservations() throws {
+        let request = structuredRequest(
+            "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            allowedToolIDs: ["memory.save", "memory.recall"]
+        )
+        let steps = [
+            AgentStep(kind: .action, content: "memory.save", toolID: "memory.save", toolArgs: ["content": "I prefer concise bullet points"]),
+            AgentStep(kind: .observation, content: "Memory saved.", toolID: "memory.save"),
+            AgentStep(kind: .action, content: "memory.recall", toolID: "memory.recall", toolArgs: ["query": "concise bullet points"]),
+            AgentStep(kind: .observation, content: "Memory recall failed.", toolID: "memory.recall")
+        ]
+
+        let failedRecallFinal = StructuredAgentKernelExecutor.postprocessStructuredFinalAnswerForTests(
+            "Recall failed.",
+            request: request,
+            availableTools: [try tool("memory.save"), try tool("memory.recall")],
+            observations: [("memory.save", "Memory saved.")],
+            steps: steps
+        )
+        XCTAssertEqual(failedRecallFinal, "Recall failed.")
+
+        let successfulFinal = StructuredAgentKernelExecutor.postprocessStructuredFinalAnswerForTests(
+            "fallback",
+            request: request,
+            availableTools: [try tool("memory.save"), try tool("memory.recall")],
+            observations: [("memory.save", "Memory saved."), ("memory.recall", "I prefer concise bullet points")],
+            steps: steps
+        )
+        XCTAssertEqual(successfulFinal, "I remember that you prefer concise bullet points.")
     }
 
     func testStructuredExecutorSourceContainsStrictEvidenceAndLoopGuards() throws {

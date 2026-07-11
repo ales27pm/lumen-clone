@@ -48,6 +48,34 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         XCTAssertEqual(router.runtime(for: context), .llama)
     }
 
+    func testStructuredStreamingUsesInjectedLlamaService() async throws {
+        let service = StubLlamaStreamingService(
+            isChatLoaded: true,
+            tokens: [.text(#"{"action":{"tool":"device.status","args":{}}}"#), .done]
+        )
+        let kernel = AssistantKernel(router: AssistantRuntimeRouter(llamaService: service))
+        let request = GenerateRequest(
+            systemPrompt: "Return JSON.",
+            history: [],
+            userMessage: "Check device status.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1.05,
+            maxTokens: 64,
+            modelName: "agent-json",
+            relevantMemories: []
+        )
+
+        let stream = try await kernel.streamStructuredLlama(request, slot: .executor)
+        var output = ""
+        for await token in stream {
+            if case .text(let text) = token { output += text }
+        }
+
+        XCTAssertEqual(output, #"{"action":{"tool":"device.status","args":{}}}"#)
+        XCTAssertEqual(AgentTurnParser.parse(output).action?.tool, "device.status")
+    }
+
     func testRunTextTurnPropagatesSelectedLlamaUnavailable() async throws {
         let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil, generateHandler: { _ in
             throw LocalRuntimeError.unavailable("controlled no loaded chat model")

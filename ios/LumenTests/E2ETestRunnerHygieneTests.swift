@@ -26,6 +26,7 @@ private actor ResourceBudgetGateSnapshotOverrideLock {
             throw error
         }
     }
+
 }
 
 @Suite(.serialized)
@@ -2597,6 +2598,40 @@ struct E2ETestRunnerHygieneTests {
         #expect(report.results.first?.metadata["failureKind"] == "adapterPathMissing")
         #expect(report.results.first?.metadata["trainingSignal"] == "false")
         #expect(report.results.first?.finalText.contains("adapterExists=false") == true)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func primaryStructuredEvidenceDoesNotReparseTruncatedDiagnosticPrefix() {
+        #if DEBUG
+        let trace = AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(),
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            intent: "emailDraft",
+            promptPrefix: "draft email",
+            rawOutputPrefix: String(repeating: "x", count: 1_600),
+            selectedToolID: "mail.draft",
+            toolArguments: ["body": String(repeating: "x", count: 2_000)],
+            allowedToolIDs: ["mail.draft"],
+            requiresApproval: true,
+            approvalMode: "user",
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            outputTokenCount: 500,
+            runtimePath: "agent-model",
+            streamStarted: true,
+            firstChunkReceived: true,
+            textChunkCount: 20,
+            finalChunkReceived: true,
+            streamTerminationReason: "stop",
+            finalizerAccepted: true
+        )
+
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(trace, requiresPrimaryAgentJSON: true))
         #else
         #expect(true)
         #endif

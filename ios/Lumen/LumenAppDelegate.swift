@@ -4,13 +4,34 @@ import MSAL
 #endif
 
 class LumenAppDelegate: NSObject, UIApplicationDelegate {
+    private let triggerScheduler: TriggerScheduler
+    private let continuedProcessingCoordinator: BackgroundContinuedProcessingCoordinator
+
+    override convenience init() {
+        self.init(
+            triggerScheduler: .shared,
+            continuedProcessingCoordinator: .shared
+        )
+    }
+
+    init(
+        triggerScheduler: TriggerScheduler,
+        continuedProcessingCoordinator: BackgroundContinuedProcessingCoordinator
+    ) {
+        self.triggerScheduler = triggerScheduler
+        self.continuedProcessingCoordinator = continuedProcessingCoordinator
+        super.init()
+    }
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         MetricKitDiagnosticsSubscriber.shared.register()
         MainActor.assumeIsolated {
-            BackgroundContinuedProcessingCoordinator.shared.markApplicationLaunchCompleted()
+            triggerScheduler.registerTasks(beforeApplicationLaunchCompletion: true)
+            continuedProcessingCoordinator.registerHandlerBeforeApplicationLaunchCompletion()
+            continuedProcessingCoordinator.markApplicationLaunchCompleted()
         }
         return true
     }

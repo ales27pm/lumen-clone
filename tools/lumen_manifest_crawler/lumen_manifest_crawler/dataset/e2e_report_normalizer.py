@@ -240,18 +240,18 @@ def _corrected_output_for_e2e_failure(scenario: dict[str, Any], required_hint: s
     if sidecar_diagnosis:
         category = str(sidecar_diagnosis.get("rootCauseCategory") or "")
         if category in {"deterministic_compatibility_not_training_evidence", "deterministic_compatibility_not_live_evidence"}:
-            return "Route this live E2E scenario through AgentService's model-backed agent-json path and keep deterministic compatibility traces as diagnostics only."
+            return "Route this live E2E scenario through the AssistantKernel model-backed structured generation path and keep deterministic compatibility traces as diagnostics only."
         if category == "missing_sidecar_trace_export":
             return "Export the AgentBehaviorTrace sidecar or include correlated model-evidence events in the live E2E report before using this artifact as training evidence."
         if category in {"no_correlated_model_turn", "agent_service_not_entered"}:
-            return "Pass the E2E correlation IDs into AgentService and persist them on AgentBehaviorTrace modelTurn records, or keep the scenario failed with the precise missing-path diagnostic."
+            return "Pass the E2E correlation IDs into AssistantKernel and persist them on AgentBehaviorTrace modelTurn records, or keep the scenario failed with the precise missing-path diagnostic."
         if category == "agent_json_context_overflow":
             return "Compact the agent-json system prompt, tool list, history, scratchpad, memories, and attachments so the primary structured executor request fits the shared chat context window."
         if category == "live_final_validation_artifact":
             return "Keep the scenario failed until the tool output is validated and the final answer contains only the user-facing response, without validation fallback JSON or approval-decision fields."
         return "Fix the executor-slot agent-json generation path so it emits non-empty structured JSON, or keep this scenario failed with the precise agent-json empty-output parse diagnostic."
     if _scenario_skipped_live_model_run(scenario):
-        return "Load the configured chat model/fleet and rerun this scenario through AgentService's model-backed generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence."
+        return "Load the configured chat model/fleet and rerun this scenario through the AssistantKernel model-backed structured generation path; do not emit routing-only fallback or compatibility output as passing E2E evidence."
     if required_hint and normalized_intent == "memory":
         remembered = _derive_memory_content_from_prompt(prompt)
         base = final if _is_useful_final(final, intent=intent) else f"Remembered: {remembered}."

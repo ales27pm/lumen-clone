@@ -32,6 +32,8 @@ final class RAGVectorIndex {
     private var matrix: [Float] = []
     private var dim: Int = 0
     private var loaded: Bool = false
+    private var loadedFormatVersion: Int?
+    private var loadedModelIdentifier: String?
 
     private init() {}
 
@@ -44,19 +46,34 @@ final class RAGVectorIndex {
         matrix.removeAll(keepingCapacity: false)
         dim = 0
         loaded = false
+        loadedFormatVersion = nil
+        loadedModelIdentifier = nil
     }
 
     @discardableResult
-    func ensureLoaded(context: ModelContext) -> VectorIndexLoadResult {
-        ensureLoaded(fetch: { try context.fetch(FetchDescriptor<RAGChunk>()) })
+    func ensureLoaded(
+        context: ModelContext,
+        formatVersion: Int = SemanticEmbeddingText.formatVersion,
+        modelIdentifier: String = "assistant-kernel-embedding",
+        dimension: Int? = nil
+    ) -> VectorIndexLoadResult {
+        ensureLoaded(formatVersion: formatVersion, modelIdentifier: modelIdentifier, dimension: dimension, fetch: { try context.fetch(FetchDescriptor<RAGChunk>()) })
     }
 
     @discardableResult
     func ensureLoadedForTests(fetch: () throws -> [RAGChunk]) -> VectorIndexLoadResult {
-        ensureLoaded(fetch: fetch)
+        ensureLoaded(formatVersion: SemanticEmbeddingText.formatVersion, modelIdentifier: "assistant-kernel-embedding", dimension: nil, fetch: fetch)
     }
 
-    private func ensureLoaded(fetch: () throws -> [RAGChunk]) -> VectorIndexLoadResult {
+    private func ensureLoaded(
+        formatVersion: Int,
+        modelIdentifier: String,
+        dimension requiredDimension: Int?,
+        fetch: () throws -> [RAGChunk]
+    ) -> VectorIndexLoadResult {
+        if loaded, loadedFormatVersion != formatVersion || loadedModelIdentifier != modelIdentifier || (requiredDimension != nil && dim != requiredDimension) {
+            invalidate()
+        }
         guard !loaded else {
             return VectorIndexLoadResult(loadedCount: ids.count, mode: "already_loaded", diagnostic: nil)
         }
@@ -69,10 +86,16 @@ final class RAGVectorIndex {
             return VectorIndexLoadResult(loadedCount: 0, mode: "failed", diagnostic: diagnostic)
         }
         loaded = true
+        loadedFormatVersion = formatVersion
+        loadedModelIdentifier = modelIdentifier
         ids.reserveCapacity(fetched.count)
         buckets.reserveCapacity(fetched.count)
         var d = 0
-        for c in fetched where !c.embedding.isEmpty {
+        for c in fetched where !c.embedding.isEmpty
+            && c.embeddingFormatVersion == formatVersion
+            && c.embeddingModelIdentifier == modelIdentifier
+            && c.embeddingDimension == c.embedding.count
+            && (requiredDimension == nil || c.embeddingDimension == requiredDimension) {
             if d == 0 { d = c.embedding.count }
             guard c.embedding.count == d else { continue }
             appendRow(id: c.persistentModelID, bucket: c.sourceType, vector: c.embedding, expectedDim: d)

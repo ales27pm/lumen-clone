@@ -1,5 +1,15 @@
 # Feature Complete Validation
 
+## PR #81 follow-up structured executor hardening (local validation)
+
+The Release structured-agent path now registers classic and continued-processing BGTask handlers synchronously during `didFinishLaunching`, before launch completion is recorded. Registration outcomes retain identifier, success, launch timing, and sanitized failure metadata, and failed registrations remain retryable.
+
+Structured tool definitions now fail closed against `SecureToolRegistry`; structured streaming and completed generation traces flow through the llama adapter injected into `AssistantKernel`. Memory save/recall synthesis requires successful trusted observations, final-step degraded location requests continue directly to `maps.search` when valid, and live evidence validation uses parser-derived trace fields rather than reparsing bounded diagnostic output.
+
+Dataset export now enforces `modelBackedRequired`, `policyFirstAllowed`, and `routingOnly` independently. RAG chunks persist embedding format, model identifier, and dimension; legacy or mismatched vectors are excluded with `rag_reindex_required` until the user runs the existing reindex workflow. Hybrid retrieval preserves lexical-side degradation diagnostics even when semantic results remain usable.
+
+Local `build-for-testing` compilation succeeded. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
+
 ## Executive Summary
 
 This pass hardened Release routing and validation around the highest-risk completion gaps: production runtime selection, deterministic fallback behavior, unavailable GGUF registration, structured tool-call validation, legacy Agent Kernel bridge exposure, shipped-status documentation, and release-readiness gates.

@@ -461,7 +461,7 @@ final class DeveloperConsoleModel {
                 privacy: "Contains prompts, final outputs, failures, and event logs from the current local E2E run. Review before sharing outside the improve-loop.",
                 notes: [
                     "This is the live E2E model/test layer export.",
-                    "Scenarios with requiresAgentRun=true must exercise AgentService's model-backed generation path and record fresh AgentBehaviorTrace modelTurn evidence.",
+                    "modelBackedRequired scenarios must exercise the AssistantKernel model-backed structured generation path and record fresh AgentBehaviorTrace modelTurn evidence.",
                     "Routing-only tool coverage scenarios are static guard checks; if a live scenario says no model loaded, routing-only checks completed, or has no model-evidence event, the offline ingester treats it as invalid E2E evidence."
                 ]
             )

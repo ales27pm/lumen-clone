@@ -61,7 +61,6 @@ enum RAGStore {
     static let minScore: Float = 0.12
     static let hybridLexicalCandidateMultiplier = 3
     static let hybridLexicalMaxCandidates = 64
-    private static let legacyQueryFallbackMinimumCandidates = 3
     private static let semanticScoreWeight = 0.82
     private static let lexicalScoreWeight = 0.18
     private static let maxLexicalScore = 0.2
@@ -178,29 +177,26 @@ enum RAGStore {
             )
         }
 
-        let vectorLoad = RAGVectorIndex.shared.ensureLoaded(context: context)
+        let embeddingModelIdentifier = await RAGEmbeddingMetadata.currentModelIdentifier()
+        let vectorLoad = RAGVectorIndex.shared.ensureLoaded(
+            context: context,
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: embeddingModelIdentifier,
+            dimension: queryVec.count
+        )
         var diagnostic = vectorLoad.diagnostic
+        if hasStaleEmbeddings(context: context, modelIdentifier: embeddingModelIdentifier, dimension: queryVec.count) {
+            diagnostic = combinedDiagnostic(primary: diagnostic ?? "rag_reindex_required", secondary: diagnostic == nil ? nil : "rag_reindex_required")
+        }
 
         let k = min(max(limit * candidatePoolMultiplier, limit + 4), maxCandidatePool)
 
-        var vectorHits = RAGVectorIndex.shared.search(
+        let vectorHits = RAGVectorIndex.shared.search(
             query: queryVec,
             topK: k,
             allowedBuckets: allowed,
             minScore: minScore
         )
-        if vectorHits.count < min(limit, legacyQueryFallbackMinimumCandidates),
-           let legacyQueryVec = try? await AssistantKernel.runEmbedding(text: trimmed),
-           !legacyQueryVec.isEmpty {
-            let legacyHits = RAGVectorIndex.shared.search(
-                query: legacyQueryVec,
-                topK: k,
-                allowedBuckets: allowed,
-                minScore: minScore
-            )
-            vectorHits = mergedVectorHits(primary: vectorHits, secondary: legacyHits, limit: k)
-        }
-
         let resolvedCandidates = resolvedVectorCandidatesResult(vectorHits: vectorHits, context: context)
         let semanticCandidates = resolvedCandidates.candidates
         if let resolvedDiagnostic = resolvedCandidates.diagnostic {
@@ -212,7 +208,7 @@ enum RAGStore {
             hybridLexicalMaxCandidates
         )
         let lexical = lexicalScoreResult(query: trimmed, context: context, allowed: allowed, exclude: [], limit: lexicalLimit)
-        if let lexicalDiagnostic = lexical.diagnostic, semanticCandidates.isEmpty {
+        if let lexicalDiagnostic = lexical.diagnostic {
             diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: lexicalDiagnostic) } ?? lexicalDiagnostic
         }
 
@@ -359,6 +355,18 @@ enum RAGStore {
     private static func combinedDiagnostic(primary: String, secondary: String?) -> String {
         guard let secondary, !secondary.isEmpty else { return primary }
         return "\(primary);\(secondary)"
+    }
+
+    private static func hasStaleEmbeddings(context: ModelContext, modelIdentifier: String, dimension: Int) -> Bool {
+        guard let chunks = try? context.fetch(FetchDescriptor<RAGChunk>()) else { return false }
+        return chunks.contains {
+            !$0.embedding.isEmpty && (
+                $0.embeddingFormatVersion != SemanticEmbeddingText.formatVersion
+                    || $0.embeddingModelIdentifier != modelIdentifier
+                    || $0.embeddingDimension != dimension
+                    || $0.embeddingDimension != $0.embedding.count
+            )
+        }
     }
 
     static func resolvedVectorCandidates(
@@ -547,7 +555,15 @@ enum RAGStore {
                 logger.error("rag_embedding_empty op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public)")
                 return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "embedding_empty")
             }
-            let chunk = RAGChunk(content: piece, sourceType: type, sourceName: name, sourceRef: url.path, chunkIndex: i, embedding: emb)
+            let chunk = RAGChunk(
+                content: piece,
+                sourceType: type,
+                sourceName: name,
+                sourceRef: url.path,
+                chunkIndex: i,
+                embedding: emb,
+                embeddingModelIdentifier: await RAGEmbeddingMetadata.currentModelIdentifier()
+            )
             context.insert(chunk)
             pendingVectors.append((id: chunk.persistentModelID, bucket: type.rawValue, vector: emb))
             if i % 8 == 7 {
@@ -737,7 +753,15 @@ enum RAGStore {
                 logger.error("rag_embedding_empty op=indexPhotos source=\(month, privacy: .public)")
                 return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
             }
-            let chunk = RAGChunk(content: summary, sourceType: .photo, sourceName: "Photos \(month)", sourceRef: month, chunkIndex: 0, embedding: emb)
+            let chunk = RAGChunk(
+                content: summary,
+                sourceType: .photo,
+                sourceName: "Photos \(month)",
+                sourceRef: month,
+                chunkIndex: 0,
+                embedding: emb,
+                embeddingModelIdentifier: await RAGEmbeddingMetadata.currentModelIdentifier()
+            )
             context.insert(chunk)
             pendingVectors.append((id: chunk.persistentModelID, bucket: RAGSourceType.photo.rawValue, vector: emb))
             count += 1
@@ -788,7 +812,15 @@ enum RAGStore {
                 logger.error("rag_embedding_empty op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public)")
                 return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
             }
-            let chunk = RAGChunk(content: piece, sourceType: .note, sourceName: title, sourceRef: nil, chunkIndex: i, embedding: emb)
+            let chunk = RAGChunk(
+                content: piece,
+                sourceType: .note,
+                sourceName: title,
+                sourceRef: nil,
+                chunkIndex: i,
+                embedding: emb,
+                embeddingModelIdentifier: await RAGEmbeddingMetadata.currentModelIdentifier()
+            )
             context.insert(chunk)
             pendingVectors.append((id: chunk.persistentModelID, bucket: RAGSourceType.note.rawValue, vector: emb))
             count += 1
