@@ -22,6 +22,8 @@ enum RuntimeMetricErrorSanitizer {
             switch error {
             case .unsupportedTaskForTextTurn: return "unsupported_task_for_text_turn"
             case .unsupportedRuntimeForTextTurn: return "unsupported_runtime_for_text_turn"
+            case .unsupportedTaskForEmbedding: return "unsupported_task_for_embedding"
+            case .unsupportedRuntimeForEmbedding: return "unsupported_runtime_for_embedding"
             }
         case let error as LocalRuntimeError:
             switch error {

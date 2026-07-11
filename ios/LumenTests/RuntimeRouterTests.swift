@@ -14,6 +14,20 @@ final class RuntimeRouterTests: XCTestCase {
         XCTAssertTrue(selection.reason.contains("experimental"))
     }
 
+    func testEmbeddingUsesLlamaWhenEmbeddingAdapterIsWired() {
+        let router = AssistantRuntimeRouter(
+            llama: LlamaRuntimeAdapter(
+                embedHandler: { _ in [Float(1.0)] }
+            ),
+            allowDiagnosticFallbackSelection: false
+        )
+        let context = AssistantTurnContext(task: .embedding, input: "x", isForeground: true, lowPowerMode: false, thermalState: .nominal)
+        let selection = router.selection(for: context)
+
+        XCTAssertEqual(selection.runtime, .llama)
+        XCTAssertEqual(selection.reason, "llama embedding available")
+    }
+
     func testBackgroundTriggerUsesFallbackWhenConstrained() {
         let router = AssistantRuntimeRouter()
         let context = AssistantTurnContext(task: .backgroundTrigger, input: "x", isForeground: false, lowPowerMode: true, thermalState: .serious)
@@ -118,6 +132,19 @@ final class RuntimeRouterTests: XCTestCase {
         )
         let context = AssistantTurnContext(task: .embedding, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
         let selection = router.selection(for: context)
+
+        XCTAssertEqual(selection.runtime, .coreML)
+        XCTAssertNotEqual(selection.runtime, .deterministicFallback)
+    }
+
+    func testRuntimeStateEmbeddingSelectionDoesNotUseDiagnosticFallback() async {
+        let router = AssistantRuntimeRouter(
+            llama: .init(isAvailable: false),
+            coreML: CoreMLRuntimeAdapter(modelURL: nil),
+            allowDiagnosticFallbackSelection: true
+        )
+        let context = AssistantTurnContext(task: .embedding, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
+        let selection = await router.selectionIncludingRuntimeState(for: context)
 
         XCTAssertEqual(selection.runtime, .coreML)
         XCTAssertNotEqual(selection.runtime, .deterministicFallback)

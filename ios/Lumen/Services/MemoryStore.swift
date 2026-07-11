@@ -84,7 +84,7 @@ enum MemoryStore {
 
         let queryVec: [Double]
         do {
-            queryVec = try await AppLlamaService.shared.embed(trimmed)
+            queryVec = try await AssistantKernel.runEmbedding(text: SemanticEmbeddingText.memoryQuery(trimmed))
         } catch {
             logger.error("memory_embedding_failed op=recall error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             let fallback = lexicalRecallResult(query: trimmed, context: context, limit: limit)
@@ -277,7 +277,13 @@ enum MemoryStore {
         }
         let embedding: [Double]
         do {
-            embedding = try await AppLlamaService.shared.embed(trimmed)
+            let embeddingText = SemanticEmbeddingText.memoryDocument(
+                content: trimmed,
+                kind: kind,
+                source: source,
+                topic: topic
+            )
+            embedding = try await AssistantKernel.runEmbedding(text: embeddingText)
         } catch {
             logger.error("memory_embedding_failed op=remember error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error

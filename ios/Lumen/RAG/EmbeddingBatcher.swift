@@ -9,7 +9,7 @@ enum EmbeddingBatcher {
         var out: [[Double]] = []
         for t in texts.prefix(batch) {
             try Task.checkCancellation()
-            do { out.append(try await AppLlamaService.shared.embed(t)) }
+            do { out.append(try await AssistantKernel.runEmbedding(text: t, sourceContext: turnContext)) }
             catch is CancellationError { throw CancellationError() }
             catch { throw EmbeddingBatcherError.unavailable(String(describing: type(of: error))) }
         }

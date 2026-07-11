@@ -9,6 +9,9 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         MetricKitDiagnosticsSubscriber.shared.register()
+        MainActor.assumeIsolated {
+            BackgroundContinuedProcessingCoordinator.shared.markApplicationLaunchCompleted()
+        }
         return true
     }
 

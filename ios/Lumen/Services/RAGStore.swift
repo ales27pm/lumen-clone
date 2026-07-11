@@ -59,6 +59,12 @@ enum RAGStore {
     static let candidatePoolMultiplier = 8
     static let maxCandidatePool = 256
     static let minScore: Float = 0.12
+    static let hybridLexicalCandidateMultiplier = 3
+    static let hybridLexicalMaxCandidates = 64
+    private static let legacyQueryFallbackMinimumCandidates = 3
+    private static let semanticScoreWeight = 0.82
+    private static let lexicalScoreWeight = 0.18
+    private static let maxLexicalScore = 0.2
 
     struct SearchResult {
         let matches: [(chunk: RAGChunk, score: Double)]
@@ -149,7 +155,7 @@ enum RAGStore {
 
         let queryVec: [Double]
         do {
-            queryVec = try await AppLlamaService.shared.embed(trimmed)
+            queryVec = try await AssistantKernel.runEmbedding(text: SemanticEmbeddingText.query(trimmed))
         } catch {
             logger.error("rag_embedding_failed op=search error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             let fallback = lexicalSearchResult(query: trimmed, context: context, allowed: allowed, limit: limit)
@@ -177,36 +183,41 @@ enum RAGStore {
 
         let k = min(max(limit * candidatePoolMultiplier, limit + 4), maxCandidatePool)
 
-        let vectorHits = RAGVectorIndex.shared.search(
+        var vectorHits = RAGVectorIndex.shared.search(
             query: queryVec,
             topK: k,
             allowedBuckets: allowed,
             minScore: minScore
         )
+        if vectorHits.count < min(limit, legacyQueryFallbackMinimumCandidates),
+           let legacyQueryVec = try? await AssistantKernel.runEmbedding(text: trimmed),
+           !legacyQueryVec.isEmpty {
+            let legacyHits = RAGVectorIndex.shared.search(
+                query: legacyQueryVec,
+                topK: k,
+                allowedBuckets: allowed,
+                minScore: minScore
+            )
+            vectorHits = mergedVectorHits(primary: vectorHits, secondary: legacyHits, limit: k)
+        }
 
         let resolvedCandidates = resolvedVectorCandidatesResult(vectorHits: vectorHits, context: context)
-        var candidates = resolvedCandidates.candidates
-        let vectorCandidateCount = candidates.count
+        let semanticCandidates = resolvedCandidates.candidates
         if let resolvedDiagnostic = resolvedCandidates.diagnostic {
             diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: resolvedDiagnostic) } ?? resolvedDiagnostic
         }
 
-        if candidates.count < limit {
-            // Lexical backfill: keyword overlap as a rescue path when embeddings
-            // missed obviously relevant chunks (short queries, OOV vocab, etc.).
-            let seenIDs: Set<PersistentIdentifier> = Set(candidates.map { $0.0.persistentModelID })
-            let lexical = lexicalScoreResult(query: trimmed, context: context, allowed: allowed, exclude: seenIDs, limit: limit - candidates.count)
-            candidates.append(contentsOf: lexical.matches)
-            if let lexicalDiagnostic = lexical.diagnostic {
-                diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: lexicalDiagnostic) } ?? lexicalDiagnostic
-            }
+        let lexicalLimit = min(
+            max(limit * hybridLexicalCandidateMultiplier, limit + 8),
+            hybridLexicalMaxCandidates
+        )
+        let lexical = lexicalScoreResult(query: trimmed, context: context, allowed: allowed, exclude: [], limit: lexicalLimit)
+        if let lexicalDiagnostic = lexical.diagnostic, semanticCandidates.isEmpty {
+            diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: lexicalDiagnostic) } ?? lexicalDiagnostic
         }
 
-        let sorted = candidates
-            .sorted { $0.1 > $1.1 }
-            .prefix(limit)
-            .map { ($0.0, $0.1) }
-        let mode = candidates.count > vectorCandidateCount ? "semantic_with_lexical_backfill" : "semantic"
+        let sorted = hybridMergedCandidates(semantic: semanticCandidates, lexical: lexical.matches, limit: limit)
+        let mode = lexical.matches.isEmpty ? "semantic" : "semantic_hybrid"
         return SearchResult(matches: sorted, mode: mode, diagnostic: diagnostic)
     }
 
@@ -282,6 +293,67 @@ enum RAGStore {
             }
         }
         return LexicalSearchResult(matches: scored.sorted { $0.1 > $1.1 }.prefix(limit).map { $0 }, diagnostic: nil)
+    }
+
+    private static func mergedVectorHits(
+        primary: [(id: PersistentIdentifier, score: Float)],
+        secondary: [(id: PersistentIdentifier, score: Float)],
+        limit: Int
+    ) -> [(id: PersistentIdentifier, score: Float)] {
+        guard limit > 0 else { return [] }
+        var byID: [PersistentIdentifier: Float] = [:]
+        for hit in primary {
+            byID[hit.id] = max(byID[hit.id] ?? -Float.infinity, hit.score)
+        }
+        for hit in secondary {
+            byID[hit.id] = max(byID[hit.id] ?? -Float.infinity, hit.score)
+        }
+        return byID
+            .map { (id: $0.key, score: $0.value) }
+            .sorted { $0.score > $1.score }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    static func hybridMergedCandidates(
+        semantic: [(RAGChunk, Double)],
+        lexical: [(RAGChunk, Double)],
+        limit: Int
+    ) -> [(RAGChunk, Double)] {
+        guard limit > 0 else { return [] }
+        var merged: [PersistentIdentifier: (chunk: RAGChunk, semantic: Double?, lexical: Double?)] = [:]
+        for (chunk, score) in semantic {
+            let id = chunk.persistentModelID
+            var current = merged[id] ?? (chunk: chunk, semantic: nil, lexical: nil)
+            current.semantic = max(current.semantic ?? -Double.infinity, score)
+            merged[id] = current
+        }
+        for (chunk, score) in lexical {
+            let id = chunk.persistentModelID
+            var current = merged[id] ?? (chunk: chunk, semantic: nil, lexical: nil)
+            current.lexical = max(current.lexical ?? -Double.infinity, score)
+            merged[id] = current
+        }
+        return merged.values
+            .map { entry -> (RAGChunk, Double) in
+                let semanticScore = max(0, entry.semantic ?? 0)
+                let lexicalScore = min(1, max(0, (entry.lexical ?? 0) / maxLexicalScore))
+                let score: Double
+                if entry.semantic == nil {
+                    score = lexicalScore * lexicalScoreWeight
+                } else {
+                    score = (semanticScore * semanticScoreWeight) + (lexicalScore * lexicalScoreWeight)
+                }
+                return (entry.chunk, score)
+            }
+            .sorted { lhs, rhs in
+                if lhs.1 == rhs.1 {
+                    return lhs.0.createdAt > rhs.0.createdAt
+                }
+                return lhs.1 > rhs.1
+            }
+            .prefix(limit)
+            .map { $0 }
     }
 
     private static func combinedDiagnostic(primary: String, secondary: String?) -> String {
@@ -459,7 +531,13 @@ enum RAGStore {
             }
             let emb: [Double]
             do {
-                emb = try await AppLlamaService.shared.embed(piece)
+                let embeddingText = SemanticEmbeddingText.document(
+                    content: piece,
+                    sourceName: name,
+                    sourceType: type.rawValue,
+                    chunkIndex: i
+                )
+                emb = try await AssistantKernel.runEmbedding(text: embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -643,7 +721,13 @@ enum RAGStore {
 
             let emb: [Double]
             do {
-                emb = try await AppLlamaService.shared.embed(summary)
+                let embeddingText = SemanticEmbeddingText.document(
+                    content: summary,
+                    sourceName: "Photos \(month)",
+                    sourceType: RAGSourceType.photo.rawValue,
+                    chunkIndex: 0
+                )
+                emb = try await AssistantKernel.runEmbedding(text: embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -688,7 +772,13 @@ enum RAGStore {
             if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexNote") { break }
             let emb: [Double]
             do {
-                emb = try await AppLlamaService.shared.embed(piece)
+                let embeddingText = SemanticEmbeddingText.document(
+                    content: piece,
+                    sourceName: title,
+                    sourceType: RAGSourceType.note.rawValue,
+                    chunkIndex: i
+                )
+                emb = try await AssistantKernel.runEmbedding(text: embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -715,7 +805,7 @@ enum RAGStore {
 
     static func embeddingRuntimeAvailable() async -> Bool {
         do {
-            let probe = try await AppLlamaService.shared.embed("embedding_readiness_probe")
+            let probe = try await AssistantKernel.runEmbedding(text: "embedding_readiness_probe")
             if probe.isEmpty {
                 logger.error("rag_embedding_empty op=readiness")
                 return false

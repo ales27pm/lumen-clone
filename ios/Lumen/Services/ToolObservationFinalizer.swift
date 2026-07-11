@@ -118,7 +118,7 @@ nonisolated enum ToolObservationFinalizer {
             return accepted("Saved to memory: \(plainObservation)\(payloadMarkers)")
         case "memory.recall":
             guard intent == .memory || intent == .note else { return rejected("intent-mismatch") }
-            return accepted("Memory recall:\n\(plainObservation)\(payloadMarkers)")
+            return accepted("\(memoryRecallFinal(from: plainObservation))\(payloadMarkers)")
         case "maps.search":
             guard intent == .maps else { return rejected("intent-mismatch") }
             return accepted("Maps search results:\n\(plainObservation)\(payloadMarkers)")
@@ -202,6 +202,82 @@ nonisolated enum ToolObservationFinalizer {
             return "\(trimmed) Source: local RAG index; no matching module snippets were retrieved."
         }
         return "[1] \(trimmed)\nSource: local RAG index snippet."
+    }
+
+    private static func memoryRecallFinal(from observation: String) -> String {
+        let trimmed = observation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "No matching memories." }
+        let lower = trimmed.lowercased()
+        if let statusFinal = memoryStatusFinal(lower) {
+            return statusFinal
+        }
+        if lower.contains("no matching") || lower.contains("no memories") {
+            return "No matching memories."
+        }
+
+        let remembered = trimmed
+            .split(whereSeparator: \.isNewline)
+            .map { memoryFactCandidate(from: String($0)) }
+            .filter { !$0.isEmpty }
+            .map { rememberedMemoryFragment(from: $0) }
+            .filter { !$0.isEmpty }
+        let uniqueRemembered = remembered.reduce(into: [String]()) { partial, fragment in
+            if !partial.contains(fragment) {
+                partial.append(fragment)
+            }
+        }
+
+        guard !uniqueRemembered.isEmpty else { return "Memory recall:\n\(trimmed)" }
+        return sentenceCased("I remember that \(uniqueRemembered.joined(separator: "; "))")
+    }
+
+    private static func memoryFactCandidate(from line: String) -> String {
+        line
+            .replacingOccurrences(of: #"^\s*[•\-]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^\[[^\]]+\]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+\|\s+.*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func rememberedMemoryFragment(from fact: String) -> String {
+        let trimmed = fact.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.,!?")))
+        guard !trimmed.isEmpty else { return "" }
+        let lower = trimmed.lowercased()
+
+        if lower.hasPrefix("user's name is ") {
+            return "your name is \(String(trimmed.dropFirst("User's name is ".count)))"
+        }
+        if lower.hasPrefix("user prefers to be called ") {
+            return "you prefer to be called \(String(trimmed.dropFirst("User prefers to be called ".count)))"
+        }
+        if lower.hasPrefix("i prefer ") {
+            return "you prefer \(String(trimmed.dropFirst("I prefer ".count)))"
+        }
+        if lower.hasPrefix("you ") || lower.hasPrefix("your ") {
+            return trimmed
+        }
+        return trimmed
+    }
+
+    private static func memoryStatusFinal(_ lower: String) -> String? {
+        if lower.contains("no matching")
+            || lower.contains("no memories")
+            || lower.contains("no memory")
+            || lower.contains("empty_store") {
+            return "No matching memories."
+        }
+        if lower.contains("memory unavailable")
+            || lower.contains("memory storage unavailable")
+            || lower.contains("memory search unavailable")
+            || lower.contains("memory recall unavailable")
+            || lower.contains("memory failed")
+            || lower.contains("memory error")
+            || lower.contains("diagnostic:")
+            || lower.contains("swiftdata")
+            || lower.contains("unavailable") {
+            return "Memory unavailable."
+        }
+        return nil
     }
 
     private static func contactSummaries(from observation: String) -> [String] {

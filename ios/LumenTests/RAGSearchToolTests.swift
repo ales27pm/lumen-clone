@@ -4,6 +4,39 @@ import SwiftUI
 @testable import Lumen
 
 final class RAGSearchToolTests: XCTestCase {
+    @MainActor func testMissingModelContextReportsSwiftDataDiagnostic() async {
+        let tool = RAGSearchTool()
+        let inv = ToolInvocation(
+            id: UUID(),
+            toolID: "rag.search.secure",
+            arguments: ["query": "architecture notes", "limit": "3"],
+            source: .system,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+
+        let res = await tool.execute(
+            invocation: inv,
+            context: .init(
+                isForeground: true,
+                appState: nil,
+                modelContext: nil,
+                permissionRegistry: .shared,
+                metricsStore: .shared
+            )
+        )
+
+        XCTAssertEqual(res.status, .unavailable)
+        XCTAssertEqual(res.displayText, "RAG storage unavailable.")
+        XCTAssertFalse(res.displayText.contains("swiftdata_model_context_unavailable"))
+        XCTAssertEqual(res.modelText, "RAG storage unavailable.")
+        XCTAssertFalse(res.modelText.contains("swiftdata_model_context_unavailable"))
+        XCTAssertEqual(res.errorCode, "swiftdata_model_context_unavailable")
+        XCTAssertEqual(res.structuredPayload?["diagnostic"], "swiftdata_model_context_unavailable")
+        XCTAssertTrue(res.modelText.contains("RAG storage unavailable"))
+    }
+
     @MainActor func testLexicalFallbackAndDedupe() async {
         ResourceBudgetGate.testSnapshotOverride = .init(
             scenePhase: .background,
@@ -101,6 +134,26 @@ final class RAGSearchToolTests: XCTestCase {
         XCTAssertEqual(result.diagnostic, "rag.search: lowPowerMode=true")
         XCTAssertEqual(result.matches.count, 1)
         XCTAssertEqual(result.matches.first?.chunk.sourceName, "notes")
+    }
+
+    @MainActor func testHybridMergeLetsStrongLexicalMatchRescueWeakSemanticHit() async throws {
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let ctx = ModelContext(container)
+        let weakSemantic = RAGChunk(content: "general architecture notes", sourceType: .note, sourceName: "semantic")
+        let exactLexical = RAGChunk(content: "swift actor isolation details", sourceType: .note, sourceName: "lexical")
+        ctx.insert(weakSemantic)
+        ctx.insert(exactLexical)
+        try ctx.save()
+
+        let merged = RAGStore.hybridMergedCandidates(
+            semantic: [(weakSemantic, 0.12)],
+            lexical: [(exactLexical, 0.2)],
+            limit: 2
+        )
+
+        XCTAssertEqual(merged.first?.0.sourceName, "lexical")
+        XCTAssertEqual(merged.count, 2)
     }
 
     @MainActor func testRAGEngineRetrievePreservesEmptyLimitDiagnostic() async throws {

@@ -21,6 +21,19 @@ struct FinalIntentValidatorTests {
         #expect(text == "No matching memories.")
     }
 
+    @Test func preservesCleanMemoryRecallObservation() async throws {
+        let routing = IntentRoutingDecision(intent: .memory, allowedToolIDs: ["memory.recall"], requiresClarification: false, clarificationPrompt: nil)
+        let text = FinalIntentValidator.validate("I remember that you prefer concise bullet points.", routing: routing, fallback: nil)
+        #expect(text == "I remember that you prefer concise bullet points.")
+    }
+
+    @Test func preservesWrappedMemoryRecallObservation() async throws {
+        let routing = IntentRoutingDecision(intent: .memory, allowedToolIDs: ["memory.recall"], requiresClarification: false, clarificationPrompt: nil)
+        let candidate = "Memory recall:\nI prefer concise bullet points"
+        let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: nil)
+        #expect(text == candidate)
+    }
+
     @Test func preservesMapsSearchResultsObservation() async throws {
         let routing = IntentRoutingDecision(intent: .maps, allowedToolIDs: ["location.current", "maps.search"], requiresClarification: false, clarificationPrompt: nil)
         let candidate = "Maps search results:\n• Tim Hortons — Avenue de la Plaza, Sorel-Tracy"

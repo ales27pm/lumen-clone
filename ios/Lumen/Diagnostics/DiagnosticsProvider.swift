@@ -4,10 +4,42 @@ import Foundation
 final class DiagnosticsProvider {
     private(set) var explicitCollectionCount = 0
 
+    private struct ContinuedProcessingDiagnostics {
+        let backgroundGPUSupported: Bool
+        let status: String
+        let registrationIdentifier: String
+        let lastSubmittedIdentifier: String?
+        let registrationErrorDomain: String?
+        let registrationErrorCode: Int?
+        let submitErrorDomain: String?
+        let submitErrorCode: Int?
+        let registeredBeforeLaunchCompletion: Bool?
+        let provisioningEntitlementPresent: Bool?
+        let expectedEntitlementValue: String?
+    }
+
+    private func continuedProcessingDiagnostics() -> ContinuedProcessingDiagnostics {
+        let coordinator = BackgroundContinuedProcessingCoordinator.shared
+        return ContinuedProcessingDiagnostics(
+            backgroundGPUSupported: coordinator.gpuSupported,
+            status: coordinator.lastSubmissionStatus,
+            registrationIdentifier: coordinator.lastRegistrationIdentifier,
+            lastSubmittedIdentifier: coordinator.lastSubmittedIdentifier,
+            registrationErrorDomain: coordinator.lastRegistrationErrorDomain,
+            registrationErrorCode: coordinator.lastRegistrationErrorCode,
+            submitErrorDomain: coordinator.lastSubmitErrorDomain,
+            submitErrorCode: coordinator.lastSubmitErrorCode,
+            registeredBeforeLaunchCompletion: coordinator.lastRegistrationBeforeAppLaunchCompletion,
+            provisioningEntitlementPresent: BackgroundDiagnosticsEntitlements.provisioningProfileContainsContinuedProcessingEntitlement(),
+            expectedEntitlementValue: BackgroundDiagnosticsEntitlements.expectedContinuedProcessingEntitlementValue()
+        )
+    }
+
     func cachedSnapshot() -> DiagnosticsSnapshot {
         let build = BuildDiagnosticsSnapshot.current()
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let capabilityMatrix = AssistantRuntimeCapabilityMatrix.current()
+        let continuedProcessing = continuedProcessingDiagnostics()
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
             foundationModelsStatus: profiler.foundationModelsStatus,
@@ -28,8 +60,17 @@ final class DiagnosticsProvider {
             permittedIdentifiers: [],
             entitlementWarnings: [],
             entitlementStates: ExpectedEntitlementManifest.currentStates(),
-            backgroundGPUSupported: BackgroundContinuedProcessingCoordinator.shared.gpuSupported,
-            continuedProcessingStatus: BackgroundContinuedProcessingCoordinator.shared.lastSubmissionStatus,
+            backgroundGPUSupported: continuedProcessing.backgroundGPUSupported,
+            continuedProcessingStatus: continuedProcessing.status,
+            continuedProcessingRegistrationIdentifier: continuedProcessing.registrationIdentifier,
+            continuedProcessingLastSubmittedIdentifier: continuedProcessing.lastSubmittedIdentifier,
+            continuedProcessingRegistrationErrorDomain: continuedProcessing.registrationErrorDomain,
+            continuedProcessingRegistrationErrorCode: continuedProcessing.registrationErrorCode,
+            continuedProcessingSubmitErrorDomain: continuedProcessing.submitErrorDomain,
+            continuedProcessingSubmitErrorCode: continuedProcessing.submitErrorCode,
+            continuedProcessingRegisteredBeforeLaunchCompletion: continuedProcessing.registeredBeforeLaunchCompletion,
+            continuedProcessingProvisioningEntitlementPresent: continuedProcessing.provisioningEntitlementPresent,
+            continuedProcessingExpectedEntitlementValue: continuedProcessing.expectedEntitlementValue,
             availableMemoryBytes: profiler.availableMemoryBytes,
             energyKit: EnergyKitCapabilitySnapshot(frameworkAvailable: false, expectedEntitlementConfigured: ExpectedEntitlementManifest.expectedBoolValue(for: ExpectedEntitlementKey.energyKit), status: "cached", venueCount: nil),
             storeKit: StoreKitCapabilitySnapshot(frameworkAvailable: true, status: "cached", environment: "cached")
@@ -50,7 +91,7 @@ final class DiagnosticsProvider {
         let build = BuildDiagnosticsSnapshot.current(infoDictionary: info)
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let metrics = (try? await RuntimeMetricsStore.shared.recentMetrics(limit: 10)) ?? []
-        let capabilityMatrix = AssistantRuntimeCapabilityMatrix.current()
+        let capabilityMatrix = await AssistantRuntimeCapabilityMatrix.currentIncludingRuntimeState()
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
             foundationModelsStatus: profiler.foundationModelsStatus,
@@ -79,12 +120,22 @@ final class DiagnosticsProvider {
         else { permitted = [] }
         async let energyKit = EnergyKitCapabilityService.snapshot()
         async let storeKit = StoreKitCapabilityService.snapshot()
+        let continuedProcessing = continuedProcessingDiagnostics()
         let background = await BackgroundDiagnosticsSnapshot(
             permittedIdentifiers: permitted,
             entitlementWarnings: warnings.map(\.message),
             entitlementStates: ExpectedEntitlementManifest.currentStates(),
-            backgroundGPUSupported: BackgroundContinuedProcessingCoordinator.shared.gpuSupported,
-            continuedProcessingStatus: BackgroundContinuedProcessingCoordinator.shared.lastSubmissionStatus,
+            backgroundGPUSupported: continuedProcessing.backgroundGPUSupported,
+            continuedProcessingStatus: continuedProcessing.status,
+            continuedProcessingRegistrationIdentifier: continuedProcessing.registrationIdentifier,
+            continuedProcessingLastSubmittedIdentifier: continuedProcessing.lastSubmittedIdentifier,
+            continuedProcessingRegistrationErrorDomain: continuedProcessing.registrationErrorDomain,
+            continuedProcessingRegistrationErrorCode: continuedProcessing.registrationErrorCode,
+            continuedProcessingSubmitErrorDomain: continuedProcessing.submitErrorDomain,
+            continuedProcessingSubmitErrorCode: continuedProcessing.submitErrorCode,
+            continuedProcessingRegisteredBeforeLaunchCompletion: continuedProcessing.registeredBeforeLaunchCompletion,
+            continuedProcessingProvisioningEntitlementPresent: continuedProcessing.provisioningEntitlementPresent,
+            continuedProcessingExpectedEntitlementValue: continuedProcessing.expectedEntitlementValue,
             availableMemoryBytes: profiler.availableMemoryBytes,
             energyKit: energyKit,
             storeKit: storeKit

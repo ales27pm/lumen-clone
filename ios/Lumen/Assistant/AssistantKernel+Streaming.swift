@@ -14,6 +14,15 @@ extension AssistantKernel: AgentKernelRunning {
                     continuation.yield(.step(step))
                 }
 
+                if request.options.structuredMode == .requiredAgentJSON {
+                    let executor = StructuredAgentKernelExecutor(kernel: self, modelContext: modelContext)
+                    for await event in executor.run(request) {
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                    return
+                }
+
                 emitStep(.thought, "Agent Kernel accepted \(request.source.rawValue) turn for \(String(describing: request.task)).")
                 let historyTuples = request.history.map { (role: $0.role.messageRole, content: $0.content) }
                 let referenceResolution = ReferenceResolver.resolve(
@@ -304,9 +313,10 @@ extension AssistantKernel: AgentKernelRunning {
         }
 
         let maxActions = max(1, request.options.maxSteps)
+        let actionsToRun = Array(plannedActions.prefix(maxActions))
         var finalText = ""
         var executedKeys: Set<String> = []
-        for action in plannedActions.prefix(maxActions) {
+        for (actionIndex, action) in actionsToRun.enumerated() {
             let validation = StructuredToolCallValidator.validate(action: action, availableTools: availableTools)
             let validatedCall: ValidatedStructuredToolCall
             switch validation {
@@ -409,11 +419,34 @@ extension AssistantKernel: AgentKernelRunning {
             events.append(.toolResult(result))
             let observationText = Self.userVisibleToolObservation(toolID: validatedCall.canonicalToolID, result: result)
             appendStep(AgentStep(kind: .observation, content: observationText, toolID: validatedCall.canonicalToolID))
-            finalText = observationText
 
             if result.status != .success {
+                let nextToolID = actionsToRun.indices.contains(actionIndex + 1)
+                    ? ToolRouteGuard.canonicalToolID(actionsToRun[actionIndex + 1].tool)
+                    : nil
+                if Self.shouldContinueNativeToolChainAfterNonSuccess(
+                    after: observationText,
+                    currentToolID: validatedCall.canonicalToolID,
+                    nextToolID: nextToolID,
+                    routing: routing
+                ) {
+                    appendStep(AgentStep(
+                        kind: .reflection,
+                        content: "Maps search continuation preserved after degraded location.current result.",
+                        toolID: validatedCall.canonicalToolID
+                    ))
+                    continue
+                }
+                finalText = observationText
                 break
             }
+
+            finalText = Self.finalizedToolObservation(
+                intent: routing.intent,
+                toolID: validatedCall.canonicalToolID,
+                observation: observationText,
+                originalPrompt: userMessage
+            )
         }
 
         if finalText.isEmpty {
@@ -456,6 +489,35 @@ extension AssistantKernel: AgentKernelRunning {
             return "\(toolID) finished with status \(result.status.rawValue): \(errorCode)."
         }
         return "\(toolID) finished with status \(result.status.rawValue) and no user-visible output."
+    }
+
+    private nonisolated static func finalizedToolObservation(
+        intent: UserIntent,
+        toolID: String,
+        observation: String,
+        originalPrompt: String
+    ) -> String {
+        ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: intent,
+            toolID: toolID,
+            observation: observation,
+            originalPrompt: originalPrompt
+        ) ?? observation
+    }
+
+    nonisolated static func shouldContinueNativeToolChainAfterNonSuccess(
+        after observation: String,
+        currentToolID: String,
+        nextToolID: String?,
+        routing: IntentRoutingDecision
+    ) -> Bool {
+        let canonicalCurrent = ToolRouteGuard.canonicalToolID(currentToolID)
+        let canonicalNext = nextToolID.map(ToolRouteGuard.canonicalToolID)
+        return routing.intent == .maps
+            && canonicalCurrent == "location.current"
+            && canonicalNext == "maps.search"
+            && routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("maps.search")
+            && !observation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func toolExecutionAvailableTools(

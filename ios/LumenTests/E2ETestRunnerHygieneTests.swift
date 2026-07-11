@@ -3,6 +3,32 @@ import SwiftUI
 import Testing
 @testable import Lumen
 
+private actor ResourceBudgetGateSnapshotOverrideLock {
+    static let shared = ResourceBudgetGateSnapshotOverrideLock()
+
+    func withOverride<T>(
+        _ snapshot: ResourceBudgetGate.Snapshot,
+        operation: () async throws -> T
+    ) async rethrows -> T {
+        await MainActor.run {
+            ResourceBudgetGate.setDiagnosticSnapshotOverride(snapshot)
+        }
+        do {
+            let result = try await operation()
+            await MainActor.run {
+                ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+            }
+            return result
+        } catch {
+            await MainActor.run {
+                ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+            }
+            throw error
+        }
+    }
+}
+
+@Suite(.serialized)
 struct E2ETestRunnerHygieneTests {
     @Test func recoveredRawThinkLeakPassesWhenSanitizedFinalIsClean() {
         let scenario = E2ETestScenario(id: "s", title: "t", kind: .chat, prompt: "p", expectedIntent: .chat, forbiddenToolIDs: [], requiredTextHints: [], forbiddenTextHints: [], requiresAgentRun: false)
@@ -123,6 +149,44 @@ struct E2ETestRunnerHygieneTests {
         )
         #expect(failures.contains("Live agent returned fallback/error text instead of completing the scenario"))
         #expect(!failures.contains(where: { $0.contains("required hint") }))
+    }
+
+    @Test func toolBackedSafeMessageFallbackCannotPassAsCompletion() {
+        let calendarScenario = E2ETestScenario(
+            id: "live-calendar-list-direct-show-my-next-calendar-events",
+            title: "calendar",
+            kind: .toolGuard,
+            prompt: "Show my next calendar events.",
+            expectedIntent: .calendar,
+            requiredAllowedToolIDs: ["calendar.list"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["module", "[1]"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        #expect(E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: "I couldn’t safely complete the calendar event request.",
+            finalText: "I couldn’t safely complete the calendar event request.",
+            scenario: calendarScenario
+        ).contains("Live agent returned fallback/error text instead of completing the scenario"))
+
+        let ragScenario = E2ETestScenario(
+            id: "live-rag-index-files-direct-reindex-my-imported-files",
+            title: "rag",
+            kind: .toolGuard,
+            prompt: "Reindex my imported files.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.index_files"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        #expect(E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: "I couldn't safely complete the local search/indexing request.",
+            finalText: "I couldn't safely complete the local search/indexing request.",
+            scenario: ragScenario
+        ).contains("Live agent returned fallback/error text instead of completing the scenario"))
     }
 
     @Test func liveValidationFallbackJSONCannotPassAsFinalAnswer() {
@@ -795,6 +859,48 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func liveRuntimeReadinessBarrierCatchesCPUWatchdogAfterWait() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-scheduler-agent",
+            title: "Training trigger",
+            kind: .training,
+            prompt: "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            expectedIntent: .trigger,
+            requiredAllowedToolIDs: ["trigger.create"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["trigger"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let probe = CPUWatchdogProbeBox(degradeAfterCalls: 1)
+        let snapshot = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+
+        let outcome = await ResourceBudgetGateSnapshotOverrideLock.shared.withOverride(snapshot) {
+            await E2ETestRunner.$debugCPUWatchdogDegradedProbe.withValue({ _ in
+                probe.isDegraded()
+            }) {
+                await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
+                    scenario,
+                    maxWaitNanoseconds: 10_000_000,
+                    pollNanoseconds: 1_000_000
+                )
+            }
+        }
+
+        #expect(outcome.denialReason == "live-e2e.pre-scenario: cpu-watchdog-degraded")
+        #expect(outcome.events.contains { $0.phase == "live-runtime-preflight-wait" })
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func passedResultsWithRuntimeWordsAreNotNonActionablePreflight() {
         let result = E2ETestResult(
             id: UUID(),
@@ -846,23 +952,19 @@ struct E2ETestRunnerHygieneTests {
             forbiddenTextHints: [],
             requiresAgentRun: true
         )
-        await MainActor.run {
-            ResourceBudgetGate.setDiagnosticSnapshotOverride(.init(
-                scenePhase: .background,
-                lowPowerModeEnabled: false,
-                thermalState: .nominal,
-                recentMemoryWarningCount: 0,
-                lastMemoryWarningAt: nil
-            ))
-        }
-
-        let outcome = await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
-            scenario,
-            maxWaitNanoseconds: 5_000_000,
-            pollNanoseconds: 1_000_000
+        let snapshot = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
         )
-        await MainActor.run {
-            ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+        let outcome = await ResourceBudgetGateSnapshotOverrideLock.shared.withOverride(snapshot) {
+            await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
+                scenario,
+                maxWaitNanoseconds: 5_000_000,
+                pollNanoseconds: 1_000_000
+            )
         }
 
         #expect(outcome.denialReason == "live-e2e.pre-scenario: scenePhase=background")
@@ -1025,6 +1127,63 @@ struct E2ETestRunnerHygieneTests {
         #expect(!outcome.rewriteAttempted)
         #expect(!outcome.finalText.contains("Key modules"))
         #expect(!outcome.finalText.contains("[1]"))
+        #expect(E2ETestRunner.liveAgentQualityFailures(rawFinalText: original, finalText: original, scenario: scenario).isEmpty)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragEmptyRetrievalSkipsPositiveSnippetAssertions() {
+        #if DEBUG
+        #expect(E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("no matching rag chunks found."))
+        #expect(E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("no matching module snippets were retrieved. source: local rag index."))
+        #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching snippets were found in the local index."))
+        #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching results in the local rag index."))
+        #expect(!E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("[1] retrieved module snippet from diagnostics.md"))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragEmptyRetrievalExemptionRequiresTrustedEmptyObservationWhenRAGObserved() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "Training eval: RAG grounding",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["module", "[1]"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let positiveSteps = [
+            AgentStep(
+                kind: .observation,
+                content: "[1] Architecture Notes · File · score 0.91\nCoordinator module owns the native agent loop.",
+                toolID: "rag.search"
+            )
+        ]
+        #expect(E2ETestRunner.ragRetrievalEvidenceStateForTests(finalText: "No matching results.", agentSteps: positiveSteps, events: []) == "positive")
+        let missing = E2ETestRunner.requiredHintsMissingForTests(
+            finalText: "No matching results.",
+            scenario: scenario,
+            agentSteps: positiveSteps,
+            events: []
+        )
+        #expect(missing.contains("[1]"))
+        #expect(missing.contains("module"))
+
+        let contradictorySteps = [
+            AgentStep(
+                kind: .observation,
+                content: "No matching results.\n[1] Architecture Notes · File · score 0.91",
+                toolID: "rag.search"
+            )
+        ]
+        #expect(E2ETestRunner.ragRetrievalEvidenceStateForTests(finalText: "No matching results.", agentSteps: contradictorySteps, events: []) == "contradictory")
         #else
         #expect(true)
         #endif
@@ -1492,6 +1651,18 @@ struct E2ETestRunnerHygieneTests {
         #expect(ragMetadata["trainingSignal"] == "false")
         #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: ragMetadata) == "Runtime infrastructure unavailable: RAG storage unavailable.")
 
+        let ragRetrievalMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: ragScenario,
+            finalText: "RAG retrieval is unavailable right now.",
+            failures: [],
+            events: []
+        )
+        #expect(ragRetrievalMetadata["failureKind"] == "ragStorageUnavailable")
+        #expect(ragRetrievalMetadata["actionable"] == "false")
+        #expect(ragRetrievalMetadata["trainingSignal"] == "false")
+        #expect(ragRetrievalMetadata["runtimeEvidence"] == "retrieval-unavailable")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: ragRetrievalMetadata) == "Runtime infrastructure unavailable: RAG retrieval unavailable.")
+
         let outlookScenario = E2ETestScenario(
             id: "live-outlook-message-read-direct",
             title: "Outlook",
@@ -1516,6 +1687,75 @@ struct E2ETestRunnerHygieneTests {
         #expect(outlookMetadata["actionable"] == "false")
         #expect(outlookMetadata["trainingSignal"] == "false")
         #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: outlookMetadata) == "Runtime infrastructure unavailable: Outlook configuration unavailable.")
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func nonActionableInfrastructureSkipsEvalHintRewrite() async {
+        #if DEBUG
+        let ragScenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "RAG",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let ragFinal = "RAG retrieval is unavailable right now. RAG storage unavailable."
+        let ragMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: ragScenario,
+            finalText: ragFinal,
+            failures: [],
+            events: []
+        )
+        let ragOutcome = await E2ETestRunner.finalHintRewriteOutcomeForTests(
+            scenario: ragScenario,
+            routing: IntentRoutingDecision(intent: .rag, allowedToolIDs: ["rag.search"], requiresClarification: false, clarificationPrompt: nil),
+            originalFinal: ragFinal,
+            hasAcceptedModelEvidence: true,
+            nonActionableMetadata: ragMetadata
+        )
+        #expect(ragOutcome.finalText == ragFinal)
+        #expect(ragOutcome.missingHints.isEmpty)
+        #expect(!ragOutcome.rewriteAttempted)
+        #expect(!ragOutcome.finalText.contains("Source:"))
+        #expect(!ragOutcome.finalText.contains("[1]"))
+        #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests(ragFinal.lowercased()))
+
+        let triggerScenario = E2ETestScenario(
+            id: "training-scheduler-agent",
+            title: "Trigger",
+            kind: .training,
+            prompt: "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            expectedIntent: .trigger,
+            requiredAllowedToolIDs: ["trigger.create"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["trigger"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let triggerFinal = "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cpu-watchdog-degraded."
+        let triggerMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: triggerScenario,
+            finalText: triggerFinal,
+            failures: [],
+            events: []
+        )
+        let triggerOutcome = await E2ETestRunner.finalHintRewriteOutcomeForTests(
+            scenario: triggerScenario,
+            routing: IntentRoutingDecision(intent: .trigger, allowedToolIDs: ["trigger.create"], requiresClarification: false, clarificationPrompt: nil),
+            originalFinal: triggerFinal,
+            hasAcceptedModelEvidence: true,
+            nonActionableMetadata: triggerMetadata
+        )
+        #expect(triggerOutcome.finalText == triggerFinal)
+        #expect(triggerOutcome.missingHints.isEmpty)
+        #expect(!triggerOutcome.rewriteAttempted)
         #else
         #expect(true)
         #endif
@@ -2265,6 +2505,44 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func executorCPUWatchdogPreflightIsNonTrainableRuntimeFailure() async {
+        #if DEBUG
+        let config = E2ERunConfig(
+            systemPrompt: "",
+            temperature: 0.1,
+            topP: 1.0,
+            repetitionPenalty: 1.0,
+            maxTokens: 64,
+            maxAgentSteps: 1,
+            enabledToolIDs: []
+        )
+
+        let report = await E2ETestRunner.$debugExecutorRuntimePreflightOverride.withValue({
+            ExecutorRuntimePreflightResult(
+                passed: false,
+                reason: "executor preflight failed: agent JSON smoke probe failed; emptyOutputReason=cpu-watchdog-degraded; outputTokens=0; streamStarted=false; firstChunkReceived=false",
+                runtimeKind: "adapter-first",
+                smokeProbeSucceeded: false,
+                failureKind: "liveRuntimeCPUWatchdogDegraded"
+            )
+        }) {
+            await E2ETestRunner.runTrainingValidation(
+                config: config,
+                ensureChatLoaded: { true }
+            )
+        }
+
+        let metadata = report.results.first?.metadata ?? [:]
+        #expect(report.results.first?.scenarioID == "executor-runtime-preflight")
+        #expect(metadata["failureKind"] == "liveRuntimeCPUWatchdogDegraded")
+        #expect(metadata["actionable"] == "false")
+        #expect(metadata["trainingSignal"] == "false")
+        #expect(metadata["runtimeEvidence"] == "runtime-preflight")
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func standardRunBlocksBeforeScenarioWhenExecutorAdapterPreflightFails() async {
         #if DEBUG
         let scenario = E2ETestScenario(
@@ -2317,10 +2595,28 @@ struct E2ETestRunnerHygieneTests {
         #expect(report.failed == 1)
         #expect(report.results.first?.scenarioID == "executor-runtime-preflight")
         #expect(report.results.first?.metadata["failureKind"] == "adapterPathMissing")
+        #expect(report.results.first?.metadata["trainingSignal"] == "false")
         #expect(report.results.first?.finalText.contains("adapterExists=false") == true)
         #else
         #expect(true)
         #endif
+    }
+}
+
+private final class CPUWatchdogProbeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private let degradeAfterCalls: Int
+
+    init(degradeAfterCalls: Int) {
+        self.degradeAfterCalls = degradeAfterCalls
+    }
+
+    func isDegraded() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        calls += 1
+        return calls > degradeAfterCalls
     }
 }
 
