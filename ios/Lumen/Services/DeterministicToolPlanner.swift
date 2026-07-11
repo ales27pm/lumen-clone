@@ -251,7 +251,13 @@ nonisolated enum DeterministicToolPlanner {
             if containsAny(text, ["index photos", "index photo", "reindex photos", "reindex photo", "photo metadata", "photo retrieval index"]) {
                 return action("rag.index_photos", ["months": intArgument(extractMonthWindow(from: text) ?? 6)])
             }
-            if containsAny(text, ["reindex", "index files", "file retrieval index", "refresh retrieval index"]) { return action("rag.index_files") }
+            if containsAny(text, [
+                "reindex", "index files", "file retrieval index", "refresh retrieval index",
+                "refresh imported files", "refresh file index", "rebuild file index",
+                "update retrieval index", "reindex imported files"
+            ]) {
+                return action("rag.index_files")
+            }
             if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
                 let query = expandRAGQueryIfNeeded(originalPrompt: prompt)
                 return action("rag.search", ["query": .string(query)])

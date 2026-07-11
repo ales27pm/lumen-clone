@@ -64,6 +64,17 @@ struct FinalOutputSanitizerTests {
         #expect(out.hadUnsafeLeakage)
     }
 
+    @Test func stripsGenericPrefixFromValidMemorySuffix() {
+        let raw = """
+        \(FinalOutputSanitizer.fallback)
+
+        I remember that you prefer concise bullet points.
+        """
+        let out = FinalOutputSanitizer.sanitizeUserVisibleText(raw)
+        #expect(out.text == "I remember that you prefer concise bullet points.")
+        #expect(out.removedArtifacts.contains(.injectedFallbackPrefix))
+    }
+
     @Test func recoveredUnsafeOutputCanBeConsumedWithRawOrSanitizedText() {
         let raw = "<think>x</think>safe"
         let sanitized = FinalOutputSanitizer.sanitizeUserVisibleText(raw)

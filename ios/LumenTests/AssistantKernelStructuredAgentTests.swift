@@ -169,6 +169,63 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testMalformedSecondMemoryTurnRepairsIntoRecall() throws {
+        #if DEBUG
+        let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."
+        let plan = try XCTUnwrap(MemoryCommandPlan.saveThenRecall(from: prompt))
+        let savedSteps = [
+            AgentStep(
+                kind: .action,
+                content: "memory.save(content=I prefer concise bullet points, kind=fact)",
+                toolID: "memory.save",
+                toolArgs: ["content": "I prefer concise bullet points", "kind": "fact"]
+            ),
+            AgentStep(
+                kind: .observation,
+                content: "Memory saved.",
+                toolID: "memory.save"
+            )
+        ]
+
+        let required = StructuredAgentKernelExecutor.nextRequiredMemoryActionForTests(
+            memoryPlan: plan,
+            steps: savedSteps,
+            availableToolIDs: ["memory.save", "memory.recall"]
+        )
+
+        XCTAssertEqual(required?.tool, "memory.recall")
+        XCTAssertEqual(required?.args["query"]?.stringValue, "concise bullet points")
+        #endif
+    }
+
+    func testMapsSearchRepairsDuplicateLocationContinuation() throws {
+        #if DEBUG
+        let routing = IntentRoutingDecision(
+            intent: .maps,
+            allowedToolIDs: ["location.current", "maps.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let steps = [
+            AgentStep(kind: .action, content: "location.current", toolID: "location.current"),
+            AgentStep(kind: .observation, content: "Position snapshot is disabled in this build.", toolID: "location.current")
+        ]
+        let duplicateLocation = AgentAction(tool: "location.current", args: [:])
+
+        let repair = StructuredAgentKernelExecutor.repairedMapsSearchActionIfNeededForTests(
+            modelAction: duplicateLocation,
+            routing: routing,
+            prompt: "Find coffee near me.",
+            steps: steps,
+            availableToolIDs: ["location.current", "maps.search"]
+        )
+
+        XCTAssertEqual(repair?.action.tool, "maps.search")
+        XCTAssertEqual(repair?.action.args["query"]?.stringValue, "coffee")
+        XCTAssertNotNil(repair?.reflection)
+        #endif
+    }
+
     func testStructuredExecutorSourceContainsStrictEvidenceAndLoopGuards() throws {
         let source = try String(
             contentsOf: repoRoot().appendingPathComponent("ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift"),

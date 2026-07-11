@@ -244,12 +244,13 @@ nonisolated enum FinalOutputSanitizer {
 
         text = normalizeWhitespace(text)
 
-        if isInjectedProvenance {
-            let fallbackRemoval = removingInjectedFallbackPrefix(from: text)
-            if fallbackRemoval.removedAny {
-                text = fallbackRemoval.text
-                mark(.injectedFallbackPrefix)
-            }
+        let fallbackRemoval = removingInjectedFallbackPrefix(
+            from: text,
+            allowSemanticRecovery: isInjectedProvenance
+        )
+        if fallbackRemoval.removedAny {
+            text = fallbackRemoval.text
+            mark(.injectedFallbackPrefix)
         }
 
         if text.isEmpty {
@@ -345,7 +346,10 @@ nonisolated enum FinalOutputSanitizer {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func removingInjectedFallbackPrefix(from source: String) -> (text: String, removedAny: Bool) {
+    private static func removingInjectedFallbackPrefix(
+        from source: String,
+        allowSemanticRecovery: Bool
+    ) -> (text: String, removedAny: Bool) {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > fallback.count else { return (source, false) }
         guard trimmed.lowercased().hasPrefix(fallback.lowercased()) else { return (source, false) }
@@ -356,7 +360,23 @@ nonisolated enum FinalOutputSanitizer {
             })
         let remainder = String(remainderStart)
         guard !remainder.isEmpty else { return (source, false) }
+        guard allowSemanticRecovery || looksLikeRecoverableAnswerSuffix(remainder) else {
+            return (source, false)
+        }
         return (remainder, true)
+    }
+
+    private static func looksLikeRecoverableAnswerSuffix(_ source: String) -> Bool {
+        let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = text.lowercased()
+        guard text.count >= 12 else { return false }
+        if lower.hasPrefix("i remember that ") { return true }
+        if lower.hasPrefix("weather update:") || lower.hasPrefix("the weather ") { return true }
+        if lower.hasPrefix("summary:") || lower.hasPrefix("summary\n") { return true }
+        if lower.hasPrefix("web results found:") { return true }
+        if lower.hasPrefix("i searched your local files") { return true }
+        if lower.hasPrefix("i found ") && lower.contains(" from ") { return true }
+        return false
     }
 
     private static func containsRawToolPayloadMarker(_ lowercasedText: String) -> Bool {

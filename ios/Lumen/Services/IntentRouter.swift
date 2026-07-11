@@ -199,7 +199,13 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .memory, allowedToolIDs: memoryToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, ["search personal data", "search my files", "search local files", "search my documents", "search my notes", "reindex files", "index files", "reindex photos", "index photos", "rag search", "architecture notes"]) || isLikelyLocalKnowledgeQuery(text) {
+        if matchesAny(text, [
+            "search personal data", "search my files", "search local files", "search my documents", "search my notes",
+            "reindex files", "reindex my imported files", "reindex imported files",
+            "refresh imported files", "refresh file index", "rebuild file index",
+            "update retrieval index", "index files", "reindex photos", "index photos",
+            "rag search", "architecture notes"
+        ]) || isLikelyLocalKnowledgeQuery(text) {
             return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
