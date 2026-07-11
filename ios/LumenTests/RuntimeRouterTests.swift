@@ -14,6 +14,20 @@ final class RuntimeRouterTests: XCTestCase {
         XCTAssertTrue(selection.reason.contains("experimental"))
     }
 
+    func testEmbeddingUsesLlamaWhenEmbeddingAdapterIsWired() {
+        let router = AssistantRuntimeRouter(
+            llama: LlamaRuntimeAdapter(
+                embedHandler: { _ in [Float(1.0)] }
+            ),
+            allowDiagnosticFallbackSelection: false
+        )
+        let context = AssistantTurnContext(task: .embedding, input: "x", isForeground: true, lowPowerMode: false, thermalState: .nominal)
+        let selection = router.selection(for: context)
+
+        XCTAssertEqual(selection.runtime, .llama)
+        XCTAssertEqual(selection.reason, "llama embedding available")
+    }
+
     func testBackgroundTriggerUsesFallbackWhenConstrained() {
         let router = AssistantRuntimeRouter()
         let context = AssistantTurnContext(task: .backgroundTrigger, input: "x", isForeground: false, lowPowerMode: true, thermalState: .serious)

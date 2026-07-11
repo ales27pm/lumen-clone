@@ -8,6 +8,8 @@ final class AssistantKernel {
     enum KernelError: Error, Sendable, Equatable {
         case unsupportedTaskForTextTurn(AssistantTaskKind)
         case unsupportedRuntimeForTextTurn(AssistantRuntimeKind)
+        case unsupportedTaskForEmbedding(AssistantTaskKind)
+        case unsupportedRuntimeForEmbedding(AssistantRuntimeKind)
     }
 
     private let router: AssistantRuntimeRouter
@@ -136,6 +138,24 @@ final class AssistantKernel {
         }
     }
 
+    func runEmbedding(_ context: AssistantTurnContext) async throws -> [Double] {
+        guard context.task == .embedding else {
+            throw KernelError.unsupportedTaskForEmbedding(context.task)
+        }
+        let selection = await router.selectionIncludingRuntimeState(for: context)
+        let start = Date()
+        do {
+            let vector = try await generateEmbedding(request: EmbeddingRequest(text: context.input), runtime: selection.runtime)
+            let latency = Int(Date().timeIntervalSince(start) * 1000)
+            try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: true, errorCode: nil, thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
+            return vector
+        } catch {
+            let latency = Int(Date().timeIntervalSince(start) * 1000)
+            try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: false, errorCode: RuntimeMetricErrorSanitizer.code(for: error), thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
+            throw error
+        }
+    }
+
     private func recordTextModelTurnIfNeeded(
         context: AssistantTurnContext,
         selection: AssistantRuntimeRouter.Selection,
@@ -214,6 +234,17 @@ final class AssistantKernel {
             throw KernelError.unsupportedRuntimeForTextTurn(.coreML)
         case .unavailable:
             throw KernelError.unsupportedRuntimeForTextTurn(.unavailable)
+        }
+    }
+
+    private func generateEmbedding(request: EmbeddingRequest, runtime: AssistantRuntimeKind) async throws -> [Double] {
+        switch runtime {
+        case .llama:
+            return try await router.llama.embed(request: request).map(Double.init)
+        case .coreML:
+            return try await router.coreML.embed(request: request).map(Double.init)
+        case .foundationModels, .deterministicFallback, .unavailable:
+            throw KernelError.unsupportedRuntimeForEmbedding(runtime)
         }
     }
 }

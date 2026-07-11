@@ -28,8 +28,8 @@ struct RAGSearchTool: LocalTool {
                 return .init(
                     invocationID: invocation.id,
                     status: .unavailable,
-                    displayText: "RAG storage unavailable. Diagnostic: swiftdata_model_context_unavailable.",
-                    modelText: "RAG storage unavailable. Diagnostic: swiftdata_model_context_unavailable.",
+                    displayText: "RAG storage unavailable.",
+                    modelText: "RAG storage unavailable.",
                     structuredPayload: [
                         "diagnostic": "swiftdata_model_context_unavailable",
                         "mode": "no_model_context"

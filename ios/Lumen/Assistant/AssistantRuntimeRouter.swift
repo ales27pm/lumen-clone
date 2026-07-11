@@ -40,6 +40,9 @@ struct AssistantRuntimeRouter {
         let decision = ComputePolicy.decide(for: context)
         switch context.task {
         case .embedding, .safetyClassification:
+            if decision.allowHeavyRuntime, llama.hasKnownSelectableEmbeddingRuntime {
+                return .init(runtime: .llama, reason: "llama embedding available")
+            }
             if coreML.supportsEmbeddings, coreML.isAvailable {
                 return .init(runtime: .coreML, reason: "embedding uses CoreML")
             }
@@ -66,6 +69,25 @@ struct AssistantRuntimeRouter {
                 return .init(runtime: .deterministicFallback, reason: decision.allowHeavyRuntime ? "no capable runtime" : (decision.denialReason ?? "heavy runtime disallowed"))
             }
             return .init(runtime: .unavailable, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : (decision.denialReason ?? "heavy runtime disallowed"))
+        }
+    }
+
+    func selectionIncludingRuntimeState(for context: AssistantTurnContext) async -> Selection {
+        let decision = ComputePolicy.decide(for: context)
+        switch context.task {
+        case .embedding, .safetyClassification:
+            if decision.allowHeavyRuntime, await llama.isEmbeddingSelectable() {
+                return .init(runtime: .llama, reason: "llama embedding available")
+            }
+            if coreML.supportsEmbeddings, coreML.isAvailable {
+                return .init(runtime: .coreML, reason: "embedding uses CoreML")
+            }
+            if allowDiagnosticFallbackSelection, fallback.isAvailable {
+                return .init(runtime: .deterministicFallback, reason: coreML.unavailableReason ?? "CoreML embedding unavailable")
+            }
+            return .init(runtime: .coreML, reason: coreML.unavailableReason ?? "CoreML embedding runtime disabled")
+        case .backgroundTrigger, .remConsolidation, .chat, .agentPlan, .toolDecision, .summarization, .memoryExtraction, .speechCommandParsing:
+            return selection(for: context)
         }
     }
 
