@@ -208,6 +208,9 @@ nonisolated enum ToolObservationFinalizer {
         let trimmed = observation.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "No matching memories." }
         let lower = trimmed.lowercased()
+        if isMemoryStatusResponse(lower) {
+            return trimmed
+        }
         if lower.contains("no matching") || lower.contains("no memories") {
             return "No matching memories."
         }
@@ -245,17 +248,23 @@ nonisolated enum ToolObservationFinalizer {
         if lower.hasPrefix("i prefer ") {
             return "you prefer \(String(trimmed.dropFirst("I prefer ".count)))"
         }
-        if let range = trimmed.range(of: "prefer ", options: [.caseInsensitive]) {
-            let preference = String(trimmed[range.upperBound...])
-                .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.,!?")))
-            if !preference.isEmpty {
-                return "you prefer \(preference)"
-            }
-        }
         if lower.hasPrefix("you ") || lower.hasPrefix("your ") {
             return trimmed
         }
         return trimmed
+    }
+
+    private static func isMemoryStatusResponse(_ lower: String) -> Bool {
+        lower.contains("memory unavailable")
+            || lower.contains("memory storage unavailable")
+            || lower.contains("memory search unavailable")
+            || lower.contains("memory recall unavailable")
+            || lower.contains("memory failed")
+            || lower.contains("memory error")
+            || lower.contains("diagnostic:")
+            || lower.contains("empty_store")
+            || lower.contains("swiftdata")
+            || lower.contains("unavailable")
     }
 
     private static func contactSummaries(from observation: String) -> [String] {

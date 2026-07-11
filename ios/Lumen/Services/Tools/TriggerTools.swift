@@ -8,7 +8,7 @@ enum TriggerTools {
         let ctx = ModelContext(container)
         let title = args["title"] ?? "Scheduled run"
         let prompt = args["prompt"] ?? title
-        let schedule = TriggerScheduleType(rawValue: args["schedule"] ?? "once") ?? .once
+        let schedule = normalizedScheduleType(from: args["schedule"])
         let trigger: Trigger
         switch schedule {
         case .once:
@@ -38,6 +38,21 @@ enum TriggerTools {
         TriggerScheduler.shared.scheduleBackgroundRefresh()
         let when = trigger.nextFireAt?.formatted(date: .abbreviated, time: .shortened) ?? "background"
         return "Scheduled \"\(title)\" (\(schedule.label)) — next run: \(when)."
+    }
+
+    private static func normalizedScheduleType(from raw: String?) -> TriggerScheduleType {
+        switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "relative", "once", "one-time", "one time":
+            return .once
+        case "absolute", "daily":
+            return .daily
+        case "interval":
+            return .interval
+        case "beforenextevent", "before_next_event", "before-next-event":
+            return .beforeNextEvent
+        default:
+            return .once
+        }
     }
 
     static func list() async -> String {

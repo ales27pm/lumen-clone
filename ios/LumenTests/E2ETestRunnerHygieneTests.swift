@@ -134,7 +134,7 @@ struct E2ETestRunnerHygieneTests {
             expectedIntent: .calendar,
             requiredAllowedToolIDs: ["calendar.list"],
             forbiddenToolIDs: [],
-            requiredTextHints: [],
+            requiredTextHints: ["module", "[1]"],
             forbiddenTextHints: [],
             requiresAgentRun: true
         )
@@ -1108,6 +1108,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(!outcome.rewriteAttempted)
         #expect(!outcome.finalText.contains("Key modules"))
         #expect(!outcome.finalText.contains("[1]"))
+        #expect(E2ETestRunner.liveAgentQualityFailures(rawFinalText: original, finalText: original, scenario: scenario).isEmpty)
         #else
         #expect(true)
         #endif
@@ -1117,6 +1118,8 @@ struct E2ETestRunnerHygieneTests {
         #if DEBUG
         #expect(E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("no matching rag chunks found."))
         #expect(E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("no matching module snippets were retrieved. source: local rag index."))
+        #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching snippets were found in the local index."))
+        #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching results in the local rag index."))
         #expect(!E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("[1] retrieved module snippet from diagnostics.md"))
         #else
         #expect(true)
@@ -2457,7 +2460,7 @@ struct E2ETestRunnerHygieneTests {
                 reason: "executor preflight failed: agent JSON smoke probe failed; emptyOutputReason=cpu-watchdog-degraded; outputTokens=0; streamStarted=false; firstChunkReceived=false",
                 runtimeKind: "adapter-first",
                 smokeProbeSucceeded: false,
-                failureKind: "smokeProbeEmptyOutput"
+                failureKind: "liveRuntimeCPUWatchdogDegraded"
             )
         }) {
             await E2ETestRunner.runTrainingValidation(
