@@ -324,12 +324,9 @@ nonisolated enum DeterministicToolPlanner {
             if has("trigger.create") {
                 var args: AgentJSONArguments = [
                     "title": .string(extractTriggerTitle(from: prompt)),
-                    "prompt": .string(extractTriggerPrompt(from: prompt)),
-                    "schedule": .string("relative")
+                    "prompt": .string(extractTriggerPrompt(from: prompt))
                 ]
-                if text.contains("tonight") { args["inMinutes"] = intArgument(120) }
-                else if let minutes = calendarStartOffsetMinutes(from: text) { args["inMinutes"] = intArgument(minutes) }
-                else { args["inMinutes"] = intArgument(60) }
+                args.merge(triggerScheduleArguments(from: text)) { _, new in new }
                 return action("trigger.create", args)
             }
             return nil
@@ -618,6 +615,49 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             return pm && hour < 12 ? hour + 12 : hour
         }
         return nil
+    }
+
+    private static func triggerScheduleArguments(from text: String) -> AgentJSONArguments {
+        if containsAny(text, ["every day", "each day", "daily"]) {
+            return [
+                "schedule": .string("absolute"),
+                "atTime": .string(triggerTimeOfDay(from: text))
+            ]
+        }
+
+        if containsAny(text, ["every hour", "hourly"]) {
+            return [
+                "schedule": .string("interval"),
+                "intervalSeconds": intArgument(3_600)
+            ]
+        }
+
+        if let duration = RelativeDuration.parse(from: text),
+           containsAny(text, ["every ", "repeat", "recurring", "interval"]) {
+            return [
+                "schedule": .string("interval"),
+                "intervalSeconds": intArgument(max(60, duration.seconds))
+            ]
+        }
+
+        var args: AgentJSONArguments = ["schedule": .string("relative")]
+        if text.contains("tonight") {
+            args["inMinutes"] = intArgument(120)
+        } else if let minutes = calendarStartOffsetMinutes(from: text) {
+            args["inMinutes"] = intArgument(minutes)
+        } else {
+            args["inMinutes"] = intArgument(60)
+        }
+        return args
+    }
+
+    private static func triggerTimeOfDay(from text: String) -> String {
+        let hour = calendarHour(from: text)
+            ?? (text.contains("morning") ? 9 : nil)
+            ?? (text.contains("afternoon") ? 13 : nil)
+            ?? (text.contains("evening") || text.contains("tonight") ? 18 : nil)
+            ?? 9
+        return String(format: "%02d:00", min(max(hour, 0), 23))
     }
 
     private static func extractMemoryRecallQuery(from prompt: String) -> String {

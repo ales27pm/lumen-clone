@@ -514,7 +514,8 @@ extension AssistantKernel: AgentKernelRunning {
         return routing.intent == .maps
             && canonicalCurrent == "location.current"
             && canonicalNext == "maps.search"
-            && observation.lowercased().contains("position snapshot is disabled")
+            && routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("maps.search")
+            && !observation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func toolExecutionAvailableTools(

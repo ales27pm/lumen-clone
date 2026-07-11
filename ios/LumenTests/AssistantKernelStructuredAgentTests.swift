@@ -252,6 +252,68 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testTriggerCreateInvalidDailyScheduleRepairsToAbsoluteTiming() throws {
+        #if DEBUG
+        let prompt = "Schedule a trigger to summarize reminders every day at 9am."
+        let routing = IntentRoutingDecision(
+            intent: .trigger,
+            allowedToolIDs: ["trigger.create", "trigger.list", "trigger.cancel"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let badAction = AgentAction(tool: "trigger.create", args: [
+            "title": .string("Reminder summary"),
+            "prompt": .string("Summarize reminders"),
+            "schedule": .string("daily")
+        ])
+        let error = StructuredToolCallValidationError.invalidEnumValue(
+            tool: "trigger.create",
+            argument: "schedule",
+            allowed: ["absolute", "interval", "relative"]
+        )
+
+        let repair = try XCTUnwrap(StructuredAgentKernelExecutor.repairedTriggerCreateActionIfNeededForTests(
+            modelAction: badAction,
+            validationError: error,
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: ["trigger.create", "trigger.list", "trigger.cancel"]
+        ))
+        XCTAssertEqual(repair.action.args["schedule"]?.stringValue, "absolute")
+        XCTAssertEqual(repair.action.args["atTime"]?.stringValue, "09:00")
+        XCTAssertNil(repair.action.args["inMinutes"])
+        #endif
+    }
+
+    func testTriggerCreateInvalidScheduleDoesNotInventRelativeFallbackWithoutPlan() {
+        #if DEBUG
+        let routing = IntentRoutingDecision(
+            intent: .trigger,
+            allowedToolIDs: ["trigger.create", "trigger.list"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let badAction = AgentAction(tool: "trigger.create", args: [
+            "title": .string("Reminder summary"),
+            "prompt": .string("Summarize reminders"),
+            "schedule": .string("yearly")
+        ])
+        let error = StructuredToolCallValidationError.invalidEnumValue(
+            tool: "trigger.create",
+            argument: "schedule",
+            allowed: ["absolute", "interval", "relative"]
+        )
+
+        XCTAssertNil(StructuredAgentKernelExecutor.repairedTriggerCreateActionIfNeededForTests(
+            modelAction: badAction,
+            validationError: error,
+            routing: routing,
+            prompt: "Schedule a trigger sometime.",
+            availableToolIDs: ["trigger.create", "trigger.list"]
+        ))
+        #endif
+    }
+
     func testMemorySaveThenRecallInvariantRepairsPrematureRecall() throws {
         #if DEBUG
         let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."

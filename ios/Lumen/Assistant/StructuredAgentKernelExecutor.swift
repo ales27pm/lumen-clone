@@ -921,12 +921,18 @@ private extension StructuredAgentKernelExecutor {
               argument == "schedule" else {
             return nil
         }
+        guard triggerPromptHasRepairableScheduleSemantics(prompt) else {
+            return nil
+        }
 
         let deterministic = DeterministicToolPlanner
             .planSteps(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs)
             .first { ToolRouteGuard.canonicalToolID($0.tool) == "trigger.create" }
+        guard let deterministicSchedule = deterministic?.args["schedule"] else {
+            return nil
+        }
         var args = modelAction.args
-        args["schedule"] = deterministic?.args["schedule"] ?? .string("relative")
+        args["schedule"] = deterministicSchedule
         if (args["title"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             args["title"] = deterministic?.args["title"] ?? .string("Scheduled agent run")
         }
@@ -951,6 +957,24 @@ private extension StructuredAgentKernelExecutor {
             toolArgs: repaired.args.stringCoerced
         )
         return (repaired, reflection)
+    }
+
+    static func triggerPromptHasRepairableScheduleSemantics(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        return lower.contains("tonight")
+            || lower.contains("tomorrow")
+            || lower.contains("morning")
+            || lower.contains("afternoon")
+            || lower.contains("evening")
+            || lower.contains("daily")
+            || lower.contains("every ")
+            || lower.contains("each day")
+            || lower.contains("hourly")
+            || lower.contains("repeat")
+            || lower.contains("recurring")
+            || lower.contains("interval")
+            || lower.range(of: #"\bin\s+\d+\s*(?:minute|minutes|hour|hours|second|seconds)\b"#, options: .regularExpression) != nil
+            || lower.range(of: #"\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b"#, options: .regularExpression) != nil
     }
 
     static func shouldContinueAfterNonSuccessToolResult(
