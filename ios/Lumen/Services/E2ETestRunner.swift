@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 #if canImport(Darwin)
 import Darwin
 #endif
@@ -599,6 +600,7 @@ nonisolated enum E2ETestRunner {
     @TaskLocal static var debugScenarioLoopThreadRecorder: (@Sendable (Bool) -> Void)?
     @TaskLocal static var debugExecutorRuntimePreflightOverride: (@Sendable () async -> ExecutorRuntimePreflightResult)?
     @TaskLocal static var debugCPUWatchdogDegradedOverride: Bool?
+    @TaskLocal static var debugCPUWatchdogDegradedProbe: (@Sendable (E2ETestScenario) -> Bool)?
 
     private static func debugIsRunningOnMainThread() -> Bool {
         #if canImport(Darwin)
@@ -1150,7 +1152,8 @@ nonisolated enum E2ETestRunner {
                         structuredAllowedToolIDs: requiresStructuredAgentJSON ? availableTools.map(\.id) : []
                     )
                     let agentEvents: AsyncStream<AgentKernelEvent> = await MainActor.run {
-                        AssistantKernel.shared.run(kernelRequest, modelContext: nil)
+                        let kernelModelContext = SharedContainer.shared.map { ModelContext($0) }
+                        return AssistantKernel.shared.run(kernelRequest, modelContext: kernelModelContext)
                     }
                     for await agentEvent in agentEvents {
                         try Task.checkCancellation()
@@ -1228,29 +1231,26 @@ nonisolated enum E2ETestRunner {
                     await event("finalizer", "deterministic web synthesis fallback used after observations")
                     rawFinalText = synthesized
                 }
-                let allowsEvalRewrite = shouldRewriteFinalForEvalHints(
-                    scenario: scenario,
-                    hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario
-                )
-
                 let recoveredBeforeRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rawFinalText)
                 let rawSanitized = mergeSanitizerOutputs(FinalOutputSanitizer.sanitizeUserVisibleText(rawFinalText), recovered: recoveredBeforeRewrite)
                 finalText = rawSanitized.text
 
                 try Task.checkCancellation()
                 await Task.yield()
-                let rewriteOutcome = allowsEvalRewrite
-                    ? await validateAndRewriteFinalTextIfNeeded(
-                        scenario: scenario,
-                        routing: routing,
-                        originalFinal: finalText
-                    )
-                    : EvalRewriteOutcome(
-                        finalText: finalText,
-                        missingHints: requiredHintsMissing(in: finalText, scenario: scenario),
-                        rewriteAttempted: false,
-                        rewriteSuccess: false
-                    )
+                let preHintNonActionableMetadata = nonActionableInfrastructureMetadata(
+                    scenario: scenario,
+                    finalText: finalText,
+                    failures: failures,
+                    events: events
+                )
+                let skippedFinalHintsForNonActionable = nonActionableQuarantineFailure(metadata: preHintNonActionableMetadata) != nil
+                let rewriteOutcome = await finalHintRewriteOutcome(
+                    scenario: scenario,
+                    routing: routing,
+                    originalFinal: finalText,
+                    hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario,
+                    nonActionableMetadata: preHintNonActionableMetadata
+                )
 
                 let recoveredAfterRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rewriteOutcome.finalText)
                 let postRewriteSanitized = mergeSanitizerOutputs(FinalOutputSanitizer.sanitizeUserVisibleText(rewriteOutcome.finalText), recovered: recoveredAfterRewrite)
@@ -1279,7 +1279,11 @@ nonisolated enum E2ETestRunner {
                 missingHints = rewriteOutcome.missingHints
                 rewriteAttempted = rewriteOutcome.rewriteAttempted
                 rewriteSuccess = rewriteOutcome.rewriteSuccess
-                await event("final-hints", "missing_hints=\(missingHints), rewrite_attempted=\(rewriteAttempted), rewrite_success=\(rewriteSuccess)")
+                if skippedFinalHintsForNonActionable {
+                    await event("final-hints", "skipped_non_actionable=true, missing_hints=[], rewrite_attempted=false, rewrite_success=false")
+                } else {
+                    await event("final-hints", "missing_hints=\(missingHints), rewrite_attempted=\(rewriteAttempted), rewrite_success=\(rewriteSuccess)")
+                }
                 await event("final", finalText)
                 collectPerformanceSample(force: true)
             } else {
@@ -1534,23 +1538,24 @@ nonisolated enum E2ETestRunner {
         onEvent: EventCallback?
     ) async -> E2ETestResult? {
         guard scenario.requiresAgentRun else { return nil }
-        if isCPUWatchdogDegradedForLiveTraining(scenario: scenario) {
-            return await liveRuntimePreflightBlockedResult(
-                for: scenario,
-                denialReason: "live-e2e.pre-scenario: cpu-watchdog-degraded",
-                onEvent: onEvent
-            )
-        }
         let readiness = await liveRuntimeReadinessBarrier(
             for: scenario,
             maxWaitNanoseconds: liveRuntimeReadinessMaxWaitNanoseconds,
             pollNanoseconds: liveRuntimeReadinessPollNanoseconds,
             onEvent: onEvent
         )
-        guard let denial = readiness.denialReason else { return nil }
+        if let denial = readiness.denialReason {
+            return await liveRuntimePreflightBlockedResult(
+                for: scenario,
+                denialReason: denial,
+                readinessEvents: readiness.events,
+                onEvent: onEvent
+            )
+        }
+        guard isCPUWatchdogDegradedForLiveTraining(scenario: scenario) else { return nil }
         return await liveRuntimePreflightBlockedResult(
             for: scenario,
-            denialReason: denial,
+            denialReason: "live-e2e.pre-scenario: cpu-watchdog-degraded",
             readinessEvents: readiness.events,
             onEvent: onEvent
         )
@@ -1576,6 +1581,12 @@ nonisolated enum E2ETestRunner {
         var attempt = 0
 
         while true {
+            if isCPUWatchdogDegradedForLiveTraining(scenario: scenario) {
+                return LiveRuntimeReadinessBarrierOutcome(
+                    denialReason: "live-e2e.pre-scenario: cpu-watchdog-degraded",
+                    events: events
+                )
+            }
             let decision = await MainActor.run {
                 ResourceBudgetGate.decision(
                     policy: .foregroundInteractive,
@@ -1757,6 +1768,9 @@ nonisolated enum E2ETestRunner {
             return false
         }
         #if DEBUG
+        if let probe = debugCPUWatchdogDegradedProbe {
+            return probe(scenario)
+        }
         if let override = debugCPUWatchdogDegradedOverride {
             return override
         }
@@ -2451,6 +2465,23 @@ nonisolated enum E2ETestRunner {
         return (outcome.finalText, outcome.missingHints, outcome.rewriteAttempted, outcome.rewriteSuccess)
     }
 
+    static func finalHintRewriteOutcomeForTests(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        originalFinal: String,
+        hasAcceptedModelEvidence: Bool,
+        nonActionableMetadata: [String: String]
+    ) async -> (finalText: String, missingHints: [String], rewriteAttempted: Bool, rewriteSuccess: Bool) {
+        let outcome = await finalHintRewriteOutcome(
+            scenario: scenario,
+            routing: routing,
+            originalFinal: originalFinal,
+            hasAcceptedModelEvidence: hasAcceptedModelEvidence,
+            nonActionableMetadata: nonActionableMetadata
+        )
+        return (outcome.finalText, outcome.missingHints, outcome.rewriteAttempted, outcome.rewriteSuccess)
+    }
+
     nonisolated static func liveRuntimeShouldStopAfterForTests(_ result: E2ETestResult) -> Bool {
         liveRuntimeShouldStopAfter(result)
     }
@@ -2597,6 +2628,10 @@ nonisolated enum E2ETestRunner {
 
     nonisolated static func nonActionableQuarantineFailureForTests(metadata: [String: String]) -> String? {
         nonActionableQuarantineFailure(metadata: metadata)
+    }
+
+    nonisolated static func isRAGEmptyRetrievalEvidenceForTests(_ lowerText: String) -> Bool {
+        isRAGEmptyRetrievalEvidence(lowerText)
     }
 
     static func agentJSONTrainingProbeForTests() async -> [AgentJSONTrainingProbeResult] {
@@ -3215,6 +3250,39 @@ nonisolated enum E2ETestRunner {
         return true
     }
 
+    private static func finalHintRewriteOutcome(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        originalFinal: String,
+        hasAcceptedModelEvidence: Bool,
+        nonActionableMetadata: [String: String]
+    ) async -> EvalRewriteOutcome {
+        if nonActionableQuarantineFailure(metadata: nonActionableMetadata) != nil {
+            return EvalRewriteOutcome(
+                finalText: originalFinal,
+                missingHints: [],
+                rewriteAttempted: false,
+                rewriteSuccess: false
+            )
+        }
+        if shouldRewriteFinalForEvalHints(
+            scenario: scenario,
+            hasAcceptedModelEvidence: hasAcceptedModelEvidence
+        ) {
+            return await validateAndRewriteFinalTextIfNeeded(
+                scenario: scenario,
+                routing: routing,
+                originalFinal: originalFinal
+            )
+        }
+        return EvalRewriteOutcome(
+            finalText: originalFinal,
+            missingHints: requiredHintsMissing(in: originalFinal, scenario: scenario),
+            rewriteAttempted: false,
+            rewriteSuccess: false
+        )
+    }
+
     nonisolated private static func validateAndRewriteFinalTextIfNeeded(
         scenario: E2ETestScenario,
         routing: IntentRoutingDecision,
@@ -3382,6 +3450,8 @@ nonisolated enum E2ETestRunner {
             || lowerText.contains("no matching local snippets")
             || lowerText.contains("import or create local files")
             || lowerText.contains("found no matching architecture notes")
+            || lowerText.contains("rag storage unavailable")
+            || lowerText.contains("rag retrieval is unavailable")
     }
 }
 

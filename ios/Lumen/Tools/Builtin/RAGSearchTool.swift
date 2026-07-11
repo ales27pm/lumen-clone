@@ -24,7 +24,21 @@ struct RAGSearchTool: LocalTool {
         do {
             let (q, limitRaw, source, minScore) = try parse(invocation.arguments)
             let limit = context.isForeground ? limitRaw : min(limitRaw, 6)
-            guard let mc = context.modelContext else { return .init(invocationID: invocation.id, status: .unavailable, displayText: "RAG storage unavailable.", modelText: "RAG unavailable.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "no_model_context", errorCode: "unavailable") }
+            guard let mc = context.modelContext else {
+                return .init(
+                    invocationID: invocation.id,
+                    status: .unavailable,
+                    displayText: "RAG storage unavailable. Diagnostic: swiftdata_model_context_unavailable.",
+                    modelText: "RAG storage unavailable. Diagnostic: swiftdata_model_context_unavailable.",
+                    structuredPayload: [
+                        "diagnostic": "swiftdata_model_context_unavailable",
+                        "mode": "no_model_context"
+                    ],
+                    privacyLevel: .moderate,
+                    metricsSummary: "no_model_context",
+                    errorCode: "swiftdata_model_context_unavailable"
+                )
+            }
             let output = await Self.searchRows(query: q, limit: limit, source: source, minScore: minScore, outputBudgetChars: definition.maxOutputCharacters, modelContext: mc)
             if let failureDiagnostic = output.failureDiagnostic {
                 return .init(

@@ -70,7 +70,9 @@ final class AgentKernelBoundaryGuardTests: XCTestCase {
         let runnerURL = repo.appendingPathComponent("ios/Lumen/Services/E2ETestRunner.swift")
         let runner = try String(contentsOf: runnerURL, encoding: .utf8)
 
-        XCTAssertTrue(runner.contains("AssistantKernel.shared.run(kernelRequest, modelContext: nil)"))
+        XCTAssertTrue(runner.contains("let kernelModelContext = SharedContainer.shared.map { ModelContext($0) }"))
+        XCTAssertTrue(runner.contains("AssistantKernel.shared.run(kernelRequest, modelContext: kernelModelContext)"))
+        XCTAssertFalse(runner.contains("AssistantKernel.shared.run(kernelRequest, modelContext: nil)"))
         XCTAssertTrue(runner.contains("strictLiveAgentKernelRequest("))
         XCTAssertTrue(runner.contains("forceModelBackedToolPlanning: requiresStructuredAgentJSON"))
         XCTAssertTrue(runner.contains("structuredMode: requiresStructuredAgentJSON ? .requiredAgentJSON : .automatic"))
