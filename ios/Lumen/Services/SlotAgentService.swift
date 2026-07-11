@@ -924,7 +924,16 @@ final class SlotAgentService {
                 }
             }
 
-            if index < plannedActions.count - 1, shouldStopPlannedChain(after: result) {
+            let nextToolID = index < plannedActions.count - 1
+                ? ToolRouteGuard.canonicalToolID(plannedActions[index + 1].tool)
+                : nil
+            if index < plannedActions.count - 1,
+               shouldStopPlannedChain(
+                after: result,
+                currentToolID: canonicalActionTool,
+                nextToolID: nextToolID,
+                routing: routing
+               ) {
                 let text = FinalIntentValidator.validate(result, routing: routing, fallback: IntentRouter.unavailableMessage(for: routing))
                 Self.emitChatTrace(req: original, phase: "chain_stopped", values: [
                     "toolID": canonicalActionTool,
@@ -1103,8 +1112,32 @@ final class SlotAgentService {
         return (continuation.text, continuation.step)
     }
 
+    nonisolated static func shouldStopPlannedChainForTests(
+        after observation: String,
+        currentToolID: String? = nil,
+        nextToolID: String? = nil,
+        routing: IntentRoutingDecision? = nil
+    ) -> Bool {
+        shouldStopPlannedChain(
+            after: observation,
+            currentToolID: currentToolID,
+            nextToolID: nextToolID,
+            routing: routing
+        )
+    }
 
-    private nonisolated static func shouldStopPlannedChain(after observation: String) -> Bool {
+
+    private nonisolated static func shouldStopPlannedChain(
+        after observation: String,
+        currentToolID: String? = nil,
+        nextToolID: String? = nil,
+        routing: IntentRoutingDecision? = nil
+    ) -> Bool {
+        if routing?.intent == .maps,
+           currentToolID == "location.current",
+           nextToolID == "maps.search" {
+            return false
+        }
         let lower = observation.lowercased()
         let normalized = lower
             .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
@@ -1115,6 +1148,7 @@ final class SlotAgentService {
             || lower.contains("missing outlook message context")
             || lower.contains("failed")
             || lower.contains("unavailable")
+            || lower.contains("disabled")
             || lower.contains("denied")
             || lower.contains("couldn't")
             || lower.contains("couldn’t")

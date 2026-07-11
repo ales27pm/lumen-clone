@@ -53,6 +53,50 @@ struct E2ETestRunnerHygieneTests {
         #expect(failures.contains("Weather precipitation recommendation not grounded"))
     }
 
+    @Test func incompleteWeatherFinalIsRejectedAndCanRepairFromObservation() {
+        #if DEBUG
+        let final = "The weather is clear with a temperature of 21°C. You do not need an"
+        let scenario = E2ETestScenario(
+            id: "training-weather-here-no-calendar",
+            title: "Training weather",
+            kind: .training,
+            prompt: "What is the weather here?",
+            expectedIntent: .weather,
+            requiredAllowedToolIDs: ["weather"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let failures = E2ETestRunner.hygieneFailures(
+            lowerRawFinal: final.lowercased(),
+            lowerFinal: final.lowercased(),
+            removedArtifacts: [],
+            scenario: scenario,
+            observations: "Weather observation: clear, temperature 21°C"
+        )
+        #expect(failures.contains("Final output appears incomplete or truncated"))
+
+        let repaired = E2ETestRunner.deterministicToolObservationFallbackForIncompleteFinalForTests(
+            scenario: scenario,
+            routing: IntentRoutingDecision(intent: .weather, allowedToolIDs: ["weather"], requiresClarification: false, clarificationPrompt: nil),
+            finalText: final,
+            events: [
+                E2ETestEvent(
+                    id: UUID(),
+                    createdAt: Date(),
+                    scenarioID: scenario.id,
+                    phase: "step",
+                    message: "observation: The weather is clear with a temperature of 21°C."
+                )
+            ]
+        )
+        #expect(repaired == "Weather update: The weather is clear with a temperature of 21°C.")
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func cleanMarkdownLinkPassesHygieneChecks() {
         let scenario = E2ETestScenario(id: "c", title: "c", kind: .chat, prompt: "p", expectedIntent: .chat, forbiddenToolIDs: [], requiredTextHints: [], forbiddenTextHints: [], requiresAgentRun: false)
         let failures = E2ETestRunner.hygieneFailures(lowerRawFinal: "use [link](https://example.com)", lowerFinal: "use [link](https://example.com)", removedArtifacts: [], scenario: scenario, observations: "")
@@ -722,6 +766,35 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func liveTrainingCPUWatchdogSkipsBeforeGeneration() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-web-research",
+            title: "Training web research",
+            kind: .training,
+            prompt: "Search the web for Swift concurrency best practices.",
+            expectedIntent: .webSearch,
+            requiredAllowedToolIDs: ["web.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["Swift"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+
+        let result = await E2ETestRunner.$debugCPUWatchdogDegradedOverride.withValue(true) {
+            await E2ETestRunner.liveRuntimePreflightBlockedResultIfNeededForTests(scenario)
+        }
+
+        #expect(result?.actualIntent == "preflight")
+        #expect(result?.metadata["failureKind"] == "liveRuntimeCPUWatchdogDegraded")
+        #expect(result?.metadata["actionable"] == "false")
+        #expect(result?.metadata["trainingSignal"] == "false")
+        #expect(result?.events.map(\.phase) == ["live-runtime-preflight"])
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func passedResultsWithRuntimeWordsAreNotNonActionablePreflight() {
         let result = E2ETestResult(
             id: UUID(),
@@ -833,6 +906,33 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .fair, lowPowerModeEnabled: true) == 8_000_000_000)
         #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .serious) == 0)
         #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: result, thermalState: .critical) == 0)
+
+        let longToolResult = E2ETestResult(
+            id: UUID(),
+            scenarioID: "live-maps-search-direct",
+            kind: E2ETestKind.toolGuard.rawValue,
+            title: "Maps search",
+            prompt: "Find coffee near me.",
+            expectedIntent: UserIntent.maps.rawValue,
+            actualIntent: UserIntent.maps.rawValue,
+            requiresAgentRun: true,
+            passed: true,
+            failures: [],
+            finalText: "Nearby search complete.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: Date(timeIntervalSinceNow: -25),
+            finishedAt: Date(),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: "",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: [],
+            performanceMatrix: nil
+        )
+        #expect(E2ETestRunner.liveRuntimePacingNanosecondsForTests(after: longToolResult, thermalState: .nominal) == 8_000_000_000)
         #else
         #expect(true)
         #endif
@@ -845,6 +945,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: recent-memory-warning") == "liveRuntimeRecentMemoryWarning")
         #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: scenePhase=background") == "liveRuntimeScenePhaseUnavailable")
         #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: scenePhase=inactive") == "liveRuntimeScenePhaseUnavailable")
+        #expect(E2ETestRunner.liveRuntimeBudgetFailureKindForTests("live-e2e.pre-scenario: cpu-watchdog-degraded") == "liveRuntimeCPUWatchdogDegraded")
         #else
         #expect(true)
         #endif

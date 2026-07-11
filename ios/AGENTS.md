@@ -12,6 +12,8 @@ This directory contains the shipped iOS app, XCTest targets, and Xcode project. 
 - Do not convert production failures into empty arrays, zero counts, false booleans, or vague user-facing copy.
 - Tool-capable chat, voice, AppIntent, trigger, and headless paths must be Agent Kernel-native in Release or excluded from Release.
 - Tool calls must be schema-validated before execution. Never execute unknown tools, schema-invalid arguments, malformed JSON, or extra dangerous arguments.
+- Tool coverage E2E paths must prefer actionable tool selection when an allowed tool exists. Nearby maps prompts such as coffee/pharmacy searches should reach `maps.search` or `location.current` plus `maps.search`; degraded location observations must not suppress `maps.search` evidence when the search can still run.
+- Missing-argument tool prompts should use explicit clarification text instead of generic safe failure finals. Keep user-visible final hygiene strict enough that truncated endings cannot pass compile-time or live-E2E evidence gates.
 - Logs and diagnostics must redact raw prompts, user documents, memory contents, and raw tool arguments unless the user explicitly exports diagnostics.
 
 ## XCTest And Xcode Validation

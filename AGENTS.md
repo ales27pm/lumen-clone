@@ -114,6 +114,9 @@ When the user explicitly asks to build and submit:
 - Structured tool calls must be parsed and validated before execution: canonical tool lookup, enabled-tool check, required fields, exact JSON types, enum/tool-name validation through the manifest, extra-argument rejection, bounded repair, and typed failure after retry exhaustion.
 - RAG and memory paths must distinguish empty results from permission, embedding, model, SwiftData, persistence, corrupt index, unsupported type, cancellation, disabled, extraction, and save failures.
 - User-facing runtime state should use explicit readiness and recovery states, not vague fallback copy.
+- Live E2E and training scoring must reject incomplete final text. Dangling endings such as `an`, `a`, `the`, `with`, `because`, and `you do not need an` cannot pass; synthesize from trusted tool observations only when the observation supports the answer.
+- Missing required tool arguments must clarify or be scored as clarification, not generic safe failure coverage evidence. For example, `files.read` without a filename/path asks `Which file should I read?`.
+- Before model-backed training scenarios, respect runtime budget and CPU watchdog degradation. If degradation is known before generation, emit a single non-actionable runtime-preflight result with `trainingSignal=false`.
 
 ## Documentation Rules
 

@@ -24,6 +24,8 @@ Keep these files aligned when validation requirements change:
 
 Validation summaries should say what actually ran, what passed, what failed, and what was skipped. If `python` is unavailable and `python3` was used, record both facts.
 
+Live E2E validation notes must distinguish actionable failures from non-actionable runtime-preflight quarantine. Do not document truncated final text, generic safe failure text, or missing-argument safe failure text as a pass; record the clarification, trusted-observation repair, or hygiene failure that actually occurred.
+
 Release/upload summaries must distinguish archive/export success from App Store Connect acceptance. Do not document a submission as complete unless the upload output includes `UPLOAD SUCCEEDED with no errors` and a `Delivery UUID`; `altool` validation errors in the log mean the upload failed even when a wrapper script continues.
 
 ## Documentation Checks
