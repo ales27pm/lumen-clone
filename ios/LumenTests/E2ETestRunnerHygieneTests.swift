@@ -795,6 +795,51 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func liveRuntimeReadinessBarrierCatchesCPUWatchdogAfterWait() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-scheduler-agent",
+            title: "Training trigger",
+            kind: .training,
+            prompt: "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            expectedIntent: .trigger,
+            requiredAllowedToolIDs: ["trigger.create"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["trigger"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let probe = CPUWatchdogProbeBox(degradeAfterCalls: 1)
+        await MainActor.run {
+            ResourceBudgetGate.setDiagnosticSnapshotOverride(.init(
+                scenePhase: .background,
+                lowPowerModeEnabled: false,
+                thermalState: .nominal,
+                recentMemoryWarningCount: 0,
+                lastMemoryWarningAt: nil
+            ))
+        }
+
+        let outcome = await E2ETestRunner.$debugCPUWatchdogDegradedProbe.withValue({ _ in
+            probe.isDegraded()
+        }) {
+            await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
+                scenario,
+                maxWaitNanoseconds: 10_000_000,
+                pollNanoseconds: 1_000_000
+            )
+        }
+        await MainActor.run {
+            ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+        }
+
+        #expect(outcome.denialReason == "live-e2e.pre-scenario: cpu-watchdog-degraded")
+        #expect(outcome.events.contains { $0.phase == "live-runtime-preflight-wait" })
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func passedResultsWithRuntimeWordsAreNotNonActionablePreflight() {
         let result = E2ETestResult(
             id: UUID(),
@@ -1516,6 +1561,75 @@ struct E2ETestRunnerHygieneTests {
         #expect(outlookMetadata["actionable"] == "false")
         #expect(outlookMetadata["trainingSignal"] == "false")
         #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: outlookMetadata) == "Runtime infrastructure unavailable: Outlook configuration unavailable.")
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func nonActionableInfrastructureSkipsEvalHintRewrite() async {
+        #if DEBUG
+        let ragScenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "RAG",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let ragFinal = "RAG retrieval is unavailable right now. RAG storage unavailable."
+        let ragMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: ragScenario,
+            finalText: ragFinal,
+            failures: [],
+            events: []
+        )
+        let ragOutcome = await E2ETestRunner.finalHintRewriteOutcomeForTests(
+            scenario: ragScenario,
+            routing: IntentRoutingDecision(intent: .rag, allowedToolIDs: ["rag.search"], requiresClarification: false, clarificationPrompt: nil),
+            originalFinal: ragFinal,
+            hasAcceptedModelEvidence: true,
+            nonActionableMetadata: ragMetadata
+        )
+        #expect(ragOutcome.finalText == ragFinal)
+        #expect(ragOutcome.missingHints.isEmpty)
+        #expect(!ragOutcome.rewriteAttempted)
+        #expect(!ragOutcome.finalText.contains("Source:"))
+        #expect(!ragOutcome.finalText.contains("[1]"))
+        #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests(ragFinal.lowercased()))
+
+        let triggerScenario = E2ETestScenario(
+            id: "training-scheduler-agent",
+            title: "Trigger",
+            kind: .training,
+            prompt: "Schedule a trigger to summarize reminders tonight and confirm what will run.",
+            expectedIntent: .trigger,
+            requiredAllowedToolIDs: ["trigger.create"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["trigger"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let triggerFinal = "I couldn't complete the structured agent turn because agent-json produced no JSON output. Reason: cpu-watchdog-degraded."
+        let triggerMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: triggerScenario,
+            finalText: triggerFinal,
+            failures: [],
+            events: []
+        )
+        let triggerOutcome = await E2ETestRunner.finalHintRewriteOutcomeForTests(
+            scenario: triggerScenario,
+            routing: IntentRoutingDecision(intent: .trigger, allowedToolIDs: ["trigger.create"], requiresClarification: false, clarificationPrompt: nil),
+            originalFinal: triggerFinal,
+            hasAcceptedModelEvidence: true,
+            nonActionableMetadata: triggerMetadata
+        )
+        #expect(triggerOutcome.finalText == triggerFinal)
+        #expect(triggerOutcome.missingHints.isEmpty)
+        #expect(!triggerOutcome.rewriteAttempted)
         #else
         #expect(true)
         #endif
@@ -2321,6 +2435,23 @@ struct E2ETestRunnerHygieneTests {
         #else
         #expect(true)
         #endif
+    }
+}
+
+private final class CPUWatchdogProbeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private let degradeAfterCalls: Int
+
+    init(degradeAfterCalls: Int) {
+        self.degradeAfterCalls = degradeAfterCalls
+    }
+
+    func isDegraded() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        calls += 1
+        return calls > degradeAfterCalls
     }
 }
 

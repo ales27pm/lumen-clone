@@ -33,7 +33,9 @@ enum MemoryTools {
     static func ragSearch(query: String, limit: Int) async -> String {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return "Need a search query." }
-        guard let container = SharedContainer.shared else { return "RAG store unavailable." }
+        guard let container = SharedContainer.shared else {
+            return "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+        }
         let ctx = ModelContext(container)
         let expandedQuery = expandRAGQueryIfNeeded(trimmed)
         let retrieval = await RAGEngine().retrieveWithDiagnostics(query: expandedQuery, limit: limit, context: ctx)
@@ -72,7 +74,9 @@ enum MemoryTools {
     }
 
     static func ragIndexFiles() async -> String {
-        guard let container = SharedContainer.shared else { return "Store unavailable." }
+        guard let container = SharedContainer.shared else {
+            return "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+        }
         let ctx = ModelContext(container)
         let embeddingReady = await RAGStore.embeddingRuntimeAvailable()
         guard embeddingReady else {
@@ -83,7 +87,9 @@ enum MemoryTools {
     }
 
     static func ragIndexPhotos(months: Int) async -> String {
-        guard let container = SharedContainer.shared else { return "Store unavailable." }
+        guard let container = SharedContainer.shared else {
+            return "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+        }
         let ctx = ModelContext(container)
         let embeddingReady = await RAGStore.embeddingRuntimeAvailable()
         guard embeddingReady else {

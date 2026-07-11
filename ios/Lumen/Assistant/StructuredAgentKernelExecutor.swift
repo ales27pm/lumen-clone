@@ -462,8 +462,14 @@ struct StructuredAgentKernelExecutor {
         let runtimePreflight = await ExecutorRuntimePreflight.checkReadiness(
             allowsLoadedMemoryPressureContinuation: request.options.allowDegradedMode
         )
+        var preGenerationDenialReason: String?
         if !runtimePreflight.passed, forcedParseError == nil {
             forcedParseError = .empty
+            preGenerationDenialReason = runtimePreflight.reason
+        }
+        if CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration), forcedParseError == nil {
+            forcedParseError = .empty
+            preGenerationDenialReason = "cpu-watchdog-degraded"
         }
 
         var raw = ""
@@ -494,6 +500,7 @@ struct StructuredAgentKernelExecutor {
         let payload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: genReq.id)
         let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let emptyReason = payload?.emptyOutputReason
+            ?? (trimmedRaw.isEmpty ? preGenerationDenialReason : nil)
             ?? (trimmedRaw.isEmpty ? runtimePreflight.reason : nil)
             ?? (trimmedRaw.isEmpty ? Self.agentJSONEmptyStreamReason(streamStarted: streamStarted, textChunkCount: textChunkCount, finalChunkReceived: finalChunkReceived, taskCancelled: Task.isCancelled, maxTokensEffective: genReq.maxTokens) : nil)
         return StructuredGenerationResult(

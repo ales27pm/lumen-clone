@@ -4,6 +4,35 @@ import SwiftUI
 @testable import Lumen
 
 final class RAGSearchToolTests: XCTestCase {
+    @MainActor func testMissingModelContextReportsSwiftDataDiagnostic() async {
+        let tool = RAGSearchTool()
+        let inv = ToolInvocation(
+            id: UUID(),
+            toolID: "rag.search.secure",
+            arguments: ["query": "architecture notes", "limit": "3"],
+            source: .system,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+
+        let res = await tool.execute(
+            invocation: inv,
+            context: .init(
+                isForeground: true,
+                appState: nil,
+                modelContext: nil,
+                permissionRegistry: .shared,
+                metricsStore: .shared
+            )
+        )
+
+        XCTAssertEqual(res.status, .unavailable)
+        XCTAssertEqual(res.errorCode, "swiftdata_model_context_unavailable")
+        XCTAssertEqual(res.structuredPayload?["diagnostic"], "swiftdata_model_context_unavailable")
+        XCTAssertTrue(res.modelText.contains("RAG storage unavailable"))
+    }
+
     @MainActor func testLexicalFallbackAndDedupe() async {
         ResourceBudgetGate.testSnapshotOverride = .init(
             scenePhase: .background,

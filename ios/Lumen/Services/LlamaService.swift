@@ -1225,6 +1225,13 @@ final actor AppLlamaService {
         }
     }
 
+    nonisolated private static func checkCPUWatchdogGenerationBudget(_ cancellationToken: LlamaGenerationCancellationToken) throws {
+        guard !CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) else {
+            cancellationToken.cancel(reason: "cpu-watchdog-degraded")
+            throw CancellationError()
+        }
+    }
+
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
         return AsyncStream<GenerationToken>(bufferingPolicy: .unbounded) { (continuation: AsyncStream<GenerationToken>.Continuation) in
             let cancellationToken = LlamaGenerationCancellationToken()
@@ -1338,6 +1345,7 @@ final actor AppLlamaService {
                         cancellationToken.cancel(reason: "resource-budget-denied-before-prompt-eval")
                         throw CancellationError()
                     }
+                    try Self.checkCPUWatchdogGenerationBudget(cancellationToken)
                     let readyMetrics = try await SlotModelRuntimeCoordinator.shared.ensureReadyWithMetrics(
                         slot: slot,
                         allowsLoadedMemoryPressureContinuation: requestForGeneration.allowsMemoryPressureContinuation
@@ -1384,6 +1392,7 @@ final actor AppLlamaService {
                         cancellationToken.cancel(reason: "resource-budget-denied-after-prompt-build")
                         throw CancellationError()
                     }
+                    try Self.checkCPUWatchdogGenerationBudget(cancellationToken)
                     cancellationStateBeforeStream = cancellationToken.isCancelled
                         ? (cancellationToken.reason ?? "cancelled")
                         : (Task.isCancelled ? "taskCancelled" : "notCancelled")
