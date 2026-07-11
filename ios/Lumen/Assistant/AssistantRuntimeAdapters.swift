@@ -60,7 +60,16 @@ extension AppLlamaService: LlamaRuntimeStreamingService {
 
     func structuredPromptPreflight(_ request: GenerateRequest, slot: LumenModelSlot) async -> LlamaStructuredPromptPreflightSnapshot {
         let contextSize = await contextSizeForDiagnostics(slot: slot)
-        let prompt = buildMessagesForDiagnostics(req: request, contextSize: contextSize, slot: slot)
+        var prompt = buildMessagesForDiagnostics(req: request, contextSize: contextSize, slot: slot)
+        if prompt.latencySelection.latencyClass == .fastInteractive,
+           prompt.finalPromptChars > PromptBudgetConstants.fastInteractiveTotalChars {
+            prompt = buildMessagesForDiagnostics(
+                req: request,
+                contextSize: contextSize,
+                slot: slot,
+                forceFastBudget: true
+            )
+        }
         return LlamaStructuredPromptPreflightSnapshot(
             contextSize: contextSize,
             finalPromptChars: prompt.finalPromptChars,

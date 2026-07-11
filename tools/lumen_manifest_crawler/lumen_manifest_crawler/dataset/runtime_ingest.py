@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
     _final_artifact_diagnosis_for_scenario,
     _is_architecture_or_finalizer_failure,
+    _is_model_backed_trace,
     _is_runtime_environment_failure,
     flatten_e2e_json_report,
 )
@@ -372,8 +373,10 @@ def _scenario_evidence_text(scenario: dict[str, Any]) -> str:
 
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?", schema_version)
+    supported_schema = bool(match and tuple(int(part) for part in match.groups()) >= (1, 0, 0))
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0", "2.0.0"}
+        supported_schema
         and "exportPolicy" in value
         and any(
             key in value
@@ -727,14 +730,18 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
         for result in legacy_results
         if str(result.get("evidenceMode") or "modelBackedRequired") != "policyFirstAllowed"
     )
-    legacy_policy_required = len(legacy_results) - legacy_model_required
     legacy_model_coverage = max(0, coverage_count - covered_strong_model)
     missing_legacy_model = max(0, legacy_model_required - legacy_model_coverage)
-    legacy_policy_coverage = max(
-        deterministic_count,
-        max(0, correlated_count - coverage_count),
+    missing_legacy_policy = sum(
+        1
+        for result in legacy_results
+        if str(result.get("evidenceMode") or "modelBackedRequired") == "policyFirstAllowed"
+        and not any(
+            _package_trace_is_model_evidence(trace) or _package_trace_is_policy_first_evidence(trace)
+            for trace in traces
+            if _package_trace_matches_result(trace, result)
+        )
     )
-    missing_legacy_policy = max(0, legacy_policy_required - legacy_policy_coverage)
     missing_evidence_count = missing_strong + missing_legacy_model + missing_legacy_policy
     if missing_evidence_count <= 0:
         return None
@@ -794,8 +801,7 @@ def _package_trace_matches_result(trace: dict[str, Any], result: dict[str, Any])
 
 def _package_trace_is_model_evidence(trace: dict[str, Any]) -> bool:
     return (
-        str(trace.get("event") or "") == "modelTurn"
-        and str(trace.get("runtimePath") or "") != "deterministic-compatibility"
+        _is_model_backed_trace(trace)
         and not trace.get("parseError")
         and bool(str(trace.get("rawOutputPrefix") or "").strip())
     )

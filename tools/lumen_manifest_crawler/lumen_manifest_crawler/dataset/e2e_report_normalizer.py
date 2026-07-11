@@ -430,6 +430,8 @@ def _scenario_model_evidence_requires_failure(scenario: dict[str, Any], diagnosi
 
 
 def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis: dict[str, Any] | None = None) -> bool:
+    if not _scenario_requires_runtime_evidence(scenario):
+        return False
     final = str(scenario.get("final") or scenario.get("finalText") or "").casefold()
     failures = str(scenario.get("failures") or "").casefold()
     events = scenario.get("events") if isinstance(scenario.get("events"), list) else []
@@ -692,7 +694,6 @@ def _diagnosis_from_model_evidence_events(scenario: dict[str, Any]) -> dict[str,
             "no correlated agentbehaviortrace" in lowered
             or "missing fresh agentbehaviortrace" in lowered
             or "did not record model-backed" in lowered
-            or "did not record model-backed or policy-first" in lowered
         ):
             return {
                 "rootCauseCategory": "no_correlated_model_turn",
@@ -869,7 +870,50 @@ def _scenario_has_explicit_correlation(scenario: dict[str, Any]) -> bool:
 
 
 def _is_model_backed_trace(trace: dict[str, Any]) -> bool:
-    return str(trace.get("event") or "") == "modelTurn" and str(trace.get("runtimePath") or "") != "deterministic-compatibility"
+    if str(trace.get("event") or "") != "modelTurn":
+        return False
+    runtime_path = str(trace.get("runtimePath") or "")
+    if runtime_path == "deterministic-compatibility":
+        return False
+    if not str(trace.get("stage") or "").startswith("agent-json"):
+        return True
+    if (
+        runtime_path != "agent-model"
+        or trace.get("streamStarted") is not True
+        or trace.get("modelLoaded") is not True
+        or trace.get("firstChunkReceived") is not True
+        or _trace_positive_int(trace.get("textChunkCount")) is None
+        or trace.get("finalChunkReceived") is not True
+    ):
+        return False
+    selected_tool_id = str(trace.get("selectedToolID") or "").strip()
+    if selected_tool_id:
+        allowed_tool_ids = {
+            str(tool_id).strip()
+            for tool_id in trace.get("allowedToolIDs") or []
+            if str(tool_id).strip()
+        }
+        return trace.get("emittedFinalInActionTurn") is not True and selected_tool_id in allowed_tool_ids
+    if trace.get("emittedFinalInActionTurn") is not True or trace.get("finalizerAccepted") is not True:
+        return False
+    return not _trace_intent_requires_tool(trace) or _trace_positive_int(trace.get("successfulObservationCount")) is not None
+
+
+def _trace_intent_requires_tool(trace: dict[str, Any]) -> bool:
+    intent = str(trace.get("intent") or "").casefold()
+    if intent:
+        return intent not in {"chat", "unknown"}
+    return bool(trace.get("allowedToolIDs"))
+
+
+def _trace_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _trace_summary(trace: dict[str, Any], *, matched_by: str, raw_output_empty: bool) -> dict[str, Any]:

@@ -823,16 +823,22 @@ struct AgentGroundingRegressionTests {
             turnID: turnID,
             intent: "rag",
             promptPrefix: "What evidence supports your claim?",
-            rawOutputPrefix: #"{"final":"Live E2E evidence."}"#,
-            selectedToolID: nil,
+            rawOutputPrefix: #"{"action":{"tool":"rag.search","args":{"query":"evidence"}}}"#,
+            selectedToolID: "rag.search",
             toolArguments: [:],
-            allowedToolIDs: [],
+            allowedToolIDs: ["rag.search"],
             requiresApproval: nil,
             approvalMode: nil,
             parseError: nil,
             emittedFinalInActionTurn: false,
             outputTokenCount: 8,
-            runtimePath: "agent-model"
+            runtimePath: "agent-model",
+            streamStarted: true,
+            modelLoaded: true,
+            firstChunkReceived: true,
+            textChunkCount: 1,
+            finalChunkReceived: true,
+            streamTerminationReason: "stop"
         ))
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
             id: UUID(),
@@ -940,16 +946,22 @@ struct AgentGroundingRegressionTests {
                 turnID: coveredTurnID,
                 intent: "rag",
                 promptPrefix: "What evidence supports your claim?",
-                rawOutputPrefix: #"{"final":"Live E2E evidence."}"#,
-                selectedToolID: nil,
+                rawOutputPrefix: #"{"action":{"tool":"rag.search","args":{"query":"evidence"}}}"#,
+                selectedToolID: "rag.search",
                 toolArguments: [:],
-                allowedToolIDs: [],
+                allowedToolIDs: ["rag.search"],
                 requiresApproval: nil,
                 approvalMode: nil,
                 parseError: nil,
                 emittedFinalInActionTurn: false,
                 outputTokenCount: 8,
-                runtimePath: "agent-model"
+                runtimePath: "agent-model",
+                streamStarted: true,
+                modelLoaded: true,
+                firstChunkReceived: true,
+                textChunkCount: 1,
+                finalChunkReceived: true,
+                streamTerminationReason: "stop"
             ))
         }
 
@@ -1180,6 +1192,172 @@ struct AgentGroundingRegressionTests {
         #expect(!json.contains(agentRunID.uuidString))
         #expect(!json.contains(conversationID.uuidString))
         #expect(!json.contains(turnID.uuidString))
+    }
+
+    @Test func liveE2EExportDoesNotCreditScenarioOnlyStaleTrace() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_090)
+        let scenarioID = "policy-first-stale-scenario"
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt.addingTimeInterval(-60),
+            event: .toolAction,
+            slot: "policy",
+            stage: "deterministic-compatibility-stale-tool",
+            scenarioID: scenarioID,
+            intent: "weather",
+            promptPrefix: "weather",
+            rawOutputPrefix: "weather(validated)",
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            runtimePath: "deterministic-compatibility"
+        ))
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: scenarioID,
+            kind: "toolCoverage",
+            title: "Unidentified current run",
+            prompt: "What's the weather?",
+            expectedIntent: "weather",
+            actualIntent: "weather",
+            requiresAgentRun: true,
+            evidenceMode: E2EEvidenceMode.policyFirstAllowed.rawValue,
+            passed: false,
+            failures: ["Current run did not record correlated evidence."],
+            finalText: "Weather unavailable.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            rawFinalPrefix: "Weather unavailable.",
+            sanitizedFinalPrefix: "Weather unavailable.",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: []
+        )
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            passed: 0,
+            failed: 1,
+            results: [result]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+
+        #expect(package.liveE2EReport?.correlatedTraceCount == 0)
+        #expect(package.liveE2EReport?.deterministicCompatibilityTraceCount == 0)
+        #expect(package.liveE2EReport?.payload.results.first?.correlationToken == nil)
+        #expect(package.recentTraces.first?.correlationToken == nil)
+        #expect(package.exportQualityFailures?.contains(where: {
+            $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
+        }) == true)
+    }
+
+    @Test func liveE2EExportRejectsStructuredFinalWithoutExplicitRuntimeAndFinalizerProof() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_095)
+        let scenarioID = "model-final-missing-proof"
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt,
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-1",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: "weather",
+            promptPrefix: "weather",
+            rawOutputPrefix: #"{"final":"It is clear."}"#,
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: true,
+            runtimePath: "agent-model"
+        ))
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: scenarioID,
+            kind: "toolCoverage",
+            title: "Weather final missing proof",
+            prompt: "What's the weather?",
+            expectedIntent: "weather",
+            actualIntent: "weather",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            requiresAgentRun: true,
+            evidenceMode: E2EEvidenceMode.modelBackedRequired.rawValue,
+            passed: true,
+            failures: [],
+            finalText: "It is clear.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            rawFinalPrefix: "It is clear.",
+            sanitizedFinalPrefix: "It is clear.",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: []
+        )
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            passed: 1,
+            failed: 0,
+            results: [result]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+
+        #expect(package.liveE2EReport?.correlatedTraceCount == 1)
+        #expect(package.liveE2EReport?.modelBackedCorrelatedTraceCount == 0)
+        #expect(package.liveE2EReport?.modelBackedCorrelatedScenarioCount == 0)
+        #expect(package.liveE2EReport?.payload.results.first?.correlationToken?.hasPrefix("corr_v1_") == true)
+        #expect(package.exportQualityFailures?.contains(where: {
+            $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
+        }) == true)
     }
 
     @Test func liveE2EExportFlagsMissingModelBackedTraceCoverage() throws {

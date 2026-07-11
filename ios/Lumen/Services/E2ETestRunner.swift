@@ -2103,13 +2103,26 @@ nonisolated enum E2ETestRunner {
                     reasons.append("parseError=\(parseError)")
                 }
             }
+            if isPrimaryAgentJSONTrace(rejectedModelTrace) {
+                if rejectedModelTrace.streamStarted != true { reasons.append("streamStarted was not true") }
+                if rejectedModelTrace.modelLoaded != true { reasons.append("modelLoaded was not true") }
+                if rejectedModelTrace.firstChunkReceived != true { reasons.append("firstChunkReceived was not true") }
+                if (rejectedModelTrace.textChunkCount ?? 0) <= 0 { reasons.append("textChunkCount was not positive") }
+                if rejectedModelTrace.finalChunkReceived != true { reasons.append("finalChunkReceived was not true") }
+                if rejectedModelTrace.emittedFinalInActionTurn {
+                    if rejectedModelTrace.finalizerAccepted != true { reasons.append("finalizerAccepted was not true") }
+                    if traceIntentRequiresTool(rejectedModelTrace), (rejectedModelTrace.successfulObservationCount ?? 0) <= 0 {
+                        reasons.append("successfulObservationCount was not positive for a tool-backed final")
+                    }
+                }
+            }
             if reasons.isEmpty {
                 reasons.append("trace did not satisfy model-backed evidence policy")
             }
             let subject = isPrimaryAgentJSONTrace(rejectedModelTrace)
                 ? "found primary agent-json modelTurn"
                 : "found AgentBehaviorTrace modelTurn"
-            return "\(subject) but \(reasons.joined(separator: "; ")); stage=\(rejectedModelTrace.stage); runtimePath=\(runtimePath); parseError=\(parseError); outputTokens=\(rejectedModelTrace.outputTokenCount.map(String.init) ?? "unknown"); streamStarted=\(rejectedModelTrace.streamStartedText); firstChunkReceived=\(rejectedModelTrace.firstChunkReceivedText); textChunkCount=\(rejectedModelTrace.textChunkCount.map(String.init) ?? "unknown"); finalChunkReceived=\(rejectedModelTrace.finalChunkReceivedText); streamTerminationReason=\(rejectedModelTrace.streamTerminationReason ?? "unknown")"
+            return "\(subject) but \(reasons.joined(separator: "; ")); stage=\(rejectedModelTrace.stage); runtimePath=\(runtimePath); parseError=\(parseError); outputTokens=\(rejectedModelTrace.outputTokenCount.map(String.init) ?? "unknown"); streamStarted=\(rejectedModelTrace.streamStartedText); firstChunkReceived=\(rejectedModelTrace.firstChunkReceivedText); textChunkCount=\(rejectedModelTrace.textChunkCount.map(String.init) ?? "unknown"); finalChunkReceived=\(rejectedModelTrace.finalChunkReceivedText); streamTerminationReason=\(rejectedModelTrace.streamTerminationReason ?? "unknown"); successfulObservationCount=\(rejectedModelTrace.successfulObservationCount.map(String.init) ?? "unknown"); finalizerAccepted=\(rejectedModelTrace.finalizerAccepted.map(String.init) ?? "unknown")"
         }
 
         if let policyTrace = matchingTraces.first(where: { $0.runtimePath == "deterministic-compatibility" }) {
@@ -2166,16 +2179,39 @@ nonisolated enum E2ETestRunner {
         }
         if requiresPrimaryAgentJSON {
             guard isPrimaryAgentJSONTrace(trace) else { return false }
+            guard trace.streamStarted == true,
+                  trace.modelLoaded == true,
+                  trace.firstChunkReceived == true,
+                  (trace.textChunkCount ?? 0) > 0,
+                  trace.finalChunkReceived == true else {
+                return false
+            }
             if let selectedToolID = trace.selectedToolID, !selectedToolID.isEmpty {
                 let canonicalTool = ToolRouteGuard.canonicalToolID(selectedToolID)
                 return trace.allowedToolIDs.contains(canonicalTool)
                     && !trace.emittedFinalInActionTurn
             }
-            return trace.emittedFinalInActionTurn
-                && trace.finalChunkReceived != false
-                && trace.finalizerAccepted != false
+            guard trace.emittedFinalInActionTurn,
+                  trace.finalizerAccepted == true else {
+                return false
+            }
+            return !traceIntentRequiresTool(trace)
+                || (trace.successfulObservationCount ?? 0) > 0
         }
         return true
+    }
+
+    private nonisolated static func traceIntentRequiresTool(_ trace: AgentBehaviorTrace) -> Bool {
+        guard let rawIntent = trace.intent,
+              let intent = UserIntent(rawValue: rawIntent) else {
+            return !trace.allowedToolIDs.isEmpty
+        }
+        return IntentRouter.intentRequiresTool(IntentRoutingDecision(
+            intent: intent,
+            allowedToolIDs: Set(trace.allowedToolIDs),
+            requiresClarification: false,
+            clarificationPrompt: nil
+        ))
     }
 
     /// Determines if an agent behavior trace qualifies as a policy-first execution trace.
