@@ -134,6 +134,11 @@ nonisolated enum AgentKernelSource: String, Codable, Sendable, Equatable {
     case benchmark
 }
 
+nonisolated enum AgentStructuredMode: String, Codable, Sendable, Equatable {
+    case automatic
+    case requiredAgentJSON
+}
+
 nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
     let allowHeavyRuntime: Bool
     let allowDegradedMode: Bool
@@ -146,6 +151,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
     let repetitionPenalty: Double
     let maxTokens: Int
     let forceModelBackedToolPlanning: Bool
+    let structuredMode: AgentStructuredMode
+    let structuredAllowedToolIDs: [String]
 
     init(
         allowHeavyRuntime: Bool,
@@ -158,7 +165,9 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         topP: Double = 0.9,
         repetitionPenalty: Double = 1.1,
         maxTokens: Int = 1024,
-        forceModelBackedToolPlanning: Bool = false
+        forceModelBackedToolPlanning: Bool = false,
+        structuredMode: AgentStructuredMode = .automatic,
+        structuredAllowedToolIDs: [String] = []
     ) {
         self.allowHeavyRuntime = allowHeavyRuntime
         self.allowDegradedMode = allowDegradedMode
@@ -171,6 +180,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         self.repetitionPenalty = min(max(repetitionPenalty, 0.1), 3.0)
         self.maxTokens = max(1, maxTokens)
         self.forceModelBackedToolPlanning = forceModelBackedToolPlanning
+        self.structuredMode = structuredMode
+        self.structuredAllowedToolIDs = Array(Set(structuredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID))).sorted()
     }
 
     init(from decoder: Decoder) throws {
@@ -186,7 +197,9 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
             topP: try container.decodeIfPresent(Double.self, forKey: .topP) ?? 0.9,
             repetitionPenalty: try container.decodeIfPresent(Double.self, forKey: .repetitionPenalty) ?? 1.1,
             maxTokens: try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? 1024,
-            forceModelBackedToolPlanning: try container.decodeIfPresent(Bool.self, forKey: .forceModelBackedToolPlanning) ?? false
+            forceModelBackedToolPlanning: try container.decodeIfPresent(Bool.self, forKey: .forceModelBackedToolPlanning) ?? false,
+            structuredMode: try container.decodeIfPresent(AgentStructuredMode.self, forKey: .structuredMode) ?? .automatic,
+            structuredAllowedToolIDs: try container.decodeIfPresent([String].self, forKey: .structuredAllowedToolIDs) ?? []
         )
     }
 
@@ -202,6 +215,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         case repetitionPenalty
         case maxTokens
         case forceModelBackedToolPlanning
+        case structuredMode
+        case structuredAllowedToolIDs
     }
 
     static let chat = AgentKernelOptions(
