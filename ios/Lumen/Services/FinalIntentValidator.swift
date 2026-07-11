@@ -180,7 +180,16 @@ nonisolated enum FinalIntentValidator {
         case .motion:
             return containsAny(lower, ["motion activity:", "no motion data", "motion permission", "motion activity is unavailable"])
         case .memory:
-            return containsAny(lower, ["saved:", "no matching memories", "memory unavailable", "user's name", "remembered"])
+            return containsAny(lower, [
+                "saved:",
+                "memory recall:",
+                "i remember that",
+                "remember that",
+                "no matching memories",
+                "memory unavailable",
+                "user's name",
+                "remembered"
+            ])
         case .outlook:
             return containsAny(lower, [
                 "outlook is not signed in", "missing outlook message context", "outlook tool failed",

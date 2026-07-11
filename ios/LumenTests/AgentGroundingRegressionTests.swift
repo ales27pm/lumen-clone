@@ -458,6 +458,45 @@ struct AgentGroundingRegressionTests {
         #expect(maps?.lowercased().contains("maps search results") == true)
         #expect(maps?.lowercased().contains("tim hortons") == true)
 
+        let memory = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: "- [E7A33820] I prefer concise bullet points | kind=fact | score=0.00 | source=agent",
+            originalPrompt: "What do you remember about my response style preference?"
+        )
+        #expect(memory == "I remember that you prefer concise bullet points.")
+        #expect(memory?.contains("E7A33820") == false)
+        #expect(memory?.contains("score=") == false)
+
+        let memoryUnavailable = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: "Memory unavailable. Diagnostic: swiftdata_shared_container_unavailable.",
+            originalPrompt: "What do you remember?"
+        )
+        #expect(memoryUnavailable == "Memory unavailable.")
+        #expect(memoryUnavailable?.lowercased().contains("diagnostic") == false)
+
+        let multiFactMemory = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: """
+            - [A1] I prefer concise bullet points | kind=fact | score=0.90 | source=agent
+            - [A2] User's name is Alexis | kind=fact | score=0.88 | source=agent
+            """,
+            originalPrompt: "What do you remember?"
+        )
+        #expect(multiFactMemory == "I remember that you prefer concise bullet points; your name is Alexis.")
+
+        let negatedPreference = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: "- [A1] I do not prefer verbose answers | kind=fact | score=0.00 | source=agent",
+            originalPrompt: "What do you remember about my response style?"
+        )
+        #expect(negatedPreference == "I remember that I do not prefer verbose answers.")
+        #expect(negatedPreference?.contains("you prefer verbose answers") == false)
+
         let ragMiss = ToolObservationFinalizer.immediateFinalIfSafe(
             intent: .rag,
             toolID: "rag.search",
@@ -523,6 +562,34 @@ struct AgentGroundingRegressionTests {
         )
         #expect(reminders?.lowercased().contains("reminders") == true)
         #expect(reminders?.lowercased().contains("buy foil") == true)
+    }
+
+    @Test func nativeKernelPolicyFirstContinuesMapsSearchAfterDegradedLocation() {
+        let routing = IntentRoutingDecision(
+            intent: .maps,
+            allowedToolIDs: ["location.current", "maps.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        #expect(AssistantKernel.shouldContinueNativeToolChainAfterNonSuccess(
+            after: "Position snapshot is disabled in this build.",
+            currentToolID: "location.current",
+            nextToolID: "maps.search",
+            routing: routing
+        ))
+        #expect(AssistantKernel.shouldContinueNativeToolChainAfterNonSuccess(
+            after: "Location permission denied.",
+            currentToolID: "location.current",
+            nextToolID: "maps.search",
+            routing: routing
+        ))
+        #expect(!AssistantKernel.shouldContinueNativeToolChainAfterNonSuccess(
+            after: "Position snapshot is disabled in this build.",
+            currentToolID: "location.current",
+            nextToolID: nil,
+            routing: routing
+        ))
     }
 
     @Test func agentServiceRepairsMemoryRecallBeforeSaveInvariant() {

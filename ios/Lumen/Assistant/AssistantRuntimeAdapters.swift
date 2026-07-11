@@ -18,7 +18,9 @@ enum LocalRuntimeError: LocalizedError, Sendable, Equatable {
 
 protocol LlamaRuntimeStreamingService: Sendable {
     var isChatLoaded: Bool { get async }
+    var isEmbedLoaded: Bool { get async }
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) async -> AsyncStream<GenerationToken>
+    func embed(_ text: String) async throws -> [Double]
 }
 
 extension AppLlamaService: LlamaRuntimeStreamingService {}
@@ -52,9 +54,11 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
         foundation: FoundationModelsRuntimeAdapter = .init(),
         llama: LlamaRuntimeAdapter = .live(),
         fallback: DeterministicFallbackRuntime = .init(),
-        coreML: CoreMLRuntimeAdapter = .init(modelURL: nil)
+        coreML: CoreMLRuntimeAdapter = .init(modelURL: nil),
+        llamaEmbeddingSelectableOverride: Bool? = nil
     ) -> AssistantRuntimeCapabilityMatrix {
-        AssistantRuntimeCapabilityMatrix(rows: [
+        let llamaEmbeddingSelectable = llamaEmbeddingSelectableOverride ?? llama.hasKnownSelectableEmbeddingRuntime
+        return AssistantRuntimeCapabilityMatrix(rows: [
             AssistantRuntimeCapabilityRow(
                 kind: foundation.kind,
                 generationSupported: foundation.supportsGeneration,
@@ -68,9 +72,9 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
                 kind: llama.kind,
                 generationSupported: true,
                 generationSelectable: llama.isAvailable,
-                embeddingSupported: false,
-                embeddingSelectable: false,
-                status: llama.isAvailable ? "available" : "unavailable",
+                embeddingSupported: llama.supportsEmbeddings,
+                embeddingSelectable: llamaEmbeddingSelectable,
+                status: llama.capabilityStatus(embeddingSelectable: llamaEmbeddingSelectable),
                 unavailableReason: llama.unavailableReason
             ),
             AssistantRuntimeCapabilityRow(
@@ -92,6 +96,22 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
                 unavailableReason: coreML.unavailableReason
             )
         ])
+    }
+
+    static func currentIncludingRuntimeState(
+        foundation: FoundationModelsRuntimeAdapter = .init(),
+        llama: LlamaRuntimeAdapter = .live(),
+        fallback: DeterministicFallbackRuntime = .init(),
+        coreML: CoreMLRuntimeAdapter = .init(modelURL: nil)
+    ) async -> AssistantRuntimeCapabilityMatrix {
+        let llamaEmbeddingSelectable = await llama.isEmbeddingSelectable()
+        return current(
+            foundation: foundation,
+            llama: llama,
+            fallback: fallback,
+            coreML: coreML,
+            llamaEmbeddingSelectableOverride: llamaEmbeddingSelectable
+        )
     }
 
     func row(for kind: AssistantRuntimeKind) -> AssistantRuntimeCapabilityRow? {
@@ -153,6 +173,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     let kind: AssistantRuntimeKind = .llama
     let unavailableReason: String?
     private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
+    private let embedHandler: (@Sendable (EmbeddingRequest) async throws -> [Float])?
     private let liveService: (any LlamaRuntimeStreamingService)?
     private let liveSlot: LumenModelSlot
 
@@ -160,12 +181,22 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         generateHandler != nil || liveService != nil
     }
 
+    var supportsEmbeddings: Bool {
+        embedHandler != nil || liveService != nil
+    }
+
+    var hasKnownSelectableEmbeddingRuntime: Bool {
+        embedHandler != nil
+    }
+
     init(
         isAvailable: Bool = false,
         unavailableReason: String? = "llama text runtime is not directly wired to AssistantKernel",
-        generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil
+        generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil,
+        embedHandler: (@Sendable (EmbeddingRequest) async throws -> [Float])? = nil
     ) {
         self.generateHandler = generateHandler
+        self.embedHandler = embedHandler
         self.liveService = nil
         self.liveSlot = .mouth
         if generateHandler != nil {
@@ -179,6 +210,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
 
     private init(liveService: any LlamaRuntimeStreamingService, liveSlot: LumenModelSlot) {
         self.generateHandler = nil
+        self.embedHandler = nil
         self.liveService = liveService
         self.liveSlot = liveSlot
         self.unavailableReason = nil
@@ -230,6 +262,42 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
             throw LocalRuntimeError.unavailable("llama runtime stream failed during generation")
         }
         return final
+    }
+
+    func isEmbeddingSelectable() async -> Bool {
+        if embedHandler != nil { return true }
+        guard let liveService else { return false }
+        return await liveService.isEmbedLoaded
+    }
+
+    func embed(request: EmbeddingRequest) async throws -> [Float] {
+        if let embedHandler {
+            return try await embedHandler(request)
+        }
+        guard let liveService else {
+            throw LocalRuntimeError.unavailable("llama embedding runtime unavailable")
+        }
+        guard await liveService.isEmbedLoaded else {
+            throw LocalRuntimeError.unavailable("llama embedding runtime has no loaded embedding model")
+        }
+        let vector = try await liveService.embed(request.text)
+        guard !vector.isEmpty else {
+            throw LocalRuntimeError.unavailable("llama embedding runtime produced an empty vector")
+        }
+        return vector.map(Float.init)
+    }
+
+    func capabilityStatus(embeddingSelectable: Bool? = nil) -> String {
+        let generation = isAvailable ? "generation available" : "generation unavailable"
+        let embeddings: String
+        if embeddingSelectable ?? hasKnownSelectableEmbeddingRuntime {
+            embeddings = "embeddings available"
+        } else if supportsEmbeddings {
+            embeddings = "embeddings not loaded"
+        } else {
+            embeddings = "embeddings unavailable"
+        }
+        return "\(generation); \(embeddings)"
     }
 
     func handleMemoryPressure() async {

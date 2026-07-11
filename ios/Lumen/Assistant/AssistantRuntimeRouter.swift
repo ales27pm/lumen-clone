@@ -36,17 +36,32 @@ struct AssistantRuntimeRouter {
         let reason: String
     }
 
+    private func embeddingSelection(
+        decision: ComputeDecision,
+        llamaEmbeddingSelectable: Bool,
+        allowDiagnosticFallback: Bool
+    ) -> Selection {
+        if decision.allowHeavyRuntime, llamaEmbeddingSelectable {
+            return .init(runtime: .llama, reason: "llama embedding available")
+        }
+        if coreML.supportsEmbeddings, coreML.isAvailable {
+            return .init(runtime: .coreML, reason: "embedding uses CoreML")
+        }
+        if allowDiagnosticFallback, fallback.isAvailable {
+            return .init(runtime: .deterministicFallback, reason: coreML.unavailableReason ?? "CoreML embedding unavailable")
+        }
+        return .init(runtime: .coreML, reason: coreML.unavailableReason ?? "CoreML embedding runtime disabled")
+    }
+
     func selection(for context: AssistantTurnContext) -> Selection {
         let decision = ComputePolicy.decide(for: context)
         switch context.task {
         case .embedding, .safetyClassification:
-            if coreML.supportsEmbeddings, coreML.isAvailable {
-                return .init(runtime: .coreML, reason: "embedding uses CoreML")
-            }
-            if allowDiagnosticFallbackSelection, fallback.isAvailable {
-                return .init(runtime: .deterministicFallback, reason: coreML.unavailableReason ?? "CoreML embedding unavailable")
-            }
-            return .init(runtime: .coreML, reason: coreML.unavailableReason ?? "CoreML embedding runtime disabled")
+            return embeddingSelection(
+                decision: decision,
+                llamaEmbeddingSelectable: llama.hasKnownSelectableEmbeddingRuntime,
+                allowDiagnosticFallback: allowDiagnosticFallbackSelection
+            )
         case .backgroundTrigger, .remConsolidation:
             if decision.allowHeavyRuntime, llama.isAvailable {
                 return .init(runtime: .llama, reason: "background heavy runtime allowed")
@@ -66,6 +81,20 @@ struct AssistantRuntimeRouter {
                 return .init(runtime: .deterministicFallback, reason: decision.allowHeavyRuntime ? "no capable runtime" : (decision.denialReason ?? "heavy runtime disallowed"))
             }
             return .init(runtime: .unavailable, reason: decision.allowHeavyRuntime ? (llama.unavailableReason ?? "llama unavailable") : (decision.denialReason ?? "heavy runtime disallowed"))
+        }
+    }
+
+    func selectionIncludingRuntimeState(for context: AssistantTurnContext) async -> Selection {
+        let decision = ComputePolicy.decide(for: context)
+        switch context.task {
+        case .embedding, .safetyClassification:
+            return embeddingSelection(
+                decision: decision,
+                llamaEmbeddingSelectable: await llama.isEmbeddingSelectable(),
+                allowDiagnosticFallback: false
+            )
+        case .backgroundTrigger, .remConsolidation, .chat, .agentPlan, .toolDecision, .summarization, .memoryExtraction, .speechCommandParsing:
+            return selection(for: context)
         }
     }
 

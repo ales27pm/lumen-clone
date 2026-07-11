@@ -36,13 +36,6 @@ DOCUMENTED_COMPATIBILITY_BRIDGES = {
             "compatibility responses; remove when those paths are kernel-native"
         ),
     },
-    "ios/Lumen/Services/E2ETestRunner.swift": {
-        "AgentService.shared.run": (
-            "diagnostic live E2E bridge for strict structured agent-json evidence; "
-            "remove when AssistantKernel emits native model-backed tool-required "
-            "agent-json turns with equivalent trace correlation"
-        ),
-    },
 }
 
 
@@ -108,6 +101,17 @@ def main() -> int:
                     legacy_inventory.append(record)
             else:
                 violations.append(record)
+
+    if not args.roots:
+        streaming_path = REPO_ROOT / "ios" / "Lumen" / "Assistant" / "AssistantKernel+Streaming.swift"
+        executor_path = REPO_ROOT / "ios" / "Lumen" / "Assistant" / "StructuredAgentKernelExecutor.swift"
+        streaming = streaming_path.read_text(encoding="utf-8") if streaming_path.exists() else ""
+        if not executor_path.exists():
+            violations.append("ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift: missing Release-native structured executor")
+        if "structuredMode == .requiredAgentJSON" not in streaming or "StructuredAgentKernelExecutor" not in streaming:
+            violations.append(
+                "ios/Lumen/Assistant/AssistantKernel+Streaming.swift: AssistantKernel.run must route requiredAgentJSON to StructuredAgentKernelExecutor"
+            )
 
     if violations:
         print("Agent Kernel boundary violations detected:", file=sys.stderr)
