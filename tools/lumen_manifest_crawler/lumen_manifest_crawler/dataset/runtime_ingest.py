@@ -272,6 +272,7 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
             "agentRunID": result.get("agentRunID"),
             "conversationID": result.get("conversationID"),
             "turnID": result.get("turnID"),
+            "correlationToken": result.get("correlationToken"),
             "name": result.get("title"),
             "kind": result.get("kind"),
             "passed": result.get("passed") is True,
@@ -279,6 +280,7 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
             "intent": result.get("actualIntent") or result.get("expectedIntent"),
             "expectedIntent": result.get("expectedIntent"),
             "requiresAgentRun": result.get("requiresAgentRun") is True,
+            "evidenceMode": result.get("evidenceMode"),
             "failures": "; ".join(str(item) for item in result.get("failures", []) if item) if isinstance(result.get("failures"), list) else result.get("failures"),
             "final": result.get("finalText"),
             "events": result.get("events") or [],
@@ -371,7 +373,7 @@ def _scenario_evidence_text(scenario: dict[str, Any]) -> str:
 def _is_in_app_package(value: dict[str, Any]) -> bool:
     schema_version = str(value.get("schemaVersion") or "")
     return (
-        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0"}
+        schema_version in {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0", "2.0.0"}
         and "exportPolicy" in value
         and any(
             key in value
@@ -693,21 +695,59 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
     deterministic_count = _optional_int(live_e2e_report.get("deterministicCompatibilityTraceCount")) or 0
     payload = live_e2e_report.get("payload")
     payload = payload if isinstance(payload, dict) else {}
-    required_agent_run_scenario_count = sum(
-        1
+    evidence_required = [
+        result
         for result in _iter_dicts(payload.get("results", []) or [])
         if result.get("requiresAgentRun") is True
+        and str(result.get("evidenceMode") or "modelBackedRequired") != "routingOnly"
+    ]
+    if not evidence_required:
+        return None
+
+    traces = list(_iter_dicts(package.get("recentTraces", []) or []))
+    strongly_correlated = [result for result in evidence_required if _result_has_strong_correlation(result)]
+    legacy_results = [result for result in evidence_required if not _result_has_strong_correlation(result)]
+
+    missing_strong = 0
+    covered_strong_model = 0
+    for result in strongly_correlated:
+        correlated = [trace for trace in traces if _package_trace_matches_result(trace, result)]
+        has_model = any(_package_trace_is_model_evidence(trace) for trace in correlated)
+        if str(result.get("evidenceMode") or "modelBackedRequired") == "policyFirstAllowed":
+            has_evidence = has_model or any(_package_trace_is_policy_first_evidence(trace) for trace in correlated)
+        else:
+            has_evidence = has_model
+            if has_model:
+                covered_strong_model += 1
+        if not has_evidence:
+            missing_strong += 1
+
+    legacy_model_required = sum(
+        1
+        for result in legacy_results
+        if str(result.get("evidenceMode") or "modelBackedRequired") != "policyFirstAllowed"
     )
-    if required_agent_run_scenario_count <= 0 or coverage_count >= required_agent_run_scenario_count:
+    legacy_policy_required = len(legacy_results) - legacy_model_required
+    legacy_model_coverage = max(0, coverage_count - covered_strong_model)
+    missing_legacy_model = max(0, legacy_model_required - legacy_model_coverage)
+    legacy_policy_coverage = max(
+        deterministic_count,
+        max(0, correlated_count - coverage_count),
+    )
+    missing_legacy_policy = max(0, legacy_policy_required - legacy_policy_coverage)
+    missing_evidence_count = missing_strong + missing_legacy_model + missing_legacy_policy
+    if missing_evidence_count <= 0:
         return None
     return {
         "type": "agent_grounding_live_e2e_model_backed_trace_gap",
         "agent": "runtime",
         "expected": [
-            "Every requiresAgentRun live E2E scenario should export correlated model-backed AgentBehaviorTrace modelTurn evidence."
+            "modelBackedRequired scenarios need correlated model-backed evidence; policyFirstAllowed scenarios may use correlated model-backed or deterministic policy-first evidence; routingOnly scenarios need no runtime evidence."
         ],
         "actual": (
-            f"requiredAgentRunScenarioCount={required_agent_run_scenario_count}; "
+            f"requiredAgentRunScenarioCount={len(evidence_required)}; "
+            f"evidenceRequiredScenarioCount={len(evidence_required)}; "
+            f"missingEvidenceScenarioCount={missing_evidence_count}; "
             f"modelBackedCorrelatedTraceCount={model_backed_trace_count}; "
             f"modelBackedCorrelatedScenarioCount={coverage_count}; "
             f"correlatedTraceCount={correlated_count}; "
@@ -715,11 +755,57 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
         ),
         "scenario": "Agent Grounding > E2E Test Runner > Export TestFlight + Agent Grounding Package",
         "problem": (
-            "The embedded live E2E report does not have enough model-backed correlated traces. "
-            "Deterministic compatibility traces and uncorrelated traces are diagnostics only, not live model evidence."
+            "The embedded live E2E report is missing correlated evidence required by each scenario's evidenceMode."
         ),
         "sourceLayer": "agentGroundingRuntimeAudit.exportQuality",
     }
+
+
+def _result_has_strong_correlation(result: dict[str, Any]) -> bool:
+    return any(
+        str(result.get(key) or "").strip()
+        for key in ("correlationToken", "e2eRunID", "agentRunID", "conversationID", "turnID")
+    )
+
+
+def _package_trace_matches_result(trace: dict[str, Any], result: dict[str, Any]) -> bool:
+    expected_scenario = str(result.get("scenarioID") or "").strip()
+    actual_scenario = str(trace.get("scenarioID") or "").strip()
+    if expected_scenario and actual_scenario != expected_scenario:
+        return False
+
+    expected_token = str(result.get("correlationToken") or "").strip()
+    actual_token = str(trace.get("correlationToken") or "").strip()
+    if expected_token:
+        return bool(actual_token and actual_token == expected_token)
+    if actual_token:
+        return False
+
+    matched_identifier = False
+    for key in ("e2eRunID", "agentRunID", "conversationID", "turnID"):
+        expected = str(result.get(key) or "").strip()
+        if not expected:
+            continue
+        if str(trace.get(key) or "").strip() != expected:
+            return False
+        matched_identifier = True
+    return matched_identifier or bool(expected_scenario and actual_scenario == expected_scenario)
+
+
+def _package_trace_is_model_evidence(trace: dict[str, Any]) -> bool:
+    return (
+        str(trace.get("event") or "") == "modelTurn"
+        and str(trace.get("runtimePath") or "") != "deterministic-compatibility"
+        and not trace.get("parseError")
+        and bool(str(trace.get("rawOutputPrefix") or "").strip())
+    )
+
+
+def _package_trace_is_policy_first_evidence(trace: dict[str, Any]) -> bool:
+    return (
+        str(trace.get("runtimePath") or "") == "deterministic-compatibility"
+        and str(trace.get("event") or "") in {"toolAction", "finalAnswer"}
+    )
 
 
 def _optional_int(value: Any) -> int | None:

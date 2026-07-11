@@ -811,6 +811,11 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     }
 
     private static func mapSearchQuery(from prompt: String) -> String {
+        let lower = normalized(prompt)
+        if lower.contains("search nearby"),
+           lower.contains("ask for clarification if required details are missing") {
+            return "nearby places"
+        }
         let query = extractNearbySearchQuery(from: prompt)
             ?? extractDestination(from: prompt)
             ?? "nearby places"

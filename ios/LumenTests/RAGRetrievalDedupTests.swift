@@ -3,6 +3,27 @@ import SwiftData
 @testable import Lumen
 
 final class RAGRetrievalDedupTests: XCTestCase {
+    func testEmbeddingModelIdentifierUsesArtifactContentsNotFilename() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rag-model-identity-\(UUID().uuidString)")
+        let firstDirectory = root.appendingPathComponent("first")
+        let secondDirectory = root.appendingPathComponent("second")
+        try FileManager.default.createDirectory(at: firstDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let first = firstDirectory.appendingPathComponent("embedding.gguf")
+        let second = secondDirectory.appendingPathComponent("embedding.gguf")
+        try Data("model-a".utf8).write(to: first)
+        try Data("model-b".utf8).write(to: second)
+
+        let firstIdentifier = try RAGEmbeddingMetadata.modelIdentifier(forFileURL: first)
+        let secondIdentifier = try RAGEmbeddingMetadata.modelIdentifier(forFileURL: second)
+        XCTAssertNotEqual(firstIdentifier, secondIdentifier)
+
+        try Data("model-a".utf8).write(to: second)
+        XCTAssertEqual(firstIdentifier, try RAGEmbeddingMetadata.modelIdentifier(forFileURL: second))
+    }
+
     @MainActor func testVectorIndexExcludesUnversionedEmbeddingChunks() {
         let current = RAGChunk(content: "current", sourceType: .note, sourceName: "current", embedding: [1, 0])
         let legacy = RAGChunk(
@@ -21,6 +42,49 @@ final class RAGRetrievalDedupTests: XCTestCase {
 
         XCTAssertEqual(result.loadedCount, 1)
         XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor func testVectorIndexAppendEnforcesLoadedEmbeddingMetadata() throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let chunk = RAGChunk(content: "row", sourceType: .note, sourceName: "row", embedding: [1, 0])
+        context.insert(chunk)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:abc",
+            dimension: 2
+        )
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        _ = RAGVectorIndex.shared.ensureLoadedForTests(
+            formatVersion: metadata.formatVersion,
+            modelIdentifier: metadata.modelIdentifier,
+            dimension: metadata.dimension,
+            fetch: { [] }
+        )
+
+        XCTAssertEqual(RAGVectorIndex.shared.dimension, 2)
+        XCTAssertTrue(RAGVectorIndex.shared.append(
+            id: chunk.persistentModelID,
+            bucket: chunk.sourceType,
+            vector: chunk.embedding,
+            metadata: metadata
+        ))
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+
+        let mismatched = RAGEmbeddingIndexMetadata(
+            formatVersion: metadata.formatVersion,
+            modelIdentifier: "llama:sha256:different",
+            dimension: metadata.dimension
+        )
+        XCTAssertFalse(RAGVectorIndex.shared.append(
+            id: chunk.persistentModelID,
+            bucket: chunk.sourceType,
+            vector: chunk.embedding,
+            metadata: mismatched
+        ))
+        XCTAssertEqual(RAGVectorIndex.shared.count, 0)
+        XCTAssertEqual(RAGVectorIndex.shared.dimension, 0)
     }
 
     @MainActor func testDedupKeepsDistinctChunksWithSameExcerpt() async throws {

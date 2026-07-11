@@ -54,6 +54,11 @@ struct EmbeddingRequest: Sendable {
     }
 }
 
+nonisolated struct EmbeddingRuntimeResult: Sendable, Equatable {
+    let vector: [Double]
+    let modelIdentifier: String
+}
+
 protocol RuntimeHealthReporting: Sendable {
     var isAvailable: Bool { get }
     var unavailableReason: String? { get }

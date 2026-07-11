@@ -23,7 +23,7 @@ final class RAGChunk {
         chunkIndex: Int = 0,
         embedding: [Double] = [],
         embeddingFormatVersion: Int = SemanticEmbeddingText.formatVersion,
-        embeddingModelIdentifier: String = "assistant-kernel-embedding",
+        embeddingModelIdentifier: String = RAGEmbeddingMetadata.unidentifiedModelIdentifier,
         embeddingDimension: Int? = nil
     ) {
         self.content = content

@@ -8,7 +8,13 @@ Structured tool definitions now fail closed against `SecureToolRegistry`; struct
 
 Dataset export now enforces `modelBackedRequired`, `policyFirstAllowed`, and `routingOnly` independently. RAG chunks persist embedding format, model identifier, and dimension; legacy or mismatched vectors are excluded with `rag_reindex_required` until the user runs the existing reindex workflow. Hybrid retrieval preserves lexical-side degradation diagnostics even when semantic results remain usable.
 
-Local `build-for-testing` compilation succeeded. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
+The follow-up correlation hardening evaluates evidence against raw in-memory traces before export redaction, removes raw correlation UUIDs from both the embedded report and trace sidecars, and joins them with a per-export opaque token. Schema `2.0.0` ingestion honors those tokens, requires exact scenario correlation, and treats explicit correlation as authoritative over prompt/time or event-text fallbacks.
+
+Tool-required structured turns now stop before generation when secure filtering removes every routed tool, and any model final produced without a trusted observation is rejected even when it sounds plausible. Runtime readiness, prompt preflight, streaming, and completed traces all flow through the injected llama adapter in that order; pre-stream acquisition failures retain `streamStarted=false` and `modelLoaded=false`.
+
+Embedding vectors now travel atomically with a content-digest model identifier through the selected runtime. RAG index loads and appends enforce format, identifier, and dimension together; rejected appends reload or surface an explicit unavailable state, while identity changes and persistence failures discard staged chunks without reporting false indexed counts.
+
+Local validation on the dedicated `Lumen Focused Test iPhone` simulator passed `build-for-testing`, the complete `LumenTests` target (1,126 passed, 0 failed, 0 skipped), and an unsigned Release simulator build. The non-slow/non-E2E Python suite passed 257 tests with 31 deselected, crawler collection found 192 tests, and the integration and Release-hardening gates passed. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
 
 ## Executive Summary
 

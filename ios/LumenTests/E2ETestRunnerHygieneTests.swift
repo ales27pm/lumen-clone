@@ -2636,6 +2636,60 @@ struct E2ETestRunnerHygieneTests {
         #expect(true)
         #endif
     }
+
+    @Test func primaryStructuredEvidenceDistinguishesFinalOnlyFromActionPlusFinal() {
+        #if DEBUG
+        func trace(selectedToolID: String?, emittedFinal: Bool) -> AgentBehaviorTrace {
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "executor",
+                stage: "agent-json-step-0",
+                intent: "weather",
+                promptPrefix: "weather",
+                rawOutputPrefix: emittedFinal
+                    ? #"{"final":"It is clear."}"#
+                    : #"{"action":{"tool":"weather","args":{}}}"#,
+                selectedToolID: selectedToolID,
+                toolArguments: [:],
+                allowedToolIDs: ["weather"],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: emittedFinal,
+                outputTokenCount: 8,
+                runtimePath: "agent-model",
+                streamStarted: true,
+                modelLoaded: true,
+                firstChunkReceived: true,
+                textChunkCount: 1,
+                finalChunkReceived: true,
+                streamTerminationReason: "stop",
+                finalizerAccepted: true
+            )
+        }
+
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: "weather", emittedFinal: false),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: "weather", emittedFinal: true),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: false),
+            requiresPrimaryAgentJSON: true
+        ))
+        #else
+        #expect(true)
+        #endif
+    }
 }
 
 private final class CPUWatchdogProbeBox: @unchecked Sendable {

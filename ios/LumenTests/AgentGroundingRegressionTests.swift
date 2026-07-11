@@ -1049,6 +1049,13 @@ struct AgentGroundingRegressionTests {
         let agentRunID = UUID()
         let conversationID = UUID()
         let turnID = UUID()
+        let rawCorrelationDiagnostic = AgentTraceCorrelation(
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID
+        ).diagnosticText
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
             id: UUID(),
             createdAt: startedAt,
@@ -1060,6 +1067,29 @@ struct AgentGroundingRegressionTests {
             agentRunID: agentRunID,
             conversationID: conversationID,
             turnID: turnID,
+            intent: "weather",
+            promptPrefix: "weather",
+            rawOutputPrefix: "",
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            runtimePath: "deterministic-compatibility"
+        ))
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt.addingTimeInterval(0.1),
+            event: .toolAction,
+            slot: "policy",
+            stage: "deterministic-compatibility-tool-partial-correlation",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: nil,
             intent: "weather",
             promptPrefix: "weather",
             rawOutputPrefix: "",
@@ -1092,14 +1122,21 @@ struct AgentGroundingRegressionTests {
             missingHints: [],
             rewriteAttempted: false,
             rewriteSuccess: false,
-            events: [],
+            events: [E2ETestEvent(
+                id: UUID(),
+                createdAt: startedAt,
+                scenarioID: scenarioID,
+                phase: "correlation",
+                message: rawCorrelationDiagnostic
+            )],
             startedAt: startedAt,
             finishedAt: startedAt.addingTimeInterval(1),
             rawFinalPrefix: "Weather observation.",
             sanitizedFinalPrefix: "Weather observation.",
             rawFinalHadUnsafeLeakage: false,
             sanitizedFinalRemovedArtifacts: [],
-            outputHygieneFailures: []
+            outputHygieneFailures: [],
+            metadata: ["traceCorrelation": rawCorrelationDiagnostic]
         )
         let report = E2ETestReport(
             id: UUID(),
@@ -1122,7 +1159,27 @@ struct AgentGroundingRegressionTests {
 
         #expect(package.liveE2EReport?.modelBackedCorrelatedScenarioCount == 0)
         #expect(package.liveE2EReport?.deterministicCompatibilityTraceCount == 1)
+        #expect(package.liveE2EReport?.correlatedTraceCount == 1)
         #expect(package.exportQualityFailures?.contains(where: { $0.type == "agent_grounding_live_e2e_model_backed_trace_gap" }) != true)
+        let exportedResult = try #require(package.liveE2EReport?.payload.results.first)
+        let correlatedTrace = try #require(package.recentTraces.first { $0.stage == "deterministic-compatibility-tool" })
+        let partialTrace = try #require(package.recentTraces.first { $0.stage == "deterministic-compatibility-tool-partial-correlation" })
+        #expect(exportedResult.e2eRunID == nil)
+        #expect(exportedResult.agentRunID == nil)
+        #expect(exportedResult.conversationID == nil)
+        #expect(exportedResult.turnID == nil)
+        #expect(exportedResult.correlationToken?.hasPrefix("corr_v1_") == true)
+        #expect(exportedResult.events.first?.message.contains("[redacted-correlation]") == true)
+        #expect(exportedResult.metadata["traceCorrelation"]?.contains("[redacted-correlation]") == true)
+        #expect(correlatedTrace.correlationToken == exportedResult.correlationToken)
+        #expect(partialTrace.correlationToken == nil)
+
+        let encoded = try JSONEncoder().encode(package)
+        let json = try #require(String(data: encoded, encoding: .utf8))
+        #expect(!json.contains(e2eRunID.uuidString))
+        #expect(!json.contains(agentRunID.uuidString))
+        #expect(!json.contains(conversationID.uuidString))
+        #expect(!json.contains(turnID.uuidString))
     }
 
     @Test func liveE2EExportFlagsMissingModelBackedTraceCoverage() throws {
@@ -1214,7 +1271,7 @@ struct AgentGroundingRegressionTests {
         #expect(failure.actual?.contains("missingEvidenceScenarioCount=1") == true)
         #expect(failure.actual?.contains("modelBackedCorrelatedTraceCount=0") == true)
         #expect(failure.actual?.contains("modelBackedCorrelatedScenarioCount=0") == true)
-        #expect(failure.problem.contains("Deterministic compatibility traces") == true)
+        #expect(failure.problem.contains("evidenceMode") == true)
     }
 
     @Test func agentGroundingPackageFlagsIncompleteStructuredModelTraceProof() throws {
@@ -1532,7 +1589,7 @@ struct AgentGroundingRegressionTests {
         #expect(package.traceParseErrorCount == 0)
     }
 
-    @Test func agentGroundingPackageReparsesToolActionTracesInsteadOfTrustingParseErrorField() throws {
+    @Test func agentGroundingPackageUsesParserDerivedToolActionParseResult() throws {
         AgentBehaviorTraceRecorder.clear()
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
             id: UUID(),
@@ -1561,9 +1618,8 @@ struct AgentGroundingRegressionTests {
             traceLimit: 10
         )
 
-        #expect(package.traceParseErrorCount == 1)
-        #expect(package.behaviorAudit?.passed == false)
-        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) == true)
+        #expect(package.traceParseErrorCount == 0)
+        #expect(package.behaviorAudit?.violations.contains(where: { $0.code == "structured_action_trace_parse_error" }) != true)
     }
 
     @Test func agentGroundingPackageAcceptsCanonicalToolActionJSONTrace() throws {
@@ -2727,7 +2783,6 @@ extension AgentGroundingRegressionTests {
         let actionTrace = traces.first { trace in
             trace.event == AgentBehaviorTrace.Event.toolAction && trace.selectedToolID == "calendar.list"
         }
-        let parsedActionTrace = AgentTurnParser.parse(actionTrace?.rawOutputPrefix ?? "")
         let hasCompatibilityFinalTrace = traces.contains { trace in
             trace.event == AgentBehaviorTrace.Event.finalAnswer && trace.runtimePath == "deterministic-compatibility"
         }
@@ -2738,10 +2793,9 @@ extension AgentGroundingRegressionTests {
         #expect(actionToolIDs == ["calendar.list"])
         #expect(response.text.lowercased().contains("event"))
         #expect(hasCalendarListActionTrace)
-        #expect(actionTrace?.rawOutputPrefix.hasPrefix(#"{"action":{"#) == true)
         #expect(actionTrace?.parseError == nil)
-        #expect(parsedActionTrace.parseError == nil)
-        #expect(parsedActionTrace.action?.tool == "calendar.list")
+        #expect(actionTrace?.allowedToolIDs.contains("calendar.list") == true)
+        #expect(actionTrace?.streamTerminationReason == "validated-tool-action")
         #expect(hasCompatibilityFinalTrace)
         #expect(finalTrace?.finalizerAccepted == true)
         #expect(finalTrace?.finalizerRejectionReason == nil)

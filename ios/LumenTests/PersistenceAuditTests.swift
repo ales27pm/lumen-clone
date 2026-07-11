@@ -44,12 +44,21 @@ final class PersistenceAuditTests: XCTestCase {
         let container = try! ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
         RAGVectorIndex.shared.invalidate()
-        RAGVectorIndex.shared.ensureLoaded(context: context)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: RAGEmbeddingMetadata.unidentifiedModelIdentifier,
+            dimension: 2
+        )
+        RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
 
         let chunk = RAGChunk(content: "test", sourceType: .note, sourceName: "n", sourceRef: nil, chunkIndex: 0, embedding: [0.1, 0.2])
-        context.insert(chunk)
-        var pending: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = [
-            (id: chunk.persistentModelID, bucket: RAGSourceType.note.rawValue, vector: [0.1, 0.2])
+        var pending: [RAGStore.PendingVector] = [
+            RAGStore.PendingVector(
+                chunk: chunk,
+                bucket: RAGSourceType.note.rawValue,
+                vector: [0.1, 0.2],
+                metadata: metadata
+            )
         ]
 
         let failed = RAGStore.persistAndAppendVectors(
@@ -60,8 +69,97 @@ final class PersistenceAuditTests: XCTestCase {
             throw TestSaveError()
         }
         XCTAssertNil(failed)
-        XCTAssertEqual(pending.count, 1)
+        XCTAssertTrue(pending.isEmpty)
         XCTAssertEqual(RAGVectorIndex.shared.count, 0)
+        XCTAssertTrue((try? context.fetch(FetchDescriptor<RAGChunk>()))?.isEmpty == true)
+    }
+
+    @MainActor
+    func testRAGStorePersistAndAppendVectorsReloadsAfterMetadataRejection() throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let loadedMetadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        let persistedMetadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-b",
+            dimension: 2
+        )
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        _ = RAGVectorIndex.shared.ensureLoaded(context: context, metadata: loadedMetadata)
+
+        let chunk = RAGChunk(
+            content: "model-b row",
+            sourceType: .note,
+            sourceName: "n",
+            embedding: [0.1, 0.2],
+            embeddingFormatVersion: persistedMetadata.formatVersion,
+            embeddingModelIdentifier: persistedMetadata.modelIdentifier,
+            embeddingDimension: persistedMetadata.dimension
+        )
+        var pending = [RAGStore.PendingVector(
+            chunk: chunk,
+            bucket: RAGSourceType.note.rawValue,
+            vector: chunk.embedding,
+            metadata: persistedMetadata
+        )]
+
+        let result = try XCTUnwrap(RAGStore.persistAndAppendVectors(
+            context: context,
+            operation: "metadata-rejection",
+            pending: &pending,
+            save: { context, _, _ in try context.save() }
+        ))
+
+        XCTAssertEqual(result.persistedCount, 1)
+        XCTAssertEqual(result.indexState, .reloaded)
+        XCTAssertTrue(pending.isEmpty)
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
+    func testEmbeddingIdentityChangeDiscardsStagedChunksWithoutFalsePersistence() throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        let chunk = RAGChunk(
+            content: "staged",
+            sourceType: .note,
+            sourceName: "n",
+            embedding: [0.1, 0.2],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        )
+        var pending = [RAGStore.PendingVector(
+            chunk: chunk,
+            bucket: RAGSourceType.note.rawValue,
+            vector: chunk.embedding,
+            metadata: metadata
+        )]
+
+        var activeMetadata: RAGEmbeddingIndexMetadata? = metadata
+        let changedMetadata = RAGEmbeddingIndexMetadata(
+            formatVersion: metadata.formatVersion,
+            modelIdentifier: "llama:sha256:model-b",
+            dimension: metadata.dimension
+        )
+
+        XCTAssertFalse(RAGStore.prepareEmbeddingMetadata(
+            changedMetadata,
+            active: &activeMetadata,
+            pending: &pending,
+            context: context
+        ))
+        XCTAssertTrue(pending.isEmpty)
+        try context.save()
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
     }
 
     @MainActor

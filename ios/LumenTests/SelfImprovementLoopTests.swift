@@ -108,7 +108,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         XCTAssertEqual(outcome, .failed("RawPromptFailure"))
         XCTAssertEqual(metrics.last?.runtimeName, "selfImprovement")
         XCTAssertEqual(metrics.last?.taskKind, BackgroundTaskKind.selfImprovement.rawValue)
-        XCTAssertEqual(metrics.last?.errorCode, "RawPromptFailure")
+        XCTAssertEqual(metrics.last?.errorCode, "rawpromptfailure")
         XCTAssertFalse(metrics.last?.policySummary.contains("secret raw prompt") == true)
         #endif
     }

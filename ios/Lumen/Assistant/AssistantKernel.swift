@@ -44,6 +44,20 @@ final class AssistantKernel {
         await router.llama.takeCompletedStructuredTracePayload(requestID: requestID)
     }
 
+    func prepareStructuredLlamaRuntime(
+        slot: LumenModelSlot,
+        allowsLoadedMemoryPressureContinuation: Bool
+    ) async throws -> ExecutorRuntimePreflightResult {
+        try await router.llama.prepareStructuredRuntime(
+            slot: slot,
+            allowsLoadedMemoryPressureContinuation: allowsLoadedMemoryPressureContinuation
+        )
+    }
+
+    func preflightStructuredLlamaPrompt(_ request: GenerateRequest, slot: LumenModelSlot) async throws -> LlamaStructuredPromptPreflightSnapshot {
+        try await router.llama.structuredPromptPreflight(request, slot: slot)
+    }
+
     func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?) async -> AssistantGroundingContext {
         guard let modelContext else { return .empty }
         let budget = ContextBudgetAllocator.allocate(for: turn)
@@ -147,16 +161,20 @@ final class AssistantKernel {
     }
 
     func runEmbedding(_ context: AssistantTurnContext) async throws -> [Double] {
+        try await runEmbeddingWithIdentity(context).vector
+    }
+
+    func runEmbeddingWithIdentity(_ context: AssistantTurnContext) async throws -> EmbeddingRuntimeResult {
         guard context.task == .embedding else {
             throw KernelError.unsupportedTaskForEmbedding(context.task)
         }
         let selection = await router.selectionIncludingRuntimeState(for: context)
         let start = Date()
         do {
-            let vector = try await generateEmbedding(request: EmbeddingRequest(text: context.input), runtime: selection.runtime)
+            let result = try await generateEmbeddingWithIdentity(request: EmbeddingRequest(text: context.input), runtime: selection.runtime)
             let latency = Int(Date().timeIntervalSince(start) * 1000)
             try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: true, errorCode: nil, thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
-            return vector
+            return result
         } catch {
             let latency = Int(Date().timeIntervalSince(start) * 1000)
             try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: false, errorCode: RuntimeMetricErrorSanitizer.code(for: error), thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
@@ -245,12 +263,17 @@ final class AssistantKernel {
         }
     }
 
-    private func generateEmbedding(request: EmbeddingRequest, runtime: AssistantRuntimeKind) async throws -> [Double] {
+    private func generateEmbeddingWithIdentity(request: EmbeddingRequest, runtime: AssistantRuntimeKind) async throws -> EmbeddingRuntimeResult {
         switch runtime {
         case .llama:
-            return try await router.llama.embed(request: request).map(Double.init)
+            return try await router.llama.embedWithIdentity(request: request)
         case .coreML:
-            return try await router.coreML.embed(request: request).map(Double.init)
+            let vector = try await router.coreML.embed(request: request).map(Double.init)
+            guard let modelURL = router.coreML.modelURL else {
+                throw CoreMLRuntimeError.modelNotConfigured
+            }
+            let digest = try SHA256FileHasher.sha256Hex(for: modelURL)
+            return EmbeddingRuntimeResult(vector: vector, modelIdentifier: "coreml:sha256:\(digest)")
         case .foundationModels, .deterministicFallback, .unavailable:
             throw KernelError.unsupportedRuntimeForEmbedding(runtime)
         }
@@ -264,6 +287,20 @@ extension AssistantKernel {
         isForeground: Bool = true,
         allowHeavyRuntime: Bool = true
     ) async throws -> [Double] {
+        try await runEmbeddingWithIdentity(
+            text: text,
+            sourceContext: sourceContext,
+            isForeground: isForeground,
+            allowHeavyRuntime: allowHeavyRuntime
+        ).vector
+    }
+
+    static func runEmbeddingWithIdentity(
+        text: String,
+        sourceContext: AssistantTurnContext? = nil,
+        isForeground: Bool = true,
+        allowHeavyRuntime: Bool = true
+    ) async throws -> EmbeddingRuntimeResult {
         let context = AssistantTurnContext(
             task: .embedding,
             input: text,
@@ -283,7 +320,7 @@ extension AssistantKernel {
             traceCorrelation: sourceContext?.traceCorrelation,
             allowedToolIDs: sourceContext?.allowedToolIDs ?? []
         )
-        return try await shared.runEmbedding(context)
+        return try await shared.runEmbeddingWithIdentity(context)
     }
 }
 
