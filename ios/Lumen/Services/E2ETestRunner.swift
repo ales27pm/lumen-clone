@@ -1243,13 +1243,19 @@ nonisolated enum E2ETestRunner {
                     failures: failures,
                     events: events
                 )
+                let preRewriteRAGRetrievalEvidence = ragRetrievalEvidenceState(
+                    finalText: finalText,
+                    agentSteps: agentSteps,
+                    events: events
+                )
                 let skippedFinalHintsForNonActionable = nonActionableQuarantineFailure(metadata: preHintNonActionableMetadata) != nil
                 let rewriteOutcome = await finalHintRewriteOutcome(
                     scenario: scenario,
                     routing: routing,
                     originalFinal: finalText,
                     hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario,
-                    nonActionableMetadata: preHintNonActionableMetadata
+                    nonActionableMetadata: preHintNonActionableMetadata,
+                    ragRetrievalEvidenceState: preRewriteRAGRetrievalEvidence
                 )
 
                 let recoveredAfterRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rewriteOutcome.finalText)
@@ -1302,6 +1308,11 @@ nonisolated enum E2ETestRunner {
         let lowerFinal = finalText.lowercased()
         let lowerRawFinal = rawFinalText.lowercased()
         let observations = events.filter { $0.phase == "step" }.map(\.message).joined(separator: "\n")
+        let ragRetrievalEvidence = ragRetrievalEvidenceState(
+            finalText: finalText,
+            agentSteps: agentSteps,
+            events: events
+        )
         var outputHygieneFailures: [String] = []
         var nonActionableMetadata = nonActionableInfrastructureMetadata(
             scenario: scenario,
@@ -1380,7 +1391,12 @@ nonisolated enum E2ETestRunner {
                 hasAcceptedModelEvidence: hasAcceptedModelEvidenceForScenario
             ) {
                 let ragEmptyRetrieval = scenario.expectedIntent == .rag
-                    && isRAGEmptyRetrievalEvidence(lowerFinal)
+                    && ragRetrievalEvidence == .empty
+                if scenario.expectedIntent == .rag,
+                   ragRetrievalEvidence == .contradictory,
+                   nonActionableQuarantineFailure(metadata: nonActionableMetadata) == nil {
+                    failures.append("RAG retrieval evidence is contradictory: empty retrieval and retrieved snippets both present")
+                }
                 for hint in scenario.requiredTextHints where !lowerFinal.contains(hint.lowercased()) {
                     if ragEmptyRetrieval, isRAGGroundingHint(hint) { continue }
                     failures.append("Required final hint missing: \(hint)")
@@ -2503,9 +2519,27 @@ nonisolated enum E2ETestRunner {
             routing: routing,
             originalFinal: originalFinal,
             hasAcceptedModelEvidence: hasAcceptedModelEvidence,
-            nonActionableMetadata: nonActionableMetadata
+            nonActionableMetadata: nonActionableMetadata,
+            ragRetrievalEvidenceState: nil
         )
         return (outcome.finalText, outcome.missingHints, outcome.rewriteAttempted, outcome.rewriteSuccess)
+    }
+
+    nonisolated static func requiredHintsMissingForTests(
+        finalText: String,
+        scenario: E2ETestScenario,
+        agentSteps: [AgentStep],
+        events: [E2ETestEvent]
+    ) -> [String] {
+        requiredHintsMissing(
+            in: finalText,
+            scenario: scenario,
+            ragRetrievalEvidenceState: ragRetrievalEvidenceState(
+                finalText: finalText,
+                agentSteps: agentSteps,
+                events: events
+            )
+        )
     }
 
     nonisolated static func liveRuntimeShouldStopAfterForTests(_ result: E2ETestResult) -> Bool {
@@ -2658,6 +2692,18 @@ nonisolated enum E2ETestRunner {
 
     nonisolated static func isRAGEmptyRetrievalEvidenceForTests(_ lowerText: String) -> Bool {
         isRAGEmptyRetrievalEvidence(lowerText)
+    }
+
+    nonisolated static func ragRetrievalEvidenceStateForTests(
+        finalText: String,
+        agentSteps: [AgentStep],
+        events: [E2ETestEvent]
+    ) -> String {
+        ragRetrievalEvidenceState(
+            finalText: finalText,
+            agentSteps: agentSteps,
+            events: events
+        ).rawValue
     }
 
     static func agentJSONTrainingProbeForTests() async -> [AgentJSONTrainingProbeResult] {
@@ -3303,7 +3349,8 @@ nonisolated enum E2ETestRunner {
         routing: IntentRoutingDecision,
         originalFinal: String,
         hasAcceptedModelEvidence: Bool,
-        nonActionableMetadata: [String: String]
+        nonActionableMetadata: [String: String],
+        ragRetrievalEvidenceState: RAGRetrievalEvidenceState?
     ) async -> EvalRewriteOutcome {
         if nonActionableQuarantineFailure(metadata: nonActionableMetadata) != nil {
             return EvalRewriteOutcome(
@@ -3320,12 +3367,13 @@ nonisolated enum E2ETestRunner {
             return await validateAndRewriteFinalTextIfNeeded(
                 scenario: scenario,
                 routing: routing,
-                originalFinal: originalFinal
+                originalFinal: originalFinal,
+                ragRetrievalEvidenceState: ragRetrievalEvidenceState
             )
         }
         return EvalRewriteOutcome(
             finalText: originalFinal,
-            missingHints: requiredHintsMissing(in: originalFinal, scenario: scenario),
+            missingHints: requiredHintsMissing(in: originalFinal, scenario: scenario, ragRetrievalEvidenceState: ragRetrievalEvidenceState),
             rewriteAttempted: false,
             rewriteSuccess: false
         )
@@ -3334,9 +3382,10 @@ nonisolated enum E2ETestRunner {
     nonisolated private static func validateAndRewriteFinalTextIfNeeded(
         scenario: E2ETestScenario,
         routing: IntentRoutingDecision,
-        originalFinal: String
+        originalFinal: String,
+        ragRetrievalEvidenceState: RAGRetrievalEvidenceState? = nil
     ) async -> EvalRewriteOutcome {
-        let firstMissing = requiredHintsMissing(in: originalFinal, scenario: scenario)
+        let firstMissing = requiredHintsMissing(in: originalFinal, scenario: scenario, ragRetrievalEvidenceState: ragRetrievalEvidenceState)
         if liveAgentInvalidFinalReason(lowerRaw: originalFinal.lowercased(), lowerFinal: originalFinal.lowercased()) != nil {
             return EvalRewriteOutcome(finalText: originalFinal, missingHints: firstMissing, rewriteAttempted: false, rewriteSuccess: false)
         }
@@ -3351,14 +3400,23 @@ nonisolated enum E2ETestRunner {
             requiredHints: firstMissing,
             forbiddenHints: scenario.forbiddenTextHints
         )
-        let secondMissing = requiredHintsMissing(in: rewritten, scenario: scenario)
+        let secondMissing = requiredHintsMissing(in: rewritten, scenario: scenario, ragRetrievalEvidenceState: ragRetrievalEvidenceState)
         let rewriteSuccess = secondMissing.isEmpty
         return EvalRewriteOutcome(finalText: rewritten, missingHints: secondMissing, rewriteAttempted: true, rewriteSuccess: rewriteSuccess)
     }
 
-    nonisolated private static func requiredHintsMissing(in finalText: String, scenario: E2ETestScenario) -> [String] {
+    nonisolated private static func requiredHintsMissing(
+        in finalText: String,
+        scenario: E2ETestScenario,
+        ragRetrievalEvidenceState explicitRAGRetrievalEvidenceState: RAGRetrievalEvidenceState? = nil
+    ) -> [String] {
         let lower = finalText.lowercased()
-        let ragEmptyRetrieval = scenario.expectedIntent == .rag && isRAGEmptyRetrievalEvidence(lower)
+        let ragEvidence = explicitRAGRetrievalEvidenceState ?? ragRetrievalEvidenceState(
+            finalText: finalText,
+            agentSteps: [],
+            events: []
+        )
+        let ragEmptyRetrieval = scenario.expectedIntent == .rag && ragEvidence == .empty
         var missing: [String] = scenario.requiredTextHints.filter {
             if ragEmptyRetrieval, isRAGGroundingHint($0) { return false }
             return !lower.contains($0.lowercased())
@@ -3428,7 +3486,8 @@ nonisolated enum E2ETestRunner {
     nonisolated private static func enforceEvalGrounding(_ text: String, intent: UserIntent) -> String {
         guard intent == .rag else { return text }
         let lower = text.lowercased()
-        if isRAGEmptyRetrievalEvidence(lower) || liveAgentInvalidFinalReason(lowerRaw: lower, lowerFinal: lower) != nil {
+        let ragEvidence = ragRetrievalEvidenceState(finalText: text, agentSteps: [], events: [])
+        if ragEvidence == .empty || ragEvidence == .contradictory || liveAgentInvalidFinalReason(lowerRaw: lower, lowerFinal: lower) != nil {
             return text
         }
         var out = text
@@ -3513,6 +3572,75 @@ nonisolated enum E2ETestRunner {
             || lowerText.contains("no files matched")
             || lowerText.contains("rag storage unavailable")
             || lowerText.contains("rag retrieval is unavailable")
+    }
+
+    private enum RAGRetrievalEvidenceState: String {
+        case unknown
+        case empty
+        case positive
+        case contradictory
+    }
+
+    nonisolated private static func ragRetrievalEvidenceState(
+        finalText: String,
+        agentSteps: [AgentStep],
+        events: [E2ETestEvent]
+    ) -> RAGRetrievalEvidenceState {
+        let trustedObservations = trustedRAGObservationTexts(agentSteps: agentSteps, events: events)
+        if !trustedObservations.isEmpty {
+            return classifyRAGRetrievalEvidence(trustedObservations.joined(separator: "\n"))
+        }
+        return classifyRAGRetrievalEvidence(finalText)
+    }
+
+    nonisolated private static func trustedRAGObservationTexts(
+        agentSteps: [AgentStep],
+        events: [E2ETestEvent]
+    ) -> [String] {
+        let stepObservations = agentSteps.compactMap { step -> String? in
+            guard step.kind == .observation,
+                  let toolID = step.toolID,
+                  isTrustedRAGRetrievalTool(toolID) else {
+                return nil
+            }
+            return step.content
+        }
+        if !stepObservations.isEmpty {
+            return stepObservations
+        }
+        return events.compactMap { event -> String? in
+            let lower = event.message.lowercased()
+            guard event.phase == "step",
+                  lower.contains("observation"),
+                  lower.contains("rag") || lower.contains("local index") else {
+                return nil
+            }
+            return event.message
+        }
+    }
+
+    nonisolated private static func isTrustedRAGRetrievalTool(_ toolID: String) -> Bool {
+        let canonical = ToolRouteGuard.canonicalToolID(toolID)
+        return canonical == "rag.search" || canonical == "files.read"
+    }
+
+    nonisolated private static func classifyRAGRetrievalEvidence(_ text: String) -> RAGRetrievalEvidenceState {
+        let lower = text.lowercased()
+        let empty = isRAGEmptyRetrievalEvidence(lower)
+        let positive = hasRAGPositiveRetrievalEvidence(lower)
+        if empty && positive { return .contradictory }
+        if empty { return .empty }
+        if positive { return .positive }
+        return .unknown
+    }
+
+    nonisolated private static func hasRAGPositiveRetrievalEvidence(_ lowerText: String) -> Bool {
+        lowerText.range(of: #"\[[0-9]+\]"#, options: .regularExpression) != nil
+            || lowerText.contains("score=")
+            || lowerText.range(of: #"\bscore\s*[:=]?\s*0?\.\d+"#, options: .regularExpression) != nil
+            || (!isRAGEmptyRetrievalEvidence(lowerText)
+                && lowerText.contains("retrieved")
+                && (lowerText.contains("snippet") || lowerText.contains("source") || lowerText.contains("file")))
     }
 
     nonisolated private static func isRAGGroundingHint(_ hint: String) -> Bool {

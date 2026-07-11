@@ -3,6 +3,32 @@ import SwiftUI
 import Testing
 @testable import Lumen
 
+private actor ResourceBudgetGateSnapshotOverrideLock {
+    static let shared = ResourceBudgetGateSnapshotOverrideLock()
+
+    func withOverride<T>(
+        _ snapshot: ResourceBudgetGate.Snapshot,
+        operation: () async throws -> T
+    ) async rethrows -> T {
+        await MainActor.run {
+            ResourceBudgetGate.setDiagnosticSnapshotOverride(snapshot)
+        }
+        do {
+            let result = try await operation()
+            await MainActor.run {
+                ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+            }
+            return result
+        } catch {
+            await MainActor.run {
+                ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+            }
+            throw error
+        }
+    }
+}
+
+@Suite(.serialized)
 struct E2ETestRunnerHygieneTests {
     @Test func recoveredRawThinkLeakPassesWhenSanitizedFinalIsClean() {
         let scenario = E2ETestScenario(id: "s", title: "t", kind: .chat, prompt: "p", expectedIntent: .chat, forbiddenToolIDs: [], requiredTextHints: [], forbiddenTextHints: [], requiresAgentRun: false)
@@ -848,27 +874,24 @@ struct E2ETestRunnerHygieneTests {
             requiresAgentRun: true
         )
         let probe = CPUWatchdogProbeBox(degradeAfterCalls: 1)
-        await MainActor.run {
-            ResourceBudgetGate.setDiagnosticSnapshotOverride(.init(
-                scenePhase: .background,
-                lowPowerModeEnabled: false,
-                thermalState: .nominal,
-                recentMemoryWarningCount: 0,
-                lastMemoryWarningAt: nil
-            ))
-        }
+        let snapshot = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
 
-        let outcome = await E2ETestRunner.$debugCPUWatchdogDegradedProbe.withValue({ _ in
-            probe.isDegraded()
-        }) {
-            await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
-                scenario,
-                maxWaitNanoseconds: 10_000_000,
-                pollNanoseconds: 1_000_000
-            )
-        }
-        await MainActor.run {
-            ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+        let outcome = await ResourceBudgetGateSnapshotOverrideLock.shared.withOverride(snapshot) {
+            await E2ETestRunner.$debugCPUWatchdogDegradedProbe.withValue({ _ in
+                probe.isDegraded()
+            }) {
+                await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
+                    scenario,
+                    maxWaitNanoseconds: 10_000_000,
+                    pollNanoseconds: 1_000_000
+                )
+            }
         }
 
         #expect(outcome.denialReason == "live-e2e.pre-scenario: cpu-watchdog-degraded")
@@ -929,23 +952,19 @@ struct E2ETestRunnerHygieneTests {
             forbiddenTextHints: [],
             requiresAgentRun: true
         )
-        await MainActor.run {
-            ResourceBudgetGate.setDiagnosticSnapshotOverride(.init(
-                scenePhase: .background,
-                lowPowerModeEnabled: false,
-                thermalState: .nominal,
-                recentMemoryWarningCount: 0,
-                lastMemoryWarningAt: nil
-            ))
-        }
-
-        let outcome = await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
-            scenario,
-            maxWaitNanoseconds: 5_000_000,
-            pollNanoseconds: 1_000_000
+        let snapshot = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
         )
-        await MainActor.run {
-            ResourceBudgetGate.clearDiagnosticSnapshotOverride()
+        let outcome = await ResourceBudgetGateSnapshotOverrideLock.shared.withOverride(snapshot) {
+            await E2ETestRunner.liveRuntimeReadinessBarrierForTests(
+                scenario,
+                maxWaitNanoseconds: 5_000_000,
+                pollNanoseconds: 1_000_000
+            )
         }
 
         #expect(outcome.denialReason == "live-e2e.pre-scenario: scenePhase=background")
@@ -1121,6 +1140,50 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching snippets were found in the local index."))
         #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching results in the local rag index."))
         #expect(!E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("[1] retrieved module snippet from diagnostics.md"))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragEmptyRetrievalExemptionRequiresTrustedEmptyObservationWhenRAGObserved() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "Training eval: RAG grounding",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["module", "[1]"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let positiveSteps = [
+            AgentStep(
+                kind: .observation,
+                content: "[1] Architecture Notes · File · score 0.91\nCoordinator module owns the native agent loop.",
+                toolID: "rag.search"
+            )
+        ]
+        #expect(E2ETestRunner.ragRetrievalEvidenceStateForTests(finalText: "No matching results.", agentSteps: positiveSteps, events: []) == "positive")
+        let missing = E2ETestRunner.requiredHintsMissingForTests(
+            finalText: "No matching results.",
+            scenario: scenario,
+            agentSteps: positiveSteps,
+            events: []
+        )
+        #expect(missing.contains("[1]"))
+        #expect(missing.contains("module"))
+
+        let contradictorySteps = [
+            AgentStep(
+                kind: .observation,
+                content: "No matching results.\n[1] Architecture Notes · File · score 0.91",
+                toolID: "rag.search"
+            )
+        ]
+        #expect(E2ETestRunner.ragRetrievalEvidenceStateForTests(finalText: "No matching results.", agentSteps: contradictorySteps, events: []) == "contradictory")
         #else
         #expect(true)
         #endif

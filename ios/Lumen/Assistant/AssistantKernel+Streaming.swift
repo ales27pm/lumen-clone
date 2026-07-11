@@ -419,12 +419,6 @@ extension AssistantKernel: AgentKernelRunning {
             events.append(.toolResult(result))
             let observationText = Self.userVisibleToolObservation(toolID: validatedCall.canonicalToolID, result: result)
             appendStep(AgentStep(kind: .observation, content: observationText, toolID: validatedCall.canonicalToolID))
-            finalText = Self.finalizedToolObservation(
-                intent: routing.intent,
-                toolID: validatedCall.canonicalToolID,
-                observation: observationText,
-                originalPrompt: userMessage
-            )
 
             if result.status != .success {
                 let nextToolID = actionsToRun.indices.contains(actionIndex + 1)
@@ -443,8 +437,16 @@ extension AssistantKernel: AgentKernelRunning {
                     ))
                     continue
                 }
+                finalText = observationText
                 break
             }
+
+            finalText = Self.finalizedToolObservation(
+                intent: routing.intent,
+                toolID: validatedCall.canonicalToolID,
+                observation: observationText,
+                originalPrompt: userMessage
+            )
         }
 
         if finalText.isEmpty {

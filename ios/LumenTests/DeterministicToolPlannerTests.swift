@@ -455,6 +455,29 @@ struct DeterministicToolPlannerTests {
         _ = try validated(action)
     }
 
+    @Test func triggerSchedulePreservesRecurringNumericIntervalAndDailyMinutes() async throws {
+        let routing = IntentRoutingDecision(intent: .trigger, allowedToolIDs: ["trigger.create", "trigger.list"], requiresClarification: false, clarificationPrompt: nil)
+        let interval = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Schedule a trigger to summarize reminders every 15 minutes.",
+            availableToolIDs: ["trigger.create", "trigger.list"]
+        )
+        #expect(interval?.tool == "trigger.create")
+        #expect(interval?.args["schedule"]?.stringValue == "interval")
+        #expect(interval?.args["intervalSeconds"] == .number(900))
+        _ = try validated(interval)
+
+        let daily = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Schedule a trigger to summarize reminders every day at 9:30.",
+            availableToolIDs: ["trigger.create", "trigger.list"]
+        )
+        #expect(daily?.tool == "trigger.create")
+        #expect(daily?.args["schedule"]?.stringValue == "absolute")
+        #expect(daily?.args["atTime"]?.stringValue == "09:30")
+        _ = try validated(daily)
+    }
+
     @Test func calendarAppointmentTomorrowMorningPlansCreateNotList() async throws {
         let routing = IntentRouter.classify("Set an appointment for tomorrow morning at nine in my calendar")
         let action = DeterministicToolPlanner.plan(
