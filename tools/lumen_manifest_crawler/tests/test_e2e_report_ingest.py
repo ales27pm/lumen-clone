@@ -684,6 +684,46 @@ def test_ingestion_quarantines_stale_outlook_archive_move_alias(tmp_path: Path):
     assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
 
 
+def test_ingestion_keeps_outlook_config_unavailable_out_of_training_repairs(tmp_path: Path):
+    report_path = tmp_path / "outlook-config-unavailable-e2e-report.json"
+    report = {
+        "kind": "lumen_e2e_test_report",
+        "passed": 0,
+        "failed": 1,
+        "results": [
+            {
+                "scenarioID": "live-outlook-message-read-direct",
+                "kind": "toolGuard",
+                "title": "Live outlook.message.read direct",
+                "passed": False,
+                "requiresAgentRun": True,
+                "prompt": "Read my latest Outlook email.",
+                "actualIntent": "outlook",
+                "expectedIntent": "outlook",
+                "failures": ["Runtime infrastructure unavailable: Outlook configuration unavailable."],
+                "finalText": "Outlook auth is not configured for this device.",
+                "events": [{"phase": "step", "message": "observation: Outlook auth is not configured"}],
+                "metadata": {
+                    "failureKind": "outlookRuntimeUnavailable",
+                    "actionable": "false",
+                    "trainingSignal": "false",
+                    "runtimeEvidence": "tool-configuration-unavailable",
+                },
+            }
+        ],
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    failure_record = normalized["failures"][0]
+    assert failure_record["type"] == "e2e_runtime_environment_deferred"
+    assert failure_record["trainable"] is False
+    assert failure_record["repairSample"]["trainable"] is False
+    assert failure_record["e2eScenario"]["metadata"]["failureKind"] == "outlookRuntimeUnavailable"
+    assert "Capture failed prompts" not in "\n".join(normalized.get("trainingSignals") or [])
+
+
 def test_ingestion_quarantines_rag_polluted_fallback_final(tmp_path: Path):
     report_path = tmp_path / "rag-polluted-e2e-report.json"
     report = {

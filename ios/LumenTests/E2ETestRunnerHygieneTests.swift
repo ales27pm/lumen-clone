@@ -1289,10 +1289,59 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func deterministicWebSynthesisRunsAfterFinalIntentValidatorSafeMessage() {
+        #if DEBUG
+        let scenario = E2ETestScenario.trainingValidation.first { $0.id == "training-web-research" }!
+        let routing = IntentRoutingDecision(
+            intent: .webSearch,
+            allowedToolIDs: ["web.search", "web.fetch"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let observation = E2ETestEvent(
+            id: UUID(),
+            createdAt: Date(),
+            scenarioID: scenario.id,
+            phase: "step",
+            message: """
+            observation: Search results for: Swift concurrency best practices
+
+            1. Swift Concurrency | Apple Developer Documentation
+            https://developer.apple.com/documentation/swift/concurrency
+
+            2. MainActor and Swift concurrency
+            https://example.com/mainactor
+            """
+        )
+        let validated = FinalIntentValidator.validate(
+            "Created a new event from the web search result.",
+            routing: routing,
+            fallback: nil
+        )
+
+        #expect(validated.contains("No direct answer from web search"))
+        let synthesized = E2ETestRunner.deterministicWebSynthesisFallbackForTests(
+            scenario: scenario,
+            rawFinalText: validated,
+            events: [observation]
+        )
+        #expect(synthesized?.contains("Swift") == true)
+        #expect(synthesized?.contains("No direct answer from web search") == false)
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func genericChatFallbackIsDetectedForRetryAndClassification() {
         #if DEBUG
         #expect(E2ETestRunner.isGenericChatFallbackFinalForTests("I'm ready. Please ask again or tell me what you'd like to do next."))
         #expect(!E2ETestRunner.isGenericChatFallbackFinalForTests("Precision is exactness and recall is coverage."))
+        let retryPrompt = E2ETestRunner.directAnswerRetryPromptForTests("Explain why a sharp chisel is safer than a dull one.")
+        #expect(retryPrompt.contains("Do not say you are ready"))
+        #expect(retryPrompt.contains("Start with the answer itself"))
+        let deterministic = E2ETestRunner.deterministicDirectChatFallbackForTests("Explain why a sharp chisel is safer than a dull one.")
+        #expect(deterministic?.contains("less force") == true)
+        #expect(deterministic?.lowercased().contains("please ask again") == false)
         let scenario = E2ETestScenario(
             id: "normal-chat-no-forced-tool",
             title: "Normal chat",
@@ -1340,6 +1389,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(ragMetadata["failureKind"] == "ragStorageUnavailable")
         #expect(ragMetadata["actionable"] == "false")
         #expect(ragMetadata["trainingSignal"] == "false")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: ragMetadata) == "Runtime infrastructure unavailable: RAG storage unavailable.")
 
         let outlookScenario = E2ETestScenario(
             id: "live-outlook-message-read-direct",
@@ -1364,6 +1414,45 @@ struct E2ETestRunnerHygieneTests {
         #expect(outlookMetadata["failureKind"] == "outlookRuntimeUnavailable")
         #expect(outlookMetadata["actionable"] == "false")
         #expect(outlookMetadata["trainingSignal"] == "false")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: outlookMetadata) == "Runtime infrastructure unavailable: Outlook configuration unavailable.")
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func cpuWatchdogAndThermalPreflightAreNonActionableQuarantines() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-memory-loop",
+            title: "Memory",
+            kind: .training,
+            prompt: "Remember that I prefer concise answers, then tell me what you remembered.",
+            expectedIntent: .memory,
+            requiredAllowedToolIDs: ["memory.save", "memory.recall"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let cpuMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: scenario,
+            finalText: "Reason: cpu-watchdog-degraded.",
+            failures: ["Live E2E scenario did not record model-backed generation evidence", "Live agent produced no action step for tool-backed intent"],
+            events: [E2ETestEvent(id: UUID(), createdAt: Date(), scenarioID: scenario.id, phase: "agent-runtime", message: "cpu-watchdog-degraded")]
+        )
+        #expect(cpuMetadata["failureKind"] == "liveRuntimeCPUWatchdogDegraded")
+        #expect(cpuMetadata["trainingSignal"] == "false")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: cpuMetadata) == "Runtime preflight unavailable: CPU watchdog degraded before valid generation.")
+
+        let thermalMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: scenario,
+            finalText: "Live E2E paused before starting this scenario: thermalState=serious.",
+            failures: ["Required final hint missing: preference"],
+            events: []
+        )
+        #expect(thermalMetadata["failureKind"] == "liveRuntimePreflightUnavailable")
+        #expect(thermalMetadata["trainingSignal"] == "false")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: thermalMetadata) == "Runtime preflight unavailable before valid generation.")
         #else
         #expect(true)
         #endif

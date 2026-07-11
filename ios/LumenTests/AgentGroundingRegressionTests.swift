@@ -2020,6 +2020,7 @@ extension AgentGroundingRegressionTests {
         #expect(retryTurn.contains("What is the weather here?"))
         #expect(retryTurn.contains("no action or final"))
         #expect(retryTurn.contains("requires a tool action before any final answer"))
+        #expect(retryTurn.contains("Allowed tool IDs: none"))
         #expect(retryTurn.contains(#"{"action":{"tool":"<allowed tool id>","args":{}}}"#))
         #expect(retryTurn.contains("Do not emit {}, final, prose"))
         #expect(retryTurn.contains("Output JSON only"))
@@ -2056,7 +2057,8 @@ extension AgentGroundingRegressionTests {
         let retry = AgentService.agentJSONMissingDecisionRetryRequestForTests(
             from: base,
             userTurn: base.userMessage,
-            rawOutput: "{\n}\n"
+            rawOutput: "{\n}\n",
+            allowedToolIDs: ["weather", "location.current"]
         )
         let result = await AppLlamaService.shared.buildMessagesForTesting(req: retry, contextSize: 2048, slot: .executor)
         let prompt = result.messages.map(\.content).joined(separator: "\n")
@@ -2067,9 +2069,59 @@ extension AgentGroundingRegressionTests {
         #expect(retry.topP <= 0.35)
         #expect(prompt.contains("Previous live agent-json attempt emitted a JSON object with no action or final"))
         #expect(prompt.contains("This turn requires a tool action"))
+        #expect(prompt.contains("Allowed tool IDs: location.current, weather"))
         #expect(prompt.contains(#""required":["action"]"#))
         #expect(!prompt.contains(#""oneOf""#))
         #expect(prompt.contains("/no_think"))
+    }
+
+    @Test func firstWebSearchObservationStopsE2ETrainingLoopBeforeSecondSearch() {
+        let tools = ToolRegistry.all.filter { ["web.search", "web.fetch"].contains(ToolRouteGuard.canonicalToolID($0.id)) }
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "Search the web for two recent Swift concurrency best practices and summarize them.",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 384,
+            maxSteps: 3,
+            availableTools: tools,
+            relevantMemories: [],
+            scenarioID: "training-web-research",
+            e2eRunID: UUID()
+        )
+        let observations = [
+            ("web.search", """
+            Search results for: Swift concurrency best practices
+
+            1. Concurrency | Apple Developer Documentation
+            https://developer.apple.com/documentation/swift/concurrency
+
+            2. Swift MainActor guidance
+            https://example.com/mainactor
+            """)
+        ]
+
+        #expect(AgentService.shouldStopAfterFirstWebObservationForTests(req: req, actionTool: "web.search", observations: observations))
+    }
+
+    @Test func placeholderWeatherFinalRequiresToolActionBeforeObservation() {
+        let req = AgentRequest(
+            systemPrompt: "sys",
+            history: [],
+            userMessage: "What is the weather here?",
+            temperature: 0,
+            topP: 1,
+            repetitionPenalty: 1,
+            maxTokens: 384,
+            maxSteps: 3,
+            availableTools: ToolRegistry.all.filter { ["weather", "location.current"].contains(ToolRouteGuard.canonicalToolID($0.id)) },
+            relevantMemories: []
+        )
+
+        #expect(AgentService.toolRequiredFinalNeedsActionForTests("[insert local weather information]", req: req))
+        #expect(!AgentService.toolRequiredFinalNeedsActionForTests("Weather update: 18 C and cloudy.", req: req, observations: [("weather", "18 C and cloudy")]))
     }
 
     @Test func agentJSONCompactionRequestKeepsSchemaVisibleUnderBudget() async {
