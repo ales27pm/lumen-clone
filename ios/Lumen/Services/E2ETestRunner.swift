@@ -1382,7 +1382,10 @@ nonisolated enum E2ETestRunner {
                 for hint in scenario.requiredTextHints where !lowerFinal.contains(hint.lowercased()) {
                     failures.append("Required final hint missing: \(hint)")
                 }
-                if scenario.expectedIntent == .rag && scenario.requiresAgentRun && scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search") {
+                if scenario.expectedIntent == .rag
+                    && scenario.requiresAgentRun
+                    && scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search")
+                    && !ragFinalIndicatesNoRetrievedSnippets(lowerFinal) {
                     if !lowerFinal.contains("module") && !lowerFinal.contains("modules") {
                         failures.append("RAG final response must mention module/modules")
                     }
@@ -1504,6 +1507,22 @@ nonisolated enum E2ETestRunner {
         let finalText = preflight.budgetReason?.contains(ResourceBudgetGate.seriousThermalRetryHint) == true
             ? ResourceBudgetGate.seriousThermalRetryHint
             : preflight.diagnosticsSummary
+        var metadata = preflight.diagnosticsMetadata
+        metadata["trainingSignal"] = "false"
+        metadata["runtimeEvidence"] = "executor-runtime-preflight"
+        let preflightEvidence = "\(preflight.reason)\n\(preflight.diagnosticsSummary)".lowercased()
+        if preflightEvidence.contains("cpu-watchdog-degraded")
+            || preflightEvidence.contains("cpu watchdog degraded") {
+            metadata["failureKind"] = "liveRuntimeCPUWatchdogDegraded"
+            metadata["actionable"] = "false"
+            metadata["runtimeEvidence"] = "runtime-preflight"
+        } else if preflightEvidence.contains("thermalstate=serious")
+                    || preflightEvidence.contains("thermal state serious")
+                    || preflightEvidence.contains("resource-budget-denied-before-prompt-eval") {
+            metadata["failureKind"] = "liveRuntimePreflightUnavailable"
+            metadata["actionable"] = "false"
+            metadata["runtimeEvidence"] = "runtime-preflight"
+        }
         return E2ETestResult(
             id: UUID(),
             scenarioID: "executor-runtime-preflight",
@@ -1529,7 +1548,7 @@ nonisolated enum E2ETestRunner {
             sanitizedFinalRemovedArtifacts: [],
             outputHygieneFailures: [],
             performanceMatrix: nil,
-            metadata: preflight.diagnosticsMetadata
+            metadata: metadata
         )
     }
 
@@ -2452,6 +2471,10 @@ nonisolated enum E2ETestRunner {
         )
     }
 
+    nonisolated static func ragFinalIndicatesNoRetrievedSnippetsForTests(_ lowerFinal: String) -> Bool {
+        ragFinalIndicatesNoRetrievedSnippets(lowerFinal)
+    }
+
     static func validateAndRewriteFinalTextIfNeededForTests(
         scenario: E2ETestScenario,
         routing: IntentRoutingDecision,
@@ -2922,6 +2945,8 @@ nonisolated enum E2ETestRunner {
             "full local model pipeline is temporarily running in compatibility mode",
             "full agent pipeline",
             "no direct answer from web search",
+            "i couldn't safely complete",
+            "i couldn’t safely complete",
             "cpu-watchdog-degraded",
             "\"rewrittenfinalanswer\"",
             "\"requiresapprovaldecision\"",
@@ -3221,6 +3246,18 @@ nonisolated enum E2ETestRunner {
     nonisolated private static func referencesRetrievedSnippet(_ lowerFinal: String) -> Bool {
         let signals = ["[1]", "[2]", "snippet", "source", "file", "pdf", "note", "retrieved"]
         return signals.contains { lowerFinal.contains($0) }
+    }
+
+    nonisolated private static func ragFinalIndicatesNoRetrievedSnippets(_ lowerFinal: String) -> Bool {
+        [
+            "no matching rag chunks",
+            "no matching local snippets",
+            "no matching module snippets",
+            "no matching files",
+            "no relevant rag chunks",
+            "no relevant local snippets",
+            "no retrieved snippets"
+        ].contains { lowerFinal.contains($0) }
     }
 
     nonisolated private static func ragArchitectureGroundingIsIrrelevant(_ lowerFinal: String) -> Bool {

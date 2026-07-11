@@ -125,6 +125,44 @@ struct E2ETestRunnerHygieneTests {
         #expect(!failures.contains(where: { $0.contains("required hint") }))
     }
 
+    @Test func toolBackedSafeMessageFallbackCannotPassAsCompletion() {
+        let calendarScenario = E2ETestScenario(
+            id: "live-calendar-list-direct-show-my-next-calendar-events",
+            title: "calendar",
+            kind: .toolGuard,
+            prompt: "Show my next calendar events.",
+            expectedIntent: .calendar,
+            requiredAllowedToolIDs: ["calendar.list"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        #expect(E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: "I couldn’t safely complete the calendar event request.",
+            finalText: "I couldn’t safely complete the calendar event request.",
+            scenario: calendarScenario
+        ).contains("Live agent returned fallback/error text instead of completing the scenario"))
+
+        let ragScenario = E2ETestScenario(
+            id: "live-rag-index-files-direct-reindex-my-imported-files",
+            title: "rag",
+            kind: .toolGuard,
+            prompt: "Reindex my imported files.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.index_files"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        #expect(E2ETestRunner.liveAgentQualityFailures(
+            rawFinalText: "I couldn't safely complete the local search/indexing request.",
+            finalText: "I couldn't safely complete the local search/indexing request.",
+            scenario: ragScenario
+        ).contains("Live agent returned fallback/error text instead of completing the scenario"))
+    }
+
     @Test func liveValidationFallbackJSONCannotPassAsFinalAnswer() {
         let scenario = E2ETestScenario(
             id: "training-memory-loop",
@@ -1070,6 +1108,16 @@ struct E2ETestRunnerHygieneTests {
         #expect(!outcome.rewriteAttempted)
         #expect(!outcome.finalText.contains("Key modules"))
         #expect(!outcome.finalText.contains("[1]"))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func ragEmptyRetrievalSkipsPositiveSnippetAssertions() {
+        #if DEBUG
+        #expect(E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("no matching rag chunks found."))
+        #expect(E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("no matching module snippets were retrieved. source: local rag index."))
+        #expect(!E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("[1] retrieved module snippet from diagnostics.md"))
         #else
         #expect(true)
         #endif
@@ -2391,6 +2439,44 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func executorCPUWatchdogPreflightIsNonTrainableRuntimeFailure() async {
+        #if DEBUG
+        let config = E2ERunConfig(
+            systemPrompt: "",
+            temperature: 0.1,
+            topP: 1.0,
+            repetitionPenalty: 1.0,
+            maxTokens: 64,
+            maxAgentSteps: 1,
+            enabledToolIDs: []
+        )
+
+        let report = await E2ETestRunner.$debugExecutorRuntimePreflightOverride.withValue({
+            ExecutorRuntimePreflightResult(
+                passed: false,
+                reason: "executor preflight failed: agent JSON smoke probe failed; emptyOutputReason=cpu-watchdog-degraded; outputTokens=0; streamStarted=false; firstChunkReceived=false",
+                runtimeKind: "adapter-first",
+                smokeProbeSucceeded: false,
+                failureKind: "smokeProbeEmptyOutput"
+            )
+        }) {
+            await E2ETestRunner.runTrainingValidation(
+                config: config,
+                ensureChatLoaded: { true }
+            )
+        }
+
+        let metadata = report.results.first?.metadata ?? [:]
+        #expect(report.results.first?.scenarioID == "executor-runtime-preflight")
+        #expect(metadata["failureKind"] == "liveRuntimeCPUWatchdogDegraded")
+        #expect(metadata["actionable"] == "false")
+        #expect(metadata["trainingSignal"] == "false")
+        #expect(metadata["runtimeEvidence"] == "runtime-preflight")
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func standardRunBlocksBeforeScenarioWhenExecutorAdapterPreflightFails() async {
         #if DEBUG
         let scenario = E2ETestScenario(
@@ -2443,6 +2529,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(report.failed == 1)
         #expect(report.results.first?.scenarioID == "executor-runtime-preflight")
         #expect(report.results.first?.metadata["failureKind"] == "adapterPathMissing")
+        #expect(report.results.first?.metadata["trainingSignal"] == "false")
         #expect(report.results.first?.finalText.contains("adapterExists=false") == true)
         #else
         #expect(true)

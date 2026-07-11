@@ -204,6 +204,54 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testTriggerCreateInvalidScheduleEnumRepairsBeforeApprovalBoundary() throws {
+        #if DEBUG
+        let prompt = "Schedule a trigger to summarize reminders tonight and confirm what will run."
+        let routing = IntentRoutingDecision(
+            intent: .trigger,
+            allowedToolIDs: ["trigger.create", "trigger.list", "trigger.cancel"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let badAction = AgentAction(tool: "trigger.create", args: [
+            "title": .string("Reminder summary tonight"),
+            "prompt": .string("Summarize reminders"),
+            "schedule": .string("tonight")
+        ])
+        let error = StructuredToolCallValidationError.invalidEnumValue(
+            tool: "trigger.create",
+            argument: "schedule",
+            allowed: ["absolute", "interval", "relative"]
+        )
+
+        let repair = try XCTUnwrap(StructuredAgentKernelExecutor.repairedTriggerCreateActionIfNeededForTests(
+            modelAction: badAction,
+            validationError: error,
+            routing: routing,
+            prompt: prompt,
+            availableToolIDs: ["trigger.create", "trigger.list", "trigger.cancel"]
+        ))
+        XCTAssertEqual(repair.action.args["schedule"]?.stringValue, "relative")
+        XCTAssertEqual(repair.action.args["inMinutes"]?.intValue, 120)
+        XCTAssertEqual(repair.reflection.kind, .reflection)
+
+        switch StructuredToolCallValidator.validate(action: repair.action, availableTools: ToolRegistry.all) {
+        case .success(let call):
+            XCTAssertEqual(call.canonicalToolID, "trigger.create")
+            XCTAssertEqual(call.arguments["schedule"], "relative")
+        case .failure(let error):
+            XCTFail("Expected repaired trigger.create to validate, got \(error.diagnostic)")
+        }
+
+        let final = StructuredAgentKernelExecutor.approvalBoundaryFinalForTests(
+            toolID: "trigger.create",
+            action: repair.action
+        )
+        XCTAssertTrue(final.contains("Approval required for trigger.create"))
+        XCTAssertTrue(final.contains("I did not schedule an agent run yet."))
+        #endif
+    }
+
     func testMemorySaveThenRecallInvariantRepairsPrematureRecall() throws {
         #if DEBUG
         let prompt = "Remember that I prefer concise bullet points, then tell me what you remembered."

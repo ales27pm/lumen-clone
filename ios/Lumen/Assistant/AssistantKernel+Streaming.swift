@@ -313,9 +313,10 @@ extension AssistantKernel: AgentKernelRunning {
         }
 
         let maxActions = max(1, request.options.maxSteps)
+        let actionsToRun = Array(plannedActions.prefix(maxActions))
         var finalText = ""
         var executedKeys: Set<String> = []
-        for action in plannedActions.prefix(maxActions) {
+        for (actionIndex, action) in actionsToRun.enumerated() {
             let validation = StructuredToolCallValidator.validate(action: action, availableTools: availableTools)
             let validatedCall: ValidatedStructuredToolCall
             switch validation {
@@ -418,9 +419,30 @@ extension AssistantKernel: AgentKernelRunning {
             events.append(.toolResult(result))
             let observationText = Self.userVisibleToolObservation(toolID: validatedCall.canonicalToolID, result: result)
             appendStep(AgentStep(kind: .observation, content: observationText, toolID: validatedCall.canonicalToolID))
-            finalText = observationText
+            finalText = Self.finalizedToolObservation(
+                intent: routing.intent,
+                toolID: validatedCall.canonicalToolID,
+                observation: observationText,
+                originalPrompt: userMessage
+            )
 
             if result.status != .success {
+                let nextToolID = actionsToRun.indices.contains(actionIndex + 1)
+                    ? ToolRouteGuard.canonicalToolID(actionsToRun[actionIndex + 1].tool)
+                    : nil
+                if Self.shouldContinueNativeToolChainAfterNonSuccess(
+                    after: observationText,
+                    currentToolID: validatedCall.canonicalToolID,
+                    nextToolID: nextToolID,
+                    routing: routing
+                ) {
+                    appendStep(AgentStep(
+                        kind: .reflection,
+                        content: "Maps search continuation preserved after degraded location.current result.",
+                        toolID: validatedCall.canonicalToolID
+                    ))
+                    continue
+                }
                 break
             }
         }
@@ -465,6 +487,34 @@ extension AssistantKernel: AgentKernelRunning {
             return "\(toolID) finished with status \(result.status.rawValue): \(errorCode)."
         }
         return "\(toolID) finished with status \(result.status.rawValue) and no user-visible output."
+    }
+
+    private nonisolated static func finalizedToolObservation(
+        intent: UserIntent,
+        toolID: String,
+        observation: String,
+        originalPrompt: String
+    ) -> String {
+        ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: intent,
+            toolID: toolID,
+            observation: observation,
+            originalPrompt: originalPrompt
+        ) ?? observation
+    }
+
+    nonisolated static func shouldContinueNativeToolChainAfterNonSuccess(
+        after observation: String,
+        currentToolID: String,
+        nextToolID: String?,
+        routing: IntentRoutingDecision
+    ) -> Bool {
+        let canonicalCurrent = ToolRouteGuard.canonicalToolID(currentToolID)
+        let canonicalNext = nextToolID.map(ToolRouteGuard.canonicalToolID)
+        return routing.intent == .maps
+            && canonicalCurrent == "location.current"
+            && canonicalNext == "maps.search"
+            && observation.lowercased().contains("position snapshot is disabled")
     }
 
     private func toolExecutionAvailableTools(
