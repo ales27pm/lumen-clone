@@ -1034,9 +1034,95 @@ struct AgentGroundingRegressionTests {
         let failure = try #require(package.exportQualityFailures?.first(where: { $0.type == "agent_grounding_live_e2e_model_backed_trace_gap" }))
         #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 2)
         #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 1)
-        #expect(failure.actual?.contains("requiredAgentRunScenarioCount=2") == true)
+        #expect(failure.actual?.contains("evidenceRequiredScenarioCount=2") == true)
+        #expect(failure.actual?.contains("missingEvidenceScenarioCount=1") == true)
         #expect(failure.actual?.contains("modelBackedCorrelatedTraceCount=2") == true)
         #expect(failure.actual?.contains("modelBackedCorrelatedScenarioCount=1") == true)
+    }
+
+    @Test func policyFirstLiveE2EExportAcceptsCorrelatedDeterministicEvidence() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_075)
+        let scenarioID = "policy-first-tool-coverage"
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt,
+            event: .toolAction,
+            slot: "policy",
+            stage: "deterministic-compatibility-tool",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: "weather",
+            promptPrefix: "weather",
+            rawOutputPrefix: "",
+            selectedToolID: "weather",
+            toolArguments: [:],
+            allowedToolIDs: ["weather"],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            runtimePath: "deterministic-compatibility"
+        ))
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: scenarioID,
+            kind: "toolCoverage",
+            title: "Policy-first weather",
+            prompt: "What's the weather?",
+            expectedIntent: "weather",
+            actualIntent: "weather",
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            requiresAgentRun: true,
+            evidenceMode: E2EEvidenceMode.policyFirstAllowed.rawValue,
+            passed: true,
+            failures: [],
+            finalText: "Weather observation.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            rawFinalPrefix: "Weather observation.",
+            sanitizedFinalPrefix: "Weather observation.",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: []
+        )
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            passed: 1,
+            failed: 0,
+            results: [result]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+
+        #expect(package.liveE2EReport?.modelBackedCorrelatedScenarioCount == 0)
+        #expect(package.liveE2EReport?.deterministicCompatibilityTraceCount == 1)
+        #expect(package.exportQualityFailures?.contains(where: { $0.type == "agent_grounding_live_e2e_model_backed_trace_gap" }) != true)
     }
 
     @Test func liveE2EExportFlagsMissingModelBackedTraceCoverage() throws {
@@ -1124,7 +1210,8 @@ struct AgentGroundingRegressionTests {
         #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 0)
         #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 0)
         #expect(liveE2EReport.deterministicCompatibilityTraceCount == 1)
-        #expect(failure.actual?.contains("requiredAgentRunScenarioCount=1") == true)
+        #expect(failure.actual?.contains("evidenceRequiredScenarioCount=1") == true)
+        #expect(failure.actual?.contains("missingEvidenceScenarioCount=1") == true)
         #expect(failure.actual?.contains("modelBackedCorrelatedTraceCount=0") == true)
         #expect(failure.actual?.contains("modelBackedCorrelatedScenarioCount=0") == true)
         #expect(failure.problem.contains("Deterministic compatibility traces") == true)

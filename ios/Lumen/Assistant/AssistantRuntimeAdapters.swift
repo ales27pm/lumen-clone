@@ -20,7 +20,12 @@ protocol LlamaRuntimeStreamingService: Sendable {
     var isChatLoaded: Bool { get async }
     var isEmbedLoaded: Bool { get async }
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) async -> AsyncStream<GenerationToken>
+    func takeCompletedTracePayload(requestID: UUID) async -> CompletedGenerationTracePayload?
     func embed(_ text: String) async throws -> [Double]
+}
+
+extension LlamaRuntimeStreamingService {
+    func takeCompletedTracePayload(requestID: UUID) async -> CompletedGenerationTracePayload? { nil }
 }
 
 extension AppLlamaService: LlamaRuntimeStreamingService {}
@@ -218,6 +223,21 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
 
     static func live(service: any LlamaRuntimeStreamingService = AppLlamaService.shared, slot: LumenModelSlot = .mouth) -> LlamaRuntimeAdapter {
         LlamaRuntimeAdapter(liveService: service, liveSlot: slot)
+    }
+
+    func streamStructured(_ request: GenerateRequest, slot: LumenModelSlot) async throws -> AsyncStream<GenerationToken> {
+        guard let liveService else {
+            throw LocalRuntimeError.unavailable(unavailableReason ?? "llama structured streaming runtime unavailable")
+        }
+        guard await liveService.isChatLoaded else {
+            throw LocalRuntimeError.unavailable("llama structured streaming runtime has no loaded chat model")
+        }
+        return await liveService.stream(request, slot: slot)
+    }
+
+    func takeCompletedStructuredTracePayload(requestID: UUID) async -> CompletedGenerationTracePayload? {
+        guard let liveService else { return nil }
+        return await liveService.takeCompletedTracePayload(requestID: requestID)
     }
 
     func generate(request: TextGenerationRequest) async throws -> String {

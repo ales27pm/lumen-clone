@@ -139,10 +139,12 @@ public struct AgentGroundingAuditView: View {
                         LabeledContent("Traces", value: "\(lastExportPackage.recentTraces.count)")
                         LabeledContent("Live E2E layer", value: lastExportPackage.liveE2EReport == nil ? "not included" : "included")
                         if let liveE2EReport = lastExportPackage.liveE2EReport {
-                            let requiredAgentRunScenarioCount = liveE2EReport.payload.results.filter(\.requiresAgentRun).count
+                            let requiredAgentRunScenarioCount = liveE2EReport.payload.results.filter {
+                                $0.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue
+                            }.count
                             LabeledContent("Live E2E scenarios", value: "\(liveE2EReport.payload.results.count)")
                             LabeledContent("Correlated E2E traces", value: "\(liveE2EReport.correlatedTraceCount)")
-                            LabeledContent("Model-backed E2E scenarios", value: "\(liveE2EReport.modelBackedCorrelatedScenarioCount)/\(requiredAgentRunScenarioCount)")
+                            LabeledContent("Model-backed required E2E scenarios", value: "\(liveE2EReport.modelBackedCorrelatedScenarioCount)/\(requiredAgentRunScenarioCount)")
                             LabeledContent("Model-backed E2E traces", value: "\(liveE2EReport.modelBackedCorrelatedTraceCount)")
                             LabeledContent("Compatibility E2E traces", value: "\(liveE2EReport.deterministicCompatibilityTraceCount)")
                         }

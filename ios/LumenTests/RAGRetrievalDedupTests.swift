@@ -3,6 +3,26 @@ import SwiftData
 @testable import Lumen
 
 final class RAGRetrievalDedupTests: XCTestCase {
+    @MainActor func testVectorIndexExcludesUnversionedEmbeddingChunks() {
+        let current = RAGChunk(content: "current", sourceType: .note, sourceName: "current", embedding: [1, 0])
+        let legacy = RAGChunk(
+            content: "legacy",
+            sourceType: .note,
+            sourceName: "legacy",
+            embedding: [1, 0],
+            embeddingFormatVersion: 0,
+            embeddingModelIdentifier: "",
+            embeddingDimension: 0
+        )
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+
+        let result = RAGVectorIndex.shared.ensureLoadedForTests { [current, legacy] }
+
+        XCTAssertEqual(result.loadedCount, 1)
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
     @MainActor func testDedupKeepsDistinctChunksWithSameExcerpt() async throws {
         let schema = Schema([RAGChunk.self]); let c = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
         let ctx = ModelContext(c)

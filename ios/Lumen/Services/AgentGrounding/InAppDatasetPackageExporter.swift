@@ -252,7 +252,7 @@ nonisolated enum InAppDatasetPackageExporter {
                 notes: [
                     "Embedded TestFlight/live E2E layer exported from the app.",
                     "The parent Agent Grounding package does not own live E2E pass/fail.",
-                    "Offline ingestion must validate requiresAgentRun=true scenarios against correlated recentTraces modelTurn sidecar evidence."
+                    "Offline ingestion must validate each scenario against correlated recentTraces according to evidenceMode."
                 ]
             ),
             payload: report,
@@ -311,6 +311,7 @@ nonisolated enum InAppDatasetPackageExporter {
     private static func modelBackedCorrelatedScenarioCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
         report.results.reduce(into: 0) { count, result in
             guard result.requiresAgentRun,
+                  result.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue,
                   traces.contains(where: { trace in
                       isModelBackedLiveEvidenceTrace(trace) && traceMatches(result: result, trace: trace)
                   }) else {
@@ -372,7 +373,7 @@ nonisolated enum InAppDatasetPackageExporter {
         }
 
         if let liveE2EReport,
-           let failure = liveE2EModelBackedTraceGapFailure(liveE2EReport) {
+           let failure = liveE2EModelBackedTraceGapFailure(liveE2EReport, traces: traces) {
             failures.append(failure)
         }
 
@@ -422,30 +423,62 @@ nonisolated enum InAppDatasetPackageExporter {
     }
 
     private static func liveE2EModelBackedTraceGapFailure(
-        _ liveE2EReport: InAppDatasetLiveE2EReportExport
+        _ liveE2EReport: InAppDatasetLiveE2EReportExport,
+        traces: [InAppDatasetTraceExport]
     ) -> InAppDatasetExportQualityFailure? {
-        let requiredAgentRunScenarioCount = liveE2EReport.payload.results.filter(\.requiresAgentRun).count
-        guard requiredAgentRunScenarioCount > 0,
-              liveE2EReport.modelBackedCorrelatedScenarioCount < requiredAgentRunScenarioCount else {
+        let evidenceRequired = liveE2EReport.payload.results.filter {
+            $0.evidenceMode != E2EEvidenceMode.routingOnly.rawValue
+        }
+        let missing = evidenceRequired.filter { result in
+            let correlated = traces.filter { traceMatches(result: result, exportedTrace: $0) }
+            if result.evidenceMode == E2EEvidenceMode.policyFirstAllowed.rawValue {
+                return !correlated.contains(where: { isModelBackedLiveEvidenceTrace($0) || isDeterministicCompatibilityEvidenceTrace($0) })
+            }
+            return !correlated.contains(where: isModelBackedLiveEvidenceTrace)
+        }
+        guard !evidenceRequired.isEmpty, !missing.isEmpty else {
             return nil
         }
         return InAppDatasetExportQualityFailure(
             type: "agent_grounding_live_e2e_model_backed_trace_gap",
             agent: "runtime",
             expected: [
-                "Every requiresAgentRun live E2E scenario should export correlated model-backed AgentBehaviorTrace modelTurn evidence."
+                "modelBackedRequired scenarios need correlated AssistantKernel model-backed structured generation evidence; policyFirstAllowed scenarios may use correlated model-backed or deterministic policy-first evidence; routingOnly scenarios need no runtime evidence."
             ],
             actual: [
-                "requiredAgentRunScenarioCount=\(requiredAgentRunScenarioCount)",
+                "evidenceRequiredScenarioCount=\(evidenceRequired.count)",
+                "missingEvidenceScenarioCount=\(missing.count)",
                 "modelBackedCorrelatedTraceCount=\(liveE2EReport.modelBackedCorrelatedTraceCount)",
                 "modelBackedCorrelatedScenarioCount=\(liveE2EReport.modelBackedCorrelatedScenarioCount)",
                 "correlatedTraceCount=\(liveE2EReport.correlatedTraceCount)",
                 "deterministicCompatibilityTraceCount=\(liveE2EReport.deterministicCompatibilityTraceCount)"
             ].joined(separator: "; "),
             scenario: "Agent Grounding > E2E Test Runner > Export TestFlight + Agent Grounding Package",
-            problem: "The embedded live E2E report does not have enough model-backed correlated traces. Deterministic compatibility traces and uncorrelated traces are diagnostics only, not live model evidence.",
+            problem: "The embedded live E2E report is missing correlated evidence required by each scenario's evidenceMode.",
             sourceLayer: "agentGroundingRuntimeAudit.exportQuality"
         )
+    }
+
+    private static func traceMatches(result: E2ETestResult, exportedTrace trace: InAppDatasetTraceExport) -> Bool {
+        if let e2eRunID = result.e2eRunID, trace.e2eRunID != e2eRunID { return false }
+        if let agentRunID = result.agentRunID, trace.agentRunID != agentRunID { return false }
+        if let conversationID = result.conversationID, trace.conversationID != conversationID { return false }
+        if let turnID = result.turnID, trace.turnID != turnID { return false }
+        if let scenarioID = trace.scenarioID, !scenarioID.isEmpty, scenarioID != result.scenarioID { return false }
+        return trace.e2eRunID != nil
+            || trace.agentRunID != nil
+            || trace.conversationID != nil
+            || trace.turnID != nil
+            || trace.scenarioID == result.scenarioID
+    }
+
+    private static func isModelBackedLiveEvidenceTrace(_ trace: InAppDatasetTraceExport) -> Bool {
+        trace.event == .modelTurn && trace.runtimePath != "deterministic-compatibility" && trace.parseError == nil
+    }
+
+    private static func isDeterministicCompatibilityEvidenceTrace(_ trace: InAppDatasetTraceExport) -> Bool {
+        guard trace.runtimePath == "deterministic-compatibility" else { return false }
+        return trace.event == .toolAction || trace.event == .finalAnswer
     }
 
     private static func requiresStructuredModelTraceCompleteness(_ trace: InAppDatasetTraceExport) -> Bool {
@@ -776,8 +809,7 @@ nonisolated enum InAppDatasetPackageExporter {
     /// - Returns: The parse error string if the trace is in a structured action stage and a parse error exists, `nil` otherwise.
     private static func actionTraceParseError(_ trace: AgentBehaviorTrace) -> String? {
         guard isActionStructuredStage(trace) else { return nil }
-        if let parseError = trace.parseError { return parseError }
-        return AgentTurnParser.parse(trace.rawOutputPrefix).parseError?.rawValue
+        return trace.parseError
     }
 
     /// Determines whether a trace represents a structured action stage.

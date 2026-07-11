@@ -1,6 +1,7 @@
 import Foundation
 
 nonisolated enum SemanticEmbeddingText {
+    static let formatVersion = 2
     private static let maxContentCharacters = 4096
     private static let maxMetadataCharacters = 160
 
@@ -84,5 +85,15 @@ nonisolated enum SemanticEmbeddingText {
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+}
+
+enum RAGEmbeddingMetadata {
+    static func currentModelIdentifier() async -> String {
+        guard let path = await AppLlamaService.shared.loadedEmbedPath, !path.isEmpty else {
+            return "assistant-kernel-embedding"
+        }
+        let leaf = URL(fileURLWithPath: path).lastPathComponent
+        return "llama:\(RuntimeFallbackLogger.promptHash(leaf).prefix(16))"
     }
 }

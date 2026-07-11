@@ -11,14 +11,30 @@ final class RAGChunk {
     var chunkIndex: Int = 0
     var createdAt: Date = Date()
     var embedding: [Double] = []
+    var embeddingFormatVersion: Int = 0
+    var embeddingModelIdentifier: String = ""
+    var embeddingDimension: Int = 0
 
-    init(content: String, sourceType: RAGSourceType, sourceName: String, sourceRef: String? = nil, chunkIndex: Int = 0, embedding: [Double] = []) {
+    init(
+        content: String,
+        sourceType: RAGSourceType,
+        sourceName: String,
+        sourceRef: String? = nil,
+        chunkIndex: Int = 0,
+        embedding: [Double] = [],
+        embeddingFormatVersion: Int = SemanticEmbeddingText.formatVersion,
+        embeddingModelIdentifier: String = "assistant-kernel-embedding",
+        embeddingDimension: Int? = nil
+    ) {
         self.content = content
         self.sourceType = sourceType.rawValue
         self.sourceName = sourceName
         self.sourceRef = sourceRef
         self.chunkIndex = chunkIndex
         self.embedding = embedding
+        self.embeddingFormatVersion = embeddingFormatVersion
+        self.embeddingModelIdentifier = embeddingModelIdentifier
+        self.embeddingDimension = embeddingDimension ?? embedding.count
     }
 
     var kind: RAGSourceType { RAGSourceType(rawValue: sourceType) ?? .file }

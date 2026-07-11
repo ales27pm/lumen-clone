@@ -7,8 +7,30 @@ import UIKit
 import OSLog
 
 @MainActor
+protocol BackgroundTaskRegistering: AnyObject {
+    func register(identifier: String, handler: @escaping (BGTask) -> Void) -> Bool
+}
+
+@MainActor
+final class SystemBackgroundTaskRegistrar: BackgroundTaskRegistering {
+    static let shared = SystemBackgroundTaskRegistrar()
+
+    func register(identifier: String, handler: @escaping (BGTask) -> Void) -> Bool {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil, launchHandler: handler)
+    }
+}
+
+struct BackgroundTaskRegistrationOutcome: Equatable, Sendable {
+    let identifier: String
+    let succeeded: Bool
+    let beforeApplicationLaunchCompletion: Bool
+    let errorDomain: String?
+    let errorCode: Int?
+}
+
+@MainActor
 final class TriggerScheduler {
-    static let shared = TriggerScheduler()
+    static let shared = TriggerScheduler(registrar: SystemBackgroundTaskRegistrar.shared)
 
     nonisolated static let refreshIdentifier = "com.27pm.lumenclone.agent.refresh"
     nonisolated static let processIdentifier = "com.27pm.lumenclone.agent.process"
@@ -21,7 +43,9 @@ final class TriggerScheduler {
         "\(continuedProcessingIdentifierPrefix)\(submissionToken)"
     }
 
-    private var registered = false
+    private let registrar: any BackgroundTaskRegistering
+    private var registeredTaskIdentifiers: Set<String> = []
+    private(set) var lastRegistrationOutcomes: [BackgroundTaskRegistrationOutcome] = []
     private var isRunning = false
     var lastPermissionGranted: Bool?
 
@@ -30,6 +54,10 @@ final class TriggerScheduler {
     var onPermissionResult: (@MainActor (Bool) -> Void)?
 
     private let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
+
+    init(registrar: any BackgroundTaskRegistering) {
+        self.registrar = registrar
+    }
 
     private func persist(_ context: ModelContext, operation: String, scope: String) throws {
         do { try context.save() } catch {
@@ -48,20 +76,44 @@ final class TriggerScheduler {
         }
     }
 
-    func registerTasks() {
-        guard !registered else { return }
-        registered = true
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: nil) { task in
+    @discardableResult
+    func registerTasks(beforeApplicationLaunchCompletion: Bool = false) -> [BackgroundTaskRegistrationOutcome] {
+        var outcomes: [BackgroundTaskRegistrationOutcome] = []
+        if !registeredTaskIdentifiers.contains(Self.refreshIdentifier) {
+            let succeeded = registrar.register(identifier: Self.refreshIdentifier) { task in
             guard let refresh = task as? BGAppRefreshTask else { task.setTaskCompleted(success: false); return }
             Task { @MainActor in await BackgroundOrchestrator.shared.handleAppRefresh(task: refresh) }
+            }
+            outcomes.append(Self.registrationOutcome(identifier: Self.refreshIdentifier, succeeded: succeeded, beforeApplicationLaunchCompletion: beforeApplicationLaunchCompletion))
+            if succeeded { registeredTaskIdentifiers.insert(Self.refreshIdentifier) }
         }
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processIdentifier, using: nil) { task in
+        if !registeredTaskIdentifiers.contains(Self.processIdentifier) {
+            let succeeded = registrar.register(identifier: Self.processIdentifier) { task in
             guard let proc = task as? BGProcessingTask else { task.setTaskCompleted(success: false); return }
             Task { @MainActor in await BackgroundOrchestrator.shared.handleProcessing(task: proc) }
+            }
+            outcomes.append(Self.registrationOutcome(identifier: Self.processIdentifier, succeeded: succeeded, beforeApplicationLaunchCompletion: beforeApplicationLaunchCompletion))
+            if succeeded { registeredTaskIdentifiers.insert(Self.processIdentifier) }
         }
+        if !outcomes.isEmpty { lastRegistrationOutcomes = outcomes }
         let center = UNUserNotificationCenter.current()
         let category = UNNotificationCategory(identifier: Self.notificationCategory, actions: [], intentIdentifiers: [], options: [])
         center.setNotificationCategories([category])
+        return outcomes
+    }
+
+    private nonisolated static func registrationOutcome(
+        identifier: String,
+        succeeded: Bool,
+        beforeApplicationLaunchCompletion: Bool
+    ) -> BackgroundTaskRegistrationOutcome {
+        BackgroundTaskRegistrationOutcome(
+            identifier: identifier,
+            succeeded: succeeded,
+            beforeApplicationLaunchCompletion: beforeApplicationLaunchCompletion,
+            errorDomain: succeeded ? nil : "BGTaskScheduler.register",
+            errorCode: succeeded ? nil : 0
+        )
     }
 
     @discardableResult

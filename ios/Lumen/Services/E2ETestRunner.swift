@@ -2161,6 +2161,13 @@ nonisolated enum E2ETestRunner {
             requiresPrimaryAgentJSON: requiresPrimaryAgentJSON
         )
     }
+
+    nonisolated static func isValidModelBackedEvidenceTraceForTests(
+        _ trace: AgentBehaviorTrace,
+        requiresPrimaryAgentJSON: Bool
+    ) -> Bool {
+        isValidModelBackedEvidenceTrace(trace, requiresPrimaryAgentJSON: requiresPrimaryAgentJSON)
+    }
     #endif
 
     private nonisolated static func isPrimaryAgentJSONTrace(_ trace: AgentBehaviorTrace) -> Bool {
@@ -2175,19 +2182,18 @@ nonisolated enum E2ETestRunner {
     ) -> Bool {
         guard trace.event == AgentBehaviorTrace.Event.modelTurn,
               trace.runtimePath != "deterministic-compatibility",
-              trace.parseError == nil,
-              !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              trace.parseError == nil else {
             return false
         }
         if requiresPrimaryAgentJSON {
             guard isPrimaryAgentJSONTrace(trace) else { return false }
-            let parsed = AgentTurnParser.parse(trace.rawOutputPrefix)
-            guard parsed.parseError == nil else { return false }
-            if let action = parsed.action {
-                let canonicalTool = ToolRouteGuard.canonicalToolID(action.tool)
+            if let selectedToolID = trace.selectedToolID, !selectedToolID.isEmpty {
+                let canonicalTool = ToolRouteGuard.canonicalToolID(selectedToolID)
                 return trace.allowedToolIDs.contains(canonicalTool)
             }
-            return parsed.final?.isEmpty == false && trace.allowedToolIDs.isEmpty
+            return !trace.emittedFinalInActionTurn
+                && trace.finalChunkReceived != false
+                && trace.finalizerAccepted != false
         }
         return true
     }

@@ -23,7 +23,15 @@ final class RAGIndexer {
                 throw RAGIndexingError.embeddingFailed
             }
             guard !embedding.isEmpty else { throw RAGIndexingError.emptyEmbedding }
-            let chunk = RAGChunk(content: c.text, sourceType: type, sourceName: title, sourceRef: source.ref, chunkIndex: i, embedding: embedding)
+            let chunk = RAGChunk(
+                content: c.text,
+                sourceType: type,
+                sourceName: title,
+                sourceRef: source.ref,
+                chunkIndex: i,
+                embedding: embedding,
+                embeddingModelIdentifier: await RAGEmbeddingMetadata.currentModelIdentifier()
+            )
             context.insert(chunk)
             pending.append(chunk)
         }

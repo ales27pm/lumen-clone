@@ -1,5 +1,9 @@
 # Lumen Validation
 
+Structured-agent release validation must confirm that refresh, processing, and continued-processing handlers register before application launch completion; model-visible tools are a fail-closed subset of `SecureToolRegistry`; and exported E2E evidence is evaluated by `evidenceMode`. A `policyFirstAllowed` scenario may use correlated deterministic policy-first evidence, while `modelBackedRequired` remains strict.
+
+After an embedding format, model, or dimension change, run the in-app reindex workflow and confirm stale chunks report `rag_reindex_required` before reindex and become searchable afterward. Simulator compilation is not proof of real-device background registration, local model loading, or live E2E behavior.
+
 `python3 -m lumen_manifest_crawler developer-cycle --root .` is the top-level validation entrypoint. It preserves the lower-level commands for targeted use:
 
 ```bash

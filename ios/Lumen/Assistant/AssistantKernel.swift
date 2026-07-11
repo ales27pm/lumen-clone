@@ -36,6 +36,14 @@ final class AssistantKernel {
         router.selection(for: context)
     }
 
+    func streamStructuredLlama(_ request: GenerateRequest, slot: LumenModelSlot) async throws -> AsyncStream<GenerationToken> {
+        try await router.llama.streamStructured(request, slot: slot)
+    }
+
+    func takeCompletedStructuredLlamaTrace(requestID: UUID) async -> CompletedGenerationTracePayload? {
+        await router.llama.takeCompletedStructuredTracePayload(requestID: requestID)
+    }
+
     func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?) async -> AssistantGroundingContext {
         guard let modelContext else { return .empty }
         let budget = ContextBudgetAllocator.allocate(for: turn)
