@@ -184,22 +184,36 @@ struct StructuredAgentKernelExecutor {
             }
 
             if let action = actionToExecute {
-                let validation = StructuredToolCallValidator.validate(action: action, availableTools: availableTools)
+                var actionForValidation = action
+                var validation = StructuredToolCallValidator.validate(action: actionForValidation, availableTools: availableTools)
+                if case .failure(let error) = validation,
+                   let triggerRepair = Self.repairedTriggerCreateActionIfNeeded(
+                    modelAction: actionForValidation,
+                    validationError: error,
+                    routing: routing,
+                    prompt: userMessage,
+                    availableToolIDs: availableToolIDs
+                   ) {
+                    steps.append(triggerRepair.reflection)
+                    continuation.yield(.step(triggerRepair.reflection))
+                    actionForValidation = triggerRepair.action
+                    validation = StructuredToolCallValidator.validate(action: actionForValidation, availableTools: availableTools)
+                }
                 let validatedCall: ValidatedStructuredToolCall
                 switch validation {
                 case .success(let call):
                     validatedCall = call
                 case .failure(let error):
-                    let canonical = ToolRouteGuard.canonicalToolID(action.tool)
+                    let canonical = ToolRouteGuard.canonicalToolID(actionForValidation.tool)
                     let obs = AgentStep(
                         kind: .observation,
                         content: "Tool call schema rejected: \(error.diagnostic). Emit a corrected action or final turn.",
                         toolID: canonical,
-                        toolArgs: action.args.stringCoerced
+                        toolArgs: actionForValidation.args.stringCoerced
                     )
                     steps.append(obs)
                     continuation.yield(.step(obs))
-                    scratchpad += "\nAction: \(action.displayContent)\nObservation: \(Self.compactScratchpadObservation(obs.content))"
+                    scratchpad += "\nAction: \(actionForValidation.displayContent)\nObservation: \(Self.compactScratchpadObservation(obs.content))"
                     continue
                 }
 
@@ -888,6 +902,55 @@ private extension StructuredAgentKernelExecutor {
 
     static func shouldStopAfterToolResult(_ status: ToolResultStatus) -> Bool {
         status != .success
+    }
+
+    static func repairedTriggerCreateActionIfNeeded(
+        modelAction: AgentAction,
+        validationError: StructuredToolCallValidationError,
+        routing: IntentRoutingDecision,
+        prompt: String,
+        availableToolIDs: Set<String>
+    ) -> (action: AgentAction, reflection: AgentStep)? {
+        guard routing.intent == .trigger,
+              ToolRouteGuard.canonicalToolID(modelAction.tool) == "trigger.create",
+              availableToolIDs.contains("trigger.create") else {
+            return nil
+        }
+        guard case .invalidEnumValue(let tool, let argument, _) = validationError,
+              ToolRouteGuard.canonicalToolID(tool) == "trigger.create",
+              argument == "schedule" else {
+            return nil
+        }
+
+        let deterministic = DeterministicToolPlanner
+            .planSteps(routing: routing, prompt: prompt, availableToolIDs: availableToolIDs)
+            .first { ToolRouteGuard.canonicalToolID($0.tool) == "trigger.create" }
+        var args = modelAction.args
+        args["schedule"] = deterministic?.args["schedule"] ?? .string("relative")
+        if (args["title"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args["title"] = deterministic?.args["title"] ?? .string("Scheduled agent run")
+        }
+        if (args["prompt"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args["prompt"] = deterministic?.args["prompt"] ?? .string(prompt)
+        }
+        let timingKeys = ["inMinutes", "atTime", "intervalSeconds", "beforeMinutes"]
+        if !timingKeys.contains(where: { args[$0] != nil }) {
+            for key in timingKeys {
+                if let value = deterministic?.args[key] {
+                    args[key] = value
+                    break
+                }
+            }
+        }
+
+        let repaired = AgentAction(tool: "trigger.create", args: args)
+        let reflection = AgentStep(
+            kind: .reflection,
+            content: "Trigger create schedule enum repaired before approval boundary.",
+            toolID: "trigger.create",
+            toolArgs: repaired.args.stringCoerced
+        )
+        return (repaired, reflection)
     }
 
     static func shouldContinueAfterNonSuccessToolResult(
@@ -1810,6 +1873,22 @@ extension StructuredAgentKernelExecutor {
             routing: routing,
             prompt: prompt,
             steps: steps,
+            availableToolIDs: availableToolIDs
+        )
+    }
+
+    static func repairedTriggerCreateActionIfNeededForTests(
+        modelAction: AgentAction,
+        validationError: StructuredToolCallValidationError,
+        routing: IntentRoutingDecision,
+        prompt: String,
+        availableToolIDs: Set<String>
+    ) -> (action: AgentAction, reflection: AgentStep)? {
+        repairedTriggerCreateActionIfNeeded(
+            modelAction: modelAction,
+            validationError: validationError,
+            routing: routing,
+            prompt: prompt,
             availableToolIDs: availableToolIDs
         )
     }
