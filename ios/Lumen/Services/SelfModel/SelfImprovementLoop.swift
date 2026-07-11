@@ -228,8 +228,11 @@ final class SelfImprovementLoop {
             return .skipped("policy_denied")
         }
 
-        await coordinator.resetIfWindowExpired(now: startedAt)
-        guard let runID = await coordinator.begin(now: startedAt, force: force, cooldown: config.cooldownSeconds) else {
+        // Policy evaluation crosses actor boundaries and may outlive another run. Use a
+        // fresh clock value for coordination so a run that completed during policy
+        // evaluation cannot leave this invocation comparing against a stale instant.
+        let coordinationNow = now()
+        guard let runID = await coordinator.begin(now: coordinationNow, force: force, cooldown: config.cooldownSeconds) else {
             let reason = await coordinator.state().lastReason ?? "already_running_or_window_active"
             await appendMetric(
                 summary: "skipped: \(reason) trigger=\(trigger.rawValue)",

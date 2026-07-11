@@ -44,7 +44,8 @@ struct StructuredAgentKernelExecutor {
         var finalAnswer = ""
         let userMessage = Self.sanitizedStructuredUserMessage(request.userMessage)
         let routing = IntentRouter.classify(userMessage)
-        let availableTools = await availableTools(for: request, routing: routing)
+        let toolAvailability = await availableTools(for: request, routing: routing)
+        let availableTools = toolAvailability.definitions
         let memoryCommandPlan = MemoryCommandPlan.saveThenRecall(from: userMessage)
         let systemPrompt = Self.buildSystemPrompt(request: request, availableTools: availableTools)
         let availableToolIDs = Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
@@ -59,6 +60,33 @@ struct StructuredAgentKernelExecutor {
             continuation.yield(.finalDelta(finalAnswer))
             continuation.yield(.final(finalAnswer))
             continuation.yield(.done(finalText: finalAnswer, steps: steps))
+            continuation.finish()
+            return
+        }
+
+        if IntentRouter.intentRequiresTool(routing), availableTools.isEmpty {
+            let unavailable = Self.secureToolUnavailableFinal(
+                routing: routing,
+                excludedReasons: toolAvailability.excludedReasons
+            )
+            emit(.observation, unavailable, steps: &steps, continuation: continuation)
+            if request.options.diagnosticsEnabled {
+                continuation.yield(.diagnostic(.init(
+                    stage: "structured-agent-json-tool-unavailable",
+                    message: "Structured generation stopped before model execution because no securely available routed tool remained.",
+                    metadata: [
+                        "intent": routing.intent.rawValue,
+                        "excludedToolReasons": toolAvailability.excludedReasons
+                            .map { "\($0.key)=\($0.value)" }
+                            .sorted()
+                            .joined(separator: ","),
+                        "runtimePath": "secure-tool-unavailable"
+                    ]
+                )))
+            }
+            continuation.yield(.finalDelta(unavailable))
+            continuation.yield(.final(unavailable))
+            continuation.yield(.done(finalText: unavailable, steps: steps))
             continuation.finish()
             return
         }
@@ -82,11 +110,23 @@ struct StructuredAgentKernelExecutor {
             )
             var turn = Self.strictToolExecutableTurn(AgentTurnParser.parse(generation.raw))
 
-            if !Task.isCancelled,
-               generation.forcedParseError == nil,
-               turn.parseError == .missingActionOrFinal,
-               Self.shouldForceActionSchema(request: request, availableTools: availableTools, stepIndex: stepIndex, hasObservations: !observations.isEmpty) {
-                recordParseFailure(parseError: .missingActionOrFinal, raw: generation.raw, systemPrompt: systemPrompt, userTurn: userTurn, stepIndex: stepIndex)
+            let requiresFirstActionRetry = generation.forcedParseError == nil
+                && Self.shouldForceActionSchema(
+                    request: request,
+                    availableTools: availableTools,
+                    stepIndex: stepIndex,
+                    hasObservations: !observations.isEmpty
+                )
+                && (turn.parseError == .missingActionOrFinal || Self.toolRequiredFinalNeedsAction(
+                    turn.final ?? "",
+                    request: request,
+                    availableTools: availableTools,
+                    observations: observations
+                ))
+            if !Task.isCancelled, requiresFirstActionRetry {
+                if turn.parseError == .missingActionOrFinal {
+                    recordParseFailure(parseError: .missingActionOrFinal, raw: generation.raw, systemPrompt: systemPrompt, userTurn: userTurn, stepIndex: stepIndex)
+                }
                 generation = await generateStructuredTurn(
                     request: request,
                     availableTools: availableTools,
@@ -398,7 +438,7 @@ struct StructuredAgentKernelExecutor {
         continuation.finish()
     }
 
-    private func availableTools(for request: AgentKernelRequest, routing: IntentRoutingDecision) async -> [ToolDefinition] {
+    private func availableTools(for request: AgentKernelRequest, routing: IntentRoutingDecision) async -> StructuredToolAvailability {
         let context = ToolExecutionContext(
             isForeground: request.source.isForegroundForStructuredAgent,
             appState: nil,
@@ -406,18 +446,37 @@ struct StructuredAgentKernelExecutor {
             permissionRegistry: .shared,
             metricsStore: kernel.metricsStore
         )
-        let secure = await kernel.toolRegistry.availableDefinitions(context: context, source: request.toolInvocationSourceForStructuredAgent)
+        let availability = await kernel.toolRegistry.definitionAvailability(
+            context: context,
+            source: request.toolInvocationSourceForStructuredAgent
+        )
+        let secure = availability.compactMap { assessment -> SecureToolDefinition? in
+            if case .deny = assessment.decision { return nil }
+            return assessment.definition
+        }
         let secureCatalog = ToolSchemaBridge.toCatalogToolDefinitions(secure)
         let catalogByID = Dictionary(uniqueKeysWithValues: ToolRegistry.all.map { (ToolRouteGuard.canonicalToolID($0.id), $0) })
         let secureIDs = Set(secureCatalog.map { ToolRouteGuard.canonicalToolID($0.id) })
         let optionIDs = Set(request.options.structuredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID))
         let routingIDs = Set(routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
-        let sourceIDs = Self.structuredToolSourceIDs(secureIDs: secureIDs, optionIDs: optionIDs, routingIDs: routingIDs)
+        let requestedIDs = Self.structuredRequestedToolSourceIDs(optionIDs: optionIDs, routingIDs: routingIDs)
+        let sourceIDs = requestedIDs.isEmpty && optionIDs.isEmpty && routingIDs.isEmpty
+            ? secureIDs
+            : requestedIDs.intersection(secureIDs)
         let tools = sourceIDs.compactMap { catalogByID[$0] }.sorted { $0.id < $1.id }
-        if tools.isEmpty, !sourceIDs.isEmpty {
-            return sourceIDs.compactMap { catalogByID[$0] }.sorted { $0.id < $1.id }
+        let assessmentsByCatalogID = availability.reduce(into: [String: ToolApprovalDecision]()) { partial, assessment in
+            guard let catalog = ToolSchemaBridge.toCatalogToolDefinitions([assessment.definition]).first else { return }
+            partial[ToolRouteGuard.canonicalToolID(catalog.id)] = assessment.decision
         }
-        return tools
+        var excludedReasons: [String: String] = [:]
+        for id in requestedIDs.subtracting(secureIDs) {
+            if case .deny(let reason) = assessmentsByCatalogID[id] {
+                excludedReasons[id] = reason
+            } else {
+                excludedReasons[id] = "Tool unavailable"
+            }
+        }
+        return StructuredToolAvailability(definitions: tools, excludedReasons: excludedReasons)
     }
 
     private func generateStructuredTurn(
@@ -500,24 +559,65 @@ struct StructuredAgentKernelExecutor {
             ),
             allowsMemoryPressureContinuation: request.options.allowDegradedMode
         )
-        var preflight = await preflightAgentJSONPrompt(genReq)
+        let runtimePreflight: ExecutorRuntimePreflightResult
+        do {
+            runtimePreflight = try await kernel.prepareStructuredLlamaRuntime(
+                slot: Self.structuredAgentModelSlot,
+                allowsLoadedMemoryPressureContinuation: request.options.allowDegradedMode
+            )
+        } catch {
+            return Self.preStreamFailureResult(
+                startedAt: startedAt,
+                request: request,
+                userTurn: userTurn,
+                selectedRuntime: selection.runtime.rawValue,
+                reason: "structured-runtime-readiness-unavailable:\(RuntimeMetricErrorSanitizer.code(for: error))",
+                streamTerminationReason: "structured-runtime-readiness-unavailable"
+            )
+        }
+        guard runtimePreflight.passed else {
+            return Self.preStreamFailureResult(
+                startedAt: startedAt,
+                request: request,
+                userTurn: userTurn,
+                selectedRuntime: selection.runtime.rawValue,
+                reason: runtimePreflight.reason,
+                streamTerminationReason: "structured-runtime-readiness-denied"
+            )
+        }
+
+        var preflight: StructuredPromptPreflight
+        do {
+            preflight = try await preflightAgentJSONPrompt(genReq)
+        } catch {
+            return Self.preStreamFailureResult(
+                startedAt: startedAt,
+                request: request,
+                userTurn: userTurn,
+                selectedRuntime: selection.runtime.rawValue,
+                reason: "structured-prompt-preflight-unavailable:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            )
+        }
         var forcedParseError: AgentTurnParseError?
         if !preflight.fits {
             genReq = Self.agentJSONContextCompactionRequest(from: genReq)
-            preflight = await preflightAgentJSONPrompt(genReq)
+            do {
+                preflight = try await preflightAgentJSONPrompt(genReq)
+            } catch {
+                return Self.preStreamFailureResult(
+                    startedAt: startedAt,
+                    request: request,
+                    userTurn: userTurn,
+                    selectedRuntime: selection.runtime.rawValue,
+                    reason: "structured-prompt-preflight-unavailable:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                )
+            }
             if !preflight.fits {
                 forcedParseError = .contextWindowExceeded
             }
         }
 
-        let runtimePreflight = await ExecutorRuntimePreflight.checkReadiness(
-            allowsLoadedMemoryPressureContinuation: request.options.allowDegradedMode
-        )
         var preGenerationDenialReason: String?
-        if !runtimePreflight.passed, forcedParseError == nil {
-            forcedParseError = .empty
-            preGenerationDenialReason = runtimePreflight.reason
-        }
         if CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration), forcedParseError == nil {
             forcedParseError = .empty
             preGenerationDenialReason = "cpu-watchdog-degraded"
@@ -528,10 +628,12 @@ struct StructuredAgentKernelExecutor {
         var textChunkCount = 0
         var finalChunkReceived = false
         var streamStarted = false
+        var modelLoaded = false
         if forcedParseError == nil {
-            streamStarted = true
             do {
                 let stream = try await kernel.streamStructuredLlama(genReq, slot: Self.structuredAgentModelSlot)
+                streamStarted = true
+                modelLoaded = true
                 streamLoop: for await token in stream {
                     if Task.isCancelled { break streamLoop }
                     switch token {
@@ -547,6 +649,8 @@ struct StructuredAgentKernelExecutor {
                     }
                 }
             } catch {
+                streamStarted = false
+                modelLoaded = false
                 forcedParseError = .empty
                 preGenerationDenialReason = "structured-runtime-unavailable:\(RuntimeMetricErrorSanitizer.code(for: error))"
             }
@@ -558,7 +662,6 @@ struct StructuredAgentKernelExecutor {
         let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let emptyReason = payload?.emptyOutputReason
             ?? (trimmedRaw.isEmpty ? preGenerationDenialReason : nil)
-            ?? (trimmedRaw.isEmpty ? runtimePreflight.reason : nil)
             ?? (trimmedRaw.isEmpty ? Self.agentJSONEmptyStreamReason(streamStarted: streamStarted, textChunkCount: textChunkCount, finalChunkReceived: finalChunkReceived, taskCancelled: Task.isCancelled, maxTokensEffective: genReq.maxTokens) : nil)
         return StructuredGenerationResult(
             raw: raw,
@@ -576,7 +679,7 @@ struct StructuredAgentKernelExecutor {
                 selectedRuntime: payload?.selectedRuntime ?? selection.runtime.rawValue,
                 selectedAdapter: payload?.selectedAdapter,
                 modelIdentifier: payload?.modelIdentifier ?? selection.runtime.rawValue,
-                modelLoaded: payload?.modelLoaded ?? streamStarted,
+                modelLoaded: payload?.modelLoaded ?? modelLoaded,
                 stopSequences: payload?.stopSequences ?? [],
                 temperature: payload?.temperature ?? genReq.temperature,
                 topP: payload?.topP ?? genReq.topP,
@@ -589,13 +692,12 @@ struct StructuredAgentKernelExecutor {
         )
     }
 
-    private func preflightAgentJSONPrompt(_ request: GenerateRequest) async -> StructuredPromptPreflight {
-        let contextSize = await AppLlamaService.shared.contextSizeForDiagnostics(slot: Self.structuredAgentModelSlot)
-        let promptBuild = await AppLlamaService.shared.buildMessagesForDiagnostics(
-            req: request,
-            contextSize: contextSize,
-            slot: Self.structuredAgentModelSlot
-        )
+    private func preflightAgentJSONPrompt(_ request: GenerateRequest) async throws -> StructuredPromptPreflight {
+        let promptBuild = try await kernel.preflightStructuredLlamaPrompt(request, slot: Self.structuredAgentModelSlot)
+        let contextSize = promptBuild.contextSize
+        guard contextSize > 0 else {
+            throw LocalRuntimeError.unavailable("llama structured prompt preflight returned an invalid context size")
+        }
         let tokenLimit = max(128, contextSize - request.maxTokens - Self.structuredPromptPreflightSafetyTokens)
         let fits = promptBuild.estimatedPromptTokens <= tokenLimit
             && promptBuild.finalPromptChars <= PromptBudget.agentJSON(contextSize: contextSize, maxTokens: request.maxTokens).totalChars + 256
@@ -777,6 +879,11 @@ struct StructuredAgentKernelExecutor {
 }
 
 private extension StructuredAgentKernelExecutor {
+    struct StructuredToolAvailability {
+        let definitions: [ToolDefinition]
+        let excludedReasons: [String: String]
+    }
+
     struct StructuredTurnGenerationDiagnostics: Sendable {
         let generationElapsedMs: Int
         let firstTokenLatencyMs: Int?
@@ -805,6 +912,43 @@ private extension StructuredAgentKernelExecutor {
         let raw: String
         let forcedParseError: AgentTurnParseError?
         let diagnostics: StructuredTurnGenerationDiagnostics
+    }
+
+    static func preStreamFailureResult(
+        startedAt: Date,
+        request: AgentKernelRequest,
+        userTurn: String,
+        selectedRuntime: String,
+        reason: String,
+        streamTerminationReason: String = "structured-preflight-unavailable"
+    ) -> StructuredGenerationResult {
+        StructuredGenerationResult(
+            raw: "",
+            forcedParseError: .empty,
+            diagnostics: .init(
+                generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
+                firstTokenLatencyMs: nil,
+                outputTokenCount: 0,
+                estimatedPromptTokenCount: nil,
+                maxTokensRequested: request.options.maxTokens,
+                maxTokensEffective: structuredTurnMaxTokens(from: request.options.maxTokens),
+                promptCharCount: userTurn.count,
+                emptyOutputReason: reason,
+                streamStarted: false,
+                selectedRuntime: selectedRuntime,
+                selectedAdapter: nil,
+                modelIdentifier: selectedRuntime,
+                modelLoaded: false,
+                stopSequences: [],
+                temperature: agentTemperature(from: request.options.temperature),
+                topP: agentTopP(from: request.options.topP),
+                cancellationStateBeforeStream: nil,
+                firstChunkReceived: false,
+                textChunkCount: 0,
+                finalChunkReceived: false,
+                streamTerminationReason: streamTerminationReason
+            )
+        )
     }
 
     struct StructuredPromptPreflight: Sendable {
@@ -906,20 +1050,40 @@ private extension StructuredAgentKernelExecutor {
         routingIDs: Set<String>
     ) -> Set<String> {
         let secure = Set(secureIDs.map(ToolRouteGuard.canonicalToolID))
-        let options = Set(optionIDs.map(ToolRouteGuard.canonicalToolID))
-        let routing = Set(routingIDs.map(ToolRouteGuard.canonicalToolID))
-        let scoped: Set<String>
-        if !options.isEmpty, !routing.isEmpty {
-            let intersection = options.intersection(routing)
-            scoped = intersection.isEmpty ? options : intersection
-        } else if !options.isEmpty {
-            scoped = options
-        } else if !routing.isEmpty {
-            scoped = routing
-        } else {
+        let scoped = structuredRequestedToolSourceIDs(optionIDs: optionIDs, routingIDs: routingIDs)
+        if scoped.isEmpty, optionIDs.isEmpty, routingIDs.isEmpty {
             return secure
         }
         return scoped.intersection(secure)
+    }
+
+    static func structuredRequestedToolSourceIDs(
+        optionIDs: Set<String>,
+        routingIDs: Set<String>
+    ) -> Set<String> {
+        let options = Set(optionIDs.map(ToolRouteGuard.canonicalToolID))
+        let routing = Set(routingIDs.map(ToolRouteGuard.canonicalToolID))
+        if !options.isEmpty, !routing.isEmpty {
+            let intersection = options.intersection(routing)
+            return intersection.isEmpty ? options : intersection
+        } else if !options.isEmpty {
+            return options
+        } else if !routing.isEmpty {
+            return routing
+        } else {
+            return []
+        }
+    }
+
+    static func secureToolUnavailableFinal(
+        routing: IntentRoutingDecision,
+        excludedReasons: [String: String]
+    ) -> String {
+        let base = IntentRouter.unavailableMessage(for: routing)
+        let reasons = Array(Set(excludedReasons.values)).sorted()
+        guard let reason = reasons.first, !reason.isEmpty else { return base }
+        let punctuation = reason.hasSuffix(".") ? reason : "\(reason)."
+        return "\(base) \(punctuation)"
     }
 
     static func shouldStopAfterFirstWebObservation(
@@ -1065,10 +1229,12 @@ private extension StructuredAgentKernelExecutor {
         availableTools: [ToolDefinition],
         observations: [(tool: String, result: String)]
     ) -> Bool {
-        guard observations.isEmpty, !availableTools.isEmpty else { return false }
+        guard !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              observations.isEmpty,
+              !availableTools.isEmpty else { return false }
         let routing = IntentRouter.classify(sanitizedStructuredUserMessage(request.userMessage))
         guard IntentRouter.intentRequiresTool(routing), !routing.requiresClarification else { return false }
-        return structuredFinalIsGenericFallback(final) || structuredFinalIsPlaceholder(final)
+        return true
     }
 
     static func postprocessStructuredFinalAnswer(
@@ -1531,7 +1697,7 @@ private extension StructuredAgentKernelExecutor {
         return """
         \(compactAgentJSONUserTurnForPreflight(userTurn))
 
-        Previous live agent-json attempt emitted a JSON object with no action or final:
+        Previous live agent-json attempt did not emit the required tool action:
         \(clipped)
 
         This turn requires a tool action before any final answer. Emit exactly one action JSON object now.

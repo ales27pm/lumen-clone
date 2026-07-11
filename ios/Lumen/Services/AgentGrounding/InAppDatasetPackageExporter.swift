@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
@@ -27,10 +28,7 @@ nonisolated struct InAppDatasetTraceExport: Codable, Sendable, Hashable {
     let slot: String
     let stage: String
     let scenarioID: String?
-    let e2eRunID: UUID?
-    let agentRunID: UUID?
-    let conversationID: UUID?
-    let turnID: UUID?
+    let correlationToken: String?
     let intent: String?
     let promptPrefix: String
     let rawOutputPrefix: String
@@ -148,7 +146,13 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
 }
 
 nonisolated enum InAppDatasetPackageExporter {
-    static let schemaVersion = "1.9.0"
+    private struct ExportCorrelationContext {
+        let key: SymmetricKey
+        let resultTokens: [UUID: String]
+        let traceTokens: [UUID: String]
+    }
+
+    static let schemaVersion = "2.0.0"
     static let exportKind = "testflight-agent-grounding-runtime-export"
     static let sourceAction = "Agent Grounding > Export TestFlight + Agent Grounding Package"
     static let filePrefix = "lumen-testflight-agent-grounding"
@@ -156,6 +160,127 @@ nonisolated enum InAppDatasetPackageExporter {
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
     private static let directoryName = "LumenDatasetExports"
+
+    private static func exportCorrelationContext(
+        report: E2ETestReport?,
+        traces: [AgentBehaviorTrace]
+    ) -> ExportCorrelationContext {
+        let key = SymmetricKey(size: .bits256)
+        guard let report else {
+            return ExportCorrelationContext(key: key, resultTokens: [:], traceTokens: [:])
+        }
+
+        var resultTokens: [UUID: String] = [:]
+        var traceTokens: [UUID: String] = [:]
+        for result in report.results {
+            let token = opaqueCorrelationToken(for: result, key: key)
+            resultTokens[result.id] = token
+            for trace in traces where traceMatches(result: result, trace: trace) {
+                traceTokens[trace.id] = token
+            }
+        }
+        return ExportCorrelationContext(key: key, resultTokens: resultTokens, traceTokens: traceTokens)
+    }
+
+    private static func opaqueCorrelationToken(for result: E2ETestResult, key: SymmetricKey) -> String {
+        let seed = [
+            result.scenarioID,
+            result.e2eRunID?.uuidString ?? "",
+            result.agentRunID?.uuidString ?? "",
+            result.conversationID?.uuidString ?? "",
+            result.turnID?.uuidString ?? ""
+        ].joined(separator: "|")
+        let digest = HMAC<SHA256>.authenticationCode(for: Data(seed.utf8), using: key)
+        return "corr_v1_" + digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func redactedLiveE2EReport(
+        _ report: E2ETestReport,
+        correlationContext: ExportCorrelationContext
+    ) -> E2ETestReport {
+        E2ETestReport(
+            id: redactedUUID(report.id, key: correlationContext.key, domain: "report"),
+            startedAt: report.startedAt,
+            finishedAt: report.finishedAt,
+            passed: report.passed,
+            failed: report.failed,
+            results: report.results.map { result in
+                let redact = { (text: String) in
+                    redactingCorrelationIdentifiers(in: text, for: result)
+                }
+                return E2ETestResult(
+                    id: redactedUUID(result.id, key: correlationContext.key, domain: "result"),
+                    scenarioID: result.scenarioID,
+                    kind: result.kind,
+                    title: redact(result.title),
+                    prompt: redact(result.prompt),
+                    expectedIntent: result.expectedIntent,
+                    actualIntent: result.actualIntent,
+                    e2eRunID: nil,
+                    agentRunID: nil,
+                    conversationID: nil,
+                    turnID: nil,
+                    correlationToken: correlationContext.resultTokens[result.id],
+                    requiresAgentRun: result.requiresAgentRun,
+                    evidenceMode: result.evidenceMode,
+                    passed: result.passed,
+                    failures: result.failures.map(redact),
+                    finalText: redact(result.finalText),
+                    missingHints: result.missingHints.map(redact),
+                    rewriteAttempted: result.rewriteAttempted,
+                    rewriteSuccess: result.rewriteSuccess,
+                    events: result.events.map { event in
+                        E2ETestEvent(
+                            id: redactedUUID(event.id, key: correlationContext.key, domain: "event"),
+                            createdAt: event.createdAt,
+                            scenarioID: event.scenarioID,
+                            phase: event.phase,
+                            message: redact(event.message)
+                        )
+                    },
+                    startedAt: result.startedAt,
+                    finishedAt: result.finishedAt,
+                    rawFinalPrefix: redact(result.rawFinalPrefix),
+                    sanitizedFinalPrefix: redact(result.sanitizedFinalPrefix),
+                    rawFinalHadUnsafeLeakage: result.rawFinalHadUnsafeLeakage,
+                    sanitizedFinalRemovedArtifacts: result.sanitizedFinalRemovedArtifacts.map(redact),
+                    outputHygieneFailures: result.outputHygieneFailures.map(redact),
+                    performanceMatrix: result.performanceMatrix,
+                    metadata: result.metadata.reduce(into: [:]) { redacted, entry in
+                        redacted[redact(entry.key)] = redact(entry.value)
+                    }
+                )
+            }
+        )
+    }
+
+    private static func redactingCorrelationIdentifiers(in text: String, for result: E2ETestResult) -> String {
+        [result.e2eRunID, result.agentRunID, result.conversationID, result.turnID]
+            .compactMap { $0?.uuidString }
+            .reduce(text) { redacted, identifier in
+                redacted.replacingOccurrences(
+                    of: identifier,
+                    with: "[redacted-correlation]",
+                    options: [.caseInsensitive]
+                )
+            }
+    }
+
+    private static func redactedUUID(_ value: UUID, key: SymmetricKey, domain: String) -> UUID {
+        let digest = HMAC<SHA256>.authenticationCode(
+            for: Data("\(domain)|\(value.uuidString)".utf8),
+            using: key
+        )
+        var bytes = Array(digest.prefix(16))
+        bytes[6] = (bytes[6] & 0x0f) | 0x40
+        bytes[8] = (bytes[8] & 0x3f) | 0x80
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
+    }
 
     /// Assembles a complete TestFlight + Agent Grounding package incorporating audit reports and recent traces.
     /// - Parameters:
@@ -175,14 +300,24 @@ nonisolated enum InAppDatasetPackageExporter {
         let traces = AgentBehaviorTraceRecorder.recent(limit: traceLimit)
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
         let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
-        let exportedTraces = traces.map(exportTrace)
+        let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: traces)
+        let exportedTraces = traces.map { trace in
+            exportTrace(trace, correlationToken: correlationContext.traceTokens[trace.id])
+        }
         let app = appInfo()
         let liveReportExport = liveE2EReport.map { report in
-            liveE2EReportExport(from: report, generatedAt: Date(), traces: traces)
+            liveE2EReportExport(
+                from: report,
+                generatedAt: Date(),
+                traces: traces,
+                correlationContext: correlationContext
+            )
         }
         let qualityFailures = exportQualityFailures(
             from: exportedTraces,
-            liveE2EReport: liveReportExport
+            liveE2EReport: liveReportExport,
+            rawLiveE2EReport: liveE2EReport,
+            rawTraces: traces
         )
         let improveLoop = ImproveLoopSampleGate.buildDataset(
             behaviorAudit: exportedBehaviorAudit,
@@ -220,7 +355,7 @@ nonisolated enum InAppDatasetPackageExporter {
             improveLoop: improveLoop,
             exportPolicy: InAppDatasetExportPolicy(
                 format: "testflight-agent-grounding-runtime-json-package",
-                privacy: "contains only manifest audit failures, behavior violations, redacted bounded runtime trace prefixes, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, trace identifiers, local paths, or tool payload bodies are exported",
+                privacy: "contains only manifest audit failures, behavior violations, redacted bounded runtime trace prefixes, opaque per-export correlation tokens, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, raw trace or correlation identifiers, local paths, or tool payload bodies are exported",
                 promptPolicy: "promptPrefix and rawOutputPrefix fields are redacted, hidden-reasoning-stripped, bounded diagnostic snippets only",
                 traceLimit: traceLimit,
                 source: "TestFlight app runtime + RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
@@ -237,7 +372,8 @@ nonisolated enum InAppDatasetPackageExporter {
     private static func liveE2EReportExport(
         from report: E2ETestReport,
         generatedAt: Date,
-        traces: [AgentBehaviorTrace]
+        traces: [AgentBehaviorTrace],
+        correlationContext: ExportCorrelationContext
     ) -> InAppDatasetLiveE2EReportExport {
         InAppDatasetLiveE2EReportExport(
             schemaVersion: EvidenceLayerExporter.schemaVersion,
@@ -248,14 +384,14 @@ nonisolated enum InAppDatasetPackageExporter {
                 sourceLayer: "e2eTestReport",
                 ownsLiveE2EScenarios: true,
                 includesDeterministicStaticScenarios: report.results.contains { !$0.requiresAgentRun },
-                privacy: "Contains prompts, final outputs, failures, and event logs from the current local E2E run plus bounded correlated AgentBehaviorTrace sidecars from recentTraces. Review before sharing outside the improve-loop.",
+                privacy: "Contains prompts, final outputs, failures, redacted event identifiers, and bounded AgentBehaviorTrace sidecars joined by opaque per-export correlation tokens. Raw correlation UUIDs are omitted. Review before sharing outside the improve-loop.",
                 notes: [
                     "Embedded TestFlight/live E2E layer exported from the app.",
                     "The parent Agent Grounding package does not own live E2E pass/fail.",
-                    "Offline ingestion must validate each scenario against correlated recentTraces according to evidenceMode."
+                    "Offline ingestion must validate each scenario against recentTraces by correlationToken according to evidenceMode."
                 ]
             ),
-            payload: report,
+            payload: redactedLiveE2EReport(report, correlationContext: correlationContext),
             correlatedTraceCount: correlatedTraceCount(report: report, traces: traces),
             modelBackedCorrelatedTraceCount: modelBackedCorrelatedTraceCount(report: report, traces: traces),
             modelBackedCorrelatedScenarioCount: modelBackedCorrelatedScenarioCount(report: report, traces: traces),
@@ -341,23 +477,32 @@ nonisolated enum InAppDatasetPackageExporter {
     }
 
     private static func traceMatches(result: E2ETestResult, trace: AgentBehaviorTrace) -> Bool {
-        if let e2eRunID = result.e2eRunID, let traceE2ERunID = trace.e2eRunID, e2eRunID != traceE2ERunID { return false }
-        if let agentRunID = result.agentRunID, let traceAgentRunID = trace.agentRunID, agentRunID != traceAgentRunID { return false }
-        if let conversationID = result.conversationID, let traceConversationID = trace.conversationID, conversationID != traceConversationID { return false }
-        if let turnID = result.turnID, let traceTurnID = trace.turnID, turnID != traceTurnID { return false }
-        if let scenarioID = trace.scenarioID, !scenarioID.isEmpty, scenarioID != result.scenarioID { return false }
-
-        let hasStrongIdentifier = result.e2eRunID != nil && trace.e2eRunID != nil
-            || result.agentRunID != nil && trace.agentRunID != nil
-            || result.conversationID != nil && trace.conversationID != nil
-            || result.turnID != nil && trace.turnID != nil
-        if hasStrongIdentifier { return true }
-        return trace.scenarioID == result.scenarioID
+        guard trace.scenarioID == result.scenarioID else { return false }
+        var matchedStrongIdentifier = false
+        if let e2eRunID = result.e2eRunID {
+            guard trace.e2eRunID == e2eRunID else { return false }
+            matchedStrongIdentifier = true
+        }
+        if let agentRunID = result.agentRunID {
+            guard trace.agentRunID == agentRunID else { return false }
+            matchedStrongIdentifier = true
+        }
+        if let conversationID = result.conversationID {
+            guard trace.conversationID == conversationID else { return false }
+            matchedStrongIdentifier = true
+        }
+        if let turnID = result.turnID {
+            guard trace.turnID == turnID else { return false }
+            matchedStrongIdentifier = true
+        }
+        return matchedStrongIdentifier || trace.scenarioID == result.scenarioID
     }
 
     private static func exportQualityFailures(
         from traces: [InAppDatasetTraceExport],
-        liveE2EReport: InAppDatasetLiveE2EReportExport?
+        liveE2EReport: InAppDatasetLiveE2EReportExport?,
+        rawLiveE2EReport: E2ETestReport?,
+        rawTraces: [AgentBehaviorTrace]
     ) -> [InAppDatasetExportQualityFailure] {
         var failures: [InAppDatasetExportQualityFailure] = []
         if traces.isEmpty {
@@ -373,7 +518,12 @@ nonisolated enum InAppDatasetPackageExporter {
         }
 
         if let liveE2EReport,
-           let failure = liveE2EModelBackedTraceGapFailure(liveE2EReport, traces: traces) {
+           let rawLiveE2EReport,
+           let failure = liveE2EModelBackedTraceGapFailure(
+            rawLiveE2EReport,
+            traces: rawTraces,
+            exportSummary: liveE2EReport
+           ) {
             failures.append(failure)
         }
 
@@ -423,14 +573,15 @@ nonisolated enum InAppDatasetPackageExporter {
     }
 
     private static func liveE2EModelBackedTraceGapFailure(
-        _ liveE2EReport: InAppDatasetLiveE2EReportExport,
-        traces: [InAppDatasetTraceExport]
+        _ liveE2EReport: E2ETestReport,
+        traces: [AgentBehaviorTrace],
+        exportSummary: InAppDatasetLiveE2EReportExport
     ) -> InAppDatasetExportQualityFailure? {
-        let evidenceRequired = liveE2EReport.payload.results.filter {
+        let evidenceRequired = liveE2EReport.results.filter {
             $0.evidenceMode != E2EEvidenceMode.routingOnly.rawValue
         }
         let missing = evidenceRequired.filter { result in
-            let correlated = traces.filter { traceMatches(result: result, exportedTrace: $0) }
+            let correlated = traces.filter { traceMatches(result: result, trace: $0) }
             if result.evidenceMode == E2EEvidenceMode.policyFirstAllowed.rawValue {
                 return !correlated.contains(where: { isModelBackedLiveEvidenceTrace($0) || isDeterministicCompatibilityEvidenceTrace($0) })
             }
@@ -448,10 +599,10 @@ nonisolated enum InAppDatasetPackageExporter {
             actual: [
                 "evidenceRequiredScenarioCount=\(evidenceRequired.count)",
                 "missingEvidenceScenarioCount=\(missing.count)",
-                "modelBackedCorrelatedTraceCount=\(liveE2EReport.modelBackedCorrelatedTraceCount)",
-                "modelBackedCorrelatedScenarioCount=\(liveE2EReport.modelBackedCorrelatedScenarioCount)",
-                "correlatedTraceCount=\(liveE2EReport.correlatedTraceCount)",
-                "deterministicCompatibilityTraceCount=\(liveE2EReport.deterministicCompatibilityTraceCount)"
+                "modelBackedCorrelatedTraceCount=\(exportSummary.modelBackedCorrelatedTraceCount)",
+                "modelBackedCorrelatedScenarioCount=\(exportSummary.modelBackedCorrelatedScenarioCount)",
+                "correlatedTraceCount=\(exportSummary.correlatedTraceCount)",
+                "deterministicCompatibilityTraceCount=\(exportSummary.deterministicCompatibilityTraceCount)"
             ].joined(separator: "; "),
             scenario: "Agent Grounding > E2E Test Runner > Export TestFlight + Agent Grounding Package",
             problem: "The embedded live E2E report is missing correlated evidence required by each scenario's evidenceMode.",
@@ -459,24 +610,7 @@ nonisolated enum InAppDatasetPackageExporter {
         )
     }
 
-    private static func traceMatches(result: E2ETestResult, exportedTrace trace: InAppDatasetTraceExport) -> Bool {
-        if let e2eRunID = result.e2eRunID, trace.e2eRunID != e2eRunID { return false }
-        if let agentRunID = result.agentRunID, trace.agentRunID != agentRunID { return false }
-        if let conversationID = result.conversationID, trace.conversationID != conversationID { return false }
-        if let turnID = result.turnID, trace.turnID != turnID { return false }
-        if let scenarioID = trace.scenarioID, !scenarioID.isEmpty, scenarioID != result.scenarioID { return false }
-        return trace.e2eRunID != nil
-            || trace.agentRunID != nil
-            || trace.conversationID != nil
-            || trace.turnID != nil
-            || trace.scenarioID == result.scenarioID
-    }
-
-    private static func isModelBackedLiveEvidenceTrace(_ trace: InAppDatasetTraceExport) -> Bool {
-        trace.event == .modelTurn && trace.runtimePath != "deterministic-compatibility" && trace.parseError == nil
-    }
-
-    private static func isDeterministicCompatibilityEvidenceTrace(_ trace: InAppDatasetTraceExport) -> Bool {
+    private static func isDeterministicCompatibilityEvidenceTrace(_ trace: AgentBehaviorTrace) -> Bool {
         guard trace.runtimePath == "deterministic-compatibility" else { return false }
         return trace.event == .toolAction || trace.event == .finalAnswer
     }
@@ -530,7 +664,7 @@ nonisolated enum InAppDatasetPackageExporter {
         return false
     }
 
-    private static func exportTrace(_ trace: AgentBehaviorTrace) -> InAppDatasetTraceExport {
+    private static func exportTrace(_ trace: AgentBehaviorTrace, correlationToken: String?) -> InAppDatasetTraceExport {
         InAppDatasetTraceExport(
             id: redactedTraceID(for: trace),
             createdAt: trace.createdAt,
@@ -538,10 +672,7 @@ nonisolated enum InAppDatasetPackageExporter {
             slot: safeCode(trace.slot),
             stage: safeCode(trace.stage),
             scenarioID: trace.scenarioID.map { sanitizedSnippet($0, limit: 160) },
-            e2eRunID: nil,
-            agentRunID: nil,
-            conversationID: nil,
-            turnID: nil,
+            correlationToken: correlationToken,
             intent: trace.intent.map(safeCode),
             promptPrefix: sanitizedSnippet(trace.promptPrefix),
             rawOutputPrefix: sanitizedSnippet(trace.rawOutputPrefix),

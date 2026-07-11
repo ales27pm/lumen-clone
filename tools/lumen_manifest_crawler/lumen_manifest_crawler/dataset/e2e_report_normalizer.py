@@ -97,6 +97,7 @@ def _coerce_e2e_scenarios(value: dict[str, Any]) -> list[dict[str, Any]]:
             "agentRunID": result.get("agentRunID"),
             "conversationID": result.get("conversationID"),
             "turnID": result.get("turnID"),
+            "correlationToken": result.get("correlationToken"),
             "prompt": result.get("prompt"),
             "intent": result.get("actualIntent") or result.get("expectedIntent"),
             "expectedIntent": result.get("expectedIntent"),
@@ -403,6 +404,7 @@ def _final_artifact_diagnosis_for_scenario(scenario: dict[str, Any]) -> dict[str
 
 _EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
     "valid_model_backed_evidence",
+    "valid_policy_first_evidence",
     "no_correlated_model_turn",
     "agent_model_empty_output",
     "agent_model_parse_error",
@@ -418,10 +420,13 @@ _EXPLICIT_MODEL_EVIDENCE_CATEGORIES = {
 
 
 def _scenario_model_evidence_requires_failure(scenario: dict[str, Any], diagnosis: dict[str, Any] | None) -> bool:
-    if scenario.get("requiresAgentRun") is not True or not diagnosis:
+    if not _scenario_requires_runtime_evidence(scenario) or not diagnosis:
         return False
     category = str(diagnosis.get("rootCauseCategory") or "")
-    return category in _EXPLICIT_MODEL_EVIDENCE_CATEGORIES and category != "valid_model_backed_evidence"
+    return category in _EXPLICIT_MODEL_EVIDENCE_CATEGORIES and category not in {
+        "valid_model_backed_evidence",
+        "valid_policy_first_evidence",
+    }
 
 
 def _scenario_skipped_live_model_run(scenario: dict[str, Any], sidecar_diagnosis: dict[str, Any] | None = None) -> bool:
@@ -460,13 +465,14 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
             "trace": {"rawDiagnostic": scenario_text[:1000], "trainable": False},
         }
     event_diagnosis = _diagnosis_from_model_evidence_events(scenario)
-    if event_diagnosis and event_diagnosis.get("rootCauseCategory") in {
+    has_explicit_correlation = _scenario_has_explicit_correlation(scenario)
+    if not has_explicit_correlation and event_diagnosis and event_diagnosis.get("rootCauseCategory") in {
         "valid_model_backed_evidence",
         "deterministic_compatibility_not_training_evidence",
         "agent_service_not_entered",
     }:
         return event_diagnosis
-    if not prompt:
+    if not prompt and not has_explicit_correlation:
         return event_diagnosis
     prompt_key = prompt.casefold()
     traces = sidecars.get("agent_behavior_traces", [])
@@ -623,9 +629,31 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
                     "rawOutputClassification": root_cause,
                 },
             }
+    if _scenario_requires_runtime_evidence(scenario) and has_explicit_correlation:
+        if not sidecar_present:
+            return {
+                "rootCauseCategory": "missing_sidecar_trace_export",
+                "message": "missing AgentBehaviorTrace sidecar export; cannot verify explicit scenario correlation",
+                "trace": {"sidecarPresent": False, "checked": _scenario_correlation_fields(scenario)},
+            }
+        return {
+            "rootCauseCategory": "no_correlated_model_turn",
+            "message": f"no correlated AgentBehaviorTrace model or policy-first turn found; checked {_scenario_correlation_text(scenario)}",
+            "trace": {"sidecarPresent": True, "checked": _scenario_correlation_fields(scenario)},
+        }
+    if (
+        event_diagnosis
+        and event_diagnosis.get("rootCauseCategory") == "no_correlated_model_turn"
+        and not sidecar_present
+    ):
+        return {
+            "rootCauseCategory": "missing_sidecar_trace_export",
+            "message": "missing AgentBehaviorTrace sidecar export; cannot verify correlated model or policy-first evidence",
+            "trace": {"sidecarPresent": False},
+        }
     if event_diagnosis:
         return event_diagnosis
-    if scenario.get("requiresAgentRun") is True and not _scenario_reported_no_model_loaded(scenario) and _has_generic_missing_model_evidence(scenario):
+    if _scenario_requires_runtime_evidence(scenario) and not _scenario_reported_no_model_loaded(scenario) and _has_generic_missing_model_evidence(scenario):
         if not sidecar_present:
             return {
                 "rootCauseCategory": "missing_sidecar_trace_export",
@@ -660,7 +688,12 @@ def _diagnosis_from_model_evidence_events(scenario: dict[str, Any]) -> dict[str,
         runtime = str(values.get("runtime") or "").casefold()
         kind = str(values.get("kind") or "").casefold()
         parse_error = str(values.get("parseError") or values.get("parseerror") or "none")
-        if "no correlated agentbehaviortrace" in lowered:
+        if (
+            "no correlated agentbehaviortrace" in lowered
+            or "missing fresh agentbehaviortrace" in lowered
+            or "did not record model-backed" in lowered
+            or "did not record model-backed or policy-first" in lowered
+        ):
             return {
                 "rootCauseCategory": "no_correlated_model_turn",
                 "message": message,
@@ -740,25 +773,22 @@ def _matching_sidecar_trace_for_scenario(
     traces: list[dict[str, Any]],
     prompt_key: str,
 ) -> tuple[dict[str, Any] | None, str]:
-    correlated = next(
-        (
-            trace
-            for trace in traces
-            if _sidecar_trace_matches_correlation(trace, scenario)
-            and str(trace.get("event") or "") == "modelTurn"
-            and str(trace.get("stage") or "").startswith("agent-json")
-        ),
-        None,
-    )
+    correlated = _preferred_sidecar_evidence_trace([
+        trace
+        for trace in traces
+        if _sidecar_trace_matches_correlation(trace, scenario)
+        and _is_sidecar_evidence_candidate(trace)
+    ])
     if correlated is not None:
         return correlated, "correlation"
-    fallback = _preferred_agent_json_trace([
+    if _scenario_has_explicit_correlation(scenario):
+        return None, "none"
+    fallback = _preferred_sidecar_evidence_trace([
         trace
         for trace in traces
         if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
         and _sidecar_record_matches_scenario_time(trace, scenario)
-        and str(trace.get("event") or "") == "modelTurn"
-        and str(trace.get("stage") or "").startswith("agent-json")
+        and _is_sidecar_evidence_candidate(trace)
     ])
     if fallback is not None:
         return fallback, "prompt-time"
@@ -766,21 +796,76 @@ def _matching_sidecar_trace_for_scenario(
 
 
 def _sidecar_trace_matches_correlation(trace: dict[str, Any], scenario: dict[str, Any]) -> bool:
+    expected_scenario = str(scenario.get("scenarioID") or scenario.get("id") or "").strip()
+    actual_scenario = str(trace.get("scenarioID") or "").strip()
+    if expected_scenario and actual_scenario != expected_scenario:
+        return False
+
+    expected_token = str(scenario.get("correlationToken") or "").strip()
+    actual_token = str(trace.get("correlationToken") or "").strip()
+    if expected_token:
+        return bool(actual_token and actual_token == expected_token)
+    if actual_token:
+        return False
+
     matched_strong_identifier = False
     for key in ("e2eRunID", "agentRunID", "conversationID", "turnID"):
         expected = str(scenario.get(key) or "").strip()
         actual = str(trace.get(key) or "").strip()
-        if expected and actual:
-            if expected != actual:
+        if expected:
+            if not actual or expected != actual:
                 return False
             matched_strong_identifier = True
-    expected_scenario = str(scenario.get("scenarioID") or scenario.get("id") or "").strip()
-    actual_scenario = str(trace.get("scenarioID") or "").strip()
-    if expected_scenario and actual_scenario and expected_scenario != actual_scenario:
-        return False
     if matched_strong_identifier:
         return True
     return bool(expected_scenario and actual_scenario and expected_scenario == actual_scenario and _sidecar_record_matches_scenario_time(trace, scenario))
+
+
+def _preferred_sidecar_evidence_trace(traces: list[dict[str, Any]]) -> dict[str, Any] | None:
+    model_traces = [
+        trace
+        for trace in traces
+        if str(trace.get("event") or "") == "modelTurn"
+        and str(trace.get("stage") or "").startswith("agent-json")
+    ]
+    valid_model_trace = _preferred_agent_json_trace([
+        trace for trace in model_traces if _is_valid_model_backed_sidecar_trace(trace)
+    ])
+    if valid_model_trace is not None:
+        return valid_model_trace
+    policy_trace = next((trace for trace in traces if _is_policy_first_trace(trace)), None)
+    if policy_trace is not None:
+        return policy_trace
+    return _preferred_agent_json_trace(model_traces)
+
+
+def _is_sidecar_evidence_candidate(trace: dict[str, Any]) -> bool:
+    return (
+        str(trace.get("event") or "") == "modelTurn"
+        and str(trace.get("stage") or "").startswith("agent-json")
+    ) or _is_policy_first_trace(trace)
+
+
+def _is_policy_first_trace(trace: dict[str, Any]) -> bool:
+    return (
+        str(trace.get("runtimePath") or "") == "deterministic-compatibility"
+        and str(trace.get("event") or "") in {"toolAction", "finalAnswer"}
+    )
+
+
+def _is_valid_model_backed_sidecar_trace(trace: dict[str, Any]) -> bool:
+    return (
+        _is_model_backed_trace(trace)
+        and bool(str(trace.get("rawOutputPrefix") or "").strip())
+        and not trace.get("parseError")
+    )
+
+
+def _scenario_has_explicit_correlation(scenario: dict[str, Any]) -> bool:
+    return any(
+        str(scenario.get(key) or "").strip()
+        for key in ("correlationToken", "e2eRunID", "agentRunID", "conversationID", "turnID")
+    )
 
 
 def _is_model_backed_trace(trace: dict[str, Any]) -> bool:
@@ -799,6 +884,7 @@ def _trace_summary(trace: dict[str, Any], *, matched_by: str, raw_output_empty: 
         "agentRunID": trace.get("agentRunID"),
         "conversationID": trace.get("conversationID"),
         "turnID": trace.get("turnID"),
+        "correlationToken": trace.get("correlationToken"),
     }
 
 
@@ -817,6 +903,7 @@ def _scenario_correlation_fields(scenario: dict[str, Any]) -> dict[str, Any]:
         "agentRunID": scenario.get("agentRunID"),
         "conversationID": scenario.get("conversationID"),
         "turnID": scenario.get("turnID"),
+        "correlationToken": scenario.get("correlationToken"),
     }
 
 
@@ -1046,6 +1133,12 @@ def _scenario_has_model_evidence_event(events: list[Any], *, scenario: dict[str,
         if "kind=model-backed" in message or "deterministic-compatibility" not in message:
             return True
     return False
+
+
+def _scenario_requires_runtime_evidence(scenario: dict[str, Any]) -> bool:
+    if scenario.get("requiresAgentRun") is not True:
+        return False
+    return str(scenario.get("evidenceMode") or "modelBackedRequired").casefold() != "routingonly"
 
 
 def _scenario_allows_policy_first_evidence(scenario: dict[str, Any] | None) -> bool:
