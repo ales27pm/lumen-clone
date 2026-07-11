@@ -272,7 +272,7 @@ final class AssistantKernel {
             guard let modelURL = router.coreML.modelURL else {
                 throw CoreMLRuntimeError.modelNotConfigured
             }
-            let digest = try SHA256FileHasher.sha256Hex(for: modelURL)
+            let digest = try SHA256FileHasher.sha256Hex(forArtifactAt: modelURL)
             return EmbeddingRuntimeResult(vector: vector, modelIdentifier: "coreml:sha256:\(digest)")
         case .foundationModels, .deterministicFallback, .unavailable:
             throw KernelError.unsupportedRuntimeForEmbedding(runtime)

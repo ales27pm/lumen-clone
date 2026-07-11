@@ -156,6 +156,7 @@ struct StructuredAgentKernelExecutor {
                 turn: turn,
                 availableTools: availableTools,
                 stepIndex: stepIndex,
+                observations: observations,
                 diagnostics: generation.diagnostics
             )
             emitModelTurnDiagnostic(
@@ -460,9 +461,11 @@ struct StructuredAgentKernelExecutor {
         let optionIDs = Set(request.options.structuredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID))
         let routingIDs = Set(routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
         let requestedIDs = Self.structuredRequestedToolSourceIDs(optionIDs: optionIDs, routingIDs: routingIDs)
-        let sourceIDs = requestedIDs.isEmpty && optionIDs.isEmpty && routingIDs.isEmpty
-            ? secureIDs
-            : requestedIDs.intersection(secureIDs)
+        let sourceIDs = Self.structuredToolSourceIDs(
+            secureIDs: secureIDs,
+            optionIDs: optionIDs,
+            routingIDs: routingIDs
+        )
         let tools = sourceIDs.compactMap { catalogByID[$0] }.sorted { $0.id < $1.id }
         let assessmentsByCatalogID = availability.reduce(into: [String: ToolApprovalDecision]()) { partial, assessment in
             guard let catalog = ToolSchemaBridge.toCatalogToolDefinitions([assessment.definition]).first else { return }
@@ -716,9 +719,33 @@ struct StructuredAgentKernelExecutor {
         turn: AgentTurn,
         availableTools: [ToolDefinition],
         stepIndex: Int,
+        observations: [(tool: String, result: String)],
         diagnostics: StructuredTurnGenerationDiagnostics
     ) {
         let routing = IntentRouter.classify(Self.sanitizedStructuredUserMessage(request.userMessage))
+        let emittedFinal = turn.final?.isEmpty == false
+        let toolRequiredFinal = emittedFinal
+            && IntentRouter.intentRequiresTool(routing)
+            && !routing.requiresClarification
+        let finalizerOutcome: ToolObservationFinalizationOutcome? = {
+            guard emittedFinal else { return nil }
+            guard toolRequiredFinal else {
+                return ToolObservationFinalizationOutcome(text: nil, accepted: true, rejectionReason: nil)
+            }
+            guard let observation = observations.last else {
+                return ToolObservationFinalizationOutcome(
+                    text: nil,
+                    accepted: false,
+                    rejectionReason: "missing-successful-tool-observation"
+                )
+            }
+            return ToolObservationFinalizer.immediateFinalOutcome(
+                intent: routing.intent,
+                toolID: observation.tool,
+                observation: observation.result,
+                originalPrompt: request.userMessage
+            )
+        }()
         AgentBehaviorTraceEmitter.recordModelTurn(
             correlation: request.traceCorrelation,
             slot: "agent",
@@ -731,7 +758,7 @@ struct StructuredAgentKernelExecutor {
             allowedToolIDs: availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }.sorted(),
             requiresApproval: turn.action.map { ToolRouteGuard.requiresUserApproval(ToolRouteGuard.canonicalToolID($0.tool)) },
             parseError: turn.parseError?.rawValue,
-            emittedFinalInActionTurn: turn.final?.isEmpty == false,
+            emittedFinalInActionTurn: emittedFinal,
             modelFamily: LumenModelFamily.persistedSelected.rawValue,
             adapterSlot: Self.structuredAgentModelSlot.rawValue,
             generationElapsedMs: diagnostics.generationElapsedMs,
@@ -757,6 +784,9 @@ struct StructuredAgentKernelExecutor {
             textChunkCount: diagnostics.textChunkCount,
             finalChunkReceived: diagnostics.finalChunkReceived,
             streamTerminationReason: diagnostics.streamTerminationReason,
+            successfulObservationCount: observations.count,
+            finalizerAccepted: finalizerOutcome?.accepted,
+            finalizerRejectionReason: finalizerOutcome?.rejectionReason,
             selfModel: AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
                 userTurn,
                 selectedToolID: turn.action.map { ToolRouteGuard.canonicalToolID($0.tool) },

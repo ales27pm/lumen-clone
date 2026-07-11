@@ -137,10 +137,6 @@ actor SelfImprovementCoordinator {
         snapshot.lastReason = "cancelled"
     }
 
-    func resetIfWindowExpired(now: Date) {
-        resetExpiredWindow(now: now)
-    }
-
     private func resetExpiredWindow(now: Date) {
         switch snapshot.phase {
         case .cooldown(let until) where now >= until:

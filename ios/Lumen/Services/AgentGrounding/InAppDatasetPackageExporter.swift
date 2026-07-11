@@ -78,6 +78,7 @@ nonisolated struct InAppDatasetTraceExport: Codable, Sendable, Hashable {
     let textChunkCount: Int?
     let finalChunkReceived: Bool?
     let streamTerminationReason: String?
+    let successfulObservationCount: Int?
     let finalizerAccepted: Bool?
     let finalizerRejectionReason: String?
     let finalValidatorAcceptedCandidate: Bool?
@@ -173,9 +174,11 @@ nonisolated enum InAppDatasetPackageExporter {
         var resultTokens: [UUID: String] = [:]
         var traceTokens: [UUID: String] = [:]
         for result in report.results {
+            let matchingTraces = traces.filter { traceMatches(result: result, trace: $0) }
+            guard !matchingTraces.isEmpty else { continue }
             let token = opaqueCorrelationToken(for: result, key: key)
             resultTokens[result.id] = token
-            for trace in traces where traceMatches(result: result, trace: trace) {
+            for trace in matchingTraces {
                 traceTokens[trace.id] = token
             }
         }
@@ -470,32 +473,66 @@ nonisolated enum InAppDatasetPackageExporter {
     private static func isModelBackedLiveEvidenceTrace(_ trace: AgentBehaviorTrace) -> Bool {
         guard trace.event == .modelTurn,
               trace.runtimePath != "deterministic-compatibility",
-              trace.parseError == nil else {
+              trace.parseError == nil,
+              !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
-        return !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard trace.stage.hasPrefix("agent-json") else { return true }
+        guard trace.runtimePath == "agent-model",
+              trace.streamStarted == true,
+              trace.modelLoaded == true,
+              trace.firstChunkReceived == true,
+              (trace.textChunkCount ?? 0) > 0,
+              trace.finalChunkReceived == true else {
+            return false
+        }
+        if let selectedToolID = trace.selectedToolID, !selectedToolID.isEmpty {
+            let canonicalToolID = ToolRouteGuard.canonicalToolID(selectedToolID)
+            return !trace.emittedFinalInActionTurn
+                && trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains(canonicalToolID)
+        }
+        guard trace.emittedFinalInActionTurn,
+              trace.finalizerAccepted == true else {
+            return false
+        }
+        return !traceIntentRequiresTool(trace.intent, allowedToolIDs: trace.allowedToolIDs)
+            || (trace.successfulObservationCount ?? 0) > 0
+    }
+
+    private static func traceIntentRequiresTool(_ rawIntent: String?, allowedToolIDs: [String]) -> Bool {
+        guard let rawIntent,
+              let intent = UserIntent(rawValue: rawIntent) else {
+            return !allowedToolIDs.isEmpty
+        }
+        return IntentRouter.intentRequiresTool(IntentRoutingDecision(
+            intent: intent,
+            allowedToolIDs: Set(allowedToolIDs),
+            requiresClarification: false,
+            clarificationPrompt: nil
+        ))
     }
 
     private static func traceMatches(result: E2ETestResult, trace: AgentBehaviorTrace) -> Bool {
         guard trace.scenarioID == result.scenarioID else { return false }
-        var matchedStrongIdentifier = false
+        guard result.e2eRunID != nil
+                || result.agentRunID != nil
+                || result.conversationID != nil
+                || result.turnID != nil else {
+            return false
+        }
         if let e2eRunID = result.e2eRunID {
             guard trace.e2eRunID == e2eRunID else { return false }
-            matchedStrongIdentifier = true
         }
         if let agentRunID = result.agentRunID {
             guard trace.agentRunID == agentRunID else { return false }
-            matchedStrongIdentifier = true
         }
         if let conversationID = result.conversationID {
             guard trace.conversationID == conversationID else { return false }
-            matchedStrongIdentifier = true
         }
         if let turnID = result.turnID {
             guard trace.turnID == turnID else { return false }
-            matchedStrongIdentifier = true
         }
-        return matchedStrongIdentifier || trace.scenarioID == result.scenarioID
+        return true
     }
 
     private static func exportQualityFailures(
@@ -650,6 +687,13 @@ nonisolated enum InAppDatasetPackageExporter {
             if trace.finalChunkReceived == false && (trace.streamTerminationReason ?? "").isEmpty && !hasPreciseRuntimeFailureReason(trace) {
                 missing.append("streamTerminationReason")
             }
+            if trace.emittedFinalInActionTurn {
+                if trace.finalizerAccepted == nil { missing.append("finalizerAccepted") }
+                if traceIntentRequiresTool(trace.intent, allowedToolIDs: trace.allowedToolIDs),
+                   (trace.successfulObservationCount ?? 0) <= 0 {
+                    missing.append("successfulObservationCount")
+                }
+            }
         } else if !hasPreciseRuntimeFailureReason(trace) {
             missing.append("emptyOutputReasonOrParseError")
         }
@@ -722,6 +766,7 @@ nonisolated enum InAppDatasetPackageExporter {
             textChunkCount: trace.textChunkCount,
             finalChunkReceived: trace.finalChunkReceived,
             streamTerminationReason: trace.streamTerminationReason.map { sanitizedSnippet($0, limit: 160) },
+            successfulObservationCount: trace.successfulObservationCount,
             finalizerAccepted: trace.finalizerAccepted,
             finalizerRejectionReason: trace.finalizerRejectionReason.map(safeCode),
             finalValidatorAcceptedCandidate: trace.finalValidatorAcceptedCandidate,

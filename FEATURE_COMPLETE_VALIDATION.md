@@ -2,7 +2,7 @@
 
 ## PR #81 follow-up structured executor hardening (local validation)
 
-The Release structured-agent path now registers classic and continued-processing BGTask handlers synchronously during `didFinishLaunching`, before launch completion is recorded. Registration outcomes retain identifier, success, launch timing, and sanitized failure metadata, and failed registrations remain retryable.
+The Release structured-agent path registers classic refresh/processing handlers synchronously during `didFinishLaunching`. Continued-processing uses the iOS 26 contract instead: the Info.plist advertises a wildcard pattern, then each user-initiated request registers and submits the same fully composed concrete identifier. Registration outcomes retain identifier, success, timing, and sanitized failure metadata, and failed registrations remain retryable.
 
 Structured tool definitions now fail closed against `SecureToolRegistry`; structured streaming and completed generation traces flow through the llama adapter injected into `AssistantKernel`. Memory save/recall synthesis requires successful trusted observations, final-step degraded location requests continue directly to `maps.search` when valid, and live evidence validation uses parser-derived trace fields rather than reparsing bounded diagnostic output.
 
@@ -14,7 +14,7 @@ Tool-required structured turns now stop before generation when secure filtering 
 
 Embedding vectors now travel atomically with a content-digest model identifier through the selected runtime. RAG index loads and appends enforce format, identifier, and dimension together; rejected appends reload or surface an explicit unavailable state, while identity changes and persistence failures discard staged chunks without reporting false indexed counts.
 
-Local validation on the dedicated `Lumen Focused Test iPhone` simulator passed `build-for-testing`, the complete `LumenTests` target (1,126 passed, 0 failed, 0 skipped), and an unsigned Release simulator build. The non-slow/non-E2E Python suite passed 257 tests with 31 deselected, crawler collection found 192 tests, and the integration and Release-hardening gates passed. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
+Local validation on the dedicated `Lumen Focused Test iPhone` simulator passed `build-for-testing`, the complete `LumenTests` target (1,135 passed, 0 failed, 0 skipped), and an unsigned Release simulator build. The non-slow/non-E2E Python suite passed 261 tests with 31 deselected, crawler collection found 201 tests, and the integration and Release-hardening gates passed. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
 
 ## Executive Summary
 

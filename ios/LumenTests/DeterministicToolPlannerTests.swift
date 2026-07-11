@@ -397,6 +397,7 @@ struct DeterministicToolPlannerTests {
         let cases: [(String, String)] = [
             ("Find coffee near me.", "coffee"),
             ("Find a pharmacy nearby.", "pharmacy"),
+            ("Search nearby coffee shops and ask for clarification if required details are missing.", "coffee shops"),
             ("Use Search Nearby, but ask for clarification if required details are missing.", "nearby places")
         ]
 

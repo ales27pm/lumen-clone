@@ -5,7 +5,7 @@
 import json
 from pathlib import Path
 
-from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
+from lumen_manifest_crawler.dataset.runtime_ingest import _is_in_app_package, load_runtime_audit_reports
 
 
 E2E_REPORT = """E2E Test Report
@@ -336,6 +336,33 @@ def test_ingestion_flags_live_e2e_without_model_evidence_event(tmp_path: Path):
     assert failure["rootCauseCategory"] == "no_correlated_model_turn"
     assert failure["e2eScenario"]["skippedLiveModelRun"] is False
     assert "correlated model-backed AgentBehaviorTrace" in failure["expected"][0]
+
+
+def test_routing_only_scenario_does_not_require_model_evidence(tmp_path: Path):
+    report_path = tmp_path / "e2e-routing-only.json"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "results": [{
+            "scenarioID": "routing-only-weather",
+            "title": "Routing-only weather",
+            "passed": True,
+            "requiresAgentRun": True,
+            "evidenceMode": "routingOnly",
+            "prompt": "Classify a weather request.",
+            "actualIntent": "weather",
+            "expectedIntent": "weather",
+            "failures": [],
+            "finalText": "Routing-only checks completed.",
+            "events": [],
+        }],
+    }), encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"] == []
+    assert normalized["scenarios"][0].get("modelEvidenceStatus") is None
 
 
 def test_ingestion_keeps_resource_budget_preflight_out_of_training_repairs(tmp_path: Path):
@@ -824,6 +851,14 @@ def test_ingestion_matches_sidecar_by_correlation_despite_prompt_mismatch(tmp_pa
         "runtimePath": "agent-model",
         "parseError": None,
         "rawOutputPrefix": "{\"final\":\"Precision is exactness; recall is coverage.\"}",
+        "intent": "chat",
+        "streamStarted": True,
+        "modelLoaded": True,
+        "firstChunkReceived": True,
+        "textChunkCount": 1,
+        "finalChunkReceived": True,
+        "emittedFinalInActionTurn": True,
+        "finalizerAccepted": True,
         "promptPrefix": "Grounded wrapper prompt without the original wording.",
         "scenarioID": "training-general-chat",
         "e2eRunID": e2e_run_id,
@@ -866,6 +901,14 @@ def test_ingestion_matches_redacted_sidecar_by_opaque_correlation_token(tmp_path
         "runtimePath": "agent-model",
         "parseError": None,
         "rawOutputPrefix": "{\"final\":\"Precision is exactness; recall is coverage.\"}",
+        "intent": "chat",
+        "streamStarted": True,
+        "modelLoaded": True,
+        "firstChunkReceived": True,
+        "textChunkCount": 1,
+        "finalChunkReceived": True,
+        "emittedFinalInActionTurn": True,
+        "finalizerAccepted": True,
         "promptPrefix": "A redacted prompt that intentionally does not match.",
         "scenarioID": "training-general-chat",
         "correlationToken": token,
@@ -1368,6 +1411,7 @@ def test_evidence_layer_envelope_preserves_sidecar_correlation(tmp_path: Path):
             "event": "modelTurn",
             "stage": "agent-json-step-0",
             "runtimePath": "agent-model",
+            "intent": "chat",
             "scenarioID": "training-general-chat",
             "e2eRunID": "11111111-1111-1111-1111-111111111111",
             "agentRunID": "22222222-2222-2222-2222-222222222222",
@@ -1376,6 +1420,13 @@ def test_evidence_layer_envelope_preserves_sidecar_correlation(tmp_path: Path):
             "promptPrefix": "redacted structured prompt",
             "rawOutputPrefix": "{\"final\":\"Precision is exactness; recall is coverage.\"}",
             "parseError": None,
+            "streamStarted": True,
+            "modelLoaded": True,
+            "firstChunkReceived": True,
+            "textChunkCount": 1,
+            "finalChunkReceived": True,
+            "emittedFinalInActionTurn": True,
+            "finalizerAccepted": True,
         }) + "\n",
         encoding="utf-8",
     )
@@ -1933,6 +1984,18 @@ def test_ingestion_distinguishes_missing_empty_parse_valid_and_policy_first_evid
     assert failures_by_prompt["Policy first prompt."]["rootCauseCategory"] == "deterministic_compatibility_not_live_evidence"
 
 
+def test_in_app_package_schema_detection_accepts_future_compatible_versions():
+    package_shape = {
+        "exportPolicy": {"sourceLayer": "agentGroundingRuntimeAudit"},
+        "recentTraces": [],
+    }
+
+    assert _is_in_app_package({**package_shape, "schemaVersion": "2.4.0"})
+    assert _is_in_app_package({**package_shape, "schemaVersion": "3.0.0"})
+    assert not _is_in_app_package({**package_shape, "schemaVersion": "0.9.9"})
+    assert not _is_in_app_package({**package_shape, "schemaVersion": "future"})
+
+
 def test_in_app_package_preserves_trace_selected_tool_allowed_count(tmp_path: Path):
     report_path = tmp_path / "lumen-agent-grounding-audit.json"
     import json
@@ -2279,6 +2342,7 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
                 "promptPrefix": "What evidence supports your claim?",
                 "rawOutputPrefix": '{"final":"The answer is supported by live E2E evidence."}',
                 "runtimePath": "agent-model",
+                "intent": "rag",
                 "selectedRuntime": "llama",
                 "modelLoaded": True,
                 "outputTokenCount": 12,
@@ -2288,7 +2352,9 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
                 "finalChunkReceived": True,
                 "allowedToolIDs": [],
                 "toolArguments": {},
-                "emittedFinalInActionTurn": False,
+                "emittedFinalInActionTurn": True,
+                "successfulObservationCount": 1,
+                "finalizerAccepted": True,
             }
         ],
         "liveE2EReport": {
@@ -2517,6 +2583,138 @@ def test_v2_package_accepts_correlated_policy_first_evidence(tmp_path: Path):
     assert live_report["failures"] == []
     assert live_report["scenarios"][0]["modelEvidenceStatus"] == "valid_policy_first_evidence"
     assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+
+
+def test_v2_package_rejects_structured_final_without_explicit_runtime_and_finalizer_proof(tmp_path: Path):
+    token = "corr_v1_missing_proof"
+    package = {
+        "schemaVersion": "2.0.0",
+        "generatedAt": "2026-07-11T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "testflight-agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [{
+            "event": "modelTurn",
+            "stage": "agent-json-step-1",
+            "scenarioID": "missing-structured-proof",
+            "correlationToken": token,
+            "intent": "weather",
+            "runtimePath": "agent-model",
+            "parseError": None,
+            "rawOutputPrefix": '{"final":"It is clear."}',
+            "selectedToolID": None,
+            "allowedToolIDs": ["weather"],
+            "emittedFinalInActionTurn": True,
+        }],
+        "liveE2EReport": {
+            "schemaVersion": "1.0.0",
+            "generatedAt": "2026-07-11T00:00:10Z",
+            "exportPolicy": {
+                "format": "live-e2e-test-report-json",
+                "sourceLayer": "e2eTestReport",
+                "ownsLiveE2EScenarios": True,
+                "includesDeterministicStaticScenarios": False,
+            },
+            "payload": {
+                "results": [{
+                    "scenarioID": "missing-structured-proof",
+                    "title": "Missing structured proof",
+                    "prompt": "What is the weather?",
+                    "actualIntent": "weather",
+                    "expectedIntent": "weather",
+                    "correlationToken": token,
+                    "requiresAgentRun": True,
+                    "evidenceMode": "modelBackedRequired",
+                    "passed": True,
+                    "failures": [],
+                    "finalText": "It is clear.",
+                    "events": [],
+                }],
+            },
+            "correlatedTraceCount": 1,
+            "modelBackedCorrelatedTraceCount": 1,
+            "modelBackedCorrelatedScenarioCount": 1,
+            "deterministicCompatibilityTraceCount": 0,
+        },
+        "exportQualityFailures": [],
+        "scenarioResults": [],
+    }
+    report_path = tmp_path / "v2-missing-structured-proof.json"
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    reports = load_runtime_audit_reports([report_path])
+    package_report = next(report for report in reports if report["_sourceFormat"] == "testflight_agent_grounding_package")
+    live_report = next(report for report in reports if report["_sourceFormat"] == "live-e2e-test-report-json")
+
+    assert any(
+        failure["type"] == "agent_grounding_live_e2e_model_backed_trace_gap"
+        for failure in package_report["failures"]
+    )
+    assert live_report["scenarios"][0]["modelEvidenceStatus"] == "no_correlated_model_turn"
+    assert live_report["failures"][0]["rootCauseCategory"] == "no_correlated_model_turn"
+
+
+def test_legacy_policy_first_requires_scenario_specific_trace(tmp_path: Path):
+    package = {
+        "schemaVersion": "1.9.0",
+        "generatedAt": "2026-07-11T00:00:00Z",
+        "manifestSource": "AgentGrounding/agent_manifest/AgentBehaviorManifest.json",
+        "usedRuntimeFallback": False,
+        "exportPolicy": {
+            "format": "agent-grounding-runtime-json-package",
+            "sourceLayer": "agentGroundingRuntimeAudit",
+            "ownsLiveE2EScenarios": False,
+        },
+        "recentTraces": [{
+            "event": "toolAction",
+            "stage": "compatibility-tool-action",
+            "scenarioID": "different-policy-scenario",
+            "runtimePath": "deterministic-compatibility",
+            "selectedToolID": "weather",
+            "allowedToolIDs": ["weather"],
+            "toolArguments": {},
+            "emittedFinalInActionTurn": False,
+        }],
+        "liveE2EReport": {
+            "payload": {
+                "results": [{
+                    "scenarioID": "missing-policy-scenario",
+                    "title": "Missing policy-first evidence",
+                    "prompt": "What is the weather?",
+                    "requiresAgentRun": True,
+                    "evidenceMode": "policyFirstAllowed",
+                    "passed": True,
+                    "failures": [],
+                    "finalText": "It is clear.",
+                }],
+            },
+            "correlatedTraceCount": 1,
+            "modelBackedCorrelatedTraceCount": 0,
+            "modelBackedCorrelatedScenarioCount": 0,
+            "deterministicCompatibilityTraceCount": 1,
+        },
+        "exportQualityFailures": [],
+        "scenarioResults": [],
+    }
+    report_path = tmp_path / "legacy-policy-first-stale-aggregate.json"
+    report_path.write_text(json.dumps(package), encoding="utf-8")
+
+    package_report = next(
+        report
+        for report in load_runtime_audit_reports([report_path])
+        if report["_sourceFormat"] == "lumen_in_app_dataset_package"
+    )
+
+    failure = next(
+        failure
+        for failure in package_report["failures"]
+        if failure["type"] == "agent_grounding_live_e2e_model_backed_trace_gap"
+    )
+    assert "missingEvidenceScenarioCount=1" in failure["actual"]
 
 
 def test_agent_grounding_package_synthesizes_live_e2e_model_backed_trace_gap(tmp_path: Path):

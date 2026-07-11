@@ -26,6 +26,10 @@ enum RAGStore {
         let indexState: IndexState
     }
 
+    enum PersistenceError: Error, Equatable {
+        case diskWriteBudgetDenied
+    }
+
     @discardableResult
     static func discardPendingVectors(_ pending: inout [PendingVector]) -> Int {
         let discardedCount = pending.count
@@ -55,8 +59,17 @@ enum RAGStore {
         String(RuntimeFallbackLogger.promptHash(value).prefix(12))
     }
 
-    private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
-        guard DiskWriteBudget.shared.canWrite(bytes: 128 * 1024, category: .rag) else { return }
+    private static func requirePersistenceBudget() throws {
+        guard DiskWriteBudget.shared.canWrite(bytes: 128 * 1024, category: .rag) else {
+            throw PersistenceError.diskWriteBudgetDenied
+        }
+    }
+
+    private static func persistAfterBudgetAuthorization(
+        _ context: ModelContext,
+        operation: String,
+        scope: String
+    ) throws {
         do {
             try context.save()
             DiskWriteBudget.shared.recordWrite(bytes: 128 * 1024, category: .rag)
@@ -74,12 +87,30 @@ enum RAGStore {
         save: ((ModelContext, String, String) throws -> Void)? = nil
     ) -> PersistAndAppendResult? {
         let persistedCount = pending.count
+        guard persistedCount > 0 else {
+            return PersistAndAppendResult(persistedCount: 0, indexState: .appended)
+        }
+        if save == nil {
+            do {
+                try requirePersistenceBudget()
+            } catch {
+                return nil
+            }
+        }
         for item in pending {
             context.insert(item.chunk)
         }
-        let saveAction = save ?? persist
         do {
-            try saveAction(context, operation, scope)
+            if let save {
+                try save(context, operation, scope)
+            } else {
+                try persistAfterBudgetAuthorization(context, operation: operation, scope: scope)
+            }
+        } catch PersistenceError.diskWriteBudgetDenied {
+            for item in pending {
+                context.delete(item.chunk)
+            }
+            return nil
         } catch {
             for item in pending {
                 context.delete(item.chunk)
@@ -179,6 +210,43 @@ enum RAGStore {
         var didIndexAllChunks: Bool {
             mode == .indexed
         }
+    }
+
+    static func persistPendingVectorsForEarlyExit(
+        context: ModelContext,
+        operation: String,
+        diagnostic: String,
+        pending: inout [PendingVector],
+        previouslyPersistedCount: Int = 0,
+        save: ((ModelContext, String, String) throws -> Void)? = nil
+    ) -> IndexResult {
+        guard !pending.isEmpty else {
+            return IndexResult(
+                indexedCount: previouslyPersistedCount,
+                mode: previouslyPersistedCount > 0 ? .partial : .failed,
+                diagnostic: diagnostic
+            )
+        }
+        guard let result = persistAndAppendVectors(
+            context: context,
+            operation: operation,
+            pending: &pending,
+            save: save
+        ) else {
+            let persistenceDiagnostic = pending.isEmpty ? ";persist_failed" : ";persistence_deferred"
+            return IndexResult(
+                indexedCount: previouslyPersistedCount,
+                mode: previouslyPersistedCount > 0 ? .partial : .failed,
+                diagnostic: diagnostic + persistenceDiagnostic
+            )
+        }
+        let totalPersistedCount = previouslyPersistedCount + result.persistedCount
+        let suffix = result.indexState == .unavailable ? ";vector_index_reload_failed" : ""
+        return IndexResult(
+            indexedCount: totalPersistedCount,
+            mode: totalPersistedCount > 0 ? .partial : .failed,
+            diagnostic: diagnostic + suffix
+        )
     }
 
     struct FileExtractionResult: Equatable {
@@ -516,10 +584,11 @@ enum RAGStore {
 
     static func wipe(_ type: RAGSourceType?, context: ModelContext) throws {
         let all = try context.fetch(FetchDescriptor<RAGChunk>())
+        try requirePersistenceBudget()
         for c in all {
             if type == nil || c.kind == type { context.delete(c) }
         }
-        try persist(context, operation: "wipe", scope: "RAGChunk")
+        try persistAfterBudgetAuthorization(context, operation: "wipe", scope: "RAGChunk")
         if let type {
             RAGVectorIndex.shared.removeBucket(type.rawValue)
         } else {
@@ -843,14 +912,34 @@ enum RAGStore {
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexPhotos.embeddingFailure",
+                    diagnostic: diagnostic,
+                    pending: &pendingVectors
+                )
             }
             let emb = embeddingResult.vector
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexPhotos source=\(month, privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexPhotos.emptyEmbedding",
+                    diagnostic: "embedding_empty",
+                    pending: &pendingVectors
+                )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
+            if let activeEmbeddingMetadata, activeEmbeddingMetadata != embeddingMetadata {
+                let result = persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexPhotos.embeddingIdentityChanged",
+                    diagnostic: "embedding_identity_changed_during_index",
+                    pending: &pendingVectors
+                )
+                RAGVectorIndex.shared.invalidate()
+                return result
+            }
             guard prepareEmbeddingMetadata(
                 embeddingMetadata,
                 active: &activeEmbeddingMetadata,
@@ -916,14 +1005,34 @@ enum RAGStore {
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexNote.embeddingFailure",
+                    diagnostic: diagnostic,
+                    pending: &pendingVectors
+                )
             }
             let emb = embeddingResult.vector
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexNote.emptyEmbedding",
+                    diagnostic: "embedding_empty",
+                    pending: &pendingVectors
+                )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
+            if let activeEmbeddingMetadata, activeEmbeddingMetadata != embeddingMetadata {
+                let result = persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexNote.embeddingIdentityChanged",
+                    diagnostic: "embedding_identity_changed_during_index",
+                    pending: &pendingVectors
+                )
+                RAGVectorIndex.shared.invalidate()
+                return result
+            }
             guard prepareEmbeddingMetadata(
                 embeddingMetadata,
                 active: &activeEmbeddingMetadata,

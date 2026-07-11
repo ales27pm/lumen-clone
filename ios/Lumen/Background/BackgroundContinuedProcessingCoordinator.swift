@@ -39,7 +39,7 @@ final class BackgroundContinuedProcessingCoordinator {
         let submissionToken = UUID().uuidString
         let identifier = TriggerScheduler.continuedProcessingIdentifier(for: submissionToken)
         lastSubmittedIdentifier = identifier
-        guard registerHandlerIfNeeded().succeeded else { return nil }
+        guard registerHandler(identifier: identifier).succeeded else { return nil }
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
             title: title,
@@ -71,19 +71,34 @@ final class BackgroundContinuedProcessingCoordinator {
     }
 
     @discardableResult
-    func registerHandlerBeforeApplicationLaunchCompletion() -> BackgroundTaskRegistrationOutcome {
-        registerHandlerIfNeeded()
+    func registerHandler(identifier: String) -> BackgroundTaskRegistrationOutcome {
+        registerHandlerIfNeeded(identifier: identifier)
     }
 
     @discardableResult
-    private func registerHandlerIfNeeded() -> BackgroundTaskRegistrationOutcome {
-        let identifier = TriggerScheduler.continuedProcessingRegistrationIdentifier
+    private func registerHandlerIfNeeded(identifier: String) -> BackgroundTaskRegistrationOutcome {
         guard #available(iOS 26.0, *) else {
             return BackgroundTaskRegistrationOutcome(
                 identifier: identifier,
                 succeeded: false,
                 beforeApplicationLaunchCompletion: !appLaunchCompleted,
                 errorDomain: "BGTaskScheduler.unavailable",
+                errorCode: nil
+            )
+        }
+        let identifierSuffix = identifier.dropFirst(TriggerScheduler.continuedProcessingIdentifierPrefix.count)
+        guard identifier.hasPrefix(TriggerScheduler.continuedProcessingIdentifierPrefix),
+              !identifierSuffix.isEmpty,
+              !identifier.contains("*") else {
+            lastRegistrationIdentifier = identifier
+            lastRegistrationBeforeAppLaunchCompletion = !appLaunchCompleted
+            lastRegistrationErrorDomain = "BGTaskScheduler.invalidContinuedProcessingIdentifier"
+            lastRegistrationErrorCode = nil
+            return BackgroundTaskRegistrationOutcome(
+                identifier: identifier,
+                succeeded: false,
+                beforeApplicationLaunchCompletion: !appLaunchCompleted,
+                errorDomain: lastRegistrationErrorDomain,
                 errorCode: nil
             )
         }

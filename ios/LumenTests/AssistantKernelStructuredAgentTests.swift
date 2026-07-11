@@ -74,6 +74,12 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
     }
 
     private struct StubWeatherTool: LocalTool {
+        let observation: String
+
+        init(observation: String = "It is 21°C and clear.") {
+            self.observation = observation
+        }
+
         let definition = SecureToolDefinition(
             id: "weather",
             displayName: "Weather",
@@ -93,8 +99,8 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             ToolResult(
                 invocationID: invocation.id,
                 status: .success,
-                displayText: "It is 21°C and clear.",
-                modelText: "It is 21°C and clear.",
+                displayText: observation,
+                modelText: observation,
                 structuredPayload: ["temperature": "21", "conditions": "clear"],
                 privacyLevel: .low,
                 metricsSummary: "weather_success",
@@ -320,6 +326,50 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         let modelTraces = traces.filter { $0.event == .modelTurn }
         XCTAssertEqual(modelTraces.count, 2)
         XCTAssertTrue(modelTraces.allSatisfy { $0.runtimePath == "agent-model" })
+        let actionTrace = modelTraces.first { $0.selectedToolID == "weather" }
+        let finalTrace = modelTraces.first { $0.emittedFinalInActionTurn }
+        XCTAssertEqual(actionTrace?.successfulObservationCount, 0)
+        XCTAssertNil(actionTrace?.finalizerAccepted)
+        XCTAssertEqual(finalTrace?.successfulObservationCount, 1)
+        XCTAssertEqual(finalTrace?.finalizerAccepted, true)
+        #endif
+    }
+
+    func testStructuredFinalTraceRecordsActualObservationFinalizerRejection() async {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let service = ScriptedLlamaService(
+            isChatLoaded: true,
+            scripts: [
+                [.text(#"{"action":{"tool":"weather","args":{}}}"#), .done],
+                [.text(#"{"final":"It is 21°C and clear."}"#), .done]
+            ]
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [StubWeatherTool(observation: #"{"kind":"unsafe"}"#)])
+        )
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "scripted-unsafe-weather-observation",
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID()
+        )
+
+        for await _ in kernel.run(structuredRequest(
+            "What's the weather?",
+            allowedToolIDs: ["weather"],
+            traceCorrelation: correlation
+        )) {}
+
+        let finalTrace = AgentBehaviorTraceRecorder.recent(limit: 10).first {
+            $0.scenarioID == correlation.scenarioID && $0.emittedFinalInActionTurn
+        }
+        XCTAssertEqual(finalTrace?.successfulObservationCount, 1)
+        XCTAssertEqual(finalTrace?.finalizerAccepted, false)
+        XCTAssertEqual(finalTrace?.finalizerRejectionReason, "unsafe-observation")
         #endif
     }
 

@@ -2624,6 +2624,7 @@ struct E2ETestRunnerHygieneTests {
             outputTokenCount: 500,
             runtimePath: "agent-model",
             streamStarted: true,
+            modelLoaded: true,
             firstChunkReceived: true,
             textChunkCount: 20,
             finalChunkReceived: true,
@@ -2639,21 +2640,28 @@ struct E2ETestRunnerHygieneTests {
 
     @Test func primaryStructuredEvidenceDistinguishesFinalOnlyFromActionPlusFinal() {
         #if DEBUG
-        func trace(selectedToolID: String?, emittedFinal: Bool) -> AgentBehaviorTrace {
+        func trace(
+            selectedToolID: String?,
+            emittedFinal: Bool,
+            intent: String = "weather",
+            successfulObservationCount: Int? = nil,
+            finalizerAccepted: Bool? = true,
+            finalChunkReceived: Bool? = true
+        ) -> AgentBehaviorTrace {
             AgentBehaviorTrace(
                 id: UUID(),
                 createdAt: Date(),
                 event: .modelTurn,
                 slot: "executor",
                 stage: "agent-json-step-0",
-                intent: "weather",
+                intent: intent,
                 promptPrefix: "weather",
                 rawOutputPrefix: emittedFinal
                     ? #"{"final":"It is clear."}"#
                     : #"{"action":{"tool":"weather","args":{}}}"#,
                 selectedToolID: selectedToolID,
                 toolArguments: [:],
-                allowedToolIDs: ["weather"],
+                allowedToolIDs: intent == "chat" ? [] : ["weather"],
                 requiresApproval: false,
                 approvalMode: nil,
                 parseError: nil,
@@ -2664,14 +2672,31 @@ struct E2ETestRunnerHygieneTests {
                 modelLoaded: true,
                 firstChunkReceived: true,
                 textChunkCount: 1,
-                finalChunkReceived: true,
+                finalChunkReceived: finalChunkReceived,
                 streamTerminationReason: "stop",
-                finalizerAccepted: true
+                successfulObservationCount: successfulObservationCount,
+                finalizerAccepted: finalizerAccepted
             )
         }
 
-        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
             trace(selectedToolID: nil, emittedFinal: true),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1, finalizerAccepted: nil),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1, finalChunkReceived: nil),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, intent: "chat"),
             requiresPrimaryAgentJSON: true
         ))
         #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
@@ -2798,7 +2823,8 @@ private func recordSyntheticTrainingTrace(
             firstChunkReceived: true,
             textChunkCount: 1,
             finalChunkReceived: true,
-            streamTerminationReason: "stop"
+            streamTerminationReason: "stop",
+            finalizerAccepted: actionToolID == nil ? true : nil
         )
     )
 }
