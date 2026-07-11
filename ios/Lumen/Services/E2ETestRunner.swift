@@ -3090,7 +3090,10 @@ nonisolated enum E2ETestRunner {
 
         if scenario.expectedIntent == .rag,
            evidence.contains("rag") || scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search") {
-            let unavailableSignals = [
+            let retrievalUnavailableSignals = [
+                "rag retrieval is unavailable"
+            ]
+            let storageUnavailableSignals = [
                 "rag storage unavailable",
                 "swiftdata unavailable",
                 "persistent store unavailable",
@@ -3099,7 +3102,9 @@ nonisolated enum E2ETestRunner {
                 "no matching files found",
                 "import or create local files"
             ]
-            if unavailableSignals.contains(where: { evidence.contains($0) }) {
+            if retrievalUnavailableSignals.contains(where: { evidence.contains($0) }) {
+                quarantine("ragStorageUnavailable", evidenceKind: "retrieval-unavailable")
+            } else if storageUnavailableSignals.contains(where: { evidence.contains($0) }) {
                 quarantine("ragStorageUnavailable", evidenceKind: "storage-unavailable")
             }
         }
@@ -3148,6 +3153,9 @@ nonisolated enum E2ETestRunner {
         guard metadata["actionable"]?.lowercased() == "false" else { return nil }
         switch metadata["failureKind"] {
         case "ragStorageUnavailable":
+            if metadata["runtimeEvidence"] == "retrieval-unavailable" {
+                return "Runtime infrastructure unavailable: RAG retrieval unavailable."
+            }
             return "Runtime infrastructure unavailable: RAG storage unavailable."
         case "outlookRuntimeUnavailable":
             return "Runtime infrastructure unavailable: Outlook configuration unavailable."

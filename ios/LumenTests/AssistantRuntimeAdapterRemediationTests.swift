@@ -84,6 +84,16 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
         XCTAssertEqual(matrix.selectableEmbeddingRuntimes, [])
     }
 
+    func testCapabilityMatrixDoesNotExposeBareLlamaAvailabilityStatus() {
+        let matrix = AssistantRuntimeCapabilityMatrix.current()
+        let llama = matrix.row(for: .llama)
+
+        XCTAssertNotEqual(llama?.status, "available")
+        XCTAssertTrue(llama?.status.contains("generation") == true)
+        XCTAssertTrue(llama?.status.contains("embeddings") == true)
+        XCTAssertEqual(llama?.embeddingSupported, true)
+    }
+
     func testMetricErrorSanitizerDoesNotExposeDescription() {
         let code = RuntimeMetricErrorSanitizer.code(for: LocalRuntimeError.unavailable("raw private text"))
         XCTAssertEqual(code, "runtime_unavailable")

@@ -28,6 +28,10 @@ final class RAGSearchToolTests: XCTestCase {
         )
 
         XCTAssertEqual(res.status, .unavailable)
+        XCTAssertEqual(res.displayText, "RAG storage unavailable.")
+        XCTAssertFalse(res.displayText.contains("swiftdata_model_context_unavailable"))
+        XCTAssertEqual(res.modelText, "RAG storage unavailable.")
+        XCTAssertFalse(res.modelText.contains("swiftdata_model_context_unavailable"))
         XCTAssertEqual(res.errorCode, "swiftdata_model_context_unavailable")
         XCTAssertEqual(res.structuredPayload?["diagnostic"], "swiftdata_model_context_unavailable")
         XCTAssertTrue(res.modelText.contains("RAG storage unavailable"))

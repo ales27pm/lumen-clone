@@ -59,7 +59,7 @@ final class DiagnosticsProvider {
         let build = BuildDiagnosticsSnapshot.current(infoDictionary: info)
         let profiler = DeviceCapabilityProfiler().captureSnapshot()
         let metrics = (try? await RuntimeMetricsStore.shared.recentMetrics(limit: 10)) ?? []
-        let capabilityMatrix = AssistantRuntimeCapabilityMatrix.current()
+        let capabilityMatrix = await AssistantRuntimeCapabilityMatrix.currentIncludingRuntimeState()
         let runtime = RuntimeDiagnosticsSnapshot(
             foundationModelsAvailable: profiler.foundationModelsAvailable,
             foundationModelsStatus: profiler.foundationModelsStatus,

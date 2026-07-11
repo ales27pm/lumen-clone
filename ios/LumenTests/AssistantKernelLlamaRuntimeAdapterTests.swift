@@ -5,11 +5,20 @@ import XCTest
 final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
     private actor StubLlamaStreamingService: LlamaRuntimeStreamingService {
         let isChatLoaded: Bool
+        let isEmbedLoaded: Bool
         private let tokens: [GenerationToken]
+        private let embedding: [Double]
 
-        init(isChatLoaded: Bool, tokens: [GenerationToken] = []) {
+        init(
+            isChatLoaded: Bool,
+            isEmbedLoaded: Bool = false,
+            tokens: [GenerationToken] = [],
+            embedding: [Double] = []
+        ) {
             self.isChatLoaded = isChatLoaded
+            self.isEmbedLoaded = isEmbedLoaded
             self.tokens = tokens
+            self.embedding = embedding
         }
 
         func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
@@ -19,6 +28,10 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
                 }
                 continuation.finish()
             }
+        }
+
+        func embed(_ text: String) async throws -> [Double] {
+            embedding
         }
     }
 
@@ -36,9 +49,9 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
     }
 
     func testRunTextTurnPropagatesSelectedLlamaUnavailable() async throws {
-        let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil) { _ in
+        let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil, generateHandler: { _ in
             throw LocalRuntimeError.unavailable("controlled no loaded chat model")
-        }
+        })
         let router = AssistantRuntimeRouter(llama: adapter)
         let kernel = AssistantKernel(router: router)
         let context = AssistantTurnContext(
@@ -64,9 +77,9 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
             .appendingPathComponent("assistant-kernel-fallback-failure-\(UUID().uuidString).jsonl")
         defer { try? FileManager.default.removeItem(at: metricsURL) }
 
-        let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil) { _ in
+        let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil, generateHandler: { _ in
             throw LocalRuntimeError.unavailable("controlled no loaded chat model")
-        }
+        })
         let router = AssistantRuntimeRouter(llama: adapter)
         let kernel = AssistantKernel(router: router, metricsStore: RuntimeMetricsStore(fileURL: metricsURL))
         let context = AssistantTurnContext(
@@ -158,5 +171,67 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testLiveLlamaAdapterEmbedsWhenEmbeddingModelLoaded() async throws {
+        let service = StubLlamaStreamingService(
+            isChatLoaded: false,
+            isEmbedLoaded: true,
+            embedding: [0.25, 0.5, 0.75]
+        )
+        let adapter = LlamaRuntimeAdapter.live(service: service)
+
+        let embeddingSelectable = await adapter.isEmbeddingSelectable()
+        XCTAssertTrue(embeddingSelectable)
+        let vector = try await adapter.embed(request: EmbeddingRequest(text: "hello"))
+
+        XCTAssertEqual(vector, [Float(0.25), Float(0.5), Float(0.75)])
+        XCTAssertTrue(adapter.supportsEmbeddings)
+    }
+
+    func testCapabilityMatrixMarksLoadedLiveLlamaEmbeddingsSelectable() async {
+        let service = StubLlamaStreamingService(
+            isChatLoaded: true,
+            isEmbedLoaded: true,
+            embedding: [1.0]
+        )
+        let adapter = LlamaRuntimeAdapter.live(service: service)
+        let matrix = await AssistantRuntimeCapabilityMatrix.currentIncludingRuntimeState(llama: adapter)
+        let llama = matrix.row(for: .llama)
+
+        XCTAssertEqual(llama?.embeddingSupported, true)
+        XCTAssertEqual(llama?.embeddingSelectable, true)
+        XCTAssertEqual(llama?.status, "generation available; embeddings available")
+        XCTAssertEqual(matrix.selectableEmbeddingRuntimes, [.llama])
+    }
+
+    func testKernelRunEmbeddingUsesLiveLlamaEmbeddingRuntime() async throws {
+        let metricsURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("assistant-kernel-embedding-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: metricsURL) }
+        let service = StubLlamaStreamingService(
+            isChatLoaded: false,
+            isEmbedLoaded: true,
+            embedding: [0.1, 0.2]
+        )
+        let router = AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false)
+        let kernel = AssistantKernel(router: router, metricsStore: RuntimeMetricsStore(fileURL: metricsURL))
+        let context = AssistantTurnContext(
+            task: .embedding,
+            input: "semantic text",
+            isForeground: true,
+            lowPowerMode: false,
+            thermalState: .nominal
+        )
+
+        let vector = try await kernel.runEmbedding(context)
+
+        XCTAssertEqual(vector.count, 2)
+        XCTAssertEqual(vector[0], 0.1, accuracy: 0.000001)
+        XCTAssertEqual(vector[1], 0.2, accuracy: 0.000001)
+        let metrics = try await RuntimeMetricsStore(fileURL: metricsURL).recentMetrics(limit: 1)
+        XCTAssertEqual(metrics.last?.runtimeName, AssistantRuntimeKind.llama.rawValue)
+        XCTAssertEqual(metrics.last?.policySummary, "llama embedding available")
+        XCTAssertEqual(metrics.last?.success, true)
     }
 }

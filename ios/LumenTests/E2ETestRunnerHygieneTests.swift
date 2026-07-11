@@ -1537,6 +1537,18 @@ struct E2ETestRunnerHygieneTests {
         #expect(ragMetadata["trainingSignal"] == "false")
         #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: ragMetadata) == "Runtime infrastructure unavailable: RAG storage unavailable.")
 
+        let ragRetrievalMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: ragScenario,
+            finalText: "RAG retrieval is unavailable right now.",
+            failures: [],
+            events: []
+        )
+        #expect(ragRetrievalMetadata["failureKind"] == "ragStorageUnavailable")
+        #expect(ragRetrievalMetadata["actionable"] == "false")
+        #expect(ragRetrievalMetadata["trainingSignal"] == "false")
+        #expect(ragRetrievalMetadata["runtimeEvidence"] == "retrieval-unavailable")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: ragRetrievalMetadata) == "Runtime infrastructure unavailable: RAG retrieval unavailable.")
+
         let outlookScenario = E2ETestScenario(
             id: "live-outlook-message-read-direct",
             title: "Outlook",
