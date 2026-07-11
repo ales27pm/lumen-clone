@@ -36,6 +36,13 @@ DOCUMENTED_COMPATIBILITY_BRIDGES = {
             "compatibility responses; remove when those paths are kernel-native"
         ),
     },
+    "ios/Lumen/Services/E2ETestRunner.swift": {
+        "AgentService.shared.run": (
+            "diagnostic live E2E bridge for strict structured agent-json evidence; "
+            "remove when AssistantKernel emits native model-backed tool-required "
+            "agent-json turns with equivalent trace correlation"
+        ),
+    },
 }
 
 

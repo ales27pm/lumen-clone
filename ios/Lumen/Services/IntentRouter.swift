@@ -204,7 +204,13 @@ nonisolated enum IntentRouter {
         }
 
         if matchesAny(text, ["read file", "open file", "read document", "imported file", "local document"]) {
-            return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
+            let requiresFileClarification = !isConcreteFileReadIntent(text)
+            return IntentRoutingDecision(
+                intent: .files,
+                allowedToolIDs: filesToolIDs,
+                requiresClarification: requiresFileClarification,
+                clarificationPrompt: requiresFileClarification ? "Which file should I read?" : nil
+            )
         }
 
         if matchesAny(text, ["note", "save this"]) {
@@ -370,6 +376,15 @@ nonisolated enum IntentRouter {
 
         if isConcreteFileReadIntent(text) {
             return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
+        if matchesAny(text, ["read file", "open file", "read document", "imported file", "local document"]) {
+            return IntentRoutingDecision(
+                intent: .files,
+                allowedToolIDs: filesToolIDs,
+                requiresClarification: true,
+                clarificationPrompt: "Which file should I read?"
+            )
         }
 
         if isExplicitRAGIndexIntent(text)

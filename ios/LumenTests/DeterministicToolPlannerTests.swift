@@ -387,6 +387,52 @@ struct DeterministicToolPlannerTests {
         #expect(steps.map(\.tool).contains("outlook.message.read"))
     }
 
+    @Test func mapsSearchCoveragePromptsPlanSearchWithConcreteQuery() async throws {
+        let routing = IntentRoutingDecision(
+            intent: .maps,
+            allowedToolIDs: ["location.current", "maps.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let cases: [(String, String)] = [
+            ("Find coffee near me.", "coffee"),
+            ("Find a pharmacy nearby.", "pharmacy"),
+            ("Use Search Nearby, but ask for clarification if required details are missing.", "nearby places")
+        ]
+
+        for (prompt, expectedQuery) in cases {
+            let steps = DeterministicToolPlanner.planSteps(
+                routing: routing,
+                prompt: prompt,
+                availableToolIDs: routing.allowedToolIDs
+            )
+            #expect(steps.map(\.tool) == ["location.current", "maps.search"], "Prompt \(prompt) planned \(steps.map(\.tool))")
+            #expect(steps.last?.args["query"]?.stringValue == expectedQuery)
+        }
+    }
+
+    @Test func mapsSearchContinuesAfterUnavailableLocationObservation() async throws {
+        let routing = IntentRoutingDecision(
+            intent: .maps,
+            allowedToolIDs: ["location.current", "maps.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        #expect(!SlotAgentService.shouldStopPlannedChainForTests(
+            after: "Position snapshot is disabled in this build.",
+            currentToolID: "location.current",
+            nextToolID: "maps.search",
+            routing: routing
+        ))
+        #expect(SlotAgentService.shouldStopPlannedChainForTests(
+            after: "Position snapshot is disabled in this build.",
+            currentToolID: "location.current",
+            nextToolID: nil,
+            routing: routing
+        ))
+    }
+
     @Test func weatherInCityKeepsExplicitLocation() async throws {
         let routing = IntentRoutingDecision(intent: .weather, allowedToolIDs: ["weather"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "weather in Montreal", availableToolIDs: ["weather"])

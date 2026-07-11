@@ -193,6 +193,11 @@ struct IntentClassifierPolicyTests {
         #expect(message.intent == .messageDraft)
         #expect(message.requiresClarification)
         #expect(message.clarificationPrompt == "What should the message say?")
+
+        let file = IntentRouter.classify("Use Read File, but ask for clarification if required details are missing.")
+        #expect(file.intent == .files)
+        #expect(file.requiresClarification)
+        #expect(file.clarificationPrompt == "Which file should I read?")
     }
 
     @Test func clearDirectCommandsDoNotOverAskClarification() async {

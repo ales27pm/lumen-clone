@@ -26,7 +26,7 @@ nonisolated enum DeterministicToolPlanner {
         case "camera.capture", "location.current", "outlook.status", "outlook.folders.list", "calendar.list", "reminders.list", "health.summary", "motion.activity", "trigger.list", "alarm.authorization_status", "alarm.list":
             return AgentAction(tool: canonical, args: [:])
         case "maps.search":
-            let query = extractNearbySearchQuery(from: prompt) ?? extractDestination(from: prompt) ?? ""
+            let query = mapSearchQuery(from: prompt)
             return AgentAction(tool: canonical, args: ["query": .string(query)])
         case "maps.directions":
             guard let destination = extractDestination(from: prompt), !destination.isEmpty else { return nil }
@@ -201,7 +201,7 @@ nonisolated enum DeterministicToolPlanner {
                 return action("maps.directions", ["destination": .string(destination)])
             }
             if isNearbyMapSearchIntent(text) {
-                let query = extractNearbySearchQuery(from: prompt) ?? extractDestination(from: prompt) ?? ""
+                let query = mapSearchQuery(from: prompt)
                 return action("maps.search", ["query": .string(query)])
             }
             return nil
@@ -233,7 +233,7 @@ nonisolated enum DeterministicToolPlanner {
             return action("motion.activity")
         case .files:
             if let name = extractFileName(from: prompt) { return action("files.read", ["name": .string(name)]) }
-            if containsAny(text, ["attachment", "attached", "this file", "this document", "read file", "read document"]) { return action("files.read") }
+            if containsAny(text, ["attachment", "attached", "this file", "this document"]) { return action("files.read") }
             return nil
         case .memory, .note:
             if isPersonalProfileRecallIntent(text) { return action("memory.recall", ["query": .string("user name")]) }
@@ -676,7 +676,7 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     static func extractNearbySearchQuery(from text: String) -> String? {
         let lower = normalized(text)
         if let range = lower.range(of: "nearby ") {
-            let query = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let query = cleanNearbySearchQuery(String(text[range.upperBound...]))
             return query.isEmpty ? nil : query
         }
         if let range = lower.range(of: "closest ") {
@@ -688,11 +688,29 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             return query.isEmpty ? nil : query
         }
         if let range = lower.range(of: " near me") {
-            let head = String(text[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let cleaned = head.replacingOccurrences(of: #"(?i)^(find|show|search|locate)\s+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = cleanNearbySearchQuery(String(text[..<range.lowerBound]))
+            return cleaned.isEmpty ? nil : cleaned
+        }
+        if let range = lower.range(of: " nearby") {
+            let cleaned = cleanNearbySearchQuery(String(text[..<range.lowerBound]))
             return cleaned.isEmpty ? nil : cleaned
         }
         return nil
+    }
+
+    private static func mapSearchQuery(from prompt: String) -> String {
+        let query = extractNearbySearchQuery(from: prompt)
+            ?? extractDestination(from: prompt)
+            ?? "nearby places"
+        let cleaned = cleanNearbySearchQuery(query)
+        return cleaned.isEmpty ? "nearby places" : cleaned
+    }
+
+    private static func cleanNearbySearchQuery(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: #"(?i)^(use\s+)?(find|show|search|locate|look for|help me find)\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)^(a|an|the)\s+"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
     }
 
     static func extractEmailAddress(from text: String) -> String? {

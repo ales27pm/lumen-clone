@@ -18,7 +18,7 @@ This matrix describes the Release product surface. A feature is either shipped, 
 | CoreML embedding runtime | Excluded from Release routing | `CoreMLRuntimeAdapter` | Reported as experimental and non-selectable until real embedding extraction exists. |
 | Deterministic runtime | DEBUG diagnostics only | `DeterministicFallbackRuntime` | Release routing cannot select it. DEBUG tests may select it explicitly. |
 | GGUF native engine | Excluded unless a compiled native bridge is supplied | `GGUFEngine`, `GGUFNativeBridge` | The unavailable bridge is DEBUG-only. Release factory registration cannot install an unavailable GGUF backend. |
-| Persistent diagnostics and E2E probes | Shipped for static/local diagnostics; live legacy probes DEBUG-only | `DiagnosticsProvider`, `PersistentRuntimeDiagnosticsRunner`, `E2ETestRunner` | Release diagnostics can export structured state. Legacy live probes are skipped in Release. |
+| Persistent diagnostics and E2E probes | Shipped for static/local diagnostics; live legacy probes DEBUG-only | `DiagnosticsProvider`, `PersistentRuntimeDiagnosticsRunner`, `E2ETestRunner` | Release diagnostics can export structured state. Live E2E scoring quarantines non-actionable runtime degradation, rejects incomplete finals, and keeps DEBUG-only structured agent-json probes out of Release. Legacy live probes are skipped in Release. |
 
 ## Release Readiness Vocabulary
 

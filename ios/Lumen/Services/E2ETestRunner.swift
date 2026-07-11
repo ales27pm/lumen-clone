@@ -598,6 +598,7 @@ nonisolated enum E2ETestRunner {
     @TaskLocal static var debugAssertScenarioLoopOffMainThread = false
     @TaskLocal static var debugScenarioLoopThreadRecorder: (@Sendable (Bool) -> Void)?
     @TaskLocal static var debugExecutorRuntimePreflightOverride: (@Sendable () async -> ExecutorRuntimePreflightResult)?
+    @TaskLocal static var debugCPUWatchdogDegradedOverride: Bool?
 
     private static func debugIsRunningOnMainThread() -> Bool {
         #if canImport(Darwin)
@@ -1152,6 +1153,7 @@ nonisolated enum E2ETestRunner {
                             agentRunID: agentRunID,
                             acceptsPolicyFirstEvidence: false
                         )
+                        #if DEBUG
                         let legacyEvents = await AgentService.shared.run(agentRequest, options: agentOptions)
                         agentEvents = AsyncStream { continuation in
                             let task = Task {
@@ -1173,6 +1175,13 @@ nonisolated enum E2ETestRunner {
                             }
                             continuation.onTermination = { @Sendable _ in task.cancel() }
                         }
+                        #else
+                        _ = agentOptions
+                        agentEvents = AsyncStream { continuation in
+                            continuation.yield(.error("Structured live E2E agent-json diagnostics require DEBUG build."))
+                            continuation.finish()
+                        }
+                        #endif
                     } else {
                         let kernelRequest = strictLiveAgentKernelRequest(
                             prompt: scenario.prompt,
@@ -1290,6 +1299,18 @@ nonisolated enum E2ETestRunner {
                 let recoveredAfterRewrite = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: rewriteOutcome.finalText)
                 let postRewriteSanitized = mergeSanitizerOutputs(FinalOutputSanitizer.sanitizeUserVisibleText(rewriteOutcome.finalText), recovered: recoveredAfterRewrite)
                 finalText = postRewriteSanitized.text
+                if let repaired = deterministicToolObservationFallbackForIncompleteFinal(
+                    scenario: scenario,
+                    routing: routing,
+                    finalText: finalText,
+                    events: events
+                ) {
+                    await event("finalizer", "deterministic tool-observation fallback used for incomplete final")
+                    rawFinalText = repaired
+                    let recoveredAfterRepair = FinalOutputSanitizer.consumeRecoveredUnsafeOutput(forSanitizedText: repaired)
+                    let repairSanitized = mergeSanitizerOutputs(FinalOutputSanitizer.sanitizeUserVisibleText(repaired), recovered: recoveredAfterRepair)
+                    finalText = repairSanitized.text
+                }
 
                 hygieneState = FinalHygieneState(
                     rawFinalText: rawFinalText,
@@ -1557,6 +1578,13 @@ nonisolated enum E2ETestRunner {
         onEvent: EventCallback?
     ) async -> E2ETestResult? {
         guard scenario.requiresAgentRun else { return nil }
+        if isCPUWatchdogDegradedForLiveTraining(scenario: scenario) {
+            return await liveRuntimePreflightBlockedResult(
+                for: scenario,
+                denialReason: "live-e2e.pre-scenario: cpu-watchdog-degraded",
+                onEvent: onEvent
+            )
+        }
         let readiness = await liveRuntimeReadinessBarrier(
             for: scenario,
             maxWaitNanoseconds: liveRuntimeReadinessMaxWaitNanoseconds,
@@ -1706,6 +1734,9 @@ nonisolated enum E2ETestRunner {
 
     private nonisolated static func liveRuntimeBudgetFailureKind(_ denialReason: String) -> String {
         let lower = denialReason.lowercased()
+        if lower.contains("cpu-watchdog-degraded") || lower.contains("cpu watchdog degraded") {
+            return "liveRuntimeCPUWatchdogDegraded"
+        }
         if lower.contains("thermalstate=serious") || lower.contains("thermal state serious") {
             return "liveRuntimeThermalCooldownRequired"
         }
@@ -1744,16 +1775,37 @@ nonisolated enum E2ETestRunner {
     ) -> UInt64 {
         guard result.requiresAgentRun else { return 0 }
         guard !liveRuntimeShouldStopAfter(result) else { return 0 }
+        let duration = max(0, result.finishedAt.timeIntervalSince(result.startedAt))
+        let ranToolOrExecutor = result.expectedIntent != UserIntent.chat.rawValue
+            || result.events.contains { event in
+                let lower = event.message.lowercased()
+                return event.phase == "step" && (lower.contains("action:") || lower.contains("observation:"))
+            }
+        let minimumCooldown: UInt64 = ranToolOrExecutor && duration >= 20 ? 8_000_000_000 : 0
         switch thermalState {
         case .nominal:
-            return lowPowerModeEnabled ? 3_000_000_000 : 1_500_000_000
+            return max(lowPowerModeEnabled ? 3_000_000_000 : 1_500_000_000, minimumCooldown)
         case .fair:
-            return lowPowerModeEnabled ? 8_000_000_000 : 5_000_000_000
+            return max(lowPowerModeEnabled ? 8_000_000_000 : 5_000_000_000, minimumCooldown)
         case .serious, .critical:
             return 0
         @unknown default:
             return 3_000_000_000
         }
+    }
+
+    private nonisolated static func isCPUWatchdogDegradedForLiveTraining(scenario: E2ETestScenario) -> Bool {
+        guard scenario.kind == .training,
+              scenario.requiresAgentRun,
+              scenario.evidenceMode == .modelBackedRequired else {
+            return false
+        }
+        #if DEBUG
+        if let override = debugCPUWatchdogDegradedOverride {
+            return override
+        }
+        #endif
+        return CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration)
     }
 
     private static func recordPolicyFirstClarificationTrace(
@@ -2451,6 +2503,12 @@ nonisolated enum E2ETestRunner {
         )
     }
 
+    static func liveRuntimePreflightBlockedResultIfNeededForTests(
+        _ scenario: E2ETestScenario
+    ) async -> E2ETestResult? {
+        await liveRuntimePreflightBlockedResultIfNeeded(for: scenario, onEvent: nil)
+    }
+
     nonisolated static func liveRuntimeBudgetFailureKindForTests(_ denialReason: String) -> String {
         liveRuntimeBudgetFailureKind(denialReason)
     }
@@ -2530,6 +2588,20 @@ nonisolated enum E2ETestRunner {
         deterministicWebSynthesisFallback(
             scenario: scenario,
             rawFinalText: rawFinalText,
+            events: events
+        )
+    }
+
+    nonisolated static func deterministicToolObservationFallbackForIncompleteFinalForTests(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        finalText: String,
+        events: [E2ETestEvent]
+    ) -> String? {
+        deterministicToolObservationFallbackForIncompleteFinal(
+            scenario: scenario,
+            routing: routing,
+            finalText: finalText,
             events: events
         )
     }
@@ -2744,10 +2816,70 @@ nonisolated enum E2ETestRunner {
         if removedArtifacts.contains(.emptyAfterSanitization) {
             failures.append("Final output empty after sanitization")
         }
+        if finalHasDanglingIncompleteEnding(lowerFinal) {
+            failures.append("Final output appears incomplete or truncated")
+        }
         if scenario.expectedIntent == .weather && weatherGroundingOverreach(finalText: lowerFinal, observations: observations) {
             failures.append("Weather precipitation recommendation not grounded")
         }
         return mergedStrings(failures)
+    }
+
+    nonisolated private static func finalHasDanglingIncompleteEnding(_ lowerFinal: String) -> Bool {
+        let text = lowerFinal
+            .replacingOccurrences(of: #"[\s\p{P}]+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        let danglingSuffixes = [
+            "an",
+            "a",
+            "the",
+            "with",
+            "because",
+            "you do not need an"
+        ]
+        return danglingSuffixes.contains(text)
+            || danglingSuffixes.contains(where: { text.hasSuffix(" \($0)") })
+    }
+
+    nonisolated private static func deterministicToolObservationFallbackForIncompleteFinal(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        finalText: String,
+        events: [E2ETestEvent]
+    ) -> String? {
+        guard finalHasDanglingIncompleteEnding(finalText.lowercased()) else { return nil }
+        guard scenario.expectedIntent == .weather || routing.intent == .weather else { return nil }
+        guard let observation = lastWeatherObservation(from: events) else { return nil }
+        return ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .weather,
+            toolID: "weather",
+            observation: observation,
+            originalPrompt: scenario.prompt
+        ) ?? "Weather update: \(observation)"
+    }
+
+    nonisolated private static func lastWeatherObservation(from events: [E2ETestEvent]) -> String? {
+        for event in events.reversed() where event.phase == "step" {
+            let lower = event.message.lowercased()
+            guard lower.contains("weather") || lower.contains("°") || lower.contains("temperature") else {
+                continue
+            }
+            let message = event.message
+            if let range = message.range(of: "observation:", options: [.caseInsensitive]) {
+                let observation = String(message[range.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !observation.isEmpty { return observation }
+            }
+            if let range = message.range(of: "observation", options: [.caseInsensitive]) {
+                let observation = String(message[range.upperBound...])
+                    .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+                if !observation.isEmpty { return observation }
+            }
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
     }
 
     nonisolated static func liveAgentQualityFailures(rawFinalText: String, finalText: String, scenario: E2ETestScenario) -> [String] {

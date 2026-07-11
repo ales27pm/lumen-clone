@@ -88,6 +88,8 @@ The latest Chat approval UI mapping pass connected that native approval-boundary
 
 The latest strict-boundary pass removed the Release-compiled `StructuredAgentKernelExecutor` bridge to `AgentService.shared.run`. Live E2E model-backed probes now enter through `AssistantKernel.run(...)`, `check_agent_kernel_boundary.py --strict` fails on documented compatibility entries unless the legacy call is inside `#if DEBUG`, and scanner regression tests cover DEBUG versus Release branch detection.
 
+The latest live-E2E completeness pass closed the remaining known scoring gaps from the post-merge live reports. Final-output hygiene now rejects dangling completions such as `an`, `a`, `the`, `with`, `because`, and `you do not need an`; weather observation turns repair truncated finals from the trusted tool observation before scoring. Model-backed training runs check CPU watchdog state before entering generation and emit one non-actionable runtime-preflight result when degraded. Deterministic maps planning keeps `maps.search` actionable for nearby search prompts, including degraded `location.current` observations, and missing-argument `files.read` requests clarify with `Which file should I read?` instead of returning generic safe failure text.
+
 This is not a claim that every future product target is complete. The Release product surface now excludes experimental or legacy paths that are not release-safe, and documents those exclusions explicitly. Hardware, TestFlight, signed archive/export, and real model/device checks still require Apple credentials and physical device coverage.
 
 ## Files Changed
@@ -122,6 +124,13 @@ Follow-up strict-boundary files:
 - Boundary guard: `tools/check_agent_kernel_boundary.py`
 - Tests: `ios/LumenTests/AgentKernelBoundaryGuardTests.swift`, `tools/pipeline/tests/test_check_agent_kernel_boundary.py`
 - Shipped-state docs: `docs/AGENT_KERNEL_MIGRATION_STATUS.md`, `docs/LEGACY_AGENT_MIGRATION.md`, `docs/CODEX_NATIVE_ASSISTANT_AUDIT.md`
+
+Follow-up live-E2E completeness files:
+
+- Final hygiene, preflight, pacing, and quarantine scoring: `ios/Lumen/Services/E2ETestRunner.swift`
+- Maps/files deterministic planning and clarification: `ios/Lumen/Services/DeterministicToolPlanner.swift`, `ios/Lumen/Services/SlotAgentService.swift`, `ios/Lumen/Services/IntentRouter.swift`
+- Regression tests: `ios/LumenTests/E2ETestRunnerHygieneTests.swift`, `ios/LumenTests/DeterministicToolPlannerTests.swift`, `ios/LumenTests/IntentClassifierPolicyTests.swift`
+- Boundary guard documentation: `tools/check_agent_kernel_boundary.py`
 
 Follow-up tool JSON hardening files:
 
@@ -1022,6 +1031,14 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 | `python3 tools/check_release_hardening.py` after Chat approval UI mapping | Passed |
 | `python3 tools/check_agent_kernel_boundary.py --strict` after Chat approval UI mapping | Passed; remaining documented calls are inside the DEBUG-only `LegacyAgentCompatibilityBridge` |
 | `SIM_UDID=8C613E1F-22F1-4A0E-88B9-01031856659B TEST_TIMEOUT_SECONDS=3600 SIM_BOOT_TIMEOUT_SECONDS=1200 SIM_READY_PROBE_TIMEOUT_SECONDS=20 bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/ToolApprovalQueueTests/testApprovalBoundaryStepCreatesPendingToolMessageForChatView` after Chat approval UI mapping | Passed with `pipefail`: dedicated `Lumen Focused Test iPhone` readiness probe succeeded without the long System App wait, `TEST BUILD SUCCEEDED`, and `TEST EXECUTE SUCCEEDED`; executed 1 XCTest with 0 failures. Log: `/tmp/lumen-chat-approval-mapper-focused-clean.log`; result bundle: `~/Library/Developer/Xcode/DerivedData/Lumen-chhvizdiogdwpghffmgflhfgheel/Logs/Test/Test-Lumen-2026.07.09_03-17-54--0400.xcresult` |
+| `git diff --check` after live-E2E completeness hardening | Passed |
+| `python3 -m compileall tools scripts` after live-E2E completeness hardening | Passed |
+| `python3 tools/check_release_hardening.py` after live-E2E completeness hardening | Passed |
+| `bash scripts/check-lumen-integration-gate.sh` after live-E2E completeness hardening | Passed; advisory placeholder/logging review lines still printed by readiness checks |
+| `uv run --python 3.12 --with pytest python -m pytest tools/pipeline/tests/test_check_agent_kernel_boundary.py` after live-E2E completeness hardening | Passed: 3 passed |
+| `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO` after live-E2E completeness hardening | Failed before compile: requested simulator `Lumen Focused Test iPhone` was unavailable on this host. |
+| `xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'generic/platform=iOS Simulator' build-for-testing CODE_SIGNING_ALLOWED=NO` after live-E2E completeness hardening | Passed: `TEST BUILD SUCCEEDED` |
+| `xcrun simctl list devices available` after live-E2E completeness hardening | Interrupted after hanging with no output; no executed simulator XCTest pass is claimed. |
 
 ## Remaining DEBUG-Only Experimental Items
 
