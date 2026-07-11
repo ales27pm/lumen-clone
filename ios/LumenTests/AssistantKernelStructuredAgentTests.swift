@@ -95,6 +95,68 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testDisjointStructuredAllowlistDoesNotBroadenToAllSecureTools() {
+        #if DEBUG
+        let sourceIDs = StructuredAgentKernelExecutor.structuredToolSourceIDsForTests(
+            secureIDs: ["weather", "web.search", "maps.search"],
+            optionIDs: ["web.search"],
+            routingIDs: ["weather"]
+        )
+
+        XCTAssertEqual(sourceIDs, Set(["web.search"]))
+        XCTAssertFalse(sourceIDs.contains("weather"))
+        XCTAssertFalse(sourceIDs.contains("maps.search"))
+        #endif
+    }
+
+    func testNonSuccessToolResultStopsBeforeTrustedObservationReuse() {
+        #if DEBUG
+        XCTAssertTrue(StructuredAgentKernelExecutor.shouldStopAfterToolResultForTests(.failed))
+        XCTAssertTrue(StructuredAgentKernelExecutor.shouldStopAfterToolResultForTests(.denied))
+        XCTAssertTrue(StructuredAgentKernelExecutor.shouldStopAfterToolResultForTests(.unavailable))
+        XCTAssertFalse(StructuredAgentKernelExecutor.shouldStopAfterToolResultForTests(.success))
+        #endif
+    }
+
+    func testPhoneCallContinuationAfterContactSearchEmitsApprovalBoundary() throws {
+        #if DEBUG
+        let routing = IntentRoutingDecision(
+            intent: .phoneCall,
+            allowedToolIDs: ["contacts.search", "phone.call"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let continuation = try XCTUnwrap(StructuredAgentKernelExecutor.phoneCallContinuationAfterContactObservationForTests(
+            routing: routing,
+            actionTool: "contacts.search",
+            observation: "Sarah — +1 (555) 123-4567",
+            availableToolIDs: ["contacts.search", "phone.call"]
+        ))
+
+        XCTAssertEqual(continuation.step.kind, .approvalBoundary)
+        XCTAssertEqual(continuation.step.toolID, "phone.call")
+        XCTAssertEqual(continuation.step.toolArgs?["number"], "+15551234567")
+        XCTAssertTrue(continuation.text.contains("Approval required for phone.call"))
+        #endif
+    }
+
+    func testRAGEmptyObservationPreservesEmptyStateInsteadOfSummary() throws {
+        #if DEBUG
+        let noMatches = try XCTUnwrap(StructuredAgentKernelExecutor.deterministicObservationFallbackForTests(
+            observations: [("rag.search", "No matching snippets found in the local index.")],
+            intent: .rag
+        ))
+        XCTAssertEqual(noMatches, "No matching snippets were found in the local index.")
+        XCTAssertFalse(noMatches.contains("Summary\n"))
+
+        let emptyIndex = try XCTUnwrap(StructuredAgentKernelExecutor.ragOrFilesEmptyObservationFinalForTests(
+            observations: [("rag.search", "RAG storage unavailable: local index appears empty.")]
+        ))
+        XCTAssertTrue(emptyIndex.contains("RAG retrieval is unavailable"))
+        XCTAssertFalse(emptyIndex.contains("Key modules"))
+        #endif
+    }
+
     func testSelectedActionIsSchemaValidatedBeforeExecution() throws {
         let web = try tool("web.search")
         let missingRequiredArg = AgentAction(tool: "web.search", args: [:])
@@ -102,7 +164,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         case .success:
             XCTFail("web.search without query must not validate")
         case .failure(let error):
-            XCTAssertTrue(error.diagnostic.contains("missing_required_argument:web.search:query"))
+            XCTAssertTrue(error.diagnostic.contains("missing_required_argument:web.search.query"))
         }
 
         let valid = AgentAction(tool: "web.search", args: ["query": .string("Swift concurrency")])
@@ -194,7 +256,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         )
 
         XCTAssertEqual(required?.tool, "memory.recall")
-        XCTAssertEqual(required?.args["query"]?.stringValue, "concise bullet points")
+        XCTAssertEqual(required?.args["query"]?.stringValue, "prefer concise bullet points")
         #endif
     }
 
@@ -246,6 +308,15 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         XCTAssertTrue(source.contains("streamTerminationReason: diagnostics.streamTerminationReason"))
         XCTAssertTrue(source.contains("Duplicate tool call blocked"))
         XCTAssertTrue(source.contains("deterministic web synthesis fallback used after observations"))
+        XCTAssertTrue(source.contains("prompt: AgentDiagnosticFileRedactor.summary(label: \"prompt\", text: request.userMessage)"))
+        XCTAssertTrue(source.contains("toolArguments: AgentDiagnosticFileRedactor.redactedMap"))
+        XCTAssertTrue(source.contains("Structured agent-json model turn completed."))
+
+        let postprocessIndex = try XCTUnwrap(source.range(of: "postprocessStructuredFinalAnswer(finalAnswer")?.lowerBound)
+        let finalDeltaIndex = try XCTUnwrap(source.range(of: "continuation.yield(.finalDelta(finalAnswer))", range: postprocessIndex..<source.endIndex)?.lowerBound)
+        let finalIndex = try XCTUnwrap(source.range(of: "continuation.yield(.final(finalAnswer))", range: finalDeltaIndex..<source.endIndex)?.lowerBound)
+        XCTAssertLessThan(postprocessIndex, finalDeltaIndex)
+        XCTAssertLessThan(finalDeltaIndex, finalIndex)
 
         let validateIndex = try XCTUnwrap(source.range(of: "StructuredToolCallValidator.validate")?.lowerBound)
         let executeIndex = try XCTUnwrap(source.range(of: "toolRegistry.execute")?.lowerBound)
