@@ -10,7 +10,13 @@ final class RAGIndexer {
         for (i,c) in chunks.enumerated() {
             let embedding: [Double]
             do {
-                embedding = try await AppLlamaService.shared.embed(c.text)
+                let embeddingText = SemanticEmbeddingText.document(
+                    content: c.text,
+                    sourceName: title,
+                    sourceType: type.rawValue,
+                    chunkIndex: i
+                )
+                embedding = try await AssistantKernel.runEmbedding(text: embeddingText)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {

@@ -137,4 +137,17 @@ final class RuntimeRouterTests: XCTestCase {
         XCTAssertNotEqual(selection.runtime, .deterministicFallback)
     }
 
+    func testRuntimeStateEmbeddingSelectionDoesNotUseDiagnosticFallback() async {
+        let router = AssistantRuntimeRouter(
+            llama: .init(isAvailable: false),
+            coreML: CoreMLRuntimeAdapter(modelURL: nil),
+            allowDiagnosticFallbackSelection: true
+        )
+        let context = AssistantTurnContext(task: .embedding, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
+        let selection = await router.selectionIncludingRuntimeState(for: context)
+
+        XCTAssertEqual(selection.runtime, .coreML)
+        XCTAssertNotEqual(selection.runtime, .deterministicFallback)
+    }
+
 }

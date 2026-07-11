@@ -136,6 +136,26 @@ final class RAGSearchToolTests: XCTestCase {
         XCTAssertEqual(result.matches.first?.chunk.sourceName, "notes")
     }
 
+    @MainActor func testHybridMergeLetsStrongLexicalMatchRescueWeakSemanticHit() async throws {
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let ctx = ModelContext(container)
+        let weakSemantic = RAGChunk(content: "general architecture notes", sourceType: .note, sourceName: "semantic")
+        let exactLexical = RAGChunk(content: "swift actor isolation details", sourceType: .note, sourceName: "lexical")
+        ctx.insert(weakSemantic)
+        ctx.insert(exactLexical)
+        try ctx.save()
+
+        let merged = RAGStore.hybridMergedCandidates(
+            semantic: [(weakSemantic, 0.12)],
+            lexical: [(exactLexical, 0.2)],
+            limit: 2
+        )
+
+        XCTAssertEqual(merged.first?.0.sourceName, "lexical")
+        XCTAssertEqual(merged.count, 2)
+    }
+
     @MainActor func testRAGEngineRetrievePreservesEmptyLimitDiagnostic() async throws {
         let schema = Schema([RAGChunk.self])
         let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])

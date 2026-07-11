@@ -1,4 +1,5 @@
 import Foundation
+import Accelerate
 import Metal
 import OSLog
 import SwiftLlama
@@ -1811,12 +1812,17 @@ final actor AppLlamaService {
             throw LlamaError.embeddingFailed("Input exceeds embedding context window")
         }
 
-        let batch = LlamaBatch(initialSize: 1)
+        let batchCapacity = max(1, min(tokens.count, Int(embeddingBatchSize)))
+        let batch = LlamaBatch(initialSize: Int32(batchCapacity))
+        let lastIndex = tokens.count - 1
         do {
             for (index, token) in tokens.enumerated() {
-                batch.reset()
-                batch.addToken(token, at: Int32(index), logits: index == (tokens.count - 1))
-                try embeddingContext.decode(batch: batch)
+                let isLast = index == lastIndex
+                batch.addToken(token, at: Int32(index), logits: isLast)
+                if batch.size == Int32(batchCapacity) || isLast {
+                    try embeddingContext.decode(batch: batch)
+                    batch.reset()
+                }
             }
         } catch {
             throw LlamaError.embeddingFailed(error.localizedDescription)
@@ -2082,9 +2088,19 @@ final actor AppLlamaService {
     }
 
     private func normalize(_ vector: [Double]) -> [Double] {
-        let norm = sqrt(vector.reduce(0.0) { $0 + ($1 * $1) })
-        guard norm > 0 else { return vector }
-        return vector.map { $0 / norm }
+        guard !vector.isEmpty else { return vector }
+        var out = vector
+        var sumOfSquares = 0.0
+        out.withUnsafeBufferPointer { buffer in
+            vDSP_svesqD(buffer.baseAddress!, 1, &sumOfSquares, vDSP_Length(buffer.count))
+        }
+        let norm = sumOfSquares.squareRoot()
+        guard norm > 1e-12 else { return vector }
+        var inverse = 1.0 / norm
+        out.withUnsafeMutableBufferPointer { buffer in
+            vDSP_vsmulD(buffer.baseAddress!, 1, &inverse, buffer.baseAddress!, 1, vDSP_Length(buffer.count))
+        }
+        return out
     }
 
     private func makeRandomSeed() -> UInt32 {

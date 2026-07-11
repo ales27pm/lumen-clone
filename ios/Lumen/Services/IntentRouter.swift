@@ -203,7 +203,7 @@ nonisolated enum IntentRouter {
             "search personal data", "search my files", "search local files", "search my documents", "search my notes",
             "reindex files", "reindex my imported files", "reindex imported files",
             "refresh imported files", "refresh file index", "rebuild file index",
-            "update retrieval index", "index files", "reindex photos", "index photos",
+            "update retrieval index", "refresh retrieval index", "index files", "reindex photos", "index photos",
             "rag search", "architecture notes"
         ]) || isLikelyLocalKnowledgeQuery(text) {
             return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
@@ -380,6 +380,11 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .reminder, allowedToolIDs: reminderToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
+        if isExplicitRAGIndexIntent(text)
+            || matchesAny(text, ["search my local files", "find lumen architecture notes", "latest lumen diagnostics report", "search personal data"]) {
+            return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        }
+
         if isConcreteFileReadIntent(text) {
             return IntentRoutingDecision(intent: .files, allowedToolIDs: filesToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
@@ -391,11 +396,6 @@ nonisolated enum IntentRouter {
                 requiresClarification: true,
                 clarificationPrompt: "Which file should I read?"
             )
-        }
-
-        if isExplicitRAGIndexIntent(text)
-            || matchesAny(text, ["search my local files", "find lumen architecture notes", "latest lumen diagnostics report", "search personal data"]) {
-            return IntentRoutingDecision(intent: .rag, allowedToolIDs: ragToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
         if isExplicitMemorySaveIntent(text)
@@ -528,6 +528,8 @@ nonisolated enum IntentRouter {
         matchesAny(text, [
             "reindex local files", "reindex files", "refresh the file retrieval index",
             "refresh file retrieval index", "reindex my imported files", "reindex imported files",
+            "refresh imported files", "refresh file index", "rebuild file index",
+            "update retrieval index", "refresh retrieval index",
             "reindex photos", "reindex photo metadata", "refresh the photo retrieval index",
             "refresh photo retrieval index"
         ])
