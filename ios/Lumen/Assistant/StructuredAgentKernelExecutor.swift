@@ -47,8 +47,11 @@ struct StructuredAgentKernelExecutor {
         let availableTools = await availableTools(for: request, routing: routing)
         let memoryCommandPlan = MemoryCommandPlan.saveThenRecall(from: userMessage)
         let systemPrompt = Self.buildSystemPrompt(request: request, availableTools: availableTools)
+        let availableToolIDs = Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let maxSteps = max(1, request.options.maxSteps)
 
         emit(.thought, "Structured Agent Kernel accepted agent-json turn.", steps: &steps, continuation: continuation)
+        emitRoutingDiagnostic(request: request, routing: routing, availableToolIDs: availableToolIDs, maxSteps: maxSteps, continuation: continuation)
 
         if routing.requiresClarification, let clarification = routing.clarificationPrompt, !clarification.isEmpty {
             emit(.reflection, "Clarification required before structured tool execution.", steps: &steps, continuation: continuation)
@@ -60,7 +63,6 @@ struct StructuredAgentKernelExecutor {
             return
         }
 
-        let maxSteps = max(1, request.options.maxSteps)
         stepsLoop: for stepIndex in 0..<maxSteps {
             if Task.isCancelled { break }
 
@@ -116,6 +118,14 @@ struct StructuredAgentKernelExecutor {
                 stepIndex: stepIndex,
                 diagnostics: generation.diagnostics
             )
+            emitModelTurnDiagnostic(
+                request: request,
+                turn: turn,
+                availableTools: availableTools,
+                stepIndex: stepIndex,
+                diagnostics: generation.diagnostics,
+                continuation: continuation
+            )
 
             if let thought = turn.thought?.trimmingCharacters(in: .whitespacesAndNewlines), !thought.isEmpty {
                 emit(.thought, thought, steps: &steps, continuation: continuation)
@@ -128,7 +138,7 @@ struct StructuredAgentKernelExecutor {
                     modelAction: parsedAction,
                     memoryPlan: memoryCommandPlan,
                     steps: steps,
-                    availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                    availableToolIDs: availableToolIDs
                 )
                 if let reflection = repair.reflection {
                     steps.append(reflection)
@@ -140,7 +150,7 @@ struct StructuredAgentKernelExecutor {
                     routing: routing,
                     prompt: userMessage,
                     steps: steps,
-                    availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                    availableToolIDs: availableToolIDs
                 ) {
                     steps.append(mapsRepair.reflection)
                     continuation.yield(.step(mapsRepair.reflection))
@@ -150,7 +160,7 @@ struct StructuredAgentKernelExecutor {
                       let requiredMemoryAction = Self.nextRequiredMemoryAction(
                         memoryPlan: memoryCommandPlan,
                         steps: steps,
-                        availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                        availableToolIDs: availableToolIDs
                       ) {
                 emit(.reflection, "Memory save-then-recall invariant repaired a premature final before required memory actions completed.", steps: &steps, continuation: continuation)
                 actionToExecute = requiredMemoryAction
@@ -158,7 +168,7 @@ struct StructuredAgentKernelExecutor {
                       let requiredMemoryAction = Self.nextRequiredMemoryAction(
                         memoryPlan: memoryCommandPlan,
                         steps: steps,
-                        availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                        availableToolIDs: availableToolIDs
                       ) {
                 emit(.reflection, "Memory save-then-recall invariant repaired malformed structured output into the next required memory action.", steps: &steps, continuation: continuation)
                 actionToExecute = requiredMemoryAction
@@ -167,7 +177,7 @@ struct StructuredAgentKernelExecutor {
                         routing: routing,
                         prompt: userMessage,
                         steps: steps,
-                        availableToolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+                        availableToolIDs: availableToolIDs
                       ) {
                 emit(.reflection, "Maps search continuation repaired degraded location-only output into maps.search.", steps: &steps, continuation: continuation)
                 actionToExecute = requiredMapsAction
@@ -201,7 +211,6 @@ struct StructuredAgentKernelExecutor {
                     emit(.reflection, "Duplicate tool call blocked: \(validatedAction.displayContent). Synthesizing answer from observations.", toolID: validatedAction.tool, steps: &steps, continuation: continuation)
                     finalAnswer = Self.deterministicObservationFallback(observations: observations, intent: routing.intent)
                         ?? "I found tool observations, but could not synthesize a grounded final answer from them."
-                    continuation.yield(.finalDelta(finalAnswer))
                     break stepsLoop
                 }
                 executedActionKeys.insert(validatedAction.dedupeKey)
@@ -211,7 +220,6 @@ struct StructuredAgentKernelExecutor {
                     let step = AgentStep(kind: .approvalBoundary, content: finalAnswer, toolID: validatedCall.canonicalToolID, toolArgs: validatedCall.arguments)
                     steps.append(step)
                     continuation.yield(.step(step))
-                    continuation.yield(.finalDelta(finalAnswer))
                     break stepsLoop
                 }
 
@@ -242,21 +250,36 @@ struct StructuredAgentKernelExecutor {
                 let observationStep = AgentStep(kind: .observation, content: observationText, toolID: validatedCall.canonicalToolID)
                 steps.append(observationStep)
                 continuation.yield(.step(observationStep))
+                if Self.shouldStopAfterToolResult(result.status) {
+                    emit(.reflection, "Structured tool loop stopped after non-success \(validatedCall.canonicalToolID) result.", toolID: validatedCall.canonicalToolID, steps: &steps, continuation: continuation)
+                    finalAnswer = observationText
+                    break stepsLoop
+                }
                 observations.append((validatedCall.canonicalToolID, observationText))
                 scratchpad += "\nAction: \(validatedAction.displayContent)\nObservation: \(Self.compactScratchpadObservation(observationText))"
+
+                if let phoneContinuation = Self.phoneCallContinuationAfterContactObservation(
+                    routing: routing,
+                    actionTool: validatedCall.canonicalToolID,
+                    observation: observationText,
+                    availableToolIDs: availableToolIDs
+                ) {
+                    steps.append(phoneContinuation.step)
+                    continuation.yield(.step(phoneContinuation.step))
+                    finalAnswer = phoneContinuation.text
+                    break stepsLoop
+                }
 
                 if Self.shouldStopAfterFirstWebObservation(request: request, actionTool: validatedCall.canonicalToolID, observations: observations),
                    let webFinal = Self.deterministicObservationFallback(observations: observations, intent: .webSearch) {
                     emit(.reflection, "deterministic web synthesis fallback used after observations", steps: &steps, continuation: continuation)
                     finalAnswer = webFinal
-                    continuation.yield(.finalDelta(finalAnswer))
                     break stepsLoop
                 }
 
                 if stepIndex == maxSteps - 1 {
                     finalAnswer = Self.deterministicObservationFallback(observations: observations, intent: routing.intent)
                         ?? "I gathered tool observations but reached the structured step limit before a final answer."
-                    continuation.yield(.finalDelta(finalAnswer))
                     break stepsLoop
                 }
                 continue
@@ -268,11 +291,9 @@ struct StructuredAgentKernelExecutor {
                     finalAnswer = observations.isEmpty
                         ? "I couldn't complete the tool-backed request because the model emitted a placeholder final instead of a tool action."
                         : Self.deterministicObservationFallback(observations: observations, intent: routing.intent) ?? final
-                    continuation.yield(.finalDelta(finalAnswer))
                     break stepsLoop
                 }
                 finalAnswer = final
-                continuation.yield(.finalDelta(finalAnswer))
                 break stepsLoop
             }
 
@@ -289,7 +310,6 @@ struct StructuredAgentKernelExecutor {
                 } else {
                     finalAnswer = "I hit an internal structured-output formatting issue before a valid tool observation was available."
                 }
-                continuation.yield(.finalDelta(finalAnswer))
                 break stepsLoop
             }
         }
@@ -303,10 +323,10 @@ struct StructuredAgentKernelExecutor {
             finalAnswer = observations.isEmpty
                 ? "I couldn't complete the structured agent turn because no valid final answer or tool observation was produced."
                 : Self.deterministicObservationFallback(observations: observations, intent: routing.intent) ?? "I gathered tool observations but could not produce a final answer."
-            continuation.yield(.finalDelta(finalAnswer))
         }
 
         finalAnswer = Self.postprocessStructuredFinalAnswer(finalAnswer, request: request, availableTools: availableTools, observations: observations, steps: steps)
+        continuation.yield(.finalDelta(finalAnswer))
         continuation.yield(.final(finalAnswer))
         continuation.yield(.done(finalText: finalAnswer, steps: steps))
         continuation.finish()
@@ -326,11 +346,10 @@ struct StructuredAgentKernelExecutor {
         let secureIDs = Set(secureCatalog.map { ToolRouteGuard.canonicalToolID($0.id) })
         let optionIDs = Set(request.options.structuredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID))
         let routingIDs = Set(routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
-        let allowedIDs = optionIDs.isEmpty ? routingIDs : optionIDs.intersection(routingIDs.isEmpty ? optionIDs : routingIDs)
-        let sourceIDs = allowedIDs.isEmpty ? secureIDs : allowedIDs.intersection(secureIDs)
+        let sourceIDs = Self.structuredToolSourceIDs(secureIDs: secureIDs, optionIDs: optionIDs, routingIDs: routingIDs)
         let tools = sourceIDs.compactMap { catalogByID[$0] }.sorted { $0.id < $1.id }
-        if tools.isEmpty, !allowedIDs.isEmpty {
-            return allowedIDs.compactMap { catalogByID[$0] }.sorted { $0.id < $1.id }
+        if tools.isEmpty, !sourceIDs.isEmpty {
+            return sourceIDs.compactMap { catalogByID[$0] }.sorted { $0.id < $1.id }
         }
         return tools
     }
@@ -524,10 +543,10 @@ struct StructuredAgentKernelExecutor {
             slot: "agent",
             stage: "agent-json-step-\(stepIndex)",
             intent: routing.intent.rawValue,
-            prompt: request.userMessage,
+            prompt: AgentDiagnosticFileRedactor.summary(label: "prompt", text: request.userMessage),
             rawOutput: Self.redactedForDiagnostics(raw),
             selectedToolID: turn.action.map { ToolRouteGuard.canonicalToolID($0.tool) },
-            toolArguments: turn.action?.args.stringCoerced ?? [:],
+            toolArguments: AgentDiagnosticFileRedactor.redactedMap(turn.action?.args.stringCoerced ?? [:]),
             allowedToolIDs: availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }.sorted(),
             requiresApproval: turn.action.map { ToolRouteGuard.requiresUserApproval(ToolRouteGuard.canonicalToolID($0.tool)) },
             parseError: turn.parseError?.rawValue,
@@ -566,6 +585,75 @@ struct StructuredAgentKernelExecutor {
         )
     }
 
+    private func emitRoutingDiagnostic(
+        request: AgentKernelRequest,
+        routing: IntentRoutingDecision,
+        availableToolIDs: Set<String>,
+        maxSteps: Int,
+        continuation: AsyncStream<AgentKernelEvent>.Continuation
+    ) {
+        guard request.options.diagnosticsEnabled else { return }
+        continuation.yield(.diagnostic(.init(
+            stage: "structured-agent-json-routing",
+            message: "Structured agent-json routing prepared.",
+            metadata: [
+                "intent": routing.intent.rawValue,
+                "source": request.source.rawValue,
+                "availableToolIDs": availableToolIDs.sorted().joined(separator: ","),
+                "maxSteps": String(maxSteps),
+                "runtimePath": "agent-model"
+            ]
+        )))
+    }
+
+    private func emitModelTurnDiagnostic(
+        request: AgentKernelRequest,
+        turn: AgentTurn,
+        availableTools: [ToolDefinition],
+        stepIndex: Int,
+        diagnostics: StructuredTurnGenerationDiagnostics,
+        continuation: AsyncStream<AgentKernelEvent>.Continuation
+    ) {
+        guard request.options.diagnosticsEnabled else { return }
+        var metadata: [String: String] = [
+            "stepIndex": String(stepIndex),
+            "runtimePath": "agent-model",
+            "allowedToolIDs": availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }.sorted().joined(separator: ",")
+        ]
+        if let selected = turn.action.map({ ToolRouteGuard.canonicalToolID($0.tool) }) {
+            metadata["selectedToolID"] = selected
+        }
+        if let parseError = turn.parseError?.rawValue {
+            metadata["parseError"] = parseError
+        }
+        if let modelLoaded = diagnostics.modelLoaded {
+            metadata["modelLoaded"] = String(modelLoaded)
+        }
+        if let streamStarted = diagnostics.streamStarted {
+            metadata["streamStarted"] = String(streamStarted)
+        }
+        if let firstChunkReceived = diagnostics.firstChunkReceived {
+            metadata["firstChunkReceived"] = String(firstChunkReceived)
+        }
+        if let textChunkCount = diagnostics.textChunkCount {
+            metadata["textChunkCount"] = String(textChunkCount)
+        }
+        if let finalChunkReceived = diagnostics.finalChunkReceived {
+            metadata["finalChunkReceived"] = String(finalChunkReceived)
+        }
+        if let reason = diagnostics.streamTerminationReason {
+            metadata["streamTerminationReason"] = reason
+        }
+        if let emptyReason = diagnostics.emptyOutputReason {
+            metadata["emptyOutputReason"] = emptyReason
+        }
+        continuation.yield(.diagnostic(.init(
+            stage: "structured-agent-json-model-turn",
+            message: "Structured agent-json model turn completed.",
+            metadata: metadata
+        )))
+    }
+
     private func recordParseFailure(
         parseError: AgentTurnParseError,
         raw: String,
@@ -583,14 +671,14 @@ struct StructuredAgentKernelExecutor {
             topP: 0.6,
             maxTokens: Self.structuredTurnMaxTokenCap,
             stepIndex: stepIndex,
-            systemPromptPrefix: String(systemPrompt.prefix(2_000)),
-            userTurnPrefix: String(userTurn.prefix(2_000)),
+            systemPromptPrefix: AgentDiagnosticFileRedactor.summary(label: "systemPrompt", text: systemPrompt),
+            userTurnPrefix: AgentDiagnosticFileRedactor.summary(label: "userTurn", text: userTurn),
             rawOutputPrefix: String(Self.redactedForDiagnostics(raw).prefix(4_000)),
             streamedThoughtPrefix: "",
             streamedFinalPrefix: "",
-            selectedJSONPrefix: snapshot.selectedJSON.map { String($0.prefix(2_000)) },
-            prefixNoise: snapshot.prefixNoise.map { String($0.prefix(1_000)) },
-            suffixNoise: snapshot.suffixNoise.map { String($0.prefix(1_000)) }
+            selectedJSONPrefix: snapshot.selectedJSON.map { AgentDiagnosticFileRedactor.summary(label: "selectedJSON", text: $0) },
+            prefixNoise: snapshot.prefixNoise.map { AgentDiagnosticFileRedactor.summary(label: "prefixNoise", text: $0) },
+            suffixNoise: snapshot.suffixNoise.map { AgentDiagnosticFileRedactor.summary(label: "suffixNoise", text: $0) }
         )
         AgentParseFailureRecorder.record(trace)
     }
@@ -733,6 +821,29 @@ private extension StructuredAgentKernelExecutor {
         return IntentRouter.intentRequiresTool(routing) && !routing.requiresClarification
     }
 
+    static func structuredToolSourceIDs(
+        secureIDs: Set<String>,
+        optionIDs: Set<String>,
+        routingIDs: Set<String>
+    ) -> Set<String> {
+        let secure = Set(secureIDs.map(ToolRouteGuard.canonicalToolID))
+        let options = Set(optionIDs.map(ToolRouteGuard.canonicalToolID))
+        let routing = Set(routingIDs.map(ToolRouteGuard.canonicalToolID))
+        let scoped: Set<String>
+        if !options.isEmpty, !routing.isEmpty {
+            let intersection = options.intersection(routing)
+            scoped = intersection.isEmpty ? options : intersection
+        } else if !options.isEmpty {
+            scoped = options
+        } else if !routing.isEmpty {
+            scoped = routing
+        } else {
+            return secure
+        }
+        let secured = scoped.intersection(secure)
+        return secured.isEmpty ? scoped : secured
+    }
+
     static func shouldStopAfterFirstWebObservation(
         request: AgentKernelRequest,
         actionTool: String,
@@ -751,6 +862,27 @@ private extension StructuredAgentKernelExecutor {
             && !lowerPrompt.contains("open the url")
             && !lowerPrompt.contains("open this url")
             && !lowerPrompt.contains("read the full")
+    }
+
+    static func shouldStopAfterToolResult(_ status: ToolResultStatus) -> Bool {
+        status != .success
+    }
+
+    static func phoneCallContinuationAfterContactObservation(
+        routing: IntentRoutingDecision,
+        actionTool: String,
+        observation: String,
+        availableToolIDs: Set<String>
+    ) -> AgentPhoneCallContinuation? {
+        guard routing.intent == .phoneCall,
+              ToolRouteGuard.canonicalToolID(actionTool) == "contacts.search" else {
+            return nil
+        }
+        return SlotAgentService.phoneCallContinuation(
+            afterContactObservation: observation,
+            availableToolIDs: availableToolIDs,
+            routing: routing
+        )
     }
 
     static func toolRequiredFinalNeedsAction(
@@ -815,6 +947,9 @@ private extension StructuredAgentKernelExecutor {
                 ?? deterministicWebResultFallback(observations: observations)
         }
         if intent == .rag || intent == .files {
+            if let emptyState = ragOrFilesEmptyObservationFinal(observations: observations) {
+                return emptyState
+            }
             let sourced = observations.prefix(3).enumerated().map { index, obs in
                 "[\(index + 1)] \(compactObservationResult(obs.result, limit: 700))"
             }
@@ -977,6 +1112,36 @@ private extension StructuredAgentKernelExecutor {
             && !lower.contains(" is disabled")
             && !lower.contains("tool disabled")
             && !lower.contains("disabled. enable it in tools")
+    }
+
+    static func ragOrFilesEmptyObservationFinal(observations: [(tool: String, result: String)]) -> String? {
+        for observation in observations.reversed() {
+            let tool = ToolRouteGuard.canonicalToolID(observation.tool)
+            guard tool == "rag.search" || tool == "files.read" else { continue }
+            let result = observation.result.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !result.isEmpty else { continue }
+            let lower = result.lowercased()
+            if lower.contains("retrieval is unavailable")
+                || lower.contains("rag storage unavailable")
+                || lower.contains("storage unavailable")
+                || lower.contains("index unavailable") {
+                return "RAG retrieval is unavailable right now. \(compactObservationResult(result, limit: 220))"
+            }
+            if lower.contains("no matching snippets")
+                || lower.contains("no matching results")
+                || lower.contains("no snippets found")
+                || lower.contains("no matches found")
+                || lower.contains("no results found") {
+                return "No matching snippets were found in the local index."
+            }
+            if lower.contains("index is empty")
+                || lower.contains("local index appears empty")
+                || lower.contains("no imported files")
+                || lower.contains("nothing has been indexed") {
+                return "The local retrieval index is empty. Import or reindex files before searching."
+            }
+        }
+        return nil
     }
 
     static func structuredFinalIsGenericFallback(_ finalAnswer: String) -> Bool {
@@ -1504,6 +1669,32 @@ extension StructuredAgentKernelExecutor {
         shouldStopAfterFirstWebObservation(request: request, actionTool: actionTool, observations: observations)
     }
 
+    static func structuredToolSourceIDsForTests(
+        secureIDs: Set<String>,
+        optionIDs: Set<String>,
+        routingIDs: Set<String>
+    ) -> Set<String> {
+        structuredToolSourceIDs(secureIDs: secureIDs, optionIDs: optionIDs, routingIDs: routingIDs)
+    }
+
+    static func shouldStopAfterToolResultForTests(_ status: ToolResultStatus) -> Bool {
+        shouldStopAfterToolResult(status)
+    }
+
+    static func phoneCallContinuationAfterContactObservationForTests(
+        routing: IntentRoutingDecision,
+        actionTool: String,
+        observation: String,
+        availableToolIDs: Set<String>
+    ) -> AgentPhoneCallContinuation? {
+        phoneCallContinuationAfterContactObservation(
+            routing: routing,
+            actionTool: actionTool,
+            observation: observation,
+            availableToolIDs: availableToolIDs
+        )
+    }
+
     static func toolRequiredFinalNeedsActionForTests(
         _ final: String,
         request: AgentKernelRequest,
@@ -1515,6 +1706,10 @@ extension StructuredAgentKernelExecutor {
 
     static func approvalBoundaryFinalForTests(toolID: String, action: AgentAction) -> String {
         approvalBoundaryFinal(for: toolID, action: action)
+    }
+
+    static func ragOrFilesEmptyObservationFinalForTests(observations: [(tool: String, result: String)]) -> String? {
+        ragOrFilesEmptyObservationFinal(observations: observations)
     }
 
     static func repairedMemoryActionIfNeededForTests(

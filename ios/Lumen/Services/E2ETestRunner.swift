@@ -1138,35 +1138,19 @@ nonisolated enum E2ETestRunner {
                             }
                         }
                     }
-                    let agentEvents: AsyncStream<AgentKernelEvent>
-                    if requiresStructuredAgentJSON {
-                        let kernelRequest = strictLiveAgentKernelRequest(
-                            prompt: scenario.prompt,
-                            systemPrompt: config.systemPrompt,
-                            config: config,
-                            conversationID: conversationID,
-                            turnID: turnID,
-                            traceCorrelation: traceCorrelation,
-                            forceModelBackedToolPlanning: true,
-                            structuredMode: .requiredAgentJSON,
-                            structuredAllowedToolIDs: availableTools.map(\.id)
-                        )
-                        agentEvents = await MainActor.run {
-                            AssistantKernel.shared.run(kernelRequest, modelContext: nil)
-                        }
-                    } else {
-                        let kernelRequest = strictLiveAgentKernelRequest(
-                            prompt: scenario.prompt,
-                            systemPrompt: config.systemPrompt,
-                            config: config,
-                            conversationID: conversationID,
-                            turnID: turnID,
-                            traceCorrelation: traceCorrelation,
-                            forceModelBackedToolPlanning: false
-                        )
-                        agentEvents = await MainActor.run {
-                            AssistantKernel.shared.run(kernelRequest, modelContext: nil)
-                        }
+                    let kernelRequest = strictLiveAgentKernelRequest(
+                        prompt: scenario.prompt,
+                        systemPrompt: config.systemPrompt,
+                        config: config,
+                        conversationID: conversationID,
+                        turnID: turnID,
+                        traceCorrelation: traceCorrelation,
+                        forceModelBackedToolPlanning: requiresStructuredAgentJSON,
+                        structuredMode: requiresStructuredAgentJSON ? .requiredAgentJSON : .automatic,
+                        structuredAllowedToolIDs: requiresStructuredAgentJSON ? availableTools.map(\.id) : []
+                    )
+                    let agentEvents: AsyncStream<AgentKernelEvent> = await MainActor.run {
+                        AssistantKernel.shared.run(kernelRequest, modelContext: nil)
                     }
                     for await agentEvent in agentEvents {
                         try Task.checkCancellation()
@@ -1922,6 +1906,7 @@ nonisolated enum E2ETestRunner {
         requiresPrimaryAgentJSON: Bool = false
     ) -> ModelRuntimeEvidenceDiagnosis {
         let promptNeedle = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let promptSummaryNeedle = AgentDiagnosticFileRedactor.summary(label: "prompt", text: prompt).lowercased()
         let recentTraces = AgentBehaviorTraceRecorder.recent(limit: 64).reversed()
         let correlatedTraces = recentTraces.filter { trace in
             traceMatchesCorrelation(trace, correlation: correlation, startedAt: startedAt)
@@ -1941,7 +1926,9 @@ nonisolated enum E2ETestRunner {
         let fallbackTraces = recentTraces.filter { trace in
             guard trace.createdAt >= startedAt else { return false }
             let promptPrefix = trace.promptPrefix.lowercased()
-            if !promptNeedle.isEmpty, !promptPrefix.contains(promptNeedle) {
+            if !promptNeedle.isEmpty,
+               !promptPrefix.contains(promptNeedle),
+               (promptSummaryNeedle.isEmpty || !promptPrefix.contains(promptSummaryNeedle)) {
                 return false
             }
             return true
