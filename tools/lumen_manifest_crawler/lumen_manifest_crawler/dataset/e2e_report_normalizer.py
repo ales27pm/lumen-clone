@@ -953,10 +953,14 @@ def _scenario_marked_non_trainable_preflight(scenario: dict[str, Any]) -> bool:
     if not isinstance(metadata, dict):
         return False
     failure_kind = str(metadata.get("failureKind") or "")
-    return (
-        str(metadata.get("trainingSignal") or "").casefold() == "false"
-        and failure_kind.startswith("liveRuntime")
-    )
+    if str(metadata.get("trainingSignal") or "").casefold() != "false":
+        return False
+    if str(metadata.get("actionable") or "").casefold() == "false":
+        return True
+    return failure_kind.startswith("liveRuntime") or failure_kind in {
+        "ragStorageUnavailable",
+        "outlookRuntimeUnavailable",
+    }
 
 
 def _runtime_environment_failure_message(text: str) -> str:
