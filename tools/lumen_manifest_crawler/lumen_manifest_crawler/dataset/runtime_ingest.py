@@ -12,7 +12,7 @@ from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
     _is_architecture_or_finalizer_failure,
     _is_model_backed_trace,
     _is_runtime_environment_failure,
-    _scenario_requires_primary_agent_json,
+    _scenario_allows_plain_chat_model_turn,
     flatten_e2e_json_report,
 )
 from lumen_manifest_crawler.dataset.e2e_text_parser import parse_e2e_text_report
@@ -801,10 +801,11 @@ def _package_trace_matches_result(trace: dict[str, Any], result: dict[str, Any])
 
 
 def _package_trace_is_model_evidence(trace: dict[str, Any], *, result: dict[str, Any]) -> bool:
+    stage = str(trace.get("stage") or "")
     return (
         (
-            not _scenario_requires_primary_agent_json(result)
-            or str(trace.get("stage") or "").startswith("agent-json")
+            stage.startswith("agent-json")
+            or (stage == "chat-text-turn" and _scenario_allows_plain_chat_model_turn(result))
         )
         and _is_model_backed_trace(trace)
         and not trace.get("parseError")

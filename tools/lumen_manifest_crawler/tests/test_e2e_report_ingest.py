@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from lumen_manifest_crawler.dataset.e2e_report_normalizer import _trace_positive_int
+from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
+    _is_sidecar_evidence_candidate,
+    _trace_positive_int,
+)
 from lumen_manifest_crawler.dataset.runtime_ingest import (
     _is_in_app_package,
     _package_trace_is_model_evidence,
@@ -992,6 +995,7 @@ def test_package_trace_is_model_evidence_respects_primary_agent_json_contract():
         "evidenceMode": "modelBackedRequired",
         "kind": "chat",
         "actualIntent": "chat",
+        "expectedIntent": "chat",
     }
     structured_training_result = {
         "requiresAgentRun": True,
@@ -1002,6 +1006,29 @@ def test_package_trace_is_model_evidence_respects_primary_agent_json_contract():
 
     assert _package_trace_is_model_evidence(trace, result=plain_chat_result)
     assert not _package_trace_is_model_evidence(trace, result=structured_training_result)
+    assert not _package_trace_is_model_evidence(
+        {**trace, "stage": "mouth-final-turn"},
+        result=plain_chat_result,
+    )
+
+
+def test_sidecar_evidence_candidate_limits_plain_chat_to_chat_text_stage():
+    direct_chat = {
+        "requiresAgentRun": True,
+        "evidenceMode": "modelBackedRequired",
+        "kind": "chat",
+        "actualIntent": "chat",
+        "expectedIntent": "chat",
+    }
+
+    assert _is_sidecar_evidence_candidate(
+        {"event": "modelTurn", "stage": "chat-text-turn"},
+        scenario=direct_chat,
+    )
+    assert not _is_sidecar_evidence_candidate(
+        {"event": "modelTurn", "stage": "mouth-final-turn"},
+        scenario=direct_chat,
+    )
 
 
 def test_ingestion_matches_redacted_sidecar_by_opaque_correlation_token(tmp_path: Path):
