@@ -11,6 +11,90 @@ struct AgentGroundingRegressionTests {
         "outlook.message.delete", "outlook.message.reply", "outlook.message.reply_all", "outlook.message.forward"
     ]
 
+    private func packageWithPlainTextModelEvidence(
+        kind: E2ETestKind,
+        expectedIntent: UserIntent,
+        actualIntent: UserIntent? = nil,
+        scenarioID: String
+    ) -> LumenInAppDatasetPackage {
+        let routedIntent = actualIntent ?? expectedIntent
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_025)
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt.addingTimeInterval(1),
+            event: .modelTurn,
+            slot: "mouth",
+            stage: "chat-text-turn",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: routedIntent.rawValue,
+            promptPrefix: "Explain precision and recall.",
+            rawOutputPrefix: "Precision measures relevance; recall measures coverage.",
+            selectedToolID: nil,
+            toolArguments: [:],
+            allowedToolIDs: [],
+            requiresApproval: false,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: true,
+            outputTokenCount: 8,
+            runtimePath: "assistant-kernel"
+        ))
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: scenarioID,
+            kind: kind.rawValue,
+            title: "Plain model evidence",
+            prompt: "Explain precision and recall.",
+            expectedIntent: expectedIntent.rawValue,
+            actualIntent: routedIntent.rawValue,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            requiresAgentRun: true,
+            evidenceMode: E2EEvidenceMode.modelBackedRequired.rawValue,
+            passed: true,
+            failures: [],
+            finalText: "Precision measures relevance; recall measures coverage.",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(2),
+            rawFinalPrefix: "Precision measures relevance; recall measures coverage.",
+            sanitizedFinalPrefix: "Precision measures relevance; recall measures coverage.",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: []
+        )
+        let report = E2ETestReport(
+            id: e2eRunID,
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(2),
+            passed: 1,
+            failed: 0,
+            results: [result]
+        )
+        return InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+    }
+
     @Test func persistentAgentBehaviorTraceRedactsRawPromptOutputArgumentsAndPaths() {
         let trace = AgentBehaviorTrace(
             id: UUID(),
@@ -971,6 +1055,64 @@ struct AgentGroundingRegressionTests {
         #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 1)
         #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 1)
         #expect(liveE2EReport.deterministicCompatibilityTraceCount == 1)
+    }
+
+    @Test func liveE2EExportAcceptsPlainModelEvidenceForDirectChat() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+
+        let package = packageWithPlainTextModelEvidence(
+            kind: .chat,
+            expectedIntent: .chat,
+            scenarioID: "direct-chat-model-evidence"
+        )
+        let report = try #require(package.liveE2EReport)
+
+        #expect(report.correlatedTraceCount == 1)
+        #expect(report.modelBackedCorrelatedTraceCount == 1)
+        #expect(report.modelBackedCorrelatedScenarioCount == 1)
+        #expect(package.exportQualityFailures?.contains(where: {
+            $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
+        }) != true)
+    }
+
+    @Test func liveE2EExportRejectsPlainModelEvidenceForStructuredTrainingChat() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+
+        let package = packageWithPlainTextModelEvidence(
+            kind: .training,
+            expectedIntent: .chat,
+            scenarioID: "training-chat-structured-evidence"
+        )
+        let report = try #require(package.liveE2EReport)
+
+        #expect(report.correlatedTraceCount == 1)
+        #expect(report.modelBackedCorrelatedTraceCount == 0)
+        #expect(report.modelBackedCorrelatedScenarioCount == 0)
+        #expect(package.exportQualityFailures?.contains(where: {
+            $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
+        }) == true)
+    }
+
+    @Test func liveE2EExportRejectsPlainModelEvidenceWhenChatRoutesToToolIntent() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+
+        let package = packageWithPlainTextModelEvidence(
+            kind: .chat,
+            expectedIntent: .chat,
+            actualIntent: .weather,
+            scenarioID: "chat-routed-to-tool-structured-evidence"
+        )
+        let report = try #require(package.liveE2EReport)
+
+        #expect(report.correlatedTraceCount == 1)
+        #expect(report.modelBackedCorrelatedTraceCount == 0)
+        #expect(report.modelBackedCorrelatedScenarioCount == 0)
+        #expect(package.exportQualityFailures?.contains(where: {
+            $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
+        }) == true)
     }
 
     @Test func liveE2EExportRequiresDistinctModelBackedScenarioCoverage() throws {
