@@ -11,10 +11,10 @@
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 558,
-        "train_dpo": 15,
-        "train_sft": 10368,
-        "val_dpo": 3,
-        "val_sft": 1830
+        "train_dpo": 14,
+        "train_sft": 10294,
+        "val_dpo": 2,
+        "val_sft": 1824
       },
       "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map."
     },
@@ -29,9 +29,9 @@
       "recordCounts": {
         "eval": 114,
         "train_dpo": 14,
-        "train_sft": 592,
+        "train_sft": 906,
         "val_dpo": 2,
-        "val_sft": 104
+        "val_sft": 164
       },
       "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments."
     },
@@ -44,11 +44,11 @@
       "agent": "fleet",
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
-        "eval": 86,
-        "train_dpo": 15,
-        "train_sft": 5092,
-        "val_dpo": 3,
-        "val_sft": 899
+        "eval": 6,
+        "train_dpo": 3,
+        "train_sft": 1136,
+        "val_dpo": 1,
+        "val_sft": 198
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -63,9 +63,9 @@
       "recordCounts": {
         "eval": 5,
         "train_dpo": 10,
-        "train_sft": 86,
+        "train_sft": 93,
         "val_dpo": 2,
-        "val_sft": 15
+        "val_sft": 9
       },
       "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."
     },
@@ -80,9 +80,9 @@
       "recordCounts": {
         "eval": 8,
         "train_dpo": 12,
-        "train_sft": 232,
+        "train_sft": 197,
         "val_dpo": 2,
-        "val_sft": 41
+        "val_sft": 31
       },
       "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels."
     },
@@ -96,10 +96,10 @@
       "baseModelID": "Qwen/Qwen3-1.7B",
       "recordCounts": {
         "eval": 6,
-        "train_dpo": 8,
-        "train_sft": 4460,
+        "train_dpo": 11,
+        "train_sft": 124,
         "val_dpo": 2,
-        "val_sft": 787
+        "val_sft": 9
       },
       "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
     }

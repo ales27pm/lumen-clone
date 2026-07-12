@@ -55,6 +55,7 @@ IGNORED_DIRS = {
 }
 
 EXCLUDED_PREFIXES = (
+    "datasets/public_adapter_corpus/",
     "generated/agent_improvement_loop/",
     "generated/agent_manifest/",
     "generated/agent_manifest/cross_model_training/",

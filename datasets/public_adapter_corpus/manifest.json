@@ -1,0 +1,150 @@
+{
+  "allowedLicenses": [
+    "Apache-2.0",
+    "CC-BY-4.0",
+    "MIT"
+  ],
+  "countsByAgent": {
+    "cortex": 650,
+    "executor": 450,
+    "fleet": 500,
+    "mimicry": 600,
+    "mouth": 50,
+    "rem": 500
+  },
+  "countsBySource": {
+    "coedit-train": 900,
+    "json-schema-test-suite-draft-2020-12": 200,
+    "massive-en-us-1.1": 1600,
+    "oasst2-train": 50
+  },
+  "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
+  "partitionPolicy": {
+    "allowedMLTrainingPartitions": [
+      "train"
+    ],
+    "heldoutMLPartitionsExcluded": true,
+    "referenceCorporaRequireExplicitPartitionKind": true
+  },
+  "privacy": {
+    "piiRegexScreened": true,
+    "rawOpenAssistantIdentifiersPersisted": false,
+    "rawSourceArtifactsIncluded": false
+  },
+  "recordCount": 2750,
+  "recordsFile": "records.jsonl",
+  "recordsSHA256": "33d29c0e61b98aa3d64dfc7128a77d42a6e716ccc059fafb2440553d5d841967",
+  "schema": "lumen.public-adapter-corpus/1.0.0",
+  "selectionPolicyVersion": "2026-07-12.2",
+  "sourceManifestSHA256": "9542c64976c308b0e016229acf3f92e5b6b925a37128753cdb6f7f4c9385f4ab",
+  "sources": [
+    {
+      "adapterCaps": {
+        "cortex": 650,
+        "executor": 450,
+        "fleet": 500
+      },
+      "artifactFormat": "tar.gz-jsonl",
+      "artifactMember": "1.1/data/en-US.jsonl",
+      "artifactSHA256": "4cba5faa11c71437928e17cb1b9b3d8b8e727e7ea363a3a9a8045e19c0491577",
+      "artifactURL": "https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.1.tar.gz",
+      "attribution": "MASSIVE 1.1 by Amazon.com, Inc. or its affiliates and the MASSIVE contributors.",
+      "datasetID": "AmazonScience/massive",
+      "id": "massive-en-us-1.1",
+      "license": "CC-BY-4.0",
+      "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
+      "locale": "en-US",
+      "partitionKind": "ml_split",
+      "revision": "ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740",
+      "sourcePartition": "train",
+      "sourceURL": "https://huggingface.co/datasets/AmazonScience/massive/tree/ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740",
+      "upstreamVersion": "1.1"
+    },
+    {
+      "adapterCaps": {
+        "mouth": 50
+      },
+      "artifactFormat": "parquet",
+      "artifactPath": "data/train-00000-of-00001-88ba0162028a73fc.parquet",
+      "artifactSHA256": "9638227b41b0a4fb69afa5d5c4b52e3fb6abfd56c9870d81bae32c9981e769b1",
+      "artifactURL": "https://huggingface.co/datasets/OpenAssistant/oasst2/resolve/179dd21fc55192153d94adb0e0ce8f69e222bf75/data/train-00000-of-00001-88ba0162028a73fc.parquet",
+      "attribution": "OpenAssistant Conversations Release 2 by the OpenAssistant contributors.",
+      "datasetID": "OpenAssistant/oasst2",
+      "id": "oasst2-train",
+      "languageCaps": {
+        "en": 42,
+        "fr": 8
+      },
+      "license": "Apache-2.0",
+      "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
+      "partitionKind": "ml_split",
+      "revision": "179dd21fc55192153d94adb0e0ce8f69e222bf75",
+      "sourcePartition": "train",
+      "sourceURL": "https://huggingface.co/datasets/OpenAssistant/oasst2/tree/179dd21fc55192153d94adb0e0ce8f69e222bf75",
+      "upstreamVersion": "2"
+    },
+    {
+      "adapterCaps": {
+        "mimicry": 600,
+        "rem": 300
+      },
+      "artifactFormat": "jsonl",
+      "artifactPath": "train.jsonl",
+      "artifactSHA256": "2913249158d6a178dc638e870212ff8a432d128eb6b4bdbe969ee805e6063ce3",
+      "artifactURL": "https://huggingface.co/datasets/grammarly/coedit/resolve/e9a255c33ef910bc33a9d2b522653fa87521583e/train.jsonl",
+      "attribution": "CoEdIT by Vipul Raheja, Dhruv Kumar, Ryan Koo, and Dongyeop Kang.",
+      "datasetID": "grammarly/coedit",
+      "id": "coedit-train",
+      "license": "Apache-2.0",
+      "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
+      "partitionKind": "ml_split",
+      "revision": "e9a255c33ef910bc33a9d2b522653fa87521583e",
+      "sourcePartition": "train",
+      "sourceURL": "https://huggingface.co/datasets/grammarly/coedit/tree/e9a255c33ef910bc33a9d2b522653fa87521583e",
+      "upstreamVersion": "pinned-revision"
+    },
+    {
+      "adapterCaps": {
+        "rem": 200
+      },
+      "artifactFormat": "tar.gz-json",
+      "artifactMemberPrefix": "tests/draft2020-12/",
+      "artifactSHA256": "22e2ce9e8746a3725f6a6d7eaa6efab4b66365e2addee449a3d67771e51051a5",
+      "artifactURL": "https://codeload.github.com/json-schema-org/JSON-Schema-Test-Suite/tar.gz/92acb61eb772a932c077d5ffa634ded719d2d738",
+      "attribution": "JSON Schema Test Suite, Copyright 2012 Julian Berman and contributors.",
+      "datasetID": "json-schema-org/JSON-Schema-Test-Suite",
+      "id": "json-schema-test-suite-draft-2020-12",
+      "license": "MIT",
+      "licenseURL": "https://github.com/json-schema-org/JSON-Schema-Test-Suite/blob/92acb61eb772a932c077d5ffa634ded719d2d738/LICENSE",
+      "partitionKind": "reference_corpus",
+      "revision": "92acb61eb772a932c077d5ffa634ded719d2d738",
+      "selectedFiles": [
+        "additionalProperties.json",
+        "allOf.json",
+        "anyOf.json",
+        "const.json",
+        "dependentRequired.json",
+        "enum.json",
+        "if-then-else.json",
+        "items.json",
+        "maxItems.json",
+        "maxLength.json",
+        "maximum.json",
+        "minItems.json",
+        "minLength.json",
+        "minimum.json",
+        "not.json",
+        "oneOf.json",
+        "pattern.json",
+        "prefixItems.json",
+        "properties.json",
+        "required.json",
+        "type.json",
+        "uniqueItems.json"
+      ],
+      "sourcePartition": "draft2020-12",
+      "sourceURL": "https://github.com/json-schema-org/JSON-Schema-Test-Suite/tree/92acb61eb772a932c077d5ffa634ded719d2d738/tests/draft2020-12",
+      "upstreamVersion": "draft2020-12"
+    }
+  ]
+}
