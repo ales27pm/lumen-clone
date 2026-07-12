@@ -1,14 +1,64 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 5283,
+  "availableSFTRecords": 554,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
+    "maxPublicCorpusSFTTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
+  "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+  "publicCorpus": {
+    "licenses": [
+      "Apache-2.0",
+      "MIT"
+    ],
+    "maxSFTTokenShare": 0.35,
+    "recordCounts": {
+      "train_dpo": 0,
+      "train_sft": 82,
+      "val_dpo": 0,
+      "val_sft": 2
+    },
+    "sourceCounts": {
+      "grammarly/coedit": 42,
+      "json-schema-org/JSON-Schema-Test-Suite": 42
+    },
+    "sourceSplitCounts": {
+      "grammarly/coedit": {
+        "train_dpo": 0,
+        "train_sft": 41,
+        "val_dpo": 0,
+        "val_sft": 1
+      },
+      "json-schema-org/JSON-Schema-Test-Suite": {
+        "train_dpo": 0,
+        "train_sft": 41,
+        "val_dpo": 0,
+        "val_sft": 1
+      }
+    },
+    "tokenShares": {
+      "train_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "train_sft": {
+        "target": 0.16682,
+        "total": 0.348508
+      },
+      "val_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "val_sft": {
+        "target": 0.27551,
+        "total": 0.312
+      }
+    }
+  },
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
@@ -21,37 +71,38 @@
   },
   "recordCounts": {
     "eval": 6,
-    "train_dpo": 8,
-    "train_sft": 4460,
+    "train_dpo": 11,
+    "train_sft": 124,
     "val_dpo": 2,
-    "val_sft": 787
+    "val_sft": 9
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
-    "codebase_home_chunk_sft",
-    "codebase_home_sft",
     "cross_model_training",
     "manifest_grounding_cards",
+    "public_adapter_corpus_coedit_train",
+    "public_adapter_corpus_json_schema_test_suite_draft_2020_12",
     "rem_reflection",
-    "runtime_audit_repairs",
-    "self_model_cards",
-    "train_sft"
+    "runtime_audit_repairs"
   ],
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypes": [
-    "codebase_home_grounding",
-    "codebase_home_overview",
-    "codebase_source_chunk_grounding",
     "fleet_delegation",
     "fleet_delegation_preference",
     "fleet_peer_knowledge",
+    "fleet_peer_source_knowledge",
     "fleet_private_state_boundary",
+    "fleet_self_knowledge",
+    "fleet_whole_system_identity",
     "manifest_grounding_cards",
+    "public_schema_failure_diagnosis",
+    "public_text_repair",
     "reflection_and_memory_policy",
     "rem_reflection",
     "runtime_manifest_drift_repair",
-    "self_model_card_grounding",
-    "tool_id_repair",
+    "source_code_self_knowledge",
+    "source_routing_knowledge",
+    "source_tool_registry_knowledge",
     "ultra_specific_argument_extraction_repair",
     "ultra_specific_manifest_tool_repair",
     "ultra_specific_memory_ttl_policy",

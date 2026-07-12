@@ -3,11 +3,11 @@
   "codebaseHome": {
     "languageCounts": {
       "csv": 5,
-      "json": 57,
+      "json": 58,
       "markdown": 73,
       "mixed": 1,
       "plist": 3,
-      "python": 114,
+      "python": 118,
       "shell": 16,
       "swift": 505,
       "text": 8,
@@ -83,13 +83,14 @@
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 4,
       "tools/lumen_manifest_crawler/generated": 23,
-      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 39,
-      "tools/lumen_manifest_crawler/tests": 24,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 41,
+      "tools/lumen_manifest_crawler/scripts": 1,
+      "tools/lumen_manifest_crawler/tests": 26,
       "tools/pipeline": 7,
       "tools/pipeline/tests": 7,
       "tools/security": 1
     },
-    "recordCount": 788,
+    "recordCount": 793,
     "selectedFiles": [
       {
         "imports": [
@@ -2205,7 +2206,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
+  "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

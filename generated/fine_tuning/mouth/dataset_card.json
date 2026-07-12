@@ -1,14 +1,56 @@
 {
   "agent": "mouth",
-  "availableSFTRecords": 282,
+  "availableSFTRecords": 291,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
+    "maxPublicCorpusSFTTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
+  "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+  "publicCorpus": {
+    "licenses": [
+      "Apache-2.0"
+    ],
+    "maxSFTTokenShare": 0.35,
+    "recordCounts": {
+      "train_dpo": 0,
+      "train_sft": 41,
+      "val_dpo": 0,
+      "val_sft": 4
+    },
+    "sourceCounts": {
+      "OpenAssistant/oasst2": 45
+    },
+    "sourceSplitCounts": {
+      "OpenAssistant/oasst2": {
+        "train_dpo": 0,
+        "train_sft": 41,
+        "val_dpo": 0,
+        "val_sft": 4
+      }
+    },
+    "tokenShares": {
+      "train_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "train_sft": {
+        "target": 0.175993,
+        "total": 0.34983
+      },
+      "val_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "val_sft": {
+        "target": 0.238916,
+        "total": 0.311969
+      }
+    }
+  },
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
@@ -22,26 +64,19 @@
   "recordCounts": {
     "eval": 8,
     "train_dpo": 12,
-    "train_sft": 232,
+    "train_sft": 197,
     "val_dpo": 2,
-    "val_sft": 41
+    "val_sft": 31
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
-    "codebase_home_chunk_sft",
-    "codebase_home_sft",
     "cross_model_training",
-    "fleet_system_prompts",
     "manifest_grounding_cards",
     "mouth_responses",
-    "runtime_audit_repairs",
-    "self_model_cards",
-    "train_sft"
+    "public_adapter_corpus_oasst2_train"
   ],
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
   "taskTypes": [
-    "codebase_home_grounding",
-    "codebase_source_chunk_grounding",
     "fleet_delegation",
     "fleet_delegation_preference",
     "fleet_peer_knowledge",
@@ -51,9 +86,7 @@
     "fleet_whole_system_identity",
     "manifest_grounding_cards",
     "mouth_responses",
-    "role_directory",
-    "runtime_manifest_drift_repair",
-    "self_model_card_grounding",
+    "public_grounded_response_finalization",
     "source_code_self_knowledge",
     "source_routing_knowledge",
     "source_tool_registry_knowledge",

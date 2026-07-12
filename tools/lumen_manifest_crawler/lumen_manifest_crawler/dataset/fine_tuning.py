@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,7 @@ from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 ULTRA_SPECIFIC_SOURCE_FAMILY = "adapter_ultra_specific"
 CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY = "cortex_codebase_self_awareness"
+PUBLIC_ADAPTER_CORPUS_PREFIX = "public_adapter_corpus_"
 SYSTEM_PROMPTS = {
     "cortex": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
     "executor": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
@@ -148,6 +150,7 @@ class FineTuningDatasetConfig:
     include_eval: bool = True
     include_unsloth_config: bool = True
     max_sequence_length: int = 4096
+    max_public_corpus_token_share: float | None = 0.35
 
 
 @dataclass(frozen=True)
@@ -198,7 +201,7 @@ def compile_agent_fine_tuning_datasets(
                 if sft_record is None:
                     continue
                 routed_sft[agent].append(sft_record)
-                routing_stats[agent]["sourceFamilies"].add(source_family)
+                routing_stats[agent]["sourceFamilies"].add(normalized["sourceFamily"])
                 routing_stats[agent]["taskTypes"].add(normalized["taskType"])
                 routing_stats[agent]["availableSFTRecords"] += 1
 
@@ -227,15 +230,39 @@ def compile_agent_fine_tuning_datasets(
 
     routed_dpo = _build_agent_dpo_records(manifest, augmented_records, config, known_tools)
     routed_eval = _build_agent_eval_records(manifest, augmented_records, known_tools)
+    public_validation_group_keys = _public_validation_group_keys(
+        [
+            record
+            for records in [*routed_sft.values(), *routed_dpo.values()]
+            for record in records
+            if _public_corpus_metadata(record) is not None
+        ],
+        config,
+    )
     output: dict[str, AgentFineTuningDataset] = {}
 
     for agent in AGENTS:
-        deduped_sft = _unique_sorted_records(routed_sft[agent])
-        train_sft, val_sft = _stable_split(deduped_sft, config)
+        deduped_sft = _unique_sft_records_by_messages(routed_sft[agent])
+        train_sft, val_sft = _stable_split(
+            deduped_sft,
+            config,
+            public_validation_group_keys=public_validation_group_keys,
+        )
+        train_sft = _cap_public_corpus_token_share(
+            train_sft,
+            config.max_public_corpus_token_share,
+        )
+        val_sft = _cap_public_corpus_token_share(
+            val_sft,
+            config.max_public_corpus_token_share,
+        )
 
         dpo_records = _unique_sorted_records(routed_dpo[agent]) if config.include_dpo else []
-        train_dpo, val_dpo = _stable_split(dpo_records, config)
-
+        train_dpo, val_dpo = _stable_split(
+            dpo_records,
+            config,
+            public_validation_group_keys=public_validation_group_keys,
+        )
         eval_records = _unique_sorted_records(routed_eval[agent]) if config.include_eval else []
         unsloth_config = _agent_unsloth_config(agent, config) if config.include_unsloth_config else {}
 
@@ -254,11 +281,19 @@ def compile_agent_fine_tuning_datasets(
             "sourceFamilies": sorted(routing_stats[agent]["sourceFamilies"]),
             "taskTypes": sorted(routing_stats[agent]["taskTypes"]),
             "availableSFTRecords": int(routing_stats[agent]["availableSFTRecords"]),
+            "publicCorpus": _public_corpus_card(
+                train_sft=train_sft,
+                val_sft=val_sft,
+                train_dpo=train_dpo,
+                val_dpo=val_dpo,
+                max_token_share=config.max_public_corpus_token_share,
+            ),
             "constraints": {
                 "manifestOnlyTools": True,
                 "sentinelSafe": True,
                 "agentSpecific": True,
                 "ultraSpecificAdapterCorpus": True,
+                "maxPublicCorpusSFTTokenShare": config.max_public_corpus_token_share,
             },
             "quality": {
                 "ultraSpecificSourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
@@ -342,6 +377,21 @@ def _read_artifact_field(obj: Any, field: str) -> Any:
     return getattr(obj, field, None)
 
 
+def _public_corpus_metadata(record: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    public_corpus = metadata.get("publicCorpus")
+    return dict(public_corpus) if isinstance(public_corpus, dict) else None
+
+
+def _is_public_adapter_corpus(source_family: str, record: dict[str, Any]) -> bool:
+    record_source_family = record.get("sourceFamily")
+    return (
+        source_family.startswith(PUBLIC_ADAPTER_CORPUS_PREFIX)
+        or (isinstance(record_source_family, str) and record_source_family.startswith(PUBLIC_ADAPTER_CORPUS_PREFIX))
+        or _public_corpus_metadata(record) is not None
+    )
+
+
 def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> dict[str, Any] | None:
     messages = _normalize_messages(record)
     user = _first_role_content(messages, "user")
@@ -349,7 +399,7 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
     normalized_assistant = assistant.strip()
     if not normalized_assistant or normalized_assistant.lower() in {"null", "none"}:
         return None
-    return {
+    normalized = {
         "messages": messages,
         "user": user,
         "assistant": assistant,
@@ -359,6 +409,10 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
         "risk": _infer_risk(record),
         "manifestCommit": ((record.get("metadata") or {}).get("manifestCommit") or None),
     }
+    public_corpus = _public_corpus_metadata(record)
+    if public_corpus is not None:
+        normalized["publicCorpus"] = public_corpus
+    return normalized
 
 
 def _normalize_messages(record: dict[str, Any]) -> list[dict[str, str]]:
@@ -419,21 +473,25 @@ def _to_sft_record(
     if not assistant:
         return None
     tool_ids = [tool_id for tool_id in normalized["toolIDs"] if tool_id in known_tools]
+    metadata = {
+        "agent": agent,
+        "taskType": normalized["taskType"],
+        "toolIDs": tool_ids,
+        "risk": normalized["risk"],
+        "sourceFamily": normalized["sourceFamily"],
+        "manifestCommit": manifest.sourceIntegrity.commit,
+        "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
+    }
+    public_corpus = normalized.get("publicCorpus")
+    if isinstance(public_corpus, dict):
+        metadata["publicCorpus"] = dict(public_corpus)
     return {
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPTS[agent]},
             {"role": "user", "content": user},
             {"role": "assistant", "content": assistant},
         ],
-        "metadata": {
-            "agent": agent,
-            "taskType": normalized["taskType"],
-            "toolIDs": tool_ids,
-            "risk": normalized["risk"],
-            "sourceFamily": normalized["sourceFamily"],
-            "manifestCommit": manifest.sourceIntegrity.commit,
-            "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
-        },
+        "metadata": metadata,
     }
 
 
@@ -455,20 +513,27 @@ def _route_record_agents(
     slot_roles: set[str],
 ) -> list[str]:
     routed: set[str] = set()
-    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
 
-    explicit_role = _normalize_agent_role(
-        metadata.get("agentRole")
-        or metadata.get("agent")
-        or record.get("agentRole")
-        or record.get("agent")
-        or record.get("role")
+    if _is_public_adapter_corpus(source_family, record):
+        public_corpus = _public_corpus_metadata(record)
+        target_adapter = public_corpus.get("targetAdapter") if public_corpus is not None else None
+        if not isinstance(target_adapter, str):
+            return []
+        normalized_target = target_adapter.strip().lower()
+        return [normalized_target] if normalized_target in AGENTS else []
+
+    # Runtime-repair records describe the agent that failed in `agentRole`; that
+    # field is provenance, not the training target. REM owns the repair contract.
+    if source_family == "runtime_audit_repairs":
+        return ["rem"]
+
+    has_structured_target, structured_target = _structured_slot_or_role_target(
+        record,
+        slot_ids,
+        slot_roles,
     )
-    if explicit_role in AGENTS:
-        routed.add(explicit_role)
-
-    if explicit_role in slot_roles or _has_explicit_fleet_slot_metadata(record, slot_ids, slot_roles):
-        routed.add("fleet")
+    if has_structured_target:
+        return [structured_target] if structured_target in AGENTS else []
 
     for agent, families in AGENT_SOURCE_FAMILIES.items():
         if source_family in families:
@@ -501,7 +566,13 @@ def _normalize_agent_role(raw: Any) -> str:
     if not isinstance(raw, str):
         return ""
     role = raw.strip().lower()
-    return "executor" if role == "tool_executor" else role
+    return {
+        "orchestrator": "cortex",
+        "tool_executor": "executor",
+        "user_response": "mouth",
+        "tone_adapter": "mimicry",
+        "idle_reflection": "rem",
+    }.get(role, role)
 
 
 def _build_ultra_specific_adapter_sft_records(
@@ -1676,15 +1747,46 @@ def _tool_contracts_for_ids(manifest: AgentBehaviorManifest, tool_ids: list[str]
     return contracts
 
 
-def _has_explicit_fleet_slot_metadata(record: dict[str, Any], slot_ids: set[str], slot_roles: set[str]) -> bool:
-    serialized = json.dumps(record, ensure_ascii=False, sort_keys=True).lower()
-    for slot_id in slot_ids:
-        if slot_id.lower() in serialized:
-            return True
-    for role in slot_roles:
-        if role.lower() in serialized:
-            return True
-    return False
+def _structured_slot_or_role_target(
+    record: dict[str, Any],
+    slot_ids: set[str],
+    slot_roles: set[str],
+) -> tuple[bool, str | None]:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    role_values = (
+        metadata.get("agentRole"),
+        metadata.get("agent"),
+        metadata.get("slotRole"),
+        record.get("agentRole"),
+        record.get("agent"),
+        record.get("slotRole"),
+        record.get("role"),
+    )
+    slot_values = (
+        metadata.get("slotID"),
+        metadata.get("slotId"),
+        metadata.get("modelSlot"),
+        metadata.get("adapterSlot"),
+        record.get("slotID"),
+        record.get("slotId"),
+        record.get("modelSlot"),
+        record.get("adapterSlot"),
+    )
+    known_roles = {role.strip().lower() for role in slot_roles}
+    known_slots = {slot_id.strip().lower() for slot_id in slot_ids}
+    for value in role_values:
+        normalized = _normalize_agent_role(value)
+        if normalized in AGENTS:
+            return True, normalized
+        if isinstance(value, str) and value.strip().lower() in known_roles:
+            return True, None
+    for value in slot_values:
+        normalized = value.strip().lower() if isinstance(value, str) else ""
+        if normalized in AGENTS:
+            return True, normalized
+        if normalized in known_slots:
+            return True, None
+    return False, None
 
 
 def _looks_like_cortex_record(record: dict[str, Any]) -> bool:
@@ -1725,8 +1827,7 @@ def _looks_like_rem_record(source_family: str, record: dict[str, Any], task_type
 def _looks_like_fleet_record(source_family: str, record: dict[str, Any], task_type: str) -> bool:
     if source_family.startswith("fleet") or source_family == "cross_model_training":
         return True
-    text = json.dumps(record, ensure_ascii=False, sort_keys=True).lower()
-    return task_type.startswith("fleet_") or any(token in text for token in ("slotid", "model directory", "delegation"))
+    return task_type.startswith("fleet_")
 
 
 def _build_agent_dpo_records(
@@ -1773,6 +1874,13 @@ def _build_agent_dpo_records(
                                 "agent": agent,
                                 "preferenceType": str((record.get("metadata") or {}).get("preferenceType") or "manifest_preference"),
                                 "reason": str((record.get("metadata") or {}).get("lesson") or source_family),
+                                "sourceFamily": str(record.get("sourceFamily") or source_family),
+                                "taskType": str(record.get("taskType") or source_family),
+                                **(
+                                    {"publicCorpus": dict(public_corpus)}
+                                    if (public_corpus := _public_corpus_metadata(record)) is not None
+                                    else {}
+                                ),
                             },
                         }
                     )
@@ -2312,7 +2420,168 @@ def _unique_sorted_records(records: list[dict[str, Any]]) -> list[dict[str, Any]
     return [deduped[key] for key in sorted(deduped)]
 
 
-def _stable_split(records: list[dict[str, Any]], config: FineTuningDatasetConfig) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _unique_sft_records_by_messages(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deduplicate training conversations while preferring Lumen-native examples."""
+
+    deduped: dict[str, dict[str, Any]] = {}
+    for record in _unique_sorted_records(records):
+        messages = record.get("messages")
+        key_value: Any = messages if isinstance(messages, list) else record
+        key = json.dumps(key_value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        existing = deduped.get(key)
+        if existing is None or (
+            _public_corpus_metadata(existing) is not None
+            and _public_corpus_metadata(record) is None
+        ):
+            deduped[key] = record
+    return [deduped[key] for key in sorted(deduped)]
+
+
+def _cap_public_corpus_token_share(
+    records: list[dict[str, Any]],
+    max_share: float | None,
+) -> list[dict[str, Any]]:
+    """Keep public examples below both total-text and target-token share caps.
+
+    Counts use a deterministic whitespace-token estimate so dataset generation remains
+    tokenizer-independent. Public source groups are selected atomically and are never
+    moved between their globally assigned train/validation lanes.
+    """
+
+    if max_share is None:
+        return _unique_sorted_records(records)
+    if not 0.0 <= max_share < 1.0:
+        raise ValueError("max_public_corpus_token_share must be in [0, 1)")
+    public_records = [record for record in records if _public_corpus_metadata(record) is not None]
+    if not public_records:
+        return _unique_sorted_records(records)
+    internal_records = [record for record in records if _public_corpus_metadata(record) is None]
+    if max_share == 0.0 or not internal_records:
+        return _unique_sorted_records(internal_records)
+
+    internal_total = sum(_record_token_counts(record)[0] for record in internal_records)
+    internal_target = sum(_record_token_counts(record)[1] for record in internal_records)
+    multiplier = max_share / (1.0 - max_share)
+    total_budget = int(internal_total * multiplier)
+    target_budget = int(internal_target * multiplier)
+
+    public_total = sum(_record_token_counts(record)[0] for record in public_records)
+    public_target = sum(_record_token_counts(record)[1] for record in public_records)
+    if public_total <= total_budget and public_target <= target_budget:
+        return _unique_sorted_records(records)
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for record in public_records:
+        groups.setdefault(_public_group_key(record), []).append(record)
+
+    source_buckets: dict[str, dict[str, list[tuple[str, list[dict[str, Any]]]]]] = {}
+    for group_key, group_records in groups.items():
+        public_corpus = _public_corpus_metadata(group_records[0]) or {}
+        source_id = _public_source_id(public_corpus)
+        stratum = str(public_corpus.get("stratum") or "unstratified")
+        source_buckets.setdefault(source_id, {}).setdefault(stratum, []).append(
+            (group_key, group_records)
+        )
+
+    source_sequences: dict[str, list[list[dict[str, Any]]]] = {}
+    for source_id, strata in sorted(source_buckets.items()):
+        for stratum, stratum_groups in strata.items():
+            stratum_groups.sort(
+                key=lambda item: hashlib.sha256(
+                    f"lumen-public-token-cap-v1\x1f{source_id}\x1f{stratum}\x1f{item[0]}".encode("utf-8")
+                ).hexdigest()
+            )
+        source_sequence: list[list[dict[str, Any]]] = []
+        stratum_names = sorted(strata)
+        while stratum_names:
+            remaining_strata: list[str] = []
+            for stratum in stratum_names:
+                stratum_groups = strata[stratum]
+                if stratum_groups:
+                    _, group_records = stratum_groups.pop(0)
+                    source_sequence.append(group_records)
+                if stratum_groups:
+                    remaining_strata.append(stratum)
+            stratum_names = remaining_strata
+        source_sequences[source_id] = source_sequence
+
+    ordered_groups: list[list[dict[str, Any]]] = []
+    source_names = sorted(source_sequences)
+    while source_names:
+        remaining_sources: list[str] = []
+        for source_id in source_names:
+            source_sequence = source_sequences[source_id]
+            if source_sequence:
+                ordered_groups.append(source_sequence.pop(0))
+            if source_sequence:
+                remaining_sources.append(source_id)
+        source_names = remaining_sources
+
+    selected: list[dict[str, Any]] = []
+    selected_total = 0
+    selected_target = 0
+    for group_records in ordered_groups:
+        group_total = sum(_record_token_counts(record)[0] for record in group_records)
+        group_target = sum(_record_token_counts(record)[1] for record in group_records)
+        if (
+            selected_total + group_total <= total_budget
+            and selected_target + group_target <= target_budget
+        ):
+            selected.extend(group_records)
+            selected_total += group_total
+            selected_target += group_target
+
+    return _unique_sorted_records(internal_records + selected)
+
+
+def _record_token_counts(record: dict[str, Any]) -> tuple[int, int]:
+    total_text: list[str] = []
+    target_text: list[str] = []
+
+    for field in ("messages", "prompt"):
+        messages = record.get(field)
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            if not isinstance(message, dict) or not isinstance(message.get("content"), str):
+                continue
+            content = message["content"]
+            total_text.append(content)
+            if str(message.get("role") or "").lower() == "assistant":
+                target_text.append(content)
+
+    for field in ("chosen", "rejected"):
+        message = record.get(field)
+        if isinstance(message, dict) and isinstance(message.get("content"), str):
+            total_text.append(message["content"])
+            target_text.append(message["content"])
+
+    total = sum(len(text.split()) for text in total_text)
+    target = sum(len(text.split()) for text in target_text)
+    return total, target
+
+
+def _stable_split(
+    records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+    *,
+    public_validation_group_keys: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    public_records = [record for record in records if _public_corpus_metadata(record) is not None]
+    if not public_records:
+        return _legacy_stable_split(records, config)
+
+    internal_records = [record for record in records if _public_corpus_metadata(record) is None]
+    internal_train, internal_val = _legacy_stable_split(internal_records, config)
+    public_train, public_val = _stable_public_group_split(
+        public_records,
+        config,
+        validation_group_keys=public_validation_group_keys,
+    )
+    return _unique_sorted_records(internal_train + public_train), _unique_sorted_records(internal_val + public_val)
+
+
+def _legacy_stable_split(records: list[dict[str, Any]], config: FineTuningDatasetConfig) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if len(records) <= 1:
         return records, []
     val_count = max(config.min_validation_records, int(round(len(records) * config.validation_ratio)))
@@ -2320,6 +2589,153 @@ def _stable_split(records: list[dict[str, Any]], config: FineTuningDatasetConfig
     val = records[:val_count]
     train = records[val_count:]
     return train, val
+
+
+def _stable_public_group_split(
+    records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+    *,
+    validation_group_keys: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        groups.setdefault(_public_group_key(record), []).append(record)
+
+    ordered_groups = [(key, _unique_sorted_records(groups[key])) for key in sorted(groups)]
+    selected_group_keys = (
+        _public_validation_group_keys(records, config)
+        if validation_group_keys is None
+        else validation_group_keys
+    )
+
+    val = [
+        record
+        for key, group_records in ordered_groups
+        if key in selected_group_keys
+        for record in group_records
+    ]
+    train = [
+        record
+        for key, group_records in ordered_groups
+        if key not in selected_group_keys
+        for record in group_records
+    ]
+    return _unique_sorted_records(train), _unique_sorted_records(val)
+
+
+def _public_validation_group_keys(
+    records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+) -> set[str]:
+    groups_by_source: dict[str, set[str]] = {}
+    for record in records:
+        public_corpus = _public_corpus_metadata(record)
+        if public_corpus is None:
+            continue
+        source_id = _public_source_id(public_corpus)
+        revision = public_corpus.get("sourceRevision") or public_corpus.get("revision")
+        revision_id = revision.strip() if isinstance(revision, str) else ""
+        source_key = json.dumps([source_id, revision_id], ensure_ascii=False, separators=(",", ":"))
+        groups_by_source.setdefault(source_key, set()).add(_public_group_key(record))
+
+    selected: set[str] = set()
+    for source_key, group_keys in sorted(groups_by_source.items()):
+        ordered = sorted(
+            group_keys,
+            key=lambda key: hashlib.sha256(
+                f"lumen-public-group-split-v1\x1f{source_key}\x1f{key}".encode("utf-8")
+            ).hexdigest(),
+        )
+        if len(ordered) <= 1:
+            continue
+        val_count = max(config.min_validation_records, int(round(len(ordered) * config.validation_ratio)))
+        val_count = min(val_count, len(ordered) - 1)
+        selected.update(ordered[:val_count])
+    return selected
+
+
+def _public_group_key(record: dict[str, Any]) -> str:
+    public_corpus = _public_corpus_metadata(record) or {}
+    group_id = public_corpus.get("sourceGroupID") or public_corpus.get("groupID")
+    if not isinstance(group_id, str) or not group_id.strip():
+        return "ungrouped:" + json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    source_id = _public_source_id(public_corpus)
+    revision = public_corpus.get("sourceRevision") or public_corpus.get("revision")
+    revision_id = revision.strip() if isinstance(revision, str) else ""
+    return json.dumps([source_id, revision_id, group_id.strip()], ensure_ascii=False, separators=(",", ":"))
+
+
+def _public_source_id(public_corpus: dict[str, Any]) -> str:
+    for key in ("sourceRepository", "datasetID", "sourceID", "repository", "source", "sourceURL"):
+        value = public_corpus.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "unknown"
+
+
+def _public_corpus_card(
+    *,
+    train_sft: list[dict[str, Any]],
+    val_sft: list[dict[str, Any]],
+    train_dpo: list[dict[str, Any]],
+    val_dpo: list[dict[str, Any]],
+    max_token_share: float | None,
+) -> dict[str, Any]:
+    lanes = {
+        "train_sft": train_sft,
+        "val_sft": val_sft,
+        "train_dpo": train_dpo,
+        "val_dpo": val_dpo,
+    }
+    record_counts: dict[str, int] = {}
+    source_split_counts: dict[str, dict[str, int]] = {}
+    licenses: set[str] = set()
+    token_shares: dict[str, dict[str, float]] = {}
+
+    for lane, records in lanes.items():
+        public_records = [record for record in records if _public_corpus_metadata(record) is not None]
+        record_counts[lane] = len(public_records)
+        lane_total = sum(_record_token_counts(record)[0] for record in records)
+        lane_target = sum(_record_token_counts(record)[1] for record in records)
+        public_total = sum(_record_token_counts(record)[0] for record in public_records)
+        public_target = sum(_record_token_counts(record)[1] for record in public_records)
+        token_shares[lane] = {
+            "total": round(public_total / lane_total, 6) if lane_total else 0.0,
+            "target": round(public_target / lane_target, 6) if lane_target else 0.0,
+        }
+        for record in public_records:
+            public_corpus = _public_corpus_metadata(record) or {}
+            source_id = _public_source_id(public_corpus)
+            source_split_counts.setdefault(source_id, {name: 0 for name in lanes})[lane] += 1
+            raw_license = (
+                public_corpus.get("sourceLicense")
+                or public_corpus.get("license")
+                or public_corpus.get("licenseSPDX")
+            )
+            if isinstance(raw_license, str) and raw_license.strip():
+                licenses.add(raw_license.strip())
+            elif isinstance(raw_license, list):
+                licenses.update(
+                    value.strip()
+                    for value in raw_license
+                    if isinstance(value, str) and value.strip()
+                )
+
+    source_counts = {
+        source_id: sum(split_counts.values())
+        for source_id, split_counts in sorted(source_split_counts.items())
+    }
+    return {
+        "recordCounts": record_counts,
+        "sourceCounts": source_counts,
+        "sourceSplitCounts": {
+            source_id: split_counts
+            for source_id, split_counts in sorted(source_split_counts.items())
+        },
+        "licenses": sorted(licenses),
+        "maxSFTTokenShare": max_token_share,
+        "tokenShares": token_shares,
+    }
 
 
 def _extract_tool_ids(value: Any) -> set[str]:

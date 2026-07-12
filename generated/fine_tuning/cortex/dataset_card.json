@@ -1,19 +1,61 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 12309,
+  "availableSFTRecords": 12123,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
+    "maxPublicCorpusSFTTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
+  "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+  "publicCorpus": {
+    "licenses": [
+      "CC-BY-4.0"
+    ],
+    "maxSFTTokenShare": 0.35,
+    "recordCounts": {
+      "train_dpo": 0,
+      "train_sft": 546,
+      "val_dpo": 0,
+      "val_sft": 104
+    },
+    "sourceCounts": {
+      "AmazonScience/massive": 650
+    },
+    "sourceSplitCounts": {
+      "AmazonScience/massive": {
+        "train_dpo": 0,
+        "train_sft": 546,
+        "val_dpo": 0,
+        "val_sft": 104
+      }
+    },
+    "tokenShares": {
+      "train_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "train_sft": {
+        "target": 0.003457,
+        "total": 0.011427
+      },
+      "val_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "val_sft": {
+        "target": 0.005905,
+        "total": 0.017585
+      }
+    }
+  },
   "quality": {
-    "cortexCodebaseChunkRecordCount": 4373,
-    "cortexCodebaseFileRecordCount": 2256,
+    "cortexCodebaseChunkRecordCount": 4453,
+    "cortexCodebaseFileRecordCount": 2270,
     "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_excluding_generated_outputs",
-    "cortexCodebaseSelfAwarenessRecordCount": 6702,
+    "cortexCodebaseSelfAwarenessRecordCount": 6797,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 25,
@@ -21,29 +63,22 @@
   },
   "recordCounts": {
     "eval": 558,
-    "train_dpo": 15,
-    "train_sft": 10368,
-    "val_dpo": 3,
-    "val_sft": 1830
+    "train_dpo": 14,
+    "train_sft": 10294,
+    "val_dpo": 2,
+    "val_sft": 1824
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
     "codebase_home_chunk_sft",
-    "codebase_home_sft",
     "cortex_codebase_self_awareness",
     "cortex_routing",
     "cross_model_training",
-    "fleet_system_prompts",
     "manifest_grounding_cards",
-    "runtime_audit_repairs",
-    "self_model_cards",
-    "self_model_sft",
-    "train_sft"
+    "public_adapter_corpus_massive_en_us_1_1"
   ],
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
   "taskTypes": [
-    "codebase_home_grounding",
-    "codebase_home_overview",
     "codebase_self_awareness",
     "codebase_source_chunk_grounding",
     "cortex_routing",
@@ -57,15 +92,11 @@
     "intent_routing",
     "manifest_grounding_cards",
     "module_ownership_grounding",
-    "role_directory",
-    "runtime_manifest_drift_repair",
-    "self_model_card_grounding",
-    "self_model_grounded_answer",
+    "public_intent_routing",
     "source_code_self_knowledge",
     "source_routing_knowledge",
     "source_symbol_grounding",
     "source_tool_registry_knowledge",
-    "tool_id_repair",
     "total_codebase_self_awareness",
     "total_codebase_source_chunk",
     "ultra_specific_intent_routing",

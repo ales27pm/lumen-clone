@@ -33,7 +33,37 @@ REQUIRED_SELF_MODEL_CARD_TYPES = {
 INFERRED_TOOL_ARGUMENT_DESCRIPTION_PREFIX = "Inferred from ToolDefinition description"
 FORBIDDEN_ARGUMENT_NAMES = {"true", "false"}
 FORBIDDEN_CODEBASE_HOME_PATHS = {"ios/Lumen/AgentBehaviorManifest.json"}
-FORBIDDEN_CODEBASE_HOME_PREFIXES = ("generated/agent_manifest/",)
+FORBIDDEN_CODEBASE_HOME_PREFIXES = ("datasets/public_adapter_corpus/", "generated/agent_manifest/")
+PUBLIC_CORPUS_ALLOWED_LICENSES = {"Apache-2.0", "CC-BY-4.0", "MIT"}
+PUBLIC_CORPUS_REQUIRED_FIELDS = {
+    "targetAdapter",
+    "sourceRepository",
+    "sourceRevision",
+    "sourceLicense",
+    "sourceLicenseURL",
+    "sourceURL",
+    "sourcePath",
+    "sourceContentSHA256",
+    "sourceArtifactSHA256",
+    "sourceGroupID",
+    "partitionKind",
+    "sourcePartition",
+    "transformationVersion",
+    "transformedContentSHA256",
+    "attribution",
+}
+PUBLIC_CORPUS_PARTITION_KINDS = {"ml_split", "reference_corpus"}
+PUBLIC_CORPUS_ML_TRAINING_PARTITIONS = {"train"}
+PUBLIC_CORPUS_RAW_ID_KEYS = {
+    "createddate",
+    "messageid",
+    "messagetreeid",
+    "parentid",
+    "userid",
+    "workerid",
+}
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+GIT_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 FANOUT_INTENTS = {
     "alarm",
     "calendar",
@@ -565,6 +595,13 @@ def _validate_agent_sft_records(  # NOSONAR
         if metadata.get("agent") != agent:
             failures.append(ValidationFailure(code="unknown_agent_role", message=f"SFT record metadata.agent mismatch for {agent}", path=f"fine_tuning.{agent}.sft.{index}.metadata.agent"))
 
+        _validate_public_corpus_metadata(
+            metadata.get("publicCorpus"),
+            agent=agent,
+            path=f"fine_tuning.{agent}.sft.{index}.metadata.publicCorpus",
+            failures=failures,
+        )
+
         tool_ids = metadata.get("toolIDs")
         if isinstance(tool_ids, list):
             for tool_id in tool_ids:
@@ -616,6 +653,13 @@ def _should_enforce_required_args(assistant: str) -> bool:
 
 def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], failures: list[ValidationFailure]) -> None:
     for index, rec in enumerate(records):
+        metadata = rec.get("metadata") if isinstance(rec.get("metadata"), dict) else {}
+        _validate_public_corpus_metadata(
+            metadata.get("publicCorpus"),
+            agent=agent,
+            path=f"fine_tuning.{agent}.dpo.{index}.metadata.publicCorpus",
+            failures=failures,
+        )
         prompt = rec.get("prompt")
         chosen = rec.get("chosen")
         rejected = rec.get("rejected")
@@ -629,6 +673,75 @@ def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], fa
             continue
         if chosen_text == rejected_text:
             failures.append(ValidationFailure(code="dpo_chosen_equals_rejected", message=f"{agent} DPO chosen == rejected", path=f"fine_tuning.{agent}.dpo.{index}"))
+
+
+def _validate_public_corpus_metadata(
+    value: Any,
+    *,
+    agent: str,
+    path: str,
+    failures: list[ValidationFailure],
+) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        failures.append(ValidationFailure(code="invalid_public_corpus_metadata", message="publicCorpus metadata must be an object", path=path))
+        return
+
+    missing = sorted(
+        key
+        for key in PUBLIC_CORPUS_REQUIRED_FIELDS
+        if not isinstance(value.get(key), str) or not str(value.get(key)).strip()
+    )
+    if missing:
+        failures.append(ValidationFailure(code="public_corpus_missing_provenance", message=f"Public corpus metadata is missing: {', '.join(missing)}", path=path))
+
+    target = str(value.get("targetAdapter") or "").strip().lower()
+    if target != agent:
+        failures.append(ValidationFailure(code="public_corpus_adapter_mismatch", message=f"Public corpus target {target or '<missing>'} does not match {agent}", path=f"{path}.targetAdapter"))
+
+    license_id = str(value.get("sourceLicense") or "").strip()
+    if license_id not in PUBLIC_CORPUS_ALLOWED_LICENSES:
+        failures.append(ValidationFailure(code="public_corpus_license_not_allowed", message=f"Public corpus license {license_id or '<missing>'} is not allowlisted", path=f"{path}.sourceLicense"))
+
+    revision = str(value.get("sourceRevision") or "").strip().lower()
+    if revision and GIT_REVISION_PATTERN.fullmatch(revision) is None:
+        failures.append(ValidationFailure(code="public_corpus_revision_not_pinned", message="Public corpus revision must be a full 40-character lowercase Git revision", path=f"{path}.sourceRevision"))
+
+    for field in ("sourceContentSHA256", "sourceArtifactSHA256", "sourceGroupID", "transformedContentSHA256"):
+        digest = str(value.get(field) or "").strip().lower()
+        if digest and SHA256_PATTERN.fullmatch(digest) is None:
+            failures.append(ValidationFailure(code="public_corpus_invalid_digest", message=f"{field} must be a 64-character lowercase SHA-256 digest", path=f"{path}.{field}"))
+
+    partition_kind = str(value.get("partitionKind") or "").strip().lower()
+    source_partition = str(value.get("sourcePartition") or "").strip().lower()
+    if partition_kind not in PUBLIC_CORPUS_PARTITION_KINDS:
+        failures.append(ValidationFailure(code="public_corpus_invalid_partition_kind", message=f"Public corpus partitionKind {partition_kind or '<missing>'} is not supported", path=f"{path}.partitionKind"))
+    elif partition_kind == "ml_split" and source_partition not in PUBLIC_CORPUS_ML_TRAINING_PARTITIONS:
+        failures.append(ValidationFailure(code="public_corpus_heldout_split_ingested", message=f"ML partition {source_partition or '<missing>'} is not approved for training", path=f"{path}.sourcePartition"))
+
+    for field in ("sourceURL", "sourceLicenseURL"):
+        url = str(value.get(field) or "").strip()
+        if url and not url.startswith("https://"):
+            failures.append(ValidationFailure(code="public_corpus_insecure_source_url", message=f"{field} must use HTTPS", path=f"{path}.{field}"))
+
+    leaked_keys = sorted(_public_corpus_raw_id_keys(value))
+    if leaked_keys:
+        failures.append(ValidationFailure(code="public_corpus_raw_identifier_leak", message=f"Public corpus metadata retained raw source identifiers: {', '.join(leaked_keys)}", path=path))
+
+
+def _public_corpus_raw_id_keys(value: Any) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if normalized in PUBLIC_CORPUS_RAW_ID_KEYS:
+                found.add(str(key))
+            found.update(_public_corpus_raw_id_keys(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.update(_public_corpus_raw_id_keys(child))
+    return found
 
 
 def _validate_agent_eval_records(

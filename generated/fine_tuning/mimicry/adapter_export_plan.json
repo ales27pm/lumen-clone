@@ -7,28 +7,22 @@
   "agent": "mimicry",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
+    "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
     "recordCounts": {
       "eval": 5,
       "train_dpo": 10,
-      "train_sft": 86,
+      "train_sft": 93,
       "val_dpo": 2,
-      "val_sft": 15
+      "val_sft": 9
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
-      "codebase_home_chunk_sft",
-      "codebase_home_sft",
       "cross_model_training",
-      "fleet_system_prompts",
       "manifest_grounding_cards",
       "mimicry_style",
-      "self_model_cards",
-      "train_sft"
+      "public_adapter_corpus_coedit_train"
     ],
     "taskTypes": [
-      "codebase_home_grounding",
-      "codebase_source_chunk_grounding",
       "fleet_delegation",
       "fleet_delegation_preference",
       "fleet_peer_knowledge",
@@ -38,8 +32,7 @@
       "fleet_whole_system_identity",
       "manifest_grounding_cards",
       "mimicry_style",
-      "role_directory",
-      "self_model_card_grounding",
+      "public_meaning_preserving_style_edit",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",

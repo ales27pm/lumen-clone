@@ -7,27 +7,23 @@
   "agent": "executor",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
+    "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
     "recordCounts": {
       "eval": 114,
       "train_dpo": 14,
-      "train_sft": 592,
+      "train_sft": 906,
       "val_dpo": 2,
-      "val_sft": 104
+      "val_sft": 164
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
       "approval_boundary_samples",
-      "codebase_home_chunk_sft",
-      "codebase_home_sft",
       "cross_model_training",
       "executor_tool_calls",
-      "fleet_system_prompts",
       "manifest_grounding_cards",
-      "self_model_cards",
-      "tool_schema_cards",
-      "train_sft",
-      "validation_sft"
+      "negative_samples",
+      "public_adapter_corpus_massive_en_us_1_1",
+      "tool_schema_cards"
     ],
     "taskTypes": [
       "ambiguous_request",
@@ -35,8 +31,6 @@
       "approval_granted",
       "approval_rejected",
       "approval_required_tool",
-      "codebase_home_grounding",
-      "codebase_source_chunk_grounding",
       "executor_tool_calls",
       "fleet_delegation",
       "fleet_delegation_preference",
@@ -47,8 +41,7 @@
       "fleet_whole_system_identity",
       "manifest_grounding_cards",
       "permission_unavailable",
-      "role_directory",
-      "self_model_card_grounding",
+      "public_manifest_tool_argument_extraction",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",

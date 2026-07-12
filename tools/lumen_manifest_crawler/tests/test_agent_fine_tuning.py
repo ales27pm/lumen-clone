@@ -7,6 +7,7 @@ import pytest
 
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
+from lumen_manifest_crawler.dataset.compiler import _records_hash
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
     CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
@@ -181,6 +182,66 @@ def test_each_adapter_has_ultra_specific_dataset_records(compiled_fine_tuning: t
         assert all((record.get("metadata") or {}).get("specificity") == "ultra_specific" for record in ultra_specific)
 
 
+def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, datasets, fine_tuning = compiled_fine_tuning
+    snapshot = json.loads(
+        (_repo_root() / "datasets/public_adapter_corpus/manifest.json").read_text(encoding="utf-8")
+    )
+    dataset_manifest = datasets["dataset_manifest"][0]
+    public_source_manifest = dataset_manifest["sources"]["publicAdapterCorpus"]
+    assert public_source_manifest["lumenContractSHA256"] == snapshot["lumenContractSHA256"]
+    assert public_source_manifest["partitionPolicy"] == snapshot["partitionPolicy"]
+
+    group_lanes: dict[tuple[str, str, str], str] = {}
+    for agent, expected_count in snapshot["countsByAgent"].items():
+        family = f"public_adapter_corpus_{agent}"
+        assert len(datasets[family]) == expected_count
+        assert dataset_manifest["hashes"][family] == _records_hash(datasets[family])
+
+        train_public = [
+            record
+            for record in fine_tuning[agent].train_sft
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        val_public = [
+            record
+            for record in fine_tuning[agent].val_sft
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        assert len(train_public) + len(val_public) == expected_count
+        assert all(
+            record["metadata"]["publicCorpus"]["targetAdapter"] == agent
+            for record in train_public + val_public
+        )
+        train_groups = {
+            record["metadata"]["publicCorpus"]["sourceGroupID"] for record in train_public
+        }
+        val_groups = {
+            record["metadata"]["publicCorpus"]["sourceGroupID"] for record in val_public
+        }
+        assert train_groups.isdisjoint(val_groups)
+        for lane, records in (("train", train_public), ("validation", val_public)):
+            for record in records:
+                public = record["metadata"]["publicCorpus"]
+                key = (
+                    public["sourceRepository"],
+                    public["sourceRevision"],
+                    public["sourceGroupID"],
+                )
+                assert group_lanes.setdefault(key, lane) == lane
+        assert sum(fine_tuning[agent].dataset_card["publicCorpus"]["recordCounts"].values()) == expected_count
+
+    for agent in AGENTS:
+        public_records = [
+            record
+            for record in fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        assert all(record["metadata"]["agent"] == agent for record in public_records)
+
+
 def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: tuple) -> None:
     _, datasets, fine_tuning = compiled_fine_tuning
     records = fine_tuning["cortex"].train_sft + fine_tuning["cortex"].val_sft
@@ -322,6 +383,7 @@ def test_codebase_home_excludes_generated_manifest_outputs() -> None:
     overview = next(record for record in datasets["codebase_home_corpus"] if record.get("path") == ".")
 
     assert "ios/Lumen/AgentBehaviorManifest.json" not in paths
+    assert not any(path.startswith("datasets/public_adapter_corpus/") for path in paths)
     assert not any(path.startswith("generated/agent_manifest/") for path in paths)
     assert overview["metadata"]["coverage"] == "git_tracked_text_files_excluding_generated_outputs"
     assert overview["metadata"]["selectedGeneratedFiles"] == []

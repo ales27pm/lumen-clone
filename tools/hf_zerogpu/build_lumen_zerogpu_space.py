@@ -14,6 +14,16 @@ from typing import Any, Sequence
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 SPACE_TEMPLATE = Path(__file__).resolve().parent / "space_template"
+LEGACY_DURATION_SECRET_KEYS = (
+    "LUMEN_ZERO_GPU_DURATION_SECONDS",
+    "LUMEN_ZERO_GPU_MAX_DURATION_SECONDS",
+)
+OPTIONAL_TRAINING_VARIABLE_KEYS = (
+    "LUMEN_ZERO_GPU_MAX_TRAIN_RECORDS",
+    "LUMEN_ZERO_GPU_MAX_VAL_RECORDS",
+    "LUMEN_ZERO_GPU_MAX_SEQ_LENGTH",
+    "LUMEN_ZERO_GPU_NUM_TRAIN_EPOCHS",
+)
 
 
 @dataclass(frozen=True)
@@ -154,6 +164,46 @@ def add_space_value(api: Any, *, repo_id: str, key: str, value: str, secret: boo
     method(repo_id=repo_id, key=key, value=value, token=token)
 
 
+def delete_space_secret_if_present(
+    api: Any,
+    *,
+    repo_id: str,
+    key: str,
+    token: str | None,
+    dry_run: bool,
+) -> None:
+    print(f"Delete legacy Space secret if present: {key}")
+    if dry_run:
+        return
+    method = getattr(api, "delete_space_secret", None)
+    if method is None:
+        raise RuntimeError(f"installed huggingface_hub has no delete_space_secret; remove {key} manually in Space settings")
+    try:
+        method(repo_id=repo_id, key=key, token=token)
+    except Exception as exc:
+        response = getattr(exc, "response", None)
+        if getattr(response, "status_code", None) == 404:
+            print(f"Legacy Space secret already absent: {key}")
+            return
+        raise
+
+
+def restart_space_after_configuration(
+    api: Any,
+    *,
+    repo_id: str,
+    token: str | None,
+    dry_run: bool,
+) -> None:
+    print("Restart Space after final configuration")
+    if dry_run:
+        return
+    method = getattr(api, "restart_space", None)
+    if method is None:
+        raise RuntimeError("installed huggingface_hub has no restart_space; restart the Space manually before triggering training")
+    method(repo_id=repo_id, token=token)
+
+
 def request_zerogpu_hardware(api: Any, *, repo_id: str, hardware: str, token: str | None, dry_run: bool) -> None:
     print(f"Request Space hardware: {hardware}")
     if dry_run:
@@ -261,6 +311,9 @@ def upload_to_hub(
 
     defaults = read_json(build.defaults_path)
     gpu_duration_seconds = str(defaults.get("gpu_duration_seconds", 1200))
+    for key in LEGACY_DURATION_SECRET_KEYS:
+        delete_space_secret_if_present(api, repo_id=space_repo, key=key, token=token, dry_run=dry_run)
+
     variables = {
         "LUMEN_ZERO_GPU_DATASET_REPO": dataset_repo,
         "LUMEN_ZERO_GPU_DATASET_REVISION": "main",
@@ -271,19 +324,15 @@ def upload_to_hub(
         "LUMEN_ZERO_GPU_DURATION_SECONDS": gpu_duration_seconds,
         "LUMEN_ZERO_GPU_MAX_DURATION_SECONDS": gpu_duration_seconds,
     }
-    for key in (
-        "LUMEN_ZERO_GPU_MAX_TRAIN_RECORDS",
-        "LUMEN_ZERO_GPU_MAX_VAL_RECORDS",
-        "LUMEN_ZERO_GPU_MAX_SEQ_LENGTH",
-        "LUMEN_ZERO_GPU_NUM_TRAIN_EPOCHS",
-    ):
-        value = os.environ.get(key)
-        if value:
-            variables[key] = value
+    # Always overwrite optional knobs. A neutral zero makes the Space retain
+    # each generated per-agent config value and clears stale caps from an older run.
+    for key in OPTIONAL_TRAINING_VARIABLE_KEYS:
+        variables[key] = os.environ.get(key, "0")
     for key, value in variables.items():
         add_space_value(api, repo_id=space_repo, key=key, value=value, secret=False, token=token, dry_run=dry_run)
 
     request_zerogpu_hardware(api, repo_id=space_repo, hardware=zero_gpu_hardware, token=token, dry_run=dry_run)
+    restart_space_after_configuration(api, repo_id=space_repo, token=token, dry_run=dry_run)
 
 
 def trigger_space_training(
@@ -334,6 +383,8 @@ def _is_terminal_space_trigger_error(exc: Exception) -> bool:
         "gpu task aborted",
         "zerogpu worker error",
         "requested gpu duration",
+        "incomplete chunked read",
+        "peer closed connection without sending complete message body",
         '"ok": false',
         "'ok': false",
     )

@@ -110,6 +110,47 @@ Or from the repo root after installation:
 python -m lumen_manifest_crawler generate --root . --output generated/agent_manifest --pretty
 ```
 
+## Build the pinned public adapter corpus
+
+The optional public-corpus snapshot is built separately from normal generation so routine
+manifest and improve-loop runs never depend on the network. The source manifest accepts only
+pinned, permissively licensed artifacts and the builder verifies every raw artifact hash before
+filtering it. ML datasets are accepted only from explicitly labeled `train` partitions; unknown,
+validation, and test partitions fail closed. Non-ML conformance material such as the JSON Schema
+Test Suite is labeled separately as `reference_corpus`. The builder strips raw source identifiers,
+applies PII and quality gates, and emits adapter-specific transformed records with per-record
+provenance.
+
+From the repository root:
+
+```bash
+uv run --python 3.12 \
+  --with-editable ./tools/lumen_manifest_crawler \
+  --with 'pyarrow==25.0.0' \
+  python tools/lumen_manifest_crawler/scripts/build_public_adapter_corpus.py \
+  --output datasets/public_adapter_corpus \
+  --lumen-manifest generated/agent_manifest/AgentBehaviorManifest.json
+```
+
+The checked snapshot contains only selected transformed records, its machine-readable manifest,
+and `THIRD_PARTY_DATASETS.md`; raw downloads remain in the ignored cache. Once the snapshot is
+present, `generate` and `improve-loop` load it offline, verify its canonical Lumen tool/intent
+contract, route each record only to its declared adapter, preserve public source groups globally
+across train/validation splitting, and include source and license counts in every adapter card.
+The fine-tuning compiler deduplicates exact conversations in favor of Lumen-native examples and
+caps public SFT data at 35% of both total and target tokens in each train/validation lane; cards
+report the resulting token shares.
+
+To reproduce from an already populated cache without network access, add `--offline`. The public
+source policy is defined in
+`lumen_manifest_crawler/dataset/public_adapter_corpus_sources.json` and currently covers MASSIVE,
+OASST2, CoEdIT, and the JSON Schema Test Suite. OASST2 is restricted to safe, rank-zero,
+upstream-reviewed root pairs and is converted into source-observation-to-concise-final examples;
+the upstream answer is neither labelled as verified nor copied byte-for-byte. CoEdIT style records
+must preserve numbers, named entities, URLs, negation, units, and temporal facts, and reject corpus
+artifacts, malformed output, high-stakes advice, current recommendations, security content, and
+artist-imitation or copyrighted-text requests.
+
 ## Run the unified developer cycle
 
 From the repo root:
