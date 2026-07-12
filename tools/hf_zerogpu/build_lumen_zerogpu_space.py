@@ -13,6 +13,12 @@ from typing import Any, Sequence
 
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
+EXPERIMENT_VARIANTS = (
+    "internal_only",
+    "internal_plus_public_baseline",
+    "internal_plus_public_optimized",
+)
+DEFAULT_EXPERIMENT_VARIANT = "internal_plus_public_optimized"
 SPACE_TEMPLATE = Path(__file__).resolve().parent / "space_template"
 LEGACY_DURATION_SECRET_KEYS = (
     "LUMEN_ZERO_GPU_DURATION_SECONDS",
@@ -46,6 +52,13 @@ def parse_agents(value: str) -> list[str]:
     return agents
 
 
+def parse_experiment_variant(value: str) -> str:
+    variant = value.strip()
+    if variant not in EXPERIMENT_VARIANTS:
+        raise ValueError(f"Unsupported experiment variant: {variant or '<empty>'}. Expected one of: {', '.join(EXPERIMENT_VARIANTS)}")
+    return variant
+
+
 def read_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -53,7 +66,12 @@ def read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def require_dataset_source(path: Path, agents: Sequence[str]) -> None:
+def require_dataset_source(
+    path: Path,
+    agents: Sequence[str],
+    experiment_variant: str = DEFAULT_EXPERIMENT_VARIANT,
+) -> None:
+    experiment_variant = parse_experiment_variant(experiment_variant)
     if not path.is_dir():
         raise FileNotFoundError(f"Missing dataset source: {path}")
     if not (path / "adapter_runtime_manifest.json").exists():
@@ -64,6 +82,11 @@ def require_dataset_source(path: Path, agents: Sequence[str]) -> None:
             required = agent_dir / filename
             if not required.exists():
                 raise FileNotFoundError(f"Missing required fine-tuning file: {required}")
+        variant_dir = agent_dir / "experiments" / experiment_variant
+        for filename in ("train_sft.jsonl", "val_sft.jsonl", "train_dpo.jsonl", "val_dpo.jsonl", "variant_manifest.json"):
+            required = variant_dir / filename
+            if not required.is_file():
+                raise FileNotFoundError(f"Missing required experiment variant file: {required}")
 
 
 def reset_dir(path: Path) -> None:
@@ -94,7 +117,9 @@ def write_space_bundle(
     base_model: str,
     gpu_size: str,
     gpu_duration_seconds: int,
+    experiment_variant: str = DEFAULT_EXPERIMENT_VARIANT,
 ) -> SpaceBuild:
+    experiment_variant = parse_experiment_variant(experiment_variant)
     run_root.mkdir(parents=True, exist_ok=True)
     space_dir = run_root / "space"
     dataset_dir = run_root / "dataset_snapshot" / "fine_tuning"
@@ -118,6 +143,7 @@ def write_space_bundle(
         "base_model_override": base_model,
         "gpu_size": gpu_size,
         "gpu_duration_seconds": gpu_duration_seconds,
+        "experiment_variant": experiment_variant,
         "fresh_run": True,
         "resume_default": False,
         "adapter_first": True,
@@ -323,6 +349,7 @@ def upload_to_hub(
         "LUMEN_ZERO_GPU_SIZE": str(defaults.get("gpu_size", "large")),
         "LUMEN_ZERO_GPU_DURATION_SECONDS": gpu_duration_seconds,
         "LUMEN_ZERO_GPU_MAX_DURATION_SECONDS": gpu_duration_seconds,
+        "LUMEN_ZERO_GPU_EXPERIMENT_VARIANT": str(defaults.get("experiment_variant", DEFAULT_EXPERIMENT_VARIANT)),
     }
     # Always overwrite optional knobs. A neutral zero makes the Space retain
     # each generated per-agent config value and clears stale caps from an older run.
@@ -346,7 +373,9 @@ def trigger_space_training(
     token: str | None,
     timeout_seconds: int,
     dry_run: bool,
+    experiment_variant: str = DEFAULT_EXPERIMENT_VARIANT,
 ) -> None:
+    experiment_variant = parse_experiment_variant(experiment_variant)
     print(f"Trigger Space training via Gradio API: {space_repo}")
     if dry_run:
         return
@@ -361,6 +390,7 @@ def trigger_space_training(
                 base_model=base_model,
                 seed=seed,
                 gpu_size=gpu_size,
+                experiment_variant=experiment_variant,
                 token=token,
                 deadline=started + timeout_seconds,
             )
@@ -399,6 +429,7 @@ def _trigger_space_training_via_gradio_api(
     base_model: str,
     seed: int,
     gpu_size: str,
+    experiment_variant: str,
     token: str | None,
     deadline: float | None = None,
 ) -> None:
@@ -418,6 +449,7 @@ def _trigger_space_training_via_gradio_api(
             True,
             True,
             gpu_size,
+            experiment_variant,
         ]
     }
     with httpx.Client(timeout=None) as client:
@@ -474,6 +506,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gpu-duration-seconds", type=int, default=1200, help="ZeroGPU function duration budget.")
     parser.add_argument("--zero-gpu-hardware", default=os.environ.get("LUMEN_ZERO_GPU_HARDWARE", "zero-a10g"), help="HF hardware id requested for the Space.")
     parser.add_argument("--seed", type=int, default=42, help="Training seed.")
+    parser.add_argument(
+        "--experiment-variant",
+        choices=EXPERIMENT_VARIANTS,
+        default=DEFAULT_EXPERIMENT_VARIANT,
+        help="Controlled dataset variant to train.",
+    )
     parser.add_argument("--trigger", action="store_true", help="Trigger Space training after upload.")
     parser.add_argument("--trigger-timeout-seconds", type=int, default=900, help="Time to wait for Space readiness before triggering.")
     parser.add_argument("--private-space", action="store_true", help="Create/update Space as private.")
@@ -489,7 +527,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_root = args.run_root.resolve()
     dataset_source = args.dataset_source.resolve()
     agents = parse_agents(args.agents)
-    require_dataset_source(dataset_source, agents)
+    require_dataset_source(dataset_source, agents, args.experiment_variant)
     read_json(dataset_source / "adapter_runtime_manifest.json")
 
     build = write_space_bundle(
@@ -504,6 +542,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         base_model=args.base_model,
         gpu_size=args.gpu_size,
         gpu_duration_seconds=args.gpu_duration_seconds,
+        experiment_variant=args.experiment_variant,
     )
     print(f"Wrote Space bundle: {build.space_dir}")
     print(f"Wrote dataset snapshot: {build.dataset_dir}")
@@ -542,6 +581,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             token=token,
             timeout_seconds=args.trigger_timeout_seconds,
             dry_run=args.dry_run,
+            experiment_variant=args.experiment_variant,
         )
     else:
         print("Trigger skipped. Set LUMEN_ZERO_GPU_TRIGGER=1 or pass --trigger to start training through the Space API.")

@@ -1,0 +1,93 @@
+{
+  "schema": "lumen.public-adapter-evaluation-sources/1.0.0",
+  "purpose": "evaluation_only",
+  "hashOnly": true,
+  "trainingEligible": false,
+  "trainingTargets": [],
+  "datasetID": "gorilla-llm/Berkeley-Function-Calling-Leaderboard",
+  "revision": "61fc0608cfd831fcfbbaa676ebdfef0ed963eeda",
+  "sourceURL": "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/tree/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda",
+  "license": "Apache-2.0",
+  "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
+  "attribution": "Berkeley Function Calling Leaderboard (BFCL), Gorilla LLM team.",
+  "artifacts": [
+    {
+      "id": "bfcl-v3-simple",
+      "category": "simple",
+      "path": "BFCL_v3_simple.json",
+      "artifactURL": "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_simple.json",
+      "artifactSHA256": "fbc37b2ad252bf9af985582e0e07b456173fe627d957491472ea9cef5fb83158",
+      "artifactBytes": 280474,
+      "format": "jsonl",
+      "trainingEligible": false,
+      "trainingTargets": [],
+      "evaluationAdapters": [
+        "executor"
+      ],
+      "metrics": [
+        "function_selection",
+        "argument_structure"
+      ],
+      "contaminationNamespace": "bfcl-v3-simple"
+    },
+    {
+      "id": "bfcl-v3-multiple",
+      "category": "multiple",
+      "path": "BFCL_v3_multiple.json",
+      "artifactURL": "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_multiple.json",
+      "artifactSHA256": "aef168155ebd74b7ac2401198b201343bc7d16d7a3d7e0d4e6d8ee82c6969b2a",
+      "artifactBytes": 316583,
+      "format": "jsonl",
+      "trainingEligible": false,
+      "trainingTargets": [],
+      "evaluationAdapters": [
+        "cortex",
+        "executor"
+      ],
+      "metrics": [
+        "function_selection",
+        "argument_structure"
+      ],
+      "contaminationNamespace": "bfcl-v3-multiple"
+    },
+    {
+      "id": "bfcl-v3-parallel",
+      "category": "parallel",
+      "path": "BFCL_v3_parallel.json",
+      "artifactURL": "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_parallel.json",
+      "artifactSHA256": "fad375d68295776efb63e5aa331dd884f8635e7bb50e05908113c74f14281c3c",
+      "artifactBytes": 172094,
+      "format": "jsonl",
+      "trainingEligible": false,
+      "trainingTargets": [],
+      "evaluationAdapters": [
+        "executor",
+        "fleet"
+      ],
+      "metrics": [
+        "parallel_function_selection",
+        "argument_structure"
+      ],
+      "contaminationNamespace": "bfcl-v3-parallel"
+    },
+    {
+      "id": "bfcl-v3-irrelevance",
+      "category": "irrelevance",
+      "path": "BFCL_v3_irrelevance.json",
+      "artifactURL": "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_irrelevance.json",
+      "artifactSHA256": "975f51c51f688649fd190078efd87081241e0a326f9114a2ea3c1ca2440d8690",
+      "artifactBytes": 160114,
+      "format": "jsonl",
+      "trainingEligible": false,
+      "trainingTargets": [],
+      "evaluationAdapters": [
+        "cortex",
+        "executor"
+      ],
+      "metrics": [
+        "no_tool_selection"
+      ],
+      "contaminationNamespace": "bfcl-v3-irrelevance"
+    }
+  ]
+}

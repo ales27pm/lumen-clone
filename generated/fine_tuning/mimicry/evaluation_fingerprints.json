@@ -1,0 +1,65 @@
+{
+  "bundleSHA256": "563ebda57f7f1e01f44e2ea56b31cdff11e8fb8fa940570f83a0c1f70f5fd3ad",
+  "hashOnly": true,
+  "purpose": "evaluation_only_contamination_fingerprints",
+  "records": [
+    {
+      "normalizedTextSHA256": "e7b76fd222c7a625eadea59f88e257c6f576809f2cf87e777334c3667be0ae4a",
+      "recordID": "record-b3834250a97e6112ce2972e5",
+      "segments": [
+        {
+          "sha256": "e7b76fd222c7a625eadea59f88e257c6f576809f2cf87e777334c3667be0ae4a",
+          "shingles": [
+            "112ed3113c00557f16cf1c43cbf24687e6a3c32ab201ad4e87c36ecf8e8a559d",
+            "b2106e7ce10f509ed3756e4ff2bc17b72203cf0546ce7ccf87696948a57f828a"
+          ]
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "36671654e1e02d3390fdf4d21357753bc2015180b10d67015801b79530ae9685",
+      "recordID": "record-bf79c6243847761d95853b92",
+      "segments": [
+        {
+          "sha256": "36671654e1e02d3390fdf4d21357753bc2015180b10d67015801b79530ae9685",
+          "shingles": [
+            "8879e44ce62ca8e07fcf2b027702cc547275023a2e77f641783399cae67914f6",
+            "98b507f8f4171c84bda480c40187bc762e68b29ad25c5c3860afff6b9eae5b7f"
+          ]
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "08157c35e176a198ef2c06b5eab3660438c643e5e288df92df9098a2c3e087ff",
+      "recordID": "record-cca9f79e25c8b1d0a0355f6e",
+      "segments": [
+        {
+          "sha256": "08157c35e176a198ef2c06b5eab3660438c643e5e288df92df9098a2c3e087ff",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "2583a8d155c64fa8d3e5e7e9db02f60d206d5410627be3ef25e8fed6aad70ecd",
+      "recordID": "record-d6bb1cb59ae83057ed2a849b",
+      "segments": [
+        {
+          "sha256": "2583a8d155c64fa8d3e5e7e9db02f60d206d5410627be3ef25e8fed6aad70ecd",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "96cb534c9f3ab5ac713eee9b9f60592b55cc93ec708c7dcd9fc8133599ba9e88",
+      "recordID": "record-f9b4da2cfdfb0886678e4816",
+      "segments": [
+        {
+          "sha256": "96cb534c9f3ab5ac713eee9b9f60592b55cc93ec708c7dcd9fc8133599ba9e88",
+          "shingles": []
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "lumen.adapter-contamination/1.0.0",
+  "shingleSize": 13
+}

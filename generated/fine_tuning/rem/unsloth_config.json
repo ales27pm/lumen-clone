@@ -13,7 +13,11 @@
     "saveAdapterByDefault": true,
     "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
     "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
-    "trainBaseModelWeights": false
+    "trainBaseModelWeights": false,
+    "trainingPhases": {
+      "dpo": "generated_not_trained",
+      "sft": "enabled"
+    }
   },
   "adapter_gguf_output_path": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
   "adapter_output_dir": "models/lora_qwen3_bootstrap/rem",
@@ -49,5 +53,6 @@
   "num_train_epochs": 2,
   "output_dir": "models/lora_qwen3_bootstrap/rem",
   "release_bake_enabled_by_default": false,
+  "seed": 42,
   "warmup_steps": 20
 }

@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-ADAPTER_EXPORT_SCHEMA_VERSION = "1.1.0"
+from lumen_manifest_crawler.dataset.adapter_evaluation import (
+    EXPERIMENT_VARIANTS,
+    promotion_contract,
+)
+
+ADAPTER_EXPORT_SCHEMA_VERSION = "1.2.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
 DEFAULT_ADAPTER_GGUF_OUTPUT_ROOT = "models/lora_qwen3_gguf"
@@ -88,6 +93,10 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "saveAdapterByDefault": True,
         "mergeAdaptersByDefault": False,
         "rollbackUnit": "adapter",
+        "trainingPhases": {
+            "sft": "enabled",
+            "dpo": "generated_not_trained",
+        },
     }
     out["mergeExport"] = {
         "enabledByDefault": False,
@@ -119,6 +128,8 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
             "recordCounts": dataset_card.get("recordCounts", {}),
             "sourceFamilies": dataset_card.get("sourceFamilies", []),
             "taskTypes": dataset_card.get("taskTypes", []),
+            "evaluation": dataset_card.get("evaluation", {}),
+            "preferenceTraining": dataset_card.get("preferenceTraining", {}),
         },
         "runtimeBinding": {
             "loadBaseModelOnce": True,
@@ -136,6 +147,12 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
             "requiresPassingEvalGatesBeforeMerge": True,
             "rollbackUnit": "adapter",
         },
+        "experimentPolicy": {
+            "requiredVariants": list(EXPERIMENT_VARIANTS),
+            "promotionContract": promotion_contract(),
+            "runtimePointerPolicy": "unchanged_until_promoted",
+            "experimentManifestSHA256": (dataset_card.get("experimentPolicy") or {}).get("experimentManifestSHA256"),
+        },
         "expectedArtifacts": {
             "adapterDirectory": adapter_output_dir(agent),
             "adapterGGUF": adapter_gguf_output_path(agent),
@@ -146,6 +163,12 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
             "eval": "eval.jsonl",
             "datasetCard": "dataset_card.json",
             "trainingConfig": "unsloth_config.json",
+            "evaluationFingerprints": "evaluation_fingerprints.json",
+            "contaminationReport": "contamination_report.json",
+            "experimentManifest": "experiment_manifest.json",
+            "experimentRoot": "experiments",
+            "variantPathTemplate": "experiments/{variant}",
+            "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
         },
     }
 
@@ -169,6 +192,9 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "baseModelID": base_model_id,
                 "systemPrompt": dataset_card.get("systemPrompt"),
                 "recordCounts": dataset_card.get("recordCounts", {}),
+                "evaluation": dataset_card.get("evaluation", {}),
+                "preferenceTraining": dataset_card.get("preferenceTraining", {}),
+                "experimentPolicy": dataset_card.get("experimentPolicy", {}),
             }
         )
 

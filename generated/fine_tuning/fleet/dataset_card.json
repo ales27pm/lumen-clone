@@ -1,6 +1,6 @@
 {
   "agent": "fleet",
-  "availableSFTRecords": 1334,
+  "availableSFTRecords": 5866,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -9,17 +9,189 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+  "evaluation": {
+    "contamination": {
+      "contaminated": false,
+      "matchCount": 0,
+      "promotionRequiresZeroMatches": true,
+      "reportSHA256": "acaac3d0529ff9fe362d54c187516c350f525249478270f17d3ebee48b384342"
+    },
+    "executableDeclarativeMetrics": true,
+    "failClosedOnUnknownMetric": true,
+    "frozenEvaluationSHA256": "8fbc7129dea37f4f9bb4777336e2f9e65afe68fb63bf633dab78f3090ff0b26d",
+    "recordCount": 15,
+    "schemaVersion": "lumen.adapter-eval/1.0.0"
+  },
+  "experimentPolicy": {
+    "controlledVariables": [
+      "baseModelID",
+      "seed",
+      "trainingConfigSHA256",
+      "frozenEvaluationSHA256",
+      "publicEvaluationBundleSHA256"
+    ],
+    "experimentManifestSHA256": "9761ba0e99a2f2d8eb494921075ec2a96cdd2b79e7dee0f64f61c2cf4967cda9",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ]
+  },
+  "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+  "preferenceTraining": {
+    "includedInCheckpoint": false,
+    "recordCount": 8,
+    "requiredPhase": "post_sft_preference_training",
+    "status": "generated_not_trained"
+  },
   "publicCorpus": {
+    "availableRecordCounts": {
+      "train_dpo": 0,
+      "train_sft": 425,
+      "val_dpo": 0,
+      "val_sft": 75
+    },
+    "availableSourceCounts": {
+      "AmazonScience/massive": 500
+    },
+    "availableSourceLineage": {
+      "AmazonScience/massive": {
+        "artifactSHA256": "4cba5faa11c71437928e17cb1b9b3d8b8e727e7ea363a3a9a8045e19c0491577",
+        "license": "CC-BY-4.0",
+        "revision": "ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740",
+        "transformations": [
+          "massive_intent_to_fleet_boundary"
+        ]
+      }
+    },
     "licenses": [
       "CC-BY-4.0"
     ],
+    "maxDPOTokenShare": 0.35,
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 427,
+      "train_sft": 425,
       "val_dpo": 0,
-      "val_sft": 73
+      "val_sft": 75
+    },
+    "rejectedByTokenCap": {
+      "train_dpo": 0,
+      "train_sft": 0,
+      "val_dpo": 0,
+      "val_sft": 0
+    },
+    "selectionContract": {
+      "maxTokenShare": 0.35,
+      "policyVersions": [
+        "2026-07-12.3"
+      ],
+      "sha256": "96274a1447057e40d32f59cf3fed6daec721b2ee33b97daaf52eb83771d3591d",
+      "strategy": "group_atomic_quality_ranked_source_stratified_v2"
+    },
+    "selectionScoreSummary": {
+      "available": {
+        "count": 500,
+        "maximum": 0.775887,
+        "mean": 0.76345,
+        "minimum": 0.760588
+      },
+      "selected": {
+        "count": 500,
+        "maximum": 0.775887,
+        "mean": 0.76345,
+        "minimum": 0.760588
+      }
+    },
+    "snapshotIntegrity": {
+      "countsByAgent": {
+        "cortex": 662,
+        "executor": 462,
+        "fleet": 500,
+        "mimicry": 600,
+        "mouth": 551,
+        "rem": 505
+      },
+      "countsBySource": {
+        "coedit-train": 900,
+        "faithdial-train": 500,
+        "json-schema-test-suite-draft-2020-12": 200,
+        "massive-en-us-1.1": 1600,
+        "oasst2-train": 50,
+        "toolace-train": 30
+      },
+      "countsByTaskType": {
+        "public_capability_delegation": 500,
+        "public_grounded_response_finalization": 50,
+        "public_grounded_response_preference": 500,
+        "public_intent_routing": 650,
+        "public_manifest_tool_argument_extraction": 450,
+        "public_meaning_preserving_style_edit": 600,
+        "public_observation_grounded_final": 1,
+        "public_schema_failure_diagnosis": 200,
+        "public_text_repair": 300,
+        "public_tool_boundary_repair": 5,
+        "public_verified_tool_argument_extraction": 12,
+        "public_verified_tool_routing": 12
+      },
+      "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
+      "partitionPolicy": {
+        "allowedMLTrainingPartitions": [
+          "train"
+        ],
+        "heldoutMLPartitionsExcluded": true,
+        "referenceCorporaRequireExplicitPartitionKind": true
+      },
+      "qualityScoreSummaryByAgent": {
+        "cortex": {
+          "maximum": 0.847137,
+          "mean": 0.832951,
+          "minimum": 0.766562
+        },
+        "executor": {
+          "maximum": 0.831918,
+          "mean": 0.799451,
+          "minimum": 0.733437
+        },
+        "fleet": {
+          "maximum": 0.775887,
+          "mean": 0.76345,
+          "minimum": 0.760588
+        },
+        "mimicry": {
+          "maximum": 0.7565,
+          "mean": 0.72871,
+          "minimum": 0.720013
+        },
+        "mouth": {
+          "maximum": 0.897506,
+          "mean": 0.888918,
+          "minimum": 0.806221
+        },
+        "rem": {
+          "maximum": 0.95625,
+          "mean": 0.862474,
+          "minimum": 0.78375
+        }
+      },
+      "recordCount": 3280,
+      "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+      "schema": "lumen.public-adapter-corpus/1.1.0",
+      "selectionPolicyVersion": "2026-07-12.3",
+      "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
       "AmazonScience/massive": 500
@@ -27,9 +199,9 @@
     "sourceSplitCounts": {
       "AmazonScience/massive": {
         "train_dpo": 0,
-        "train_sft": 427,
+        "train_sft": 425,
         "val_dpo": 0,
-        "val_sft": 73
+        "val_sft": 75
       }
     },
     "tokenShares": {
@@ -38,16 +210,16 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.004967,
-        "total": 0.114333
+        "target": 0.000529,
+        "total": 0.017911
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.00466,
-        "total": 0.108874
+        "target": 0.000514,
+        "total": 0.0175
       }
     }
   },
@@ -62,15 +234,17 @@
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
-    "eval": 6,
-    "train_dpo": 3,
-    "train_sft": 1136,
+    "eval": 15,
+    "train_dpo": 7,
+    "train_sft": 4983,
     "val_dpo": 1,
-    "val_sft": 198
+    "val_sft": 879
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
+    "codebase_home_chunk_sft",
     "codebase_home_sft",
+    "fleet_orchestration_native",
     "fleet_system_prompts",
     "manifest_grounding_cards",
     "public_adapter_corpus_massive_en_us_1_1",
@@ -81,6 +255,9 @@
   "taskTypes": [
     "codebase_home_grounding",
     "codebase_home_overview",
+    "codebase_source_chunk_grounding",
+    "fleet_orchestration_event_graph",
+    "fleet_orchestration_event_graph_preference",
     "manifest_grounding_cards",
     "public_capability_delegation",
     "role_directory",

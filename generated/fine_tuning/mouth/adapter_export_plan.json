@@ -7,22 +7,47 @@
   "agent": "mouth",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+    "evaluation": {
+      "contamination": {
+        "contaminated": false,
+        "matchCount": 0,
+        "promotionRequiresZeroMatches": true,
+        "reportSHA256": "c83ae260ff16c7e9b6c2ba80caa9e2b31f1348459a3e01959a328a770c185f2c"
+      },
+      "executableDeclarativeMetrics": true,
+      "failClosedOnUnknownMetric": true,
+      "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
+      "recordCount": 8,
+      "schemaVersion": "lumen.adapter-eval/1.0.0"
+    },
+    "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+    "preferenceTraining": {
+      "includedInCheckpoint": false,
+      "recordCount": 33,
+      "requiredPhase": "post_sft_preference_training",
+      "status": "generated_not_trained"
+    },
     "recordCounts": {
       "eval": 8,
-      "train_dpo": 12,
-      "train_sft": 197,
-      "val_dpo": 2,
-      "val_sft": 31
+      "train_dpo": 28,
+      "train_sft": 238,
+      "val_dpo": 5,
+      "val_sft": 35
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_sft",
       "cross_model_training",
       "manifest_grounding_cards",
       "mouth_responses",
-      "public_adapter_corpus_oasst2_train"
+      "public_adapter_corpus_faithdial_train",
+      "public_adapter_corpus_oasst2_train",
+      "public_adapter_corpus_toolace_train"
     ],
     "taskTypes": [
+      "codebase_home_grounding",
+      "codebase_source_chunk_grounding",
       "fleet_delegation",
       "fleet_delegation_preference",
       "fleet_peer_knowledge",
@@ -33,6 +58,8 @@
       "manifest_grounding_cards",
       "mouth_responses",
       "public_grounded_response_finalization",
+      "public_grounded_response_preference",
+      "public_observation_grounded_final",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",
@@ -47,13 +74,41 @@
   "expectedArtifacts": {
     "adapterDirectory": "models/lora_qwen3_bootstrap/mouth",
     "adapterGGUF": "models/lora_qwen3_gguf/lumen-mouth-lora.gguf",
+    "contaminationReport": "contamination_report.json",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
+    "evaluationFingerprints": "evaluation_fingerprints.json",
+    "experimentManifest": "experiment_manifest.json",
+    "experimentRoot": "experiments",
     "trainDPO": "train_dpo.jsonl",
     "trainSFT": "train_sft.jsonl",
     "trainingConfig": "unsloth_config.json",
     "validationDPO": "val_dpo.jsonl",
-    "validationSFT": "val_sft.jsonl"
+    "validationSFT": "val_sft.jsonl",
+    "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
+    "variantPathTemplate": "experiments/{variant}"
+  },
+  "experimentPolicy": {
+    "experimentManifestSHA256": "d3a21162c608537aaf5fb94f127abeb4405c96de35b4f89748434743a9ab1754",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ],
+    "runtimePointerPolicy": "unchanged_until_promoted"
   },
   "exportPolicy": {
     "allowMergedExport": true,
@@ -72,7 +127,7 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels."

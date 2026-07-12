@@ -9,14 +9,14 @@
     "mimicry_style": 3,
     "mouth_responses": 53,
     "negative_samples": 53,
-    "public_adapter_corpus_cortex": 650,
-    "public_adapter_corpus_executor": 450,
+    "public_adapter_corpus_cortex": 662,
+    "public_adapter_corpus_executor": 462,
     "public_adapter_corpus_fleet": 500,
     "public_adapter_corpus_mimicry": 600,
-    "public_adapter_corpus_mouth": 50,
-    "public_adapter_corpus_rem": 500,
+    "public_adapter_corpus_mouth": 551,
+    "public_adapter_corpus_rem": 505,
     "rem_reflection": 5,
-    "runtime_audit_repairs": 3,
+    "runtime_audit_repairs": 0,
     "self_model_cards": 8,
     "self_model_eval": 24,
     "self_model_sft": 4,
@@ -30,13 +30,13 @@
     "dpo_preference_pairs": "fc8ba43a683659c1be618455896e91d9f858db2b06235572e59d86e1479b7dad",
     "eval_scenarios": "feed42e30cbaae0c1761bcaafcc25fa44b867c37c0ce32a3c83c760886acbaa1",
     "manifest_grounding_cards": "9ecf1928679851b3d8546abded0f1298766dde6176c1acd43999f413f4af9f58",
-    "public_adapter_corpus_cortex": "18bb85e3f30f0c31d4659fce7ac341b0f3182b1429725a5bcdc84ab8ad70c487",
-    "public_adapter_corpus_executor": "1220a6d4d120390e9ceda46cece69a0ca0a5eb943fee49a853f29c5f54b0e263",
-    "public_adapter_corpus_fleet": "760f2ea59a4207b6f5aa32b9329d3bee82f5175fa883e18727631439294a68d2",
-    "public_adapter_corpus_mimicry": "21ea12c7731cf3048e6036ef70fb6c3906b599e9a00dea67765f8c4fd331867f",
-    "public_adapter_corpus_mouth": "3b7714370f30fdfa5c50a98e5d9e3832ae6db8fca33a5b5960f6ff6a3fb3bc58",
-    "public_adapter_corpus_rem": "510894a99cd9b8290354c5dee09cd1cbd7dbc2fd6d313ae89bb8c38156233dfa",
-    "runtime_audit_repairs": "d1fcf8e8bd1c4c7d52337da021a37a816a18659c8764ab22c66b6628c829144f",
+    "public_adapter_corpus_cortex": "86ee1ada8c0d67b635d87e8d30af7992a6e2b4237316e7433325b3757f680e3c",
+    "public_adapter_corpus_executor": "47d124f1864939a8957edff50481c9fe527585c646de1327cc911f25199cda96",
+    "public_adapter_corpus_fleet": "7a63185df0f35561d32e32ca39b3abb4a28e618dbe62735c1749946eb917f331",
+    "public_adapter_corpus_mimicry": "71490ca3b23318f157ecc30ed1d2f1f93f1ea7f28ea8ee53badfe04fc5654e8a",
+    "public_adapter_corpus_mouth": "dfcff1bf473cbf20684b3f7691e4728c2ac57dc3ada44f7c2fcf2f2639003822",
+    "public_adapter_corpus_rem": "c5f904997d9bc9786b237d306abe60fbf682e3ee1105c8c16d118eab5406fa82",
+    "runtime_audit_repairs": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "self_model_cards": "d60a2a77913f30639e4b49e78bb28ea06379040208335db8262d6b82f736e6f7",
     "self_model_eval": "499bf7a5f7fc33c617d4029c087f9f32e9865ec48d0dffc571bcfac5f06355aa",
     "self_model_sft": "09b7b0f9d07b0103055b38c8636090f469ddf8ddcd37e162b3e47d5891c0850d",
@@ -55,18 +55,34 @@
   "sources": {
     "publicAdapterCorpus": {
       "countsByAgent": {
-        "cortex": 650,
-        "executor": 450,
+        "cortex": 662,
+        "executor": 462,
         "fleet": 500,
         "mimicry": 600,
-        "mouth": 50,
-        "rem": 500
+        "mouth": 551,
+        "rem": 505
       },
       "countsBySource": {
         "coedit-train": 900,
+        "faithdial-train": 500,
         "json-schema-test-suite-draft-2020-12": 200,
         "massive-en-us-1.1": 1600,
-        "oasst2-train": 50
+        "oasst2-train": 50,
+        "toolace-train": 30
+      },
+      "countsByTaskType": {
+        "public_capability_delegation": 500,
+        "public_grounded_response_finalization": 50,
+        "public_grounded_response_preference": 500,
+        "public_intent_routing": 650,
+        "public_manifest_tool_argument_extraction": 450,
+        "public_meaning_preserving_style_edit": 600,
+        "public_observation_grounded_final": 1,
+        "public_schema_failure_diagnosis": 200,
+        "public_text_repair": 300,
+        "public_tool_boundary_repair": 5,
+        "public_verified_tool_argument_extraction": 12,
+        "public_verified_tool_routing": 12
       },
       "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
       "partitionPolicy": {
@@ -76,11 +92,43 @@
         "heldoutMLPartitionsExcluded": true,
         "referenceCorporaRequireExplicitPartitionKind": true
       },
-      "recordCount": 2750,
-      "recordsSHA256": "33d29c0e61b98aa3d64dfc7128a77d42a6e716ccc059fafb2440553d5d841967",
-      "schema": "lumen.public-adapter-corpus/1.0.0",
-      "selectionPolicyVersion": "2026-07-12.2",
-      "sourceManifestSHA256": "9542c64976c308b0e016229acf3f92e5b6b925a37128753cdb6f7f4c9385f4ab"
+      "qualityScoreSummaryByAgent": {
+        "cortex": {
+          "maximum": 0.847137,
+          "mean": 0.832951,
+          "minimum": 0.766562
+        },
+        "executor": {
+          "maximum": 0.831918,
+          "mean": 0.799451,
+          "minimum": 0.733437
+        },
+        "fleet": {
+          "maximum": 0.775887,
+          "mean": 0.76345,
+          "minimum": 0.760588
+        },
+        "mimicry": {
+          "maximum": 0.7565,
+          "mean": 0.72871,
+          "minimum": 0.720013
+        },
+        "mouth": {
+          "maximum": 0.897506,
+          "mean": 0.888918,
+          "minimum": 0.806221
+        },
+        "rem": {
+          "maximum": 0.95625,
+          "mean": 0.862474,
+          "minimum": 0.78375
+        }
+      },
+      "recordCount": 3280,
+      "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+      "schema": "lumen.public-adapter-corpus/1.1.0",
+      "selectionPolicyVersion": "2026-07-12.3",
+      "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "rawDatasetFamilies": [
       "approval_boundary_samples",
@@ -97,11 +145,8 @@
       "public_adapter_corpus_rem",
       "rem_reflection"
     ],
-    "runtimeAuditFormats": [
-      "live-e2e-test-report-json",
-      "lumen_e2e_text_report"
-    ],
-    "runtimeAuditReports": 3,
+    "runtimeAuditFormats": [],
+    "runtimeAuditReports": 0,
     "staticSwiftSourceFiles": 13
   },
   "trainingPolicy": {

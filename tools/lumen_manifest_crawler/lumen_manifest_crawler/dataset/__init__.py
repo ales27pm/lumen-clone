@@ -140,6 +140,8 @@ def _augment_dataset_manifest_with_public_corpus(
         "recordsSHA256": snapshot.get("recordsSHA256"),
         "countsByAgent": snapshot.get("countsByAgent"),
         "countsBySource": snapshot.get("countsBySource"),
+        "countsByTaskType": snapshot.get("countsByTaskType"),
+        "qualityScoreSummaryByAgent": snapshot.get("qualityScoreSummaryByAgent"),
         "lumenContractSHA256": snapshot.get("lumenContractSHA256"),
         "partitionPolicy": snapshot.get("partitionPolicy"),
         "sourceManifestSHA256": snapshot.get("sourceManifestSHA256"),

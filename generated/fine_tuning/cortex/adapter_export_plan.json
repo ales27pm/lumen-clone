@@ -7,24 +7,47 @@
   "agent": "cortex",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+    "evaluation": {
+      "contamination": {
+        "contaminated": false,
+        "matchCount": 0,
+        "promotionRequiresZeroMatches": true,
+        "reportSHA256": "74c02ed58fc54e56b49591ca9405acfe7ad0ca2481c756c50e02ba0a2a47737b"
+      },
+      "executableDeclarativeMetrics": true,
+      "failClosedOnUnknownMetric": true,
+      "frozenEvaluationSHA256": "03e21e574b6143088c1b220e0c17828ee60d755270412b87c3c019db938fec57",
+      "recordCount": 558,
+      "schemaVersion": "lumen.adapter-eval/1.0.0"
+    },
+    "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+    "preferenceTraining": {
+      "includedInCheckpoint": false,
+      "recordCount": 16,
+      "requiredPhase": "post_sft_preference_training",
+      "status": "generated_not_trained"
+    },
     "recordCounts": {
       "eval": 558,
       "train_dpo": 14,
-      "train_sft": 10294,
+      "train_sft": 11091,
       "val_dpo": 2,
-      "val_sft": 1824
+      "val_sft": 1956
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
       "codebase_home_chunk_sft",
+      "codebase_home_sft",
       "cortex_codebase_self_awareness",
       "cortex_routing",
       "cross_model_training",
       "manifest_grounding_cards",
-      "public_adapter_corpus_massive_en_us_1_1"
+      "public_adapter_corpus_massive_en_us_1_1",
+      "public_adapter_corpus_toolace_train"
     ],
     "taskTypes": [
+      "codebase_home_grounding",
+      "codebase_home_overview",
       "codebase_self_awareness",
       "codebase_source_chunk_grounding",
       "cortex_routing",
@@ -39,6 +62,7 @@
       "manifest_grounding_cards",
       "module_ownership_grounding",
       "public_intent_routing",
+      "public_verified_tool_routing",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_symbol_grounding",
@@ -52,13 +76,41 @@
   "expectedArtifacts": {
     "adapterDirectory": "models/lora_qwen3_bootstrap/cortex",
     "adapterGGUF": "models/lora_qwen3_gguf/lumen-cortex-lora.gguf",
+    "contaminationReport": "contamination_report.json",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
+    "evaluationFingerprints": "evaluation_fingerprints.json",
+    "experimentManifest": "experiment_manifest.json",
+    "experimentRoot": "experiments",
     "trainDPO": "train_dpo.jsonl",
     "trainSFT": "train_sft.jsonl",
     "trainingConfig": "unsloth_config.json",
     "validationDPO": "val_dpo.jsonl",
-    "validationSFT": "val_sft.jsonl"
+    "validationSFT": "val_sft.jsonl",
+    "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
+    "variantPathTemplate": "experiments/{variant}"
+  },
+  "experimentPolicy": {
+    "experimentManifestSHA256": "2d14996841f5acfa07ef93ea9fad572eb366d0cf4c71984e06eae4f6e7a362e8",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ],
+    "runtimePointerPolicy": "unchanged_until_promoted"
   },
   "exportPolicy": {
     "allowMergedExport": true,
@@ -77,7 +129,7 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map."

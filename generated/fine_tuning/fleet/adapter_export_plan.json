@@ -7,17 +7,38 @@
   "agent": "fleet",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+    "evaluation": {
+      "contamination": {
+        "contaminated": false,
+        "matchCount": 0,
+        "promotionRequiresZeroMatches": true,
+        "reportSHA256": "acaac3d0529ff9fe362d54c187516c350f525249478270f17d3ebee48b384342"
+      },
+      "executableDeclarativeMetrics": true,
+      "failClosedOnUnknownMetric": true,
+      "frozenEvaluationSHA256": "8fbc7129dea37f4f9bb4777336e2f9e65afe68fb63bf633dab78f3090ff0b26d",
+      "recordCount": 15,
+      "schemaVersion": "lumen.adapter-eval/1.0.0"
+    },
+    "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+    "preferenceTraining": {
+      "includedInCheckpoint": false,
+      "recordCount": 8,
+      "requiredPhase": "post_sft_preference_training",
+      "status": "generated_not_trained"
+    },
     "recordCounts": {
-      "eval": 6,
-      "train_dpo": 3,
-      "train_sft": 1136,
+      "eval": 15,
+      "train_dpo": 7,
+      "train_sft": 4983,
       "val_dpo": 1,
-      "val_sft": 198
+      "val_sft": 879
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
       "codebase_home_sft",
+      "fleet_orchestration_native",
       "fleet_system_prompts",
       "manifest_grounding_cards",
       "public_adapter_corpus_massive_en_us_1_1",
@@ -27,6 +48,9 @@
     "taskTypes": [
       "codebase_home_grounding",
       "codebase_home_overview",
+      "codebase_source_chunk_grounding",
+      "fleet_orchestration_event_graph",
+      "fleet_orchestration_event_graph_preference",
       "manifest_grounding_cards",
       "public_capability_delegation",
       "role_directory",
@@ -40,13 +64,41 @@
   "expectedArtifacts": {
     "adapterDirectory": "models/lora_qwen3_bootstrap/fleet",
     "adapterGGUF": "models/lora_qwen3_gguf/lumen-fleet-lora.gguf",
+    "contaminationReport": "contamination_report.json",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
+    "evaluationFingerprints": "evaluation_fingerprints.json",
+    "experimentManifest": "experiment_manifest.json",
+    "experimentRoot": "experiments",
     "trainDPO": "train_dpo.jsonl",
     "trainSFT": "train_sft.jsonl",
     "trainingConfig": "unsloth_config.json",
     "validationDPO": "val_dpo.jsonl",
-    "validationSFT": "val_sft.jsonl"
+    "validationSFT": "val_sft.jsonl",
+    "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
+    "variantPathTemplate": "experiments/{variant}"
+  },
+  "experimentPolicy": {
+    "experimentManifestSHA256": "9761ba0e99a2f2d8eb494921075ec2a96cdd2b79e7dee0f64f61c2cf4967cda9",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ],
+    "runtimePointerPolicy": "unchanged_until_promoted"
   },
   "exportPolicy": {
     "allowMergedExport": true,
@@ -65,7 +117,7 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."

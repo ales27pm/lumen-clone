@@ -1,0 +1,107 @@
+{
+  "bundleSHA256": "e59d7bbb4822b576775a77d65fb8e835ae2cfc8596aeee443c302afe08e4cbe7",
+  "hashOnly": true,
+  "purpose": "evaluation_only_contamination_fingerprints",
+  "records": [
+    {
+      "normalizedTextSHA256": "864d4416a173ec117222b5b8e14f7ef85aecb6d425f48536c849e0647b7c5718",
+      "recordID": "record-11f4dea18fa6fbce5588289b",
+      "segments": [
+        {
+          "sha256": "864d4416a173ec117222b5b8e14f7ef85aecb6d425f48536c849e0647b7c5718",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "98142f0f0990d9487c2b5b69b16803ea90731d06c8787d8b14386dac7035840c",
+      "recordID": "record-38e7a05a59f82ae1bf0f3fa7",
+      "segments": [
+        {
+          "sha256": "98142f0f0990d9487c2b5b69b16803ea90731d06c8787d8b14386dac7035840c",
+          "shingles": [
+            "01406972993789b2fd124530fbe78c9a9527af77874b4cf83ff94d54fc5a2c46",
+            "101b0c45bea8c93be92283cd1e110ab4296941578cd5b47e611fb6596c14d72a",
+            "151f6d27f1bc5775f034bba137702f63f3f81d675e9d9dc577cdfcb9899ed6d2",
+            "5a516fc07c489b808344229cbc3b7323f4c542c8d82621b4cc71e27ccef4269a",
+            "6e169eaecc5d20a00c380b88ab2f9a2673148b82acf7d768fe68bb8005969c56",
+            "8ac8eb1f23ea6c8dd79008c473703be01a98663b219dabfdd94e81fff0de0cd0",
+            "bed4afd00b19a30063cb8e0ac9d1e80ca2b1dabf8189b43ff9a6ea722aff6810",
+            "cb748f8c6d3927974fb4837cfe63abe06c09f59f7492177c16282f0f017726eb",
+            "e6aa56376f395b05c1904ba234c322e89f2008e4224cd0c843f6e2c28183ff3b"
+          ]
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "db36ade7fdd32ead37158ce36f6fd2bf360ba9ad48a570b2ebe5ff6ce870cdcd",
+      "recordID": "record-6b298b1448d17a061eaadf83",
+      "segments": [
+        {
+          "sha256": "db36ade7fdd32ead37158ce36f6fd2bf360ba9ad48a570b2ebe5ff6ce870cdcd",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "f6ddbb30ceb34d3d4048c5f17a70918cb67c315346284504fead910f16a1e40b",
+      "recordID": "record-72d000808173c9f47d44db0c",
+      "segments": [
+        {
+          "sha256": "f6ddbb30ceb34d3d4048c5f17a70918cb67c315346284504fead910f16a1e40b",
+          "shingles": [
+            "0511cd7962d98828b7e848bc05341fc2ecb4d406ade7262d4a24f09ebf4edf55",
+            "ae84851c733b255b949fb3f28a5d4275dedfdb05116d81335a7b32adeea2c5d3"
+          ]
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "67a0db8166afdfa7936620896c24f31433fb18005a7dbe4c21ce09bc3ce70095",
+      "recordID": "record-992de55409c4465f487a1fd3",
+      "segments": [
+        {
+          "sha256": "67a0db8166afdfa7936620896c24f31433fb18005a7dbe4c21ce09bc3ce70095",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "5c3d607acf26615682f8a1e5d388c0764d96e4ef271a5a0d83990529c88982a1",
+      "recordID": "record-a3c4e3a1b17aba76b29dd900",
+      "segments": [
+        {
+          "sha256": "5c3d607acf26615682f8a1e5d388c0764d96e4ef271a5a0d83990529c88982a1",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "fa51510512408446326f2f5727d7988ae08ccc8e16b8a50c8ac23a27757e993b",
+      "recordID": "record-b67b98a69b5cad5284b80ab1",
+      "segments": [
+        {
+          "sha256": "fa51510512408446326f2f5727d7988ae08ccc8e16b8a50c8ac23a27757e993b",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "271b1b5015d89ed21cfc6c3044d1a598acd2d0e0832d9d2f03fd61b7c83362bd",
+      "recordID": "record-de0b8e86de6a58a8b9595b3b",
+      "segments": [
+        {
+          "sha256": "271b1b5015d89ed21cfc6c3044d1a598acd2d0e0832d9d2f03fd61b7c83362bd",
+          "shingles": [
+            "2e44b12ab56f085a9f5f275f9c65fed4f98039c2fd239726b5976ee2dc94393b",
+            "67adcadc4cfceab54dd586811596c76eb1ccc9e6cbeecebda11917cc5206b7e2",
+            "7f66f296838ed086881ba74635fbd19d5f1ca48acc34cd75214f26c8e41c1d84",
+            "bcb7088b5973ce9ff52c3da493e120b2e57323b6a7b7377e20196bc5cfb3d076"
+          ]
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "lumen.adapter-contamination/1.0.0",
+  "shingleSize": 13
+}

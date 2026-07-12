@@ -5,18 +5,34 @@
     "MIT"
   ],
   "countsByAgent": {
-    "cortex": 650,
-    "executor": 450,
+    "cortex": 662,
+    "executor": 462,
     "fleet": 500,
     "mimicry": 600,
-    "mouth": 50,
-    "rem": 500
+    "mouth": 551,
+    "rem": 505
   },
   "countsBySource": {
     "coedit-train": 900,
+    "faithdial-train": 500,
     "json-schema-test-suite-draft-2020-12": 200,
     "massive-en-us-1.1": 1600,
-    "oasst2-train": 50
+    "oasst2-train": 50,
+    "toolace-train": 30
+  },
+  "countsByTaskType": {
+    "public_capability_delegation": 500,
+    "public_grounded_response_finalization": 50,
+    "public_grounded_response_preference": 500,
+    "public_intent_routing": 650,
+    "public_manifest_tool_argument_extraction": 450,
+    "public_meaning_preserving_style_edit": 600,
+    "public_observation_grounded_final": 1,
+    "public_schema_failure_diagnosis": 200,
+    "public_text_repair": 300,
+    "public_tool_boundary_repair": 5,
+    "public_verified_tool_argument_extraction": 12,
+    "public_verified_tool_routing": 12
   },
   "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
   "partitionPolicy": {
@@ -31,14 +47,48 @@
     "rawOpenAssistantIdentifiersPersisted": false,
     "rawSourceArtifactsIncluded": false
   },
-  "recordCount": 2750,
+  "qualityScoreSummaryByAgent": {
+    "cortex": {
+      "maximum": 0.847137,
+      "mean": 0.832951,
+      "minimum": 0.766562
+    },
+    "executor": {
+      "maximum": 0.831918,
+      "mean": 0.799451,
+      "minimum": 0.733437
+    },
+    "fleet": {
+      "maximum": 0.775887,
+      "mean": 0.76345,
+      "minimum": 0.760588
+    },
+    "mimicry": {
+      "maximum": 0.7565,
+      "mean": 0.72871,
+      "minimum": 0.720013
+    },
+    "mouth": {
+      "maximum": 0.897506,
+      "mean": 0.888918,
+      "minimum": 0.806221
+    },
+    "rem": {
+      "maximum": 0.95625,
+      "mean": 0.862474,
+      "minimum": 0.78375
+    }
+  },
+  "recordCount": 3280,
   "recordsFile": "records.jsonl",
-  "recordsSHA256": "33d29c0e61b98aa3d64dfc7128a77d42a6e716ccc059fafb2440553d5d841967",
-  "schema": "lumen.public-adapter-corpus/1.0.0",
-  "selectionPolicyVersion": "2026-07-12.2",
-  "sourceManifestSHA256": "9542c64976c308b0e016229acf3f92e5b6b925a37128753cdb6f7f4c9385f4ab",
+  "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+  "schema": "lumen.public-adapter-corpus/1.1.0",
+  "selectionPolicyVersion": "2026-07-12.3",
+  "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa",
+  "sourceManifestSchema": "lumen.public-adapter-corpus-sources/1.1.0",
   "sources": [
     {
+      "accessMode": "public_https",
       "adapterCaps": {
         "cortex": 650,
         "executor": 450,
@@ -55,12 +105,21 @@
       "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
       "locale": "en-US",
       "partitionKind": "ml_split",
+      "qualityProfile": "human_intent_annotations",
+      "redistributionMode": "transformed_records_only",
       "revision": "ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740",
       "sourcePartition": "train",
       "sourceURL": "https://huggingface.co/datasets/AmazonScience/massive/tree/ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740",
+      "targetAdapters": [
+        "cortex",
+        "executor",
+        "fleet"
+      ],
+      "transformer": "massive_v1",
       "upstreamVersion": "1.1"
     },
     {
+      "accessMode": "public_https",
       "adapterCaps": {
         "mouth": 50
       },
@@ -78,12 +137,19 @@
       "license": "Apache-2.0",
       "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
       "partitionKind": "ml_split",
+      "qualityProfile": "human_dialogue_grounding",
+      "redistributionMode": "transformed_records_only",
       "revision": "179dd21fc55192153d94adb0e0ce8f69e222bf75",
       "sourcePartition": "train",
       "sourceURL": "https://huggingface.co/datasets/OpenAssistant/oasst2/tree/179dd21fc55192153d94adb0e0ce8f69e222bf75",
+      "targetAdapters": [
+        "mouth"
+      ],
+      "transformer": "oasst2_v2",
       "upstreamVersion": "2"
     },
     {
+      "accessMode": "public_https",
       "adapterCaps": {
         "mimicry": 600,
         "rem": 300
@@ -98,12 +164,20 @@
       "license": "Apache-2.0",
       "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
       "partitionKind": "ml_split",
+      "qualityProfile": "human_meaning_preserving_edits",
+      "redistributionMode": "transformed_records_only",
       "revision": "e9a255c33ef910bc33a9d2b522653fa87521583e",
       "sourcePartition": "train",
       "sourceURL": "https://huggingface.co/datasets/grammarly/coedit/tree/e9a255c33ef910bc33a9d2b522653fa87521583e",
+      "targetAdapters": [
+        "mimicry",
+        "rem"
+      ],
+      "transformer": "coedit_v1",
       "upstreamVersion": "pinned-revision"
     },
     {
+      "accessMode": "public_https",
       "adapterCaps": {
         "rem": 200
       },
@@ -117,6 +191,8 @@
       "license": "MIT",
       "licenseURL": "https://github.com/json-schema-org/JSON-Schema-Test-Suite/blob/92acb61eb772a932c077d5ffa634ded719d2d738/LICENSE",
       "partitionKind": "reference_corpus",
+      "qualityProfile": "standards_conformance_cases",
+      "redistributionMode": "transformed_records_only",
       "revision": "92acb61eb772a932c077d5ffa634ded719d2d738",
       "selectedFiles": [
         "additionalProperties.json",
@@ -144,7 +220,69 @@
       ],
       "sourcePartition": "draft2020-12",
       "sourceURL": "https://github.com/json-schema-org/JSON-Schema-Test-Suite/tree/92acb61eb772a932c077d5ffa634ded719d2d738/tests/draft2020-12",
+      "targetAdapters": [
+        "rem"
+      ],
+      "transformer": "json_schema_tests_v1",
       "upstreamVersion": "draft2020-12"
+    },
+    {
+      "accessMode": "public_https",
+      "adapterCaps": {
+        "cortex": 150,
+        "executor": 150,
+        "mouth": 100,
+        "rem": 150
+      },
+      "artifactFormat": "json",
+      "artifactPath": "data.json",
+      "artifactSHA256": "ba12c083fca7e8da48c67ad5b895e495447da7c66e39a2e19742c082e6cb537e",
+      "artifactURL": "https://huggingface.co/datasets/Team-ACE/ToolACE/resolve/6bda777c88d21e5a204703c1ee45597a8fa4f734/data.json",
+      "attribution": "ToolACE by the ToolACE authors and contributors.",
+      "datasetID": "Team-ACE/ToolACE",
+      "id": "toolace-train",
+      "license": "Apache-2.0",
+      "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
+      "partitionKind": "ml_split",
+      "qualityProfile": "verified_synthetic_tool_use",
+      "redistributionMode": "transformed_records_only",
+      "revision": "6bda777c88d21e5a204703c1ee45597a8fa4f734",
+      "sourcePartition": "train",
+      "sourceURL": "https://huggingface.co/datasets/Team-ACE/ToolACE/tree/6bda777c88d21e5a204703c1ee45597a8fa4f734",
+      "targetAdapters": [
+        "cortex",
+        "executor",
+        "mouth",
+        "rem"
+      ],
+      "transformer": "toolace_v1",
+      "upstreamVersion": "pinned-revision"
+    },
+    {
+      "accessMode": "public_https",
+      "adapterCaps": {
+        "mouth": 500
+      },
+      "artifactFormat": "json",
+      "artifactPath": "data/train.json",
+      "artifactSHA256": "51eff8212d804b1954b7eefa8987265750f0412b0b18b534ed2dbe636e524512",
+      "artifactURL": "https://huggingface.co/datasets/McGill-NLP/FaithDial/resolve/7a414e80725eac766f2602676dc8b39f80b061e4/data/train.json",
+      "attribution": "FaithDial by the FaithDial authors and contributors.",
+      "datasetID": "McGill-NLP/FaithDial",
+      "id": "faithdial-train",
+      "license": "MIT",
+      "licenseURL": "https://opensource.org/license/mit",
+      "partitionKind": "ml_split",
+      "qualityProfile": "human_dialogue_grounding",
+      "redistributionMode": "transformed_records_only",
+      "revision": "7a414e80725eac766f2602676dc8b39f80b061e4",
+      "sourcePartition": "train",
+      "sourceURL": "https://huggingface.co/datasets/McGill-NLP/FaithDial/tree/7a414e80725eac766f2602676dc8b39f80b061e4",
+      "targetAdapters": [
+        "mouth"
+      ],
+      "transformer": "faithdial_v1",
+      "upstreamVersion": "pinned-revision"
     }
   ]
 }

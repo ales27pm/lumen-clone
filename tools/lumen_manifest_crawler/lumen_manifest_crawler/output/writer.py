@@ -12,7 +12,11 @@ from lumen_manifest_crawler.dataset.adapter_export import (
     agent_adapter_export_plan,
     augment_unsloth_config_for_adapter_export,
 )
+from lumen_manifest_crawler.dataset.adapter_evaluation import build_evaluation_fingerprint_bundle
 from lumen_manifest_crawler.dataset.fine_tuning import AgentFineTuningDataset
+from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
+    build_public_adapter_eval_fingerprint_bundle,
+)
 from lumen_manifest_crawler.output.hashing import sha256_file
 
 
@@ -94,7 +98,11 @@ def write_outputs(
     for name, records in datasets.items():
         if name == "dataset_manifest" or name in CANONICAL_DATASET_ALIASES:
             continue
-        with (dataset_dir / f"{name}.jsonl").open("w", encoding="utf-8") as handle:
+        path = dataset_dir / f"{name}.jsonl"
+        if not records:
+            path.unlink(missing_ok=True)
+            continue
+        with path.open("w", encoding="utf-8") as handle:
             for record in records:
                 handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
     self_model_cards = datasets.get("self_model_cards", [])
@@ -119,6 +127,7 @@ def _write_fleet_artifacts(output_dir: Path, artifacts: FleetArtifacts, cross_mo
     target_dir = cross_model_train_dir or (output_dir / "cross_model_training")
     target_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(target_dir / "cross_model_training.jsonl", artifacts.cross_model_training)
+    _write_jsonl(target_dir / "orchestration_evals.jsonl", artifacts.orchestration_evals)
     split_records = _split_cross_model_records(artifacts.cross_model_training)
     for filename, records in split_records.items():
         _write_jsonl(target_dir / filename, records)
@@ -400,6 +409,16 @@ def _write_fine_tuning_outputs(root: Path, datasets: dict[str, AgentFineTuningDa
         json.dumps(adapter_runtime_manifest(datasets), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (root / "public_evaluation_fingerprints.json").write_text(
+        json.dumps(
+            build_public_adapter_eval_fingerprint_bundle(),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     for agent, dataset in sorted(datasets.items()):
         d = root / agent
         d.mkdir(parents=True, exist_ok=True)
@@ -412,6 +431,40 @@ def _write_fine_tuning_outputs(root: Path, datasets: dict[str, AgentFineTuningDa
             json.dumps(dataset.dataset_card, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        (d / "evaluation_fingerprints.json").write_text(
+            json.dumps(
+                build_evaluation_fingerprint_bundle(dataset.eval),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (d / "contamination_report.json").write_text(
+            json.dumps(dataset.contamination_report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (d / "experiment_manifest.json").write_text(
+            json.dumps(dataset.experiment_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        experiments_root = d / "experiments"
+        for variant, artifacts in sorted(dataset.experiment_variants.items()):
+            variant_root = experiments_root / variant
+            variant_root.mkdir(parents=True, exist_ok=True)
+            _write_jsonl(variant_root / "train_sft.jsonl", artifacts["train_sft"])
+            _write_jsonl(variant_root / "val_sft.jsonl", artifacts["val_sft"])
+            _write_jsonl(variant_root / "train_dpo.jsonl", artifacts["train_dpo"])
+            _write_jsonl(variant_root / "val_dpo.jsonl", artifacts["val_dpo"])
+            (variant_root / "contamination_report.json").write_text(
+                json.dumps(artifacts["contamination_report"], ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (variant_root / "variant_manifest.json").write_text(
+                json.dumps(artifacts["variant_manifest"], ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
         adapter_first_config = augment_unsloth_config_for_adapter_export(agent, dataset.unsloth_config)
         (d / "unsloth_config.json").write_text(
             json.dumps(adapter_first_config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
