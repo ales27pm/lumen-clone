@@ -801,6 +801,60 @@ struct AgentGroundingRegressionTests {
         #expect(failure.actual == "recentTraces is empty")
     }
 
+    @Test func liveE2EExportDoesNotRequireRuntimeEvidenceForStaticResults() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let result = E2ETestResult(
+            id: UUID(),
+            scenarioID: "static-routing-result",
+            title: "Static routing result",
+            prompt: "Classify this request.",
+            expectedIntent: "chat",
+            actualIntent: "chat",
+            requiresAgentRun: false,
+            passed: true,
+            failures: [],
+            finalText: "",
+            missingHints: [],
+            rewriteAttempted: false,
+            rewriteSuccess: false,
+            events: [],
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            rawFinalPrefix: "",
+            sanitizedFinalPrefix: "",
+            rawFinalHadUnsafeLeakage: false,
+            sanitizedFinalRemovedArtifacts: [],
+            outputHygieneFailures: []
+        )
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            passed: 1,
+            failed: 0,
+            results: [result]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 0
+        )
+
+        let exportedResult = try #require(package.liveE2EReport?.payload.results.first)
+        #expect(exportedResult.requiresAgentRun == false)
+        #expect(exportedResult.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue)
+        #expect(package.exportQualityFailures?.contains(where: {
+            $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
+        }) != true)
+    }
+
     @Test func liveE2EExportCountsModelBackedAndCompatibilityTracesSeparately() throws {
         AgentBehaviorTraceRecorder.clear()
         defer { AgentBehaviorTraceRecorder.clear() }

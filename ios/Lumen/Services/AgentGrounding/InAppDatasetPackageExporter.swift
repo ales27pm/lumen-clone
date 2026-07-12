@@ -653,7 +653,8 @@ nonisolated enum InAppDatasetPackageExporter {
         correlationContext: ExportCorrelationContext
     ) -> InAppDatasetExportQualityFailure? {
         let evidenceRequired = liveE2EReport.results.filter {
-            $0.evidenceMode != E2EEvidenceMode.routingOnly.rawValue
+            $0.requiresAgentRun
+                && $0.evidenceMode != E2EEvidenceMode.routingOnly.rawValue
         }
         let missing = evidenceRequired.filter { result in
             let correlated = traces.filter { correlationContext.traceResultIDs[$0.id] == result.id }
