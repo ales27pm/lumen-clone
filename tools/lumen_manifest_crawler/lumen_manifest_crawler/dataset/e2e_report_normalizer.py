@@ -907,13 +907,13 @@ def _trace_intent_requires_tool(trace: dict[str, Any]) -> bool:
 
 
 def _trace_positive_int(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
+    if type(value) is int:
+        return value if value > 0 else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if re.fullmatch(r"[1-9]\d*", stripped):
+            return int(stripped)
+    return None
 
 
 def _trace_summary(trace: dict[str, Any], *, matched_by: str, raw_output_empty: bool) -> dict[str, Any]:

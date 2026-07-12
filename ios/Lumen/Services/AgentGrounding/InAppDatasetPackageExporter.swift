@@ -151,6 +151,7 @@ nonisolated enum InAppDatasetPackageExporter {
         let key: SymmetricKey
         let resultTokens: [UUID: String]
         let traceTokens: [UUID: String]
+        let traceResultIDs: [UUID: UUID]
     }
 
     static let schemaVersion = "2.0.0"
@@ -168,21 +169,36 @@ nonisolated enum InAppDatasetPackageExporter {
     ) -> ExportCorrelationContext {
         let key = SymmetricKey(size: .bits256)
         guard let report else {
-            return ExportCorrelationContext(key: key, resultTokens: [:], traceTokens: [:])
+            return ExportCorrelationContext(key: key, resultTokens: [:], traceTokens: [:], traceResultIDs: [:])
+        }
+
+        var traceResultIDs: [UUID: UUID] = [:]
+        for trace in traces {
+            let matchingResults = report.results.filter { traceMatches(result: $0, trace: trace) }
+            // A subset of identifiers can match multiple results; ambiguous traces prove neither run.
+            guard matchingResults.count == 1, let result = matchingResults.first else { continue }
+            traceResultIDs[trace.id] = result.id
         }
 
         var resultTokens: [UUID: String] = [:]
         var traceTokens: [UUID: String] = [:]
         for result in report.results {
-            let matchingTraces = traces.filter { traceMatches(result: result, trace: $0) }
-            guard !matchingTraces.isEmpty else { continue }
+            let matchingTraceIDs = traceResultIDs.compactMap { traceID, resultID in
+                resultID == result.id ? traceID : nil
+            }
+            guard !matchingTraceIDs.isEmpty else { continue }
             let token = opaqueCorrelationToken(for: result, key: key)
             resultTokens[result.id] = token
-            for trace in matchingTraces {
-                traceTokens[trace.id] = token
+            for traceID in matchingTraceIDs {
+                traceTokens[traceID] = token
             }
         }
-        return ExportCorrelationContext(key: key, resultTokens: resultTokens, traceTokens: traceTokens)
+        return ExportCorrelationContext(
+            key: key,
+            resultTokens: resultTokens,
+            traceTokens: traceTokens,
+            traceResultIDs: traceResultIDs
+        )
     }
 
     private static func opaqueCorrelationToken(for result: E2ETestResult, key: SymmetricKey) -> String {
@@ -320,7 +336,8 @@ nonisolated enum InAppDatasetPackageExporter {
             from: exportedTraces,
             liveE2EReport: liveReportExport,
             rawLiveE2EReport: liveE2EReport,
-            rawTraces: traces
+            rawTraces: traces,
+            correlationContext: correlationContext
         )
         let improveLoop = ImproveLoopSampleGate.buildDataset(
             behaviorAudit: exportedBehaviorAudit,
@@ -395,10 +412,22 @@ nonisolated enum InAppDatasetPackageExporter {
                 ]
             ),
             payload: redactedLiveE2EReport(report, correlationContext: correlationContext),
-            correlatedTraceCount: correlatedTraceCount(report: report, traces: traces),
-            modelBackedCorrelatedTraceCount: modelBackedCorrelatedTraceCount(report: report, traces: traces),
-            modelBackedCorrelatedScenarioCount: modelBackedCorrelatedScenarioCount(report: report, traces: traces),
-            deterministicCompatibilityTraceCount: deterministicCompatibilityTraceCount(report: report, traces: traces),
+            correlatedTraceCount: correlatedTraceCount(correlationContext: correlationContext),
+            modelBackedCorrelatedTraceCount: modelBackedCorrelatedTraceCount(
+                report: report,
+                traces: traces,
+                correlationContext: correlationContext
+            ),
+            modelBackedCorrelatedScenarioCount: modelBackedCorrelatedScenarioCount(
+                report: report,
+                traces: traces,
+                correlationContext: correlationContext
+            ),
+            deterministicCompatibilityTraceCount: deterministicCompatibilityTraceCount(
+                report: report,
+                traces: traces,
+                correlationContext: correlationContext
+            ),
             traceSidecarField: "recentTraces"
         )
     }
@@ -428,31 +457,34 @@ nonisolated enum InAppDatasetPackageExporter {
         )
     }
 
-    private static func correlatedTraceCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
+    private static func correlatedTraceCount(correlationContext: ExportCorrelationContext) -> Int {
+        correlationContext.traceResultIDs.count
+    }
+
+    private static func modelBackedCorrelatedTraceCount(
+        report: E2ETestReport,
+        traces: [AgentBehaviorTrace],
+        correlationContext: ExportCorrelationContext
+    ) -> Int {
         traces.reduce(into: 0) { count, trace in
-            guard report.results.contains(where: { result in
-                traceMatches(result: result, trace: trace)
-            }) else { return }
+            guard let resultID = correlationContext.traceResultIDs[trace.id],
+                  report.results.contains(where: { $0.id == resultID && $0.requiresAgentRun }),
+                  isModelBackedLiveEvidenceTrace(trace) else { return }
             count += 1
         }
     }
 
-    private static func modelBackedCorrelatedTraceCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
-        traces.reduce(into: 0) { count, trace in
-            guard isModelBackedLiveEvidenceTrace(trace),
-                  report.results.contains(where: { result in
-                      result.requiresAgentRun && traceMatches(result: result, trace: trace)
-                  }) else { return }
-            count += 1
-        }
-    }
-
-    private static func modelBackedCorrelatedScenarioCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
+    private static func modelBackedCorrelatedScenarioCount(
+        report: E2ETestReport,
+        traces: [AgentBehaviorTrace],
+        correlationContext: ExportCorrelationContext
+    ) -> Int {
         report.results.reduce(into: 0) { count, result in
             guard result.requiresAgentRun,
                   result.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue,
                   traces.contains(where: { trace in
-                      isModelBackedLiveEvidenceTrace(trace) && traceMatches(result: result, trace: trace)
+                      isModelBackedLiveEvidenceTrace(trace)
+                          && correlationContext.traceResultIDs[trace.id] == result.id
                   }) else {
                 return
             }
@@ -460,12 +492,15 @@ nonisolated enum InAppDatasetPackageExporter {
         }
     }
 
-    private static func deterministicCompatibilityTraceCount(report: E2ETestReport, traces: [AgentBehaviorTrace]) -> Int {
+    private static func deterministicCompatibilityTraceCount(
+        report: E2ETestReport,
+        traces: [AgentBehaviorTrace],
+        correlationContext: ExportCorrelationContext
+    ) -> Int {
         traces.reduce(into: 0) { count, trace in
-            guard trace.runtimePath == "deterministic-compatibility",
-                  report.results.contains(where: { result in
-                      result.requiresAgentRun && traceMatches(result: result, trace: trace)
-                  }) else { return }
+            guard let resultID = correlationContext.traceResultIDs[trace.id],
+                  report.results.contains(where: { $0.id == resultID && $0.requiresAgentRun }),
+                  trace.runtimePath == "deterministic-compatibility" else { return }
             count += 1
         }
     }
@@ -539,7 +574,8 @@ nonisolated enum InAppDatasetPackageExporter {
         from traces: [InAppDatasetTraceExport],
         liveE2EReport: InAppDatasetLiveE2EReportExport?,
         rawLiveE2EReport: E2ETestReport?,
-        rawTraces: [AgentBehaviorTrace]
+        rawTraces: [AgentBehaviorTrace],
+        correlationContext: ExportCorrelationContext
     ) -> [InAppDatasetExportQualityFailure] {
         var failures: [InAppDatasetExportQualityFailure] = []
         if traces.isEmpty {
@@ -559,7 +595,8 @@ nonisolated enum InAppDatasetPackageExporter {
            let failure = liveE2EModelBackedTraceGapFailure(
             rawLiveE2EReport,
             traces: rawTraces,
-            exportSummary: liveE2EReport
+            exportSummary: liveE2EReport,
+            correlationContext: correlationContext
            ) {
             failures.append(failure)
         }
@@ -612,13 +649,14 @@ nonisolated enum InAppDatasetPackageExporter {
     private static func liveE2EModelBackedTraceGapFailure(
         _ liveE2EReport: E2ETestReport,
         traces: [AgentBehaviorTrace],
-        exportSummary: InAppDatasetLiveE2EReportExport
+        exportSummary: InAppDatasetLiveE2EReportExport,
+        correlationContext: ExportCorrelationContext
     ) -> InAppDatasetExportQualityFailure? {
         let evidenceRequired = liveE2EReport.results.filter {
             $0.evidenceMode != E2EEvidenceMode.routingOnly.rawValue
         }
         let missing = evidenceRequired.filter { result in
-            let correlated = traces.filter { traceMatches(result: result, trace: $0) }
+            let correlated = traces.filter { correlationContext.traceResultIDs[$0.id] == result.id }
             if result.evidenceMode == E2EEvidenceMode.policyFirstAllowed.rawValue {
                 return !correlated.contains(where: { isModelBackedLiveEvidenceTrace($0) || isDeterministicCompatibilityEvidenceTrace($0) })
             }

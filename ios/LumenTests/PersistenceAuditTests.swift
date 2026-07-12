@@ -172,6 +172,48 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testRAGFileEmbeddingFailureFlushesCurrentPendingBatch() async throws {
+        struct EmbeddingFailure: Error {}
+
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-partial-\(UUID().uuidString).txt")
+        try String(repeating: "a", count: RAGStore.chunkSize + 1).write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+
+        var embeddingCallCount = 0
+        let result = await RAGStore.indexFileWithDiagnostics(
+            url: fileURL,
+            context: context,
+            embed: { _ in
+                embeddingCallCount += 1
+                guard embeddingCallCount == 1 else { throw EmbeddingFailure() }
+                return EmbeddingRuntimeResult(vector: [0.1, 0.2], modelIdentifier: "llama:sha256:model-a")
+            },
+            save: { context, _, _ in try context.save() }
+        )
+
+        XCTAssertEqual(embeddingCallCount, 2)
+        XCTAssertEqual(result.indexedCount, 1)
+        XCTAssertEqual(result.mode, .partial)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("embedding_failed:") == true)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).count, 1)
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
     func testRAGStorePersistAndAppendVectorsReloadsAfterMetadataRejection() throws {
         let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)

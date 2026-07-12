@@ -2646,7 +2646,8 @@ struct E2ETestRunnerHygieneTests {
             intent: String = "weather",
             successfulObservationCount: Int? = nil,
             finalizerAccepted: Bool? = true,
-            finalChunkReceived: Bool? = true
+            finalChunkReceived: Bool? = true,
+            rawOutputPrefix: String? = nil
         ) -> AgentBehaviorTrace {
             AgentBehaviorTrace(
                 id: UUID(),
@@ -2656,9 +2657,9 @@ struct E2ETestRunnerHygieneTests {
                 stage: "agent-json-step-0",
                 intent: intent,
                 promptPrefix: "weather",
-                rawOutputPrefix: emittedFinal
+                rawOutputPrefix: rawOutputPrefix ?? (emittedFinal
                     ? #"{"final":"It is clear."}"#
-                    : #"{"action":{"tool":"weather","args":{}}}"#,
+                    : #"{"action":{"tool":"weather","args":{}}}"#),
                 selectedToolID: selectedToolID,
                 toolArguments: [:],
                 allowedToolIDs: intent == "chat" ? [] : ["weather"],
@@ -2693,6 +2694,10 @@ struct E2ETestRunnerHygieneTests {
         ))
         #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
             trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1, finalChunkReceived: nil),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1, rawOutputPrefix: ""),
             requiresPrimaryAgentJSON: true
         ))
         #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(

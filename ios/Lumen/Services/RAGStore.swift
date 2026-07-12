@@ -665,7 +665,14 @@ enum RAGStore {
         await indexFileWithDiagnostics(url: url, context: context).indexedCount
     }
 
-    static func indexFileWithDiagnostics(url: URL, context: ModelContext) async -> IndexResult {
+    static func indexFileWithDiagnostics(
+        url: URL,
+        context: ModelContext,
+        embed: (String) async throws -> EmbeddingRuntimeResult = { text in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: text)
+        },
+        save: ((ModelContext, String, String) throws -> Void)? = nil
+    ) async -> IndexResult {
         let name = url.lastPathComponent
         let extracted = extractFileTextWithDiagnostics(url: url)
         guard extracted.mode != .failed, let text = extracted.text, let type = extracted.sourceType else {
@@ -694,18 +701,44 @@ enum RAGStore {
                     sourceType: type.rawValue,
                     chunkIndex: i
                 )
-                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText)
+                embeddingResult = try await embed(embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-                return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: diagnostic)
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexFile.embeddingFailure",
+                    diagnostic: diagnostic,
+                    pending: &pendingVectors,
+                    previouslyPersistedCount: persistedCount,
+                    save: save
+                )
             }
             let emb = embeddingResult.vector
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public)")
-                return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "embedding_empty")
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexFile.emptyEmbedding",
+                    diagnostic: "embedding_empty",
+                    pending: &pendingVectors,
+                    previouslyPersistedCount: persistedCount,
+                    save: save
+                )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
+            if let activeEmbeddingMetadata, activeEmbeddingMetadata != embeddingMetadata {
+                let result = persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexFile.embeddingIdentityChanged",
+                    diagnostic: "embedding_identity_changed_during_index",
+                    pending: &pendingVectors,
+                    previouslyPersistedCount: persistedCount,
+                    save: save
+                )
+                RAGVectorIndex.shared.invalidate()
+                return result
+            }
             guard prepareEmbeddingMetadata(
                 embeddingMetadata,
                 active: &activeEmbeddingMetadata,
@@ -727,7 +760,7 @@ enum RAGStore {
             )
             pendingVectors.append(PendingVector(chunk: chunk, bucket: type.rawValue, vector: emb, metadata: embeddingMetadata))
             if i % 8 == 7 {
-                guard let batchResult = persistAndAppendVectors(context: context, operation: "indexFile.batch", pending: &pendingVectors) else {
+                guard let batchResult = persistAndAppendVectors(context: context, operation: "indexFile.batch", pending: &pendingVectors, save: save) else {
                     logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count + 1, privacy: .public)")
                     return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
                 }
@@ -738,7 +771,7 @@ enum RAGStore {
             }
             count += 1
         }
-        guard let finalResult = persistAndAppendVectors(context: context, operation: "indexFile.complete", pending: &pendingVectors) else {
+        guard let finalResult = persistAndAppendVectors(context: context, operation: "indexFile.complete", pending: &pendingVectors, save: save) else {
             logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count, privacy: .public)")
             return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
         }

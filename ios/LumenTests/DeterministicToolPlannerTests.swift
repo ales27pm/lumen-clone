@@ -412,6 +412,48 @@ struct DeterministicToolPlannerTests {
         }
     }
 
+    @Test func mapsSearchPreservesDestinationNamesContainingInstructionWords() async throws {
+        let cases: [(String, String)] = [
+            ("Search for Required Records.", "Required Records"),
+            ("Search near Missing Link Café.", "Missing Link Café"),
+            ("Search for Clarification Center.", "Clarification Center")
+        ]
+
+        for (prompt, expectedQuery) in cases {
+            let action = DeterministicToolPlanner.planForSpecificTool(
+                toolID: "maps.search",
+                prompt: prompt,
+                availableToolIDs: ["maps.search"]
+            )
+            #expect(action?.tool == "maps.search")
+            #expect(action?.args["query"]?.stringValue == expectedQuery)
+        }
+    }
+
+    @Test func mapsSearchStripsClarificationClauseBeforeClosestAndNearestQueryExtraction() async throws {
+        let cases: [(String, String)] = [
+            (
+                "Find the closest Missing Link Café and ask for clarification if required details are missing.",
+                "Missing Link Café"
+            ),
+            (
+                "Find the nearest Clarification Center and ask for clarification if required details are missing.",
+                "Clarification Center"
+            )
+        ]
+
+        for (prompt, expectedQuery) in cases {
+            let action = DeterministicToolPlanner.planForSpecificTool(
+                toolID: "maps.search",
+                prompt: prompt,
+                availableToolIDs: ["maps.search"]
+            )
+
+            #expect(action?.tool == "maps.search")
+            #expect(action?.args["query"]?.stringValue == expectedQuery)
+        }
+    }
+
     @Test func mapsSearchContinuesAfterUnavailableLocationObservation() async throws {
         let routing = IntentRoutingDecision(
             intent: .maps,
