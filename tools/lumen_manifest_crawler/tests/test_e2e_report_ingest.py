@@ -979,7 +979,7 @@ def test_ingestion_rejects_chat_text_turn_when_scenario_requires_primary_agent_j
     assert normalized["failures"][0]["rootCauseCategory"] == "no_correlated_model_turn"
 
 
-def test_in_app_package_chat_text_evidence_respects_primary_agent_json_contract():
+def test_package_trace_is_model_evidence_respects_primary_agent_json_contract():
     trace = {
         "event": "modelTurn",
         "stage": "chat-text-turn",
