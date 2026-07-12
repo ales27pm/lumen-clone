@@ -30,31 +30,6 @@ enum RAGStore {
         case diskWriteBudgetDenied
     }
 
-    @discardableResult
-    static func discardPendingVectors(_ pending: inout [PendingVector]) -> Int {
-        let discardedCount = pending.count
-        pending.removeAll(keepingCapacity: true)
-        return discardedCount
-    }
-
-    static func prepareEmbeddingMetadata(
-        _ metadata: RAGEmbeddingIndexMetadata,
-        active: inout RAGEmbeddingIndexMetadata?,
-        pending: inout [PendingVector],
-        context: ModelContext
-    ) -> Bool {
-        if let active, active != metadata {
-            RAGVectorIndex.shared.invalidate()
-            discardPendingVectors(&pending)
-            return false
-        }
-        if active == nil {
-            _ = RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
-            active = metadata
-        }
-        return true
-    }
-
     private static func sourceLogID(_ value: String) -> String {
         String(RuntimeFallbackLogger.promptHash(value).prefix(12))
     }
@@ -247,6 +222,34 @@ enum RAGStore {
             mode: totalPersistedCount > 0 ? .partial : .failed,
             diagnostic: diagnostic + suffix
         )
+    }
+
+    static func prepareEmbeddingMetadata(
+        _ metadata: RAGEmbeddingIndexMetadata,
+        active: inout RAGEmbeddingIndexMetadata?,
+        pending: inout [PendingVector],
+        context: ModelContext,
+        identityChangeOperation: String,
+        previouslyPersistedCount: Int = 0,
+        save: ((ModelContext, String, String) throws -> Void)? = nil
+    ) -> IndexResult? {
+        if let active, active != metadata {
+            let result = persistPendingVectorsForEarlyExit(
+                context: context,
+                operation: identityChangeOperation,
+                diagnostic: "embedding_identity_changed_during_index",
+                pending: &pending,
+                previouslyPersistedCount: previouslyPersistedCount,
+                save: save
+            )
+            RAGVectorIndex.shared.invalidate()
+            return result
+        }
+        if active == nil {
+            _ = RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
+            active = metadata
+        }
+        return nil
     }
 
     struct FileExtractionResult: Equatable {
@@ -727,25 +730,16 @@ enum RAGStore {
                 )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
-            if let activeEmbeddingMetadata, activeEmbeddingMetadata != embeddingMetadata {
-                let result = persistPendingVectorsForEarlyExit(
-                    context: context,
-                    operation: "indexFile.embeddingIdentityChanged",
-                    diagnostic: "embedding_identity_changed_during_index",
-                    pending: &pendingVectors,
-                    previouslyPersistedCount: persistedCount,
-                    save: save
-                )
-                RAGVectorIndex.shared.invalidate()
-                return result
-            }
-            guard prepareEmbeddingMetadata(
+            if let earlyExit = prepareEmbeddingMetadata(
                 embeddingMetadata,
                 active: &activeEmbeddingMetadata,
                 pending: &pendingVectors,
-                context: context
-            ) else {
-                return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "embedding_identity_changed_during_index")
+                context: context,
+                identityChangeOperation: "indexFile.embeddingIdentityChanged",
+                previouslyPersistedCount: persistedCount,
+                save: save
+            ) {
+                return earlyExit
             }
             let chunk = RAGChunk(
                 content: piece,
@@ -963,23 +957,14 @@ enum RAGStore {
                 )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
-            if let activeEmbeddingMetadata, activeEmbeddingMetadata != embeddingMetadata {
-                let result = persistPendingVectorsForEarlyExit(
-                    context: context,
-                    operation: "indexPhotos.embeddingIdentityChanged",
-                    diagnostic: "embedding_identity_changed_during_index",
-                    pending: &pendingVectors
-                )
-                RAGVectorIndex.shared.invalidate()
-                return result
-            }
-            guard prepareEmbeddingMetadata(
+            if let earlyExit = prepareEmbeddingMetadata(
                 embeddingMetadata,
                 active: &activeEmbeddingMetadata,
                 pending: &pendingVectors,
-                context: context
-            ) else {
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_identity_changed_during_index")
+                context: context,
+                identityChangeOperation: "indexPhotos.embeddingIdentityChanged"
+            ) {
+                return earlyExit
             }
             let chunk = RAGChunk(
                 content: summary,
@@ -1056,23 +1041,14 @@ enum RAGStore {
                 )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
-            if let activeEmbeddingMetadata, activeEmbeddingMetadata != embeddingMetadata {
-                let result = persistPendingVectorsForEarlyExit(
-                    context: context,
-                    operation: "indexNote.embeddingIdentityChanged",
-                    diagnostic: "embedding_identity_changed_during_index",
-                    pending: &pendingVectors
-                )
-                RAGVectorIndex.shared.invalidate()
-                return result
-            }
-            guard prepareEmbeddingMetadata(
+            if let earlyExit = prepareEmbeddingMetadata(
                 embeddingMetadata,
                 active: &activeEmbeddingMetadata,
                 pending: &pendingVectors,
-                context: context
-            ) else {
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_identity_changed_during_index")
+                context: context,
+                identityChangeOperation: "indexNote.embeddingIdentityChanged"
+            ) {
+                return earlyExit
             }
             let chunk = RAGChunk(
                 content: piece,

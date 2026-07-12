@@ -261,7 +261,7 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
-    func testEmbeddingIdentityChangeDiscardsStagedChunksWithoutFalsePersistence() throws {
+    func testEmbeddingIdentityChangePersistsStagedChunksBeforeInvalidatingIndex() throws {
         let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
         let metadata = RAGEmbeddingIndexMetadata(
@@ -274,7 +274,9 @@ final class PersistenceAuditTests: XCTestCase {
             sourceType: .note,
             sourceName: "n",
             embedding: [0.1, 0.2],
-            embeddingModelIdentifier: metadata.modelIdentifier
+            embeddingFormatVersion: metadata.formatVersion,
+            embeddingModelIdentifier: metadata.modelIdentifier,
+            embeddingDimension: metadata.dimension
         )
         var pending = [RAGStore.PendingVector(
             chunk: chunk,
@@ -284,21 +286,36 @@ final class PersistenceAuditTests: XCTestCase {
         )]
 
         var activeMetadata: RAGEmbeddingIndexMetadata? = metadata
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        _ = RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
         let changedMetadata = RAGEmbeddingIndexMetadata(
             formatVersion: metadata.formatVersion,
             modelIdentifier: "llama:sha256:model-b",
             dimension: metadata.dimension
         )
+        var saveCallCount = 0
 
-        XCTAssertFalse(RAGStore.prepareEmbeddingMetadata(
+        let result = try XCTUnwrap(RAGStore.prepareEmbeddingMetadata(
             changedMetadata,
             active: &activeMetadata,
             pending: &pending,
-            context: context
+            context: context,
+            identityChangeOperation: "test.embeddingIdentityChanged",
+            previouslyPersistedCount: 2,
+            save: { context, _, _ in
+                saveCallCount += 1
+                try context.save()
+            }
         ))
+        XCTAssertEqual(result.indexedCount, 3)
+        XCTAssertEqual(result.mode, .partial)
+        XCTAssertEqual(result.diagnostic, "embedding_identity_changed_during_index")
+        XCTAssertEqual(saveCallCount, 1)
+        XCTAssertEqual(activeMetadata, metadata)
         XCTAssertTrue(pending.isEmpty)
-        try context.save()
-        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).count, 1)
+        XCTAssertEqual(RAGVectorIndex.shared.count, 0)
     }
 
     @MainActor
