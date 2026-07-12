@@ -127,6 +127,50 @@ struct AgentGroundingRegressionTests {
         #expect(redacted.promptCharCount == 44)
     }
 
+    @Test func persistentAgentBehaviorTracePreservesOnlyEvidenceRuntimePathCategories() {
+        func redactedRuntimePath(_ runtimePath: String) -> String? {
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+                event: .modelTurn,
+                slot: "agent",
+                stage: "agent-json-step-0",
+                intent: "memory",
+                promptPrefix: "prompt",
+                rawOutputPrefix: "output",
+                selectedToolID: nil,
+                toolArguments: [:],
+                allowedToolIDs: [],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: false,
+                runtimePath: runtimePath
+            ).redactedForPersistentDiagnostics().runtimePath
+        }
+
+        #expect(redactedRuntimePath("agent-model") == "agent-model")
+        #expect(redactedRuntimePath("deterministic-compatibility") == "deterministic-compatibility")
+        #expect(redactedRuntimePath("sharedAdapter")?.contains("sha256=") == true)
+        #expect(redactedRuntimePath("/private/var/mobile/model.gguf")?.contains("/private") == false)
+    }
+
+    @Test func evidenceAppInfoIncludesConfiguredSourceRevisionAndOmitsPlaceholders() {
+        let info = InAppDatasetAppInfo.current(
+            infoDictionary: [
+                "CFBundleName": "Lumen",
+                "CFBundleShortVersionString": "1.0.0",
+                "CFBundleVersion": "20260711214250",
+                "LumenGitSHA": "d00e9fc818059ce15eabec8e453d52374511a8e1"
+            ],
+            bundleIdentifier: "com.27pm.lumenclone"
+        )
+
+        #expect(info.sourceRevision == "d00e9fc818059ce15eabec8e453d52374511a8e1")
+        #expect(InAppDatasetAppInfo.current(infoDictionary: ["LumenGitSHA": "unknown"]).sourceRevision == nil)
+        #expect(InAppDatasetAppInfo.current(infoDictionary: ["LumenGitSHA": "$(LUMEN_GIT_SHA)"]).sourceRevision == nil)
+    }
+
     @Test func persistentAgentParseTracesRedactRawPromptAndModelOutput() {
         let failure = AgentParseFailureTrace(
             id: UUID(),

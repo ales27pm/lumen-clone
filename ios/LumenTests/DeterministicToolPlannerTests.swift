@@ -72,6 +72,25 @@ struct DeterministicToolPlannerTests {
         #expect(action?.tool == "location.current")
     }
 
+    @Test func fileScopedRAGSearchAddsDocumentScopeAndMissingQueryClarifies() async throws {
+        let routing = IntentRoutingDecision(intent: .rag, allowedToolIDs: ["rag.search"], requiresClarification: false, clarificationPrompt: nil)
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Search my files for architecture notes.",
+            availableToolIDs: ["rag.search"]
+        )
+        #expect(action?.tool == "rag.search")
+        #expect(action?.args["sourceScope"] == .string("documents"))
+        _ = try validated(action)
+
+        let missing = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Use Search Personal Data, but ask for clarification if required details are missing.",
+            availableToolIDs: ["rag.search"]
+        )
+        #expect(missing == nil)
+    }
+
     @Test func unreadEmailsPreferMailboxListOverRead() async throws {
         let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.message.read", "outlook.messages.list"], requiresClarification: false, clarificationPrompt: nil)
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "Check unread emails", availableToolIDs: ["outlook.message.read", "outlook.messages.list"])

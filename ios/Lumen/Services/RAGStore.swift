@@ -625,22 +625,28 @@ enum RAGStore {
         await indexImportedFilesWithDiagnostics(context: context, progress: progress).indexedCount
     }
 
-    static func indexImportedFilesWithDiagnostics(context: ModelContext, progress: ((Double) -> Void)? = nil) async -> IndexResult {
-        do {
-            try wipe(.file, context: context)
-            try wipe(.pdf, context: context)
-        } catch {
-            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("persist_failed op=indexImportedFiles.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
-        }
-        let imports = FileStore.importedFilesWithDiagnostics()
+    static func indexImportedFilesWithDiagnostics(
+        context: ModelContext,
+        progress: ((Double) -> Void)? = nil,
+        importedFilesResult: FileStore.ImportedFilesResult? = nil
+    ) async -> IndexResult {
+        let imports = importedFilesResult ?? FileStore.importedFilesWithDiagnostics()
         if imports.mode == "failed" {
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: imports.diagnostic ?? "imports_list_failed")
         }
         let files = imports.files
         guard !files.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: imports.diagnostic ?? "no_imported_files")
+        }
+        do {
+            try wipe(.file, context: context)
+            try wipe(.pdf, context: context)
+        } catch PersistenceError.diskWriteBudgetDenied {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
+        } catch {
+            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("persist_failed op=indexImportedFiles.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
         var total = 0
         var degraded = 0
@@ -867,13 +873,6 @@ enum RAGStore {
         guard status == .authorized || status == .limited else {
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "photos_permission_denied:\(photoAuthorizationDiagnostic(status))")
         }
-        do {
-            try wipe(.photo, context: context)
-        } catch {
-            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("persist_failed op=indexPhotos.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
-        }
         let start = Calendar.current.date(byAdding: .month, value: -monthsBack, to: Date()) ?? Date()
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "creationDate >= %@", start as NSDate)
@@ -885,6 +884,15 @@ enum RAGStore {
         fetch.enumerateObjects { a, _, _ in assets.append(a) }
         guard !assets.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_photo_library")
+        }
+        do {
+            try wipe(.photo, context: context)
+        } catch PersistenceError.diskWriteBudgetDenied {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
+        } catch {
+            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("persist_failed op=indexPhotos.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
 
         var selfieIDs: Set<String> = []

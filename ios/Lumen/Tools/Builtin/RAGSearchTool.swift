@@ -3,26 +3,30 @@ import SwiftData
 import CryptoKit
 
 struct RAGSearchTool: LocalTool {
-    let definition = SecureToolDefinition(id: "rag.search.secure", displayName: "Search RAG", description: "Search indexed local chunks", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "{query:string,limit?:1...12,sourceFilter?:string,minimumScore?:0...1}", resultPrivacyLevel: .moderate, maxOutputCharacters: 1800)
+    let definition = SecureToolDefinition(id: "rag.search.secure", displayName: "Search RAG", description: "Search indexed local chunks", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "{query:string,limit?:1...12,sourceScope?:all|documents|notes|photos,sourceFilter?:string,minimumScore?:0...1}", resultPrivacyLevel: .moderate, maxOutputCharacters: 1800)
 
     func validateArguments(_ arguments: [String : String]) throws { _ = try parse(arguments) }
-    private func parse(_ a:[String:String]) throws -> (String,Int,String?,Double?) {
+    private func parse(_ a:[String:String]) throws -> (String,Int,RAGSourceScope,String?,Double?) {
         let q = (a["query"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard (1...500).contains(q.count) else { throw ToolExecutionError.invalidArguments("query") }
         let limit = Int(a["limit"] ?? "6") ?? 6
         guard (1...12).contains(limit) else { throw ToolExecutionError.invalidArguments("limit") }
+        let rawScope = (a["sourceScope"] ?? RAGSourceScope.all.rawValue).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let sourceScope = RAGSourceScope(rawValue: rawScope) else {
+            throw ToolExecutionError.invalidArguments("sourceScope")
+        }
         let source = a["sourceFilter"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let source, source.count > 120 { throw ToolExecutionError.invalidArguments("sourceFilter") }
         let min = a["minimumScore"].flatMap(Double.init)
         if let min, !(0...1).contains(min) { throw ToolExecutionError.invalidArguments("minimumScore") }
-        return (q,limit,source?.isEmpty==true ? nil:source,min)
+        return (q,limit,sourceScope,source?.isEmpty==true ? nil:source,min)
     }
 
     /// Executes a RAG search query and returns the results.
     /// - Returns: A tool result with the formatted search results, or status indicating unavailability or invalid arguments.
     func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
         do {
-            let (q, limitRaw, source, minScore) = try parse(invocation.arguments)
+            let (q, limitRaw, sourceScope, source, minScore) = try parse(invocation.arguments)
             let limit = context.isForeground ? limitRaw : min(limitRaw, 6)
             guard let mc = context.modelContext else {
                 return .init(
@@ -39,7 +43,15 @@ struct RAGSearchTool: LocalTool {
                     errorCode: "swiftdata_model_context_unavailable"
                 )
             }
-            let output = await Self.searchRows(query: q, limit: limit, source: source, minScore: minScore, outputBudgetChars: definition.maxOutputCharacters, modelContext: mc)
+            let output = await Self.searchRows(
+                query: q,
+                limit: limit,
+                sourceScope: sourceScope,
+                source: source,
+                minScore: minScore,
+                outputBudgetChars: definition.maxOutputCharacters,
+                modelContext: mc
+            )
             if let failureDiagnostic = output.failureDiagnostic {
                 return .init(
                     invocationID: invocation.id,
@@ -54,10 +66,16 @@ struct RAGSearchTool: LocalTool {
             }
             let rows = output.rows
             let mode = output.mode
-            let txt = rows.isEmpty ? "No matching RAG chunks found." : rows.joined(separator: "\n")
+            let txt: String
+            if output.scopedCorpusEmpty {
+                txt = sourceScope.emptyCorpusMessage(query: q)
+            } else {
+                txt = rows.isEmpty ? "No matching RAG chunks found." : rows.joined(separator: "\n")
+            }
             var payload = output.diagnosticsPayload
             payload["mode"] = mode
             payload["count"] = "\(rows.count)"
+            payload["sourceScope"] = sourceScope.rawValue
             return SafeToolOutputLimiter.limit(result: .init(invocationID: invocation.id, status: .success, displayText: txt, modelText: txt, structuredPayload: payload, privacyLevel: .moderate, metricsSummary: mode, errorCode: nil), maxOutput: definition.maxOutputCharacters)
         } catch {
             return .init(invocationID: invocation.id, status: .failed, displayText: "Invalid RAG query.", modelText: "RAG input invalid.", structuredPayload: nil, privacyLevel: .moderate, metricsSummary: "invalid_args", errorCode: "invalid")
@@ -67,15 +85,29 @@ struct RAGSearchTool: LocalTool {
     /// Searches local RAG chunks and returns ranked, deduplicated results.
     /// - Returns: A tuple containing formatted chunk rows and the search mode ("semantic" or "lexical").
     @MainActor
-    private static func searchRows(query: String, limit: Int, source: String?, minScore: Double?, outputBudgetChars: Int, modelContext: ModelContext) async -> (rows: [String], mode: String, diagnosticsPayload: [String: String], failureDiagnostic: String?) {
-        let retrieval = await RAGEngine().retrieveWithDiagnostics(query: query, limit: limit, context: modelContext)
+    private static func searchRows(query: String, limit: Int, sourceScope: RAGSourceScope, source: String?, minScore: Double?, outputBudgetChars: Int, modelContext: ModelContext) async -> (rows: [String], mode: String, diagnosticsPayload: [String: String], failureDiagnostic: String?, scopedCorpusEmpty: Bool) {
+        let retrieval = await RAGEngine().retrieveWithDiagnostics(
+            query: query,
+            limit: limit,
+            sourceTypes: sourceScope.sourceTypes,
+            context: modelContext
+        )
         var results = retrieval.results
         let mode = retrieval.mode
         if let source {
             results = results.filter { $0.source.title.localizedCaseInsensitiveContains(source) || ($0.source.ref?.localizedCaseInsensitiveContains(source) ?? false) }
         }
         if let minScore { results = results.filter { $0.score >= minScore } }
-        let failureDiagnostic = isFailureDiagnostic(retrieval.diagnostic) ? (retrieval.diagnostic ?? "unknown") : nil
+        var failureDiagnostic = isFailureDiagnostic(retrieval.diagnostic) ? (retrieval.diagnostic ?? "unknown") : nil
+        var scopedCorpusEmpty = false
+        if results.isEmpty, let sourceTypes = sourceScope.sourceTypes {
+            let counts = RAGStore.countsWithDiagnostics(context: modelContext)
+            if counts.mode == "failed" || isFailureDiagnostic(counts.diagnostic) {
+                failureDiagnostic = counts.diagnostic ?? "counts_failed"
+            } else {
+                scopedCorpusEmpty = sourceTypes.reduce(0) { $0 + (counts.counts[$1] ?? 0) } == 0
+            }
+        }
 
         var seen = Set<String>()
         let deduped = results.filter { item in
@@ -94,7 +126,10 @@ struct RAGSearchTool: LocalTool {
         if let diagnostic = retrieval.diagnostic {
             payload["diagnostic"] = diagnostic
         }
-        return (rows, mode, payload, failureDiagnostic)
+        if scopedCorpusEmpty {
+            payload["diagnostic"] = "scoped_index_empty:\(sourceScope.rawValue)"
+        }
+        return (rows, mode, payload, failureDiagnostic, scopedCorpusEmpty)
     }
 
     private static func diagnosticsPayload(for context: RAGContextResult, dedupedCount: Int) -> [String: String] {
@@ -115,5 +150,20 @@ struct RAGSearchTool: LocalTool {
             || diagnostic.contains("persist_failed")
             || diagnostic.contains("permission_denied")
             || diagnostic.contains("corrupt")
+    }
+}
+
+private extension RAGSourceScope {
+    func emptyCorpusMessage(query: String) -> String {
+        switch self {
+        case .all:
+            return "No matching personal data found for '\(query)'. Your local index appears empty. Import or create local content, then reindex."
+        case .documents:
+            return "No matching documents found for '\(query)'. Your local document index appears empty. Import local files, then reindex."
+        case .notes:
+            return "No matching notes found for '\(query)'. Your local notes index appears empty. Create or import notes, then reindex."
+        case .photos:
+            return "No matching photo metadata found for '\(query)'. Your local photo index appears empty. Index the photo library, then try again."
+        }
     }
 }

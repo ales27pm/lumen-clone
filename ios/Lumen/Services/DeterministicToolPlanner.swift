@@ -259,8 +259,14 @@ nonisolated enum DeterministicToolPlanner {
                 return action("rag.index_files")
             }
             if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
-                let query = expandRAGQueryIfNeeded(originalPrompt: prompt)
-                return action("rag.search", ["query": .string(query)])
+                let cleanedPrompt = strippingClarificationMetaInstruction(prompt)
+                guard normalized(cleanedPrompt) != "use search personal data" else { return nil }
+                let query = expandRAGQueryIfNeeded(originalPrompt: cleanedPrompt)
+                var args: AgentJSONArguments = ["query": .string(query)]
+                if let scope = RAGSourceScope.inferred(fromUserPrompt: cleanedPrompt) {
+                    args["sourceScope"] = .string(scope.rawValue)
+                }
+                return action("rag.search", args)
             }
             return nil
         case .alarm:
@@ -811,7 +817,7 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     }
 
     private static func mapSearchQuery(from prompt: String) -> String {
-        let cleanedPrompt = strippingMapSearchMetaInstruction(prompt)
+        let cleanedPrompt = strippingClarificationMetaInstruction(prompt)
         let query = extractNearbySearchQuery(from: cleanedPrompt)
             ?? extractDestination(from: cleanedPrompt)
             ?? "nearby places"
@@ -819,7 +825,7 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
         return cleaned.isEmpty ? "nearby places" : cleaned
     }
 
-    private static func strippingMapSearchMetaInstruction(_ value: String) -> String {
+    private static func strippingClarificationMetaInstruction(_ value: String) -> String {
         value.replacingOccurrences(
             of: #"(?i)\s*,?\s*(?:and|but)?\s*ask\s+for\s+clarification\s+if\s+required\s+details\s+are\s+missing\b.*$"#,
             with: "",

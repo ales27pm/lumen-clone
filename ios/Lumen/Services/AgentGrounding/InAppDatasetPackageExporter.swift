@@ -116,6 +116,35 @@ nonisolated struct InAppDatasetAppInfo: Codable, Sendable, Hashable {
     let bundleIdentifier: String?
     let shortVersion: String?
     let buildNumber: String?
+    let sourceRevision: String?
+
+    static func current(
+        infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) -> InAppDatasetAppInfo {
+        InAppDatasetAppInfo(
+            name: normalizedString(infoDictionary["CFBundleName"]) ?? "Lumen",
+            bundleIdentifier: bundleIdentifier,
+            shortVersion: normalizedString(infoDictionary["CFBundleShortVersionString"]),
+            buildNumber: normalizedString(infoDictionary["CFBundleVersion"]),
+            sourceRevision: sourceRevision(infoDictionary["LumenGitSHA"])
+        )
+    }
+
+    private static func normalizedString(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func sourceRevision(_ value: Any?) -> String? {
+        guard let revision = normalizedString(value),
+              revision.lowercased() != "unknown",
+              !revision.hasPrefix("$(") else {
+            return nil
+        }
+        return revision
+    }
 }
 
 nonisolated struct TestFlightAgentGroundingExportInfo: Codable, Sendable, Hashable {
@@ -474,12 +503,7 @@ nonisolated enum InAppDatasetPackageExporter {
     }
 
     private static func appInfo() -> InAppDatasetAppInfo {
-        InAppDatasetAppInfo(
-            name: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Lumen",
-            bundleIdentifier: Bundle.main.bundleIdentifier,
-            shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-            buildNumber: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-        )
+        .current()
     }
 
     private static func testFlightExportInfo(

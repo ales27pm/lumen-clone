@@ -94,8 +94,6 @@ final class SecureToolRegistry {
             return "calendar.read"
         case "contacts.search":
             return "contacts.lookup"
-        case "location.current":
-            return "position.snapshot"
         case "memory.recall":
             return "memory.search"
         case "rag.search":

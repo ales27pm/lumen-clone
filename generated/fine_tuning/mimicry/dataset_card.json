@@ -1,6 +1,6 @@
 {
   "agent": "mimicry",
-  "availableSFTRecords": 117,
+  "availableSFTRecords": 114,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -8,7 +8,7 @@
     "ultraSpecificAdapterCorpus": true
   },
   "deterministic": true,
-  "manifestCommit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
+  "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
@@ -22,9 +22,9 @@
   "recordCounts": {
     "eval": 5,
     "train_dpo": 10,
-    "train_sft": 88,
+    "train_sft": 86,
     "val_dpo": 2,
-    "val_sft": 16
+    "val_sft": 15
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
@@ -34,7 +34,6 @@
     "fleet_system_prompts",
     "manifest_grounding_cards",
     "mimicry_style",
-    "runtime_audit_repairs",
     "self_model_cards",
     "train_sft"
   ],
@@ -52,7 +51,6 @@
     "manifest_grounding_cards",
     "mimicry_style",
     "role_directory",
-    "runtime_manifest_drift_repair",
     "self_model_card_grounding",
     "source_code_self_knowledge",
     "source_routing_knowledge",

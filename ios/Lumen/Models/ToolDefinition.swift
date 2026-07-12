@@ -193,7 +193,11 @@ private nonisolated enum ToolArgumentContractCatalog {
         case "memory.save":
             return [.init("content"), .init("kind")]
         case "rag.search":
-            return [.init("query"), .init("limit", type: .number, required: false)]
+            return [
+                .init("query"),
+                .init("limit", type: .number, required: false),
+                .init("sourceScope", type: .enumeration, required: false, allowedValues: ["all", "documents", "notes", "photos"])
+            ]
         case "rag.index_photos":
             return [.init("months", type: .number)]
         case "trigger.create":
@@ -276,7 +280,7 @@ nonisolated enum ToolRegistry {
         ToolDefinition(id: "files.read", name: "Read File", category: .knowledge, description: "Read a previously imported local document by name. Args: name. Do not use for attached files already visible in the current prompt.", icon: "doc.text.fill", tint: "yellow", requiresApproval: false, permissionKey: nil),
         ToolDefinition(id: "memory.save", name: "Save Memory", category: .knowledge, description: "Store a user fact or preference for future recall. Args: content, kind.", icon: "brain.head.profile", tint: "purple", requiresApproval: false, permissionKey: nil),
         ToolDefinition(id: "memory.recall", name: "Recall Memory", category: .knowledge, description: "Search stored memories about the user. Args: query. Not for web search.", icon: "sparkle.magnifyingglass", tint: "purple", requiresApproval: false, permissionKey: nil),
-        ToolDefinition(id: "rag.search", name: "Search Personal Data", category: .knowledge, description: "Semantic search across indexed local files, PDFs, notes, and photo metadata. Args: query, optional limit. Not for internet search.", icon: "doc.text.magnifyingglass", tint: "yellow", requiresApproval: false, permissionKey: nil),
+        ToolDefinition(id: "rag.search", name: "Search Personal Data", category: .knowledge, description: "Semantic search across indexed local files, PDFs, notes, and photo metadata. Args: query, optional limit/sourceScope (all, documents, notes, photos). Not for internet search.", icon: "doc.text.magnifyingglass", tint: "yellow", requiresApproval: false, permissionKey: nil),
         ToolDefinition(id: "rag.index_files", name: "Reindex Files", category: .knowledge, description: "Rebuild the index for imported files and PDFs. Args: none.", icon: "arrow.triangle.2.circlepath.doc.on.clipboard", tint: "yellow", requiresApproval: false, permissionKey: nil),
         ToolDefinition(id: "rag.index_photos", name: "Reindex Photos", category: .knowledge, description: "Rebuild the monthly photo metadata index. Args: months.", icon: "photo.stack", tint: "purple", requiresApproval: false, permissionKey: "NSPhotoLibraryUsageDescription"),
         ToolDefinition(id: "trigger.create", name: "Schedule Agent Run", category: .productivity, description: "Schedule a background agent run. Args: title, prompt, schedule, optional inMinutes/atTime/intervalSeconds/beforeMinutes.", icon: "alarm", tint: "orange", requiresApproval: true, permissionKey: nil),

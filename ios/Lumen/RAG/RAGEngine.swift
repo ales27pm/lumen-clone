@@ -1,6 +1,46 @@
 import Foundation
 import SwiftData
 
+nonisolated enum RAGSourceScope: String, CaseIterable, Sendable {
+    case all
+    case documents
+    case notes
+    case photos
+
+    var sourceTypes: Set<RAGSourceType>? {
+        switch self {
+        case .all:
+            nil
+        case .documents:
+            [.file, .pdf, .note]
+        case .notes:
+            [.note]
+        case .photos:
+            [.photo]
+        }
+    }
+
+    static func inferred(fromUserPrompt prompt: String) -> RAGSourceScope? {
+        let lower = prompt.lowercased()
+        if ["my files", "local files"].contains(where: lower.contains) {
+            return .documents
+        }
+        if ["my notes", "local notes"].contains(where: lower.contains) {
+            return .notes
+        }
+        if ["my photos", "photo library", "photo metadata", "pictures"].contains(where: lower.contains) {
+            return .photos
+        }
+        if ["documents", "document", "report", "pdf"].contains(where: lower.contains) {
+            return .documents
+        }
+        if lower.contains("architecture notes") {
+            return .notes
+        }
+        return nil
+    }
+}
+
 struct RAGMaintenanceResult: Sendable, Equatable {
     let success: Bool
     let metricSummary: String
@@ -20,14 +60,24 @@ final class RAGEngine {
         await retrieveWithDiagnostics(query: query, limit: limit, context: context).results
     }
 
-    func retrieveWithDiagnostics(query: String, limit: Int, context: ModelContext) async -> RetrieveResult {
+    func retrieveWithDiagnostics(
+        query: String,
+        limit: Int,
+        sourceTypes: Set<RAGSourceType>? = nil,
+        context: ModelContext
+    ) async -> RetrieveResult {
         let boundedLimit = max(0, limit)
         guard boundedLimit > 0 else {
             return RetrieveResult(results: [], mode: "empty_limit", diagnostic: "empty_limit")
         }
 
         let candidateLimit = min(max(boundedLimit * 3, boundedLimit + 8), 60)
-        let search = await RAGStore.searchWithDiagnostics(query: query, context: context, limit: candidateLimit)
+        let search = await RAGStore.searchWithDiagnostics(
+            query: query,
+            context: context,
+            limit: candidateLimit,
+            sourceTypes: sourceTypes
+        )
         let mapped = search.matches.map { item in
             let ref = item.chunk.sourceRef ?? item.chunk.id.uuidString
             let excerpt = Self.focusedExcerpt(query: query, content: item.chunk.content, maxLength: 260)

@@ -467,7 +467,7 @@ nonisolated extension AgentBehaviorTrace {
             tokensPerSecond: tokensPerSecond,
             ensureReadyMs: ensureReadyMs,
             adapterActivationMs: adapterActivationMs,
-            runtimePath: runtimePath.map { AgentDiagnosticFileRedactor.summary(label: "runtimePath", text: $0) },
+            runtimePath: AgentDiagnosticFileRedactor.redactedRuntimePath(runtimePath),
             activeAdapterSlot: activeAdapterSlot,
             maxTokensRequested: maxTokensRequested,
             maxTokensEffective: maxTokensEffective,
@@ -775,6 +775,11 @@ nonisolated enum AgentBehaviorTraceEmitter {
 }
 
 nonisolated enum AgentDiagnosticFileRedactor {
+    private static let persistentRuntimePathAllowlist: Set<String> = [
+        "agent-model",
+        "deterministic-compatibility"
+    ]
+
     static func summary(label: String, text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
@@ -785,6 +790,14 @@ nonisolated enum AgentDiagnosticFileRedactor {
         Dictionary(uniqueKeysWithValues: values.map { key, value in
             (key, summary(label: key, text: value))
         })
+    }
+
+    static func redactedRuntimePath(_ value: String?) -> String? {
+        guard let value else { return nil }
+        guard persistentRuntimePathAllowlist.contains(value) else {
+            return summary(label: "runtimePath", text: value)
+        }
+        return value
     }
 }
 

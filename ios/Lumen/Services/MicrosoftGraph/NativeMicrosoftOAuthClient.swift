@@ -169,8 +169,14 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard (200...299).contains(http.statusCode) else {
-            if let oauthError = try? JSONDecoder().decode(NativeOAuthErrorResponse.self, from: data) {
-                throw MicrosoftGraphAuthError.invalidConfiguration(oauthError.errorDescription ?? oauthError.error)
+            let oauthError = try? JSONDecoder().decode(NativeOAuthErrorResponse.self, from: data)
+            if let classified = Self.authErrorForTokenEndpointFailure(
+                errorCode: oauthError?.error,
+                suberror: oauthError?.suberror,
+                errorDescription: oauthError?.errorDescription,
+                httpStatus: http.statusCode
+            ) {
+                throw classified
             }
             throw GraphHTTPError.unexpectedStatus(http.statusCode)
         }
@@ -209,8 +215,7 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw MicrosoftGraphAuthError.interactionRequired }
         let items = components.queryItems ?? []
         if let error = items.first(where: { $0.name == "error" })?.value {
-            let description = items.first(where: { $0.name == "error_description" })?.value ?? error
-            throw MicrosoftGraphAuthError.invalidConfiguration(description)
+            throw Self.authErrorForAuthorizationFailure(errorCode: error)
         }
         guard items.first(where: { $0.name == "state" })?.value == expectedState else {
             throw MicrosoftGraphAuthError.invalidConfiguration("Microsoft sign-in state validation failed.")
@@ -230,9 +235,85 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
     }
 
     private func token(_ token: NativeMicrosoftOAuthTokenSet, satisfies scopes: [String]) -> Bool {
-        let requested = Set(normalizedScopes(scopes).split(separator: " ").map(String.init))
-        let granted = Set((token.scope ?? "").split(separator: " ").map(String.init))
+        Self.accessTokenScopesSatisfy(grantedScopes: token.scope, requestedScopes: scopes)
+    }
+
+    nonisolated static func accessTokenScopesSatisfy(grantedScopes: String?, requestedScopes: [String]) -> Bool {
+        let grantOnlyScopes = Set([MicrosoftGraphScope.offlineAccess.rawValue.lowercased()])
+        let requested = Set((requestedScopes + [MicrosoftGraphScope.userRead.rawValue])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty })
+            .subtracting(grantOnlyScopes)
+        let granted = Set((grantedScopes ?? "")
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { $0.lowercased() })
         return requested.isSubset(of: granted)
+    }
+
+    nonisolated static func authErrorForTokenEndpointFailure(
+        errorCode: String?,
+        suberror: String? = nil,
+        errorDescription: String? = nil,
+        httpStatus: Int
+    ) -> MicrosoftGraphAuthError? {
+        if httpStatus == 429 {
+            return .tokenEndpointThrottled
+        }
+        if (500...599).contains(httpStatus) {
+            return .tokenEndpointUnavailable
+        }
+
+        let code = errorCode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let detail = [suberror, errorDescription]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .joined(separator: " ")
+        if detail.contains("consent_required") || detail.contains("aadsts65001") || detail.contains("aadsts65004") {
+            return .consentRequired
+        }
+        if detail.contains("interaction_required")
+            || detail.contains("login_required")
+            || detail.contains("aadsts50076")
+            || detail.contains("aadsts50079") {
+            return .interactionRequired
+        }
+        if detail.contains("invalid_scope") || detail.contains("aadsts70011") {
+            return .invalidScope
+        }
+        switch code {
+        case "invalid_grant":
+            return .invalidGrant
+        case "interaction_required", "login_required", "account_selection_required":
+            return .interactionRequired
+        case "consent_required":
+            return .consentRequired
+        case "invalid_scope", "insufficient_scope":
+            return .invalidScope
+        case "temporarily_unavailable", "server_error":
+            return .tokenEndpointUnavailable
+        case "too_many_requests", "throttled":
+            return .tokenEndpointThrottled
+        case "invalid_client", "unauthorized_client", "invalid_request", "unsupported_grant_type":
+            return .invalidConfiguration("Microsoft OAuth client or token-request configuration is invalid for this build.")
+        default:
+            return nil
+        }
+    }
+
+    nonisolated private static func authErrorForAuthorizationFailure(errorCode: String) -> MicrosoftGraphAuthError {
+        switch errorCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "interaction_required", "login_required", "account_selection_required":
+            return .interactionRequired
+        case "consent_required", "access_denied":
+            return .consentRequired
+        case "invalid_scope":
+            return .invalidScope
+        case "temporarily_unavailable", "server_error":
+            return .tokenEndpointUnavailable
+        case "invalid_client", "unauthorized_client", "invalid_request", "unsupported_response_type":
+            return .invalidConfiguration("Microsoft OAuth authorization configuration is invalid for this build.")
+        default:
+            return .interactionRequired
+        }
     }
 
     private static func makeCodeChallenge(verifier: String) -> String {
@@ -268,10 +349,12 @@ private nonisolated struct NativeOAuthTokenResponse: Decodable {
 private nonisolated struct NativeOAuthErrorResponse: Decodable {
     let error: String
     let errorDescription: String?
+    let suberror: String?
 
     enum CodingKeys: String, CodingKey {
         case error
         case errorDescription = "error_description"
+        case suberror
     }
 }
 

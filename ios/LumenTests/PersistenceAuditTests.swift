@@ -418,6 +418,54 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyImportedFileReindexPreservesExistingDocumentCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "architecture.txt"))
+        context.insert(RAGChunk(content: "existing design", sourceType: .pdf, sourceName: "design.pdf"))
+        try context.save()
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [],
+                mode: "loaded",
+                diagnostic: "empty_imports"
+            )
+        )
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.diagnostic, "empty_imports")
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(Set(chunks.map(\.sourceName)), ["architecture.txt", "design.pdf"])
+    }
+
+    @MainActor
+    func testImportedFileCleanupBudgetDenialIsDeferredAndPreservesCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "architecture.txt"))
+        try context.save()
+        DiskWriteBudget.shared.setGenerationActive(true)
+        defer { DiskWriteBudget.shared.setGenerationActive(false) }
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [URL(fileURLWithPath: "/tmp/imports/new.txt")],
+                mode: "loaded",
+                diagnostic: nil
+            )
+        )
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.diagnostic, "cleanup_deferred:disk_write_budget_denied")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
+    }
+
+    @MainActor
     func testRAGFileExtractionDistinguishesReadFailureFromDecodeFailure() {
         let rawPath = "/private/raw/rag/secret.rtf"
         let url = URL(fileURLWithPath: rawPath)

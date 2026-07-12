@@ -7,7 +7,7 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "commit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
+    "commit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -23,7 +23,7 @@
       },
       {
         "path": "ios/Lumen/Models/ToolDefinition.swift",
-        "sha256": "14f972e712506bac7024f48c4ca1897fd247d2f749f9f409ce3d565bd1eb315d"
+        "sha256": "13a93a98462303e9b3a012abce1c6e73e8136afa87a75e8f07be63a6e8fb3d42"
       },
       {
         "path": "ios/Lumen/Models/Trigger.swift",
@@ -31,15 +31,15 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "6fe2365f934e1da6086353c7de2b1d3e4e31e73e34bccbb38d55c153d6479fd5"
+        "sha256": "c62d784e6684c8b6c9eeeef1abcb7f34eaaf7f406ddbefcbcb7424b516a12c85"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "sha256": "5ab068c52bcf47d3b4d97bb225ba7d66ba0c998b2c92ea3142882028eb768570"
+        "sha256": "428671e9ff67d81aae27b9e99f41fdbe5d93e8817ba10dbe220c97830f7d2367"
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
-        "sha256": "b92ed2ec1cd55f45383c42da42e29fd95b35164e2780e7e2d7e1a3f64fdd9d64"
+        "sha256": "5108cc828577037b302446358f3525b496e2707e623006a89d95bbf9811c0437"
       },
       {
         "path": "ios/Lumen/Services/MimicryProfile.swift",
@@ -47,19 +47,19 @@
       },
       {
         "path": "ios/Lumen/Services/ModelFleet.swift",
-        "sha256": "3cba55a8fa3b759a7ff33f904f95febad97a29f6d5d3f42ff8acc65da13aa5b5"
+        "sha256": "4325976231bb637ac5ca1f812a120dee1db4b81156fb763c5f9c17f1a592e4ea"
       },
       {
         "path": "ios/Lumen/Services/RemCycleService.swift",
-        "sha256": "fa032d1d73871631b9dd181c662db464fbb28c40bd46c8a9bb1fdfa3e5ea27fa"
+        "sha256": "09b68c47eeb70361ded1623ee456b8bbf7f139c8ab6b706003456f65cff4eb9a"
       },
       {
         "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-        "sha256": "cd3577ffd4fe2ced2640ca8f92ec404396fb0d4b36f51bed9f558ffa798e8785"
+        "sha256": "f5de0bf635e01ed28f916c4b6cc1aacb0da59d9e89192a7b3b6205ccb0c6cc5d"
       },
       {
         "path": "ios/Lumen/Views/ChatView.swift",
-        "sha256": "0112d14866bd7b1029c95cbb65e77328fd3dd66ba33c761bbfcd66178e45bdb4"
+        "sha256": "0b417f29061dfb13626fb413de2583003e7ddfc95bae1f49a59e86d15f3a9cd2"
       }
     ]
   },
@@ -348,6 +348,7 @@
           "name": "title",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -355,6 +356,7 @@
           "name": "startsInMinutes",
           "type": "number",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -389,6 +391,7 @@
           "name": "title",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -423,6 +426,7 @@
           "name": "query",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -444,6 +448,7 @@
           "name": "to",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -451,6 +456,7 @@
           "name": "body",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -458,6 +464,7 @@
           "name": "recipient",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -465,6 +472,7 @@
           "name": "number",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -472,6 +480,7 @@
           "name": "message",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -479,6 +488,7 @@
           "name": "text",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -500,13 +510,15 @@
           "name": "to",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "subject",
           "type": "string",
-          "required": true,
+          "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -514,6 +526,7 @@
           "name": "body",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -521,6 +534,7 @@
           "name": "recipient",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -528,6 +542,7 @@
           "name": "email",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -535,6 +550,7 @@
           "name": "message",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -542,6 +558,15 @@
           "name": "text",
           "type": "string",
           "required": false,
+          "allowedValues": null,
+          "description": "Declared in ToolDefinition capability contract.",
+          "source": "ios/Lumen/Models/ToolDefinition.swift"
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -576,6 +601,7 @@
           "name": "includeHidden",
           "type": "bool",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -597,6 +623,7 @@
           "name": "folder",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -604,6 +631,7 @@
           "name": "folderId",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -611,6 +639,7 @@
           "name": "limit",
           "type": "number",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -618,6 +647,7 @@
           "name": "unreadOnly",
           "type": "bool",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -639,6 +669,7 @@
           "name": "query",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -646,6 +677,7 @@
           "name": "folder",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -653,6 +685,7 @@
           "name": "folderId",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -660,6 +693,7 @@
           "name": "limit",
           "type": "number",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -681,6 +715,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -688,6 +723,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -709,6 +745,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -716,6 +753,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -737,6 +775,7 @@
           "name": "to",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -744,6 +783,7 @@
           "name": "subject",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -751,6 +791,7 @@
           "name": "body",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -772,6 +813,7 @@
           "name": "to",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -779,6 +821,7 @@
           "name": "subject",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -786,6 +829,7 @@
           "name": "body",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -807,6 +851,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -814,6 +859,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -835,6 +881,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -842,6 +889,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -863,6 +911,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -870,6 +919,7 @@
           "name": "destination",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -877,6 +927,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -884,6 +935,7 @@
           "name": "destinationId",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -905,6 +957,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -912,6 +965,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -933,6 +987,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -940,6 +995,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -961,6 +1017,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -968,6 +1025,7 @@
           "name": "body",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -975,6 +1033,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -982,6 +1041,7 @@
           "name": "comment",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1003,6 +1063,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1010,6 +1071,7 @@
           "name": "body",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1017,6 +1079,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1024,6 +1087,7 @@
           "name": "comment",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1045,6 +1109,7 @@
           "name": "messageId",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1052,6 +1117,7 @@
           "name": "to",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1059,6 +1125,7 @@
           "name": "id",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1066,6 +1133,7 @@
           "name": "body",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1073,6 +1141,7 @@
           "name": "comment",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1094,6 +1163,7 @@
           "name": "number",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1128,6 +1198,7 @@
           "name": "location",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1135,6 +1206,7 @@
           "name": "city",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1156,6 +1228,7 @@
           "name": "destination",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1177,6 +1250,7 @@
           "name": "query",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1198,6 +1272,7 @@
           "name": "query",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1258,6 +1333,7 @@
           "name": "query",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1279,6 +1355,7 @@
           "name": "url",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1300,6 +1377,7 @@
           "name": "name",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1321,6 +1399,7 @@
           "name": "content",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1328,6 +1407,7 @@
           "name": "kind",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1349,6 +1429,7 @@
           "name": "query",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1360,7 +1441,7 @@
     {
       "id": "rag.search",
       "displayName": "Search Personal Data",
-      "description": "Semantic search across indexed local files, PDFs, notes, and photo metadata. Args: query, optional limit. Not for internet search.",
+      "description": "Semantic search across indexed local files, PDFs, notes, and photo metadata. Args: query, optional limit/sourceScope (all, documents, notes, photos). Not for internet search.",
       "requiresApproval": false,
       "permissionKey": null,
       "permissionKind": null,
@@ -1370,6 +1451,7 @@
           "name": "query",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1377,6 +1459,20 @@
           "name": "limit",
           "type": "number",
           "required": false,
+          "allowedValues": null,
+          "description": "Declared in ToolDefinition capability contract.",
+          "source": "ios/Lumen/Models/ToolDefinition.swift"
+        },
+        {
+          "name": "sourceScope",
+          "type": "enum",
+          "required": false,
+          "allowedValues": [
+            "all",
+            "documents",
+            "notes",
+            "photos"
+          ],
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1411,6 +1507,7 @@
           "name": "months",
           "type": "number",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1432,6 +1529,7 @@
           "name": "title",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1439,13 +1537,19 @@
           "name": "prompt",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
         {
           "name": "schedule",
-          "type": "string",
+          "type": "enum",
           "required": true,
+          "allowedValues": [
+            "absolute",
+            "interval",
+            "relative"
+          ],
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1453,6 +1557,7 @@
           "name": "inMinutes",
           "type": "number",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1460,6 +1565,7 @@
           "name": "atTime",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1467,6 +1573,7 @@
           "name": "intervalSeconds",
           "type": "number",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1474,6 +1581,7 @@
           "name": "beforeMinutes",
           "type": "number",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1508,6 +1616,7 @@
           "name": "id",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1515,6 +1624,7 @@
           "name": "title",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1562,6 +1672,7 @@
           "name": "title",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1569,6 +1680,7 @@
           "name": "inMinutes",
           "type": "number",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1576,6 +1688,7 @@
           "name": "timestamp",
           "type": "string",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1583,6 +1696,7 @@
           "name": "repeats",
           "type": "bool",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1590,6 +1704,7 @@
           "name": "snoozeMinutes",
           "type": "number",
           "required": false,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1611,6 +1726,7 @@
           "name": "title",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         },
@@ -1618,6 +1734,7 @@
           "name": "durationSeconds",
           "type": "number",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1652,6 +1769,7 @@
           "name": "id",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1673,6 +1791,7 @@
           "name": "id",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1694,6 +1813,7 @@
           "name": "id",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1715,6 +1835,7 @@
           "name": "id",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -1736,6 +1857,7 @@
           "name": "id",
           "type": "string",
           "required": true,
+          "allowedValues": null,
           "description": "Declared in ToolDefinition capability contract.",
           "source": "ios/Lumen/Models/ToolDefinition.swift"
         }
@@ -2754,6 +2876,7 @@
       "<private_reasoning>",
       "<scratchpad>",
       "<tool_json>",
+      "<tool_output>",
       "<user_final_text>",
       "\\nAction: \\(action.displayContent)\\nObservation: \\(compactScratchpadObservation(obs.content))",
       "\\nAction: \\(action.displayContent)\\nObservation: \\(compactScratchpadObservation(result))"
