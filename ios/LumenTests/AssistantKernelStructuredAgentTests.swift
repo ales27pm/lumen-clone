@@ -4,6 +4,111 @@ import XCTest
 
 @MainActor
 final class AssistantKernelStructuredAgentTests: XCTestCase {
+    private actor ScriptedLlamaService: LlamaRuntimeStreamingService {
+        private var chatLoaded: Bool
+        var isChatLoaded: Bool { chatLoaded }
+        let isEmbedLoaded = false
+        private let scripts: [[GenerationToken]]
+        private let readiness: ExecutorRuntimePreflightResult
+        private let loadsChatOnReadiness: Bool
+        private(set) var readinessCallCount = 0
+        private(set) var preflightCallCount = 0
+        private(set) var streamCallCount = 0
+        private(set) var callOrder: [String] = []
+
+        init(
+            isChatLoaded: Bool,
+            scripts: [[GenerationToken]],
+            readiness: ExecutorRuntimePreflightResult? = nil,
+            loadsChatOnReadiness: Bool = false
+        ) {
+            self.chatLoaded = isChatLoaded
+            self.scripts = scripts
+            self.readiness = readiness ?? ExecutorRuntimePreflightResult(
+                passed: true,
+                reason: "scripted runtime ready",
+                baseModelExists: true,
+                resourceGateAllowed: true,
+                ensureReadySucceeded: true
+            )
+            self.loadsChatOnReadiness = loadsChatOnReadiness
+        }
+
+        func prepareStructuredRuntime(
+            slot: LumenModelSlot,
+            allowsLoadedMemoryPressureContinuation: Bool
+        ) -> ExecutorRuntimePreflightResult {
+            readinessCallCount += 1
+            callOrder.append("readiness")
+            if readiness.passed, loadsChatOnReadiness {
+                chatLoaded = true
+            }
+            return readiness
+        }
+
+        func structuredPromptPreflight(_ request: GenerateRequest, slot: LumenModelSlot) -> LlamaStructuredPromptPreflightSnapshot {
+            preflightCallCount += 1
+            callOrder.append("preflight")
+            let chars = request.systemPrompt.count + request.userMessage.count
+            return .init(contextSize: 4_096, finalPromptChars: chars, estimatedPromptTokens: max(1, chars / 4))
+        }
+
+        func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
+            let index = streamCallCount
+            streamCallCount += 1
+            callOrder.append("stream")
+            let tokens = scripts.indices.contains(index) ? scripts[index] : []
+            return AsyncStream { continuation in
+                for token in tokens {
+                    continuation.yield(token)
+                }
+                continuation.finish()
+            }
+        }
+
+        func embed(_ text: String) async throws -> [Double] { [] }
+
+        func embedWithIdentity(_ text: String) async throws -> EmbeddingRuntimeResult {
+            EmbeddingRuntimeResult(vector: [], modelIdentifier: "test:structured")
+        }
+    }
+
+    private struct StubWeatherTool: LocalTool {
+        let observation: String
+
+        init(observation: String = "It is 21°C and clear.") {
+            self.observation = observation
+        }
+
+        let definition = SecureToolDefinition(
+            id: "weather",
+            displayName: "Weather",
+            description: "Returns a grounded weather observation.",
+            category: .readOnly,
+            requiredPermissions: [],
+            supportsBackgroundExecution: true,
+            requiresUserApproval: false,
+            argumentSchemaDescription: "{}",
+            resultPrivacyLevel: .low,
+            maxOutputCharacters: 2_000
+        )
+
+        func validateArguments(_ arguments: [String: String]) throws {}
+
+        func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
+            ToolResult(
+                invocationID: invocation.id,
+                status: .success,
+                displayText: observation,
+                modelText: observation,
+                structuredPayload: ["temperature": "21", "conditions": "clear"],
+                privacyLevel: .low,
+                metricsSummary: "weather_success",
+                errorCode: nil
+            )
+        }
+    }
+
     func testToolRequiredFirstTurnUsesActionOnlySchema() throws {
         #if DEBUG
         let request = structuredRequest(
@@ -86,6 +191,12 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             availableTools: tools,
             observations: []
         ))
+        XCTAssertTrue(StructuredAgentKernelExecutor.toolRequiredFinalNeedsActionForTests(
+            "It is sunny and 21°C.",
+            request: request,
+            availableTools: tools,
+            observations: []
+        ))
         XCTAssertFalse(StructuredAgentKernelExecutor.toolRequiredFinalNeedsActionForTests(
             "[insert local weather information]",
             request: request,
@@ -118,6 +229,241 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         )
 
         XCTAssertTrue(sourceIDs.isEmpty)
+        #endif
+    }
+
+    func testToolRequiredEmptySecureScopeStopsBeforeModelGeneration() async {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let service = ScriptedLlamaService(
+            isChatLoaded: true,
+            scripts: [[.text(#"{"final":"unsupported weather claim"}"#), .done]]
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [])
+        )
+        let request = structuredRequest(
+            "What's the weather here?",
+            allowedToolIDs: ["weather"],
+            traceCorrelation: AgentTraceCorrelation(
+                scenarioID: "secure-empty-weather",
+                e2eRunID: UUID(),
+                agentRunID: UUID(),
+                conversationID: UUID(),
+                turnID: UUID()
+            )
+        )
+
+        var final = ""
+        for await event in kernel.run(request) {
+            if case .final(let text) = event { final = text }
+        }
+
+        XCTAssertTrue(final.localizedCaseInsensitiveContains("unavailable"))
+        let preflightCallCount = await service.preflightCallCount
+        let streamCallCount = await service.streamCallCount
+        XCTAssertEqual(preflightCallCount, 0)
+        XCTAssertEqual(streamCallCount, 0)
+        let readinessCallCount = await service.readinessCallCount
+        XCTAssertEqual(readinessCallCount, 0)
+        XCTAssertFalse(AgentBehaviorTraceRecorder.recent(limit: 10).contains { $0.stage.hasPrefix("agent-json-step-") })
+        #endif
+    }
+
+    func testInjectedRuntimeExecutesPreflightActionToolAndFinal() async throws {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let service = ScriptedLlamaService(
+            isChatLoaded: true,
+            scripts: [
+                [.text(#"{"action":{"tool":"weather","args":{}}}"#), .done],
+                [.text(#"{"final":"It is 21°C and clear."}"#), .done]
+            ]
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [StubWeatherTool()])
+        )
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "scripted-weather",
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID()
+        )
+        let request = structuredRequest("What's the weather?", allowedToolIDs: ["weather"], traceCorrelation: correlation)
+        var sawAction = false
+        var sawToolSuccess = false
+        var final = ""
+        for await event in kernel.run(request) {
+            switch event {
+            case .step(let step) where step.kind == .action && step.toolID == "weather":
+                sawAction = true
+            case .toolResult(let result) where result.status == .success:
+                sawToolSuccess = true
+            case .final(let text):
+                final = text
+            default:
+                break
+            }
+        }
+
+        XCTAssertTrue(sawAction)
+        XCTAssertTrue(sawToolSuccess)
+        XCTAssertEqual(final, "It is 21°C and clear.")
+        let preflightCallCount = await service.preflightCallCount
+        let streamCallCount = await service.streamCallCount
+        XCTAssertEqual(preflightCallCount, 2)
+        XCTAssertEqual(streamCallCount, 2)
+        let readinessCallCount = await service.readinessCallCount
+        let callOrder = await service.callOrder
+        XCTAssertEqual(readinessCallCount, 2)
+        XCTAssertEqual(callOrder, ["readiness", "preflight", "stream", "readiness", "preflight", "stream"])
+        let traces = AgentBehaviorTraceRecorder.recent(limit: 10).filter { $0.scenarioID == correlation.scenarioID }
+        let modelTraces = traces.filter { $0.event == .modelTurn }
+        XCTAssertEqual(modelTraces.count, 2)
+        XCTAssertTrue(modelTraces.allSatisfy { $0.runtimePath == "agent-model" })
+        let actionTrace = modelTraces.first { $0.selectedToolID == "weather" }
+        let finalTrace = modelTraces.first { $0.emittedFinalInActionTurn }
+        XCTAssertEqual(actionTrace?.successfulObservationCount, 0)
+        XCTAssertNil(actionTrace?.finalizerAccepted)
+        XCTAssertEqual(finalTrace?.successfulObservationCount, 1)
+        XCTAssertEqual(finalTrace?.finalizerAccepted, true)
+        #endif
+    }
+
+    func testStructuredFinalTraceRecordsActualObservationFinalizerRejection() async {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let service = ScriptedLlamaService(
+            isChatLoaded: true,
+            scripts: [
+                [.text(#"{"action":{"tool":"weather","args":{}}}"#), .done],
+                [.text(#"{"final":"It is 21°C and clear."}"#), .done]
+            ]
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [StubWeatherTool(observation: #"{"kind":"unsafe"}"#)])
+        )
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "scripted-unsafe-weather-observation",
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID()
+        )
+
+        for await _ in kernel.run(structuredRequest(
+            "What's the weather?",
+            allowedToolIDs: ["weather"],
+            traceCorrelation: correlation
+        )) {}
+
+        let finalTrace = AgentBehaviorTraceRecorder.recent(limit: 10).first {
+            $0.scenarioID == correlation.scenarioID && $0.emittedFinalInActionTurn
+        }
+        XCTAssertEqual(finalTrace?.successfulObservationCount, 1)
+        XCTAssertEqual(finalTrace?.finalizerAccepted, false)
+        XCTAssertEqual(finalTrace?.finalizerRejectionReason, "unsafe-observation")
+        #endif
+    }
+
+    func testStreamAcquisitionFailureRecordsNoStartedOrLoadedModel() async {
+        #if DEBUG
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let service = ScriptedLlamaService(isChatLoaded: false, scripts: [])
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [])
+        )
+        let correlation = AgentTraceCorrelation(
+            scenarioID: "scripted-stream-acquisition-failure",
+            e2eRunID: UUID(),
+            agentRunID: UUID(),
+            conversationID: UUID(),
+            turnID: UUID()
+        )
+        let request = structuredRequest("Say hello.", allowedToolIDs: [], traceCorrelation: correlation)
+        for await _ in kernel.run(request) {}
+
+        let trace = AgentBehaviorTraceRecorder.recent(limit: 10).last { $0.scenarioID == correlation.scenarioID }
+        XCTAssertEqual(trace?.streamStarted, false)
+        XCTAssertEqual(trace?.modelLoaded, false)
+        XCTAssertEqual(trace?.firstChunkReceived, false)
+        XCTAssertEqual(trace?.textChunkCount, 0)
+        XCTAssertTrue(trace?.emptyOutputReason?.hasPrefix("structured-runtime-unavailable:") == true)
+        let preflightCallCount = await service.preflightCallCount
+        let streamCallCount = await service.streamCallCount
+        XCTAssertEqual(preflightCallCount, 1)
+        XCTAssertEqual(streamCallCount, 0)
+        let readinessCallCount = await service.readinessCallCount
+        let callOrder = await service.callOrder
+        XCTAssertEqual(readinessCallCount, 1)
+        XCTAssertEqual(callOrder, ["readiness", "preflight"])
+        #endif
+    }
+
+    func testColdInjectedRuntimeReadinessPrecedesPromptPreflight() async {
+        #if DEBUG
+        let service = ScriptedLlamaService(
+            isChatLoaded: false,
+            scripts: [[.text(#"{"final":"Hello."}"#), .done]],
+            loadsChatOnReadiness: true
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [])
+        )
+
+        var final = ""
+        for await event in kernel.run(structuredRequest("Say hello.", allowedToolIDs: [])) {
+            if case .final(let text) = event { final = text }
+        }
+
+        XCTAssertEqual(final, "Hello.")
+        let callOrder = await service.callOrder
+        XCTAssertEqual(callOrder, ["readiness", "preflight", "stream"])
+        #endif
+    }
+
+    func testPlausibleToolRequiredFinalRetriesActionBeforeAnswering() async {
+        #if DEBUG
+        let service = ScriptedLlamaService(
+            isChatLoaded: true,
+            scripts: [
+                [.text(#"{"final":"It is sunny and 30°C."}"#), .done],
+                [.text(#"{"action":{"tool":"weather","args":{}}}"#), .done],
+                [.text(#"{"final":"It is 21°C and clear."}"#), .done]
+            ]
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [StubWeatherTool()])
+        )
+
+        var sawToolSuccess = false
+        var final = ""
+        for await event in kernel.run(structuredRequest("What's the weather?", allowedToolIDs: ["weather"])) {
+            if case .toolResult(let result) = event, result.status == .success {
+                sawToolSuccess = true
+            }
+            if case .final(let text) = event { final = text }
+        }
+
+        XCTAssertTrue(sawToolSuccess)
+        XCTAssertEqual(final, "It is 21°C and clear.")
+        let readinessCallCount = await service.readinessCallCount
+        let preflightCallCount = await service.preflightCallCount
+        let streamCallCount = await service.streamCallCount
+        XCTAssertEqual(readinessCallCount, 3)
+        XCTAssertEqual(preflightCallCount, 3)
+        XCTAssertEqual(streamCallCount, 3)
         #endif
     }
 

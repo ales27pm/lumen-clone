@@ -30,7 +30,6 @@ class LumenAppDelegate: NSObject, UIApplicationDelegate {
         MetricKitDiagnosticsSubscriber.shared.register()
         MainActor.assumeIsolated {
             triggerScheduler.registerTasks(beforeApplicationLaunchCompletion: true)
-            continuedProcessingCoordinator.registerHandlerBeforeApplicationLaunchCompletion()
             continuedProcessingCoordinator.markApplicationLaunchCompleted()
         }
         return true

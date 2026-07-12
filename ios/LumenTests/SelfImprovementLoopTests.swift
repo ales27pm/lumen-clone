@@ -10,17 +10,17 @@ final class SelfImprovementLoopTests: XCTestCase {
         ResourceBudgetGate.testSnapshotOverride = nominalSnapshot()
         defer { ResourceBudgetGate.testSnapshotOverride = nil }
         let store = metricsStore()
-        var runCount = 0
+        let maintenanceProbe = TestMaintenanceProbe()
         let loop = SelfImprovementLoop(metricsStore: store, config: .init(cooldownSeconds: 0), maintenance: { _, _, _, _ in
-            runCount += 1
-            try await Task.sleep(nanoseconds: 50_000_000)
-            return .applied("test_applied")
+            await maintenanceProbe.run()
         })
 
         let first = Task { @MainActor in await loop.run(trigger: .test, container: nil) }
-        try await Task.sleep(nanoseconds: 5_000_000)
+        await maintenanceProbe.waitUntilStarted()
         let second = await loop.run(trigger: .test, container: nil)
+        await maintenanceProbe.release()
         let firstOutcome = await first.value
+        let runCount = await maintenanceProbe.runCount()
 
         XCTAssertEqual(firstOutcome, .applied("test_applied"))
         XCTAssertEqual(second, .skipped("already_running"))
@@ -108,7 +108,7 @@ final class SelfImprovementLoopTests: XCTestCase {
         XCTAssertEqual(outcome, .failed("RawPromptFailure"))
         XCTAssertEqual(metrics.last?.runtimeName, "selfImprovement")
         XCTAssertEqual(metrics.last?.taskKind, BackgroundTaskKind.selfImprovement.rawValue)
-        XCTAssertEqual(metrics.last?.errorCode, "RawPromptFailure")
+        XCTAssertEqual(metrics.last?.errorCode, "rawpromptfailure")
         XCTAssertFalse(metrics.last?.policySummary.contains("secret raw prompt") == true)
         #endif
     }
@@ -342,6 +342,40 @@ final class SelfImprovementLoopTests: XCTestCase {
         func consumeShouldCancel() -> Bool {
             defer { shouldCancel = false }
             return shouldCancel
+        }
+    }
+
+    private actor TestMaintenanceProbe {
+        private var count = 0
+        private var started = false
+        private var startedContinuation: CheckedContinuation<Void, Never>?
+        private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+        func run() async -> SelfImprovementMaintenanceResult {
+            count += 1
+            started = true
+            startedContinuation?.resume()
+            startedContinuation = nil
+            await withCheckedContinuation { continuation in
+                releaseContinuation = continuation
+            }
+            return .applied("test_applied")
+        }
+
+        func waitUntilStarted() async {
+            guard !started else { return }
+            await withCheckedContinuation { continuation in
+                startedContinuation = continuation
+            }
+        }
+
+        func release() {
+            releaseContinuation?.resume()
+            releaseContinuation = nil
+        }
+
+        func runCount() -> Int {
+            count
         }
     }
 }

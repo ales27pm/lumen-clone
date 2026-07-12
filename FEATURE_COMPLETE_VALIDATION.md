@@ -2,13 +2,19 @@
 
 ## PR #81 follow-up structured executor hardening (local validation)
 
-The Release structured-agent path now registers classic and continued-processing BGTask handlers synchronously during `didFinishLaunching`, before launch completion is recorded. Registration outcomes retain identifier, success, launch timing, and sanitized failure metadata, and failed registrations remain retryable.
+The Release structured-agent path registers classic refresh/processing handlers synchronously during `didFinishLaunching`. Continued-processing uses the iOS 26 contract instead: the Info.plist advertises a wildcard pattern, then each user-initiated request registers and submits the same fully composed concrete identifier. Registration outcomes retain identifier, success, timing, and sanitized failure metadata, and failed registrations remain retryable.
 
 Structured tool definitions now fail closed against `SecureToolRegistry`; structured streaming and completed generation traces flow through the llama adapter injected into `AssistantKernel`. Memory save/recall synthesis requires successful trusted observations, final-step degraded location requests continue directly to `maps.search` when valid, and live evidence validation uses parser-derived trace fields rather than reparsing bounded diagnostic output.
 
 Dataset export now enforces `modelBackedRequired`, `policyFirstAllowed`, and `routingOnly` independently. RAG chunks persist embedding format, model identifier, and dimension; legacy or mismatched vectors are excluded with `rag_reindex_required` until the user runs the existing reindex workflow. Hybrid retrieval preserves lexical-side degradation diagnostics even when semantic results remain usable.
 
-Local `build-for-testing` compilation succeeded. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
+The follow-up correlation hardening evaluates evidence against raw in-memory traces before export redaction, removes raw correlation UUIDs from both the embedded report and trace sidecars, and joins them with a per-export opaque token. Schema `2.0.0` ingestion honors those tokens, requires exact scenario correlation, and treats explicit correlation as authoritative over prompt/time or event-text fallbacks.
+
+Tool-required structured turns now stop before generation when secure filtering removes every routed tool, and any model final produced without a trusted observation is rejected even when it sounds plausible. Runtime readiness, prompt preflight, streaming, and completed traces all flow through the injected llama adapter in that order; pre-stream acquisition failures retain `streamStarted=false` and `modelLoaded=false`.
+
+Embedding vectors now travel atomically with a content-digest model identifier through the selected runtime. RAG index loads and appends enforce format, identifier, and dimension together; rejected appends reload or surface an explicit unavailable state, while identity changes and persistence failures discard staged chunks without reporting false indexed counts.
+
+Local validation on the dedicated `Lumen Focused Test iPhone` simulator passed `build-for-testing`, the complete `LumenTests` target (1,144 passed, 0 failed, 0 skipped), and an unsigned Release simulator build. The non-slow/non-E2E Python suite passed 273 tests with 31 deselected, crawler collection found 213 tests, and the integration and Release-hardening gates passed. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
 
 ## Executive Summary
 
