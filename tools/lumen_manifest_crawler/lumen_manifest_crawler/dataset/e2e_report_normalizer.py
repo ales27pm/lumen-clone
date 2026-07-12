@@ -186,7 +186,7 @@ def e2e_failure_from_scenario(scenario: dict[str, Any], *, source_layer: str, si
 
 
 def _scenario_intent(scenario: dict[str, Any]) -> str:
-    intent = str(scenario.get("intent") or "").strip()
+    intent = str(scenario.get("intent") or scenario.get("actualIntent") or "").strip()
     if intent:
         return intent
     expected_intent = str(scenario.get("expectedIntent") or "").strip()
@@ -778,7 +778,7 @@ def _matching_sidecar_trace_for_scenario(
         trace
         for trace in traces
         if _sidecar_trace_matches_correlation(trace, scenario)
-        and _is_sidecar_evidence_candidate(trace)
+        and _is_sidecar_evidence_candidate(trace, scenario=scenario)
     ])
     if correlated is not None:
         return correlated, "correlation"
@@ -789,7 +789,7 @@ def _matching_sidecar_trace_for_scenario(
         for trace in traces
         if _sidecar_text_matches_prompt(str(trace.get("promptPrefix") or ""), prompt_key)
         and _sidecar_record_matches_scenario_time(trace, scenario)
-        and _is_sidecar_evidence_candidate(trace)
+        and _is_sidecar_evidence_candidate(trace, scenario=scenario)
     ])
     if fallback is not None:
         return fallback, "prompt-time"
@@ -827,7 +827,6 @@ def _preferred_sidecar_evidence_trace(traces: list[dict[str, Any]]) -> dict[str,
         trace
         for trace in traces
         if str(trace.get("event") or "") == "modelTurn"
-        and str(trace.get("stage") or "").startswith("agent-json")
     ]
     valid_model_trace = _preferred_agent_json_trace([
         trace for trace in model_traces if _is_valid_model_backed_sidecar_trace(trace)
@@ -840,11 +839,26 @@ def _preferred_sidecar_evidence_trace(traces: list[dict[str, Any]]) -> dict[str,
     return _preferred_agent_json_trace(model_traces)
 
 
-def _is_sidecar_evidence_candidate(trace: dict[str, Any]) -> bool:
+def _is_sidecar_evidence_candidate(trace: dict[str, Any], *, scenario: dict[str, Any]) -> bool:
+    if _is_policy_first_trace(trace):
+        return True
+    if str(trace.get("event") or "") != "modelTurn":
+        return False
     return (
-        str(trace.get("event") or "") == "modelTurn"
-        and str(trace.get("stage") or "").startswith("agent-json")
-    ) or _is_policy_first_trace(trace)
+        not _scenario_requires_primary_agent_json(scenario)
+        or str(trace.get("stage") or "").startswith("agent-json")
+    )
+
+
+def _scenario_requires_primary_agent_json(scenario: dict[str, Any]) -> bool:
+    if scenario.get("requiresAgentRun") is not True:
+        return False
+    if str(scenario.get("evidenceMode") or "modelBackedRequired").casefold() != "modelbackedrequired":
+        return False
+    return not (
+        str(scenario.get("kind") or "").casefold() == "chat"
+        and _scenario_intent(scenario).casefold() == "chat"
+    )
 
 
 def _is_policy_first_trace(trace: dict[str, Any]) -> bool:

@@ -12,6 +12,7 @@ from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
     _is_architecture_or_finalizer_failure,
     _is_model_backed_trace,
     _is_runtime_environment_failure,
+    _scenario_requires_primary_agent_json,
     flatten_e2e_json_report,
 )
 from lumen_manifest_crawler.dataset.e2e_text_parser import parse_e2e_text_report
@@ -715,7 +716,7 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
     covered_strong_model = 0
     for result in strongly_correlated:
         correlated = [trace for trace in traces if _package_trace_matches_result(trace, result)]
-        has_model = any(_package_trace_is_model_evidence(trace) for trace in correlated)
+        has_model = any(_package_trace_is_model_evidence(trace, result=result) for trace in correlated)
         if str(result.get("evidenceMode") or "modelBackedRequired") == "policyFirstAllowed":
             has_evidence = has_model or any(_package_trace_is_policy_first_evidence(trace) for trace in correlated)
         else:
@@ -737,7 +738,7 @@ def _live_e2e_model_backed_trace_gap_failure(package: dict[str, Any]) -> dict[st
         for result in legacy_results
         if str(result.get("evidenceMode") or "modelBackedRequired") == "policyFirstAllowed"
         and not any(
-            _package_trace_is_model_evidence(trace) or _package_trace_is_policy_first_evidence(trace)
+            _package_trace_is_model_evidence(trace, result=result) or _package_trace_is_policy_first_evidence(trace)
             for trace in traces
             if _package_trace_matches_result(trace, result)
         )
@@ -799,9 +800,13 @@ def _package_trace_matches_result(trace: dict[str, Any], result: dict[str, Any])
     return matched_identifier or bool(expected_scenario and actual_scenario == expected_scenario)
 
 
-def _package_trace_is_model_evidence(trace: dict[str, Any]) -> bool:
+def _package_trace_is_model_evidence(trace: dict[str, Any], *, result: dict[str, Any]) -> bool:
     return (
-        _is_model_backed_trace(trace)
+        (
+            not _scenario_requires_primary_agent_json(result)
+            or str(trace.get("stage") or "").startswith("agent-json")
+        )
+        and _is_model_backed_trace(trace)
         and not trace.get("parseError")
         and bool(str(trace.get("rawOutputPrefix") or "").strip())
     )

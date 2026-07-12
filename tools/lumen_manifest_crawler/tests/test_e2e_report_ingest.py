@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 
 from lumen_manifest_crawler.dataset.e2e_report_normalizer import _trace_positive_int
-from lumen_manifest_crawler.dataset.runtime_ingest import _is_in_app_package, load_runtime_audit_reports
+from lumen_manifest_crawler.dataset.runtime_ingest import (
+    _is_in_app_package,
+    _package_trace_is_model_evidence,
+    load_runtime_audit_reports,
+)
 
 
 E2E_REPORT = """E2E Test Report
@@ -889,6 +893,115 @@ def test_ingestion_matches_sidecar_by_correlation_despite_prompt_mismatch(tmp_pa
     assert normalized["failures"] == []
     assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
     assert normalized["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+
+
+def test_ingestion_accepts_correlated_chat_text_turn_for_plain_chat_scenario(tmp_path: Path):
+    report_path = tmp_path / "e2e-plain-chat-sidecar.json"
+    e2e_run_id = "11111111-1111-4111-8111-111111111111"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "results": [{
+            "scenarioID": "normal-chat-no-forced-tool",
+            "kind": "chat",
+            "title": "Normal chat does not force tools",
+            "passed": True,
+            "requiresAgentRun": True,
+            "evidenceMode": "modelBackedRequired",
+            "prompt": "Explain why a sharp chisel is safer than a dull one.",
+            "actualIntent": "chat",
+            "expectedIntent": "chat",
+            "e2eRunID": e2e_run_id,
+            "failures": [],
+            "finalText": "A sharp chisel needs less force and is easier to control.",
+            "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+        }],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "chat-text-turn",
+        "runtimePath": "agent-model",
+        "parseError": None,
+        "rawOutputPrefix": "A sharp chisel needs less force and is easier to control.",
+        "intent": "chat",
+        "promptPrefix": "A redacted direct-chat prompt.",
+        "scenarioID": "normal-chat-no-forced-tool",
+        "e2eRunID": e2e_run_id,
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"] == []
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
+    assert normalized["scenarios"][0]["modelEvidenceTrace"]["stage"] == "chat-text-turn"
+    assert normalized["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+
+
+def test_ingestion_rejects_chat_text_turn_when_scenario_requires_primary_agent_json(tmp_path: Path):
+    report_path = tmp_path / "e2e-structured-training-chat-sidecar.json"
+    e2e_run_id = "11111111-1111-4111-8111-111111111111"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "results": [{
+            "scenarioID": "training-general-chat",
+            "kind": "training",
+            "title": "Training eval: pure chat quality",
+            "passed": True,
+            "requiresAgentRun": True,
+            "evidenceMode": "modelBackedRequired",
+            "prompt": "Explain precision and recall.",
+            "actualIntent": "chat",
+            "expectedIntent": "chat",
+            "e2eRunID": e2e_run_id,
+            "failures": [],
+            "finalText": "Precision measures exactness; recall measures coverage.",
+            "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+        }],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "chat-text-turn",
+        "runtimePath": "agent-model",
+        "parseError": None,
+        "rawOutputPrefix": "Precision measures exactness; recall measures coverage.",
+        "intent": "chat",
+        "promptPrefix": "A redacted training prompt.",
+        "scenarioID": "training-general-chat",
+        "e2eRunID": e2e_run_id,
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "no_correlated_model_turn"
+    assert normalized["failures"][0]["rootCauseCategory"] == "no_correlated_model_turn"
+
+
+def test_in_app_package_chat_text_evidence_respects_primary_agent_json_contract():
+    trace = {
+        "event": "modelTurn",
+        "stage": "chat-text-turn",
+        "runtimePath": "agent-model",
+        "parseError": None,
+        "rawOutputPrefix": "A grounded model response.",
+    }
+    plain_chat_result = {
+        "requiresAgentRun": True,
+        "evidenceMode": "modelBackedRequired",
+        "kind": "chat",
+        "actualIntent": "chat",
+    }
+    structured_training_result = {
+        "requiresAgentRun": True,
+        "evidenceMode": "modelBackedRequired",
+        "kind": "training",
+        "actualIntent": "chat",
+    }
+
+    assert _package_trace_is_model_evidence(trace, result=plain_chat_result)
+    assert not _package_trace_is_model_evidence(trace, result=structured_training_result)
 
 
 def test_ingestion_matches_redacted_sidecar_by_opaque_correlation_token(tmp_path: Path):
