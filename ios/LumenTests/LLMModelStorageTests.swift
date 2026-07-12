@@ -14,6 +14,28 @@ struct LLMModelStorageTests {
         #expect(hash == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
     }
 
+    @Test func sha256ArtifactHasherRecursivelyHashesCompiledModelBundleContents() throws {
+        let temp = try makeTemporaryStorage()
+        defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
+        let firstBundle = temp.baseDirectory.appendingPathComponent("first.mlmodelc", isDirectory: true)
+        let secondBundle = temp.baseDirectory.appendingPathComponent("second.mlmodelc", isDirectory: true)
+        for bundle in [firstBundle, secondBundle] {
+            let weights = bundle.appendingPathComponent("weights", isDirectory: true)
+            try FileManager.default.createDirectory(at: weights, withIntermediateDirectories: true)
+            try Data("manifest".utf8).write(to: bundle.appendingPathComponent("model.mil"))
+            try Data("weights-a".utf8).write(to: weights.appendingPathComponent("weight.bin"))
+        }
+
+        let firstDigest = try SHA256FileHasher.sha256Hex(forArtifactAt: firstBundle)
+        let secondDigest = try SHA256FileHasher.sha256Hex(forArtifactAt: secondBundle)
+        #expect(firstDigest == secondDigest)
+
+        try Data("weights-b".utf8).write(
+            to: secondBundle.appendingPathComponent("weights", isDirectory: true).appendingPathComponent("weight.bin")
+        )
+        #expect(firstDigest != (try SHA256FileHasher.sha256Hex(forArtifactAt: secondBundle)))
+    }
+
     @Test func modelFileValidatorAcceptsGGUFExtension() throws {
         let url = URL(fileURLWithPath: "/tmp/model.gguf")
 

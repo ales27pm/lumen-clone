@@ -1,6 +1,11 @@
 import Foundation
 import SwiftData
 
+struct SecureToolDefinitionAvailability: Sendable, Equatable {
+    let definition: SecureToolDefinition
+    let decision: ToolApprovalDecision
+}
+
 @MainActor
 final class SecureToolRegistry {
     static let shared = SecureToolRegistry()
@@ -42,12 +47,18 @@ final class SecureToolRegistry {
     func duplicateDefinitionIDs() -> [ToolID] { duplicateToolIDs }
 
     func availableDefinitions(context: ToolExecutionContext, source: ToolInvocationSource) async -> [SecureToolDefinition] {
+        await definitionAvailability(context: context, source: source).compactMap { assessment in
+            if case .deny = assessment.decision { return nil }
+            return assessment.definition
+        }
+    }
+
+    func definitionAvailability(context: ToolExecutionContext, source: ToolInvocationSource) async -> [SecureToolDefinitionAvailability] {
         let states = await context.permissionRegistry.diagnostics()
-        return definitions().filter { def in
+        return definitions().map { def in
             let inv = ToolInvocation(id: UUID(), toolID: def.id, arguments: [:], source: source, conversationID: nil, turnID: nil, createdAt: Date())
             let decision = ToolApprovalPolicy.decide(definition: def, invocation: inv, isForeground: context.isForeground, permissionStates: states, settings: .init(networkAccessEnabled: states[.networkAccess] == .granted, userAllowlist: []))
-            if case .deny = decision { return false }
-            return true
+            return SecureToolDefinitionAvailability(definition: def, decision: decision)
         }
     }
 

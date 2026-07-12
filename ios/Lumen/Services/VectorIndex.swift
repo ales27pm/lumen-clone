@@ -9,6 +9,12 @@ nonisolated struct VectorIndexLoadResult: Sendable, Equatable {
     let diagnostic: String?
 }
 
+nonisolated struct RAGEmbeddingIndexMetadata: Sendable, Equatable {
+    let formatVersion: Int
+    let modelIdentifier: String
+    let dimension: Int
+}
+
 /// In-memory, pre-normalized Float32 vector index with Accelerate-accelerated search.
 ///
 /// Design:
@@ -53,16 +59,31 @@ final class RAGVectorIndex {
     @discardableResult
     func ensureLoaded(
         context: ModelContext,
-        formatVersion: Int = SemanticEmbeddingText.formatVersion,
-        modelIdentifier: String = "assistant-kernel-embedding",
-        dimension: Int? = nil
+        formatVersion: Int,
+        modelIdentifier: String,
+        dimension: Int
     ) -> VectorIndexLoadResult {
         ensureLoaded(formatVersion: formatVersion, modelIdentifier: modelIdentifier, dimension: dimension, fetch: { try context.fetch(FetchDescriptor<RAGChunk>()) })
     }
 
     @discardableResult
-    func ensureLoadedForTests(fetch: () throws -> [RAGChunk]) -> VectorIndexLoadResult {
-        ensureLoaded(formatVersion: SemanticEmbeddingText.formatVersion, modelIdentifier: "assistant-kernel-embedding", dimension: nil, fetch: fetch)
+    func ensureLoaded(context: ModelContext, metadata: RAGEmbeddingIndexMetadata) -> VectorIndexLoadResult {
+        ensureLoaded(
+            context: context,
+            formatVersion: metadata.formatVersion,
+            modelIdentifier: metadata.modelIdentifier,
+            dimension: metadata.dimension
+        )
+    }
+
+    @discardableResult
+    func ensureLoadedForTests(
+        formatVersion: Int = SemanticEmbeddingText.formatVersion,
+        modelIdentifier: String = RAGEmbeddingMetadata.unidentifiedModelIdentifier,
+        dimension: Int? = nil,
+        fetch: () throws -> [RAGChunk]
+    ) -> VectorIndexLoadResult {
+        ensureLoaded(formatVersion: formatVersion, modelIdentifier: modelIdentifier, dimension: dimension, fetch: fetch)
     }
 
     private func ensureLoaded(
@@ -100,15 +121,47 @@ final class RAGVectorIndex {
             guard c.embedding.count == d else { continue }
             appendRow(id: c.persistentModelID, bucket: c.sourceType, vector: c.embedding, expectedDim: d)
         }
-        dim = d
+        dim = requiredDimension ?? d
         return VectorIndexLoadResult(loadedCount: ids.count, mode: "loaded", diagnostic: nil)
     }
 
-    func append(id: PersistentIdentifier, bucket: String, vector: [Double]) {
-        guard loaded, !vector.isEmpty else { return }
-        if dim == 0 { dim = vector.count }
-        guard vector.count == dim else { return }
+    @discardableResult
+    func append(
+        id: PersistentIdentifier,
+        bucket: String,
+        vector: [Double],
+        formatVersion: Int,
+        modelIdentifier: String,
+        dimension: Int
+    ) -> Bool {
+        guard loaded else { return false }
+        guard loadedFormatVersion == formatVersion,
+              loadedModelIdentifier == modelIdentifier,
+              dim == dimension,
+              !vector.isEmpty,
+              vector.count == dimension else {
+            invalidate()
+            return false
+        }
         appendRow(id: id, bucket: bucket, vector: vector, expectedDim: dim)
+        return true
+    }
+
+    @discardableResult
+    func append(
+        id: PersistentIdentifier,
+        bucket: String,
+        vector: [Double],
+        metadata: RAGEmbeddingIndexMetadata
+    ) -> Bool {
+        append(
+            id: id,
+            bucket: bucket,
+            vector: vector,
+            formatVersion: metadata.formatVersion,
+            modelIdentifier: metadata.modelIdentifier,
+            dimension: metadata.dimension
+        )
     }
 
     func removeBucket(_ bucket: String) {

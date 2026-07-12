@@ -19,16 +19,64 @@ enum LocalRuntimeError: LocalizedError, Sendable, Equatable {
 protocol LlamaRuntimeStreamingService: Sendable {
     var isChatLoaded: Bool { get async }
     var isEmbedLoaded: Bool { get async }
+    func prepareStructuredRuntime(
+        slot: LumenModelSlot,
+        allowsLoadedMemoryPressureContinuation: Bool
+    ) async -> ExecutorRuntimePreflightResult
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) async -> AsyncStream<GenerationToken>
     func takeCompletedTracePayload(requestID: UUID) async -> CompletedGenerationTracePayload?
+    func structuredPromptPreflight(_ request: GenerateRequest, slot: LumenModelSlot) async -> LlamaStructuredPromptPreflightSnapshot
     func embed(_ text: String) async throws -> [Double]
+    func embedWithIdentity(_ text: String) async throws -> EmbeddingRuntimeResult
 }
 
 extension LlamaRuntimeStreamingService {
     func takeCompletedTracePayload(requestID: UUID) async -> CompletedGenerationTracePayload? { nil }
 }
 
-extension AppLlamaService: LlamaRuntimeStreamingService {}
+nonisolated struct LlamaStructuredPromptPreflightSnapshot: Sendable, Equatable {
+    let contextSize: Int
+    let finalPromptChars: Int
+    let estimatedPromptTokens: Int
+}
+
+extension AppLlamaService: LlamaRuntimeStreamingService {
+    func prepareStructuredRuntime(
+        slot: LumenModelSlot,
+        allowsLoadedMemoryPressureContinuation: Bool
+    ) async -> ExecutorRuntimePreflightResult {
+        guard slot == .executor else {
+            return ExecutorRuntimePreflightResult(
+                passed: false,
+                reason: "structured runtime readiness requires the executor slot; requested=\(slot.rawValue)",
+                slot: slot.rawValue,
+                failureKind: "structuredSlotMismatch"
+            )
+        }
+        return await ExecutorRuntimePreflight.checkReadiness(
+            allowsLoadedMemoryPressureContinuation: allowsLoadedMemoryPressureContinuation
+        )
+    }
+
+    func structuredPromptPreflight(_ request: GenerateRequest, slot: LumenModelSlot) async -> LlamaStructuredPromptPreflightSnapshot {
+        let contextSize = await contextSizeForDiagnostics(slot: slot)
+        var prompt = buildMessagesForDiagnostics(req: request, contextSize: contextSize, slot: slot)
+        if prompt.latencySelection.latencyClass == .fastInteractive,
+           prompt.finalPromptChars > PromptBudgetConstants.fastInteractiveTotalChars {
+            prompt = buildMessagesForDiagnostics(
+                req: request,
+                contextSize: contextSize,
+                slot: slot,
+                forceFastBudget: true
+            )
+        }
+        return LlamaStructuredPromptPreflightSnapshot(
+            contextSize: contextSize,
+            finalPromptChars: prompt.finalPromptChars,
+            estimatedPromptTokens: prompt.estimatedPromptTokens
+        )
+    }
+}
 
 enum CoreMLRuntimeError: Error, Sendable, Equatable {
     case unsupportedOnPlatform
@@ -179,6 +227,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     let unavailableReason: String?
     private let generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)?
     private let embedHandler: (@Sendable (EmbeddingRequest) async throws -> [Float])?
+    private let injectedEmbeddingModelIdentifier: String?
     private let liveService: (any LlamaRuntimeStreamingService)?
     private let liveSlot: LumenModelSlot
 
@@ -198,10 +247,12 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         isAvailable: Bool = false,
         unavailableReason: String? = "llama text runtime is not directly wired to AssistantKernel",
         generateHandler: (@Sendable (TextGenerationRequest) async throws -> String)? = nil,
-        embedHandler: (@Sendable (EmbeddingRequest) async throws -> [Float])? = nil
+        embedHandler: (@Sendable (EmbeddingRequest) async throws -> [Float])? = nil,
+        embeddingModelIdentifier: String? = nil
     ) {
         self.generateHandler = generateHandler
         self.embedHandler = embedHandler
+        self.injectedEmbeddingModelIdentifier = embeddingModelIdentifier
         self.liveService = nil
         self.liveSlot = .mouth
         if generateHandler != nil {
@@ -216,6 +267,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     private init(liveService: any LlamaRuntimeStreamingService, liveSlot: LumenModelSlot) {
         self.generateHandler = nil
         self.embedHandler = nil
+        self.injectedEmbeddingModelIdentifier = nil
         self.liveService = liveService
         self.liveSlot = liveSlot
         self.unavailableReason = nil
@@ -238,6 +290,26 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     func takeCompletedStructuredTracePayload(requestID: UUID) async -> CompletedGenerationTracePayload? {
         guard let liveService else { return nil }
         return await liveService.takeCompletedTracePayload(requestID: requestID)
+    }
+
+    func prepareStructuredRuntime(
+        slot: LumenModelSlot,
+        allowsLoadedMemoryPressureContinuation: Bool
+    ) async throws -> ExecutorRuntimePreflightResult {
+        guard let liveService else {
+            throw LocalRuntimeError.unavailable(unavailableReason ?? "llama structured readiness runtime unavailable")
+        }
+        return await liveService.prepareStructuredRuntime(
+            slot: slot,
+            allowsLoadedMemoryPressureContinuation: allowsLoadedMemoryPressureContinuation
+        )
+    }
+
+    func structuredPromptPreflight(_ request: GenerateRequest, slot: LumenModelSlot) async throws -> LlamaStructuredPromptPreflightSnapshot {
+        guard let liveService else {
+            throw LocalRuntimeError.unavailable(unavailableReason ?? "llama structured prompt preflight runtime unavailable")
+        }
+        return await liveService.structuredPromptPreflight(request, slot: slot)
     }
 
     func generate(request: TextGenerationRequest) async throws -> String {
@@ -305,6 +377,30 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
             throw LocalRuntimeError.unavailable("llama embedding runtime produced an empty vector")
         }
         return vector.map(Float.init)
+    }
+
+    func embedWithIdentity(request: EmbeddingRequest) async throws -> EmbeddingRuntimeResult {
+        if let embedHandler {
+            guard let injectedEmbeddingModelIdentifier, !injectedEmbeddingModelIdentifier.isEmpty else {
+                throw LocalRuntimeError.unavailable("injected llama embedding runtime did not provide a model identifier")
+            }
+            let vector = try await embedHandler(request).map(Double.init)
+            guard !vector.isEmpty else {
+                throw LocalRuntimeError.unavailable("llama embedding runtime produced an empty vector")
+            }
+            return EmbeddingRuntimeResult(vector: vector, modelIdentifier: injectedEmbeddingModelIdentifier)
+        }
+        guard let liveService else {
+            throw LocalRuntimeError.unavailable("llama embedding runtime unavailable")
+        }
+        guard await liveService.isEmbedLoaded else {
+            throw LocalRuntimeError.unavailable("llama embedding runtime has no loaded embedding model")
+        }
+        let result = try await liveService.embedWithIdentity(request.text)
+        guard !result.vector.isEmpty, !result.modelIdentifier.isEmpty else {
+            throw LocalRuntimeError.unavailable("llama embedding runtime produced incomplete embedding metadata")
+        }
+        return result
     }
 
     func capabilityStatus(embeddingSelectable: Bool? = nil) -> String {

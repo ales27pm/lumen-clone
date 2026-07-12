@@ -669,6 +669,7 @@ final actor AppLlamaService {
     private var lastCancellationReasonByRequest: [UUID: String] = [:]
 
     private var embeddingModelPath: String?
+    private var embeddingModelContentIdentifier: String?
     private var embeddingModel: LlamaModel?
     private var embeddingContext: LlamaContext?
     private var embeddingContextSize: UInt32 = 2048
@@ -878,6 +879,7 @@ final actor AppLlamaService {
         guard FileManager.default.fileExists(atPath: path) else {
             throw LlamaError.modelFileNotFound(path)
         }
+        let contentIdentifier = try RAGEmbeddingMetadata.modelIdentifier(forFileURL: URL(fileURLWithPath: path))
 
         LlamaRuntimeLogCapture.shared.installIfNeeded()
         LlamaRuntimeLogCapture.shared.markLoadBoundary()
@@ -899,6 +901,7 @@ final actor AppLlamaService {
         embeddingModel = model
         embeddingContext = context
         embeddingModelPath = path
+        embeddingModelContentIdentifier = contentIdentifier
     }
 
     func unloadChat() async {
@@ -926,6 +929,7 @@ final actor AppLlamaService {
 
     func unloadEmbed() async {
         embeddingModelPath = nil
+        embeddingModelContentIdentifier = nil
         embeddingModel = nil
         embeddingContext = nil
     }
@@ -1795,6 +1799,20 @@ final actor AppLlamaService {
     }
 
     func embed(_ text: String) async throws -> [Double] {
+        try embedVector(text)
+    }
+
+    func embedWithIdentity(_ text: String) async throws -> EmbeddingRuntimeResult {
+        guard let embeddingModelContentIdentifier, !embeddingModelContentIdentifier.isEmpty else {
+            throw LlamaError.embeddingModelNotLoaded
+        }
+        return EmbeddingRuntimeResult(
+            vector: try embedVector(text),
+            modelIdentifier: embeddingModelContentIdentifier
+        )
+    }
+
+    private func embedVector(_ text: String) throws -> [Double] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 

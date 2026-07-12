@@ -225,4 +225,41 @@ final class PromptFastInteractiveBudgetTests: XCTestCase {
         XCTAssertFalse(result.messages.map(\.content).joined(separator: "\n").contains("large attachment body"))
         XCTAssertFalse(result.messages.map(\.content).joined(separator: "\n").contains("memory body"))
     }
+
+    func testStructuredPromptPreflightMirrorsStreamingFastReslim() async {
+        let request = GenerateRequest(
+            systemPrompt: String(repeating: "Structured system constraint. ", count: 200),
+            history: [],
+            userMessage: "Hi",
+            temperature: 0.1,
+            topP: 0.8,
+            repetitionPenalty: 1.05,
+            maxTokens: 256,
+            modelName: "chat",
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: #"{"type":"object"}"#)
+        )
+
+        let contextSize = await AppLlamaService.shared.contextSizeForDiagnostics(slot: .executor)
+        var streamedPrompt = await AppLlamaService.shared.buildMessagesForTesting(
+            req: request,
+            contextSize: contextSize,
+            slot: .executor
+        )
+        if streamedPrompt.latencySelection.latencyClass == .fastInteractive,
+           streamedPrompt.finalPromptChars > PromptBudgetConstants.fastInteractiveTotalChars {
+            streamedPrompt = await AppLlamaService.shared.buildMessagesForTesting(
+                req: request,
+                contextSize: contextSize,
+                slot: .executor,
+                forceFastBudget: true
+            )
+        }
+
+        let preflight = await AppLlamaService.shared.structuredPromptPreflight(request, slot: .executor)
+
+        XCTAssertEqual(preflight.contextSize, contextSize)
+        XCTAssertEqual(preflight.finalPromptChars, streamedPrompt.finalPromptChars)
+        XCTAssertEqual(preflight.estimatedPromptTokens, streamedPrompt.estimatedPromptTokens)
+    }
 }

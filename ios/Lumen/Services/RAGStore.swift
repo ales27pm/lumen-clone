@@ -8,12 +8,43 @@ import OSLog
 enum RAGStore {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
 
+    struct PendingVector {
+        let chunk: RAGChunk
+        let bucket: String
+        let vector: [Double]
+        let metadata: RAGEmbeddingIndexMetadata
+    }
+
+    struct PersistAndAppendResult: Equatable {
+        enum IndexState: Equatable {
+            case appended
+            case reloaded
+            case unavailable
+        }
+
+        let persistedCount: Int
+        let indexState: IndexState
+    }
+
+    enum PersistenceError: Error, Equatable {
+        case diskWriteBudgetDenied
+    }
+
     private static func sourceLogID(_ value: String) -> String {
         String(RuntimeFallbackLogger.promptHash(value).prefix(12))
     }
 
-    private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
-        guard DiskWriteBudget.shared.canWrite(bytes: 128 * 1024, category: .rag) else { return }
+    private static func requirePersistenceBudget() throws {
+        guard DiskWriteBudget.shared.canWrite(bytes: 128 * 1024, category: .rag) else {
+            throw PersistenceError.diskWriteBudgetDenied
+        }
+    }
+
+    private static func persistAfterBudgetAuthorization(
+        _ context: ModelContext,
+        operation: String,
+        scope: String
+    ) throws {
         do {
             try context.save()
             DiskWriteBudget.shared.recordWrite(bytes: 128 * 1024, category: .rag)
@@ -27,21 +58,67 @@ enum RAGStore {
         context: ModelContext,
         operation: String,
         scope: String = "RAGChunk",
-        pending: inout [(id: PersistentIdentifier, bucket: String, vector: [Double])],
+        pending: inout [PendingVector],
         save: ((ModelContext, String, String) throws -> Void)? = nil
-    ) -> Int? {
-        let appendedCount = pending.count
-        let saveAction = save ?? persist
-        do {
-            try saveAction(context, operation, scope)
-        } catch {
-            return nil
+    ) -> PersistAndAppendResult? {
+        let persistedCount = pending.count
+        guard persistedCount > 0 else {
+            return PersistAndAppendResult(persistedCount: 0, indexState: .appended)
+        }
+        if save == nil {
+            do {
+                try requirePersistenceBudget()
+            } catch {
+                return nil
+            }
         }
         for item in pending {
-            RAGVectorIndex.shared.append(id: item.id, bucket: item.bucket, vector: item.vector)
+            context.insert(item.chunk)
+        }
+        do {
+            if let save {
+                try save(context, operation, scope)
+            } else {
+                try persistAfterBudgetAuthorization(context, operation: operation, scope: scope)
+            }
+        } catch PersistenceError.diskWriteBudgetDenied {
+            for item in pending {
+                context.delete(item.chunk)
+            }
+            return nil
+        } catch {
+            for item in pending {
+                context.delete(item.chunk)
+            }
+            pending.removeAll(keepingCapacity: true)
+            return nil
+        }
+        var appendedAll = true
+        for item in pending {
+            guard RAGVectorIndex.shared.append(
+                id: item.chunk.persistentModelID,
+                bucket: item.bucket,
+                vector: item.vector,
+                metadata: item.metadata
+            ) else {
+                appendedAll = false
+                break
+            }
+        }
+        let indexState: PersistAndAppendResult.IndexState
+        if appendedAll {
+            indexState = .appended
+        } else if let metadata = pending.first?.metadata,
+                  pending.allSatisfy({ $0.metadata == metadata }) {
+            RAGVectorIndex.shared.invalidate()
+            let reload = RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
+            indexState = reload.mode == "failed" ? .unavailable : .reloaded
+        } else {
+            RAGVectorIndex.shared.invalidate()
+            indexState = .unavailable
         }
         pending.removeAll(keepingCapacity: true)
-        return appendedCount
+        return PersistAndAppendResult(persistedCount: persistedCount, indexState: indexState)
     }
 
     static func auditPersistence(operation: String, scope: String, save: () throws -> Void) -> Bool {
@@ -110,6 +187,71 @@ enum RAGStore {
         }
     }
 
+    static func persistPendingVectorsForEarlyExit(
+        context: ModelContext,
+        operation: String,
+        diagnostic: String,
+        pending: inout [PendingVector],
+        previouslyPersistedCount: Int = 0,
+        save: ((ModelContext, String, String) throws -> Void)? = nil
+    ) -> IndexResult {
+        guard !pending.isEmpty else {
+            return IndexResult(
+                indexedCount: previouslyPersistedCount,
+                mode: previouslyPersistedCount > 0 ? .partial : .failed,
+                diagnostic: diagnostic
+            )
+        }
+        guard let result = persistAndAppendVectors(
+            context: context,
+            operation: operation,
+            pending: &pending,
+            save: save
+        ) else {
+            let persistenceDiagnostic = pending.isEmpty ? ";persist_failed" : ";persistence_deferred"
+            return IndexResult(
+                indexedCount: previouslyPersistedCount,
+                mode: previouslyPersistedCount > 0 ? .partial : .failed,
+                diagnostic: diagnostic + persistenceDiagnostic
+            )
+        }
+        let totalPersistedCount = previouslyPersistedCount + result.persistedCount
+        let suffix = result.indexState == .unavailable ? ";vector_index_reload_failed" : ""
+        return IndexResult(
+            indexedCount: totalPersistedCount,
+            mode: totalPersistedCount > 0 ? .partial : .failed,
+            diagnostic: diagnostic + suffix
+        )
+    }
+
+    static func prepareEmbeddingMetadata(
+        _ metadata: RAGEmbeddingIndexMetadata,
+        active: inout RAGEmbeddingIndexMetadata?,
+        pending: inout [PendingVector],
+        context: ModelContext,
+        identityChangeOperation: String,
+        previouslyPersistedCount: Int = 0,
+        save: ((ModelContext, String, String) throws -> Void)? = nil
+    ) -> IndexResult? {
+        if let active, active != metadata {
+            let result = persistPendingVectorsForEarlyExit(
+                context: context,
+                operation: identityChangeOperation,
+                diagnostic: "embedding_identity_changed_during_index",
+                pending: &pending,
+                previouslyPersistedCount: previouslyPersistedCount,
+                save: save
+            )
+            RAGVectorIndex.shared.invalidate()
+            return result
+        }
+        if active == nil {
+            _ = RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
+            active = metadata
+        }
+        return nil
+    }
+
     struct FileExtractionResult: Equatable {
         let text: String?
         let sourceType: RAGSourceType?
@@ -152,9 +294,9 @@ enum RAGStore {
             )
         }
 
-        let queryVec: [Double]
+        let queryEmbedding: EmbeddingRuntimeResult
         do {
-            queryVec = try await AssistantKernel.runEmbedding(text: SemanticEmbeddingText.query(trimmed))
+            queryEmbedding = try await AssistantKernel.runEmbeddingWithIdentity(text: SemanticEmbeddingText.query(trimmed))
         } catch {
             logger.error("rag_embedding_failed op=search error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             let fallback = lexicalSearchResult(query: trimmed, context: context, allowed: allowed, limit: limit)
@@ -167,6 +309,7 @@ enum RAGStore {
                 )
             )
         }
+        let queryVec = queryEmbedding.vector
         guard !queryVec.isEmpty else {
             logger.error("rag_embedding_empty op=search")
             let fallback = lexicalSearchResult(query: trimmed, context: context, allowed: allowed, limit: limit)
@@ -177,7 +320,7 @@ enum RAGStore {
             )
         }
 
-        let embeddingModelIdentifier = await RAGEmbeddingMetadata.currentModelIdentifier()
+        let embeddingModelIdentifier = queryEmbedding.modelIdentifier
         let vectorLoad = RAGVectorIndex.shared.ensureLoaded(
             context: context,
             formatVersion: SemanticEmbeddingText.formatVersion,
@@ -369,6 +512,14 @@ enum RAGStore {
         }
     }
 
+    private static func embeddingMetadata(for result: EmbeddingRuntimeResult) -> RAGEmbeddingIndexMetadata {
+        RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: result.modelIdentifier,
+            dimension: result.vector.count
+        )
+    }
+
     static func resolvedVectorCandidates(
         vectorHits: [(id: PersistentIdentifier, score: Float)],
         context: ModelContext
@@ -436,10 +587,11 @@ enum RAGStore {
 
     static func wipe(_ type: RAGSourceType?, context: ModelContext) throws {
         let all = try context.fetch(FetchDescriptor<RAGChunk>())
+        try requirePersistenceBudget()
         for c in all {
             if type == nil || c.kind == type { context.delete(c) }
         }
-        try persist(context, operation: "wipe", scope: "RAGChunk")
+        try persistAfterBudgetAuthorization(context, operation: "wipe", scope: "RAGChunk")
         if let type {
             RAGVectorIndex.shared.removeBucket(type.rawValue)
         } else {
@@ -516,28 +668,35 @@ enum RAGStore {
         await indexFileWithDiagnostics(url: url, context: context).indexedCount
     }
 
-    static func indexFileWithDiagnostics(url: URL, context: ModelContext) async -> IndexResult {
+    static func indexFileWithDiagnostics(
+        url: URL,
+        context: ModelContext,
+        embed: (String) async throws -> EmbeddingRuntimeResult = { text in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: text)
+        },
+        save: ((ModelContext, String, String) throws -> Void)? = nil
+    ) async -> IndexResult {
         let name = url.lastPathComponent
         let extracted = extractFileTextWithDiagnostics(url: url)
         guard extracted.mode != .failed, let text = extracted.text, let type = extracted.sourceType else {
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: extracted.diagnostic ?? "file_extraction_failed")
         }
 
-        RAGVectorIndex.shared.ensureLoaded(context: context)
         let pieces = chunkText(text)
         guard !pieces.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_text")
         }
         var count = 0
         var persistedCount = 0
-        var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
+        var pendingVectors: [PendingVector] = []
+        var activeEmbeddingMetadata: RAGEmbeddingIndexMetadata?
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for (i, piece) in pieces.enumerated() {
             if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexFile") {
                 break
             }
-            let emb: [Double]
+            let embeddingResult: EmbeddingRuntimeResult
             do {
                 let embeddingText = SemanticEmbeddingText.document(
                     content: piece,
@@ -545,15 +704,42 @@ enum RAGStore {
                     sourceType: type.rawValue,
                     chunkIndex: i
                 )
-                emb = try await AssistantKernel.runEmbedding(text: embeddingText)
+                embeddingResult = try await embed(embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-                return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: diagnostic)
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexFile.embeddingFailure",
+                    diagnostic: diagnostic,
+                    pending: &pendingVectors,
+                    previouslyPersistedCount: persistedCount,
+                    save: save
+                )
             }
+            let emb = embeddingResult.vector
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public)")
-                return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "embedding_empty")
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexFile.emptyEmbedding",
+                    diagnostic: "embedding_empty",
+                    pending: &pendingVectors,
+                    previouslyPersistedCount: persistedCount,
+                    save: save
+                )
+            }
+            let embeddingMetadata = embeddingMetadata(for: embeddingResult)
+            if let earlyExit = prepareEmbeddingMetadata(
+                embeddingMetadata,
+                active: &activeEmbeddingMetadata,
+                pending: &pendingVectors,
+                context: context,
+                identityChangeOperation: "indexFile.embeddingIdentityChanged",
+                previouslyPersistedCount: persistedCount,
+                save: save
+            ) {
+                return earlyExit
             }
             let chunk = RAGChunk(
                 content: piece,
@@ -562,24 +748,31 @@ enum RAGStore {
                 sourceRef: url.path,
                 chunkIndex: i,
                 embedding: emb,
-                embeddingModelIdentifier: await RAGEmbeddingMetadata.currentModelIdentifier()
+                embeddingFormatVersion: embeddingMetadata.formatVersion,
+                embeddingModelIdentifier: embeddingMetadata.modelIdentifier,
+                embeddingDimension: embeddingMetadata.dimension
             )
-            context.insert(chunk)
-            pendingVectors.append((id: chunk.persistentModelID, bucket: type.rawValue, vector: emb))
+            pendingVectors.append(PendingVector(chunk: chunk, bucket: type.rawValue, vector: emb, metadata: embeddingMetadata))
             if i % 8 == 7 {
-                guard let appendedCount = persistAndAppendVectors(context: context, operation: "indexFile.batch", pending: &pendingVectors) else {
+                guard let batchResult = persistAndAppendVectors(context: context, operation: "indexFile.batch", pending: &pendingVectors, save: save) else {
                     logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count + 1, privacy: .public)")
                     return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
                 }
-                persistedCount += appendedCount
+                persistedCount += batchResult.persistedCount
+                if batchResult.indexState == .unavailable {
+                    return IndexResult(indexedCount: persistedCount, mode: .partial, diagnostic: "vector_index_reload_failed")
+                }
             }
             count += 1
         }
-        guard let appendedCount = persistAndAppendVectors(context: context, operation: "indexFile.complete", pending: &pendingVectors) else {
+        guard let finalResult = persistAndAppendVectors(context: context, operation: "indexFile.complete", pending: &pendingVectors, save: save) else {
             logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count, privacy: .public)")
             return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
         }
-        persistedCount += appendedCount
+        persistedCount += finalResult.persistedCount
+        if finalResult.indexState == .unavailable {
+            return IndexResult(indexedCount: persistedCount, mode: .partial, diagnostic: "vector_index_reload_failed")
+        }
         if persistedCount < pieces.count {
             return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
         }
@@ -681,8 +874,6 @@ enum RAGStore {
             logger.error("persist_failed op=indexPhotos.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
-        RAGVectorIndex.shared.ensureLoaded(context: context)
-
         let start = Calendar.current.date(byAdding: .month, value: -monthsBack, to: Date()) ?? Date()
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "creationDate >= %@", start as NSDate)
@@ -711,7 +902,8 @@ enum RAGStore {
         }
 
         var count = 0
-        var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
+        var pendingVectors: [PendingVector] = []
+        var activeEmbeddingMetadata: RAGEmbeddingIndexMetadata?
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         let totalBuckets = buckets.count
@@ -735,7 +927,7 @@ enum RAGStore {
             \(favorites) favorites, \(videos) videos, \(screenshots) screenshots, \(selfies) selfies, \(livePhotos) live photos, \(portraits) portraits, \(geo) with location.
             """
 
-            let emb: [Double]
+            let embeddingResult: EmbeddingRuntimeResult
             do {
                 let embeddingText = SemanticEmbeddingText.document(
                     content: summary,
@@ -743,15 +935,36 @@ enum RAGStore {
                     sourceType: RAGSourceType.photo.rawValue,
                     chunkIndex: 0
                 )
-                emb = try await AssistantKernel.runEmbedding(text: embeddingText)
+                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexPhotos.embeddingFailure",
+                    diagnostic: diagnostic,
+                    pending: &pendingVectors
+                )
             }
+            let emb = embeddingResult.vector
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexPhotos source=\(month, privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexPhotos.emptyEmbedding",
+                    diagnostic: "embedding_empty",
+                    pending: &pendingVectors
+                )
+            }
+            let embeddingMetadata = embeddingMetadata(for: embeddingResult)
+            if let earlyExit = prepareEmbeddingMetadata(
+                embeddingMetadata,
+                active: &activeEmbeddingMetadata,
+                pending: &pendingVectors,
+                context: context,
+                identityChangeOperation: "indexPhotos.embeddingIdentityChanged"
+            ) {
+                return earlyExit
             }
             let chunk = RAGChunk(
                 content: summary,
@@ -760,20 +973,24 @@ enum RAGStore {
                 sourceRef: month,
                 chunkIndex: 0,
                 embedding: emb,
-                embeddingModelIdentifier: await RAGEmbeddingMetadata.currentModelIdentifier()
+                embeddingFormatVersion: embeddingMetadata.formatVersion,
+                embeddingModelIdentifier: embeddingMetadata.modelIdentifier,
+                embeddingDimension: embeddingMetadata.dimension
             )
-            context.insert(chunk)
-            pendingVectors.append((id: chunk.persistentModelID, bucket: RAGSourceType.photo.rawValue, vector: emb))
+            pendingVectors.append(PendingVector(chunk: chunk, bucket: RAGSourceType.photo.rawValue, vector: emb, metadata: embeddingMetadata))
             count += 1
         }
-        guard let persistedCount = persistAndAppendVectors(context: context, operation: "indexPhotos.complete", pending: &pendingVectors) else {
+        guard let persistResult = persistAndAppendVectors(context: context, operation: "indexPhotos.complete", pending: &pendingVectors) else {
             logger.error("rag_index_partial_failure op=indexPhotos persisted=0 attempted=\(count, privacy: .public)")
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "persist_failed")
         }
-        if persistedCount < totalBuckets {
-            return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
+        if persistResult.indexState == .unavailable {
+            return IndexResult(indexedCount: persistResult.persistedCount, mode: .partial, diagnostic: "vector_index_reload_failed")
         }
-        return IndexResult(indexedCount: persistedCount, mode: .indexed, diagnostic: nil)
+        if persistResult.persistedCount < totalBuckets {
+            return IndexResult(indexedCount: persistResult.persistedCount, mode: persistResult.persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
+        }
+        return IndexResult(indexedCount: persistResult.persistedCount, mode: .indexed, diagnostic: nil)
     }
 
     // MARK: - Notes (plain text import via share)
@@ -783,18 +1000,18 @@ enum RAGStore {
     }
 
     static func indexNoteWithDiagnostics(title: String, body: String, context: ModelContext) async -> IndexResult {
-        RAGVectorIndex.shared.ensureLoaded(context: context)
         let pieces = chunkText(body)
         guard !pieces.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_text")
         }
         var count = 0
-        var pendingVectors: [(id: PersistentIdentifier, bucket: String, vector: [Double])] = []
+        var pendingVectors: [PendingVector] = []
+        var activeEmbeddingMetadata: RAGEmbeddingIndexMetadata?
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for (i, piece) in pieces.enumerated() {
             if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexNote") { break }
-            let emb: [Double]
+            let embeddingResult: EmbeddingRuntimeResult
             do {
                 let embeddingText = SemanticEmbeddingText.document(
                     content: piece,
@@ -802,15 +1019,36 @@ enum RAGStore {
                     sourceType: RAGSourceType.note.rawValue,
                     chunkIndex: i
                 )
-                emb = try await AssistantKernel.runEmbedding(text: embeddingText)
+                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexNote.embeddingFailure",
+                    diagnostic: diagnostic,
+                    pending: &pendingVectors
+                )
             }
+            let emb = embeddingResult.vector
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public)")
-                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
+                return persistPendingVectorsForEarlyExit(
+                    context: context,
+                    operation: "indexNote.emptyEmbedding",
+                    diagnostic: "embedding_empty",
+                    pending: &pendingVectors
+                )
+            }
+            let embeddingMetadata = embeddingMetadata(for: embeddingResult)
+            if let earlyExit = prepareEmbeddingMetadata(
+                embeddingMetadata,
+                active: &activeEmbeddingMetadata,
+                pending: &pendingVectors,
+                context: context,
+                identityChangeOperation: "indexNote.embeddingIdentityChanged"
+            ) {
+                return earlyExit
             }
             let chunk = RAGChunk(
                 content: piece,
@@ -819,20 +1057,24 @@ enum RAGStore {
                 sourceRef: nil,
                 chunkIndex: i,
                 embedding: emb,
-                embeddingModelIdentifier: await RAGEmbeddingMetadata.currentModelIdentifier()
+                embeddingFormatVersion: embeddingMetadata.formatVersion,
+                embeddingModelIdentifier: embeddingMetadata.modelIdentifier,
+                embeddingDimension: embeddingMetadata.dimension
             )
-            context.insert(chunk)
-            pendingVectors.append((id: chunk.persistentModelID, bucket: RAGSourceType.note.rawValue, vector: emb))
+            pendingVectors.append(PendingVector(chunk: chunk, bucket: RAGSourceType.note.rawValue, vector: emb, metadata: embeddingMetadata))
             count += 1
         }
-        guard let persistedCount = persistAndAppendVectors(context: context, operation: "indexNote.complete", pending: &pendingVectors) else {
+        guard let persistResult = persistAndAppendVectors(context: context, operation: "indexNote.complete", pending: &pendingVectors) else {
             logger.error("rag_index_partial_failure op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) persisted=0 attempted=\(count, privacy: .public)")
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "persist_failed")
         }
-        if persistedCount < pieces.count {
-            return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
+        if persistResult.indexState == .unavailable {
+            return IndexResult(indexedCount: persistResult.persistedCount, mode: .partial, diagnostic: "vector_index_reload_failed")
         }
-        return IndexResult(indexedCount: persistedCount, mode: .indexed, diagnostic: nil)
+        if persistResult.persistedCount < pieces.count {
+            return IndexResult(indexedCount: persistResult.persistedCount, mode: persistResult.persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
+        }
+        return IndexResult(indexedCount: persistResult.persistedCount, mode: .indexed, diagnostic: nil)
     }
 
     static func embeddingRuntimeAvailable() async -> Bool {

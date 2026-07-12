@@ -40,19 +40,47 @@ final class BackgroundTaskRegistrationTests: XCTestCase {
         XCTAssertTrue(scheduler.registerTasks(beforeApplicationLaunchCompletion: true).isEmpty)
     }
 
-    func testContinuedRegistrationRecordsLaunchTimingAndRetriesFailure() throws {
+    func testContinuedRegistrationUsesConcreteIdentifierAndRetriesFailure() throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("BGContinuedProcessingTask requires iOS 26") }
-        let identifier = TriggerScheduler.continuedProcessingRegistrationIdentifier
+        let identifier = TriggerScheduler.continuedProcessingIdentifier(for: "test-token")
         let registrar = Registrar(results: [identifier: [false, true]])
         let coordinator = BackgroundContinuedProcessingCoordinator(registrar: registrar)
+        coordinator.markApplicationLaunchCompleted()
 
-        let first = coordinator.registerHandlerBeforeApplicationLaunchCompletion()
+        let first = coordinator.registerHandler(identifier: identifier)
         XCTAssertFalse(first.succeeded)
-        XCTAssertTrue(first.beforeApplicationLaunchCompletion)
+        XCTAssertFalse(first.beforeApplicationLaunchCompletion)
 
-        let retry = coordinator.registerHandlerBeforeApplicationLaunchCompletion()
+        let retry = coordinator.registerHandler(identifier: identifier)
         XCTAssertTrue(retry.succeeded)
-        XCTAssertTrue(retry.beforeApplicationLaunchCompletion)
+        XCTAssertFalse(retry.beforeApplicationLaunchCompletion)
+        XCTAssertFalse(identifier.contains("*"))
         XCTAssertEqual(registrar.registeredIdentifiers, [identifier, identifier])
+    }
+
+    func testContinuedRegistrationRejectsWildcardPatternAsAHandlerIdentifier() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("BGContinuedProcessingTask requires iOS 26") }
+        let registrar = Registrar(results: [:])
+        let coordinator = BackgroundContinuedProcessingCoordinator(registrar: registrar)
+
+        let outcome = coordinator.registerHandler(identifier: TriggerScheduler.continuedProcessingRegistrationIdentifier)
+
+        XCTAssertFalse(outcome.succeeded)
+        XCTAssertEqual(outcome.errorDomain, "BGTaskScheduler.invalidContinuedProcessingIdentifier")
+        XCTAssertTrue(registrar.registeredIdentifiers.isEmpty)
+    }
+
+    func testSystemContinuedRegistrationMatchesAdvertisedWildcard() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("BGContinuedProcessingTask requires iOS 26") }
+        let coordinator = BackgroundContinuedProcessingCoordinator(registrar: SystemBackgroundTaskRegistrar.shared)
+        coordinator.markApplicationLaunchCompleted()
+        let identifier = TriggerScheduler.continuedProcessingIdentifier(for: UUID().uuidString)
+
+        let outcome = coordinator.registerHandler(identifier: identifier)
+
+        XCTAssertTrue(outcome.succeeded)
+        XCTAssertFalse(outcome.beforeApplicationLaunchCompletion)
+        XCTAssertNil(outcome.errorDomain)
+        XCTAssertNil(outcome.errorCode)
     }
 }

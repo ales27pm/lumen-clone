@@ -8,17 +8,20 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         let isEmbedLoaded: Bool
         private let tokens: [GenerationToken]
         private let embedding: [Double]
+        private let embeddingModelIdentifier: String
 
         init(
             isChatLoaded: Bool,
             isEmbedLoaded: Bool = false,
             tokens: [GenerationToken] = [],
-            embedding: [Double] = []
+            embedding: [Double] = [],
+            embeddingModelIdentifier: String = "llama:sha256:stub"
         ) {
             self.isChatLoaded = isChatLoaded
             self.isEmbedLoaded = isEmbedLoaded
             self.tokens = tokens
             self.embedding = embedding
+            self.embeddingModelIdentifier = embeddingModelIdentifier
         }
 
         func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
@@ -30,8 +33,35 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
             }
         }
 
+        func prepareStructuredRuntime(
+            slot: LumenModelSlot,
+            allowsLoadedMemoryPressureContinuation: Bool
+        ) -> ExecutorRuntimePreflightResult {
+            ExecutorRuntimePreflightResult(
+                passed: true,
+                reason: "stub runtime ready",
+                slot: slot.rawValue,
+                baseModelExists: true,
+                resourceGateAllowed: true,
+                ensureReadySucceeded: true
+            )
+        }
+
+        func structuredPromptPreflight(_ request: GenerateRequest, slot: LumenModelSlot) -> LlamaStructuredPromptPreflightSnapshot {
+            let finalPromptChars = request.systemPrompt.count + request.userMessage.count
+            return LlamaStructuredPromptPreflightSnapshot(
+                contextSize: 4_096,
+                finalPromptChars: finalPromptChars,
+                estimatedPromptTokens: max(1, finalPromptChars / 4)
+            )
+        }
+
         func embed(_ text: String) async throws -> [Double] {
             embedding
+        }
+
+        func embedWithIdentity(_ text: String) async throws -> EmbeddingRuntimeResult {
+            EmbeddingRuntimeResult(vector: embedding, modelIdentifier: embeddingModelIdentifier)
         }
     }
 
@@ -261,5 +291,31 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         XCTAssertEqual(metrics.last?.runtimeName, AssistantRuntimeKind.llama.rawValue)
         XCTAssertEqual(metrics.last?.policySummary, "llama embedding available")
         XCTAssertEqual(metrics.last?.success, true)
+    }
+
+    func testKernelCapturesEmbeddingVectorAndModelIdentityFromSameRuntimeResult() async throws {
+        let service = StubLlamaStreamingService(
+            isChatLoaded: false,
+            isEmbedLoaded: true,
+            embedding: [0.3, 0.7],
+            embeddingModelIdentifier: "llama:sha256:atomic-stub"
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false)
+        )
+        let context = AssistantTurnContext(
+            task: .embedding,
+            input: "atomic embedding",
+            isForeground: true,
+            lowPowerMode: false,
+            thermalState: .nominal
+        )
+
+        let result = try await kernel.runEmbeddingWithIdentity(context)
+
+        XCTAssertEqual(result.vector.count, 2)
+        XCTAssertEqual(result.vector[0], 0.3, accuracy: 0.000001)
+        XCTAssertEqual(result.vector[1], 0.7, accuracy: 0.000001)
+        XCTAssertEqual(result.modelIdentifier, "llama:sha256:atomic-stub")
     }
 }

@@ -2624,6 +2624,7 @@ struct E2ETestRunnerHygieneTests {
             outputTokenCount: 500,
             runtimePath: "agent-model",
             streamStarted: true,
+            modelLoaded: true,
             firstChunkReceived: true,
             textChunkCount: 20,
             finalChunkReceived: true,
@@ -2632,6 +2633,89 @@ struct E2ETestRunnerHygieneTests {
         )
 
         #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(trace, requiresPrimaryAgentJSON: true))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func primaryStructuredEvidenceDistinguishesFinalOnlyFromActionPlusFinal() {
+        #if DEBUG
+        func trace(
+            selectedToolID: String?,
+            emittedFinal: Bool,
+            intent: String = "weather",
+            successfulObservationCount: Int? = nil,
+            finalizerAccepted: Bool? = true,
+            finalChunkReceived: Bool? = true,
+            rawOutputPrefix: String? = nil
+        ) -> AgentBehaviorTrace {
+            AgentBehaviorTrace(
+                id: UUID(),
+                createdAt: Date(),
+                event: .modelTurn,
+                slot: "executor",
+                stage: "agent-json-step-0",
+                intent: intent,
+                promptPrefix: "weather",
+                rawOutputPrefix: rawOutputPrefix ?? (emittedFinal
+                    ? #"{"final":"It is clear."}"#
+                    : #"{"action":{"tool":"weather","args":{}}}"#),
+                selectedToolID: selectedToolID,
+                toolArguments: [:],
+                allowedToolIDs: intent == "chat" ? [] : ["weather"],
+                requiresApproval: false,
+                approvalMode: nil,
+                parseError: nil,
+                emittedFinalInActionTurn: emittedFinal,
+                outputTokenCount: 8,
+                runtimePath: "agent-model",
+                streamStarted: true,
+                modelLoaded: true,
+                firstChunkReceived: true,
+                textChunkCount: 1,
+                finalChunkReceived: finalChunkReceived,
+                streamTerminationReason: "stop",
+                successfulObservationCount: successfulObservationCount,
+                finalizerAccepted: finalizerAccepted
+            )
+        }
+
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1, finalizerAccepted: nil),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1, finalChunkReceived: nil),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, successfulObservationCount: 1, rawOutputPrefix: ""),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: true, intent: "chat"),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: "weather", emittedFinal: false),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: "weather", emittedFinal: true),
+            requiresPrimaryAgentJSON: true
+        ))
+        #expect(!E2ETestRunner.isValidModelBackedEvidenceTraceForTests(
+            trace(selectedToolID: nil, emittedFinal: false),
+            requiresPrimaryAgentJSON: true
+        ))
         #else
         #expect(true)
         #endif
@@ -2744,7 +2828,8 @@ private func recordSyntheticTrainingTrace(
             firstChunkReceived: true,
             textChunkCount: 1,
             finalChunkReceived: true,
-            streamTerminationReason: "stop"
+            streamTerminationReason: "stop",
+            finalizerAccepted: actionToolID == nil ? true : nil
         )
     )
 }

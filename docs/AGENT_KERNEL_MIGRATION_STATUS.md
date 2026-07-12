@@ -7,12 +7,12 @@ This is the current Release-facing status for Agent Kernel ownership. Historical
 | Surface | Release status | Owner | Enforcement |
 | --- | --- | --- | --- |
 | Chat UI text turns | Shipped | `ChatView` -> `AssistantKernel.run(...)` -> `ChatKernelEventReducer` | ChatView consumes native `AgentKernelEvent` values. |
-| Chat UI tool-required turns | Shipped for validated intent-routed tool actions | `AssistantKernel+Streaming` | Native kernel execution emits `toolInvocation` and `toolResult` events after intent routing, schema validation, approval policy, and `SecureToolRegistry` dispatch. |
+| Chat UI tool-required turns | Shipped for validated structured and policy-first actions | `AssistantKernel+Streaming`, `StructuredAgentKernelExecutor` | Release execution uses injected llama readiness/streaming, constrained structured turns, fail-closed secure tool visibility, schema validation, approval policy, and trusted tool observations before accepting a final. |
 | Voice text turns | Shipped | `VoiceCommandRouter` -> `AssistantKernel.run(...)` | Foreground-only voice text execution uses native kernel events. |
-| Voice tool-required turns | Shipped for validated intent-routed tool actions | `VoiceCommandRouter` | Voice routes through `AssistantKernel.run(...)` and reuses the same native tool execution boundary as chat. |
+| Voice tool-required turns | Shipped for validated structured and policy-first actions | `VoiceCommandRouter` | Voice routes through `AssistantKernel.run(...)` and reuses the same structured and secure native tool boundary as chat. |
 | AppIntents | Shipped only for guarded local actions | `LumenAskIntent`, `LumenAddMemoryIntent`, `LumenMemorySearchIntent`, `LumenRunTriggerIntent` | Intents return degraded or open-app responses when required context is missing. |
 | Background triggers/headless | Shipped only for background-safe coordination | `HeadlessAgentKernelRunner`, `BackgroundToolExecutionPolicy` | Background tasks cannot load model assets or prompt for permissions. Background-safe tool-only runs are policy-assessed and return explicit skip diagnostics when context is missing. |
-| Live E2E model-backed probes | Shipped diagnostics | `E2ETestRunner` -> `AssistantKernel.run(...)` | Release live E2E scenarios enter the native Agent Kernel boundary and do not call the legacy agent bridge. |
+| Live E2E model-backed probes | Shipped diagnostics | `E2ETestRunner` -> `AssistantKernel.run(...)` -> `StructuredAgentKernelExecutor` | Release live E2E scenarios enter the native structured Agent Kernel boundary, emit correlated parser-derived evidence, and do not call the legacy agent bridge. |
 | Remaining legacy live probes | DEBUG diagnostics only | `PersistentRuntimeDiagnosticsRunner`, `AgentGroundingAuditView` | Release records skipped diagnostic events instead of running the legacy agent path. |
 | Native tool groups | Shipped | `SecureToolRegistry` and `LocalTool` implementations | Tool execution requires registry lookup, policy approval, and schema-valid arguments. |
 
