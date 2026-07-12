@@ -2179,7 +2179,8 @@ nonisolated enum E2ETestRunner {
         }
         if requiresPrimaryAgentJSON {
             guard isPrimaryAgentJSONTrace(trace) else { return false }
-            guard trace.streamStarted == true,
+            guard !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  trace.streamStarted == true,
                   trace.modelLoaded == true,
                   trace.firstChunkReceived == true,
                   (trace.textChunkCount ?? 0) > 0,

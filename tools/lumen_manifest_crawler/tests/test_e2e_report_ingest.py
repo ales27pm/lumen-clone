@@ -5,6 +5,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from lumen_manifest_crawler.dataset.e2e_report_normalizer import _trace_positive_int
 from lumen_manifest_crawler.dataset.runtime_ingest import _is_in_app_package, load_runtime_audit_reports
 
 
@@ -34,6 +37,23 @@ Intent: emailDraft / expected emailDraft
 Failures: Required final hint missing: question
 Final: emailDraft
 """
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (1, 1),
+        ("1", 1),
+        (True, None),
+        (1.0, None),
+        (1.5, None),
+        ("1.0", None),
+        (0, None),
+        (-1, None),
+    ],
+)
+def test_trace_positive_int_requires_an_integer_value(value, expected):
+    assert _trace_positive_int(value) == expected
 
 
 GENERIC_E2E_REPORT = """E2E Test Report

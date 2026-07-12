@@ -1052,6 +1052,123 @@ struct AgentGroundingRegressionTests {
         #expect(failure.actual?.contains("modelBackedCorrelatedScenarioCount=1") == true)
     }
 
+    @Test func liveE2EExportRejectsTraceThatAmbiguouslyMatchesMultipleResults() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_060)
+        let scenarioID = "ambiguous-live-scenario"
+        let e2eRunID = UUID()
+        let agentRunID = UUID()
+        let conversationID = UUID()
+        let turnID = UUID()
+
+        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: startedAt,
+            event: .modelTurn,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            scenarioID: scenarioID,
+            e2eRunID: e2eRunID,
+            agentRunID: agentRunID,
+            conversationID: conversationID,
+            turnID: turnID,
+            intent: "rag",
+            promptPrefix: "What evidence supports your claim?",
+            rawOutputPrefix: #"{"action":{"tool":"rag.search","args":{"query":"evidence"}}}"#,
+            selectedToolID: "rag.search",
+            toolArguments: [:],
+            allowedToolIDs: ["rag.search"],
+            requiresApproval: nil,
+            approvalMode: nil,
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            outputTokenCount: 8,
+            runtimePath: "agent-model",
+            streamStarted: true,
+            modelLoaded: true,
+            firstChunkReceived: true,
+            textChunkCount: 1,
+            finalChunkReceived: true,
+            streamTerminationReason: "stop"
+        ))
+
+        func result(
+            title: String,
+            agentRunID: UUID? = nil,
+            conversationID: UUID? = nil,
+            turnID: UUID? = nil
+        ) -> E2ETestResult {
+            E2ETestResult(
+                id: UUID(),
+                scenarioID: scenarioID,
+                kind: "standard",
+                title: title,
+                prompt: "What evidence supports your claim?",
+                expectedIntent: "rag",
+                actualIntent: "rag",
+                e2eRunID: e2eRunID,
+                agentRunID: agentRunID,
+                conversationID: conversationID,
+                turnID: turnID,
+                requiresAgentRun: true,
+                evidenceMode: E2EEvidenceMode.modelBackedRequired.rawValue,
+                passed: true,
+                failures: [],
+                finalText: "Live E2E evidence.",
+                missingHints: [],
+                rewriteAttempted: false,
+                rewriteSuccess: false,
+                events: [],
+                startedAt: startedAt,
+                finishedAt: startedAt.addingTimeInterval(1),
+                rawFinalPrefix: "Live E2E evidence.",
+                sanitizedFinalPrefix: "Live E2E evidence.",
+                rawFinalHadUnsafeLeakage: false,
+                sanitizedFinalRemovedArtifacts: [],
+                outputHygieneFailures: []
+            )
+        }
+
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: startedAt.addingTimeInterval(1),
+            passed: 2,
+            failed: 0,
+            results: [
+                result(title: "Partial correlation"),
+                result(
+                    title: "Full correlation",
+                    agentRunID: agentRunID,
+                    conversationID: conversationID,
+                    turnID: turnID
+                )
+            ]
+        )
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: report,
+            traceLimit: 10
+        )
+
+        let liveE2EReport = try #require(package.liveE2EReport)
+        let failure = try #require(package.exportQualityFailures?.first(where: {
+            $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
+        }))
+        #expect(liveE2EReport.correlatedTraceCount == 0)
+        #expect(liveE2EReport.modelBackedCorrelatedTraceCount == 0)
+        #expect(liveE2EReport.modelBackedCorrelatedScenarioCount == 0)
+        #expect(liveE2EReport.payload.results.allSatisfy { $0.correlationToken == nil })
+        #expect(package.recentTraces.first?.correlationToken == nil)
+        #expect(failure.actual?.contains("missingEvidenceScenarioCount=2") == true)
+    }
+
     @Test func policyFirstLiveE2EExportAcceptsCorrelatedDeterministicEvidence() throws {
         AgentBehaviorTraceRecorder.clear()
         defer { AgentBehaviorTraceRecorder.clear() }

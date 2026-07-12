@@ -811,13 +811,20 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     }
 
     private static func mapSearchQuery(from prompt: String) -> String {
-        let destination = extractDestination(from: prompt)
-            .flatMap { containsMapSearchMetaInstruction($0) ? nil : $0 }
-        let query = extractNearbySearchQuery(from: prompt)
-            ?? destination
+        let cleanedPrompt = strippingMapSearchMetaInstruction(prompt)
+        let query = extractNearbySearchQuery(from: cleanedPrompt)
+            ?? extractDestination(from: cleanedPrompt)
             ?? "nearby places"
         let cleaned = cleanNearbySearchQuery(query)
         return cleaned.isEmpty ? "nearby places" : cleaned
+    }
+
+    private static func strippingMapSearchMetaInstruction(_ value: String) -> String {
+        value.replacingOccurrences(
+            of: #"(?i)\s*,?\s*(?:and|but)?\s*ask\s+for\s+clarification\s+if\s+required\s+details\s+are\s+missing\b.*$"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 
     private static func cleanNearbySearchQuery(_ value: String) -> String {
@@ -830,13 +837,6 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
             .replacingOccurrences(of: #"(?i)^(use\s+)?(find|show|search|locate|look for|help me find)\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?i)^(a|an|the)\s+"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
-    }
-
-    private static func containsMapSearchMetaInstruction(_ value: String) -> Bool {
-        value.range(
-            of: #"(?i)\b(?:clarification|missing|required)\b"#,
-            options: .regularExpression
-        ) != nil
     }
 
     static func extractEmailAddress(from text: String) -> String? {
