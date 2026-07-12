@@ -14,7 +14,7 @@ Tool-required structured turns now stop before generation when secure filtering 
 
 Embedding vectors now travel atomically with a content-digest model identifier through the selected runtime. RAG index loads and appends enforce format, identifier, and dimension together; rejected appends reload or surface an explicit unavailable state, while identity changes and persistence failures discard staged chunks without reporting false indexed counts.
 
-Local validation on the dedicated `Lumen Focused Test iPhone` simulator passed `build-for-testing`, the complete `LumenTests` target (1,140 passed, 0 failed, 0 skipped), and an unsigned Release simulator build. The non-slow/non-E2E Python suite passed 269 tests with 31 deselected, crawler collection found 209 tests, and the integration and Release-hardening gates passed. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
+Local validation on the dedicated `Lumen Focused Test iPhone` simulator passed `build-for-testing`, the complete `LumenTests` target (1,140 passed, 0 failed, 0 skipped), and an unsigned Release simulator build. The non-slow/non-E2E Python suite passed 272 tests with 31 deselected, crawler collection found 212 tests, and the integration and Release-hardening gates passed. Fresh signed Release, TestFlight, real-device BGTask registration, local model generation, live E2E, RAG reindex, and embedding-model-load evidence remain required before release-readiness claims.
 
 ## Executive Summary
 
