@@ -4,8 +4,8 @@
     "CC-BY-4.0",
     "MIT"
   ],
-  "schema": "lumen.public-adapter-corpus-sources/1.0.0",
-  "selectionPolicyVersion": "2026-07-12.2",
+  "schema": "lumen.public-adapter-corpus-sources/1.1.0",
+  "selectionPolicyVersion": "2026-07-12.3",
   "sources": [
     {
       "adapterCaps": {
@@ -18,15 +18,24 @@
       "artifactSHA256": "4cba5faa11c71437928e17cb1b9b3d8b8e727e7ea363a3a9a8045e19c0491577",
       "artifactURL": "https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.1.tar.gz",
       "attribution": "MASSIVE 1.1 by Amazon.com, Inc. or its affiliates and the MASSIVE contributors.",
+      "accessMode": "public_https",
       "datasetID": "AmazonScience/massive",
       "id": "massive-en-us-1.1",
       "license": "CC-BY-4.0",
       "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
       "locale": "en-US",
       "partitionKind": "ml_split",
+      "qualityProfile": "human_intent_annotations",
+      "redistributionMode": "transformed_records_only",
       "revision": "ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740",
       "sourcePartition": "train",
       "sourceURL": "https://huggingface.co/datasets/AmazonScience/massive/tree/ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740",
+      "targetAdapters": [
+        "cortex",
+        "executor",
+        "fleet"
+      ],
+      "transformer": "massive_v1",
       "upstreamVersion": "1.1"
     },
     {
@@ -38,6 +47,7 @@
       "artifactSHA256": "9638227b41b0a4fb69afa5d5c4b52e3fb6abfd56c9870d81bae32c9981e769b1",
       "artifactURL": "https://huggingface.co/datasets/OpenAssistant/oasst2/resolve/179dd21fc55192153d94adb0e0ce8f69e222bf75/data/train-00000-of-00001-88ba0162028a73fc.parquet",
       "attribution": "OpenAssistant Conversations Release 2 by the OpenAssistant contributors.",
+      "accessMode": "public_https",
       "datasetID": "OpenAssistant/oasst2",
       "id": "oasst2-train",
       "languageCaps": {
@@ -47,9 +57,15 @@
       "license": "Apache-2.0",
       "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
       "partitionKind": "ml_split",
+      "qualityProfile": "human_dialogue_grounding",
+      "redistributionMode": "transformed_records_only",
       "revision": "179dd21fc55192153d94adb0e0ce8f69e222bf75",
       "sourcePartition": "train",
       "sourceURL": "https://huggingface.co/datasets/OpenAssistant/oasst2/tree/179dd21fc55192153d94adb0e0ce8f69e222bf75",
+      "targetAdapters": [
+        "mouth"
+      ],
+      "transformer": "oasst2_v2",
       "upstreamVersion": "2"
     },
     {
@@ -62,14 +78,22 @@
       "artifactSHA256": "2913249158d6a178dc638e870212ff8a432d128eb6b4bdbe969ee805e6063ce3",
       "artifactURL": "https://huggingface.co/datasets/grammarly/coedit/resolve/e9a255c33ef910bc33a9d2b522653fa87521583e/train.jsonl",
       "attribution": "CoEdIT by Vipul Raheja, Dhruv Kumar, Ryan Koo, and Dongyeop Kang.",
+      "accessMode": "public_https",
       "datasetID": "grammarly/coedit",
       "id": "coedit-train",
       "license": "Apache-2.0",
       "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
       "partitionKind": "ml_split",
+      "qualityProfile": "human_meaning_preserving_edits",
+      "redistributionMode": "transformed_records_only",
       "revision": "e9a255c33ef910bc33a9d2b522653fa87521583e",
       "sourcePartition": "train",
       "sourceURL": "https://huggingface.co/datasets/grammarly/coedit/tree/e9a255c33ef910bc33a9d2b522653fa87521583e",
+      "targetAdapters": [
+        "mimicry",
+        "rem"
+      ],
+      "transformer": "coedit_v1",
       "upstreamVersion": "pinned-revision"
     },
     {
@@ -81,11 +105,14 @@
       "artifactSHA256": "22e2ce9e8746a3725f6a6d7eaa6efab4b66365e2addee449a3d67771e51051a5",
       "artifactURL": "https://codeload.github.com/json-schema-org/JSON-Schema-Test-Suite/tar.gz/92acb61eb772a932c077d5ffa634ded719d2d738",
       "attribution": "JSON Schema Test Suite, Copyright 2012 Julian Berman and contributors.",
+      "accessMode": "public_https",
       "datasetID": "json-schema-org/JSON-Schema-Test-Suite",
       "id": "json-schema-test-suite-draft-2020-12",
       "license": "MIT",
       "licenseURL": "https://github.com/json-schema-org/JSON-Schema-Test-Suite/blob/92acb61eb772a932c077d5ffa634ded719d2d738/LICENSE",
       "partitionKind": "reference_corpus",
+      "qualityProfile": "standards_conformance_cases",
+      "redistributionMode": "transformed_records_only",
       "revision": "92acb61eb772a932c077d5ffa634ded719d2d738",
       "selectedFiles": [
         "additionalProperties.json",
@@ -113,7 +140,69 @@
       ],
       "sourcePartition": "draft2020-12",
       "sourceURL": "https://github.com/json-schema-org/JSON-Schema-Test-Suite/tree/92acb61eb772a932c077d5ffa634ded719d2d738/tests/draft2020-12",
+      "targetAdapters": [
+        "rem"
+      ],
+      "transformer": "json_schema_tests_v1",
       "upstreamVersion": "draft2020-12"
+    },
+    {
+      "adapterCaps": {
+        "cortex": 150,
+        "executor": 150,
+        "mouth": 100,
+        "rem": 150
+      },
+      "artifactFormat": "json",
+      "artifactPath": "data.json",
+      "artifactSHA256": "ba12c083fca7e8da48c67ad5b895e495447da7c66e39a2e19742c082e6cb537e",
+      "artifactURL": "https://huggingface.co/datasets/Team-ACE/ToolACE/resolve/6bda777c88d21e5a204703c1ee45597a8fa4f734/data.json",
+      "attribution": "ToolACE by the ToolACE authors and contributors.",
+      "accessMode": "public_https",
+      "datasetID": "Team-ACE/ToolACE",
+      "id": "toolace-train",
+      "license": "Apache-2.0",
+      "licenseURL": "https://www.apache.org/licenses/LICENSE-2.0",
+      "partitionKind": "ml_split",
+      "qualityProfile": "verified_synthetic_tool_use",
+      "redistributionMode": "transformed_records_only",
+      "revision": "6bda777c88d21e5a204703c1ee45597a8fa4f734",
+      "sourcePartition": "train",
+      "sourceURL": "https://huggingface.co/datasets/Team-ACE/ToolACE/tree/6bda777c88d21e5a204703c1ee45597a8fa4f734",
+      "targetAdapters": [
+        "cortex",
+        "executor",
+        "mouth",
+        "rem"
+      ],
+      "transformer": "toolace_v1",
+      "upstreamVersion": "pinned-revision"
+    },
+    {
+      "adapterCaps": {
+        "mouth": 500
+      },
+      "artifactFormat": "json",
+      "artifactPath": "data/train.json",
+      "artifactSHA256": "51eff8212d804b1954b7eefa8987265750f0412b0b18b534ed2dbe636e524512",
+      "artifactURL": "https://huggingface.co/datasets/McGill-NLP/FaithDial/resolve/7a414e80725eac766f2602676dc8b39f80b061e4/data/train.json",
+      "attribution": "FaithDial by the FaithDial authors and contributors.",
+      "accessMode": "public_https",
+      "datasetID": "McGill-NLP/FaithDial",
+      "id": "faithdial-train",
+      "license": "MIT",
+      "licenseURL": "https://opensource.org/license/mit",
+      "partitionKind": "ml_split",
+      "qualityProfile": "human_dialogue_grounding",
+      "redistributionMode": "transformed_records_only",
+      "revision": "7a414e80725eac766f2602676dc8b39f80b061e4",
+      "sourcePartition": "train",
+      "sourceURL": "https://huggingface.co/datasets/McGill-NLP/FaithDial/tree/7a414e80725eac766f2602676dc8b39f80b061e4",
+      "targetAdapters": [
+        "mouth"
+      ],
+      "transformer": "faithdial_v1",
+      "upstreamVersion": "pinned-revision"
     }
   ]
 }

@@ -144,7 +144,12 @@ def generate(
     console.print(f"[bold]Model slots:[/bold] {len(manifest.fleet.slots)}")
     console.print(f"[bold]Datasets:[/bold] {compiled_count} records across {families_count} families")
     if fleet_artifacts:
-        console.print(f"[bold]Fleet self-knowledge:[/bold] {len(fleet_artifacts.system_prompts)} prompts and {len(fleet_artifacts.cross_model_training)} cross-model records")
+        console.print(
+            "[bold]Fleet self-knowledge:[/bold] "
+            f"{len(fleet_artifacts.system_prompts)} prompts, "
+            f"{len(fleet_artifacts.cross_model_training)} cross-model records, and "
+            f"{len(fleet_artifacts.orchestration_evals)} orchestration evals"
+        )
     elif manifest_markdown:
         console.print("[bold]Fleet markdown:[/bold] wrote AgentBehaviorManifest.md")
     if runtime_audit:

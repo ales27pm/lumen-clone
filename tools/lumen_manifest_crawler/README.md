@@ -119,7 +119,10 @@ filtering it. ML datasets are accepted only from explicitly labeled `train` part
 validation, and test partitions fail closed. Non-ML conformance material such as the JSON Schema
 Test Suite is labeled separately as `reference_corpus`. The builder strips raw source identifiers,
 applies PII and quality gates, and emits adapter-specific transformed records with per-record
-provenance.
+provenance. Each source also declares its registered transformer, quality profile, access mode,
+redistribution mode, and exact target-adapter set. A gated source may use `local_override` access,
+but the build then requires an explicit local artifact whose SHA-256 matches the pinned manifest;
+it never falls back to a credentialed or unaudited network fetch.
 
 From the repository root:
 
@@ -144,12 +147,41 @@ report the resulting token shares.
 To reproduce from an already populated cache without network access, add `--offline`. The public
 source policy is defined in
 `lumen_manifest_crawler/dataset/public_adapter_corpus_sources.json` and currently covers MASSIVE,
-OASST2, CoEdIT, and the JSON Schema Test Suite. OASST2 is restricted to safe, rank-zero,
+OASST2, CoEdIT, the JSON Schema Test Suite, ToolACE, and FaithDial. OASST2 is restricted to safe, rank-zero,
 upstream-reviewed root pairs and is converted into source-observation-to-concise-final examples;
 the upstream answer is neither labelled as verified nor copied byte-for-byte. CoEdIT style records
 must preserve numbers, named entities, URLs, negation, units, and temporal facts, and reject corpus
 artifacts, malformed output, high-stakes advice, current recommendations, security content, and
-artist-imitation or copyrighted-text requests.
+artist-imitation or copyrighted-text requests. ToolACE calls enter Cortex, Executor, Mouth, or REM
+only through an explicit source-tool mapping and current-manifest validation; unmapped tools and
+partially mapped arguments are discarded. FaithDial contributes observation-grounded Mouth targets
+and optional human-corrected chosen/rejected preference pairs while keeping raw dialogue identifiers
+out of the snapshot. APIGen/xLAM-compatible JSON or JSONL can be added only as a gated
+`local_override` source: its source contract must declare exact upstream-function-to-Lumen-tool and
+argument-name mappings, and every emitted call must validate against the current Lumen manifest.
+Unknown functions, missing or extra arguments, and calls absent from the row's tool definitions are
+dropped. This opt-in transformer is not part of the default pinned snapshot.
+
+Eligible records receive deterministic adapter-relevance, source-confidence,
+transformation-confidence, boundary-value, difficulty, and novelty scores. Selection preserves
+whole source groups, covers available task strata first, then fills each adapter cap by score. The
+snapshot manifest reports score summaries and task/source distributions so a larger source cannot
+silently displace higher-value role-native data.
+
+Fine-tuning generation emits three controlled datasets per adapter under
+`<agent>/experiments/`: `internal_only`, `internal_plus_public_baseline`, and
+`internal_plus_public_optimized`. Each variant manifest binds the four train/validation SFT/DPO
+lanes, controlled hyperparameters, frozen Lumen evaluation set, public evaluation fingerprint
+bundle, and contamination report. Training runners default to the optimized variant but require an
+explicit valid variant name, verify every lane and controlled field before training, and record a
+run attestation. DPO files remain `generated_not_trained` until the separate preference phase runs.
+
+BFCL v3 simple, multiple, parallel, and irrelevance cases are registered strictly as evaluation
+data. The pinned hash-only bundle contains per-row normalized digests and bounded five-token
+shingle sketches for 1,040 rows, without retaining raw benchmark text or any training target.
+Variant promotion is blocked unless both baseline and optimized corpora are clean against the
+frozen Lumen eval set and this public evaluation bundle, both evaluation reports reproduce from
+candidate outputs, and each report is bound to the exact finalized adapter digest.
 
 ## Run the unified developer cycle
 

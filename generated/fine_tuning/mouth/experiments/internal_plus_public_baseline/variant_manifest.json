@@ -1,0 +1,74 @@
+{
+  "agent": "mouth",
+  "artifact": {
+    "adapterSHA256": null,
+    "evaluationReportSHA256": null,
+    "status": "pending_training"
+  },
+  "baseModelID": "Qwen/Qwen3-1.7B",
+  "contamination": {
+    "contaminated": false,
+    "evaluationRecordsSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
+    "matchCount": 0,
+    "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
+    "publicEvaluationRowCount": 1040,
+    "reportSHA256": "181d360e412cd10fc683731d500070640a365d71a4a64f67b1558a8164778ca5",
+    "trainingRecordsSHA256": "0d2f1928bea15728abf219a353d803626935ff24853ef02ed89923c277c0213f"
+  },
+  "controlledTrainingConfig": {
+    "agent": "mouth",
+    "artifactMode": "adapter_first",
+    "artifact_mode": "adapter_first",
+    "baseModelID": "Qwen/Qwen3-1.7B",
+    "base_model_name": "Qwen/Qwen3-1.7B",
+    "batch_size": 2,
+    "defaultExportArtifact": "lora_adapter",
+    "default_export_artifact": "lora_adapter",
+    "fleet_strategy": "per_slot_adapter",
+    "gguf_quantization": "q4_k_m",
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 8e-05,
+    "load_in_4bit": true,
+    "lora_alpha": 32,
+    "lora_dropout": 0.0,
+    "lora_r": 16,
+    "max_seq_length": 4096,
+    "merge_adapters_by_default": false,
+    "merge_target": null,
+    "num_train_epochs": 1,
+    "release_bake_enabled_by_default": false,
+    "seed": 42,
+    "warmup_steps": 20
+  },
+  "datasets": {
+    "trainDPO": {
+      "count": 29,
+      "sha256": "efa63ba66902d5e0f446dde90f8c4a5f05ee71d8dda6cdd29b4382bef75d7376"
+    },
+    "trainSFT": {
+      "count": 237,
+      "sha256": "bfba28c912485c0b266f1e64c06d4b0b26e4ba08b81a4fec7504d7216472e1b8"
+    },
+    "validationDPO": {
+      "count": 5,
+      "sha256": "16d26b0a9099c6cc4a62ed6d212c36eb45a01a8b66177428da5ef039e8123921"
+    },
+    "validationSFT": {
+      "count": 35,
+      "sha256": "14a9bbc4f473afb0b22b166f702656bd5c5438393740ee48fe6f4f3dc3bdb929"
+    }
+  },
+  "dpoTraining": {
+    "includedInCheckpoint": false,
+    "requiredPhase": "post_sft_preference_training",
+    "status": "generated_not_trained"
+  },
+  "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
+  "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
+  "schemaVersion": "lumen.adapter-experiment-variant/1.0.0",
+  "seed": 42,
+  "trainingConfigSHA256": "308d0ed0451198c0514378b8d0e688bd169383d89bbee0759ee724d83b6f14b2",
+  "trainingCorpusSHA256": "0d2f1928bea15728abf219a353d803626935ff24853ef02ed89923c277c0213f",
+  "variant": "internal_plus_public_baseline",
+  "variantManifestSHA256": "6764dbeeeadf6e44d45f62ad42124ea9eb8ced9b7041de82340177e0700c2d8f"
+}

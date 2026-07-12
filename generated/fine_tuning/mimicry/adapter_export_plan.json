@@ -7,22 +7,45 @@
   "agent": "mimicry",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+    "evaluation": {
+      "contamination": {
+        "contaminated": false,
+        "matchCount": 0,
+        "promotionRequiresZeroMatches": true,
+        "reportSHA256": "ab14c680040e65e6034fcd037fdd742dd54deda9322f641c1c79bed2b56e3c4d"
+      },
+      "executableDeclarativeMetrics": true,
+      "failClosedOnUnknownMetric": true,
+      "frozenEvaluationSHA256": "91a9d6eae5545f7189c16519d5c4b1810afcaea3bda71b8c6324b9e9fb619445",
+      "recordCount": 5,
+      "schemaVersion": "lumen.adapter-eval/1.0.0"
+    },
+    "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+    "preferenceTraining": {
+      "includedInCheckpoint": false,
+      "recordCount": 12,
+      "requiredPhase": "post_sft_preference_training",
+      "status": "generated_not_trained"
+    },
     "recordCounts": {
       "eval": 5,
       "train_dpo": 10,
-      "train_sft": 93,
+      "train_sft": 183,
       "val_dpo": 2,
-      "val_sft": 9
+      "val_sft": 26
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_sft",
       "cross_model_training",
       "manifest_grounding_cards",
       "mimicry_style",
       "public_adapter_corpus_coedit_train"
     ],
     "taskTypes": [
+      "codebase_home_grounding",
+      "codebase_source_chunk_grounding",
       "fleet_delegation",
       "fleet_delegation_preference",
       "fleet_peer_knowledge",
@@ -43,13 +66,41 @@
   "expectedArtifacts": {
     "adapterDirectory": "models/lora_qwen3_bootstrap/mimicry",
     "adapterGGUF": "models/lora_qwen3_gguf/lumen-mimicry-lora.gguf",
+    "contaminationReport": "contamination_report.json",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
+    "evaluationFingerprints": "evaluation_fingerprints.json",
+    "experimentManifest": "experiment_manifest.json",
+    "experimentRoot": "experiments",
     "trainDPO": "train_dpo.jsonl",
     "trainSFT": "train_sft.jsonl",
     "trainingConfig": "unsloth_config.json",
     "validationDPO": "val_dpo.jsonl",
-    "validationSFT": "val_sft.jsonl"
+    "validationSFT": "val_sft.jsonl",
+    "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
+    "variantPathTemplate": "experiments/{variant}"
+  },
+  "experimentPolicy": {
+    "experimentManifestSHA256": "829463de2e547d206cede25b74e90a72d46c6ff759c6502d69792954623ef809",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ],
+    "runtimePointerPolicy": "unchanged_until_promoted"
   },
   "exportPolicy": {
     "allowMergedExport": true,
@@ -68,7 +119,7 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."

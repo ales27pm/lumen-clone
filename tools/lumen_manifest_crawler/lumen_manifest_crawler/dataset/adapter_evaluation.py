@@ -1,0 +1,1843 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import re
+from collections.abc import Iterable, Mapping, Sequence
+from functools import lru_cache
+from typing import Any
+
+from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
+    build_public_adapter_eval_fingerprint_bundle,
+    public_evaluation_text_shingle_hashes,
+)
+
+
+EVALUATION_SCHEMA_VERSION = "lumen.adapter-eval/1.0.0"
+EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.0.0"
+CONTAMINATION_SCHEMA_VERSION = "lumen.adapter-contamination/1.0.0"
+EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.0.0"
+VARIANT_SCHEMA_VERSION = "lumen.adapter-experiment-variant/1.0.0"
+PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.0.0"
+
+EXPERIMENT_VARIANTS = (
+    "internal_only",
+    "internal_plus_public_baseline",
+    "internal_plus_public_optimized",
+)
+DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.80
+DEFAULT_SHINGLE_SIZE = 13
+PUBLIC_EVALUATION_SKETCH_COVERAGE_THRESHOLD = 0.60
+_NON_TRAINING_CONFIG_FIELDS = {
+    "adapterExport",
+    "adapter_gguf_output_path",
+    "adapter_output_dir",
+    "dataset_dir",
+    "gguf_output_dir",
+    "gguf_repo_id",
+    "mergeExport",
+    "output_dir",
+}
+
+
+def canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def controlled_training_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Return only fields that can change learned adapter weights."""
+
+    return {
+        key: value
+        for key, value in sorted(config.items())
+        if key not in _NON_TRAINING_CONFIG_FIELDS
+    }
+
+
+def declarative_metrics_from_expected(
+    expected: Mapping[str, Any],
+    *,
+    agent: str,
+) -> list[dict[str, Any]]:
+    """Translate legacy eval expectations into executable, fail-closed metrics.
+
+    The original ``expected`` object is retained by callers for compatibility, but
+    quality gates consume only the returned versioned metric definitions.
+    Unrecognized expectations deliberately become ``unsupported_contract`` metrics
+    instead of silently passing.
+    """
+
+    metrics: list[dict[str, Any]] = []
+    consumed: set[str] = set()
+
+    if "graphSchemaVersion" in expected and "knownSlotIDs" in expected:
+        metrics.append({"type": "orchestration_graph", "contract": dict(expected)})
+        consumed.update(expected)
+
+    if expected.get("format") == "strict_json":
+        metrics.append({"type": "json_valid"})
+        consumed.add("format")
+
+    if "selectedToolID" in expected:
+        metrics.append(
+            {
+                "type": "manifest_tool_call",
+                "candidatePaths": ["selectedToolID", "tool"],
+                "expectedToolID": expected["selectedToolID"],
+                "validateArguments": False,
+            }
+        )
+        consumed.add("selectedToolID")
+
+    if "tool" in expected:
+        metrics.append(
+            {
+                "type": "manifest_tool_call",
+                "candidatePaths": ["tool", "selectedToolID"],
+                "expectedToolID": expected["tool"],
+                "validateArguments": True,
+            }
+        )
+        consumed.add("tool")
+
+    if "knownToolIDs" in expected and "mustReject" not in expected:
+        metrics.append(
+            {
+                "type": "manifest_tool_call",
+                "candidatePaths": ["tool", "selectedToolID"],
+                "allowedToolIDs": expected["knownToolIDs"],
+                "validateArguments": True,
+            }
+        )
+        consumed.add("knownToolIDs")
+    elif "knownToolIDs" in expected:
+        consumed.add("knownToolIDs")
+
+    if "requiredArguments" in expected:
+        required_arguments = _string_values(expected["requiredArguments"])
+        if required_arguments:
+            metrics.append(
+                {
+                    "type": "json_fields_present",
+                    "paths": [f"arguments.{name}" for name in required_arguments],
+                }
+            )
+        consumed.add("requiredArguments")
+
+    if "allowedToolIDs" in expected or "forbiddenToolIDs" in expected:
+        allowed_tool_ids = _string_values(expected.get("allowedToolIDs"))
+        metrics.append(
+            {
+                "type": "no_tool_selected",
+                "candidatePaths": ["selectedToolID", "tool"],
+            }
+            if "allowedToolIDs" in expected and not allowed_tool_ids
+            else {
+                "type": "manifest_tool_call",
+                "candidatePaths": ["selectedToolID", "tool"],
+                "allowedToolIDs": allowed_tool_ids,
+                "forbiddenToolIDs": expected.get("forbiddenToolIDs") or [],
+                "validateArguments": False,
+            }
+        )
+        consumed.update({"allowedToolIDs", "forbiddenToolIDs"}.intersection(expected))
+
+    if expected.get("mustUseManifestToolIDsOnly") is True:
+        if not any(metric.get("type") == "manifest_tool_call" for metric in metrics):
+            metrics.append(
+                {
+                    "type": "manifest_tool_call",
+                    "candidatePaths": ["selectedToolID", "tool"],
+                    "validateArguments": False,
+                }
+            )
+        consumed.add("mustUseManifestToolIDsOnly")
+
+    if expected.get("mustPersistActionStep") is True:
+        metrics.append({"type": "action_step_persistence", "agent": agent})
+        consumed.add("mustPersistActionStep")
+
+    if "mustReject" in expected:
+        rejected_tool = expected.get("mustReject")
+        metrics.append(
+            {
+                "type": "rejection_status",
+                **({"forbiddenToolID": rejected_tool} if isinstance(rejected_tool, str) else {}),
+            }
+        )
+        consumed.add("mustReject")
+
+    if "requiresApproval" in expected:
+        metrics.append(
+            {
+                "type": "approval_boundary",
+                "required": expected["requiresApproval"] is True,
+                "agent": agent,
+            }
+        )
+        consumed.add("requiresApproval")
+
+    # These fields describe the held-out scenario and authoritative manifest
+    # context. They are not candidate-output claims and are covered by the tool,
+    # argument, action-step, and boundary metrics above.
+    consumed.update({"permissionKey", "scenarioKind"}.intersection(expected))
+
+    if "mustNotContain" in expected:
+        metrics.append({"type": "forbidden_text", "values": expected["mustNotContain"]})
+        consumed.add("mustNotContain")
+
+    if expected.get("mustNotContainJSON") is True:
+        metrics.append({"type": "forbidden_json"})
+        consumed.add("mustNotContainJSON")
+
+    if "maxSentences" in expected:
+        metrics.append({"type": "max_sentences", "maximum": expected["maxSentences"]})
+        consumed.add("maxSentences")
+
+    if expected.get("mustMentionFailure") is True:
+        metrics.append(
+            {
+                "type": "required_text",
+                "match": "any",
+                "values": ["failed", "could not", "unable", "permission"],
+            }
+        )
+        consumed.add("mustMentionFailure")
+
+    if expected.get("mustMentionAttachments") is True:
+        metrics.append({"type": "required_text", "values": ["attachment"]})
+        consumed.add("mustMentionAttachments")
+
+    if expected.get("mustMentionObservation") is True:
+        evidence_terms = _string_values(expected.get("trustedObservationTerms"))
+        metrics.append(
+            {"type": "observation_entailment", "evidenceTerms": evidence_terms}
+            if evidence_terms
+            else {"type": "unsupported_contract", "contractKey": "trusted_observation_missing", "agent": agent}
+        )
+        consumed.add("mustMentionObservation")
+        consumed.add("trustedObservationTerms")
+
+    if expected.get("mustNotContradictToolEvidence") is True:
+        metrics.append(
+            {
+                "type": "forbidden_text",
+                "values": ["unavailable", "could not access", "tool failed", "no result"],
+            }
+        )
+        consumed.add("mustNotContradictToolEvidence")
+
+    if "mustMentionToolResult" in expected:
+        terms = _string_values(expected.get("trustedObservationTerms"))
+        metrics.append(
+            {"type": "observation_entailment", "evidenceTerms": terms}
+            if terms
+            else {"type": "unsupported_contract", "contractKey": "trusted_observation_missing", "agent": agent}
+        )
+        consumed.add("mustMentionToolResult")
+        consumed.add("trustedObservationTerms")
+
+    if expected.get("noContentDrift") is True:
+        invariants = _string_values(expected.get("sourceInvariants"))
+        metrics.append(
+            {"type": "semantic_preservation", "sourceInvariants": invariants}
+            if invariants
+            else {"type": "unsupported_contract", "contractKey": "source_invariants_missing", "agent": agent}
+        )
+        consumed.add("noContentDrift")
+        consumed.add("sourceInvariants")
+
+    if "failureType" in expected or "repairAction" in expected:
+        metric: dict[str, Any] = {"type": "repair_classification"}
+        if "failureType" in expected:
+            metric["expectedFailureType"] = expected["failureType"]
+            consumed.add("failureType")
+        if "repairAction" in expected:
+            metric["expectedRepairAction"] = expected["repairAction"]
+            consumed.add("repairAction")
+        metrics.append(metric)
+
+    if "delegateTo" in expected:
+        metrics.append(
+            {
+                "type": "fixed_slot",
+                "path": "delegateTo",
+                "expectedSlot": expected["delegateTo"],
+                "allowedSlots": expected.get("knownRoles") or expected.get("knownSlots") or [],
+            }
+        )
+        consumed.update({"delegateTo", "knownRoles", "knownSlots"}.intersection(expected))
+    elif expected.get("mustNotInventSlots") is True:
+        metrics.append(
+            {
+                "type": "fixed_slot",
+                "allowedSlots": expected.get("knownRoles") or expected.get("knownSlots") or [],
+                "inspectPaths": ["delegateTo", "knownRoles", "knownSlots", "routeThrough"],
+            }
+        )
+        consumed.update({"mustNotInventSlots", "knownRoles", "knownSlots"}.intersection(expected))
+    elif "knownRoles" in expected or "knownSlots" in expected:
+        key = "knownRoles" if "knownRoles" in expected else "knownSlots"
+        metrics.append(
+            {
+                "type": "json_array_contains",
+                "path": key,
+                "values": expected[key],
+            }
+        )
+        consumed.add(key)
+
+    if expected.get("mustAggregate") is True or "aggregationOwner" in expected:
+        metrics.append(
+            {
+                "type": "aggregation",
+                "required": bool(expected.get("mustAggregate", True)),
+                "expectedOwner": expected.get("aggregationOwner"),
+            }
+        )
+        consumed.update({"mustAggregate", "aggregationOwner"}.intersection(expected))
+
+    if "mustStop" in expected or "stopReason" in expected:
+        metrics.append(
+            {
+                "type": "stopping",
+                "expectedStop": bool(expected.get("mustStop", True)),
+                "expectedReason": expected.get("stopReason"),
+            }
+        )
+        consumed.update({"mustStop", "stopReason"}.intersection(expected))
+
+    exact_paths = {
+        "status": ["status"],
+        "risk": ["risk"],
+        "tone": ["tone", "styleProfile.tone"],
+        "length": ["length", "styleProfile.length"],
+        "diagnosis": ["diagnosis", "failureType"],
+    }
+    for key, paths in exact_paths.items():
+        if key in expected:
+            metrics.append(
+                {
+                    "type": "json_field_equals",
+                    "candidatePaths": paths,
+                    "expected": expected[key],
+                }
+            )
+            consumed.add(key)
+
+    # Remaining boolean contracts are executable when the role emits its normal
+    # structured contract. A missing field is a failure, never an implied pass.
+    for key, value in sorted(expected.items()):
+        if key in consumed:
+            continue
+        if type(value) is bool:
+            metrics.append(
+                {
+                    "type": "json_field_equals",
+                    "candidatePaths": [key],
+                    "expected": value,
+                }
+            )
+        else:
+            metrics.append(
+                {
+                    "type": "unsupported_contract",
+                    "contractKey": key,
+                    "agent": agent,
+                }
+            )
+
+    return metrics or [{"type": "unsupported_contract", "contractKey": "empty_expected", "agent": agent}]
+
+
+def upgrade_evaluation_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(record)
+    metadata = dict(payload.get("metadata") or {})
+    agent = str(metadata.get("agent") or "").strip().lower()
+    expected = payload.get("expected")
+    raw_metrics = payload.get("metrics")
+    if isinstance(raw_metrics, list):
+        metrics = [dict(metric) for metric in raw_metrics if isinstance(metric, Mapping)]
+    elif isinstance(expected, Mapping):
+        metrics = declarative_metrics_from_expected(expected, agent=agent)
+    else:
+        metrics = [{"type": "unsupported_contract", "contractKey": "missing_metrics", "agent": agent}]
+
+    identity = {
+        "agent": agent,
+        "evalType": metadata.get("evalType"),
+        "messages": payload.get("messages") or [],
+        "metrics": metrics,
+    }
+    return {
+        **payload,
+        "schemaVersion": EVALUATION_SCHEMA_VERSION,
+        "evalID": str(payload.get("evalID") or f"eval-{canonical_sha256(identity)[:20]}"),
+        "metrics": metrics,
+        "weight": _positive_number(payload.get("weight"), default=1.0),
+        "metadata": {
+            **metadata,
+            "mustPass": metadata.get("mustPass") is not False,
+            "critical": metadata.get("critical") is not False,
+        },
+    }
+
+
+def score_evaluation_suite(
+    records: Sequence[Mapping[str, Any]],
+    candidate_outputs: Mapping[str, Any],
+    *,
+    tool_contracts: Mapping[str, Any] | None = None,
+    allowed_slots: Iterable[str] = (),
+    agent: str | None = None,
+    variant: str | None = None,
+    controlled_lineage: Mapping[str, Any] | None = None,
+    variant_manifest: Mapping[str, Any] | None = None,
+    artifact_sha256: str | None = None,
+) -> dict[str, Any]:
+    upgraded = [upgrade_evaluation_record(record) for record in records]
+    record_agents = {
+        str((record.get("metadata") or {}).get("agent") or "").strip().lower()
+        for record in upgraded
+        if str((record.get("metadata") or {}).get("agent") or "").strip()
+    }
+    requested_agent = agent.strip().lower() if isinstance(agent, str) and agent.strip() else None
+    agent_mismatch = requested_agent is not None and record_agents != {requested_agent}
+    resolved_agent = (
+        None
+        if agent_mismatch
+        else requested_agent or (next(iter(record_agents)) if len(record_agents) == 1 else None)
+    )
+    case_results: list[dict[str, Any]] = []
+    weighted_passed = 0.0
+    total_weight = 0.0
+    critical_failures = 0
+    categories: dict[str, list[bool]] = {}
+    missing_outputs = 0
+
+    for record in upgraded:
+        eval_id = record["evalID"]
+        weight = float(record["weight"])
+        total_weight += weight
+        has_output = eval_id in candidate_outputs
+        candidate = candidate_outputs.get(eval_id)
+        if not has_output:
+            missing_outputs += 1
+        metric_results: list[dict[str, Any]] = []
+        for metric in record["metrics"]:
+            result = _score_metric(
+                metric,
+                candidate,
+                tool_contracts=tool_contracts or {},
+                allowed_slots=set(allowed_slots),
+                has_output=has_output,
+            )
+            result["category"] = str(metric.get("category") or metric.get("type") or "unknown")
+            metric_results.append(result)
+        passed = has_output and bool(metric_results) and all(result["passed"] for result in metric_results)
+        if passed:
+            weighted_passed += weight
+        critical = bool((record.get("metadata") or {}).get("critical", True))
+        if critical and not passed:
+            critical_failures += 1
+        for metric, result in zip(record["metrics"], metric_results, strict=True):
+            category = str(metric.get("category") or metric.get("type") or "unknown")
+            categories.setdefault(category, []).append(bool(result["passed"]))
+        case_results.append(
+            {
+                "evalID": eval_id,
+                "agent": (record.get("metadata") or {}).get("agent"),
+                "evalType": (record.get("metadata") or {}).get("evalType"),
+                "weight": weight,
+                "critical": critical,
+                "outputPresent": has_output,
+                "passed": passed,
+                "metricResults": metric_results,
+            }
+        )
+
+    evaluation_sha256 = canonical_sha256(upgraded)
+    variant_binding_valid = (
+        isinstance(variant_manifest, Mapping)
+        and _valid_variant_manifest(
+            variant_manifest,
+            agent=resolved_agent,
+            expected_variant=variant,
+            require_trained_artifact=True,
+        )
+        and variant_manifest.get("frozenEvaluationSHA256") == evaluation_sha256
+        and _is_sha256(artifact_sha256)
+        and isinstance(variant_manifest.get("artifact"), Mapping)
+        and variant_manifest["artifact"].get("adapterSHA256") == artifact_sha256
+    )
+    report = {
+        "schemaVersion": EVALUATION_REPORT_SCHEMA_VERSION,
+        "evaluationSchemaVersion": EVALUATION_SCHEMA_VERSION,
+        "agent": resolved_agent,
+        "agentMismatch": agent_mismatch,
+        "variant": variant,
+        "controlledLineageSHA256": canonical_sha256(dict(controlled_lineage or {})),
+        "evaluationSHA256": evaluation_sha256,
+        "candidateOutputsSHA256": canonical_sha256(dict(candidate_outputs)),
+        "variantManifestSHA256": (
+            variant_manifest.get("variantManifestSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "artifactSHA256": artifact_sha256,
+        "promotionEvidenceBound": variant_binding_valid,
+        "caseCount": len(upgraded),
+        "passedCaseCount": sum(1 for result in case_results if result["passed"]),
+        "missingOutputCount": missing_outputs,
+        "criticalFailureCount": critical_failures,
+        "evidenceComplete": (
+            bool(upgraded)
+            and missing_outputs == 0
+            and resolved_agent is not None
+            and not agent_mismatch
+        ),
+        "weightedScore": round(weighted_passed / total_weight, 6) if total_weight else 0.0,
+        "categoryScores": {
+            category: round(sum(values) / len(values), 6)
+            for category, values in sorted(categories.items())
+        },
+        "caseResults": case_results,
+    }
+    report["reportSHA256"] = canonical_sha256(report)
+    return report
+
+
+def _score_metric(
+    metric: Mapping[str, Any],
+    candidate: Any,
+    *,
+    tool_contracts: Mapping[str, Any],
+    allowed_slots: set[str],
+    has_output: bool,
+) -> dict[str, Any]:
+    metric_type = metric.get("type")
+    if not has_output:
+        return _metric_result(metric_type, False, "candidate_output_missing")
+    if not isinstance(metric_type, str):
+        return _metric_result("invalid", False, "metric_type_missing")
+
+    parsed, json_error = _parse_candidate_json(candidate)
+    text = _candidate_text(candidate)
+    if candidate is None or not text.strip():
+        return _metric_result(metric_type, False, "empty_candidate_output")
+
+    if metric_type == "json_valid":
+        return _metric_result(metric_type, json_error is None, json_error or "valid_json")
+    if metric_type == "json_field_equals":
+        paths = _string_values(metric.get("candidatePaths") or [metric.get("path")])
+        found, value = _first_path_value(parsed, paths)
+        passed = found and _json_equal(value, metric.get("expected"))
+        return _metric_result(metric_type, passed, "matched" if passed else "missing_or_unequal_field")
+    if metric_type == "json_fields_present":
+        paths = _string_values(metric.get("paths"))
+        passed = bool(paths) and parsed is not None and all(_path_value(parsed, path)[0] for path in paths)
+        return _metric_result(metric_type, passed, "all_present" if passed else "required_field_missing")
+    if metric_type == "json_array_contains":
+        found, value = _path_value(parsed, str(metric.get("path") or ""))
+        required = _string_values(metric.get("values"))
+        passed = found and isinstance(value, list) and set(required).issubset({str(item) for item in value})
+        return _metric_result(metric_type, passed, "contains_required_values" if passed else "required_values_missing")
+    if metric_type == "manifest_tool_call":
+        return _score_manifest_tool_call(metric, parsed, tool_contracts)
+    if metric_type == "no_tool_selected":
+        paths = _string_values(metric.get("candidatePaths") or ["selectedToolID", "tool"])
+        found, value = _first_path_value(parsed, paths)
+        passed = found and value is None
+        return _metric_result(metric_type, passed, "no_tool_selected" if passed else "unexpected_or_missing_tool")
+    if metric_type == "action_step_persistence":
+        found_action, action = _first_path_value(parsed, ["actionStep", "action", "nextAction"])
+        found_tool, tool = _first_path_value(parsed, ["tool", "selectedToolID"])
+        passed = (found_action and action is not None and action != "") or (
+            metric.get("agent") == "executor" and found_tool and isinstance(tool, str) and bool(tool)
+        )
+        return _metric_result(metric_type, passed, "action_step_present" if passed else "action_step_missing")
+    if metric_type == "approval_boundary":
+        required = metric.get("required")
+        if type(required) is not bool:
+            return _metric_result(metric_type, False, "approval_requirement_invalid")
+        found, value = _first_path_value(parsed, ["requiresApproval", "status", "risk"])
+        if required:
+            passed = found and value in {True, "requires_user_approval", "approval_required"}
+        else:
+            passed = not found or value in {False, "ready_to_execute", "standard", "permissioned"}
+        return _metric_result(metric_type, passed, "approval_boundary_valid" if passed else "approval_boundary_failed")
+    if metric_type == "rejection_status":
+        found, value = _first_path_value(parsed, ["status", "decision", "rejected"])
+        found_rejected, rejected = _first_path_value(parsed, ["rejectedToolID", "invalidToolID"])
+        passed = (found and value in {True, "rejected", "denied", "unsupported", "invalid_tool"}) or (
+            found_rejected and rejected == metric.get("forbiddenToolID")
+        )
+        return _metric_result(metric_type, passed, "rejection_valid" if passed else "rejection_missing")
+    if metric_type == "forbidden_text":
+        forbidden = [value.casefold() for value in _string_values(metric.get("values"))]
+        lowered = text.casefold()
+        passed = bool(forbidden) and not any(value in lowered for value in forbidden)
+        return _metric_result(metric_type, passed, "forbidden_text_absent" if passed else "forbidden_text_present_or_empty_contract")
+    if metric_type == "required_text":
+        values = [value.casefold() for value in _string_values(metric.get("values"))]
+        lowered = text.casefold()
+        if metric.get("match") == "any":
+            passed = bool(values) and any(value in lowered for value in values)
+        else:
+            passed = bool(values) and all(value in lowered for value in values)
+        return _metric_result(metric_type, passed, "required_text_present" if passed else "required_text_missing")
+    if metric_type == "forbidden_json":
+        stripped = text.strip()
+        looks_like_json = (
+            stripped.startswith(("{", "["))
+            or re.search(r'"[^"\n]+"\s*:', stripped) is not None
+        )
+        passed = json_error is not None and not looks_like_json
+        return _metric_result(metric_type, passed, "not_json" if passed else "unexpected_json")
+    if metric_type == "max_sentences":
+        maximum = metric.get("maximum")
+        count = len([part for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part.strip()]) if text.strip() else 0
+        passed = type(maximum) is int and maximum >= 0 and 0 < count <= maximum
+        return _metric_result(metric_type, passed, f"sentence_count={count}")
+    if metric_type == "observation_entailment":
+        required = [value.casefold() for value in _string_values(metric.get("evidenceTerms") or metric.get("requiredTerms"))]
+        forbidden = [value.casefold() for value in _string_values(metric.get("forbiddenClaims"))]
+        lowered = text.casefold()
+        passed = (
+            bool(required)
+            and
+            all(value in lowered for value in required)
+            and not any(value in lowered for value in forbidden)
+        )
+        return _metric_result(metric_type, passed, "observation_supported" if passed else "observation_support_missing")
+    if metric_type == "semantic_preservation":
+        required = [value.casefold() for value in _string_values(metric.get("sourceInvariants") or metric.get("requiredTerms"))]
+        forbidden = [value.casefold() for value in _string_values(metric.get("forbiddenTerms"))]
+        lowered = text.casefold()
+        passed = bool(required) and all(value in lowered for value in required) and not any(value in lowered for value in forbidden)
+        return _metric_result(metric_type, passed, "semantics_preserved" if passed else "semantic_invariant_failed")
+    if metric_type == "repair_classification":
+        return _score_repair_classification(metric, parsed)
+    if metric_type == "fixed_slot":
+        return _score_fixed_slot(metric, parsed, allowed_slots)
+    if metric_type == "aggregation":
+        expected_owner = metric.get("expectedOwner")
+        found_aggregate, aggregate = _first_path_value(parsed, ["aggregate", "mustAggregate"])
+        found_owner, owner = _first_path_value(parsed, ["aggregationOwner", "aggregate.owner"])
+        expected_required = bool(metric.get("required", True))
+        passed = found_aggregate and type(aggregate) is bool and aggregate is expected_required
+        if expected_owner is not None:
+            passed = passed and found_owner and owner == expected_owner
+        return _metric_result(metric_type, passed, "aggregation_valid" if passed else "aggregation_contract_failed")
+    if metric_type == "stopping":
+        found_stop, stop = _first_path_value(parsed, ["stop", "mustStop", "shouldStop"])
+        expected_stop = bool(metric.get("expectedStop", True))
+        passed = found_stop and type(stop) is bool and stop is expected_stop
+        if metric.get("expectedReason") is not None:
+            found_reason, reason = _first_path_value(parsed, ["stopReason", "reason"])
+            passed = passed and found_reason and reason == metric.get("expectedReason")
+        return _metric_result(metric_type, passed, "stopping_valid" if passed else "stopping_contract_failed")
+    if metric_type == "orchestration_graph":
+        return _score_orchestration_graph(metric, parsed)
+
+    return _metric_result(metric_type, False, "unsupported_metric_type")
+
+
+def _score_orchestration_graph(metric: Mapping[str, Any], parsed: Any) -> dict[str, Any]:
+    contract = metric.get("contract")
+    if not isinstance(contract, Mapping) or not isinstance(parsed, Mapping):
+        return _metric_result("orchestration_graph", False, "graph_or_contract_missing")
+    graph = parsed.get("graph") if isinstance(parsed.get("graph"), Mapping) else parsed
+    decision = graph.get("decision") if isinstance(graph.get("decision"), Mapping) else graph
+    events = graph.get("events")
+    dependencies = graph.get("dependencies")
+    if not isinstance(events, list) or not isinstance(dependencies, list):
+        return _metric_result("orchestration_graph", False, "events_or_dependencies_missing")
+    if graph.get("graphSchemaVersion") != contract.get("graphSchemaVersion"):
+        return _metric_result("orchestration_graph", False, "graph_schema_version_mismatch")
+
+    known_slots = set(_string_values(contract.get("knownSlotIDs")))
+    delegated = _string_values(
+        decision.get("delegatedSlotIDs")
+        if isinstance(decision, Mapping)
+        else None
+    )
+    expected_delegated = _string_values(contract.get("expectedDelegatedSlotIDs"))
+    if contract.get("mustUseKnownSlotsOnly") is True and (
+        not known_slots or not set(delegated).issubset(known_slots)
+    ):
+        return _metric_result("orchestration_graph", False, "unknown_slot_used")
+    event_slots = {
+        str(event[key])
+        for event in events
+        if isinstance(event, Mapping)
+        for key in ("targetSlotID", "sourceSlotID")
+        if isinstance(event.get(key), str)
+    }
+    if contract.get("mustUseKnownSlotsOnly") is True and not event_slots.issubset(known_slots):
+        return _metric_result("orchestration_graph", False, "unknown_event_slot_used")
+    if "expectedDelegatedSlotIDs" in contract and delegated != expected_delegated:
+        return _metric_result("orchestration_graph", False, "delegation_sequence_mismatch")
+    event_delegations = [
+        str(event.get("targetSlotID"))
+        for event in events
+        if isinstance(event, Mapping)
+        and event.get("type") == "delegate"
+        and isinstance(event.get("targetSlotID"), str)
+    ]
+    if event_delegations != delegated:
+        return _metric_result("orchestration_graph", False, "decision_event_delegation_mismatch")
+    if contract.get("strategy") is not None and decision.get("strategy") != contract.get("strategy"):
+        return _metric_result("orchestration_graph", False, "strategy_mismatch")
+    if decision.get("aggregationOwnerSlotID") != contract.get("expectedAggregationOwnerSlotID"):
+        return _metric_result("orchestration_graph", False, "aggregation_owner_mismatch")
+    if decision.get("stopReason") != contract.get("expectedStopReason"):
+        return _metric_result("orchestration_graph", False, "stop_reason_mismatch")
+
+    event_types = [str(event.get("type")) for event in events if isinstance(event, Mapping)]
+    required_types = _string_values(contract.get("requiredEventTypes"))
+    if event_types != required_types:
+        return _metric_result("orchestration_graph", False, "event_sequence_mismatch")
+    required_dependencies = contract.get("requiredDependencies")
+    if isinstance(required_dependencies, list):
+        actual = {canonical_sha256(item) for item in dependencies if isinstance(item, Mapping)}
+        required = {canonical_sha256(item) for item in required_dependencies if isinstance(item, Mapping)}
+        if actual != required:
+            return _metric_result("orchestration_graph", False, "dependency_set_mismatch")
+    event_positions = {
+        str(event.get("id")): index
+        for index, event in enumerate(events)
+        if isinstance(event, Mapping) and isinstance(event.get("id"), str)
+    }
+    for dependency in dependencies:
+        if not isinstance(dependency, Mapping):
+            return _metric_result("orchestration_graph", False, "dependency_invalid")
+        source_id = dependency.get("fromEventID") or dependency.get("from")
+        target_id = dependency.get("toEventID") or dependency.get("to")
+        if source_id not in event_positions or target_id not in event_positions:
+            return _metric_result("orchestration_graph", False, "dependency_event_missing")
+        if (
+            contract.get("mustRespectDependencyOrder") is True
+            or contract.get("mustWaitForAllDependenciesBeforeAggregation") is True
+        ) and event_positions[str(source_id)] >= event_positions[str(target_id)]:
+            return _metric_result("orchestration_graph", False, "dependency_order_invalid")
+
+    maximum_delegations = contract.get("maximumDelegationCount")
+    if type(maximum_delegations) is int and len(event_delegations) > maximum_delegations:
+        return _metric_result("orchestration_graph", False, "delegation_limit_exceeded")
+    maximum_per_work_key = contract.get("maximumDelegationsPerWorkKey")
+    if type(maximum_per_work_key) is int:
+        work_key_counts: dict[str, int] = {}
+        for event in events:
+            if not isinstance(event, Mapping) or event.get("type") != "delegate":
+                continue
+            work_key = event.get("workKey")
+            if isinstance(work_key, str):
+                work_key_counts[work_key] = work_key_counts.get(work_key, 0) + 1
+        if any(count > maximum_per_work_key for count in work_key_counts.values()):
+            return _metric_result("orchestration_graph", False, "duplicate_delegation_not_suppressed")
+
+    expected_tool_id = contract.get("toolID")
+    if isinstance(expected_tool_id, str):
+        event_tool_ids = [
+            event.get("toolID")
+            for event in events
+            if isinstance(event, Mapping) and "toolID" in event
+        ]
+        if not event_tool_ids or any(tool_id != expected_tool_id for tool_id in event_tool_ids):
+            return _metric_result("orchestration_graph", False, "boundary_tool_mismatch")
+
+    if contract.get("mustRequestApproval") is True:
+        approval_boundaries = [
+            event for event in events
+            if isinstance(event, Mapping) and event.get("type") == "approval_boundary"
+        ]
+        approval_requests = [
+            event for event in events
+            if isinstance(event, Mapping) and event.get("type") == "request_user_approval"
+        ]
+        if (
+            len(approval_boundaries) != 1
+            or approval_boundaries[0].get("approvalState") != "required"
+            or len(approval_requests) != 1
+        ):
+            return _metric_result("orchestration_graph", False, "approval_boundary_payload_invalid")
+
+    if contract.get("mustNotDelegateUnavailableCapability") is True:
+        unavailable = [
+            event for event in events
+            if isinstance(event, Mapping) and event.get("type") == "capability_unavailable"
+        ]
+        if len(unavailable) != 1 or unavailable[0].get("permissionState") != "denied":
+            return _metric_result("orchestration_graph", False, "unavailable_boundary_payload_invalid")
+
+    if contract.get("mustSuppressDuplicateDelegation") is True:
+        delegated_work_keys = {
+            str(event.get("workKey"))
+            for event in events
+            if isinstance(event, Mapping)
+            and event.get("type") == "delegate"
+            and isinstance(event.get("workKey"), str)
+        }
+        suppressed_work_keys = {
+            str(event.get("workKey"))
+            for event in events
+            if isinstance(event, Mapping)
+            and event.get("type") == "duplicate_suppressed"
+            and isinstance(event.get("workKey"), str)
+        }
+        if not delegated_work_keys or suppressed_work_keys != delegated_work_keys:
+            return _metric_result("orchestration_graph", False, "duplicate_suppression_payload_invalid")
+
+    rejected_slot_id = contract.get("mustRejectSlotID")
+    if isinstance(rejected_slot_id, str):
+        requested_slot_ids = {
+            str(event.get("requestedSlotID"))
+            for event in events
+            if isinstance(event, Mapping) and isinstance(event.get("requestedSlotID"), str)
+        }
+        rejection_events = [
+            event for event in events
+            if isinstance(event, Mapping) and event.get("type") == "invalid_slot_rejected"
+        ]
+        if requested_slot_ids != {rejected_slot_id} or len(rejection_events) != 1:
+            return _metric_result("orchestration_graph", False, "invalid_slot_rejection_payload_invalid")
+
+    if contract.get("mustHaveExactlyOneAggregationOwner") is True:
+        owner = decision.get("aggregationOwnerSlotID")
+        owner_delegations = [slot_id for slot_id in event_delegations if slot_id == owner]
+        if not isinstance(owner, str) or len(owner_delegations) != 1:
+            return _metric_result("orchestration_graph", False, "aggregation_owner_count_invalid")
+
+    visible_graph = _without_exclusion_declarations(graph)
+    serialized = json.dumps(visible_graph, ensure_ascii=False, sort_keys=True).casefold()
+    if contract.get("mustNotExposePrivateState") is True and any(
+        marker in serialized
+        for marker in (
+            "hiddenreasoning",
+            "hidden_reasoning",
+            "privatepeerstate",
+            "private_peer_state",
+            "rawconversation",
+            "raw_conversation",
+        )
+    ):
+        return _metric_result("orchestration_graph", False, "private_state_exposed")
+    forbidden_context = [value.casefold() for value in _string_values(contract.get("forbiddenContextKeys"))]
+    if any(value in serialized for value in forbidden_context):
+        return _metric_result("orchestration_graph", False, "forbidden_context_exposed")
+    required_context = [value.casefold() for value in _string_values(contract.get("requiredContextKeys"))]
+    if any(value not in serialized for value in required_context):
+        return _metric_result("orchestration_graph", False, "required_context_missing")
+    return _metric_result("orchestration_graph", True, "orchestration_graph_valid")
+
+
+def _without_exclusion_declarations(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            key: _without_exclusion_declarations(child)
+            for key, child in value.items()
+            if str(key).casefold() not in {"excludes", "forbiddencontextkeys", "forbiddenfields"}
+        }
+    if isinstance(value, list):
+        return [_without_exclusion_declarations(child) for child in value]
+    return value
+
+
+def _score_manifest_tool_call(
+    metric: Mapping[str, Any],
+    parsed: Any,
+    tool_contracts: Mapping[str, Any],
+) -> dict[str, Any]:
+    paths = _string_values(metric.get("candidatePaths") or ["tool", "selectedToolID"])
+    found, tool_id = _first_path_value(parsed, paths)
+    if not found or not isinstance(tool_id, str):
+        return _metric_result("manifest_tool_call", False, "tool_id_missing")
+    allowed = set(_string_values(metric.get("allowedToolIDs"))) or set(tool_contracts)
+    if tool_id not in allowed:
+        return _metric_result("manifest_tool_call", False, "tool_id_not_allowed")
+    if tool_id in set(_string_values(metric.get("forbiddenToolIDs"))):
+        return _metric_result("manifest_tool_call", False, "tool_id_forbidden")
+    expected = metric.get("expectedToolID")
+    if expected is not None and tool_id != expected:
+        return _metric_result("manifest_tool_call", False, "unexpected_tool_id")
+    if metric.get("validateArguments") is False:
+        return _metric_result("manifest_tool_call", True, "manifest_tool_selected")
+
+    contract = tool_contracts.get(tool_id)
+    if contract is None:
+        return _metric_result("manifest_tool_call", False, "tool_contract_missing")
+    found_args, arguments = _path_value(parsed, "arguments")
+    if not found_args or not isinstance(arguments, dict):
+        return _metric_result("manifest_tool_call", False, "arguments_missing")
+    contract_args = _tool_arguments(contract)
+    known_names = {item["name"] for item in contract_args}
+    if set(arguments) - known_names:
+        return _metric_result("manifest_tool_call", False, "extra_arguments")
+    for definition in contract_args:
+        name = definition["name"]
+        if definition["required"] and name not in arguments:
+            return _metric_result("manifest_tool_call", False, "required_argument_missing")
+        if name not in arguments:
+            continue
+        if not _argument_has_type(arguments[name], definition["type"]):
+            return _metric_result("manifest_tool_call", False, "argument_type_mismatch")
+        allowed_values = definition.get("allowedValues")
+        if allowed_values and arguments[name] not in allowed_values:
+            return _metric_result("manifest_tool_call", False, "argument_enum_mismatch")
+    return _metric_result("manifest_tool_call", True, "manifest_call_valid")
+
+
+def _score_repair_classification(metric: Mapping[str, Any], parsed: Any) -> dict[str, Any]:
+    passed = parsed is not None
+    if metric.get("expectedFailureType") is not None:
+        found, value = _first_path_value(parsed, ["failureType", "diagnosis"])
+        passed = passed and found and value == metric.get("expectedFailureType")
+    if metric.get("expectedRepairAction") is not None:
+        found, value = _first_path_value(parsed, ["repairAction", "repair.action", "repair"])
+        passed = passed and found and value == metric.get("expectedRepairAction")
+    return _metric_result("repair_classification", passed, "repair_valid" if passed else "repair_contract_failed")
+
+
+def _score_fixed_slot(metric: Mapping[str, Any], parsed: Any, allowed_slots: set[str]) -> dict[str, Any]:
+    metric_allowed = set(_string_values(metric.get("allowedSlots")))
+    allowed = metric_allowed or allowed_slots
+    if not allowed:
+        return _metric_result("fixed_slot", False, "allowed_slots_missing")
+    expected = metric.get("expectedSlot")
+    if expected is not None:
+        found, value = _path_value(parsed, str(metric.get("path") or "delegateTo"))
+        passed = found and value == expected and value in allowed
+        return _metric_result("fixed_slot", passed, "slot_valid" if passed else "slot_invalid")
+    inspect_paths = _string_values(metric.get("inspectPaths")) or ["delegateTo"]
+    values: list[str] = []
+    for path in inspect_paths:
+        found, value = _path_value(parsed, path)
+        if not found:
+            continue
+        if isinstance(value, list):
+            values.extend(str(item) for item in value)
+        elif isinstance(value, str):
+            values.append(value)
+    passed = bool(values) and set(values).issubset(allowed)
+    return _metric_result("fixed_slot", passed, "slots_valid" if passed else "unknown_or_missing_slot")
+
+
+def build_evaluation_fingerprint_bundle(
+    evaluation_records: Sequence[Mapping[str, Any]],
+    *,
+    shingle_size: int = DEFAULT_SHINGLE_SIZE,
+) -> dict[str, Any]:
+    fingerprints = [
+        _record_fingerprint(upgrade_evaluation_record(record), shingle_size=shingle_size)
+        for record in evaluation_records
+    ]
+    payload = {
+        "schemaVersion": CONTAMINATION_SCHEMA_VERSION,
+        "purpose": "evaluation_only_contamination_fingerprints",
+        "hashOnly": True,
+        "shingleSize": shingle_size,
+        "records": sorted(fingerprints, key=lambda item: item["recordID"]),
+    }
+    payload["bundleSHA256"] = canonical_sha256(payload)
+    return payload
+
+
+def build_contamination_report(
+    training_records: Sequence[Mapping[str, Any]],
+    evaluation_records: Sequence[Mapping[str, Any]],
+    *,
+    threshold: float = DEFAULT_NEAR_DUPLICATE_THRESHOLD,
+    shingle_size: int = DEFAULT_SHINGLE_SIZE,
+) -> dict[str, Any]:
+    if not 0 < threshold <= 1:
+        raise ValueError("threshold must be in (0, 1]")
+    upgraded_evaluation = [upgrade_evaluation_record(record) for record in evaluation_records]
+    eval_fingerprints = [
+        _record_fingerprint(record, shingle_size=shingle_size)
+        for record in upgraded_evaluation
+    ]
+    matches: list[dict[str, Any]] = []
+    # Stream training fingerprints so large source-chunk corpora do not retain
+    # every shingle set in memory at once. Evaluation bundles are intentionally
+    # small and frozen, so retaining that side is bounded.
+    for training_record in training_records:
+        training = _record_fingerprint(training_record, shingle_size=shingle_size)
+        for evaluation in eval_fingerprints:
+            kind, similarity = _fingerprint_match(training, evaluation, threshold)
+            if kind is None:
+                continue
+            matches.append(
+                {
+                    "trainingRecordID": training["recordID"],
+                    "evaluationRecordID": evaluation["recordID"],
+                    "matchKind": kind,
+                    "similarity": round(similarity, 6),
+                }
+            )
+        matches.extend(_public_evaluation_matches(training_record, training["recordID"]))
+    public_bundle = build_public_adapter_eval_fingerprint_bundle()
+    report = {
+        "schemaVersion": CONTAMINATION_SCHEMA_VERSION,
+        "threshold": threshold,
+        "shingleSize": shingle_size,
+        "hashOnly": True,
+        "trainingRecordCount": len(training_records),
+        "evaluationRecordCount": len(evaluation_records),
+        "trainingRecordsSHA256": canonical_sha256(list(training_records)),
+        "evaluationRecordsSHA256": canonical_sha256(upgraded_evaluation),
+        "publicEvaluationBundleSHA256": public_bundle["bundleSHA256"],
+        "publicEvaluationRowCount": public_bundle["rowCount"],
+        "matchCount": len(matches),
+        "contaminated": bool(matches),
+        "matches": sorted(
+            matches,
+            key=lambda item: (
+                item["trainingRecordID"],
+                item["evaluationRecordID"],
+                item["matchKind"],
+            ),
+        ),
+    }
+    report["reportSHA256"] = canonical_sha256(report)
+    return report
+
+
+def build_experiment_variant_manifest(
+    *,
+    agent: str,
+    variant: str,
+    base_model_id: str,
+    seed: int,
+    training_config: Mapping[str, Any],
+    train_sft: Sequence[Mapping[str, Any]],
+    validation_sft: Sequence[Mapping[str, Any]],
+    dpo_records: Sequence[Mapping[str, Any]],
+    evaluation_records: Sequence[Mapping[str, Any]],
+    validation_dpo_records: Sequence[Mapping[str, Any]] = (),
+    contamination_report: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if variant not in EXPERIMENT_VARIANTS:
+        raise ValueError(f"Unsupported experiment variant: {variant}")
+    upgraded_eval = [upgrade_evaluation_record(record) for record in evaluation_records]
+    contamination = dict(contamination_report or build_contamination_report(
+        [*train_sft, *validation_sft, *dpo_records, *validation_dpo_records],
+        upgraded_eval,
+    ))
+    training_corpus = [*train_sft, *validation_sft, *dpo_records, *validation_dpo_records]
+    training_corpus_sha256 = canonical_sha256(training_corpus)
+    evaluation_sha256 = canonical_sha256(upgraded_eval)
+    public_evaluation_bundle = build_public_adapter_eval_fingerprint_bundle()
+    controlled_config = controlled_training_config(training_config)
+    if (
+        contamination.get("trainingRecordsSHA256") != training_corpus_sha256
+        or contamination.get("evaluationRecordsSHA256") != evaluation_sha256
+        or contamination.get("publicEvaluationBundleSHA256")
+        != public_evaluation_bundle["bundleSHA256"]
+        or contamination.get("publicEvaluationRowCount")
+        != public_evaluation_bundle["rowCount"]
+    ):
+        raise ValueError("Contamination report is not bound to the variant datasets")
+    manifest = {
+        "schemaVersion": VARIANT_SCHEMA_VERSION,
+        "agent": agent,
+        "variant": variant,
+        "baseModelID": base_model_id,
+        "seed": seed,
+        "controlledTrainingConfig": controlled_config,
+        "trainingConfigSHA256": canonical_sha256(controlled_config),
+        "frozenEvaluationSHA256": evaluation_sha256,
+        "publicEvaluationBundleSHA256": public_evaluation_bundle["bundleSHA256"],
+        "trainingCorpusSHA256": training_corpus_sha256,
+        "datasets": {
+            "trainSFT": {"count": len(train_sft), "sha256": canonical_sha256(list(train_sft))},
+            "validationSFT": {"count": len(validation_sft), "sha256": canonical_sha256(list(validation_sft))},
+            "trainDPO": {"count": len(dpo_records), "sha256": canonical_sha256(list(dpo_records))},
+            "validationDPO": {"count": len(validation_dpo_records), "sha256": canonical_sha256(list(validation_dpo_records))},
+        },
+        "dpoTraining": {
+            "status": "generated_not_trained",
+            "includedInCheckpoint": False,
+            "requiredPhase": "post_sft_preference_training",
+        },
+        "contamination": {
+            "contaminated": bool(contamination.get("contaminated", True)),
+            "matchCount": contamination.get("matchCount"),
+            "reportSHA256": contamination.get("reportSHA256"),
+            "trainingRecordsSHA256": contamination.get("trainingRecordsSHA256"),
+            "evaluationRecordsSHA256": contamination.get("evaluationRecordsSHA256"),
+            "publicEvaluationBundleSHA256": contamination.get("publicEvaluationBundleSHA256"),
+            "publicEvaluationRowCount": contamination.get("publicEvaluationRowCount"),
+        },
+        "artifact": {
+            "status": "pending_training",
+            "adapterSHA256": None,
+            "evaluationReportSHA256": None,
+        },
+    }
+    manifest["variantManifestSHA256"] = canonical_sha256(manifest)
+    return manifest
+
+
+def build_experiment_manifest(
+    *,
+    agent: str,
+    variants: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    missing = set(EXPERIMENT_VARIANTS) - set(variants)
+    extra = set(variants) - set(EXPERIMENT_VARIANTS)
+    if missing or extra:
+        raise ValueError(f"Experiment variants must be exactly {EXPERIMENT_VARIANTS}; missing={sorted(missing)}, extra={sorted(extra)}")
+    ordered = [dict(variants[name]) for name in EXPERIMENT_VARIANTS]
+    for manifest, expected_variant in zip(ordered, EXPERIMENT_VARIANTS, strict=True):
+        if not _valid_variant_manifest(
+            manifest,
+            agent=agent,
+            expected_variant=expected_variant,
+        ):
+            raise ValueError("Variant manifest integrity, agent, or name mismatch")
+    for field in (
+        "baseModelID",
+        "seed",
+        "trainingConfigSHA256",
+        "frozenEvaluationSHA256",
+        "publicEvaluationBundleSHA256",
+    ):
+        values = {manifest.get(field) for manifest in ordered}
+        if len(values) != 1 or None in values:
+            raise ValueError(f"All variants must share {field}")
+    payload = {
+        "schemaVersion": EXPERIMENT_SCHEMA_VERSION,
+        "agent": agent,
+        "variantOrder": list(EXPERIMENT_VARIANTS),
+        "controlledVariables": {
+            "baseModelID": ordered[0]["baseModelID"],
+            "seed": ordered[0]["seed"],
+            "trainingConfigSHA256": ordered[0]["trainingConfigSHA256"],
+            "frozenEvaluationSHA256": ordered[0]["frozenEvaluationSHA256"],
+            "publicEvaluationBundleSHA256": ordered[0]["publicEvaluationBundleSHA256"],
+        },
+        "variants": ordered,
+        "promotionContract": promotion_contract(),
+    }
+    payload["experimentManifestSHA256"] = canonical_sha256(payload)
+    return payload
+
+
+def finalize_experiment_variant_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    adapter_sha256: str,
+) -> dict[str, Any]:
+    """Bind a pending dataset variant to the exact trained adapter artifact."""
+
+    agent = manifest.get("agent")
+    variant = manifest.get("variant")
+    if not _valid_variant_manifest(
+        manifest,
+        agent=agent if isinstance(agent, str) else None,
+        expected_variant=variant if isinstance(variant, str) else None,
+    ):
+        raise ValueError("Cannot finalize an invalid experiment variant manifest")
+    if not _is_sha256(adapter_sha256):
+        raise ValueError("adapter_sha256 must be a lowercase SHA-256 digest")
+    finalized = {
+        key: value
+        for key, value in dict(manifest).items()
+        if key != "variantManifestSHA256"
+    }
+    finalized["artifact"] = {
+        "status": "trained",
+        "adapterSHA256": adapter_sha256,
+        "evaluationReportSHA256": None,
+    }
+    finalized["variantManifestSHA256"] = canonical_sha256(finalized)
+    return finalized
+
+
+def promotion_contract() -> dict[str, Any]:
+    return {
+        "schemaVersion": PROMOTION_SCHEMA_VERSION,
+        "requiresCompleteEvidence": True,
+        "requiresArtifactDigests": True,
+        "requiresBaselineAndOptimizedContaminationReports": True,
+        "requiresPublicEvaluationFingerprintBinding": True,
+        "maximumContaminationMatches": 0,
+        "maximumCriticalBoundaryFailures": 0,
+        "maximumCriticalCategoryRegression": 0.02,
+        "minimumWeightedScoreImprovement": 0.01,
+        "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+        "runtimePointerPolicy": "unchanged_until_promoted",
+    }
+
+
+def decide_adapter_promotion(
+    *,
+    agent: str,
+    baseline_report: Mapping[str, Any],
+    optimized_report: Mapping[str, Any],
+    baseline_variant_manifest: Mapping[str, Any],
+    optimized_variant_manifest: Mapping[str, Any],
+    evaluation_records: Sequence[Mapping[str, Any]],
+    baseline_candidate_outputs: Mapping[str, Any],
+    optimized_candidate_outputs: Mapping[str, Any],
+    baseline_contamination_report: Mapping[str, Any],
+    optimized_contamination_report: Mapping[str, Any],
+    baseline_artifact_sha256: str | None,
+    optimized_artifact_sha256: str | None,
+    tool_contracts: Mapping[str, Any] | None = None,
+    allowed_slots: Iterable[str] = (),
+) -> dict[str, Any]:
+    contract = promotion_contract()
+    failures: list[str] = []
+    baseline_valid = _valid_evaluation_report(
+        baseline_report,
+        agent=agent,
+        expected_variant="internal_plus_public_baseline",
+    )
+    optimized_valid = _valid_evaluation_report(
+        optimized_report,
+        agent=agent,
+        expected_variant="internal_plus_public_optimized",
+    )
+    baseline_variant_valid = _valid_variant_manifest(
+        baseline_variant_manifest,
+        agent=agent,
+        expected_variant="internal_plus_public_baseline",
+        require_trained_artifact=True,
+    )
+    optimized_variant_valid = _valid_variant_manifest(
+        optimized_variant_manifest,
+        agent=agent,
+        expected_variant="internal_plus_public_optimized",
+        require_trained_artifact=True,
+    )
+    baseline_contamination_valid = _valid_contamination_report(baseline_contamination_report)
+    contamination_valid = _valid_contamination_report(optimized_contamination_report)
+    if not baseline_valid or not optimized_valid:
+        failures.append("evaluation_report_integrity_invalid")
+    if not baseline_contamination_valid or not contamination_valid:
+        failures.append("contamination_report_integrity_invalid")
+    if not baseline_variant_valid or not optimized_variant_valid:
+        failures.append("variant_manifest_integrity_invalid")
+    if baseline_variant_valid:
+        expected_baseline_report = score_evaluation_suite(
+            evaluation_records,
+            baseline_candidate_outputs,
+            tool_contracts=tool_contracts,
+            allowed_slots=allowed_slots,
+            agent=agent,
+            variant="internal_plus_public_baseline",
+            controlled_lineage=_variant_controlled_lineage(baseline_variant_manifest),
+            variant_manifest=baseline_variant_manifest,
+            artifact_sha256=baseline_artifact_sha256,
+        )
+        if canonical_sha256(dict(baseline_report)) != canonical_sha256(expected_baseline_report):
+            failures.append("baseline_report_reproduction_failed")
+    if optimized_variant_valid:
+        expected_optimized_report = score_evaluation_suite(
+            evaluation_records,
+            optimized_candidate_outputs,
+            tool_contracts=tool_contracts,
+            allowed_slots=allowed_slots,
+            agent=agent,
+            variant="internal_plus_public_optimized",
+            controlled_lineage=_variant_controlled_lineage(optimized_variant_manifest),
+            variant_manifest=optimized_variant_manifest,
+            artifact_sha256=optimized_artifact_sha256,
+        )
+        if canonical_sha256(dict(optimized_report)) != canonical_sha256(expected_optimized_report):
+            failures.append("optimized_report_reproduction_failed")
+    if baseline_variant_valid and optimized_variant_valid:
+        controlled_fields = (
+            "baseModelID",
+            "seed",
+            "trainingConfigSHA256",
+            "frozenEvaluationSHA256",
+            "publicEvaluationBundleSHA256",
+        )
+        if any(
+            baseline_variant_manifest.get(field) != optimized_variant_manifest.get(field)
+            for field in controlled_fields
+        ):
+            failures.append("variant_controlled_lineage_mismatch")
+    if baseline_valid and baseline_variant_valid and not _report_matches_variant(
+        baseline_report,
+        baseline_variant_manifest,
+        baseline_artifact_sha256,
+    ):
+        failures.append("baseline_report_variant_binding_invalid")
+    if optimized_valid and optimized_variant_valid and not _report_matches_variant(
+        optimized_report,
+        optimized_variant_manifest,
+        optimized_artifact_sha256,
+    ):
+        failures.append("optimized_report_variant_binding_invalid")
+    if contamination_valid and optimized_variant_valid and not _contamination_matches_variant(
+        optimized_contamination_report,
+        optimized_variant_manifest,
+    ):
+        failures.append("contamination_variant_binding_invalid")
+    if baseline_contamination_valid and baseline_variant_valid and not _contamination_matches_variant(
+        baseline_contamination_report,
+        baseline_variant_manifest,
+    ):
+        failures.append("baseline_contamination_variant_binding_invalid")
+    if baseline_valid and optimized_valid and (
+        baseline_report.get("evaluationSHA256") != optimized_report.get("evaluationSHA256")
+        or baseline_report.get("caseCount") != optimized_report.get("caseCount")
+        or baseline_report.get("controlledLineageSHA256") != optimized_report.get("controlledLineageSHA256")
+    ):
+        failures.append("evaluation_lineage_mismatch")
+    if not baseline_report.get("evidenceComplete") or not optimized_report.get("evidenceComplete"):
+        failures.append("evaluation_evidence_incomplete")
+    if not _is_sha256(baseline_artifact_sha256) or not _is_sha256(optimized_artifact_sha256):
+        failures.append("artifact_digest_missing_or_invalid")
+    if (
+        baseline_contamination_report.get("contaminated") is not False
+        or baseline_contamination_report.get("matchCount") != 0
+        or optimized_contamination_report.get("contaminated") is not False
+        or optimized_contamination_report.get("matchCount") != 0
+    ):
+        failures.append("evaluation_contamination_detected_or_unproven")
+    if optimized_report.get("criticalFailureCount") != 0:
+        failures.append("critical_boundary_failure")
+
+    baseline_score = _bounded_score(baseline_report.get("weightedScore"))
+    optimized_score = _bounded_score(optimized_report.get("weightedScore"))
+    if baseline_score is None or optimized_score is None:
+        failures.append("weighted_score_missing_or_invalid")
+        improvement = None
+    else:
+        improvement = round(optimized_score - baseline_score, 6)
+        if improvement < contract["minimumWeightedScoreImprovement"]:
+            failures.append("insufficient_weighted_score_improvement")
+
+    regressions: dict[str, float] = {}
+    baseline_categories = baseline_report.get("categoryScores")
+    optimized_categories = optimized_report.get("categoryScores")
+    if not isinstance(baseline_categories, Mapping) or not isinstance(optimized_categories, Mapping):
+        failures.append("category_scores_missing")
+    else:
+        for category, raw_baseline in baseline_categories.items():
+            baseline_value = _bounded_score(raw_baseline)
+            optimized_value = _bounded_score(optimized_categories.get(category))
+            if baseline_value is None or optimized_value is None:
+                regressions[str(category)] = 1.0
+                continue
+            regression = round(baseline_value - optimized_value, 6)
+            if regression > contract["maximumCriticalCategoryRegression"]:
+                regressions[str(category)] = regression
+        if regressions:
+            failures.append("critical_category_regression")
+
+    promoted = not failures
+    decision = {
+        "schemaVersion": PROMOTION_SCHEMA_VERSION,
+        "agent": agent,
+        "promoted": promoted,
+        "failures": failures,
+        "weightedScoreImprovement": improvement,
+        "categoryRegressions": dict(sorted(regressions.items())),
+        "baselineReportSHA256": baseline_report.get("reportSHA256"),
+        "optimizedReportSHA256": optimized_report.get("reportSHA256"),
+        "baselineVariantManifestSHA256": baseline_variant_manifest.get("variantManifestSHA256"),
+        "optimizedVariantManifestSHA256": optimized_variant_manifest.get("variantManifestSHA256"),
+        "baselineContaminationReportSHA256": baseline_contamination_report.get("reportSHA256"),
+        "contaminationReportSHA256": optimized_contamination_report.get("reportSHA256"),
+        "baselineArtifactSHA256": baseline_artifact_sha256,
+        "optimizedArtifactSHA256": optimized_artifact_sha256,
+        "runtimePointerAction": "promote_optimized_candidate" if promoted else "leave_current_pointer_unchanged",
+        "contract": contract,
+    }
+    decision["decisionSHA256"] = canonical_sha256(decision)
+    return decision
+
+
+def _valid_evaluation_report(
+    report: Mapping[str, Any],
+    *,
+    agent: str,
+    expected_variant: str,
+) -> bool:
+    return (
+        report.get("schemaVersion") == EVALUATION_REPORT_SCHEMA_VERSION
+        and report.get("agent") == agent
+        and report.get("variant") == expected_variant
+        and type(report.get("caseCount")) is int
+        and report["caseCount"] > 0
+        and _is_sha256(report.get("evaluationSHA256"))
+        and _is_sha256(report.get("candidateOutputsSHA256"))
+        and _is_sha256(report.get("controlledLineageSHA256"))
+        and _is_sha256(report.get("variantManifestSHA256"))
+        and _is_sha256(report.get("artifactSHA256"))
+        and report.get("promotionEvidenceBound") is True
+        and _evaluation_report_aggregates_valid(report)
+        and _valid_embedded_hash(report, "reportSHA256")
+    )
+
+
+def _evaluation_report_aggregates_valid(report: Mapping[str, Any]) -> bool:
+    cases = report.get("caseResults")
+    case_count = report.get("caseCount")
+    if not isinstance(cases, list) or type(case_count) is not int or len(cases) != case_count:
+        return False
+    total_weight = 0.0
+    passed_weight = 0.0
+    passed_count = 0
+    missing_count = 0
+    critical_failures = 0
+    categories: dict[str, list[bool]] = {}
+    for case in cases:
+        if not isinstance(case, Mapping):
+            return False
+        weight = _positive_number(case.get("weight"), default=0.0)
+        if weight <= 0 or type(case.get("passed")) is not bool or type(case.get("critical")) is not bool:
+            return False
+        if type(case.get("outputPresent")) is not bool:
+            return False
+        metric_results = case.get("metricResults")
+        if not isinstance(metric_results, list) or not metric_results:
+            return False
+        passed = case["passed"]
+        if passed != all(
+            isinstance(result, Mapping) and result.get("passed") is True
+            for result in metric_results
+        ):
+            return False
+        total_weight += weight
+        if passed:
+            passed_count += 1
+            passed_weight += weight
+        if not case["outputPresent"]:
+            missing_count += 1
+        if case["critical"] and not passed:
+            critical_failures += 1
+        for result in metric_results:
+            if not isinstance(result, Mapping) or type(result.get("passed")) is not bool:
+                return False
+            category = str(result.get("category") or result.get("type") or "unknown")
+            categories.setdefault(category, []).append(result["passed"])
+    expected_categories = {
+        category: round(sum(values) / len(values), 6)
+        for category, values in sorted(categories.items())
+    }
+    return (
+        report.get("passedCaseCount") == passed_count
+        and report.get("missingOutputCount") == missing_count
+        and report.get("criticalFailureCount") == critical_failures
+        and _bounded_score(report.get("weightedScore"))
+        == round(passed_weight / total_weight, 6)
+        and report.get("categoryScores") == expected_categories
+        and report.get("evidenceComplete") is (missing_count == 0)
+    )
+
+
+def _valid_variant_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    agent: str | None,
+    expected_variant: str | None,
+    require_trained_artifact: bool = False,
+) -> bool:
+    datasets = manifest.get("datasets")
+    artifact = manifest.get("artifact")
+    structurally_valid = (
+        manifest.get("schemaVersion") == VARIANT_SCHEMA_VERSION
+        and isinstance(agent, str)
+        and manifest.get("agent") == agent
+        and isinstance(expected_variant, str)
+        and manifest.get("variant") == expected_variant
+        and _is_sha256(manifest.get("trainingConfigSHA256"))
+        and isinstance(manifest.get("controlledTrainingConfig"), Mapping)
+        and canonical_sha256(dict(manifest["controlledTrainingConfig"]))
+        == manifest.get("trainingConfigSHA256")
+        and _is_sha256(manifest.get("frozenEvaluationSHA256"))
+        and _is_sha256(manifest.get("publicEvaluationBundleSHA256"))
+        and _is_sha256(manifest.get("trainingCorpusSHA256"))
+        and isinstance(datasets, Mapping)
+        and all(
+            isinstance(datasets.get(name), Mapping)
+            and _is_sha256(datasets[name].get("sha256"))
+            and type(datasets[name].get("count")) is int
+            for name in ("trainSFT", "validationSFT", "trainDPO", "validationDPO")
+        )
+        and _valid_embedded_hash(manifest, "variantManifestSHA256")
+    )
+    if not structurally_valid:
+        return False
+    if not require_trained_artifact:
+        return True
+    return (
+        isinstance(artifact, Mapping)
+        and artifact.get("status") == "trained"
+        and _is_sha256(artifact.get("adapterSHA256"))
+    )
+
+
+def _report_matches_variant(
+    report: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    artifact_sha256: str | None,
+) -> bool:
+    artifact = manifest.get("artifact")
+    return (
+        report.get("variantManifestSHA256") == manifest.get("variantManifestSHA256")
+        and report.get("evaluationSHA256") == manifest.get("frozenEvaluationSHA256")
+        and report.get("artifactSHA256") == artifact_sha256
+        and isinstance(artifact, Mapping)
+        and artifact.get("adapterSHA256") == artifact_sha256
+        and report.get("promotionEvidenceBound") is True
+    )
+
+
+def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        field: manifest.get(field)
+        for field in (
+            "agent",
+            "baseModelID",
+            "seed",
+            "trainingConfigSHA256",
+            "frozenEvaluationSHA256",
+            "publicEvaluationBundleSHA256",
+        )
+    }
+
+
+def _contamination_matches_variant(
+    report: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> bool:
+    contamination = manifest.get("contamination")
+    return (
+        isinstance(contamination, Mapping)
+        and report.get("reportSHA256") == contamination.get("reportSHA256")
+        and report.get("trainingRecordsSHA256") == manifest.get("trainingCorpusSHA256")
+        and report.get("evaluationRecordsSHA256") == manifest.get("frozenEvaluationSHA256")
+        and report.get("publicEvaluationBundleSHA256")
+        == manifest.get("publicEvaluationBundleSHA256")
+    )
+
+
+def _valid_contamination_report(report: Mapping[str, Any]) -> bool:
+    return (
+        report.get("schemaVersion") == CONTAMINATION_SCHEMA_VERSION
+        and type(report.get("matchCount")) is int
+        and type(report.get("contaminated")) is bool
+        and _is_sha256(report.get("trainingRecordsSHA256"))
+        and _is_sha256(report.get("evaluationRecordsSHA256"))
+        and _is_sha256(report.get("publicEvaluationBundleSHA256"))
+        and type(report.get("publicEvaluationRowCount")) is int
+        and report["publicEvaluationRowCount"] > 0
+        and _valid_embedded_hash(report, "reportSHA256")
+    )
+
+
+@lru_cache(maxsize=1)
+def _public_evaluation_shingle_index() -> tuple[
+    dict[str, tuple[tuple[str, int], ...]],
+    dict[tuple[str, int], int],
+]:
+    bundle = build_public_adapter_eval_fingerprint_bundle()
+    mutable_index: dict[str, list[tuple[str, int]]] = {}
+    sketch_sizes: dict[tuple[str, int], int] = {}
+    for artifact in bundle["artifacts"]:
+        artifact_id = str(artifact["id"])
+        for row in artifact["rows"]:
+            row_key = (artifact_id, int(row["rowOrdinal"]))
+            sketch = row["tokenShingleSketch"]
+            sketch_sizes[row_key] = len(sketch)
+            for digest in sketch:
+                mutable_index.setdefault(str(digest), []).append(row_key)
+    return (
+        {
+            digest: tuple(rows)
+            for digest, rows in mutable_index.items()
+        },
+        sketch_sizes,
+    )
+
+
+def _public_evaluation_matches(
+    training_record: Mapping[str, Any],
+    training_record_id: str,
+) -> list[dict[str, Any]]:
+    shingles = _cached_public_evaluation_text_shingles(
+        tuple(_content_segments(training_record))
+    )
+    if not shingles:
+        return []
+    index, sketch_sizes = _public_evaluation_shingle_index()
+    counts: dict[tuple[str, int], int] = {}
+    for digest in shingles:
+        for row_key in index.get(digest, ()):
+            counts[row_key] = counts.get(row_key, 0) + 1
+    matches: list[dict[str, Any]] = []
+    for (artifact_id, ordinal), count in counts.items():
+        sketch_size = sketch_sizes[(artifact_id, ordinal)]
+        coverage = count / sketch_size if sketch_size else 0.0
+        if coverage < PUBLIC_EVALUATION_SKETCH_COVERAGE_THRESHOLD:
+            continue
+        matches.append(
+            {
+                "trainingRecordID": training_record_id,
+                "evaluationRecordID": f"public:{artifact_id}:{ordinal}",
+                "matchKind": "public_evaluation_shingle_sketch",
+                "similarity": round(coverage, 6),
+            }
+        )
+    return matches
+
+
+@lru_cache(maxsize=32_768)
+def _cached_public_evaluation_text_shingles(values: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(public_evaluation_text_shingle_hashes(values))
+
+
+def _valid_embedded_hash(payload: Mapping[str, Any], field: str) -> bool:
+    expected = payload.get(field)
+    if not _is_sha256(expected):
+        return False
+    unhashed = {key: value for key, value in payload.items() if key != field}
+    return canonical_sha256(unhashed) == expected
+
+
+def _record_fingerprint(record: Mapping[str, Any], *, shingle_size: int) -> dict[str, Any]:
+    canonical_record = json.dumps(
+        record,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return _record_fingerprint_from_canonical_json(canonical_record, shingle_size)
+
+
+@lru_cache(maxsize=32_768)
+def _record_fingerprint_from_canonical_json(
+    canonical_record: str,
+    shingle_size: int,
+) -> dict[str, Any]:
+    record = json.loads(canonical_record)
+    segments = _content_segments(record)
+    normalized_segments = [_normalize_text(segment) for segment in segments]
+    normalized_segments = [segment for segment in normalized_segments if segment]
+    normalized_text = "\n".join(normalized_segments)
+    segment_items = []
+    for segment in normalized_segments:
+        segment_items.append(
+            {
+                "sha256": hashlib.sha256(segment.encode("utf-8")).hexdigest(),
+                "shingles": sorted(_hashed_shingles(segment, shingle_size)),
+            }
+        )
+    return {
+        "recordID": f"record-{hashlib.sha256(canonical_record.encode('utf-8')).hexdigest()[:24]}",
+        "normalizedTextSHA256": hashlib.sha256(normalized_text.encode("utf-8")).hexdigest(),
+        "segments": segment_items,
+    }
+
+
+def _fingerprint_match(
+    training: Mapping[str, Any],
+    evaluation: Mapping[str, Any],
+    threshold: float,
+) -> tuple[str | None, float]:
+    if training.get("normalizedTextSHA256") == evaluation.get("normalizedTextSHA256"):
+        return "exact_record", 1.0
+    training_segments = training.get("segments") or []
+    evaluation_segments = evaluation.get("segments") or []
+    training_hashes = {segment.get("sha256") for segment in training_segments}
+    evaluation_hashes = {segment.get("sha256") for segment in evaluation_segments}
+    if (training_hashes & evaluation_hashes) - {None}:
+        return "exact_segment", 1.0
+    best = 0.0
+    for train_segment in training_segments:
+        train_shingles = set(train_segment.get("shingles") or [])
+        if not train_shingles:
+            continue
+        for eval_segment in evaluation_segments:
+            eval_shingles = set(eval_segment.get("shingles") or [])
+            if not eval_shingles:
+                continue
+            union = train_shingles | eval_shingles
+            similarity = len(train_shingles & eval_shingles) / len(union) if union else 0.0
+            best = max(best, similarity)
+    return ("near_segment", best) if best >= threshold else (None, best)
+
+
+def _content_segments(record: Mapping[str, Any]) -> list[str]:
+    segments: list[str] = []
+    for field in ("messages", "prompt"):
+        messages = record.get(field)
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            if not isinstance(message, Mapping):
+                continue
+            role = str(message.get("role") or "").strip().lower()
+            content = message.get("content")
+            if role == "system" or not isinstance(content, str):
+                continue
+            segments.append(content)
+    for field in ("chosen", "rejected"):
+        value = record.get(field)
+        if isinstance(value, Mapping) and isinstance(value.get("content"), str):
+            segments.append(value["content"])
+    return segments
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(re.findall(r"\w+", value.casefold(), flags=re.UNICODE))
+
+
+def _hashed_shingles(value: str, size: int) -> set[str]:
+    if size <= 0:
+        raise ValueError("shingle_size must be positive")
+    tokens = value.split()
+    if len(tokens) < size:
+        return set()
+    return {
+        hashlib.sha256("\x1f".join(tokens[index:index + size]).encode("utf-8")).hexdigest()
+        for index in range(len(tokens) - size + 1)
+    }
+
+
+def _candidate_text(candidate: Any) -> str:
+    if isinstance(candidate, str):
+        return candidate
+    return json.dumps(candidate, ensure_ascii=False, sort_keys=True)
+
+
+def _parse_candidate_json(candidate: Any) -> tuple[Any, str | None]:
+    if isinstance(candidate, (dict, list)):
+        return (candidate, None) if _has_only_finite_numbers(candidate) else (None, "non_finite_number")
+    if not isinstance(candidate, str) or not candidate.strip():
+        return None, "empty_or_non_text_output"
+    try:
+        parsed = json.loads(candidate, parse_constant=_reject_json_constant)
+        return (parsed, None) if _has_only_finite_numbers(parsed) else (None, "non_finite_number")
+    except (TypeError, ValueError):
+        return None, "invalid_json"
+
+
+def _reject_json_constant(value: str) -> Any:
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
+def _has_only_finite_numbers(value: Any) -> bool:
+    if type(value) is float:
+        return math.isfinite(value)
+    if isinstance(value, Mapping):
+        return all(_has_only_finite_numbers(child) for child in value.values())
+    if isinstance(value, list):
+        return all(_has_only_finite_numbers(child) for child in value)
+    return True
+
+
+def _path_value(value: Any, path: str) -> tuple[bool, Any]:
+    if not path:
+        return False, None
+    current = value
+    for part in path.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
+
+
+def _first_path_value(value: Any, paths: Sequence[str]) -> tuple[bool, Any]:
+    for path in paths:
+        found, result = _path_value(value, path)
+        if found:
+            return True, result
+    return False, None
+
+
+def _metric_result(metric_type: Any, passed: bool, reason: str) -> dict[str, Any]:
+    return {"type": str(metric_type), "passed": bool(passed), "reason": reason}
+
+
+def _string_values(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return [str(item) for item in value if isinstance(item, (str, int, float))]
+
+
+def _tool_arguments(contract: Any) -> list[dict[str, Any]]:
+    raw_arguments = contract.get("arguments") if isinstance(contract, Mapping) else getattr(contract, "arguments", None)
+    if not isinstance(raw_arguments, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for argument in raw_arguments:
+        if isinstance(argument, Mapping):
+            name = argument.get("name")
+            arg_type = argument.get("type")
+            required = argument.get("required", True)
+            allowed_values = argument.get("allowedValues")
+        else:
+            name = getattr(argument, "name", None)
+            arg_type = getattr(argument, "type", None)
+            required = getattr(argument, "required", True)
+            allowed_values = getattr(argument, "allowedValues", None)
+        if isinstance(name, str) and isinstance(arg_type, str):
+            out.append(
+                {
+                    "name": name,
+                    "type": arg_type,
+                    "required": bool(required),
+                    "allowedValues": list(allowed_values) if isinstance(allowed_values, list) else None,
+                }
+            )
+    return out
+
+
+def _argument_has_type(value: Any, declared_type: str) -> bool:
+    normalized = declared_type.strip().lower().replace("?", "")
+    if "|" in normalized:
+        return any(_argument_has_type(value, part) for part in normalized.split("|"))
+    if normalized in {"string", "str"}:
+        return isinstance(value, str)
+    if normalized in {"bool", "boolean"}:
+        return type(value) is bool
+    if normalized in {"int", "integer"}:
+        return type(value) is int
+    if normalized in {"double", "float", "number"}:
+        return type(value) in {int, float}
+    if normalized in {"array", "list"} or normalized.startswith("["):
+        return isinstance(value, list)
+    if normalized in {"object", "dictionary", "dict"}:
+        return isinstance(value, dict)
+    if normalized in {"null", "none", "nil"}:
+        return value is None
+    return False
+
+
+def _json_equal(left: Any, right: Any) -> bool:
+    return type(left) is type(right) and left == right
+
+
+def _positive_number(value: Any, *, default: float) -> float:
+    if type(value) in {int, float} and value > 0:
+        return float(value)
+    return default
+
+
+def _bounded_score(value: Any) -> float | None:
+    if type(value) not in {int, float}:
+        return None
+    parsed = float(value)
+    return parsed if 0 <= parsed <= 1 else None
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None

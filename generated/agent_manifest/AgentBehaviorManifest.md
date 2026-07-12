@@ -1,7 +1,7 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Commit: `372d59a3163f4b9d36ae21386ac097d4a8fccffb`
+- Commit: `a5a5181294be023414896f5d4f7fba724e5fb5c9`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol

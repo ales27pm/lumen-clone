@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -12,6 +14,8 @@ from tools.hf_zerogpu.build_lumen_zerogpu_space import (
     SpaceBuild,
     delete_space_secret_if_present,
     parse_agents,
+    parse_experiment_variant,
+    require_dataset_source,
     write_space_bundle,
 )
 
@@ -48,6 +52,16 @@ def _write_agent_fixture(root: Path, agent: str) -> None:
         ),
         encoding="utf-8",
     )
+    variant_dir = agent_dir / "experiments" / "internal_plus_public_optimized"
+    variant_dir.mkdir(parents=True)
+    for filename in ("train_sft.jsonl", "val_sft.jsonl"):
+        (variant_dir / filename).write_text(
+            json.dumps({"messages": [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}]}) + "\n",
+            encoding="utf-8",
+        )
+    for filename in ("train_dpo.jsonl", "val_dpo.jsonl"):
+        (variant_dir / filename).write_text("", encoding="utf-8")
+    (variant_dir / "variant_manifest.json").write_text("{}\n", encoding="utf-8")
 
 
 def test_parse_agents_rejects_unknown_agent() -> None:
@@ -55,10 +69,81 @@ def test_parse_agents_rejects_unknown_agent() -> None:
         parse_agents("executor,unknown")
 
 
+def test_experiment_variant_is_strict_and_defaults_to_optimized() -> None:
+    assert parse_experiment_variant("internal_plus_public_optimized") == "internal_plus_public_optimized"
+    with pytest.raises(ValueError):
+        parse_experiment_variant("optimized")
+
+
+def test_require_dataset_source_requires_selected_variant_files(tmp_path: Path) -> None:
+    dataset = tmp_path / "fine_tuning"
+    dataset.mkdir()
+    (dataset / "adapter_runtime_manifest.json").write_text("{}\n", encoding="utf-8")
+    _write_agent_fixture(dataset, "executor")
+    require_dataset_source(dataset, ["executor"])
+    (dataset / "executor" / "experiments" / "internal_plus_public_optimized" / "variant_manifest.json").unlink()
+    with pytest.raises(FileNotFoundError):
+        require_dataset_source(dataset, ["executor"])
+
+
 def test_long_lived_space_stream_disconnect_is_terminal() -> None:
     assert builder._is_terminal_space_trigger_error(
         RuntimeError("peer closed connection without sending complete message body (incomplete chunked read)")
     )
+
+
+def test_gradio_trigger_carries_selected_experiment_variant(monkeypatch: pytest.MonkeyPatch) -> None:
+    posts: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"event_id": "event"}
+
+        def iter_lines(self) -> list[str]:
+            return ["event: complete", 'data: {"ok": true}']
+
+    class FakeClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def post(self, _url: str, **kwargs: Any) -> FakeResponse:
+            posts.append(kwargs["json"])
+            return FakeResponse()
+
+        def stream(self, *_args: Any, **_kwargs: Any) -> FakeResponse:
+            return FakeResponse()
+
+    httpx = ModuleType("httpx")
+    httpx.Client = FakeClient
+    monkeypatch.setitem(sys.modules, "httpx", httpx)
+
+    builder._trigger_space_training_via_gradio_api(
+        space_repo="user/space",
+        run_id="run",
+        agents=["executor"],
+        base_model="",
+        seed=42,
+        gpu_size="large",
+        experiment_variant="internal_only",
+        token="token",
+    )
+
+    assert posts[0]["data"][-1] == "internal_only"
 
 
 def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -> None:
@@ -94,6 +179,7 @@ def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -
     assert defaults["fresh_run"] is True
     assert defaults["resume_default"] is False
     assert defaults["adapter_first"] is True
+    assert defaults["experiment_variant"] == "internal_plus_public_optimized"
     assert defaults["dataset_path_in_repo"] == "runs/test-run/fine_tuning"
     assert (build.space_dir / "app.py").exists()
     assert (build.space_dir / "lumen_train_sft.py").exists()

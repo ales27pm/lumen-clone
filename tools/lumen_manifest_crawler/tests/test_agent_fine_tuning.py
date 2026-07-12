@@ -60,6 +60,7 @@ def test_per_agent_directories_are_produced(tmp_path: Path, compiled_fine_tuning
     fine_tuning_output = _write_fine_tuning_fixture(tmp_path, compiled_fine_tuning)
 
     assert (fine_tuning_output / "adapter_runtime_manifest.json").exists()
+    assert (fine_tuning_output / "public_evaluation_fingerprints.json").exists()
     for agent in AGENTS:
         agent_dir = fine_tuning_output / agent
         assert agent_dir.exists()
@@ -68,10 +69,15 @@ def test_per_agent_directories_are_produced(tmp_path: Path, compiled_fine_tuning
             "val_sft.jsonl",
             "eval.jsonl",
             "dataset_card.json",
+            "experiment_manifest.json",
             "unsloth_config.json",
             "adapter_export_plan.json",
         ):
             assert (agent_dir / filename).exists(), f"missing {agent}/{filename}"
+        for variant in ("internal_only", "internal_plus_public_baseline", "internal_plus_public_optimized"):
+            variant_dir = agent_dir / "experiments" / variant
+            assert (variant_dir / "variant_manifest.json").exists()
+            assert (variant_dir / "contamination_report.json").exists()
 
 
 def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_fine_tuning: tuple) -> None:
@@ -148,6 +154,20 @@ def test_sft_records_use_chat_format(compiled_fine_tuning: tuple) -> None:
             assert messages[2]["content"].strip()
 
 
+def test_eval_records_use_supported_executable_metric_contracts(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    for agent in AGENTS:
+        assert fine_tuning[agent].eval
+        for record in fine_tuning[agent].eval:
+            assert record["schemaVersion"] == "lumen.adapter-eval/1.0.0"
+            assert record["metrics"]
+            assert not [
+                metric
+                for metric in record["metrics"]
+                if metric.get("type") == "unsupported_contract"
+            ], (agent, record.get("metadata"), record["metrics"])
+
+
 def test_sft_records_do_not_train_null_assistant_outputs(compiled_fine_tuning: tuple) -> None:
     _, _, fine_tuning = compiled_fine_tuning
     for agent in AGENTS:
@@ -200,21 +220,42 @@ def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
         assert len(datasets[family]) == expected_count
         assert dataset_manifest["hashes"][family] == _records_hash(datasets[family])
 
-        train_public = [
+        train_public_sft = [
             record
             for record in fine_tuning[agent].train_sft
             if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
         ]
-        val_public = [
+        val_public_sft = [
             record
             for record in fine_tuning[agent].val_sft
             if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
         ]
-        assert len(train_public) + len(val_public) == expected_count
+        train_public_dpo = [
+            record
+            for record in fine_tuning[agent].train_dpo
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        val_public_dpo = [
+            record
+            for record in fine_tuning[agent].val_dpo
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        train_public = [*train_public_sft, *train_public_dpo]
+        val_public = [*val_public_sft, *val_public_dpo]
+        selected_public = [*train_public, *val_public]
+        assert selected_public
         assert all(
             record["metadata"]["publicCorpus"]["targetAdapter"] == agent
-            for record in train_public + val_public
+            for record in selected_public
         )
+        loaded_groups = {
+            record["metadata"]["publicCorpus"]["sourceGroupID"]
+            for record in datasets[family]
+        }
+        assert {
+            record["metadata"]["publicCorpus"]["sourceGroupID"]
+            for record in selected_public
+        } <= loaded_groups
         train_groups = {
             record["metadata"]["publicCorpus"]["sourceGroupID"] for record in train_public
         }
@@ -231,12 +272,35 @@ def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
                     public["sourceGroupID"],
                 )
                 assert group_lanes.setdefault(key, lane) == lane
-        assert sum(fine_tuning[agent].dataset_card["publicCorpus"]["recordCounts"].values()) == expected_count
+        public_card = fine_tuning[agent].dataset_card["publicCorpus"]
+        assert public_card["snapshotIntegrity"]["recordsSHA256"] == snapshot["recordsSHA256"]
+        assert public_card["snapshotIntegrity"]["sourceManifestSHA256"] == snapshot["sourceManifestSHA256"]
+        assert public_card["selectionContract"]["policyVersions"] == [snapshot["selectionPolicyVersion"]]
+        assert len(public_card["selectionContract"]["sha256"]) == 64
+        assert sum(public_card["recordCounts"].values()) == len(selected_public)
+        for lane, selected_count in public_card["recordCounts"].items():
+            available_count = public_card["availableRecordCounts"][lane]
+            assert selected_count <= available_count
+            assert public_card["rejectedByTokenCap"][lane] == available_count - selected_count
+        assert sum(public_card["availableSourceCounts"].values()) == sum(
+            public_card["availableRecordCounts"].values()
+        )
+
+    assert sum(fine_tuning["mouth"].dataset_card["publicCorpus"]["recordCounts"][lane] for lane in ("train_dpo", "val_dpo")) > 0
+    mouth_public = fine_tuning["mouth"].dataset_card["publicCorpus"]
+    for lane in ("train_dpo", "val_dpo"):
+        assert mouth_public["tokenShares"][lane]["total"] <= 0.35
+        assert mouth_public["tokenShares"][lane]["target"] <= 0.35
 
     for agent in AGENTS:
         public_records = [
             record
-            for record in fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+            for record in (
+                fine_tuning[agent].train_sft
+                + fine_tuning[agent].val_sft
+                + fine_tuning[agent].train_dpo
+                + fine_tuning[agent].val_dpo
+            )
             if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
         ]
         assert all(record["metadata"]["agent"] == agent for record in public_records)

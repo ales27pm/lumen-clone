@@ -81,6 +81,14 @@ def _source(
     adapter_caps: dict[str, int],
     **extra: object,
 ) -> dict[str, object]:
+    transformer = {
+        "massive": "massive_v1",
+        "oasst2": "oasst2_v2",
+        "coedit": "coedit_v1",
+        "json-schema": "json_schema_tests_v1",
+        "toolace": "toolace_v1",
+        "faithdial": "faithdial_v1",
+    }.get(next((name for name in ("massive", "oasst2", "coedit", "json-schema", "toolace", "faithdial") if source_id.startswith(name)), ""), "coedit_v1")
     return {
         "id": source_id,
         "datasetID": "example/public",
@@ -95,6 +103,11 @@ def _source(
         "licenseURL": "https://opensource.org/license/mit",
         "attribution": "Example public source.",
         "adapterCaps": adapter_caps,
+        "targetAdapters": list(adapter_caps),
+        "transformer": transformer,
+        "qualityProfile": "human_meaning_preserving_edits",
+        "accessMode": "public_https",
+        "redistributionMode": "transformed_records_only",
         **extra,
     }
 
@@ -103,7 +116,7 @@ def _source_manifest(path: Path, sources: list[dict[str, object]]) -> Path:
     path.write_text(
         json.dumps(
             {
-                "schema": "lumen.public-adapter-corpus-sources/1.0.0",
+                "schema": corpus.SOURCE_MANIFEST_SCHEMA,
                 "selectionPolicyVersion": "test.1",
                 "allowedLicenses": ["MIT"],
                 "sources": sources,
@@ -185,13 +198,17 @@ def test_pinned_source_manifest_has_only_approved_licensed_sources() -> None:
 
     assert {source["datasetID"] for source in manifest["sources"]} == {
         "AmazonScience/massive",
+        "McGill-NLP/FaithDial",
         "OpenAssistant/oasst2",
+        "Team-ACE/ToolACE",
         "grammarly/coedit",
         "json-schema-org/JSON-Schema-Test-Suite",
     }
     assert {source["license"] for source in manifest["sources"]} <= set(manifest["allowedLicenses"])
     assert all(len(source["revision"]) == 40 for source in manifest["sources"])
     assert all(len(source["artifactSHA256"]) == 64 for source in manifest["sources"])
+    assert all(source["transformer"] in corpus.TRANSFORMERS for source in manifest["sources"])
+    assert all(set(source["targetAdapters"]) == set(source["adapterCaps"]) for source in manifest["sources"])
     assert {source["partitionKind"] for source in manifest["sources"]} == {
         "ml_split",
         "reference_corpus",
@@ -219,6 +236,19 @@ def test_source_manifest_rejects_unknown_license_and_short_revision(tmp_path: Pa
     path = _source_manifest(tmp_path / "sources.json", [source])
 
     with pytest.raises(corpus.PublicCorpusError):
+        corpus.load_public_corpus_source_manifest(path)
+
+
+def test_source_manifest_schema_versions_new_explicit_contract(tmp_path: Path) -> None:
+    artifact = tmp_path / "source.jsonl"
+    artifact.write_text("{}\n", encoding="utf-8")
+    source = _source("coedit-test", artifact, artifact_format="jsonl", adapter_caps={"rem": 1})
+    path = _source_manifest(tmp_path / "sources.json", [source])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["schema"] = "lumen.public-adapter-corpus-sources/1.0.0"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(corpus.PublicCorpusError, match="Unsupported public corpus source manifest schema"):
         corpus.load_public_corpus_source_manifest(path)
 
 
@@ -769,6 +799,297 @@ def test_json_schema_tests_are_rem_fail_closed_repairs_not_executor_targets(tmp_
     diagnosis = json.loads(records[0]["messages"][1]["content"])
     assert diagnosis["decision"] == "reject"
     assert diagnosis["repair"]["knownValidExample"] == "ok"
+
+
+def test_toolace_json_transform_emits_only_manifest_exact_role_native_records(tmp_path: Path) -> None:
+    artifact = tmp_path / "toolace.json"
+    artifact.write_text(
+        json.dumps(
+            [
+                {
+                    "system": "Tool catalog omitted from this fixture.",
+                    "conversations": [
+                        {
+                            "from": "user",
+                            "value": "Find vegetarian restaurants near me.",
+                        },
+                        {
+                            "from": "assistant",
+                            "value": '[Search Nearby(query="vegetarian restaurants", lng=1.0, lat=2.0)]',
+                        },
+                        {
+                            "from": "tool",
+                            "value": '[{"name":"Search Nearby","results":{"places":[{"name":"Green Garden","address":"Main Street"}]}}]',
+                        },
+                        {
+                            "from": "assistant",
+                            "value": "Green Garden is on Main Street.",
+                        },
+                    ],
+                },
+                {
+                    "system": "Tool catalog omitted from this fixture.",
+                    "conversations": [
+                        {"from": "user", "value": "Use an unrelated cryptocurrency API."},
+                        {"from": "assistant", "value": '[newAddress(password="secret")]'},
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    source = _source(
+        "toolace-test",
+        artifact,
+        artifact_format="json",
+        adapter_caps={"cortex": 10, "executor": 10, "mouth": 10, "rem": 10},
+        artifactPath="data.json",
+        qualityProfile="verified_synthetic_tool_use",
+    )
+    contract = corpus.load_lumen_contract(_lumen_manifest(tmp_path / "manifest.json"))
+
+    records = corpus._transform_toolace(source, artifact, "test.1", contract)
+
+    assert Counter(record["metadata"]["agent"] for record in records) == Counter(
+        {"cortex": 1, "executor": 1, "mouth": 1, "rem": 1}
+    )
+    executor = next(record for record in records if record["metadata"]["agent"] == "executor")
+    assert json.loads(executor["messages"][1]["content"]) == {
+        "arguments": {"query": "vegetarian restaurants near latitude 2.0, longitude 1.0"},
+        "tool": "maps.search",
+    }
+    rem = next(record for record in records if record["metadata"]["agent"] == "rem")
+    assert json.loads(rem["messages"][1]["content"])["missingArgument"] == "query"
+    assert all("newAddress" not in json.dumps(record) for record in records)
+
+
+def test_apigen_xlam_transform_requires_override_and_exact_mapping(tmp_path: Path) -> None:
+    artifact = tmp_path / "apigen.json"
+    artifact.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "What is the weather in Montreal?",
+                    "tools": json.dumps(
+                        [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "get_current_weather",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"location": {"type": "string"}},
+                                        "required": ["location"],
+                                    },
+                                },
+                            }
+                        ]
+                    ),
+                    "answers": json.dumps(
+                        [{"name": "get_current_weather", "arguments": {"location": "Montreal"}}]
+                    ),
+                },
+                {
+                    "query": "Look up an unmapped service.",
+                    "tools": [
+                        {
+                            "name": "unknown_service",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"value": {"type": "string"}},
+                                "required": ["value"],
+                            },
+                        }
+                    ],
+                    "calls": [{"name": "unknown_service", "arguments": {"value": "example"}}],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    source = _source(
+        "apigen-xlam-gated-test",
+        artifact,
+        artifact_format="json",
+        adapter_caps={"cortex": 10, "executor": 10},
+        artifactPath="data/train.json",
+        transformer="apigen_xlam_v1",
+        qualityProfile="verified_synthetic_tool_use",
+        accessMode="local_override",
+        toolMappings={
+            "get_current_weather": {
+                "toolID": "weather",
+                "intent": "weather",
+                "argumentMappings": {"location": "city"},
+            }
+        },
+    )
+    source.pop("artifactURL")
+    source_manifest = _source_manifest(tmp_path / "apigen-sources.json", [source])
+
+    with pytest.raises(corpus.PublicCorpusError, match="requires a hash-verified local artifact override"):
+        corpus.acquire_public_corpus_sources(
+            tmp_path / "cache",
+            source_manifest_path=source_manifest,
+        )
+
+    resolved = corpus.acquire_public_corpus_sources(
+        tmp_path / "cache",
+        source_manifest_path=source_manifest,
+        artifact_paths={"apigen-xlam-gated-test": artifact},
+    )
+    assert resolved == {"apigen-xlam-gated-test": artifact}
+
+    contract = corpus.load_lumen_contract(_lumen_manifest(tmp_path / "manifest.json"))
+    records = corpus._transform_source(source, artifact, "test.1", contract)
+
+    assert Counter(record["metadata"]["agent"] for record in records) == Counter(
+        {"cortex": 1, "executor": 1}
+    )
+    executor = next(record for record in records if record["metadata"]["agent"] == "executor")
+    assert json.loads(executor["messages"][1]["content"]) == {
+        "arguments": {"city": "Montreal"},
+        "tool": "weather",
+    }
+    assert all("unknown_service" not in json.dumps(record) for record in records)
+
+
+def test_apigen_xlam_manifest_rejects_non_gated_or_implicit_mappings(tmp_path: Path) -> None:
+    artifact = tmp_path / "apigen.json"
+    artifact.write_text("[]", encoding="utf-8")
+    source = _source(
+        "apigen-xlam-test",
+        artifact,
+        artifact_format="json",
+        adapter_caps={"executor": 1},
+        artifactPath="data/train.json",
+        transformer="apigen_xlam_v1",
+        qualityProfile="verified_synthetic_tool_use",
+        toolMappings={},
+    )
+    manifest_path = _source_manifest(tmp_path / "sources.json", [source])
+
+    with pytest.raises(corpus.PublicCorpusError, match="must use local_override access"):
+        corpus.load_public_corpus_source_manifest(manifest_path)
+
+    source["accessMode"] = "local_override"
+    source.pop("artifactURL")
+    manifest_path = _source_manifest(tmp_path / "sources.json", [source])
+    with pytest.raises(corpus.PublicCorpusError, match="requires explicit toolMappings"):
+        corpus.load_public_corpus_source_manifest(manifest_path)
+
+
+def test_faithdial_json_transform_builds_grounded_preference_without_raw_ids(tmp_path: Path) -> None:
+    artifact = tmp_path / "faithdial.json"
+    artifact.write_text(
+        json.dumps(
+            [
+                {
+                    "dialog_idx": 123,
+                    "utterances": [
+                        {
+                            "speaker": "Wizard",
+                            "history": ["What was the Aurora mission designed to study?"],
+                            "knowledge": "The Aurora mission was designed to study polar lights.",
+                            "response": "The Aurora mission was designed to study polar lights.",
+                            "original_response": "It was designed to study deep ocean vents.",
+                            "BEGIN": ["Hallucination"],
+                            "VRM": ["Edification"],
+                        }
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    source = _source(
+        "faithdial-test",
+        artifact,
+        artifact_format="json",
+        adapter_caps={"mouth": 10},
+        artifactPath="data/train.json",
+        qualityProfile="human_dialogue_grounding",
+    )
+
+    records = corpus._transform_faithdial(source, artifact, "test.1")
+
+    assert len(records) == 1
+    record = records[0]
+    assert record["preference"] == {
+        "chosen": "The Aurora mission was designed to study polar lights.",
+        "rejected": "It was designed to study deep ocean vents.",
+    }
+    assert "123" not in json.dumps(record)
+    assert record["metadata"]["publicCorpus"]["preferenceContentSHA256"] == corpus._sha256_bytes(
+        corpus._canonical_json(record["preference"]).encode("utf-8")
+    )
+
+
+def test_value_scoring_and_group_selection_are_deterministic(tmp_path: Path) -> None:
+    artifact = tmp_path / "faithdial.json"
+    artifact.write_text("[]", encoding="utf-8")
+    source = _source(
+        "faithdial-test",
+        artifact,
+        artifact_format="json",
+        adapter_caps={"mouth": 1},
+        artifactPath="data/train.json",
+        qualityProfile="human_dialogue_grounding",
+    )
+    records = [
+        corpus._make_record(
+            source,
+            "test.1",
+            agent="mouth",
+            user=f"Trusted observation: item {index} is available.",
+            assistant=f"Item {index} is available.",
+            task_type="public_grounded_response_preference",
+            transformation="fixture",
+            group_hash=corpus._opaque_group_hash(str(index)),
+            source_content_sha256=corpus._source_content_sha256({"index": index}),
+            source_path="data/train.json",
+            stratum=f"stratum-{index}",
+            language="en",
+            quality={"humanReviewed": index == 1, "synthetic": False},
+        )
+        for index in range(2)
+    ]
+    records = [record for record in records if record is not None]
+
+    first = corpus._score_and_select_source_records(records, source)
+    second = corpus._score_and_select_source_records(records, source)
+
+    assert [record["id"] for record in first] == [record["id"] for record in second]
+    assert len(first) == 1
+    assert first[0]["metadata"]["publicCorpus"]["selectionScore"]["reasons"] == sorted(
+        first[0]["metadata"]["publicCorpus"]["selectionScore"]["reasons"]
+    )
+    assert first[0]["metadata"]["publicCorpus"]["quality"]["humanReviewed"] is True
+
+
+def test_local_override_source_never_falls_back_to_network(tmp_path: Path) -> None:
+    artifact = tmp_path / "source.json"
+    artifact.write_text("[]", encoding="utf-8")
+    source = _source(
+        "faithdial-gated-test",
+        artifact,
+        artifact_format="json",
+        adapter_caps={"mouth": 1},
+        artifactPath="data/train.json",
+        accessMode="local_override",
+    )
+    source.pop("artifactURL")
+    manifest_path = _source_manifest(tmp_path / "sources.json", [source])
+
+    with pytest.raises(corpus.PublicCorpusError, match="requires a hash-verified local artifact override"):
+        corpus.acquire_public_corpus_sources(tmp_path / "cache", source_manifest_path=manifest_path)
+
+    resolved = corpus.acquire_public_corpus_sources(
+        tmp_path / "cache",
+        source_manifest_path=manifest_path,
+        artifact_paths={"faithdial-gated-test": artifact},
+    )
+    assert resolved == {"faithdial-gated-test": artifact}
 
 
 def test_snapshot_build_is_deterministic_and_loader_rejects_tampering(tmp_path: Path) -> None:

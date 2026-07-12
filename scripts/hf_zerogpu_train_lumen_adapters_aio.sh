@@ -28,6 +28,7 @@ DRY_RUN="${LUMEN_ZERO_GPU_DRY_RUN:-0}"
 PRIVATE_SPACE="${LUMEN_ZERO_GPU_PRIVATE_SPACE:-1}"
 PRIVATE_DATASET="${LUMEN_ZERO_GPU_PRIVATE_DATASET:-1}"
 PRIVATE_ADAPTERS="${LUMEN_ZERO_GPU_PRIVATE_ADAPTERS:-1}"
+EXPERIMENT_VARIANT="${LUMEN_ZERO_GPU_EXPERIMENT_VARIANT:-internal_plus_public_optimized}"
 
 log() {
   printf '[lumen-zerogpu] %s\n' "$*"
@@ -73,6 +74,7 @@ run_training_batch() {
     --gpu-duration-seconds "$GPU_DURATION_SECONDS"
     --trigger-timeout-seconds "$TRIGGER_TIMEOUT_SECONDS"
     --seed "$SEED"
+    --experiment-variant "$EXPERIMENT_VARIANT"
   )
 
   if [[ -n "$BASE_MODEL" ]]; then
@@ -106,6 +108,10 @@ if [[ ! -d "$DATASET_SOURCE" && -d "$ROOT/generated/fine_tuning" ]]; then
 fi
 [[ -d "$DATASET_SOURCE" ]] || die "missing fine-tuning dataset source: $DATASET_SOURCE"
 [[ -f "$DATASET_SOURCE/adapter_runtime_manifest.json" ]] || die "dataset source is missing adapter_runtime_manifest.json: $DATASET_SOURCE"
+case "$EXPERIMENT_VARIANT" in
+  internal_only|internal_plus_public_baseline|internal_plus_public_optimized) ;;
+  *) die "unsupported experiment variant: $EXPERIMENT_VARIANT" ;;
+esac
 [[ "$AGENT_BATCH_SIZE" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be a positive integer"
 (( AGENT_BATCH_SIZE > 0 )) || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be greater than zero"
 [[ "$TRIGGER_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS must be a positive integer"
@@ -131,6 +137,7 @@ log "dataset repo: $DATASET_REPO"
 log "adapter repo: $ADAPTER_REPO"
 log "agents: $AGENTS"
 log "agent batch size: $AGENT_BATCH_SIZE"
+log "experiment variant: $EXPERIMENT_VARIANT"
 log "trigger timeout seconds: $TRIGGER_TIMEOUT_SECONDS"
 
 IFS=',' read -r -a AGENT_ARRAY <<< "$AGENTS"

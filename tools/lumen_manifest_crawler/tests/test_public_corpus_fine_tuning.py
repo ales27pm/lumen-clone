@@ -5,6 +5,7 @@ from typing import Any
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
     FineTuningDatasetConfig,
+    _build_experiment_variants,
     _cap_public_corpus_token_share,
     _public_validation_group_keys,
     _stable_split,
@@ -537,3 +538,112 @@ def test_public_token_cap_balances_sources_before_source_strata() -> None:
             source_counts[source] = source_counts.get(source, 0) + 1
     assert set(source_counts) == {"source/many-strata", "source/one-stratum"}
     assert abs(source_counts["source/many-strata"] - source_counts["source/one-stratum"]) <= 1
+
+
+def test_public_token_cap_prefers_higher_selection_score_within_stratum() -> None:
+    internal = [{
+        "messages": [
+            {"role": "user", "content": " ".join(["internal-user"] * 100)},
+            {"role": "assistant", "content": " ".join(["internal-target"] * 100)},
+        ],
+        "metadata": {"agent": "mouth"},
+    }]
+    public = []
+    for name, score in (("low", 0.1), ("high", 0.9)):
+        provenance = _provenance(
+            target="mouth",
+            group=f"quality-{name}",
+            row=f"quality-{name}",
+        )
+        provenance["stratum"] = "grounded-final"
+        provenance["selectionScore"] = {"overall": score}
+        public.append({
+            "messages": [
+                {"role": "user", "content": " ".join([f"{name}-user"] * 10)},
+                {"role": "assistant", "content": " ".join([f"{name}-target"] * 10)},
+            ],
+            "metadata": {"agent": "mouth", "publicCorpus": provenance},
+        })
+
+    selected = _cap_public_corpus_token_share([*internal, *public], 0.10)
+    selected_public = [
+        record for record in selected
+        if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+    ]
+    assert len(selected_public) == 1
+    assert selected_public[0]["metadata"]["publicCorpus"]["selectionScore"]["overall"] == 0.9
+
+
+def test_experiment_variants_separate_internal_baseline_and_quality_optimized_corpora() -> None:
+    internal = [{
+        "messages": [
+            {"role": "user", "content": " ".join(["internal-user"] * 100)},
+            {"role": "assistant", "content": " ".join(["internal-target"] * 100)},
+        ],
+        "metadata": {"agent": "mouth"},
+    }]
+    public = []
+    for index in range(10):
+        provenance = _provenance(
+            target="mouth",
+            group=f"variant-group-{index}",
+            row=f"variant-{index}",
+        )
+        provenance["stratum"] = "grounded-final"
+        provenance["selectionScore"] = {"overall": 0.5}
+        public.append({
+            "messages": [
+                {"role": "user", "content": " ".join([f"public-user-{index}"] * 10)},
+                {"role": "assistant", "content": " ".join([f"public-target-{index}"] * 10)},
+            ],
+            "metadata": {"agent": "mouth", "publicCorpus": provenance},
+        })
+
+    baseline_probe = _cap_public_corpus_token_share(
+        [*internal, *public],
+        0.10,
+        prefer_quality=False,
+    )
+    baseline_group = next(
+        record["metadata"]["publicCorpus"]["sourceGroupID"]
+        for record in baseline_probe
+        if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+    )
+    for index, record in enumerate(public):
+        public_metadata = record["metadata"]["publicCorpus"]
+        public_metadata["selectionScore"]["overall"] = (
+            0.0 if public_metadata["sourceGroupID"] == baseline_group else index + 1.0
+        )
+
+    optimized = _cap_public_corpus_token_share([*internal, *public], 0.10)
+    variants, experiment = _build_experiment_variants(
+        agent="mouth",
+        available_train_sft=[*internal, *public],
+        available_val_sft=[],
+        available_train_dpo=[],
+        available_val_dpo=[],
+        optimized_train_sft=optimized,
+        optimized_val_sft=[],
+        optimized_train_dpo=[],
+        optimized_val_dpo=[],
+        evaluation_records=[],
+        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
+        max_public_share=0.10,
+    )
+
+    internal_only = variants["internal_only"]
+    assert internal_only["train_sft"] == internal
+    assert not any(
+        isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        for record in internal_only["train_sft"]
+    )
+    assert variants["internal_plus_public_optimized"]["train_sft"] == optimized
+    assert (
+        variants["internal_plus_public_baseline"]["variant_manifest"]["trainingCorpusSHA256"]
+        != variants["internal_plus_public_optimized"]["variant_manifest"]["trainingCorpusSHA256"]
+    )
+    assert experiment["variantOrder"] == [
+        "internal_only",
+        "internal_plus_public_baseline",
+        "internal_plus_public_optimized",
+    ]

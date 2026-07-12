@@ -7,24 +7,48 @@
   "agent": "rem",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "372d59a3163f4b9d36ae21386ac097d4a8fccffb",
+    "evaluation": {
+      "contamination": {
+        "contaminated": false,
+        "matchCount": 0,
+        "promotionRequiresZeroMatches": true,
+        "reportSHA256": "49528c731a6e7d95bb694863004283bfe4ea84fc63a0e513dcd5fa99a2b0042b"
+      },
+      "executableDeclarativeMetrics": true,
+      "failClosedOnUnknownMetric": true,
+      "frozenEvaluationSHA256": "5ccb346d6c881fd79dd45ff72f0000eded0930a803cb140e71feab1a94439efc",
+      "recordCount": 6,
+      "schemaVersion": "lumen.adapter-eval/1.0.0"
+    },
+    "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+    "preferenceTraining": {
+      "includedInCheckpoint": false,
+      "recordCount": 13,
+      "requiredPhase": "post_sft_preference_training",
+      "status": "generated_not_trained"
+    },
     "recordCounts": {
       "eval": 6,
       "train_dpo": 11,
-      "train_sft": 124,
+      "train_sft": 4981,
       "val_dpo": 2,
-      "val_sft": 9
+      "val_sft": 882
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
+      "codebase_home_chunk_sft",
+      "codebase_home_sft",
       "cross_model_training",
       "manifest_grounding_cards",
       "public_adapter_corpus_coedit_train",
       "public_adapter_corpus_json_schema_test_suite_draft_2020_12",
-      "rem_reflection",
-      "runtime_audit_repairs"
+      "public_adapter_corpus_toolace_train",
+      "rem_reflection"
     ],
     "taskTypes": [
+      "codebase_home_grounding",
+      "codebase_home_overview",
+      "codebase_source_chunk_grounding",
       "fleet_delegation",
       "fleet_delegation_preference",
       "fleet_peer_knowledge",
@@ -35,9 +59,9 @@
       "manifest_grounding_cards",
       "public_schema_failure_diagnosis",
       "public_text_repair",
+      "public_tool_boundary_repair",
       "reflection_and_memory_policy",
       "rem_reflection",
-      "runtime_manifest_drift_repair",
       "source_code_self_knowledge",
       "source_routing_knowledge",
       "source_tool_registry_knowledge",
@@ -53,13 +77,41 @@
   "expectedArtifacts": {
     "adapterDirectory": "models/lora_qwen3_bootstrap/rem",
     "adapterGGUF": "models/lora_qwen3_gguf/lumen-rem-lora.gguf",
+    "contaminationReport": "contamination_report.json",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
+    "evaluationFingerprints": "evaluation_fingerprints.json",
+    "experimentManifest": "experiment_manifest.json",
+    "experimentRoot": "experiments",
     "trainDPO": "train_dpo.jsonl",
     "trainSFT": "train_sft.jsonl",
     "trainingConfig": "unsloth_config.json",
     "validationDPO": "val_dpo.jsonl",
-    "validationSFT": "val_sft.jsonl"
+    "validationSFT": "val_sft.jsonl",
+    "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
+    "variantPathTemplate": "experiments/{variant}"
+  },
+  "experimentPolicy": {
+    "experimentManifestSHA256": "f6e250774b05b26b943972b629a0349a5eca9bf2c6750e1e23121086bb73368b",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ],
+    "runtimePointerPolicy": "unchanged_until_promoted"
   },
   "exportPolicy": {
     "allowMergedExport": true,
@@ -78,7 +130,7 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
