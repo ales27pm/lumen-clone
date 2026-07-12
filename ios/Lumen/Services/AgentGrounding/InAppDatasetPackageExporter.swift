@@ -317,6 +317,30 @@ nonisolated enum InAppDatasetPackageExporter {
         includeScenarioResults: Bool = defaultIncludesScenarioResults
     ) -> LumenInAppDatasetPackage {
         let traces = AgentBehaviorTraceRecorder.recent(limit: traceLimit)
+        return makePackage(
+            manifestSource: manifestSource,
+            usedRuntimeFallback: usedRuntimeFallback,
+            runtimeManifestAudit: runtimeManifestAudit,
+            behaviorAudit: behaviorAudit,
+            scenarioResults: scenarioResults,
+            liveE2EReport: liveE2EReport,
+            traceLimit: traceLimit,
+            includeScenarioResults: includeScenarioResults,
+            traces: traces
+        )
+    }
+
+    private static func makePackage(
+        manifestSource: String,
+        usedRuntimeFallback: Bool,
+        runtimeManifestAudit: RuntimeAgentManifestAuditReport?,
+        behaviorAudit: AgentBehaviorAuditReport?,
+        scenarioResults: [RuntimeScenarioResult],
+        liveE2EReport: E2ETestReport?,
+        traceLimit: Int,
+        includeScenarioResults: Bool,
+        traces: [AgentBehaviorTrace]
+    ) -> LumenInAppDatasetPackage {
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
         let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
         let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: traces)
@@ -386,6 +410,23 @@ nonisolated enum InAppDatasetPackageExporter {
                     ? "Static manifest scenario checks were explicitly included; they are not proof of live model execution and must not be treated as E2E model runs. If liveE2EReport is present, its embedded e2eTestReport envelope is the only layer that owns live scenario pass/fail."
                     : "Static manifest scenario checks are displayed in-app only and omitted from the dataset export; E2ETestRunner owns live model scenario results through the embedded liveE2EReport envelope when available."
             )
+        )
+    }
+
+    static func makePackageForTests(
+        liveE2EReport: E2ETestReport,
+        traces: [AgentBehaviorTrace]
+    ) -> LumenInAppDatasetPackage {
+        makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            liveE2EReport: liveE2EReport,
+            traceLimit: traces.count,
+            includeScenarioResults: false,
+            traces: traces
         )
     }
 
@@ -516,10 +557,15 @@ nonisolated enum InAppDatasetPackageExporter {
               !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
-        if scenarioRequiresPrimaryAgentJSON(result) {
-            guard trace.stage.hasPrefix("agent-json") else { return false }
+        if !trace.stage.hasPrefix("agent-json") {
+            return plainModelEvidenceStageIsAccepted(
+                trace.stage,
+                requiresAgentRun: result.requiresAgentRun,
+                kind: result.kind,
+                expectedIntent: result.expectedIntent,
+                actualIntent: result.actualIntent
+            )
         }
-        guard trace.stage.hasPrefix("agent-json") else { return true }
         guard trace.runtimePath == "agent-model",
               trace.streamStarted == true,
               trace.modelLoaded == true,
@@ -541,14 +587,34 @@ nonisolated enum InAppDatasetPackageExporter {
             || (trace.successfulObservationCount ?? 0) > 0
     }
 
-    private static func scenarioRequiresPrimaryAgentJSON(_ result: E2ETestResult) -> Bool {
-        guard result.requiresAgentRun,
-              result.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue else {
-            return false
-        }
-        return !(result.kind.caseInsensitiveCompare(E2ETestKind.chat.rawValue) == .orderedSame
-            && result.expectedIntent.caseInsensitiveCompare(UserIntent.chat.rawValue) == .orderedSame
-            && result.actualIntent.caseInsensitiveCompare(UserIntent.chat.rawValue) == .orderedSame)
+    private static func plainModelEvidenceStageIsAccepted(
+        _ stage: String,
+        requiresAgentRun: Bool,
+        kind: String,
+        expectedIntent: String,
+        actualIntent: String
+    ) -> Bool {
+        stage == "chat-text-turn"
+            && requiresAgentRun
+            && kind.caseInsensitiveCompare(E2ETestKind.chat.rawValue) == .orderedSame
+            && expectedIntent.caseInsensitiveCompare(UserIntent.chat.rawValue) == .orderedSame
+            && actualIntent.caseInsensitiveCompare(UserIntent.chat.rawValue) == .orderedSame
+    }
+
+    static func plainModelEvidenceStageIsAcceptedForTests(
+        _ stage: String,
+        requiresAgentRun: Bool,
+        kind: String,
+        expectedIntent: String,
+        actualIntent: String
+    ) -> Bool {
+        plainModelEvidenceStageIsAccepted(
+            stage,
+            requiresAgentRun: requiresAgentRun,
+            kind: kind,
+            expectedIntent: expectedIntent,
+            actualIntent: actualIntent
+        )
     }
 
     private static func traceIntentRequiresTool(_ rawIntent: String?, allowedToolIDs: [String]) -> Bool {

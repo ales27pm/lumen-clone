@@ -844,9 +844,18 @@ def _is_sidecar_evidence_candidate(trace: dict[str, Any], *, scenario: dict[str,
         return True
     if str(trace.get("event") or "") != "modelTurn":
         return False
+    stage = str(trace.get("stage") or "")
+    return stage.startswith("agent-json") or (
+        stage == "chat-text-turn" and _scenario_allows_plain_chat_model_turn(scenario)
+    )
+
+
+def _scenario_allows_plain_chat_model_turn(scenario: dict[str, Any]) -> bool:
     return (
-        not _scenario_requires_primary_agent_json(scenario)
-        or str(trace.get("stage") or "").startswith("agent-json")
+        scenario.get("requiresAgentRun") is True
+        and str(scenario.get("kind") or "").casefold() == "chat"
+        and str(scenario.get("expectedIntent") or "").casefold() == "chat"
+        and str(scenario.get("actualIntent") or scenario.get("intent") or "").casefold() == "chat"
     )
 
 
@@ -855,10 +864,7 @@ def _scenario_requires_primary_agent_json(scenario: dict[str, Any]) -> bool:
         return False
     if str(scenario.get("evidenceMode") or "modelBackedRequired").casefold() != "modelbackedrequired":
         return False
-    return not (
-        str(scenario.get("kind") or "").casefold() == "chat"
-        and _scenario_intent(scenario).casefold() == "chat"
-    )
+    return not _scenario_allows_plain_chat_model_turn(scenario)
 
 
 def _is_policy_first_trace(trace: dict[str, Any]) -> bool:

@@ -23,7 +23,7 @@ struct AgentGroundingRegressionTests {
         let agentRunID = UUID()
         let conversationID = UUID()
         let turnID = UUID()
-        AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
+        let trace = AgentBehaviorTrace(
             id: UUID(),
             createdAt: startedAt.addingTimeInterval(1),
             event: .modelTurn,
@@ -46,7 +46,7 @@ struct AgentGroundingRegressionTests {
             emittedFinalInActionTurn: true,
             outputTokenCount: 8,
             runtimePath: "assistant-kernel"
-        ))
+        )
         let result = E2ETestResult(
             id: UUID(),
             scenarioID: scenarioID,
@@ -84,14 +84,9 @@ struct AgentGroundingRegressionTests {
             failed: 0,
             results: [result]
         )
-        return InAppDatasetPackageExporter.makePackage(
-            manifestSource: "test-manifest",
-            usedRuntimeFallback: false,
-            runtimeManifestAudit: nil,
-            behaviorAudit: nil,
-            scenarioResults: [],
+        return InAppDatasetPackageExporter.makePackageForTests(
             liveE2EReport: report,
-            traceLimit: 10
+            traces: [trace]
         )
     }
 
@@ -1058,9 +1053,6 @@ struct AgentGroundingRegressionTests {
     }
 
     @Test func liveE2EExportAcceptsPlainModelEvidenceForDirectChat() throws {
-        AgentBehaviorTraceRecorder.clear()
-        defer { AgentBehaviorTraceRecorder.clear() }
-
         let package = packageWithPlainTextModelEvidence(
             kind: .chat,
             expectedIntent: .chat,
@@ -1077,9 +1069,6 @@ struct AgentGroundingRegressionTests {
     }
 
     @Test func liveE2EExportRejectsPlainModelEvidenceForStructuredTrainingChat() throws {
-        AgentBehaviorTraceRecorder.clear()
-        defer { AgentBehaviorTraceRecorder.clear() }
-
         let package = packageWithPlainTextModelEvidence(
             kind: .training,
             expectedIntent: .chat,
@@ -1096,9 +1085,6 @@ struct AgentGroundingRegressionTests {
     }
 
     @Test func liveE2EExportRejectsPlainModelEvidenceWhenChatRoutesToToolIntent() throws {
-        AgentBehaviorTraceRecorder.clear()
-        defer { AgentBehaviorTraceRecorder.clear() }
-
         let package = packageWithPlainTextModelEvidence(
             kind: .chat,
             expectedIntent: .chat,
@@ -1113,6 +1099,29 @@ struct AgentGroundingRegressionTests {
         #expect(package.exportQualityFailures?.contains(where: {
             $0.type == "agent_grounding_live_e2e_model_backed_trace_gap"
         }) == true)
+    }
+
+    @Test func liveE2EExportRejectsNonChatTextStageForDirectChat() {
+        let fields = (
+            requiresAgentRun: true,
+            kind: E2ETestKind.chat.rawValue,
+            expectedIntent: UserIntent.chat.rawValue,
+            actualIntent: UserIntent.chat.rawValue
+        )
+        #expect(InAppDatasetPackageExporter.plainModelEvidenceStageIsAcceptedForTests(
+            "chat-text-turn",
+            requiresAgentRun: fields.requiresAgentRun,
+            kind: fields.kind,
+            expectedIntent: fields.expectedIntent,
+            actualIntent: fields.actualIntent
+        ))
+        #expect(!InAppDatasetPackageExporter.plainModelEvidenceStageIsAcceptedForTests(
+            "mouth-final-turn",
+            requiresAgentRun: fields.requiresAgentRun,
+            kind: fields.kind,
+            expectedIntent: fields.expectedIntent,
+            actualIntent: fields.actualIntent
+        ))
     }
 
     @Test func liveE2EExportRequiresDistinctModelBackedScenarioCoverage() throws {
