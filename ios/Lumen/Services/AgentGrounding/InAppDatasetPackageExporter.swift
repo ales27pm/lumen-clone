@@ -468,8 +468,9 @@ nonisolated enum InAppDatasetPackageExporter {
     ) -> Int {
         traces.reduce(into: 0) { count, trace in
             guard let resultID = correlationContext.traceResultIDs[trace.id],
-                  report.results.contains(where: { $0.id == resultID && $0.requiresAgentRun }),
-                  isModelBackedLiveEvidenceTrace(trace) else { return }
+                  let result = report.results.first(where: { $0.id == resultID }),
+                  result.requiresAgentRun,
+                  isModelBackedLiveEvidenceTrace(trace, for: result) else { return }
             count += 1
         }
     }
@@ -483,7 +484,7 @@ nonisolated enum InAppDatasetPackageExporter {
             guard result.requiresAgentRun,
                   result.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue,
                   traces.contains(where: { trace in
-                      isModelBackedLiveEvidenceTrace(trace)
+                      isModelBackedLiveEvidenceTrace(trace, for: result)
                           && correlationContext.traceResultIDs[trace.id] == result.id
                   }) else {
                 return
@@ -505,12 +506,18 @@ nonisolated enum InAppDatasetPackageExporter {
         }
     }
 
-    private static func isModelBackedLiveEvidenceTrace(_ trace: AgentBehaviorTrace) -> Bool {
+    private static func isModelBackedLiveEvidenceTrace(
+        _ trace: AgentBehaviorTrace,
+        for result: E2ETestResult
+    ) -> Bool {
         guard trace.event == .modelTurn,
               trace.runtimePath != "deterministic-compatibility",
               trace.parseError == nil,
               !trace.rawOutputPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
+        }
+        if scenarioRequiresPrimaryAgentJSON(result) {
+            guard trace.stage.hasPrefix("agent-json") else { return false }
         }
         guard trace.stage.hasPrefix("agent-json") else { return true }
         guard trace.runtimePath == "agent-model",
@@ -532,6 +539,16 @@ nonisolated enum InAppDatasetPackageExporter {
         }
         return !traceIntentRequiresTool(trace.intent, allowedToolIDs: trace.allowedToolIDs)
             || (trace.successfulObservationCount ?? 0) > 0
+    }
+
+    private static func scenarioRequiresPrimaryAgentJSON(_ result: E2ETestResult) -> Bool {
+        guard result.requiresAgentRun,
+              result.evidenceMode == E2EEvidenceMode.modelBackedRequired.rawValue else {
+            return false
+        }
+        return !(result.kind.caseInsensitiveCompare(E2ETestKind.chat.rawValue) == .orderedSame
+            && result.expectedIntent.caseInsensitiveCompare(UserIntent.chat.rawValue) == .orderedSame
+            && result.actualIntent.caseInsensitiveCompare(UserIntent.chat.rawValue) == .orderedSame)
     }
 
     private static func traceIntentRequiresTool(_ rawIntent: String?, allowedToolIDs: [String]) -> Bool {
@@ -659,9 +676,12 @@ nonisolated enum InAppDatasetPackageExporter {
         let missing = evidenceRequired.filter { result in
             let correlated = traces.filter { correlationContext.traceResultIDs[$0.id] == result.id }
             if result.evidenceMode == E2EEvidenceMode.policyFirstAllowed.rawValue {
-                return !correlated.contains(where: { isModelBackedLiveEvidenceTrace($0) || isDeterministicCompatibilityEvidenceTrace($0) })
+                return !correlated.contains(where: {
+                    isModelBackedLiveEvidenceTrace($0, for: result)
+                        || isDeterministicCompatibilityEvidenceTrace($0)
+                })
             }
-            return !correlated.contains(where: isModelBackedLiveEvidenceTrace)
+            return !correlated.contains(where: { isModelBackedLiveEvidenceTrace($0, for: result) })
         }
         guard !evidenceRequired.isEmpty, !missing.isEmpty else {
             return nil
