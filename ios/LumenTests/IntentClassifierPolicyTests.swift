@@ -198,6 +198,11 @@ struct IntentClassifierPolicyTests {
         #expect(file.intent == .files)
         #expect(file.requiresClarification)
         #expect(file.clarificationPrompt == "Which file should I read?")
+
+        let rag = await IntentClassifierService.shared.classify("Use Search Personal Data, but ask for clarification if required details are missing.")
+        #expect(rag.intent == .rag)
+        #expect(rag.requiresClarification)
+        #expect(rag.clarificationPrompt == "What should I search for?")
     }
 
     @Test func clearDirectCommandsDoNotOverAskClarification() async {

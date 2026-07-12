@@ -10,7 +10,7 @@
     "mouth_responses": 53,
     "negative_samples": 53,
     "rem_reflection": 5,
-    "runtime_audit_repairs": 137,
+    "runtime_audit_repairs": 2,
     "self_model_cards": 8,
     "self_model_eval": 24,
     "self_model_sft": 4,
@@ -21,16 +21,16 @@
   "deterministic": true,
   "generatedAt": "1970-01-01T00:00:00+00:00",
   "hashes": {
-    "dpo_preference_pairs": "4f767adaddc8004a98edfdd72b4ed9097d199d6890731154f06b8c300a9ca48f",
-    "eval_scenarios": "719a4dedd0dab84679efe032385d7994ecb6ad1b0e72cd835a95121243d55c5d",
-    "manifest_grounding_cards": "1d0cef01d0db5365957b22d31f0ed18e24e713ec7b7494aea9d584189d308107",
-    "runtime_audit_repairs": "a3728d5273abd5d8a9f374b7ea10e222ac55b9e5964ea9e4c6c412b53db92748",
-    "self_model_cards": "37da69d84061767bfcda744b3fbfd1e09182a752caf18f95be5297f1eda09a79",
+    "dpo_preference_pairs": "fc8ba43a683659c1be618455896e91d9f858db2b06235572e59d86e1479b7dad",
+    "eval_scenarios": "feed42e30cbaae0c1761bcaafcc25fa44b867c37c0ce32a3c83c760886acbaa1",
+    "manifest_grounding_cards": "9ecf1928679851b3d8546abded0f1298766dde6176c1acd43999f413f4af9f58",
+    "runtime_audit_repairs": "abbb1fd61587938a1fbce81e45a560f226959e624a77acc7c698123ac277a945",
+    "self_model_cards": "d60a2a77913f30639e4b49e78bb28ea06379040208335db8262d6b82f736e6f7",
     "self_model_eval": "499bf7a5f7fc33c617d4029c087f9f32e9865ec48d0dffc571bcfac5f06355aa",
     "self_model_sft": "09b7b0f9d07b0103055b38c8636090f469ddf8ddcd37e162b3e47d5891c0850d",
-    "tool_schema_cards": "b37b9ae73160ea85155026e7fa82f132c68aa2057c74008c716d4b341e420d55",
-    "train_sft": "f77fdc979a909930c1fb52d6a4205f9121108e9e589cd2fc44b3eec372afd9c2",
-    "validation_sft": "ef1a6ae09a0918eec64d7c406938b2dbea7907fc2bc6a997c6bad9db762edf70"
+    "tool_schema_cards": "8c92f99091fe0ff2af83ee0041976671287aaa115404742010de29dd0367b60c",
+    "train_sft": "f7696f1455c9f67da3ebb6d6dadf53cfa8e8b203fce56b4774ff1c64ec28af5d",
+    "validation_sft": "f823100a5c83edd193af6431cdc3fde0185cf187fafb785f85b05e50550b25d2"
   },
   "manifest": {
     "commit": null,

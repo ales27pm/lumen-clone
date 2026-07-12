@@ -49,6 +49,36 @@ def test_enum_argument_type_is_supported():
     assert not any(f.code == "unsupported_argument_type" for f in report.failures)
 
 
+def test_enum_argument_type_is_supported_when_executor_lists_only_json_primitives():
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="trigger.create",
+                arguments=[
+                    ToolArgumentManifest(
+                        name="schedule",
+                        type="enum",
+                        required=True,
+                        allowedValues=["absolute", "interval", "relative"],
+                    )
+                ],
+            )
+        ]
+    )
+    manifest.agentProtocols.executorOutput["supportedJSONTypes"] = [
+        "array",
+        "bool",
+        "null",
+        "number",
+        "object",
+        "string",
+    ]
+
+    report = validate_manifest(manifest)
+
+    assert not any(f.code == "unsupported_argument_type" for f in report.failures)
+
+
 def test_inferred_tool_argument_contract_is_hard_failure():
     manifest = AgentBehaviorManifest(
         tools=[

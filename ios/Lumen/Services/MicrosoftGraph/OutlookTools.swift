@@ -79,8 +79,12 @@ nonisolated struct OutlookToolOutcome: Equatable, Sendable {
         OutlookToolOutcome(text: text, status: .failed, availability: .configured, errorCode: "outlook_invalid_arguments", diagnostics: diagnostics)
     }
 
-    static func authUnavailable(_ text: String, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
-        OutlookToolOutcome(text: text, status: .unavailable, availability: .authUnavailable, errorCode: "outlook_auth_unavailable", diagnostics: diagnostics)
+    static func authUnavailable(
+        _ text: String,
+        errorCode: String = "outlook_auth_unavailable",
+        diagnostics: [String: String] = [:]
+    ) -> OutlookToolOutcome {
+        OutlookToolOutcome(text: text, status: .unavailable, availability: .authUnavailable, errorCode: errorCode, diagnostics: diagnostics)
     }
 
     static func failure(from error: Error, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
@@ -102,9 +106,52 @@ nonisolated struct OutlookToolOutcome: Equatable, Sendable {
                 diagnostics: diagnostics
             )
         case MicrosoftGraphAuthError.noAccount,
-             MicrosoftGraphAuthError.interactionRequired,
              MicrosoftGraphAuthError.signInCancelled:
             return authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
+        case MicrosoftGraphAuthError.invalidGrant:
+            return authUnavailable(
+                "Outlook authorization expired or was revoked. Reconnect Outlook and sign in again.",
+                errorCode: "outlook_reauthentication_required",
+                diagnostics: diagnostics
+            )
+        case MicrosoftGraphAuthError.interactionRequired:
+            return authUnavailable(
+                "Outlook requires an interactive sign-in. Reconnect Outlook to continue.",
+                errorCode: "outlook_interaction_required",
+                diagnostics: diagnostics
+            )
+        case MicrosoftGraphAuthError.consentRequired:
+            return OutlookToolOutcome(
+                text: "Outlook needs consent for the requested Mail permissions. Reconnect Outlook and grant access.",
+                status: .denied,
+                availability: .permissionDenied,
+                errorCode: "outlook_consent_required",
+                diagnostics: diagnostics
+            )
+        case MicrosoftGraphAuthError.invalidScope:
+            return OutlookToolOutcome(
+                text: "Outlook did not grant the Mail permission required for this action. Reconnect Outlook and grant access.",
+                status: .denied,
+                availability: .permissionDenied,
+                errorCode: "outlook_scope_not_granted",
+                diagnostics: diagnostics
+            )
+        case MicrosoftGraphAuthError.tokenEndpointThrottled:
+            return OutlookToolOutcome(
+                text: "Microsoft is throttling Outlook authentication requests. Try again later.",
+                status: .failed,
+                availability: .providerError,
+                errorCode: "outlook_provider_throttled",
+                diagnostics: diagnostics
+            )
+        case MicrosoftGraphAuthError.tokenEndpointUnavailable:
+            return OutlookToolOutcome(
+                text: "Outlook authentication is temporarily unavailable. Try again later.",
+                status: .failed,
+                availability: .providerError,
+                errorCode: "outlook_auth_provider_unavailable",
+                diagnostics: diagnostics
+            )
         case MicrosoftGraphAuthError.msalNotLinked,
              MicrosoftGraphAuthError.presentationAnchorUnavailable:
             return authUnavailable("Outlook authentication is unavailable in this build.", diagnostics: diagnostics)
@@ -393,6 +440,9 @@ enum OutlookTools {
         let auth = MicrosoftGraphAuthManager()
         await auth.bootstrap()
         let diagnostics = buildDiagnostics(auth: auth)
+        if let authError = auth.lastError {
+            return OutlookToolOutcome.failure(from: authError, diagnostics: diagnostics)
+        }
         guard auth.isSignedIn else {
             return .authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
         }
@@ -552,6 +602,9 @@ enum OutlookTools {
             let auth = MicrosoftGraphAuthManager()
             await auth.bootstrap()
             let diagnostics = buildDiagnostics(auth: auth)
+            if let authError = auth.lastError {
+                return OutlookToolOutcome.failure(from: authError, diagnostics: diagnostics)
+            }
             guard auth.isSignedIn else {
                 return .authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
             }

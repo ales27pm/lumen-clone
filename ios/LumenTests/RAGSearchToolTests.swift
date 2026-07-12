@@ -4,6 +4,21 @@ import SwiftUI
 @testable import Lumen
 
 final class RAGSearchToolTests: XCTestCase {
+    func testExplicitRAGSourceOwnershipOutranksGenericQueryTerms() {
+        XCTAssertEqual(
+            RAGSourceScope.inferred(fromUserPrompt: "Search my files for architecture notes."),
+            .documents
+        )
+        XCTAssertEqual(
+            RAGSourceScope.inferred(fromUserPrompt: "Search my notes for a PDF reference."),
+            .notes
+        )
+        XCTAssertEqual(
+            RAGSourceScope.inferred(fromUserPrompt: "Search my photos and report what you find."),
+            .photos
+        )
+    }
+
     @MainActor func testMissingModelContextReportsSwiftDataDiagnostic() async {
         let tool = RAGSearchTool()
         let inv = ToolInvocation(
@@ -111,6 +126,113 @@ final class RAGSearchToolTests: XCTestCase {
         XCTAssertEqual(res.structuredPayload?["selectedSourceCount"], "2")
         XCTAssertEqual(res.structuredPayload?["diversityPassApplied"], "true")
         XCTAssertEqual(res.structuredPayload?["dedupedCount"], "4")
+    }
+
+    @MainActor func testDocumentScopeExcludesPhotoMetadataBeforeRetrieval() async throws {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "architecture module contract", sourceType: .file, sourceName: "architecture.txt"))
+        context.insert(RAGChunk(content: "architecture module contract", sourceType: .photo, sourceName: "Photos 2026-07"))
+        try context.save()
+
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "rag.search.secure",
+            arguments: ["query": "architecture module", "sourceScope": "documents"],
+            source: .system,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+        let result = await RAGSearchTool().execute(
+            invocation: invocation,
+            context: .init(isForeground: true, appState: nil, modelContext: context, permissionRegistry: .shared, metricsStore: .shared)
+        )
+
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(result.structuredPayload?["sourceScope"], "documents")
+        XCTAssertTrue(result.modelText.contains("architecture.txt"))
+        XCTAssertFalse(result.modelText.contains("Photos 2026-07"))
+    }
+
+    @MainActor func testDocumentScopeReportsEmptyCorpusInsteadOfPhotoResult() async throws {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "architecture module contract", sourceType: .photo, sourceName: "Photos 2026-07"))
+        try context.save()
+
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "rag.search.secure",
+            arguments: ["query": "architecture notes", "sourceScope": "documents"],
+            source: .system,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+        let result = await RAGSearchTool().execute(
+            invocation: invocation,
+            context: .init(isForeground: true, appState: nil, modelContext: context, permissionRegistry: .shared, metricsStore: .shared)
+        )
+
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(result.structuredPayload?["diagnostic"], "scoped_index_empty:documents")
+        XCTAssertTrue(result.modelText.contains("local document index appears empty"))
+        XCTAssertFalse(result.modelText.contains("Photos 2026-07"))
+    }
+
+    @MainActor func testPhotoScopeReportsPhotoSpecificEmptyCorpusGuidance() async throws {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "architecture module contract", sourceType: .file, sourceName: "architecture.txt"))
+        try context.save()
+
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "rag.search.secure",
+            arguments: ["query": "summer trip", "sourceScope": "photos"],
+            source: .system,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+        let result = await RAGSearchTool().execute(
+            invocation: invocation,
+            context: .init(isForeground: true, appState: nil, modelContext: context, permissionRegistry: .shared, metricsStore: .shared)
+        )
+
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(result.structuredPayload?["diagnostic"], "scoped_index_empty:photos")
+        XCTAssertTrue(result.modelText.contains("photo index appears empty"))
+        XCTAssertTrue(result.modelText.contains("Index the photo library"))
+        XCTAssertFalse(result.modelText.contains("Import local files"))
     }
 
     @MainActor func testRAGStoreFallsBackToLexicalWhenEmbeddingBudgetDenied() async {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -25,6 +26,22 @@ RUNTIME_ENVIRONMENT_ROOT_CAUSES = {
     "runtime_environment_deferred",
     "agent_json_resource_budget_denied_before_first_token",
 }
+
+KNOWN_RUNTIME_PATHS = (
+    "agent-model",
+    "deterministic-compatibility",
+)
+
+
+def _normalized_runtime_path(value: Any) -> str:
+    """Restore only known control-plane values from an exact privacy summary."""
+    runtime_path = str(value or "")
+    for known_path in KNOWN_RUNTIME_PATHS:
+        digest = hashlib.sha256(known_path.encode("utf-8")).hexdigest()[:16]
+        summary = f"runtimePath_chars={len(known_path)};sha256={digest}"
+        if runtime_path in {known_path, summary}:
+            return known_path
+    return runtime_path
 
 
 def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
@@ -484,7 +501,7 @@ def _model_evidence_diagnosis_for_scenario(scenario: dict[str, Any], sidecars: d
     if matching_trace is not None:
         raw = str(matching_trace.get("rawOutputPrefix") or "")
         parse_error = matching_trace.get("parseError")
-        runtime_path = str(matching_trace.get("runtimePath") or "unknown")
+        runtime_path = _normalized_runtime_path(matching_trace.get("runtimePath")) or "unknown"
         stage = str(matching_trace.get("stage") or "unknown")
         if _is_model_backed_trace(matching_trace) and raw.strip() and not parse_error:
             return {
@@ -869,7 +886,7 @@ def _scenario_requires_primary_agent_json(scenario: dict[str, Any]) -> bool:
 
 def _is_policy_first_trace(trace: dict[str, Any]) -> bool:
     return (
-        str(trace.get("runtimePath") or "") == "deterministic-compatibility"
+        _normalized_runtime_path(trace.get("runtimePath")) == "deterministic-compatibility"
         and str(trace.get("event") or "") in {"toolAction", "finalAnswer"}
     )
 
@@ -892,7 +909,7 @@ def _scenario_has_explicit_correlation(scenario: dict[str, Any]) -> bool:
 def _is_model_backed_trace(trace: dict[str, Any]) -> bool:
     if str(trace.get("event") or "") != "modelTurn":
         return False
-    runtime_path = str(trace.get("runtimePath") or "")
+    runtime_path = _normalized_runtime_path(trace.get("runtimePath"))
     if runtime_path == "deterministic-compatibility":
         return False
     if not str(trace.get("stage") or "").startswith("agent-json"):
@@ -939,7 +956,7 @@ def _trace_positive_int(value: Any) -> int | None:
 def _trace_summary(trace: dict[str, Any], *, matched_by: str, raw_output_empty: bool) -> dict[str, Any]:
     return {
         "stage": str(trace.get("stage") or "unknown"),
-        "runtimePath": str(trace.get("runtimePath") or "unknown"),
+        "runtimePath": _normalized_runtime_path(trace.get("runtimePath")) or "unknown",
         "parseError": trace.get("parseError"),
         "rawOutputEmpty": raw_output_empty,
         "matchedBy": matched_by,
@@ -1127,7 +1144,7 @@ def _preferred_agent_json_trace(traces: list[dict[str, Any]]) -> dict[str, Any] 
 
     def score(trace: dict[str, Any]) -> tuple[int, int, int, int, str]:
         stage = str(trace.get("stage") or "")
-        runtime_path = str(trace.get("runtimePath") or "")
+        runtime_path = _normalized_runtime_path(trace.get("runtimePath"))
         raw = str(trace.get("rawOutputPrefix") or "")
         parse_error = str(trace.get("parseError") or "")
         is_primary = runtime_path == "agent-model" and stage.startswith("agent-json-step-")

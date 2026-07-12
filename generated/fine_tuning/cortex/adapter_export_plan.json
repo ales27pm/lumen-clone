@@ -7,13 +7,13 @@
   "agent": "cortex",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "datasetCard": {
-    "manifestCommit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
+    "manifestCommit": "d00e9fc818059ce15eabec8e453d52374511a8e1",
     "recordCounts": {
       "eval": 558,
       "train_dpo": 15,
-      "train_sft": 9573,
+      "train_sft": 10368,
       "val_dpo": 3,
-      "val_sft": 1689
+      "val_sft": 1830
     },
     "sourceFamilies": [
       "adapter_ultra_specific",

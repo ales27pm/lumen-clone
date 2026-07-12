@@ -100,7 +100,7 @@ def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str
             arg_type = arg.type.lower()
             if arg_type in VAGUE_TYPES:
                 warnings.append(ValidationWarning(code="vague_argument_type", message=f"Tool {tool.id}.{arg.name} uses vague type {arg.type}", path=f"tools.{tool.id}.arguments.{arg.name}"))
-            if arg_type not in normalized_supported:
+            if arg_type != "enum" and arg_type not in normalized_supported:
                 failures.append(ValidationFailure(code="unsupported_argument_type", message=f"Tool {tool.id}.{arg.name} uses unsupported type {arg.type}", path=f"tools.{tool.id}.arguments.{arg.name}"))
 
     for slot in manifest.fleet.slots:

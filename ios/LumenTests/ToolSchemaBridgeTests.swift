@@ -60,6 +60,20 @@ final class ToolSchemaBridgeTests: XCTestCase {
         XCTAssertEqual(result.failure, .invalidEnumValue(tool: "trigger.create", argument: "schedule", allowed: ["absolute", "interval", "relative"]))
     }
 
+    func testStructuredToolCallValidatorEnforcesRAGSourceScopeEnum() {
+        let valid = StructuredToolCallValidator.validate(
+            action: AgentAction(tool: "rag.search", args: ["query": .string("architecture"), "sourceScope": .string("documents")]),
+            availableTools: ToolRegistry.all
+        )
+        XCTAssertEqual(valid.success?.arguments["sourceScope"], "documents")
+
+        let invalid = StructuredToolCallValidator.validate(
+            action: AgentAction(tool: "rag.search", args: ["query": .string("architecture"), "sourceScope": .string("internet")]),
+            availableTools: ToolRegistry.all
+        )
+        XCTAssertEqual(invalid.failure, .invalidEnumValue(tool: "rag.search", argument: "sourceScope", allowed: ["all", "documents", "notes", "photos"]))
+    }
+
     func testStructuredToolCallValidatorRejectsExtraDangerousArguments() {
         let action = AgentAction(tool: "web.search", args: ["query": .string("swift"), "deleteAfter": .bool(true)])
         let result = StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all)

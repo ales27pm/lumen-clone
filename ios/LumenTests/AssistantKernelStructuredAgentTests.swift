@@ -109,6 +109,42 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         }
     }
 
+    private struct StubMemoryTool: LocalTool {
+        let definition: SecureToolDefinition
+        private let observation: String
+
+        init(id: String, observation: String) {
+            definition = SecureToolDefinition(
+                id: id,
+                displayName: id,
+                description: "Scripted memory tool for structured executor tests.",
+                category: .readOnly,
+                requiredPermissions: [],
+                supportsBackgroundExecution: true,
+                requiresUserApproval: false,
+                argumentSchemaDescription: "{}",
+                resultPrivacyLevel: .moderate,
+                maxOutputCharacters: 2_000
+            )
+            self.observation = observation
+        }
+
+        func validateArguments(_ arguments: [String: String]) throws {}
+
+        func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
+            ToolResult(
+                invocationID: invocation.id,
+                status: .success,
+                displayText: observation,
+                modelText: observation,
+                structuredPayload: ["toolID": definition.id],
+                privacyLevel: .moderate,
+                metricsSummary: "scripted_memory_success",
+                errorCode: nil
+            )
+        }
+    }
+
     func testToolRequiredFirstTurnUsesActionOnlySchema() throws {
         #if DEBUG
         let request = structuredRequest(
@@ -335,6 +371,51 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testMalformedMemoryTurnsRepairedIntoRequiredActionsRecordParseFailures() async throws {
+        #if DEBUG
+        let diagnosticsDirectory = try AgentParseFailureRecorder.diagnosticsDirectory()
+        let diagnosticsURL = diagnosticsDirectory.appendingPathComponent("agent-parse-failures.jsonl")
+        let originalByteCount = (try? Data(contentsOf: diagnosticsURL).count) ?? 0
+        let service = ScriptedLlamaService(
+            isChatLoaded: true,
+            scripts: [
+                [.text("{}"), .done],
+                [.text("{}"), .done],
+                [.text("{}"), .done],
+                [.text(#"{"final":"I remember that you prefer concise bullet points."}"#), .done]
+            ]
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [
+                StubMemoryTool(id: "memory.save", observation: "Memory saved."),
+                StubMemoryTool(id: "memory.recall", observation: "I prefer concise bullet points.")
+            ])
+        )
+
+        var final = ""
+        for await event in kernel.run(structuredRequest(
+            "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            allowedToolIDs: ["memory.save", "memory.recall"]
+        )) {
+            if case .final(let text) = event { final = text }
+        }
+
+        XCTAssertEqual(final, "I remember that you prefer concise bullet points.")
+        let data = try Data(contentsOf: diagnosticsURL)
+        XCTAssertGreaterThanOrEqual(data.count, originalByteCount)
+        let appendedData = data.subdata(in: min(originalByteCount, data.count)..<data.count)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let appendedFailures = appendedData
+            .split(separator: 0x0A)
+            .compactMap { try? decoder.decode(AgentParseFailureTrace.self, from: Data($0)) }
+        XCTAssertEqual(appendedFailures.filter { $0.parseError == AgentTurnParseError.missingActionOrFinal.rawValue }.count, 3)
+        let streamCallCount = await service.streamCallCount
+        XCTAssertEqual(streamCallCount, 4)
+        #endif
+    }
+
     func testStructuredFinalTraceRecordsActualObservationFinalizerRejection() async {
         #if DEBUG
         AgentBehaviorTraceRecorder.clear()
@@ -520,6 +601,26 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         XCTAssertEqual(unavailable, "RAG retrieval is unavailable right now. RAG storage unavailable.")
         XCTAssertFalse(unavailable.contains("Summary\n"))
         XCTAssertFalse(unavailable.contains("Key modules"))
+        #endif
+    }
+
+    func testRAGSearchRepairConstrainsFileRequestToDocuments() throws {
+        #if DEBUG
+        let routing = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let repair = try XCTUnwrap(StructuredAgentKernelExecutor.repairedRAGSearchActionIfNeededForTests(
+            modelAction: AgentAction(tool: "rag.search", args: ["query": .string("architecture notes")]),
+            routing: routing,
+            prompt: "Search my files for architecture notes and summarize key modules."
+        ))
+
+        XCTAssertEqual(repair.action.tool, "rag.search")
+        XCTAssertEqual(repair.action.args["sourceScope"], .string("documents"))
+        XCTAssertEqual(repair.reflection.toolArgs?["sourceScope"], "documents")
         #endif
     }
 

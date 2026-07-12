@@ -70,12 +70,7 @@ nonisolated enum EvidenceLayerExporter {
     }
 
     private static func appInfo() -> InAppDatasetAppInfo {
-        InAppDatasetAppInfo(
-            name: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Lumen",
-            bundleIdentifier: Bundle.main.bundleIdentifier,
-            shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-            buildNumber: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-        )
+        .current()
     }
 
     private static func sanitizeFilePrefix(_ value: String) -> String {
