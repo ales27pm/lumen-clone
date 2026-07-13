@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import pickletools
 import re
+import zipfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -19,6 +22,23 @@ _OPTIONAL_FILES = {
     "special_tokens_map.json",
 }
 _ALLOWED_FILES = _REQUIRED_FILES | _WEIGHT_FILES | _OPTIONAL_FILES
+_SAFETENSORS_DTYPE_BYTES = {
+    "BOOL": 1,
+    "BF16": 2,
+    "F16": 2,
+    "F32": 4,
+    "F64": 8,
+    "F8_E4M3": 1,
+    "F8_E5M2": 1,
+    "I8": 1,
+    "I16": 2,
+    "I32": 4,
+    "I64": 8,
+    "U8": 1,
+    "U16": 2,
+    "U32": 4,
+    "U64": 8,
+}
 
 
 def canonical_sha256(value: Any) -> str:
@@ -37,6 +57,159 @@ def hash_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _load_json_object(value: bytes, *, label: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is not valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return parsed
+
+
+def _validate_safetensors_file(path: Path) -> set[str]:
+    size = path.stat().st_size
+    if size < 9:
+        raise ValueError("adapter_model.safetensors is truncated or empty")
+    with path.open("rb") as handle:
+        header_size_bytes = handle.read(8)
+        header_size = int.from_bytes(header_size_bytes, byteorder="little", signed=False)
+        if header_size == 0 or header_size > size - 8:
+            raise ValueError("adapter_model.safetensors has an invalid header length")
+        header = _load_json_object(
+            handle.read(header_size),
+            label="adapter_model.safetensors header",
+        )
+
+    data_size = size - 8 - header_size
+    tensor_entries = [
+        (name, value) for name, value in header.items() if name != "__metadata__"
+    ]
+    if not tensor_entries:
+        raise ValueError("adapter_model.safetensors must contain at least one tensor")
+    tensor_names = {name for name, _ in tensor_entries if isinstance(name, str)}
+    if not any(".lora_" in name or "lora_embedding_" in name for name in tensor_names):
+        raise ValueError("adapter_model.safetensors does not contain LoRA tensors")
+
+    ranges: list[tuple[int, int]] = []
+    for name, value in tensor_entries:
+        if not isinstance(name, str) or not isinstance(value, Mapping):
+            raise ValueError("adapter_model.safetensors contains an invalid tensor entry")
+        dtype = value.get("dtype")
+        shape = value.get("shape")
+        offsets = value.get("data_offsets")
+        if dtype not in _SAFETENSORS_DTYPE_BYTES:
+            raise ValueError(f"adapter_model.safetensors tensor {name!r} has an unsupported dtype")
+        if not isinstance(shape, list) or any(
+            type(dimension) is not int or dimension < 0 for dimension in shape
+        ):
+            raise ValueError(f"adapter_model.safetensors tensor {name!r} has an invalid shape")
+        if (
+            not isinstance(offsets, list)
+            or len(offsets) != 2
+            or any(type(offset) is not int for offset in offsets)
+        ):
+            raise ValueError(f"adapter_model.safetensors tensor {name!r} has invalid offsets")
+        start, end = offsets
+        if start < 0 or end <= start or end > data_size:
+            raise ValueError(f"adapter_model.safetensors tensor {name!r} is out of bounds")
+        expected_bytes = math.prod(shape) * _SAFETENSORS_DTYPE_BYTES[dtype]
+        if end - start != expected_bytes:
+            raise ValueError(
+                f"adapter_model.safetensors tensor {name!r} byte length does not match its dtype and shape"
+            )
+        ranges.append((start, end))
+
+    expected_start = 0
+    for start, end in sorted(ranges):
+        if start != expected_start:
+            raise ValueError("adapter_model.safetensors tensor data has gaps or overlaps")
+        expected_start = end
+    if expected_start != data_size:
+        raise ValueError("adapter_model.safetensors contains unreferenced tensor data")
+    return tensor_names
+
+
+def _validate_pytorch_bin_file(path: Path) -> None:
+    size = path.stat().st_size
+    if size < 16:
+        raise ValueError("adapter_model.bin is truncated or empty")
+    with path.open("rb") as handle:
+        prefix = handle.read(4)
+    if prefix != b"PK\x03\x04":
+        raise ValueError(
+            "adapter_model.bin must use the structurally verifiable PyTorch ZIP format"
+        )
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            corrupt = archive.testzip()
+            pickle_names = [name for name in names if name.endswith("/data.pkl")]
+            pickle_payload = (
+                archive.read(pickle_names[0]) if len(pickle_names) == 1 else b""
+            )
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise ValueError("adapter_model.bin is not a valid PyTorch ZIP artifact") from exc
+    if (
+        corrupt is not None
+        or len(pickle_names) != 1
+        or not any("/data/" in name for name in names)
+    ):
+        raise ValueError("adapter_model.bin lacks a complete PyTorch tensor archive")
+    try:
+        operations = list(pickletools.genops(pickle_payload))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError("adapter_model.bin contains an invalid PyTorch pickle") from exc
+    if (
+        not operations
+        or operations[-1][0].name != "STOP"
+        or operations[-1][2] != len(pickle_payload) - 1
+    ):
+        raise ValueError("adapter_model.bin contains an incomplete PyTorch pickle")
+
+
+def _validate_weight_file(path: Path) -> set[str] | None:
+    if path.name == "adapter_model.safetensors":
+        return _validate_safetensors_file(path)
+    _validate_pytorch_bin_file(path)
+    return None
+
+
+def _validate_lora_config(
+    config: Mapping[str, Any],
+    *,
+    tensor_names: set[str] | None,
+) -> None:
+    base_model = config.get("base_model_name_or_path")
+    if base_model is not None and (
+        not isinstance(base_model, str) or not base_model.strip()
+    ):
+        raise ValueError("adapter_config.json base_model_name_or_path must be non-empty")
+
+    raw_targets = config.get("target_modules")
+    target_modules: list[str] | None
+    if raw_targets is None or isinstance(raw_targets, str) and raw_targets.strip():
+        target_modules = None
+    elif isinstance(raw_targets, list) and raw_targets and all(
+        isinstance(target, str) and target.strip() for target in raw_targets
+    ):
+        target_modules = raw_targets
+    else:
+        raise ValueError("adapter_config.json must declare non-empty LoRA target_modules")
+
+    if tensor_names is not None and target_modules is not None and any(
+        not any(
+            f".{target}.lora_" in tensor_name
+            or f".{target}.lora_embedding_" in tensor_name
+            for tensor_name in tensor_names
+        )
+        for target in target_modules
+    ):
+        raise ValueError(
+            "adapter_model.safetensors LoRA tensors do not match adapter_config.json target_modules"
+        )
 
 
 def _artifact_files(adapter_dir: Path) -> list[Path]:
@@ -72,6 +245,8 @@ def _artifact_files(adapter_dir: Path) -> list[Path]:
     config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
     if not isinstance(config, dict) or str(config.get("peft_type") or "").upper() != "LORA":
         raise ValueError("adapter_config.json must declare peft_type=LORA")
+    tensor_names = _validate_weight_file(adapter_dir / weights[0])
+    _validate_lora_config(config, tensor_names=tensor_names)
     return files
 
 
@@ -131,6 +306,7 @@ def verify_adapter_artifact(
     *,
     expected_adapter_sha256: str | None = None,
     expected_training_phase: str | None = None,
+    expected_parent_sft_adapter_sha256: str | None = None,
 ) -> dict[str, Any]:
     manifest_path = adapter_dir / ADAPTER_ARTIFACT_MANIFEST_FILENAME
     if not manifest_path.is_file():
@@ -155,4 +331,12 @@ def verify_adapter_artifact(
         raise ValueError("Adapter artifact digest does not match the expected finalized lineage")
     if expected_training_phase is not None and phase != expected_training_phase:
         raise ValueError(f"Expected a {expected_training_phase} adapter artifact, got {phase or '<missing>'}")
+    if (
+        expected_parent_sft_adapter_sha256 is not None
+        and rebuilt["parentSFTAdapterSHA256"]
+        != expected_parent_sft_adapter_sha256
+    ):
+        raise ValueError(
+            "Adapter artifact parent SFT digest does not match the expected finalized lineage"
+        )
     return rebuilt

@@ -220,6 +220,97 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
     assert config["variantAttestation"]["runtimeImageBindingVerified"] is False
 
 
+def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    source_root = tmp_path / "datasets"
+    source_root.mkdir()
+    _write_variant_fixture(module, source_root)
+    item = module._prepare_configs(
+        source_root=source_root,
+        run_root=tmp_path / "run",
+        agents=["executor"],
+        base_model_override="",
+        seed=42,
+        variant="internal_plus_public_optimized",
+    )[0]
+    attestation = item["variantAttestation"]
+    config = json.loads(Path(item["config"]).read_text(encoding="utf-8"))
+    training_environment = {
+        "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+        "containerImageDigest": config["trainingContainerImageDigest"],
+        "containerImageDigestSource": config["trainingContainerImageDigestSource"],
+        "runtimeImageBindingStatus": config["trainingRuntimeImageBindingStatus"],
+        "runtimeImageBindingVerified": config["trainingRuntimeImageBindingVerified"],
+        "environmentLock": config["trainingEnvironmentLock"],
+    }
+    finalized = {
+        "agent": item["agent"],
+        "variant": item["variant"],
+        "sourceVariantManifestSHA256": item["variantManifestSHA256"],
+        "baseModelID": item["base_model_name"],
+        "baseModelRevision": item["baseModelRevision"],
+        "baseModelIndexDigest": item["baseModelIndexDigest"],
+        "baseModelArtifactDigest": item["baseModelArtifactDigest"],
+        "baseModelWeightShards": item["baseModelWeightShards"],
+        "baseModelTokenizerDigest": item["baseModelTokenizerDigest"],
+        "trainingEnvironmentSHA256": item["trainingEnvironmentSHA256"],
+        "trainingEnvironment": training_environment,
+        "trainingCorpusSHA256": attestation["trainingCorpusSHA256"],
+        "trainingConfigSHA256": attestation["effectiveTrainingConfigSHA256"],
+        "datasets": {
+            name: {"sha256": digest}
+            for name, digest in attestation["laneHashes"].items()
+        },
+        "artifact": {
+            "status": "trained",
+            "trainingPhase": "sft",
+            "parentSFTAdapterSHA256": None,
+            "adapterSHA256": "a" * 64,
+            "adapterManifestSHA256": "a" * 64,
+        },
+    }
+    finalized["variantManifestSHA256"] = module._canonical_sha256(finalized)
+    manifest_path = Path(item["finalized_variant_manifest"])
+
+    module._verify_finalized_variant_lineage(item, finalized, manifest_path)
+
+    tampered = dict(finalized)
+    tampered["agent"] = "cortex"
+    with pytest.raises(ValueError, match="integrity check failed"):
+        module._verify_finalized_variant_lineage(item, tampered, manifest_path)
+
+    substituted = dict(tampered)
+    substituted.pop("variantManifestSHA256")
+    substituted["variantManifestSHA256"] = module._canonical_sha256(substituted)
+    with pytest.raises(ValueError, match="identity or source lineage mismatch"):
+        module._verify_finalized_variant_lineage(item, substituted, manifest_path)
+
+    missing_digest = json.loads(json.dumps(finalized))
+    missing_digest["artifact"].pop("adapterSHA256")
+    missing_digest.pop("variantManifestSHA256")
+    missing_digest["variantManifestSHA256"] = module._canonical_sha256(
+        missing_digest
+    )
+    with pytest.raises(ValueError, match="valid SFT adapter lineage"):
+        module._verify_finalized_variant_lineage(
+            item, missing_digest, manifest_path
+        )
+
+    attestation_drift = json.loads(json.dumps(finalized))
+    attestation_drift["datasets"]["trainSFT"]["sha256"] = "f" * 64
+    attestation_drift.pop("variantManifestSHA256")
+    attestation_drift["variantManifestSHA256"] = module._canonical_sha256(
+        attestation_drift
+    )
+    with pytest.raises(ValueError, match="prepared attestation"):
+        module._verify_finalized_variant_lineage(
+            item, attestation_drift, manifest_path
+        )
+
+
 def test_variant_dataset_rejects_tampered_lane_and_control_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

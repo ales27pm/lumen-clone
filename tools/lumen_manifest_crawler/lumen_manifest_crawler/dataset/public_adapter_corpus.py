@@ -7,6 +7,7 @@ import os
 import re
 import tarfile
 import tempfile
+import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -48,6 +49,17 @@ RECORD_SCHEMA = "lumen.public-adapter-corpus-record/1.1.0"
 MAX_ARTIFACT_BYTES = 256 * 1024 * 1024
 MAX_TEXT_CHARS = 4_000
 MIN_TEXT_CHARS = 2
+
+_APPROVED_ARTIFACT_DOWNLOAD_HOSTS = frozenset(
+    {
+        "amazon-massive-nlu-dataset.s3.amazonaws.com",
+        "cdn-lfs.hf.co",
+        "cas-bridge.xethub.hf.co",
+        "codeload.github.com",
+        "huggingface.co",
+        "us.aws.cdn.hf.co",
+    }
+)
 
 _EMAIL_RE = re.compile(r"(?i)(?<![\w.+-])[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+")
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\s().-]*){7,15}(?!\w)")
@@ -643,6 +655,7 @@ def _artifact_cache_filename(source: Mapping[str, Any]) -> str:
 
 def _download_verified(url: str, destination: Path, expected_sha256: str) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
+    source_origin = _validated_download_origin(url)
     request = urllib.request.Request(url, headers={"User-Agent": "LumenPublicAdapterCorpus/1.0"})
     digest = hashlib.sha256()
     total = 0
@@ -655,7 +668,14 @@ def _download_verified(url: str, destination: Path, expected_sha256: str) -> Non
             delete=False,
         ) as output:
             temp = Path(output.name)
-            with urllib.request.urlopen(request, timeout=60) as response:
+            opener = urllib.request.build_opener(
+                _ValidatedArtifactRedirectHandler(source_origin)
+            )
+            with opener.open(request, timeout=60) as response:
+                _validate_download_target(
+                    response.geturl(),
+                    source_origin=source_origin,
+                )
                 while chunk := response.read(1024 * 1024):
                     total += len(chunk)
                     if total > MAX_ARTIFACT_BYTES:
@@ -673,6 +693,79 @@ def _download_verified(url: str, destination: Path, expected_sha256: str) -> Non
     finally:
         if temp is not None:
             temp.unlink(missing_ok=True)
+
+
+def _validated_download_origin(url: str) -> tuple[str, str, int | None]:
+    parsed = urllib.parse.urlsplit(url)
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise PublicCorpusError("Public corpus downloads require an HTTPS URL without credentials")
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise PublicCorpusError("Public corpus download URL has an invalid port") from error
+    hostname = parsed.hostname.lower()
+    if (
+        port not in {None, 443}
+        or (
+            hostname not in _APPROVED_ARTIFACT_DOWNLOAD_HOSTS
+            and not hostname.endswith(".cdn.hf.co")
+        )
+    ):
+        raise PublicCorpusError(
+            f"Public corpus download target host is not approved: {hostname}"
+        )
+    return ("https", hostname, port or 443)
+
+
+def _validate_download_target(
+    url: str,
+    *,
+    source_origin: tuple[str, str, int | None],
+) -> str:
+    target_origin = _validated_download_origin(url)
+    source_host = source_origin[1]
+    target_host = target_origin[1]
+    approved_hugging_face_redirect = (
+        source_host == "huggingface.co"
+        and (
+            target_host
+            in {
+                "cdn-lfs.hf.co",
+                "cas-bridge.xethub.hf.co",
+                "us.aws.cdn.hf.co",
+            }
+            or target_host.endswith(".cdn.hf.co")
+        )
+    )
+    if target_origin != source_origin and not approved_hugging_face_redirect:
+        raise PublicCorpusError(
+            f"Public corpus download rejected an off-origin redirect to {target_host}"
+        )
+    return url
+
+
+class _ValidatedArtifactRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, source_origin: tuple[str, str, int | None]) -> None:
+        super().__init__()
+        self._source_origin = source_origin
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: BinaryIO,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        target = urllib.parse.urljoin(req.full_url, newurl)
+        _validate_download_target(target, source_origin=self._source_origin)
+        return super().redirect_request(req, fp, code, msg, headers, target)
 
 
 def build_public_adapter_corpus(

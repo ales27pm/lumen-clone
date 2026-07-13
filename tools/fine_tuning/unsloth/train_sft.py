@@ -80,21 +80,38 @@ def validate_artifact_path_config(cfg: dict[str, Any]) -> None:
     if agent not in AGENTS:
         raise ValueError(f"Config has unsupported agent '{agent}'. Expected one of: {', '.join(sorted(AGENTS))}")
 
-    output_dir = str(cfg.get("output_dir", "")).strip()
-    if not output_dir:
-        raise ValueError("Config output_dir must be non-empty")
+    for label in ("output_dir", "adapter_output_dir"):
+        value = str(cfg.get(label, "")).strip()
+        if not value:
+            raise ValueError(f"Config {label} must be non-empty")
 
-    tokens = _tokenize_path(output_dir)
-    if agent not in tokens:
+        tokens = _tokenize_path(value)
+        if agent not in tokens:
+            raise ValueError(
+                f"{label} must include slot token '{agent}' in the artifact path. Got: {value}"
+            )
+        if not FINETUNE_MARKERS.intersection(tokens):
+            raise ValueError(
+                f"{label} must include a finetune marker token (one of: "
+                + ", ".join(sorted(FINETUNE_MARKERS))
+                + f"). Got: {value}"
+            )
+
+    validate_sft_artifact_paths(cfg)
+
+
+def validate_sft_artifact_paths(cfg: dict[str, Any]) -> tuple[Path, Path]:
+    output_dir = Path(cfg["output_dir"]).resolve()
+    adapter_output_dir = Path(cfg["adapter_output_dir"]).resolve()
+    if (
+        adapter_output_dir == output_dir
+        or output_dir in adapter_output_dir.parents
+        or adapter_output_dir in output_dir.parents
+    ):
         raise ValueError(
-            f"output_dir must include slot token '{agent}' in the artifact path. Got: {output_dir}"
+            "adapter_output_dir must be separate from the training work/output directory"
         )
-    if not FINETUNE_MARKERS.intersection(tokens):
-        raise ValueError(
-            "output_dir must include a finetune marker token (one of: "
-            + ", ".join(sorted(FINETUNE_MARKERS))
-            + f"). Got: {output_dir}"
-        )
+    return output_dir, adapter_output_dir
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -702,10 +719,7 @@ def main() -> None:
     train_records = _limit_records(load_jsonl(train_path), cfg.get("max_train_records"))
     val_records = _limit_records(load_jsonl(val_path), cfg.get("max_val_records"))
 
-    output_dir = Path(cfg["output_dir"]).resolve()
-    adapter_output_dir = Path(cfg["adapter_output_dir"]).resolve()
-    if adapter_output_dir == output_dir or output_dir in adapter_output_dir.parents:
-        raise RuntimeError("adapter_output_dir must be separate from the training work/output directory")
+    output_dir, adapter_output_dir = validate_sft_artifact_paths(cfg)
     output_dir.mkdir(parents=True, exist_ok=True)
     adapter_output_dir.mkdir(parents=True, exist_ok=True)
 

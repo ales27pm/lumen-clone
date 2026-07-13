@@ -924,6 +924,43 @@ def test_finalizer_rejects_rebinding_an_already_trained_manifest() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("training_phase", "parent_sft_adapter_sha256", "error"),
+    (
+        ("unsupported", None, "training_phase must be"),
+        ("sft", "a" * 64, "must not declare a parent"),
+        ("sft_dpo", None, "require a parent SFT adapter"),
+        ("sft_dpo", "not-a-digest", "require a parent SFT adapter"),
+    ),
+)
+def test_finalizer_rejects_invalid_training_phase_parent_combinations(
+    training_phase: str,
+    parent_sft_adapter_sha256: str | None,
+    error: str,
+) -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+
+    with pytest.raises(ValueError, match=error):
+        finalize_experiment_variant_manifest(
+            pending,
+            adapter_sha256="b" * 64,
+            adapter_artifact_manifest=_adapter_artifact("b"),
+            training_environment=_training_environment(pending),
+            training_phase=training_phase,
+            parent_sft_adapter_sha256=parent_sft_adapter_sha256,
+        )
+
+
 def test_finalizer_rejects_forged_extra_adapter_artifact_file() -> None:
     pending = build_experiment_variant_manifest(
         agent="executor",
