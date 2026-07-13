@@ -51,6 +51,7 @@ case "$EXPERIMENT_VARIANT" in
   *) die "unsupported experiment variant: $EXPERIMENT_VARIANT (expected internal_only, internal_plus_public_baseline, or internal_plus_public_optimized)" ;;
 esac
 [[ "$CONTAINER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "LUMEN_AIO_CONTAINER_IMAGE_DIGEST must be sha256:<64 lowercase hex characters>"
+[[ "$RESUME" == "0" ]] || die "Local AIO resume is disabled until it emits the same run/checkpoint lineage contract as ZeroGPU"
 
 if [[ ! -d "$DATASET_SOURCE" && -d "$ROOT/generated/fine_tuning" ]]; then
   DATASET_SOURCE="$ROOT/generated/fine_tuning"
@@ -105,6 +106,7 @@ fi
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -142,6 +144,8 @@ runtime_lineage_config_fields.update({
     "trainingRuntimeImageBindingStatus",
     "trainingRuntimeImageBindingVerified",
     "trainingEnvironmentSHA256",
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
 })
 def canonical_sha256(value):
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -242,6 +246,13 @@ base_by_agent = {
     if isinstance(item, dict) and item.get("agent")
 }
 adapter_repo = runtime_manifest.get("adapterRepoID") or "ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
+runtime_source_revision = subprocess.check_output(
+    ["git", "rev-parse", "HEAD"], cwd=root, text=True
+).strip()
+if len(runtime_source_revision) != 40 or any(
+    character not in "0123456789abcdef" for character in runtime_source_revision
+):
+    raise SystemExit("Local training requires an immutable source Git commit SHA")
 
 prepared = []
 for agent in agents:
@@ -254,7 +265,14 @@ for agent in agents:
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     controlled = variant_manifest.get("controlledTrainingConfig")
     controlled_keys = set(controlled) if isinstance(controlled, dict) else set()
-    unexpected_fields = set(cfg) - controlled_keys - uncontrolled_config_fields if isinstance(cfg, dict) else set()
+    unexpected_fields = (
+        set(cfg)
+        - controlled_keys
+        - uncontrolled_config_fields
+        - runtime_lineage_config_fields
+        if isinstance(cfg, dict)
+        else set()
+    )
     if (
         not isinstance(cfg, dict)
         or not isinstance(controlled, dict)
@@ -285,6 +303,14 @@ for agent in agents:
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
         "trainingEnvironmentLock",
+        "trainingCodeManifest",
+        "trainingCodeSHA256",
+        "trainingCodeManifestsByPhase",
+        "trainingCodeSHA256ByPhase",
+        "trainingCodeBundleSHA256",
+        "trainingDependencyLock",
+        "trainingDependencyLockSHA256",
+        "requirementsSHA256",
     ):
         if cfg.get(field) != variant_manifest.get(field):
             raise SystemExit(f"{field} drifted from the controlled variant for {agent}")
@@ -296,12 +322,19 @@ for agent in agents:
         "runtimeImageBindingVerified": False,
         "effectiveSeed": seed,
         "environmentLock": variant_manifest["trainingEnvironmentLock"],
+        "trainingCodeSHA256": variant_manifest["trainingCodeSHA256"],
+        "trainingDependencyLockSHA256": variant_manifest[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": variant_manifest["requirementsSHA256"],
     }
     cfg["trainingContainerImageDigest"] = container_image_digest
     cfg["trainingContainerImageDigestSource"] = environment["containerImageDigestSource"]
     cfg["trainingRuntimeImageBindingStatus"] = environment["runtimeImageBindingStatus"]
     cfg["trainingRuntimeImageBindingVerified"] = environment["runtimeImageBindingVerified"]
     cfg["trainingEnvironmentSHA256"] = canonical_sha256(environment)
+    cfg["runtimeSourceKind"] = "git"
+    cfg["runtimeSourceRevision"] = runtime_source_revision
     cfg["dataset_dir"] = str(variant_dir)
     cfg["variant"] = variant
     cfg["variantManifestSHA256"] = variant_manifest["variantManifestSHA256"]
@@ -347,6 +380,8 @@ run_manifest = {
     "adapter_repo": adapter_repo,
     "source_dataset_root": str(src_root),
     "variant": variant,
+    "runtimeSourceKind": "git",
+    "runtimeSourceRevision": runtime_source_revision,
     "agents": prepared,
 }
 (run_root / "aio_run_manifest.json").write_text(
@@ -470,8 +505,14 @@ for agent in agents:
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
         "trainingEnvironmentSHA256",
+        "trainingCodeSHA256",
+        "trainingDependencyLockSHA256",
+        "requirementsSHA256",
+        "runtimeSourceKind",
+        "runtimeSourceRevision",
     ):
-        if finalized.get(field) != attestation.get(field):
+        expected = attestation.get(field) if field in attestation else config.get(field)
+        if finalized.get(field) != expected:
             raise SystemExit(f"Finalized variant manifest {field} does not match the prepared attestation")
     if (
         finalized.get("baseModelID") != config.get("baseModelID")

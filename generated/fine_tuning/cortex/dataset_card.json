@@ -1,6 +1,6 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 13445,
+  "availableSFTRecords": 13567,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "a11cca7d894b437923e192ccfdf8b6e98b792f244a53c688bf02e8fb710622e7"
+      "reportSHA256": "dc23174bae2b3428d9c6eb34b451774c4fa68e446277aaac0ec910b40998dfe9"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "47df83f254ab6b6a9e7cc51dfab79539378ed764b0bf06c71197000ea6bd44c1",
-      "optimizedTrainingCorpusSHA256": "41297b58f7269c84ee584b18f861bdecbc4e5070277f44b696deaa2532bd7952",
+      "baselineTrainingCorpusSHA256": "fa5f9bbead0b99d33fd653a46d595cecc3de586413e82be75ea3e42e602b4319",
+      "optimizedTrainingCorpusSHA256": "ff5b451fca554ffb137aa2081f8ac5975262803ef99292ff5f203afb03af5b3d",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 662,
@@ -42,12 +42,16 @@
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
       "trainingEnvironmentLockSHA256",
+      "trainingCodeSHA256",
+      "trainingCodeBundleSHA256",
+      "trainingDependencyLockSHA256",
+      "requirementsSHA256",
       "seed",
       "trainingConfigSHA256",
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "223a3e4dc0791abef9f518eaea8286e73493f3c0a304d46e166f1326f875dd1a",
+    "experimentManifestSHA256": "512102d407ae70730e0e1314a476ef9b8541de06fa8896ec3998968b2b89ae53",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -59,11 +63,14 @@
       "requiresArtifactDigests": true,
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,
+      "requiresIdenticalTrainingCode": true,
+      "requiresIdenticalTrainingDependencyLock": true,
       "requiresIdenticalTrainingEnvironment": true,
       "requiresImmutableBaseModelRevisionAndDigest": true,
       "requiresPublicEvaluationFingerprintBinding": true,
       "requiresVerifiedRuntimeImageBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
+      "runtimeSourceRevisionIsAuditOnly": true,
       "schemaVersion": "lumen.adapter-promotion/1.0.0"
     },
     "requiredVariants": [
@@ -72,7 +79,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
+  "manifestCommit": "f2acf093f88155576a993b2ad1a0cea172cde59f",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 16,
@@ -249,24 +256,24 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.003294,
-        "total": 0.012314
+        "target": 0.003264,
+        "total": 0.012203
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.004705,
-        "total": 0.016178
+        "target": 0.004628,
+        "total": 0.015947
       }
     }
   },
   "quality": {
-    "cortexCodebaseChunkRecordCount": 4690,
+    "cortexCodebaseChunkRecordCount": 4751,
     "cortexCodebaseFileRecordCount": 2302,
     "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_excluding_generated_outputs",
-    "cortexCodebaseSelfAwarenessRecordCount": 7066,
+    "cortexCodebaseSelfAwarenessRecordCount": 7127,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 25,
@@ -275,9 +282,9 @@
   "recordCounts": {
     "eval": 558,
     "train_dpo": 14,
-    "train_sft": 11418,
+    "train_sft": 11522,
     "val_dpo": 2,
-    "val_sft": 2014
+    "val_sft": 2032
   },
   "sourceFamilies": [
     "adapter_ultra_specific",

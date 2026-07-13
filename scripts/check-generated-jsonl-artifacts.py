@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -29,6 +30,7 @@ CANONICAL_DATASET_ALIASES = {
 
 def main() -> int:
     zero_byte_files: list[Path] = []
+    invalid_jsonl_rows: list[str] = []
     alias_errors: list[str] = []
     stale_nested_fine_tuning_files: list[Path] = []
     for root in GENERATED_ROOTS:
@@ -39,6 +41,27 @@ def main() -> int:
             for path in root.rglob("*.jsonl")
             if path.is_file() and path.stat().st_size == 0
         )
+        for path in root.rglob("*.jsonl"):
+            if not path.is_file() or path.stat().st_size == 0:
+                continue
+            with path.open(encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if not line.strip():
+                        invalid_jsonl_rows.append(
+                            f"{path}:{line_number}: blank JSONL row"
+                        )
+                        continue
+                    try:
+                        value = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        invalid_jsonl_rows.append(
+                            f"{path}:{line_number}: {exc.msg}"
+                        )
+                        continue
+                    if not isinstance(value, dict):
+                        invalid_jsonl_rows.append(
+                            f"{path}:{line_number}: row must be a JSON object"
+                        )
         agent_manifest = root / "agent_manifest" if root.name == "generated" else root
         if not agent_manifest.exists():
             continue
@@ -67,6 +90,13 @@ def main() -> int:
         for path in sorted(zero_byte_files):
             print(f"  {path}")
         print("Regenerate the owning artifact or delete the empty placeholder.")
+        return 1
+    if invalid_jsonl_rows:
+        print("error: invalid generated JSONL rows found:")
+        for error in invalid_jsonl_rows[:100]:
+            print(f"  {error}")
+        if len(invalid_jsonl_rows) > 100:
+            print(f"  ... {len(invalid_jsonl_rows) - 100} additional errors")
         return 1
     if alias_errors:
         print("error: generated dataset alias validation failed:")

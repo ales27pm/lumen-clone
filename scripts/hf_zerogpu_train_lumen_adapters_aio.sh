@@ -11,6 +11,8 @@ SKIP_INSTALL="${LUMEN_ZERO_GPU_SKIP_INSTALL:-0}"
 
 : "${LUMEN_ZERO_GPU_EXPERIMENT_VARIANT:?Select an explicit experiment variant}"
 : "${LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST:?Declare the intended training container image sha256 digest for manual verification}"
+: "${LUMEN_ZERO_GPU_ADMIN_TOKEN:?Set a dedicated administrative token for the training endpoint}"
+: "${LUMEN_ZERO_GPU_HUB_TOKEN:?Set a fine-grained Hub token scoped to the required Space, dataset, and adapter repositories}"
 EXPERIMENT_VARIANT="$LUMEN_ZERO_GPU_EXPERIMENT_VARIANT"
 CONTAINER_IMAGE_DIGEST="$LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST"
 RUN_ID_BASE="${LUMEN_ZERO_GPU_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -34,9 +36,11 @@ TRIGGER_TIMEOUT_SECONDS="${LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS:-1800}"
 SEED="${LUMEN_ZERO_GPU_SEED:-42}"
 TRIGGER="${LUMEN_ZERO_GPU_TRIGGER:-1}"
 DRY_RUN="${LUMEN_ZERO_GPU_DRY_RUN:-0}"
-PRIVATE_SPACE="${LUMEN_ZERO_GPU_PRIVATE_SPACE:-1}"
+PUBLIC_SPACE="${LUMEN_ZERO_GPU_PUBLIC_SPACE:-0}"
 PRIVATE_DATASET="${LUMEN_ZERO_GPU_PRIVATE_DATASET:-1}"
 PRIVATE_ADAPTERS="${LUMEN_ZERO_GPU_PRIVATE_ADAPTERS:-1}"
+DESTRUCTIVE_RESET="${LUMEN_ZERO_GPU_DESTRUCTIVE_RESET:-0}"
+RESUME="${LUMEN_ZERO_GPU_RESUME:-0}"
 
 log() {
   printf '[lumen-zerogpu] %s\n' "$*"
@@ -95,14 +99,20 @@ run_training_batch() {
   if [[ "$DRY_RUN" == "1" ]]; then
     args+=(--dry-run)
   fi
-  if [[ "$PRIVATE_SPACE" == "1" ]]; then
-    args+=(--private-space)
+  if [[ "$PUBLIC_SPACE" == "1" ]]; then
+    args+=(--public-space)
   fi
   if [[ "$PRIVATE_DATASET" == "1" ]]; then
     args+=(--private-dataset)
   fi
   if [[ "$PRIVATE_ADAPTERS" == "1" ]]; then
     args+=(--private-adapters)
+  fi
+  if [[ "$DESTRUCTIVE_RESET" == "1" ]]; then
+    args+=(--destructive-reset)
+  fi
+  if [[ "$RESUME" == "1" ]]; then
+    args+=(--resume)
   fi
 
   log "batch $batch_index/$batch_count run id: $batch_run_id"
@@ -112,16 +122,20 @@ run_training_batch() {
   "$TRAIN_PY" "$ROOT/tools/hf_zerogpu/build_lumen_zerogpu_space.py" "${args[@]}"
 }
 
-if [[ ! -d "$DATASET_SOURCE" && -d "$ROOT/generated/fine_tuning" ]]; then
-  DATASET_SOURCE="$ROOT/generated/fine_tuning"
+if [[ "$RESUME" != "1" ]]; then
+  if [[ ! -d "$DATASET_SOURCE" && -d "$ROOT/generated/fine_tuning" ]]; then
+    DATASET_SOURCE="$ROOT/generated/fine_tuning"
+  fi
+  [[ -d "$DATASET_SOURCE" ]] || die "missing fine-tuning dataset source: $DATASET_SOURCE"
+  [[ -f "$DATASET_SOURCE/adapter_runtime_manifest.json" ]] || die "dataset source is missing adapter_runtime_manifest.json: $DATASET_SOURCE"
 fi
-[[ -d "$DATASET_SOURCE" ]] || die "missing fine-tuning dataset source: $DATASET_SOURCE"
-[[ -f "$DATASET_SOURCE/adapter_runtime_manifest.json" ]] || die "dataset source is missing adapter_runtime_manifest.json: $DATASET_SOURCE"
 case "$EXPERIMENT_VARIANT" in
   internal_only|internal_plus_public_baseline|internal_plus_public_optimized) ;;
   *) die "unsupported experiment variant: $EXPERIMENT_VARIANT" ;;
 esac
 [[ "$CONTAINER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST must be sha256:<64 lowercase hex characters>"
+(( ${#LUMEN_ZERO_GPU_ADMIN_TOKEN} >= 32 )) || die "LUMEN_ZERO_GPU_ADMIN_TOKEN must contain at least 32 characters"
+[[ "$RESUME" != "1" || "$DESTRUCTIVE_RESET" != "1" ]] || die "resume and destructive reset are mutually exclusive"
 [[ "$AGENT_BATCH_SIZE" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be a positive integer"
 (( AGENT_BATCH_SIZE > 0 )) || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be greater than zero"
 [[ "$TRIGGER_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS must be a positive integer"

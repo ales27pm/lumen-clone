@@ -9,10 +9,20 @@ from typing import Any
 
 try:
     from .adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
-    from .train_sft import _resolve_controlled_seed, _seed_everything, _training_environment
+    from .train_sft import (
+        _resolve_controlled_seed,
+        _seed_everything,
+        _training_environment,
+        _training_runtime_lineage,
+    )
 except ImportError:
     from adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
-    from train_sft import _resolve_controlled_seed, _seed_everything, _training_environment
+    from train_sft import (
+        _resolve_controlled_seed,
+        _seed_everything,
+        _training_environment,
+        _training_runtime_lineage,
+    )
 
 
 REQUIRED_CONFIG_KEYS = {
@@ -31,6 +41,13 @@ REQUIRED_CONFIG_KEYS = {
     "trainingRuntimeImageBindingStatus",
     "trainingRuntimeImageBindingVerified",
     "trainingEnvironmentSHA256",
+    "trainingCodeManifestsByPhase",
+    "trainingCodeSHA256ByPhase",
+    "trainingDependencyLock",
+    "trainingDependencyLockSHA256",
+    "requirementsSHA256",
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
     "max_seq_length",
     "load_in_4bit",
     "lora_r",
@@ -261,26 +278,86 @@ def _base_model_weight_shard_contract(value: Any) -> dict[str, Any]:
     }
 
 
-def render_messages(tokenizer: Any, messages: list[dict[str, Any]]) -> str:
-    if hasattr(tokenizer, "apply_chat_template"):
-        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
-    return "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages if isinstance(m, dict))
+_PROMPT_ROLES = {"system", "user", "assistant"}
 
 
-def row_to_preference(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
-    prompt_messages = row.get("prompt")
-    if not isinstance(prompt_messages, list):
-        prompt_messages = [{"role": "user", "content": "Follow the manifest."}]
-    prompt_text = render_messages(tokenizer, prompt_messages)
-    chosen = row.get("chosen", {})
-    rejected = row.get("rejected", {})
-    chosen_text = chosen.get("content") if isinstance(chosen, dict) else ""
-    rejected_text = rejected.get("content") if isinstance(rejected, dict) else ""
-    return {
-        "prompt": prompt_text,
-        "chosen": chosen_text or "",
-        "rejected": rejected_text or "",
-    }
+def _preference_message(
+    value: Any,
+    *,
+    field: str,
+    allowed_roles: set[str],
+) -> dict[str, str]:
+    if not isinstance(value, dict) or set(value) != {"role", "content"}:
+        raise ValueError(f"Preference {field} must be a message with only role and content")
+    role = value.get("role")
+    content = value.get("content")
+    if not isinstance(role, str) or role not in allowed_roles:
+        raise ValueError(f"Preference {field} has an unsupported role")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError(f"Preference {field} content must be non-empty text")
+    return {"role": role, "content": content}
+
+
+def _completion_messages(value: Any, *, field: str) -> list[dict[str, str]]:
+    if isinstance(value, dict):
+        message = value
+    elif isinstance(value, list) and len(value) == 1:
+        message = value[0]
+    else:
+        raise ValueError(f"Preference {field} must contain exactly one assistant message")
+    return [
+        _preference_message(
+            message,
+            field=field,
+            allowed_roles={"assistant"},
+        )
+    ]
+
+
+def _normalized_completion_content(value: str) -> str:
+    return " ".join(value.split())
+
+
+def row_to_preference(row: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    if not isinstance(row, dict):
+        raise ValueError("Preference record must be a JSON object")
+    prompt_value = row.get("prompt")
+    if not isinstance(prompt_value, list) or not prompt_value:
+        raise ValueError("Preference prompt must be a non-empty message list")
+
+    prompt = [
+        _preference_message(
+            message,
+            field=f"prompt[{index}]",
+            allowed_roles=_PROMPT_ROLES,
+        )
+        for index, message in enumerate(prompt_value)
+    ]
+    if prompt[0]["role"] == "system":
+        conversation = prompt[1:]
+        if not conversation:
+            raise ValueError("Preference prompt must contain a user message after the system message")
+    else:
+        conversation = prompt
+    if any(message["role"] == "system" for message in conversation):
+        raise ValueError("Preference system messages are only supported at the start of the prompt")
+    expected_role = "user"
+    for message in conversation:
+        if message["role"] != expected_role:
+            raise ValueError("Preference prompt user and assistant roles must alternate")
+        expected_role = "assistant" if expected_role == "user" else "user"
+    if prompt[-1]["role"] != "user":
+        raise ValueError("Preference prompt must end with a user message before the assistant response")
+
+    if "chosen" not in row or "rejected" not in row:
+        raise ValueError("Preference record must include chosen and rejected assistant messages")
+    chosen = _completion_messages(row["chosen"], field="chosen")
+    rejected = _completion_messages(row["rejected"], field="rejected")
+    if _normalized_completion_content(chosen[0]["content"]) == _normalized_completion_content(
+        rejected[0]["content"]
+    ):
+        raise ValueError("Preference chosen and rejected completions must differ")
+    return {"prompt": prompt, "chosen": chosen, "rejected": rejected}
 
 
 def _load_sft_policy(
@@ -415,6 +492,15 @@ def _verified_sft_parent(
         or artifact.get("effectiveSeed") != cfg["seed"]
         or not isinstance(training_environment, dict)
         or training_environment.get("effectiveSeed") != cfg["seed"]
+        or finalized.get("trainingCodeSHA256")
+        != (cfg.get("trainingCodeSHA256ByPhase") or {}).get("sft")
+        or finalized.get("trainingDependencyLockSHA256")
+        != cfg.get("trainingDependencyLockSHA256")
+        or finalized.get("requirementsSHA256") != cfg.get("requirementsSHA256")
+        or re.fullmatch(
+            r"[0-9a-f]{40}", str(finalized.get("runtimeSourceRevision") or "")
+        )
+        is None
     ):
         raise RuntimeError("DPO input must be a finalized SFT artifact for the selected variant")
     parent_sha256 = _require_sha256(
@@ -478,6 +564,49 @@ def _finalize_dpo_variant(
     return finalized
 
 
+def _select_preference_runtime_lineage(
+    cfg: dict[str, Any],
+    *,
+    preference_trainer: str,
+) -> dict[str, Any]:
+    manifests = cfg.get("trainingCodeManifestsByPhase")
+    digests = cfg.get("trainingCodeSHA256ByPhase")
+    if not isinstance(manifests, dict) or not isinstance(digests, dict):
+        raise RuntimeError("Preference training requires phase-specific code manifests")
+    manifest = manifests.get(preference_trainer)
+    digest = digests.get(preference_trainer)
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("phase") != preference_trainer
+        or manifest.get("trainingCodeSHA256") != digest
+    ):
+        raise RuntimeError("Preference training-code manifest is invalid")
+    cfg["trainingCodeManifest"] = manifest
+    cfg["trainingCodeSHA256"] = digest
+    environment_payload = {
+        "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+        "containerImageDigest": cfg["trainingContainerImageDigest"],
+        "containerImageDigestSource": cfg[
+            "trainingContainerImageDigestSource"
+        ],
+        "runtimeImageBindingStatus": cfg[
+            "trainingRuntimeImageBindingStatus"
+        ],
+        "runtimeImageBindingVerified": cfg[
+            "trainingRuntimeImageBindingVerified"
+        ],
+        "effectiveSeed": int(cfg["seed"]),
+        "environmentLock": cfg["trainingEnvironmentLock"],
+        "trainingCodeSHA256": digest,
+        "trainingDependencyLockSHA256": cfg[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": cfg["requirementsSHA256"],
+    }
+    cfg["trainingEnvironmentSHA256"] = _canonical_sha256(environment_payload)
+    return _training_runtime_lineage(cfg, phase=preference_trainer)
+
+
 def main() -> None:
     args = parse_args()
     cfg = load_config(Path(args.config).resolve())
@@ -501,6 +630,16 @@ def main() -> None:
     if not train_path.exists() or not val_path.exists():
         raise FileNotFoundError(f"Missing DPO dataset split files under {dataset_dir}")
 
+    preference_trainer = str(cfg.get("preference_trainer", "dpo")).lower()
+    if preference_trainer not in {"dpo", "orpo"}:
+        raise ValueError("preference_trainer must be either 'dpo' or 'orpo'")
+    training_runtime_lineage = _select_preference_runtime_lineage(
+        cfg,
+        preference_trainer=preference_trainer,
+    )
+    training_environment = _training_environment(cfg)
+    _verify_base_model_lineage(cfg)
+
     try:
         from datasets import Dataset
         from unsloth import FastLanguageModel
@@ -510,13 +649,6 @@ def main() -> None:
         raise RuntimeError(
             "Missing dependencies for Unsloth DPO training. Install: unsloth, trl, datasets, transformers, peft, accelerate, bitsandbytes."
         ) from exc
-
-    preference_trainer = str(cfg.get("preference_trainer", "dpo")).lower()
-    if preference_trainer not in {"dpo", "orpo"}:
-        raise ValueError("preference_trainer must be either 'dpo' or 'orpo'")
-
-    _verify_base_model_lineage(cfg)
-    training_environment = _training_environment(cfg)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],
@@ -533,8 +665,8 @@ def main() -> None:
 
     train_raw = load_jsonl(train_path)
     val_raw = load_jsonl(val_path)
-    train_rows = [row_to_preference(tokenizer, row) for row in train_raw]
-    val_rows = [row_to_preference(tokenizer, row) for row in val_raw]
+    train_rows = [row_to_preference(row) for row in train_raw]
+    val_rows = [row_to_preference(row) for row in val_raw]
     train_dataset = Dataset.from_list(train_rows)
     val_dataset = Dataset.from_list(val_rows) if val_rows else None
 
@@ -575,7 +707,15 @@ def main() -> None:
             else None
         ),
         preference_trainer=preference_trainer,
-        training_environment=training_environment,
+        training_environment={
+            **training_environment,
+            "runtimeSourceKind": training_runtime_lineage[
+                "runtimeSourceKind"
+            ],
+            "runtimeSourceRevision": training_runtime_lineage[
+                "runtimeSourceRevision"
+            ],
+        },
         output_path=finalized_manifest_path,
     )
 
@@ -583,6 +723,10 @@ def main() -> None:
         "agent": cfg["agent"],
         "trainer": "ORPOTrainer" if preference_trainer == "orpo" else "DPOTrainer",
         "dataset_dir": str(dataset_dir),
+        "datasetRepository": cfg.get("datasetRepository"),
+        "datasetRevision": cfg.get("datasetRevision"),
+        "runResumeLineageSHA256": cfg.get("runResumeLineageSHA256"),
+        "variantManifestSHA256": cfg["variantManifestSHA256"],
         "train_records": len(train_rows),
         "val_records": len(val_rows),
         "output_dir": str(output_dir),
@@ -596,6 +740,8 @@ def main() -> None:
         ),
         "seed": seed,
         "seed_source": seed_source,
+        "trainingEnvironment": training_environment,
+        **training_runtime_lineage,
         "adapterSHA256": dpo_artifact_manifest["adapterSHA256"],
         "finalized_variant_manifest": str(finalized_manifest_path),
         "finalized_variant_manifest_sha256": finalized_variant["variantManifestSHA256"],

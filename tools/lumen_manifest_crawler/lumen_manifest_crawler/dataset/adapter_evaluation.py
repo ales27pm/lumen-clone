@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
+import importlib.util
 import json
 import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from functools import lru_cache
+from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
@@ -63,21 +67,55 @@ _VERIFIED_BASE_MODEL_INDEX_REGISTRY: dict[
 }
 DEFAULT_UNSLOTH_REVISION = "935474c20aabc2aadb1da17338959c7c6f9bdafe"
 DEFAULT_LLAMA_CPP_REVISION = "34558825a27f4d74dcfd7a91bfde4464baa2a30a"
+
+
+def _load_training_lineage_module() -> ModuleType:
+    try:
+        bundled = importlib.import_module("training_lineage")
+    except ImportError:
+        bundled = None
+    if bundled is not None and hasattr(
+        bundled,
+        "verify_training_code_manifest",
+    ):
+        return bundled
+    helper_path = (
+        Path(__file__).resolve().parents[4]
+        / "tools/fine_tuning/unsloth/training_lineage.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "lumen_unsloth_training_lineage",
+        helper_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load training-lineage helper: {helper_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_TRAINING_LINEAGE = _load_training_lineage_module()
+_BUNDLED_REQUIREMENTS_PATH = Path(_TRAINING_LINEAGE.__file__).resolve().parent / "requirements.txt"
+_REQUIREMENTS_PATH = (
+    _BUNDLED_REQUIREMENTS_PATH
+    if _BUNDLED_REQUIREMENTS_PATH.is_file()
+    else Path(__file__).resolve().parents[4]
+    / "tools/hf_zerogpu/space_template/requirements.txt"
+)
+DEFAULT_TRAINING_DEPENDENCY_LOCK: dict[str, Any] = (
+    _TRAINING_LINEAGE.build_training_dependency_lock(_REQUIREMENTS_PATH)
+)
 DEFAULT_TRAINING_ENVIRONMENT_LOCK: dict[str, Any] = {
     "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
     "pythonVersion": "3.10",
     "cudaVersion": "12.8",
-    "packageVersions": {
-        "accelerate": "1.14.0",
-        "bitsandbytes": "0.49.2",
-        "datasets": "4.3.0",
-        "peft": "0.19.1",
-        "torch": "2.8.0",
-        "transformers": "5.5.0",
-        "trl": "0.24.0",
-    },
+    "packageVersions": dict(DEFAULT_TRAINING_DEPENDENCY_LOCK["packageVersions"]),
     "unslothRevision": DEFAULT_UNSLOTH_REVISION,
     "llamaCppRevision": DEFAULT_LLAMA_CPP_REVISION,
+    "trainingDependencyLockSHA256": DEFAULT_TRAINING_DEPENDENCY_LOCK[
+        "trainingDependencyLockSHA256"
+    ],
+    "requirementsSHA256": DEFAULT_TRAINING_DEPENDENCY_LOCK["requirementsSHA256"],
     "baseTokenizerSHA256": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
     "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
 }
@@ -100,6 +138,8 @@ _NON_TRAINING_CONFIG_FIELDS = {
     "gguf_repo_id",
     "mergeExport",
     "output_dir",
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
 }
 
 
@@ -294,6 +334,48 @@ def default_training_environment_lock() -> dict[str, Any]:
     """Return an isolated copy of the immutable production training lock."""
 
     return json.loads(json.dumps(DEFAULT_TRAINING_ENVIRONMENT_LOCK))
+
+
+def default_training_dependency_lock() -> dict[str, Any]:
+    """Return an isolated copy of the exact direct runtime dependency lock."""
+
+    return json.loads(json.dumps(DEFAULT_TRAINING_DEPENDENCY_LOCK))
+
+
+def default_training_code_manifest() -> dict[str, Any]:
+    """Hash every deployed file that can affect SFT or preference training."""
+
+    repo_root = Path(__file__).resolve().parents[4]
+    return _TRAINING_LINEAGE.repository_training_code_bundle(repo_root)
+
+
+def default_training_lineage_contract() -> dict[str, Any]:
+    """Return the generated config contract shared by local and ZeroGPU runners."""
+
+    code_bundle = default_training_code_manifest()
+    phase_manifests = dict(code_bundle["phases"])
+    phase_digests = {
+        phase: manifest["trainingCodeSHA256"]
+        for phase, manifest in phase_manifests.items()
+    }
+    code_manifest = phase_manifests["sft"]
+    dependency_lock = default_training_dependency_lock()
+    return {
+        "trainingCodeManifest": code_manifest,
+        "trainingCodeSHA256": code_manifest["trainingCodeSHA256"],
+        "trainingCodeManifestsByPhase": phase_manifests,
+        "trainingCodeSHA256ByPhase": phase_digests,
+        "trainingCodeBundleSHA256": code_bundle["trainingCodeSHA256"],
+        "trainingDependencyLock": dependency_lock,
+        "trainingDependencyLockSHA256": dependency_lock[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": dependency_lock["requirementsSHA256"],
+        # The builder/launcher must replace this audit-only placeholder with the
+        # immutable Git or Space revision before any model or checkpoint access.
+        "runtimeSourceKind": "unresolved",
+        "runtimeSourceRevision": None,
+    }
 
 
 def controlled_training_config(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -837,6 +919,31 @@ def score_evaluation_suite(
         "candidateOutputsSHA256": canonical_sha256(dict(candidate_outputs)),
         "variantManifestSHA256": (
             variant_manifest.get("variantManifestSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "trainingCodeSHA256": (
+            variant_manifest.get("trainingCodeSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "trainingDependencyLockSHA256": (
+            variant_manifest.get("trainingDependencyLockSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "requirementsSHA256": (
+            variant_manifest.get("requirementsSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "runtimeSourceKind": (
+            variant_manifest.get("runtimeSourceKind")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "runtimeSourceRevision": (
+            variant_manifest.get("runtimeSourceRevision")
             if isinstance(variant_manifest, Mapping)
             else None
         ),
@@ -1716,6 +1823,89 @@ def build_experiment_variant_manifest(
     environment_lock = dict(training_environment_lock or default_training_environment_lock())
     if environment_lock.get("baseTokenizerSHA256") != base_model_tokenizer_digest:
         raise ValueError("training_environment_lock must match the base-model tokenizer digest")
+    default_lineage = default_training_lineage_contract()
+    training_code_manifest = dict(
+        training_config.get("trainingCodeManifest")
+        or default_lineage["trainingCodeManifest"]
+    )
+    try:
+        training_code_sha256 = _TRAINING_LINEAGE.verify_training_code_manifest(
+            training_code_manifest
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("trainingCodeManifest is invalid") from exc
+    if training_config.get("trainingCodeSHA256", training_code_sha256) != training_code_sha256:
+        raise ValueError("trainingCodeSHA256 does not match trainingCodeManifest")
+    phase_manifests = dict(
+        training_config.get("trainingCodeManifestsByPhase")
+        or default_lineage["trainingCodeManifestsByPhase"]
+    )
+    code_bundle = _TRAINING_LINEAGE.build_training_code_bundle(phase_manifests)
+    phase_digests = {
+        phase: manifest["trainingCodeSHA256"]
+        for phase, manifest in phase_manifests.items()
+    }
+    if (
+        training_code_manifest != phase_manifests.get("sft")
+        or training_config.get("trainingCodeSHA256ByPhase", phase_digests)
+        != phase_digests
+        or training_config.get(
+            "trainingCodeBundleSHA256",
+            code_bundle["trainingCodeSHA256"],
+        )
+        != code_bundle["trainingCodeSHA256"]
+    ):
+        raise ValueError("Phase-specific training-code manifests are inconsistent")
+
+    training_dependency_lock = dict(
+        training_config.get("trainingDependencyLock")
+        or default_lineage["trainingDependencyLock"]
+    )
+    try:
+        training_dependency_lock_sha256 = (
+            _TRAINING_LINEAGE.verify_training_dependency_lock(
+                training_dependency_lock,
+                requirements_path=_REQUIREMENTS_PATH,
+            )
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("trainingDependencyLock is invalid") from exc
+    requirements_digest = training_dependency_lock["requirementsSHA256"]
+    if (
+        training_config.get(
+            "trainingDependencyLockSHA256",
+            training_dependency_lock_sha256,
+        )
+        != training_dependency_lock_sha256
+        or training_config.get("requirementsSHA256", requirements_digest)
+        != requirements_digest
+        or environment_lock.get("trainingDependencyLockSHA256")
+        != training_dependency_lock_sha256
+        or environment_lock.get("requirementsSHA256") != requirements_digest
+        or environment_lock.get("packageVersions")
+        != training_dependency_lock.get("packageVersions")
+        or environment_lock.get("pythonVersion")
+        != training_dependency_lock.get("pythonVersion")
+        or environment_lock.get("cudaVersion")
+        != training_dependency_lock.get("cudaVersion")
+        or environment_lock.get("unslothRevision")
+        != training_dependency_lock["vcsPackages"]["unsloth"]["revision"]
+        or environment_lock.get("llamaCppRevision")
+        != training_dependency_lock.get("llamaCppRevision")
+    ):
+        raise ValueError(
+            "Training environment, dependency lock, and requirements must be identical"
+        )
+    runtime_source_kind = training_config.get("runtimeSourceKind", "unresolved")
+    runtime_source_revision = training_config.get("runtimeSourceRevision")
+    if (runtime_source_kind, runtime_source_revision) != ("unresolved", None):
+        try:
+            _TRAINING_LINEAGE.validate_runtime_source(
+                kind=runtime_source_kind,
+                revision=runtime_source_revision,
+            )
+        except ValueError as exc:
+            raise ValueError("Runtime source lineage is invalid") from exc
     environment_lock_sha256 = canonical_sha256(environment_lock)
     upgraded_eval = [upgrade_evaluation_record(record) for record in evaluation_records]
     contamination = dict(contamination_report or build_contamination_report(
@@ -1752,6 +1942,16 @@ def build_experiment_variant_manifest(
         "trainingEnvironmentLockSHA256": environment_lock_sha256,
         "trainingEnvironment": None,
         "trainingEnvironmentSHA256": None,
+        "trainingCodeManifest": training_code_manifest,
+        "trainingCodeSHA256": training_code_sha256,
+        "trainingCodeManifestsByPhase": phase_manifests,
+        "trainingCodeSHA256ByPhase": phase_digests,
+        "trainingCodeBundleSHA256": code_bundle["trainingCodeSHA256"],
+        "trainingDependencyLock": training_dependency_lock,
+        "trainingDependencyLockSHA256": training_dependency_lock_sha256,
+        "requirementsSHA256": requirements_digest,
+        "runtimeSourceKind": runtime_source_kind,
+        "runtimeSourceRevision": runtime_source_revision,
         "seed": seed,
         "controlledTrainingConfig": controlled_config,
         "trainingConfigSHA256": canonical_sha256(controlled_config),
@@ -1815,6 +2015,10 @@ def build_experiment_manifest(
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
         "trainingEnvironmentLockSHA256",
+        "trainingCodeSHA256",
+        "trainingCodeBundleSHA256",
+        "trainingDependencyLockSHA256",
+        "requirementsSHA256",
         "seed",
         "trainingConfigSHA256",
         "frozenEvaluationSHA256",
@@ -1839,6 +2043,10 @@ def build_experiment_manifest(
             "baseModelWeightShards": ordered[0]["baseModelWeightShards"],
             "baseModelTokenizerDigest": ordered[0]["baseModelTokenizerDigest"],
             "trainingEnvironmentLockSHA256": ordered[0]["trainingEnvironmentLockSHA256"],
+            "trainingCodeSHA256": ordered[0]["trainingCodeSHA256"],
+            "trainingCodeBundleSHA256": ordered[0]["trainingCodeBundleSHA256"],
+            "trainingDependencyLockSHA256": ordered[0]["trainingDependencyLockSHA256"],
+            "requirementsSHA256": ordered[0]["requirementsSHA256"],
             "seed": ordered[0]["seed"],
             "trainingConfigSHA256": ordered[0]["trainingConfigSHA256"],
             "frozenEvaluationSHA256": ordered[0]["frozenEvaluationSHA256"],
@@ -1912,12 +2120,40 @@ def finalize_experiment_variant_manifest(
         expected_parent_sft_sha256=parent_sft_adapter_sha256,
     ):
         raise ValueError("adapter_artifact_manifest does not bind a canonical PEFT/LoRA directory")
+    selected_code_phase = (
+        "sft" if training_phase == "sft" else str(preference_trainer or "")
+    )
+    phase_manifests = manifest.get("trainingCodeManifestsByPhase")
+    if not isinstance(phase_manifests, Mapping) or not isinstance(
+        phase_manifests.get(selected_code_phase), Mapping
+    ):
+        raise ValueError("Missing phase-specific training-code manifest")
+    selected_code_manifest = dict(phase_manifests[selected_code_phase])
+    selected_code_sha256 = _TRAINING_LINEAGE.verify_training_code_manifest(
+        selected_code_manifest
+    )
     environment = dict(training_environment)
     environment.pop("trainingEnvironmentSHA256", None)
+    runtime_source_kind = environment.pop("runtimeSourceKind", None)
+    runtime_source_revision = environment.pop("runtimeSourceRevision", None)
+    try:
+        _TRAINING_LINEAGE.validate_runtime_source(
+            kind=runtime_source_kind,
+            revision=runtime_source_revision,
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "training_environment must include an immutable runtime source revision"
+        ) from exc
     if not _valid_training_environment(
         environment,
         manifest.get("trainingEnvironmentLock"),
         expected_seed=manifest.get("seed"),
+        expected_training_code_sha256=selected_code_sha256,
+        expected_dependency_lock_sha256=manifest.get(
+            "trainingDependencyLockSHA256"
+        ),
+        expected_requirements_sha256=manifest.get("requirementsSHA256"),
     ):
         raise ValueError(
             "training_environment must match the manifest lock and declare an unverified immutable container digest"
@@ -1928,6 +2164,10 @@ def finalize_experiment_variant_manifest(
         for key, value in dict(manifest).items()
         if key != "variantManifestSHA256"
     }
+    finalized["trainingCodeManifest"] = selected_code_manifest
+    finalized["trainingCodeSHA256"] = selected_code_sha256
+    finalized["runtimeSourceKind"] = runtime_source_kind
+    finalized["runtimeSourceRevision"] = runtime_source_revision
     finalized["artifact"] = {
         "status": "trained",
         "artifactType": "peft_lora_directory",
@@ -1939,6 +2179,13 @@ def finalize_experiment_variant_manifest(
         "referenceSFTAdapterSHA256": reference_sft_adapter_sha256,
         "preferenceTrainer": preference_trainer,
         "effectiveSeed": environment["effectiveSeed"],
+        "trainingCodeSHA256": selected_code_sha256,
+        "trainingDependencyLockSHA256": manifest[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": manifest["requirementsSHA256"],
+        "runtimeSourceKind": runtime_source_kind,
+        "runtimeSourceRevision": runtime_source_revision,
         "evaluationReportSHA256": None,
     }
     finalized["sourceVariantManifestSHA256"] = manifest["variantManifestSHA256"]
@@ -2018,6 +2265,9 @@ def promotion_contract() -> dict[str, Any]:
         "requiresArtifactDigests": True,
         "requiresImmutableBaseModelRevisionAndDigest": True,
         "requiresIdenticalTrainingEnvironment": True,
+        "requiresIdenticalTrainingCode": True,
+        "requiresIdenticalTrainingDependencyLock": True,
+        "runtimeSourceRevisionIsAuditOnly": True,
         "requiresVerifiedRuntimeImageBinding": True,
         "requiresBaselineAndOptimizedContaminationReports": True,
         "requiresPublicEvaluationFingerprintBinding": True,
@@ -2135,6 +2385,10 @@ def decide_adapter_promotion(
             "baseModelTokenizerDigest",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",
+            "trainingCodeSHA256",
+            "trainingCodeBundleSHA256",
+            "trainingDependencyLockSHA256",
+            "requirementsSHA256",
             "seed",
             "trainingConfigSHA256",
             "frozenEvaluationSHA256",
@@ -2246,6 +2500,21 @@ def decide_adapter_promotion(
         "contaminationReportSHA256": optimized_contamination_report.get("reportSHA256"),
         "baselineArtifactSHA256": baseline_artifact_sha256,
         "optimizedArtifactSHA256": optimized_artifact_sha256,
+        "trainingCodeSHA256": optimized_variant_manifest.get(
+            "trainingCodeSHA256"
+        ),
+        "trainingDependencyLockSHA256": optimized_variant_manifest.get(
+            "trainingDependencyLockSHA256"
+        ),
+        "requirementsSHA256": optimized_variant_manifest.get(
+            "requirementsSHA256"
+        ),
+        "baselineRuntimeSourceRevision": baseline_variant_manifest.get(
+            "runtimeSourceRevision"
+        ),
+        "optimizedRuntimeSourceRevision": optimized_variant_manifest.get(
+            "runtimeSourceRevision"
+        ),
         "runtimePointerAction": "promote_optimized_candidate" if promoted else "leave_current_pointer_unchanged",
         "contract": contract,
     }
@@ -2269,6 +2538,13 @@ def _valid_evaluation_report(
         and _is_sha256(report.get("candidateOutputsSHA256"))
         and _is_sha256(report.get("controlledLineageSHA256"))
         and _is_sha256(report.get("variantManifestSHA256"))
+        and _is_sha256(report.get("trainingCodeSHA256"))
+        and _is_sha256(report.get("trainingDependencyLockSHA256"))
+        and _is_sha256(report.get("requirementsSHA256"))
+        and report.get("runtimeSourceKind") in {"git", "huggingface_space"}
+        and isinstance(report.get("runtimeSourceRevision"), str)
+        and re.fullmatch(r"[0-9a-f]{40}", report["runtimeSourceRevision"])
+        is not None
         and _is_sha256(report.get("artifactSHA256"))
         and report.get("promotionEvidenceBound") is True
         and _evaluation_report_aggregates_valid(report)
@@ -2357,6 +2633,92 @@ def _valid_dpo_training_lineage(dpo_training: Any, artifact: Any) -> bool:
     return True
 
 
+def _selected_training_code_phase(manifest: Mapping[str, Any]) -> str:
+    artifact = manifest.get("artifact")
+    if not isinstance(artifact, Mapping) or artifact.get("status") != "trained":
+        return "sft"
+    if artifact.get("trainingPhase") == "sft":
+        return "sft"
+    trainer = artifact.get("preferenceTrainer")
+    return trainer if trainer in {"dpo", "orpo"} else ""
+
+
+def _valid_training_code_lineage(manifest: Mapping[str, Any]) -> bool:
+    code_manifest = manifest.get("trainingCodeManifest")
+    phase_manifests = manifest.get("trainingCodeManifestsByPhase")
+    phase_digests = manifest.get("trainingCodeSHA256ByPhase")
+    if (
+        not isinstance(code_manifest, Mapping)
+        or not isinstance(phase_manifests, Mapping)
+        or not isinstance(phase_digests, Mapping)
+    ):
+        return False
+    try:
+        selected_digest = _TRAINING_LINEAGE.verify_training_code_manifest(
+            code_manifest
+        )
+        bundle = _TRAINING_LINEAGE.build_training_code_bundle(phase_manifests)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    expected_phase_digests = {
+        phase: value["trainingCodeSHA256"]
+        for phase, value in phase_manifests.items()
+    }
+    selected_phase = _selected_training_code_phase(manifest)
+    return (
+        bool(selected_phase)
+        and code_manifest == phase_manifests.get(selected_phase)
+        and manifest.get("trainingCodeSHA256") == selected_digest
+        and phase_digests == expected_phase_digests
+        and manifest.get("trainingCodeBundleSHA256")
+        == bundle["trainingCodeSHA256"]
+    )
+
+
+def _valid_training_dependency_lineage(manifest: Mapping[str, Any]) -> bool:
+    lock = manifest.get("trainingDependencyLock")
+    if not isinstance(lock, Mapping):
+        return False
+    try:
+        digest = _TRAINING_LINEAGE.verify_training_dependency_lock(lock)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    environment_lock = manifest.get("trainingEnvironmentLock")
+    return (
+        manifest.get("trainingDependencyLockSHA256") == digest
+        and manifest.get("requirementsSHA256") == lock.get("requirementsSHA256")
+        and isinstance(environment_lock, Mapping)
+        and environment_lock.get("trainingDependencyLockSHA256") == digest
+        and environment_lock.get("requirementsSHA256")
+        == lock.get("requirementsSHA256")
+        and environment_lock.get("packageVersions") == lock.get("packageVersions")
+        and environment_lock.get("pythonVersion") == lock.get("pythonVersion")
+        and environment_lock.get("cudaVersion") == lock.get("cudaVersion")
+        and environment_lock.get("unslothRevision")
+        == (lock.get("vcsPackages") or {}).get("unsloth", {}).get("revision")
+        and environment_lock.get("llamaCppRevision")
+        == lock.get("llamaCppRevision")
+    )
+
+
+def _valid_runtime_source_lineage(manifest: Mapping[str, Any]) -> bool:
+    artifact = manifest.get("artifact")
+    pending = isinstance(artifact, Mapping) and artifact.get("status") == "pending_training"
+    if pending:
+        return (
+            manifest.get("runtimeSourceKind") == "unresolved"
+            and manifest.get("runtimeSourceRevision") is None
+        )
+    try:
+        _TRAINING_LINEAGE.validate_runtime_source(
+            kind=manifest.get("runtimeSourceKind"),
+            revision=manifest.get("runtimeSourceRevision"),
+        )
+    except ValueError:
+        return False
+    return True
+
+
 def _valid_variant_manifest(
     manifest: Mapping[str, Any],
     *,
@@ -2407,6 +2769,9 @@ def _valid_variant_manifest(
         == manifest.get("baseModelTokenizerDigest")
         and canonical_sha256(dict(manifest["trainingEnvironmentLock"]))
         == manifest.get("trainingEnvironmentLockSHA256")
+        and _valid_training_code_lineage(manifest)
+        and _valid_training_dependency_lineage(manifest)
+        and _valid_runtime_source_lineage(manifest)
         and (
             (
                 manifest.get("trainingEnvironment") is None
@@ -2417,6 +2782,15 @@ def _valid_variant_manifest(
                     manifest.get("trainingEnvironment"),
                     manifest.get("trainingEnvironmentLock"),
                     expected_seed=manifest.get("seed"),
+                    expected_training_code_sha256=manifest.get(
+                        "trainingCodeSHA256"
+                    ),
+                    expected_dependency_lock_sha256=manifest.get(
+                        "trainingDependencyLockSHA256"
+                    ),
+                    expected_requirements_sha256=manifest.get(
+                        "requirementsSHA256"
+                    ),
                 )
                 and canonical_sha256(dict(manifest["trainingEnvironment"]))
                 == manifest.get("trainingEnvironmentSHA256")
@@ -2454,6 +2828,16 @@ def _valid_variant_manifest(
         and type(artifact.get("adapterFileCount")) is int
         and artifact["adapterFileCount"] >= 4
         and artifact.get("effectiveSeed") == manifest.get("seed")
+        and artifact.get("trainingCodeSHA256")
+        == manifest.get("trainingCodeSHA256")
+        and artifact.get("trainingDependencyLockSHA256")
+        == manifest.get("trainingDependencyLockSHA256")
+        and artifact.get("requirementsSHA256")
+        == manifest.get("requirementsSHA256")
+        and artifact.get("runtimeSourceKind")
+        == manifest.get("runtimeSourceKind")
+        and artifact.get("runtimeSourceRevision")
+        == manifest.get("runtimeSourceRevision")
         and (
             (
                 artifact.get("trainingPhase") == "sft"
@@ -2486,6 +2870,9 @@ def _valid_training_environment(
     environment_lock: Any,
     *,
     expected_seed: Any,
+    expected_training_code_sha256: Any | None = None,
+    expected_dependency_lock_sha256: Any | None = None,
+    expected_requirements_sha256: Any | None = None,
 ) -> bool:
     provenance = (
         environment.get("containerImageDigestSource"),
@@ -2494,6 +2881,19 @@ def _valid_training_environment(
     ) if isinstance(environment, Mapping) else None
     return (
         isinstance(environment, Mapping)
+        and set(environment)
+        == {
+            "schemaVersion",
+            "containerImageDigest",
+            "containerImageDigestSource",
+            "runtimeImageBindingStatus",
+            "runtimeImageBindingVerified",
+            "effectiveSeed",
+            "environmentLock",
+            "trainingCodeSHA256",
+            "trainingDependencyLockSHA256",
+            "requirementsSHA256",
+        }
         and environment.get("schemaVersion")
         == "lumen.adapter-training-environment/1.0.0"
         and re.fullmatch(
@@ -2505,6 +2905,21 @@ def _valid_training_environment(
         and environment.get("environmentLock") == environment_lock
         and type(expected_seed) is int
         and environment.get("effectiveSeed") == expected_seed
+        and (
+            expected_training_code_sha256 is None
+            or environment.get("trainingCodeSHA256")
+            == expected_training_code_sha256
+        )
+        and (
+            expected_dependency_lock_sha256 is None
+            or environment.get("trainingDependencyLockSHA256")
+            == expected_dependency_lock_sha256
+        )
+        and (
+            expected_requirements_sha256 is None
+            or environment.get("requirementsSHA256")
+            == expected_requirements_sha256
+        )
         and provenance == ("operator_declared", "manual_validation_required", False)
     )
 
@@ -2521,6 +2936,13 @@ def _report_matches_variant(
         and report.get("artifactSHA256") == artifact_sha256
         and isinstance(artifact, Mapping)
         and artifact.get("adapterSHA256") == artifact_sha256
+        and report.get("trainingCodeSHA256") == manifest.get("trainingCodeSHA256")
+        and report.get("trainingDependencyLockSHA256")
+        == manifest.get("trainingDependencyLockSHA256")
+        and report.get("requirementsSHA256") == manifest.get("requirementsSHA256")
+        and report.get("runtimeSourceKind") == manifest.get("runtimeSourceKind")
+        and report.get("runtimeSourceRevision")
+        == manifest.get("runtimeSourceRevision")
         and report.get("promotionEvidenceBound") is True
     )
 
@@ -2541,6 +2963,10 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
             "baseModelTokenizerDigest",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",
+            "trainingCodeSHA256",
+            "trainingCodeBundleSHA256",
+            "trainingDependencyLockSHA256",
+            "requirementsSHA256",
             "seed",
             "trainingConfigSHA256",
             "frozenEvaluationSHA256",

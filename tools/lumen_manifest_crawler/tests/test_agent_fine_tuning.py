@@ -92,6 +92,10 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         "model-00002-of-00002.safetensors",
     ]
     assert len(runtime_manifest["sharedBaseModelIndexShardBindingSHA256"]) == 64
+    assert len(runtime_manifest["sharedTrainingCodeSHA256"]) == 64
+    assert len(runtime_manifest["sharedTrainingCodeBundleSHA256"]) == 64
+    assert len(runtime_manifest["sharedTrainingDependencyLockSHA256"]) == 64
+    assert len(runtime_manifest["sharedRequirementsSHA256"]) == 64
     assert runtime_manifest["adapterRepoID"] == EXPECTED_ADAPTER_REPO
     assert runtime_manifest["runtimeStrategy"]["loadBaseModelOnce"] is True
     assert runtime_manifest["runtimeStrategy"]["selectAdapterByAgentSlot"] is True
@@ -124,6 +128,18 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert config["adapterExport"]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
         assert config["adapterExport"]["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
         assert config["preference_trainer"] == "dpo"
+        assert config["trainingCodeManifest"]["phase"] == "sft"
+        assert config["trainingCodeSHA256"] == config[
+            "trainingCodeSHA256ByPhase"
+        ]["sft"]
+        assert config["trainingDependencyLockSHA256"] == config[
+            "trainingDependencyLock"
+        ]["trainingDependencyLockSHA256"]
+        assert config["requirementsSHA256"] == config["trainingDependencyLock"][
+            "requirementsSHA256"
+        ]
+        assert config["runtimeSourceKind"] == "unresolved"
+        assert config["runtimeSourceRevision"] is None
         assert config["adapterExport"]["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
         assert config["adapterExport"]["trainBaseModelWeights"] is False
         assert config["adapterExport"]["saveAdapterByDefault"] is True
@@ -135,6 +151,12 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert adapters_by_agent[agent]["adapterDirectory"] == expected_adapter_dir
         assert adapters_by_agent[agent]["adapterGGUFArtifact"] == expected_adapter_gguf
         assert adapters_by_agent[agent]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
+        assert adapters_by_agent[agent]["trainingCodeSHA256"] == config[
+            "trainingCodeSHA256"
+        ]
+        assert adapters_by_agent[agent]["trainingDependencyLockSHA256"] == config[
+            "trainingDependencyLockSHA256"
+        ]
         assert (
             set(adapters_by_agent[agent]["experimentPolicy"]["controlledVariables"])
             == controlled_variables
@@ -147,6 +169,10 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert plan["adapterArtifact"] == expected_adapter_dir
         assert plan["adapterDirectory"] == expected_adapter_dir
         assert plan["adapterGGUFArtifact"] == expected_adapter_gguf
+        assert plan["trainingCodeSHA256"] == config["trainingCodeSHA256"]
+        assert plan["trainingDependencyLockSHA256"] == config[
+            "trainingDependencyLockSHA256"
+        ]
         assert set(plan["experimentPolicy"]["controlledVariables"]) == controlled_variables
         assert plan["expectedArtifacts"]["adapterDirectory"] == expected_adapter_dir
         assert plan["expectedArtifacts"]["adapterGGUF"] == expected_adapter_gguf

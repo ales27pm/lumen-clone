@@ -95,6 +95,26 @@ When preference training is enabled, DPO must start from a verified finalized SF
 to a separate adapter directory, and identify the SFT parent digest. It must never overwrite or
 replace the SFT artifact in place.
 
+DPO and ORPO inputs stay conversational through TRL preprocessing: `prompt` is a validated
+system/user conversation ending at an assistant generation boundary, while `chosen` and
+`rejected` are assistant-message lists. Missing roles, empty completions, identical preference
+pairs, and generic synthesized fallbacks are rejected. The pinned Qwen tokenizer and TRL 0.24
+apply the chat template; the dataset compiler does not flatten preference turns into strings.
+
+## Reproducible run identity
+
+Every real ZeroGPU run binds the uploaded dataset repository to its full immutable commit SHA.
+The run/resume lineage also binds each agent's variant manifest, lane and corpus hashes,
+controlled training config, base-model shard contract, seed, environment lock, phase-specific
+training code, dependency lock, runtime source revision, and checkpoint/output paths. A resume
+must match the entire lineage and reuse the original local snapshot and recorded checkpoints.
+
+The canonical training-code manifest hashes the exact deployed trainer, artifact verifier,
+finalizer modules, Space application, and requirements lock. The dependency lock covers all direct
+runtime packages plus Python, CUDA, Unsloth, and llama.cpp revisions. Local Ubuntu runs record the
+source Git commit; ZeroGPU runs record the uploaded Space commit. The source revision is retained
+as audit evidence, while controlled comparisons use the verified code and dependency digests.
+
 Rollback immediately if an adapter causes:
 
 - sentinel leakage;

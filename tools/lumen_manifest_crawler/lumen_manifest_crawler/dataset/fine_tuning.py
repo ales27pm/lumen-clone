@@ -22,6 +22,7 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     build_experiment_manifest,
     build_experiment_variant_manifest,
     canonical_sha256,
+    default_training_lineage_contract,
     default_training_environment_lock,
     promotion_contract,
     upgrade_evaluation_record,
@@ -2031,9 +2032,7 @@ def _build_agent_dpo_records(
 
 def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str]) -> dict[str, list[dict[str, Any]]]:
     first_tool = next(iter(sorted(known_tools)), "tool.unknown")
-    second_tool = next(iter(sorted(t for t in known_tools if t != first_tool)), first_tool)
     approval_tool = _first_tool_with(manifest.tools, lambda tool: tool.requiresApproval) or first_tool
-    permission_tool = _first_tool_with(manifest.tools, lambda tool: bool(tool.permissionKey)) or first_tool
     fake_tool = "system.root.delete"
 
     fleet_slot_ids = [slot.id for slot in manifest.fleet.slots] or ["cortex", "executor"]
@@ -2206,7 +2205,6 @@ def _ultra_specific_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[
     outlook_attachments = _known_tool_or_default(known_tools, "outlook.attachments.list")
     motion_activity = _known_tool_or_default(known_tools, "motion.activity")
     approval_tool = _first_tool_with(manifest.tools, lambda tool: tool.requiresApproval) or _known_tool_or_default(known_tools, "")
-    permission_tool = _first_tool_with(manifest.tools, lambda tool: bool(tool.permissionKey)) or _known_tool_or_default(known_tools, "")
     slots = [slot.id for slot in manifest.fleet.slots] or list(AGENTS)
 
     return {
@@ -2731,6 +2729,7 @@ def _backfill_rem_runtime_repairs(
 def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[str, Any]:
     high_reasoning = agent in {"cortex", "executor", "rem"}
     fleet_strategy = "train_first" if agent == "fleet" else "per_slot_adapter"
+    training_lineage = default_training_lineage_contract()
     base_config = {
         "agent": agent,
         "base_model_name": DEFAULT_BASE_MODEL_ID,
@@ -2747,6 +2746,7 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         "baseModelWeightShards": [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS],
         "baseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
         "trainingEnvironmentLock": default_training_environment_lock(),
+        **training_lineage,
         "max_seq_length": config.max_sequence_length,
         "load_in_4bit": True,
         "lora_r": 24 if high_reasoning else 16,

@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "e5d0c18f35beea659c404d367deaa87c58970668173115ac84ff9fb5f4c5f756"
+      "reportSHA256": "9a923b9edb962e0e59198ea8724fd3666d47d08bc63a6f5710d3b130d9a9e388"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "8383dfa95cdbc17879959075698a4cb9bdac24f71d6db0de084c5155fb7bf7f3",
-      "optimizedTrainingCorpusSHA256": "e0bd94befab6c89ecc2dac232fa0e488f43ef60906ab7c7bc141d856477c9f03",
+      "baselineTrainingCorpusSHA256": "31c4fb96bf0a953169ff3a7946baac09c553e777dc3491614503d10fbd6de4f3",
+      "optimizedTrainingCorpusSHA256": "d3c004a19258f7cef12e27700a6b702b38fd8696c55d8bbe24fd66c7e4385890",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 600,
@@ -42,12 +42,16 @@
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
       "trainingEnvironmentLockSHA256",
+      "trainingCodeSHA256",
+      "trainingCodeBundleSHA256",
+      "trainingDependencyLockSHA256",
+      "requirementsSHA256",
       "seed",
       "trainingConfigSHA256",
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "2c6abf7f0484515e85cc31aa5e81ed444b3916b4a0157b2053ad6ef7c372e934",
+    "experimentManifestSHA256": "4946566dc71b4f7d2ab6d2d25ff633b8ddad150a8d2fb07da403612fe410ef7c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -59,11 +63,14 @@
       "requiresArtifactDigests": true,
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,
+      "requiresIdenticalTrainingCode": true,
+      "requiresIdenticalTrainingDependencyLock": true,
       "requiresIdenticalTrainingEnvironment": true,
       "requiresImmutableBaseModelRevisionAndDigest": true,
       "requiresPublicEvaluationFingerprintBinding": true,
       "requiresVerifiedRuntimeImageBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
+      "runtimeSourceRevisionIsAuditOnly": true,
       "schemaVersion": "lumen.adapter-promotion/1.0.0"
     },
     "requiredVariants": [
@@ -72,7 +79,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
+  "manifestCommit": "f2acf093f88155576a993b2ad1a0cea172cde59f",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 12,
@@ -106,13 +113,13 @@
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 108,
+      "train_sft": 107,
       "val_dpo": 0,
       "val_sft": 13
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 403,
+      "train_sft": 404,
       "val_dpo": 0,
       "val_sft": 76
     },
@@ -132,9 +139,9 @@
         "minimum": 0.720013
       },
       "selected": {
-        "count": 121,
+        "count": 120,
         "maximum": 0.7565,
-        "mean": 0.736925,
+        "mean": 0.737054,
         "minimum": 0.720445
       }
     },
@@ -216,12 +223,12 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "grammarly/coedit": 121
+      "grammarly/coedit": 120
     },
     "sourceSplitCounts": {
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 108,
+        "train_sft": 107,
         "val_dpo": 0,
         "val_sft": 13
       }
@@ -232,8 +239,8 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.186706,
-        "total": 0.349755
+        "target": 0.186416,
+        "total": 0.349062
       },
       "val_dpo": {
         "target": 0.0,
@@ -258,7 +265,7 @@
   "recordCounts": {
     "eval": 5,
     "train_dpo": 10,
-    "train_sft": 184,
+    "train_sft": 183,
     "val_dpo": 2,
     "val_sft": 26
   },
