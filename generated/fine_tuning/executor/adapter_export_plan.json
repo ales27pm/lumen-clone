@@ -5,10 +5,23 @@
   "adapterID": "lumen-executor-adapter",
   "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "executor",
-  "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+  "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "baseModelID": "Qwen/Qwen3-1.7B",
+  "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
   "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
   "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+  "baseModelWeightShards": [
+    {
+      "filename": "model-00001-of-00002.safetensors",
+      "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+      "size": 3441185608
+    },
+    {
+      "filename": "model-00002-of-00002.safetensors",
+      "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+      "size": 622329984
+    }
+  ],
   "datasetCard": {
     "evaluation": {
       "contamination": {
@@ -99,13 +112,28 @@
     "variantPathTemplate": "experiments/{variant}"
   },
   "experimentPolicy": {
-    "experimentManifestSHA256": "a1df6bde4322b543e712a66bf9ed2f593ff5b1eff0294604787267478ae025a3",
+    "controlledVariables": [
+      "baseModelID",
+      "baseModelRevision",
+      "baseModelIndexDigest",
+      "baseModelArtifactDigest",
+      "baseModelWeightShards",
+      "baseModelTokenizerDigest",
+      "trainingEnvironmentLockSHA256",
+      "seed",
+      "trainingConfigSHA256",
+      "frozenEvaluationSHA256",
+      "publicEvaluationBundleSHA256"
+    ],
+    "experimentManifestSHA256": "0492174df9e08d611369696e3206cd8ef2da9ffd88dbe880dcafd9c2acf6f599",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
       "maximumCriticalBoundaryFailures": 0,
       "maximumCriticalCategoryRegression": 0.02,
       "minimumWeightedScoreImprovement": 0.01,
+      "promotionSupported": false,
+      "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
       "requiresArtifactDigests": true,
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,

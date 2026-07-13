@@ -92,12 +92,26 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
     }
     for lane, records in lanes.items():
         _write_jsonl(variant_root / f"{lane}.jsonl", records)
+    weight_shards = [
+        {
+            "filename": "model-00001-of-00002.safetensors",
+            "size": 3_441_185_608,
+            "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+        },
+        {
+            "filename": "model-00002-of-00002.safetensors",
+            "size": 622_329_984,
+            "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+        },
+    ]
     config = {
         "agent": "executor",
         "baseModelID": "Qwen/Qwen3-1.7B",
         "base_model_name": "Qwen/Qwen3-1.7B",
         "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
-        "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+        "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+        "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
+        "baseModelWeightShards": weight_shards,
         "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
         "max_seq_length": 128,
         "load_in_4bit": True,
@@ -130,7 +144,9 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "variant": "internal_plus_public_optimized",
         "baseModelID": "Qwen/Qwen3-1.7B",
         "baseModelRevision": config["baseModelRevision"],
+        "baseModelIndexDigest": config["baseModelIndexDigest"],
         "baseModelArtifactDigest": config["baseModelArtifactDigest"],
+        "baseModelWeightShards": config["baseModelWeightShards"],
         "baseModelTokenizerDigest": config["baseModelTokenizerDigest"],
         "trainingEnvironmentLock": environment_lock,
         "trainingEnvironmentLockSHA256": module._canonical_sha256(environment_lock),

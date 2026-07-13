@@ -8,10 +8,23 @@
       "adapterID": "lumen-cortex-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "cortex",
-      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
       "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
       "evaluation": {
         "contamination": {
           "contaminated": false,
@@ -37,18 +50,26 @@
         },
         "controlledVariables": [
           "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
           "seed",
           "trainingConfigSHA256",
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "d789d71d2c636810098fc6fa3cdf72328747568c1803204a32d26061e55ce17a",
+        "experimentManifestSHA256": "d05ddc99b4b1c383ce6822e7fa501688c46c880e5eb5965d298e59c1bf21e37a",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
           "maximumCriticalBoundaryFailures": 0,
           "maximumCriticalCategoryRegression": 0.02,
           "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
@@ -87,10 +108,23 @@
       "adapterID": "lumen-executor-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "executor",
-      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
       "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
       "evaluation": {
         "contamination": {
           "contaminated": false,
@@ -116,18 +150,26 @@
         },
         "controlledVariables": [
           "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
           "seed",
           "trainingConfigSHA256",
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "a1df6bde4322b543e712a66bf9ed2f593ff5b1eff0294604787267478ae025a3",
+        "experimentManifestSHA256": "0492174df9e08d611369696e3206cd8ef2da9ffd88dbe880dcafd9c2acf6f599",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
           "maximumCriticalBoundaryFailures": 0,
           "maximumCriticalCategoryRegression": 0.02,
           "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
@@ -166,10 +208,23 @@
       "adapterID": "lumen-fleet-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "fleet",
-      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
       "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
       "evaluation": {
         "contamination": {
           "contaminated": false,
@@ -195,18 +250,26 @@
         },
         "controlledVariables": [
           "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
           "seed",
           "trainingConfigSHA256",
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "b69dae2a5bac2f809dacba8400af892cd0dabda267093a09a367b72b13d92f42",
+        "experimentManifestSHA256": "669d7911ef3868facd1f3a6c9bfa63ba44f1dd0f90cfa85f3475fee450d8cdcd",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
           "maximumCriticalBoundaryFailures": 0,
           "maximumCriticalCategoryRegression": 0.02,
           "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
@@ -245,10 +308,23 @@
       "adapterID": "lumen-mimicry-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mimicry",
-      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
       "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
       "evaluation": {
         "contamination": {
           "contaminated": false,
@@ -274,18 +350,26 @@
         },
         "controlledVariables": [
           "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
           "seed",
           "trainingConfigSHA256",
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "957fab92a5abac75146cc77c74fdf72a0171016ac745813fe9a2099266521652",
+        "experimentManifestSHA256": "8689f3d527f48e19e19fec66359840a0cff32556d448af95334d2c04e2e6d603",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
           "maximumCriticalBoundaryFailures": 0,
           "maximumCriticalCategoryRegression": 0.02,
           "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
@@ -324,10 +408,23 @@
       "adapterID": "lumen-mouth-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mouth",
-      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
       "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
       "evaluation": {
         "contamination": {
           "contaminated": false,
@@ -353,18 +450,26 @@
         },
         "controlledVariables": [
           "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
           "seed",
           "trainingConfigSHA256",
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "da1557502fe4544d6a414b29c021b672c8ecf1ba2c153460a0347e167e8bf733",
+        "experimentManifestSHA256": "eacf013e90aa2d0a9812e9ec808fdefc635d7b09cc851a09e5315b5c01acbc14",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
           "maximumCriticalBoundaryFailures": 0,
           "maximumCriticalCategoryRegression": 0.02,
           "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
@@ -403,10 +508,23 @@
       "adapterID": "lumen-rem-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "rem",
-      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
       "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
       "evaluation": {
         "contamination": {
           "contaminated": false,
@@ -432,18 +550,26 @@
         },
         "controlledVariables": [
           "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
           "seed",
           "trainingConfigSHA256",
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "1f86d3c3aac5193940a1bcb2638dcb5b2086d7c73c7cfb1779514b4872e70df6",
+        "experimentManifestSHA256": "84a57e568065fb3f6bf2d5d3fce0f7323e85849a6f8d2be7cab2df9691c98de9",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
           "maximumCriticalBoundaryFailures": 0,
           "maximumCriticalCategoryRegression": 0.02,
           "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
@@ -495,9 +621,22 @@
   },
   "schemaVersion": "1.2.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
-  "sharedBaseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+  "sharedBaseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "sharedBaseModelID": "Qwen/Qwen3-1.7B",
+  "sharedBaseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
   "sharedBaseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
   "sharedBaseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+  "sharedBaseModelWeightShards": [
+    {
+      "filename": "model-00001-of-00002.safetensors",
+      "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+      "size": 3441185608
+    },
+    {
+      "filename": "model-00002-of-00002.safetensors",
+      "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+      "size": 622329984
+    }
+  ],
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf"
 }

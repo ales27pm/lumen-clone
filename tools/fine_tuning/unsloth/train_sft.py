@@ -13,12 +13,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from .adapter_artifact import write_adapter_artifact_manifest
+except ImportError:
+    from adapter_artifact import write_adapter_artifact_manifest
+
 
 REQUIRED_CONFIG_KEYS = {
     "agent",
     "base_model_name",
     "baseModelRevision",
+    "baseModelIndexDigest",
     "baseModelArtifactDigest",
+    "baseModelWeightShards",
     "baseModelTokenizerDigest",
     "trainingEnvironmentLock",
     "trainingContainerImageDigest",
@@ -37,10 +44,13 @@ REQUIRED_CONFIG_KEYS = {
     "num_train_epochs",
     "warmup_steps",
     "output_dir",
+    "adapter_output_dir",
     "dataset_dir",
+    "variant",
+    "variantManifestSHA256",
 }
 AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
-FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned"}
+FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned", "training"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -450,7 +460,7 @@ def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
         raise RuntimeError("baseModelRevision must be a full lowercase Hugging Face commit SHA")
     expected = {
         "model.safetensors.index.json": _require_sha256(
-            cfg.get("baseModelArtifactDigest"), name="baseModelArtifactDigest"
+            cfg.get("baseModelIndexDigest"), name="baseModelIndexDigest"
         ),
         "tokenizer.json": _require_sha256(
             cfg.get("baseModelTokenizerDigest"), name="baseModelTokenizerDigest"
@@ -458,10 +468,75 @@ def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
     }
     from huggingface_hub import hf_hub_download  # type: ignore
 
+    downloaded: dict[str, Path] = {}
     for filename, digest in expected.items():
         path = Path(hf_hub_download(repo_id=cfg["base_model_name"], filename=filename, revision=revision))
+        downloaded[filename] = path
         if _hash_file(path) != digest:
             raise RuntimeError(f"Pinned base-model artifact digest mismatch: {filename}")
+
+    shard_contract = _base_model_weight_shard_contract(cfg.get("baseModelWeightShards"))
+    if _canonical_sha256(shard_contract) != _require_sha256(
+        cfg.get("baseModelArtifactDigest"), name="baseModelArtifactDigest"
+    ):
+        raise RuntimeError("baseModelArtifactDigest does not match baseModelWeightShards")
+    try:
+        index = json.loads(downloaded["model.safetensors.index.json"].read_text(encoding="utf-8"))
+        weight_map = index["weight_map"]
+        if not isinstance(weight_map, dict) or any(
+            not isinstance(filename, str) for filename in weight_map.values()
+        ):
+            raise TypeError
+        referenced_shards = sorted(set(weight_map.values()))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Pinned base-model index has an invalid weight_map") from exc
+    expected_shards = [item["filename"] for item in shard_contract["shards"]]
+    if referenced_shards != expected_shards:
+        raise RuntimeError("Pinned base-model index shard set does not match baseModelWeightShards")
+    for item in shard_contract["shards"]:
+        path = Path(
+            hf_hub_download(
+                repo_id=cfg["base_model_name"],
+                filename=item["filename"],
+                revision=revision,
+            )
+        )
+        if path.stat().st_size != item["size"] or _hash_file(path) != item["sha256"]:
+            raise RuntimeError(f"Pinned base-model weight shard digest mismatch: {item['filename']}")
+
+
+def _base_model_weight_shard_contract(value: Any) -> dict[str, Any]:
+    if not isinstance(value, list) or not value:
+        raise RuntimeError("baseModelWeightShards must be a non-empty list")
+    shards: list[dict[str, Any]] = []
+    filenames: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            raise RuntimeError("baseModelWeightShards entries must be objects")
+        filename = item.get("filename")
+        size = item.get("size")
+        digest = item.get("sha256")
+        if (
+            not isinstance(filename, str)
+            or filename != filename.rsplit("/", 1)[-1]
+            or not filename.endswith(".safetensors")
+            or filename in filenames
+            or type(size) is not int
+            or size <= 0
+        ):
+            raise RuntimeError("baseModelWeightShards contains invalid shard metadata")
+        filenames.add(filename)
+        shards.append(
+            {
+                "filename": filename,
+                "size": size,
+                "sha256": _require_sha256(digest, name=f"baseModelWeightShards[{filename}].sha256"),
+            }
+        )
+    return {
+        "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
+        "shards": sorted(shards, key=lambda item: item["filename"]),
+    }
 
 
 def _git_sha(repo_root: Path) -> str:
@@ -510,6 +585,54 @@ def _limit_records(records: list[dict[str, Any]], value: Any) -> list[dict[str, 
     if limit <= 0:
         return records
     return records[:limit]
+
+
+def _finalize_variant_manifest(
+    cfg: dict[str, Any],
+    *,
+    adapter_artifact_manifest: dict[str, Any],
+    training_environment: dict[str, Any],
+    output_dir: Path,
+) -> dict[str, Any]:
+    source_path = Path(cfg["dataset_dir"]).resolve() / "variant_manifest.json"
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Expected experiment variant manifest: {source_path}")
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    if not isinstance(source, dict):
+        raise RuntimeError("Experiment variant manifest must be a JSON object")
+    if (
+        source.get("variant") != cfg["variant"]
+        or source.get("agent") != cfg["agent"]
+        or source.get("variantManifestSHA256") != cfg["variantManifestSHA256"]
+    ):
+        raise RuntimeError("Training config is not bound to the selected experiment variant manifest")
+
+    repo_root = Path(__file__).resolve().parents[3]
+    crawler_root = repo_root / "tools" / "lumen_manifest_crawler"
+    if crawler_root.is_dir() and str(crawler_root) not in sys.path:
+        sys.path.insert(0, str(crawler_root))
+    try:
+        from lumen_manifest_crawler.dataset.adapter_evaluation import (
+            finalize_experiment_variant_manifest,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "The experiment-manifest finalizer must be bundled with the training runtime"
+        ) from exc
+
+    finalized = finalize_experiment_variant_manifest(
+        source,
+        adapter_sha256=adapter_artifact_manifest["adapterSHA256"],
+        adapter_artifact_manifest=adapter_artifact_manifest,
+        training_environment=training_environment,
+        training_phase="sft",
+    )
+    destination = output_dir / "finalized_variant_manifest.json"
+    destination.write_text(
+        json.dumps(finalized, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return finalized
 
 
 def main() -> None:
@@ -580,7 +703,11 @@ def main() -> None:
     val_records = _limit_records(load_jsonl(val_path), cfg.get("max_val_records"))
 
     output_dir = Path(cfg["output_dir"]).resolve()
+    adapter_output_dir = Path(cfg["adapter_output_dir"]).resolve()
+    if adapter_output_dir == output_dir or output_dir in adapter_output_dir.parents:
+        raise RuntimeError("adapter_output_dir must be separate from the training work/output directory")
     output_dir.mkdir(parents=True, exist_ok=True)
+    adapter_output_dir.mkdir(parents=True, exist_ok=True)
 
     assistant_only_loss = bool(args.assistant_only_loss or cfg.get("assistant_only_loss", False))
     train_rows = build_sft_rows(
@@ -645,8 +772,18 @@ def main() -> None:
         resume_checkpoint = True if checkpoints else False
 
     train_result = trainer.train(resume_from_checkpoint=resume_checkpoint or None)
-    trainer.model.save_pretrained(str(output_dir))
-    tokenizer.save_pretrained(str(output_dir))
+    trainer.model.save_pretrained(str(adapter_output_dir))
+    tokenizer.save_pretrained(str(adapter_output_dir))
+    adapter_artifact_manifest = write_adapter_artifact_manifest(
+        adapter_output_dir,
+        training_phase="sft",
+    )
+    finalized_variant_manifest = _finalize_variant_manifest(
+        cfg,
+        adapter_artifact_manifest=adapter_artifact_manifest,
+        training_environment=training_environment,
+        output_dir=output_dir,
+    )
 
     repo_root = Path(__file__).resolve().parents[3]
     manifest = {
@@ -654,7 +791,9 @@ def main() -> None:
         "agent": cfg["agent"],
         "base_model_name": cfg["base_model_name"],
         "baseModelRevision": cfg["baseModelRevision"],
+        "baseModelIndexDigest": cfg["baseModelIndexDigest"],
         "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
+        "baseModelWeightShards": cfg["baseModelWeightShards"],
         "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
         "trainingEnvironment": training_environment,
         "trainingEnvironmentSHA256": training_environment["trainingEnvironmentSHA256"],
@@ -676,6 +815,16 @@ def main() -> None:
         "seed": seed,
         "seed_source": seed_source,
         "output_dir": str(output_dir),
+        "adapter_output_dir": str(adapter_output_dir),
+        "adapterSHA256": adapter_artifact_manifest["adapterSHA256"],
+        "adapterArtifactManifest": str(
+            adapter_output_dir / "adapter_artifact_manifest.json"
+        ),
+        "finalizedVariantManifest": str(output_dir / "finalized_variant_manifest.json"),
+        "finalizedVariantManifestSHA256": finalized_variant_manifest[
+            "variantManifestSHA256"
+        ],
+        "trainingPhase": "sft",
         "git_sha": _git_sha(repo_root),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "platform": {

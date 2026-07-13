@@ -97,15 +97,20 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
     adapters_by_agent = {entry["agent"]: entry for entry in runtime_manifest["adapters"]}
     for agent in AGENTS:
         expected_adapter_dir = f"models/lora_qwen3_bootstrap/{agent}"
+        expected_training_dir = f"models/training_runs_qwen3_bootstrap/{agent}"
+        expected_dpo_dir = f"models/lora_qwen3_dpo/{agent}"
         expected_adapter_gguf = f"models/lora_qwen3_gguf/lumen-{agent}-lora.gguf"
         agent_dir = fine_tuning_output / agent
         config = json.loads((agent_dir / "unsloth_config.json").read_text(encoding="utf-8"))
         plan = json.loads((agent_dir / "adapter_export_plan.json").read_text(encoding="utf-8"))
+        experiment = json.loads((agent_dir / "experiment_manifest.json").read_text(encoding="utf-8"))
+        controlled_variables = set(experiment["controlledVariables"])
 
         assert config["artifactMode"] == "adapter_first"
         assert config["defaultExportArtifact"] == "lora_adapter"
         assert config["adapter_output_dir"] == expected_adapter_dir
-        assert config["output_dir"] == expected_adapter_dir
+        assert config["output_dir"] == expected_training_dir
+        assert config["dpo_output_dir"] == expected_dpo_dir
         assert config["adapter_gguf_output_path"] == expected_adapter_gguf
         assert config["adapterExport"]["agent"] == agent
         assert config["adapterExport"]["adapterArtifact"] == expected_adapter_dir
@@ -124,6 +129,10 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert adapters_by_agent[agent]["adapterDirectory"] == expected_adapter_dir
         assert adapters_by_agent[agent]["adapterGGUFArtifact"] == expected_adapter_gguf
         assert adapters_by_agent[agent]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
+        assert (
+            set(adapters_by_agent[agent]["experimentPolicy"]["controlledVariables"])
+            == controlled_variables
+        )
         assert plan["mode"] == "adapter_first"
         assert plan["agent"] == agent
         assert plan["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
@@ -132,6 +141,7 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert plan["adapterArtifact"] == expected_adapter_dir
         assert plan["adapterDirectory"] == expected_adapter_dir
         assert plan["adapterGGUFArtifact"] == expected_adapter_gguf
+        assert set(plan["experimentPolicy"]["controlledVariables"]) == controlled_variables
         assert plan["expectedArtifacts"]["adapterDirectory"] == expected_adapter_dir
         assert plan["expectedArtifacts"]["adapterGGUF"] == expected_adapter_gguf
         assert plan["runtimeBinding"]["loadBaseModelOnce"] is True

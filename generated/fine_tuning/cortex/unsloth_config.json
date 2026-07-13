@@ -6,10 +6,23 @@
     "adapterID": "lumen-cortex-adapter",
     "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
     "agent": "cortex",
-    "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+    "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
     "baseModelID": "Qwen/Qwen3-1.7B",
+    "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
     "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
     "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "baseModelWeightShards": [
+      {
+        "filename": "model-00001-of-00002.safetensors",
+        "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+        "size": 3441185608
+      },
+      {
+        "filename": "model-00002-of-00002.safetensors",
+        "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+        "size": 622329984
+      }
+    ],
     "enabled": true,
     "mergeAdaptersByDefault": false,
     "rollbackUnit": "adapter",
@@ -27,15 +40,29 @@
   "agent": "cortex",
   "artifactMode": "adapter_first",
   "artifact_mode": "adapter_first",
-  "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+  "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "baseModelID": "Qwen/Qwen3-1.7B",
+  "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
   "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
   "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+  "baseModelWeightShards": [
+    {
+      "filename": "model-00001-of-00002.safetensors",
+      "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+      "size": 3441185608
+    },
+    {
+      "filename": "model-00002-of-00002.safetensors",
+      "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+      "size": 622329984
+    }
+  ],
   "base_model_name": "Qwen/Qwen3-1.7B",
   "batch_size": 2,
   "dataset_dir": "generated/fine_tuning/cortex",
   "defaultExportArtifact": "lora_adapter",
   "default_export_artifact": "lora_adapter",
+  "dpo_output_dir": "models/lora_qwen3_dpo/cortex",
   "fleet_strategy": "per_slot_adapter",
   "gguf_output_dir": "models/gguf_release_bake_qwen3_bootstrap/cortex_merged_gguf",
   "gguf_quantization": "q4_k_m",
@@ -57,7 +84,7 @@
   "merge_adapters_by_default": false,
   "merge_target": null,
   "num_train_epochs": 2,
-  "output_dir": "models/lora_qwen3_bootstrap/cortex",
+  "output_dir": "models/training_runs_qwen3_bootstrap/cortex",
   "release_bake_enabled_by_default": false,
   "seed": 42,
   "trainingEnvironmentLock": {

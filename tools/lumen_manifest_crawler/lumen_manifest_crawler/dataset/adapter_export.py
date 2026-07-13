@@ -5,8 +5,10 @@ from typing import Any
 
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+    DEFAULT_BASE_MODEL_INDEX_DIGEST,
     DEFAULT_BASE_MODEL_REVISION,
     DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
     EXPERIMENT_VARIANTS,
     promotion_contract,
 )
@@ -14,6 +16,8 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
 ADAPTER_EXPORT_SCHEMA_VERSION = "1.2.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
+DEFAULT_TRAINING_OUTPUT_ROOT = "models/training_runs_qwen3_bootstrap"
+DEFAULT_DPO_OUTPUT_ROOT = "models/lora_qwen3_dpo"
 DEFAULT_ADAPTER_GGUF_OUTPUT_ROOT = "models/lora_qwen3_gguf"
 DEFAULT_RELEASE_BAKE_OUTPUT_ROOT = "models/gguf_release_bake_qwen3_bootstrap"
 DEFAULT_ADAPTER_REPO_ID = "ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
@@ -28,6 +32,14 @@ def adapter_artifact_name(agent: str) -> str:
 
 def adapter_output_dir(agent: str) -> str:
     return f"{DEFAULT_LORA_OUTPUT_ROOT}/{agent}"
+
+
+def training_output_dir(agent: str) -> str:
+    return f"{DEFAULT_TRAINING_OUTPUT_ROOT}/{agent}"
+
+
+def dpo_output_dir(agent: str) -> str:
+    return f"{DEFAULT_DPO_OUTPUT_ROOT}/{agent}"
 
 
 def adapter_gguf_output_path(agent: str) -> str:
@@ -72,7 +84,9 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     base_model_id = base_model_id_from_config(out)
     out.setdefault("baseModelID", base_model_id)
     out.setdefault("baseModelRevision", DEFAULT_BASE_MODEL_REVISION)
+    out.setdefault("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST)
     out.setdefault("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST)
+    out.setdefault("baseModelWeightShards", [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS])
     out.setdefault("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST)
     out["artifactMode"] = "adapter_first"
     out["defaultExportArtifact"] = "lora_adapter"
@@ -81,7 +95,8 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out["merge_adapters_by_default"] = False
     out["release_bake_enabled_by_default"] = False
     out["adapter_output_dir"] = adapter_output_dir(agent)
-    out["output_dir"] = adapter_output_dir(agent)
+    out["output_dir"] = training_output_dir(agent)
+    out["dpo_output_dir"] = dpo_output_dir(agent)
     out["adapter_gguf_output_path"] = adapter_gguf_output_path(agent)
     out["gguf_output_dir"] = release_bake_output_dir(agent)
     out["adapterExport"] = {
@@ -94,7 +109,9 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
         "baseModelID": base_model_id,
         "baseModelRevision": out["baseModelRevision"],
+        "baseModelIndexDigest": out["baseModelIndexDigest"],
         "baseModelArtifactDigest": out["baseModelArtifactDigest"],
+        "baseModelWeightShards": out["baseModelWeightShards"],
         "baseModelTokenizerDigest": out["baseModelTokenizerDigest"],
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
@@ -126,7 +143,9 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "agent": agent,
         "baseModelID": base_model_id,
         "baseModelRevision": config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
+        "baseModelIndexDigest": config.get("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST),
         "baseModelArtifactDigest": config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
+        "baseModelWeightShards": config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
         "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
@@ -162,6 +181,11 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         },
         "experimentPolicy": {
             "requiredVariants": list(EXPERIMENT_VARIANTS),
+            "controlledVariables": list(
+                (dataset_card.get("experimentPolicy") or {}).get(
+                    "controlledVariables", []
+                )
+            ),
             "promotionContract": promotion_contract(),
             "runtimePointerPolicy": "unchanged_until_promoted",
             "experimentManifestSHA256": (dataset_card.get("experimentPolicy") or {}).get("experimentManifestSHA256"),
@@ -204,7 +228,9 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
                 "baseModelID": base_model_id,
                 "baseModelRevision": unsloth_config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
+                "baseModelIndexDigest": unsloth_config.get("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST),
                 "baseModelArtifactDigest": unsloth_config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
+                "baseModelWeightShards": unsloth_config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
                 "baseModelTokenizerDigest": unsloth_config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
                 "systemPrompt": dataset_card.get("systemPrompt"),
                 "recordCounts": dataset_card.get("recordCounts", {}),
@@ -220,7 +246,9 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "mode": "adapter_first",
         "sharedBaseModelID": shared_base_model_id,
         "sharedBaseModelRevision": DEFAULT_BASE_MODEL_REVISION,
+        "sharedBaseModelIndexDigest": DEFAULT_BASE_MODEL_INDEX_DIGEST,
         "sharedBaseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+        "sharedBaseModelWeightShards": DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
         "sharedBaseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
