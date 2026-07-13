@@ -9,10 +9,10 @@ from typing import Any
 
 try:
     from .adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
-    from .train_sft import _training_environment
+    from .train_sft import _resolve_controlled_seed, _seed_everything, _training_environment
 except ImportError:
     from adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
-    from train_sft import _training_environment
+    from train_sft import _resolve_controlled_seed, _seed_everything, _training_environment
 
 
 REQUIRED_CONFIG_KEYS = {
@@ -20,6 +20,8 @@ REQUIRED_CONFIG_KEYS = {
     "base_model_name",
     "baseModelRevision",
     "baseModelIndexDigest",
+    "baseModelIndexReferencedShardNames",
+    "baseModelIndexShardBindingSHA256",
     "baseModelArtifactDigest",
     "baseModelWeightShards",
     "baseModelTokenizerDigest",
@@ -45,9 +47,12 @@ REQUIRED_CONFIG_KEYS = {
     "dataset_dir",
     "variant",
     "variantManifestSHA256",
+    "seed",
 }
 AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
 FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned", "training"}
+POLICY_ADAPTER_NAME = "default"
+REFERENCE_ADAPTER_NAME = "lumen_sft_reference"
 
 
 def parse_args() -> argparse.Namespace:
@@ -189,6 +194,22 @@ def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
     expected_shards = [item["filename"] for item in shard_contract["shards"]]
     if referenced_shards != expected_shards:
         raise RuntimeError("Pinned base-model index shard set does not match baseModelWeightShards")
+    declared_referenced_shards = cfg.get("baseModelIndexReferencedShardNames")
+    if declared_referenced_shards != referenced_shards:
+        raise RuntimeError(
+            "Pinned base-model index shard set does not match baseModelIndexReferencedShardNames"
+        )
+    index_shard_binding = {
+        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+        "indexDigest": expected["model.safetensors.index.json"],
+        "referencedShardNames": referenced_shards,
+        "shardContractDigest": cfg["baseModelArtifactDigest"],
+    }
+    if _canonical_sha256(index_shard_binding) != _require_sha256(
+        cfg.get("baseModelIndexShardBindingSHA256"),
+        name="baseModelIndexShardBindingSHA256",
+    ):
+        raise RuntimeError("baseModelIndexShardBindingSHA256 does not bind the verified index and shards")
     for item in shard_contract["shards"]:
         path = Path(
             hf_hub_download(
@@ -262,6 +283,108 @@ def row_to_preference(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _load_sft_policy(
+    base_model: Any,
+    *,
+    peft_model_class: Any,
+    sft_adapter_dir: Path,
+    preference_trainer: str,
+) -> Any:
+    model = peft_model_class.from_pretrained(
+        base_model,
+        str(sft_adapter_dir),
+        adapter_name=POLICY_ADAPTER_NAME,
+        is_trainable=True,
+    )
+    if preference_trainer == "dpo":
+        model.load_adapter(
+            str(sft_adapter_dir),
+            adapter_name=REFERENCE_ADAPTER_NAME,
+            is_trainable=False,
+        )
+        model.set_adapter(POLICY_ADAPTER_NAME)
+    return model
+
+
+def _build_preference_trainer(
+    cfg: dict[str, Any],
+    *,
+    preference_trainer: str,
+    seed: int,
+    model: Any,
+    tokenizer: Any,
+    train_dataset: Any,
+    val_dataset: Any,
+    output_dir: Path,
+    dpo_config_class: Any,
+    dpo_trainer_class: Any,
+    orpo_config_class: Any,
+    orpo_trainer_class: Any,
+) -> tuple[Any, Any]:
+    common_config = {
+        "output_dir": str(output_dir),
+        "per_device_train_batch_size": int(cfg["batch_size"]),
+        "per_device_eval_batch_size": max(1, int(cfg["batch_size"])),
+        "gradient_accumulation_steps": int(cfg["gradient_accumulation_steps"]),
+        "learning_rate": float(cfg["learning_rate"]),
+        "num_train_epochs": float(cfg["num_train_epochs"]),
+        "warmup_steps": int(cfg["warmup_steps"]),
+        "logging_steps": int(cfg.get("logging_steps", 10)),
+        "eval_strategy": "steps" if val_dataset is not None else "no",
+        "eval_steps": int(cfg.get("eval_steps", 50)),
+        "save_steps": int(cfg.get("save_steps", 100)),
+        "save_total_limit": int(cfg.get("save_total_limit", 2)),
+        "bf16": bool(cfg.get("bf16", False)),
+        "fp16": bool(cfg.get("fp16", True)),
+        "report_to": "none",
+        "seed": seed,
+        "data_seed": seed,
+        "max_length": int(cfg["max_seq_length"]),
+        "max_prompt_length": int(
+            cfg.get("max_prompt_length", int(cfg["max_seq_length"]) // 2)
+        ),
+    }
+    if preference_trainer == "dpo":
+        training_args = dpo_config_class(
+            **common_config,
+            beta=float(cfg.get("dpo_beta", 0.1)),
+            model_adapter_name=POLICY_ADAPTER_NAME,
+            ref_adapter_name=REFERENCE_ADAPTER_NAME,
+        )
+        trainer = dpo_trainer_class(
+            model=model,
+            ref_model=None,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            processing_class=tokenizer,
+        )
+        return trainer, training_args
+    if preference_trainer == "orpo":
+        training_args = orpo_config_class(
+            **common_config,
+            beta=float(cfg.get("orpo_beta", 0.1)),
+        )
+        trainer = orpo_trainer_class(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            processing_class=tokenizer,
+        )
+        return trainer, training_args
+    raise ValueError("preference_trainer must be either 'dpo' or 'orpo'")
+
+
+def _save_policy_adapter(model: Any, output_dir: Path) -> None:
+    model.set_adapter(POLICY_ADAPTER_NAME)
+    model.save_pretrained(
+        str(output_dir),
+        safe_serialization=True,
+        selected_adapters=[POLICY_ADAPTER_NAME],
+    )
+
+
 def _verified_sft_parent(
     cfg: dict[str, Any],
     *,
@@ -279,14 +402,19 @@ def _verified_sft_parent(
     if _canonical_sha256(unsigned) != finalized.get("variantManifestSHA256"):
         raise RuntimeError("Finalized SFT variant manifest integrity check failed")
     artifact = finalized.get("artifact")
+    training_environment = finalized.get("trainingEnvironment")
     if (
         finalized.get("agent") != cfg["agent"]
         or finalized.get("variant") != cfg["variant"]
+        or finalized.get("seed") != cfg["seed"]
         or finalized.get("sourceVariantManifestSHA256")
         != cfg["variantManifestSHA256"]
         or not isinstance(artifact, dict)
         or artifact.get("status") != "trained"
         or artifact.get("trainingPhase") != "sft"
+        or artifact.get("effectiveSeed") != cfg["seed"]
+        or not isinstance(training_environment, dict)
+        or training_environment.get("effectiveSeed") != cfg["seed"]
     ):
         raise RuntimeError("DPO input must be a finalized SFT artifact for the selected variant")
     parent_sha256 = _require_sha256(
@@ -308,6 +436,8 @@ def _finalize_dpo_variant(
     *,
     adapter_artifact_manifest: dict[str, Any],
     parent_sft_adapter_sha256: str,
+    reference_sft_adapter_sha256: str | None,
+    preference_trainer: str,
     training_environment: dict[str, Any],
     output_path: Path,
 ) -> dict[str, Any]:
@@ -338,6 +468,8 @@ def _finalize_dpo_variant(
         training_environment=training_environment,
         training_phase="sft_dpo",
         parent_sft_adapter_sha256=parent_sft_adapter_sha256,
+        reference_sft_adapter_sha256=reference_sft_adapter_sha256,
+        preference_trainer=preference_trainer,
     )
     output_path.write_text(
         json.dumps(finalized, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -349,6 +481,8 @@ def _finalize_dpo_variant(
 def main() -> None:
     args = parse_args()
     cfg = load_config(Path(args.config).resolve())
+    seed, seed_source = _resolve_controlled_seed(cfg)
+    _seed_everything(seed)
     sft_adapter_dir = Path(args.sft_adapter_dir).resolve()
     output_dir, dpo_adapter_dir = validate_dpo_artifact_paths(
         cfg,
@@ -369,22 +503,17 @@ def main() -> None:
 
     try:
         from datasets import Dataset
-        from transformers import TrainingArguments
         from unsloth import FastLanguageModel
         from peft import PeftModel
+        from trl import DPOConfig, DPOTrainer, ORPOConfig, ORPOTrainer
     except ImportError as exc:
         raise RuntimeError(
             "Missing dependencies for Unsloth DPO training. Install: unsloth, trl, datasets, transformers, peft, accelerate, bitsandbytes."
         ) from exc
 
     preference_trainer = str(cfg.get("preference_trainer", "dpo")).lower()
-    try:
-        if preference_trainer == "orpo":
-            from trl import ORPOTrainer as PreferenceTrainer
-        else:
-            from trl import DPOTrainer as PreferenceTrainer
-    except ImportError as exc:
-        raise RuntimeError("TRL preference trainer import failed. Ensure `trl` is installed and supports DPO/ORPO.") from exc
+    if preference_trainer not in {"dpo", "orpo"}:
+        raise ValueError("preference_trainer must be either 'dpo' or 'orpo'")
 
     _verify_base_model_lineage(cfg)
     training_environment = _training_environment(cfg)
@@ -395,10 +524,11 @@ def main() -> None:
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=bool(cfg["load_in_4bit"]),
     )
-    model = PeftModel.from_pretrained(
+    model = _load_sft_policy(
         model,
-        str(sft_adapter_dir),
-        is_trainable=True,
+        peft_model_class=PeftModel,
+        sft_adapter_dir=sft_adapter_dir,
+        preference_trainer=preference_trainer,
     )
 
     train_raw = load_jsonl(train_path)
@@ -411,38 +541,23 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     dpo_adapter_dir.mkdir(parents=True, exist_ok=True)
 
-    training_args = TrainingArguments(
-        output_dir=str(output_dir),
-        per_device_train_batch_size=int(cfg["batch_size"]),
-        per_device_eval_batch_size=max(1, int(cfg["batch_size"])),
-        gradient_accumulation_steps=int(cfg["gradient_accumulation_steps"]),
-        learning_rate=float(cfg["learning_rate"]),
-        num_train_epochs=float(cfg["num_train_epochs"]),
-        warmup_steps=int(cfg["warmup_steps"]),
-        logging_steps=int(cfg.get("logging_steps", 10)),
-        eval_strategy="steps" if val_dataset is not None else "no",
-        eval_steps=int(cfg.get("eval_steps", 50)),
-        save_steps=int(cfg.get("save_steps", 100)),
-        save_total_limit=int(cfg.get("save_total_limit", 2)),
-        bf16=bool(cfg.get("bf16", False)),
-        fp16=bool(cfg.get("fp16", True)),
-        report_to=[],
-    )
-
-    trainer = PreferenceTrainer(
+    trainer, _ = _build_preference_trainer(
+        cfg,
+        preference_trainer=preference_trainer,
+        seed=seed,
         model=model,
-        ref_model=None,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
         tokenizer=tokenizer,
-        beta=float(cfg.get("dpo_beta", 0.1)),
-        max_length=int(cfg["max_seq_length"]),
-        max_prompt_length=int(cfg.get("max_prompt_length", cfg["max_seq_length"] // 2)),
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        output_dir=output_dir,
+        dpo_config_class=DPOConfig,
+        dpo_trainer_class=DPOTrainer,
+        orpo_config_class=ORPOConfig,
+        orpo_trainer_class=ORPOTrainer,
     )
 
     train_result = trainer.train()
-    trainer.model.save_pretrained(str(dpo_adapter_dir))
+    _save_policy_adapter(trainer.model, dpo_adapter_dir)
     tokenizer.save_pretrained(str(dpo_adapter_dir))
     dpo_artifact_manifest = write_adapter_artifact_manifest(
         dpo_adapter_dir,
@@ -454,6 +569,12 @@ def main() -> None:
         cfg,
         adapter_artifact_manifest=dpo_artifact_manifest,
         parent_sft_adapter_sha256=sft_artifact_manifest["adapterSHA256"],
+        reference_sft_adapter_sha256=(
+            sft_artifact_manifest["adapterSHA256"]
+            if preference_trainer == "dpo"
+            else None
+        ),
+        preference_trainer=preference_trainer,
         training_environment=training_environment,
         output_path=finalized_manifest_path,
     )
@@ -468,6 +589,13 @@ def main() -> None:
         "adapter_output_dir": str(dpo_adapter_dir),
         "training_phase": "sft_dpo",
         "parent_sft_adapter_sha256": sft_artifact_manifest["adapterSHA256"],
+        "reference_sft_adapter_sha256": (
+            sft_artifact_manifest["adapterSHA256"]
+            if preference_trainer == "dpo"
+            else None
+        ),
+        "seed": seed,
+        "seed_source": seed_source,
         "adapterSHA256": dpo_artifact_manifest["adapterSHA256"],
         "finalized_variant_manifest": str(finalized_manifest_path),
         "finalized_variant_manifest_sha256": finalized_variant["variantManifestSHA256"],

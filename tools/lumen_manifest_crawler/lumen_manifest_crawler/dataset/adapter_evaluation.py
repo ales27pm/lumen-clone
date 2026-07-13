@@ -25,6 +25,9 @@ DEFAULT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_BASE_MODEL_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 DEFAULT_BASE_MODEL_INDEX_DIGEST = "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
 BASE_MODEL_WEIGHT_SHARD_SCHEMA_VERSION = "lumen.base-model-weight-shards/1.0.0"
+BASE_MODEL_INDEX_SHARD_BINDING_SCHEMA_VERSION = (
+    "lumen.base-model-index-shard-binding/1.0.0"
+)
 DEFAULT_BASE_MODEL_WEIGHT_SHARDS: list[dict[str, Any]] = [
     {
         "filename": "model-00001-of-00002.safetensors",
@@ -39,6 +42,25 @@ DEFAULT_BASE_MODEL_WEIGHT_SHARDS: list[dict[str, Any]] = [
 ]
 DEFAULT_BASE_MODEL_ARTIFACT_DIGEST = "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218"
 DEFAULT_BASE_MODEL_TOKENIZER_DIGEST = "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+# These names were parsed from model.safetensors.index.json at the pinned
+# DEFAULT_BASE_MODEL_REVISION. Keep them independent of the shard contract so
+# manifest generation detects drift between the verified index and that contract.
+DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES = (
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors",
+)
+_VERIFIED_BASE_MODEL_INDEX_REGISTRY: dict[
+    tuple[str, str, str], dict[str, Any]
+] = {
+    (
+        DEFAULT_BASE_MODEL_ID,
+        DEFAULT_BASE_MODEL_REVISION,
+        DEFAULT_BASE_MODEL_INDEX_DIGEST,
+    ): {
+        "referencedShardNames": DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES,
+        "artifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+    }
+}
 DEFAULT_UNSLOTH_REVISION = "935474c20aabc2aadb1da17338959c7c6f9bdafe"
 DEFAULT_LLAMA_CPP_REVISION = "34558825a27f4d74dcfd7a91bfde4464baa2a30a"
 DEFAULT_TRAINING_ENVIRONMENT_LOCK: dict[str, Any] = {
@@ -129,6 +151,98 @@ def base_model_artifact_digest(value: Sequence[Mapping[str, Any]]) -> str:
     return canonical_sha256(canonical_base_model_weight_shards(value))
 
 
+def _index_referenced_shard_names(index_bytes: bytes) -> tuple[str, ...]:
+    try:
+        parsed = json.loads(index_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("base_model_index_bytes must contain valid JSON") from exc
+    weight_map = parsed.get("weight_map") if isinstance(parsed, Mapping) else None
+    if not isinstance(weight_map, Mapping) or not weight_map:
+        raise ValueError("base-model index must contain a non-empty weight_map")
+    names = set(weight_map.values())
+    if any(
+        not isinstance(name, str)
+        or not name
+        or name != name.rsplit("/", 1)[-1]
+        or not name.endswith(".safetensors")
+        for name in names
+    ):
+        raise ValueError("base-model index references an unsafe weight shard")
+    return tuple(sorted(names))
+
+
+def base_model_index_shard_binding_digest(
+    *,
+    index_digest: str,
+    referenced_shard_names: Sequence[str],
+    artifact_digest: str,
+) -> str:
+    """Bind a verified index digest to its exact canonical weight-shard contract."""
+
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(index_digest)) is None
+        or re.fullmatch(r"[0-9a-f]{64}", str(artifact_digest)) is None
+    ):
+        raise ValueError("base-model index binding requires SHA-256 digests")
+    names = tuple(sorted(referenced_shard_names))
+    if (
+        not names
+        or len(set(names)) != len(names)
+        or any(
+            not isinstance(name, str)
+            or not name
+            or name != name.rsplit("/", 1)[-1]
+            or not name.endswith(".safetensors")
+            for name in names
+        )
+    ):
+        raise ValueError("base-model index binding requires safe unique shard names")
+    return canonical_sha256(
+        {
+            "schemaVersion": BASE_MODEL_INDEX_SHARD_BINDING_SCHEMA_VERSION,
+            "indexDigest": index_digest,
+            "referencedShardNames": list(names),
+            "shardContractDigest": artifact_digest,
+        }
+    )
+
+
+DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256 = (
+    base_model_index_shard_binding_digest(
+        index_digest=DEFAULT_BASE_MODEL_INDEX_DIGEST,
+        referenced_shard_names=DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES,
+        artifact_digest=DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+    )
+)
+
+
+def _verified_index_shard_names(
+    *,
+    base_model_id: str,
+    base_model_revision: str,
+    index_digest: str,
+    artifact_digest: str,
+    index_bytes: bytes | None,
+) -> tuple[str, ...]:
+    if index_bytes is not None:
+        if hashlib.sha256(index_bytes).hexdigest() != index_digest:
+            raise ValueError("base_model_index_bytes does not match base_model_index_digest")
+        return _index_referenced_shard_names(index_bytes)
+
+    verified = _VERIFIED_BASE_MODEL_INDEX_REGISTRY.get(
+        (base_model_id, base_model_revision, index_digest)
+    )
+    if verified is None:
+        raise ValueError(
+            "Custom base models require verified base_model_index_bytes"
+        )
+    if verified.get("artifactDigest") != artifact_digest:
+        raise ValueError(
+            "Verified base-model index registry does not match the shard contract"
+        )
+    return tuple(verified["referencedShardNames"])
+
+
 def _valid_base_model_weight_shards(value: Any, artifact_digest: Any) -> bool:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return False
@@ -136,6 +250,44 @@ def _valid_base_model_weight_shards(value: Any, artifact_digest: Any) -> bool:
         return base_model_artifact_digest(value) == artifact_digest
     except (AttributeError, TypeError, ValueError):
         return False
+
+
+def _valid_base_model_index_shard_binding(manifest: Mapping[str, Any]) -> bool:
+    referenced = manifest.get("baseModelIndexReferencedShardNames")
+    shards = manifest.get("baseModelWeightShards")
+    if (
+        not isinstance(referenced, Sequence)
+        or isinstance(referenced, (str, bytes))
+        or not isinstance(shards, Sequence)
+        or isinstance(shards, (str, bytes))
+    ):
+        return False
+    try:
+        canonical_shards = canonical_base_model_weight_shards(shards)
+        names = tuple(referenced)
+        if names != tuple(item["filename"] for item in canonical_shards["shards"]):
+            return False
+        binding = base_model_index_shard_binding_digest(
+            index_digest=manifest.get("baseModelIndexDigest"),
+            referenced_shard_names=names,
+            artifact_digest=manifest.get("baseModelArtifactDigest"),
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+    if binding != manifest.get("baseModelIndexShardBindingSHA256"):
+        return False
+
+    registry_entry = _VERIFIED_BASE_MODEL_INDEX_REGISTRY.get(
+        (
+            manifest.get("baseModelID"),
+            manifest.get("baseModelRevision"),
+            manifest.get("baseModelIndexDigest"),
+        )
+    )
+    return registry_entry is None or (
+        tuple(registry_entry["referencedShardNames"]) == names
+        and registry_entry["artifactDigest"] == manifest.get("baseModelArtifactDigest")
+    )
 
 
 def default_training_environment_lock() -> dict[str, Any]:
@@ -1489,6 +1641,7 @@ def build_experiment_variant_manifest(
     base_model_artifact_digest: str | None = None,
     base_model_weight_shards: Sequence[Mapping[str, Any]] | None = None,
     base_model_tokenizer_digest: str | None = None,
+    base_model_index_bytes: bytes | None = None,
     training_environment_lock: Mapping[str, Any] | None = None,
     validation_dpo_records: Sequence[Mapping[str, Any]] = (),
     contamination_report: Mapping[str, Any] | None = None,
@@ -1539,6 +1692,25 @@ def build_experiment_variant_manifest(
         and base_model_tokenizer_digest == DEFAULT_BASE_MODEL_TOKENIZER_DIGEST
     ):
         raise ValueError("Qwen default provenance cannot describe a non-default base model")
+    referenced_shard_names = _verified_index_shard_names(
+        base_model_id=base_model_id,
+        base_model_revision=base_model_revision,
+        index_digest=base_model_index_digest,
+        artifact_digest=base_model_artifact_digest,
+        index_bytes=base_model_index_bytes,
+    )
+    declared_shard_names = tuple(
+        item["filename"] for item in canonical_weight_shards["shards"]
+    )
+    if referenced_shard_names != declared_shard_names:
+        raise ValueError(
+            "Verified base-model index shard set does not match base_model_weight_shards"
+        )
+    index_shard_binding_sha256 = base_model_index_shard_binding_digest(
+        index_digest=base_model_index_digest,
+        referenced_shard_names=referenced_shard_names,
+        artifact_digest=base_model_artifact_digest,
+    )
     if not _is_sha256(base_model_tokenizer_digest):
         raise ValueError("base_model_tokenizer_digest must be a lowercase SHA-256 digest")
     environment_lock = dict(training_environment_lock or default_training_environment_lock())
@@ -1571,6 +1743,8 @@ def build_experiment_variant_manifest(
         "baseModelID": base_model_id,
         "baseModelRevision": base_model_revision,
         "baseModelIndexDigest": base_model_index_digest,
+        "baseModelIndexReferencedShardNames": list(referenced_shard_names),
+        "baseModelIndexShardBindingSHA256": index_shard_binding_sha256,
         "baseModelArtifactDigest": base_model_artifact_digest,
         "baseModelWeightShards": canonical_weight_shards["shards"],
         "baseModelTokenizerDigest": base_model_tokenizer_digest,
@@ -1635,6 +1809,8 @@ def build_experiment_manifest(
         "baseModelID",
         "baseModelRevision",
         "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
         "baseModelArtifactDigest",
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
@@ -1657,6 +1833,8 @@ def build_experiment_manifest(
             "baseModelID": ordered[0]["baseModelID"],
             "baseModelRevision": ordered[0]["baseModelRevision"],
             "baseModelIndexDigest": ordered[0]["baseModelIndexDigest"],
+            "baseModelIndexReferencedShardNames": ordered[0]["baseModelIndexReferencedShardNames"],
+            "baseModelIndexShardBindingSHA256": ordered[0]["baseModelIndexShardBindingSHA256"],
             "baseModelArtifactDigest": ordered[0]["baseModelArtifactDigest"],
             "baseModelWeightShards": ordered[0]["baseModelWeightShards"],
             "baseModelTokenizerDigest": ordered[0]["baseModelTokenizerDigest"],
@@ -1681,6 +1859,8 @@ def finalize_experiment_variant_manifest(
     training_environment: Mapping[str, Any],
     training_phase: str = "sft",
     parent_sft_adapter_sha256: str | None = None,
+    reference_sft_adapter_sha256: str | None = None,
+    preference_trainer: str | None = None,
 ) -> dict[str, Any]:
     """Bind a pending dataset variant to the exact trained adapter artifact."""
 
@@ -1705,10 +1885,25 @@ def finalize_experiment_variant_manifest(
         raise ValueError("adapter_sha256 must be a lowercase SHA-256 digest")
     if training_phase not in {"sft", "sft_dpo"}:
         raise ValueError("training_phase must be either 'sft' or 'sft_dpo'")
-    if training_phase == "sft" and parent_sft_adapter_sha256 is not None:
-        raise ValueError("SFT artifacts must not declare a parent SFT adapter")
+    if training_phase == "sft" and (
+        parent_sft_adapter_sha256 is not None
+        or reference_sft_adapter_sha256 is not None
+        or preference_trainer is not None
+    ):
+        raise ValueError("SFT artifacts must not declare preference-training lineage")
     if training_phase == "sft_dpo" and not _is_sha256(parent_sft_adapter_sha256):
         raise ValueError("SFT-to-DPO artifacts require a parent SFT adapter SHA-256")
+    if training_phase == "sft_dpo" and preference_trainer not in {"dpo", "orpo"}:
+        raise ValueError("SFT-to-DPO artifacts require a DPO or ORPO trainer identity")
+    if training_phase == "sft_dpo" and preference_trainer == "dpo" and (
+        not _is_sha256(reference_sft_adapter_sha256)
+        or reference_sft_adapter_sha256 != parent_sft_adapter_sha256
+    ):
+        raise ValueError("DPO artifacts must reference the exact frozen parent SFT adapter")
+    if training_phase == "sft_dpo" and preference_trainer == "orpo" and (
+        reference_sft_adapter_sha256 is not None
+    ):
+        raise ValueError("ORPO artifacts must not declare a reference-policy adapter")
     artifact_manifest = dict(adapter_artifact_manifest)
     if not _valid_adapter_artifact_manifest(
         artifact_manifest,
@@ -1722,6 +1917,7 @@ def finalize_experiment_variant_manifest(
     if not _valid_training_environment(
         environment,
         manifest.get("trainingEnvironmentLock"),
+        expected_seed=manifest.get("seed"),
     ):
         raise ValueError(
             "training_environment must match the manifest lock and declare an unverified immutable container digest"
@@ -1740,6 +1936,9 @@ def finalize_experiment_variant_manifest(
         "adapterManifestSHA256": adapter_sha256,
         "adapterFileCount": len(artifact_manifest["files"]),
         "parentSFTAdapterSHA256": parent_sft_adapter_sha256,
+        "referenceSFTAdapterSHA256": reference_sft_adapter_sha256,
+        "preferenceTrainer": preference_trainer,
+        "effectiveSeed": environment["effectiveSeed"],
         "evaluationReportSHA256": None,
     }
     finalized["sourceVariantManifestSHA256"] = manifest["variantManifestSHA256"]
@@ -1749,6 +1948,8 @@ def finalize_experiment_variant_manifest(
         "includedInCheckpoint": training_phase == "sft_dpo",
         "requiredPhase": "post_sft_preference_training",
         "parentSFTAdapterSHA256": parent_sft_adapter_sha256,
+        "referenceSFTAdapterSHA256": reference_sft_adapter_sha256,
+        "preferenceTrainer": preference_trainer,
     }
     finalized["trainingEnvironment"] = environment
     finalized["trainingEnvironmentSHA256"] = training_environment_sha256
@@ -1785,7 +1986,6 @@ def _valid_adapter_artifact_manifest(
     allowed_paths = {
         "README.md",
         "adapter_config.json",
-        "adapter_model.bin",
         "adapter_model.safetensors",
         "added_tokens.json",
         "chat_template.jinja",
@@ -1803,7 +2003,7 @@ def _valid_adapter_artifact_manifest(
         and paths == sorted(paths)
         and set(paths).issubset(allowed_paths)
         and {"adapter_config.json", "tokenizer.json", "tokenizer_config.json"}.issubset(paths)
-        and len({"adapter_model.safetensors", "adapter_model.bin"}.intersection(paths)) == 1
+        and "adapter_model.safetensors" in paths
         and artifact.get("adapterSHA256") == expected_sha256
         and canonical_sha256(unsigned) == expected_sha256
     )
@@ -1928,6 +2128,8 @@ def decide_adapter_promotion(
             "baseModelID",
             "baseModelRevision",
             "baseModelIndexDigest",
+            "baseModelIndexReferencedShardNames",
+            "baseModelIndexShardBindingSHA256",
             "baseModelArtifactDigest",
             "baseModelWeightShards",
             "baseModelTokenizerDigest",
@@ -1943,6 +2145,21 @@ def decide_adapter_promotion(
             for field in controlled_fields
         ):
             failures.append("variant_controlled_lineage_mismatch")
+        baseline_artifact = baseline_variant_manifest.get("artifact")
+        optimized_artifact = optimized_variant_manifest.get("artifact")
+        if (
+            not isinstance(baseline_artifact, Mapping)
+            or not isinstance(optimized_artifact, Mapping)
+            or (
+                baseline_artifact.get("trainingPhase"),
+                baseline_artifact.get("preferenceTrainer"),
+            )
+            != (
+                optimized_artifact.get("trainingPhase"),
+                optimized_artifact.get("preferenceTrainer"),
+            )
+        ):
+            failures.append("preference_training_lineage_mismatch")
     if baseline_valid and baseline_variant_valid and not _report_matches_variant(
         baseline_report,
         baseline_variant_manifest,
@@ -2115,6 +2332,31 @@ def _evaluation_report_aggregates_valid(report: Mapping[str, Any]) -> bool:
     )
 
 
+def _valid_dpo_training_lineage(dpo_training: Any, artifact: Any) -> bool:
+    if not isinstance(dpo_training, Mapping) or not isinstance(artifact, Mapping):
+        return False
+    if dpo_training.get("requiredPhase") != "post_sft_preference_training":
+        return False
+
+    phase = artifact.get("trainingPhase")
+    expected_trained = artifact.get("status") == "trained" and phase == "sft_dpo"
+    if dpo_training.get("status") != (
+        "trained" if expected_trained else "generated_not_trained"
+    ):
+        return False
+    if dpo_training.get("includedInCheckpoint") is not expected_trained:
+        return False
+
+    for field in (
+        "parentSFTAdapterSHA256",
+        "referenceSFTAdapterSHA256",
+        "preferenceTrainer",
+    ):
+        if dpo_training.get(field) != artifact.get(field):
+            return False
+    return True
+
+
 def _valid_variant_manifest(
     manifest: Mapping[str, Any],
     *,
@@ -2124,6 +2366,7 @@ def _valid_variant_manifest(
 ) -> bool:
     datasets = manifest.get("datasets")
     artifact = manifest.get("artifact")
+    dpo_training = manifest.get("dpoTraining")
     structurally_valid = (
         manifest.get("schemaVersion") == VARIANT_SCHEMA_VERSION
         and isinstance(agent, str)
@@ -2135,6 +2378,7 @@ def _valid_variant_manifest(
         and isinstance(manifest.get("baseModelRevision"), str)
         and re.fullmatch(r"[0-9a-f]{40}", manifest["baseModelRevision"]) is not None
         and _is_sha256(manifest.get("baseModelIndexDigest"))
+        and _valid_base_model_index_shard_binding(manifest)
         and _is_sha256(manifest.get("baseModelArtifactDigest"))
         and _valid_base_model_weight_shards(
             manifest.get("baseModelWeightShards"),
@@ -2172,6 +2416,7 @@ def _valid_variant_manifest(
                 _valid_training_environment(
                     manifest.get("trainingEnvironment"),
                     manifest.get("trainingEnvironmentLock"),
+                    expected_seed=manifest.get("seed"),
                 )
                 and canonical_sha256(dict(manifest["trainingEnvironment"]))
                 == manifest.get("trainingEnvironmentSHA256")
@@ -2181,6 +2426,7 @@ def _valid_variant_manifest(
         and isinstance(manifest.get("controlledTrainingConfig"), Mapping)
         and canonical_sha256(dict(manifest["controlledTrainingConfig"]))
         == manifest.get("trainingConfigSHA256")
+        and _valid_dpo_training_lineage(dpo_training, artifact)
         and _is_sha256(manifest.get("frozenEvaluationSHA256"))
         and _is_sha256(manifest.get("publicEvaluationBundleSHA256"))
         and _is_sha256(manifest.get("trainingCorpusSHA256"))
@@ -2207,14 +2453,28 @@ def _valid_variant_manifest(
         and _is_sha256(manifest.get("sourceVariantManifestSHA256"))
         and type(artifact.get("adapterFileCount")) is int
         and artifact["adapterFileCount"] >= 4
+        and artifact.get("effectiveSeed") == manifest.get("seed")
         and (
             (
                 artifact.get("trainingPhase") == "sft"
                 and artifact.get("parentSFTAdapterSHA256") is None
+                and artifact.get("referenceSFTAdapterSHA256") is None
+                and artifact.get("preferenceTrainer") is None
             )
             or (
                 artifact.get("trainingPhase") == "sft_dpo"
                 and _is_sha256(artifact.get("parentSFTAdapterSHA256"))
+                and (
+                    (
+                        artifact.get("preferenceTrainer") == "dpo"
+                        and artifact.get("referenceSFTAdapterSHA256")
+                        == artifact.get("parentSFTAdapterSHA256")
+                    )
+                    or (
+                        artifact.get("preferenceTrainer") == "orpo"
+                        and artifact.get("referenceSFTAdapterSHA256") is None
+                    )
+                )
             )
         )
         and _is_sha256(manifest.get("trainingEnvironmentSHA256"))
@@ -2224,6 +2484,8 @@ def _valid_variant_manifest(
 def _valid_training_environment(
     environment: Any,
     environment_lock: Any,
+    *,
+    expected_seed: Any,
 ) -> bool:
     provenance = (
         environment.get("containerImageDigestSource"),
@@ -2241,6 +2503,8 @@ def _valid_training_environment(
         is not None
         and isinstance(environment_lock, Mapping)
         and environment.get("environmentLock") == environment_lock
+        and type(expected_seed) is int
+        and environment.get("effectiveSeed") == expected_seed
         and provenance == ("operator_declared", "manual_validation_required", False)
     )
 
@@ -2262,13 +2526,16 @@ def _report_matches_variant(
 
 
 def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    artifact = manifest.get("artifact")
+    lineage = {
         field: manifest.get(field)
         for field in (
             "agent",
             "baseModelID",
             "baseModelRevision",
             "baseModelIndexDigest",
+            "baseModelIndexReferencedShardNames",
+            "baseModelIndexShardBindingSHA256",
             "baseModelArtifactDigest",
             "baseModelWeightShards",
             "baseModelTokenizerDigest",
@@ -2280,6 +2547,13 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
             "publicEvaluationBundleSHA256",
         )
     }
+    lineage["trainingPhase"] = (
+        artifact.get("trainingPhase") if isinstance(artifact, Mapping) else None
+    )
+    lineage["preferenceTrainer"] = (
+        artifact.get("preferenceTrainer") if isinstance(artifact, Mapping) else None
+    )
+    return lineage
 
 
 def _contamination_matches_variant(

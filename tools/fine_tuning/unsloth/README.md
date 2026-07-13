@@ -36,7 +36,7 @@ python tools/fine_tuning/unsloth/train_dpo.py \
   --sft-finalized-variant-manifest "$LUMEN_AIO_RUN_ROOT/training/cortex/finalized_variant_manifest.json"
 ```
 
-5. Merge adapters if needed.
+5. Use the legacy merge helper only when a non-GGUF merged artifact is specifically needed.
 ```bash
 python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unsloth/configs/cortex.json
 ```
@@ -44,6 +44,7 @@ python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unslot
 6. Export merged GGUF per agent.
 ```bash
 .venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
+  --release-bake \
   --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
   --agents cortex,executor,mouth,mimicry,rem,fleet \
   --quantization q4_k_m \
@@ -54,6 +55,7 @@ python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unslot
 7. Optional: upload merged GGUFs to Hugging Face in one pass.
 ```bash
 .venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
+  --release-bake \
   --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
   --agents cortex,executor,mouth,mimicry,rem,fleet \
   --quantization q4_k_m \

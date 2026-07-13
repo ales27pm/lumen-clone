@@ -3,9 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import pickletools
 import re
-import zipfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -13,7 +11,7 @@ from typing import Any, Mapping
 ADAPTER_ARTIFACT_SCHEMA_VERSION = "lumen.peft-lora-adapter-artifact/1.0.0"
 ADAPTER_ARTIFACT_MANIFEST_FILENAME = "adapter_artifact_manifest.json"
 _REQUIRED_FILES = {"adapter_config.json", "tokenizer.json", "tokenizer_config.json"}
-_WEIGHT_FILES = {"adapter_model.safetensors", "adapter_model.bin"}
+_WEIGHT_FILES = {"adapter_model.safetensors"}
 _OPTIONAL_FILES = {
     "README.md",
     "added_tokens.json",
@@ -132,49 +130,8 @@ def _validate_safetensors_file(path: Path) -> set[str]:
     return tensor_names
 
 
-def _validate_pytorch_bin_file(path: Path) -> None:
-    size = path.stat().st_size
-    if size < 16:
-        raise ValueError("adapter_model.bin is truncated or empty")
-    with path.open("rb") as handle:
-        prefix = handle.read(4)
-    if prefix != b"PK\x03\x04":
-        raise ValueError(
-            "adapter_model.bin must use the structurally verifiable PyTorch ZIP format"
-        )
-    try:
-        with zipfile.ZipFile(path) as archive:
-            names = archive.namelist()
-            corrupt = archive.testzip()
-            pickle_names = [name for name in names if name.endswith("/data.pkl")]
-            pickle_payload = (
-                archive.read(pickle_names[0]) if len(pickle_names) == 1 else b""
-            )
-    except (OSError, zipfile.BadZipFile) as exc:
-        raise ValueError("adapter_model.bin is not a valid PyTorch ZIP artifact") from exc
-    if (
-        corrupt is not None
-        or len(pickle_names) != 1
-        or not any("/data/" in name for name in names)
-    ):
-        raise ValueError("adapter_model.bin lacks a complete PyTorch tensor archive")
-    try:
-        operations = list(pickletools.genops(pickle_payload))
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise ValueError("adapter_model.bin contains an invalid PyTorch pickle") from exc
-    if (
-        not operations
-        or operations[-1][0].name != "STOP"
-        or operations[-1][2] != len(pickle_payload) - 1
-    ):
-        raise ValueError("adapter_model.bin contains an incomplete PyTorch pickle")
-
-
-def _validate_weight_file(path: Path) -> set[str] | None:
-    if path.name == "adapter_model.safetensors":
-        return _validate_safetensors_file(path)
-    _validate_pytorch_bin_file(path)
-    return None
+def _validate_weight_file(path: Path) -> set[str]:
+    return _validate_safetensors_file(path)
 
 
 def _validate_lora_config(
@@ -237,10 +194,17 @@ def _artifact_files(adapter_dir: Path) -> list[Path]:
     extra = sorted(names - _ALLOWED_FILES)
     if missing:
         raise ValueError(f"Adapter artifact is missing required files: {', '.join(missing)}")
-    if len(weights) != 1:
-        raise ValueError("Adapter artifact must contain exactly one canonical PEFT weight file")
+    if "adapter_model.bin" in names:
+        raise ValueError(
+            "Finalized adapter artifacts prohibit adapter_model.bin; "
+            "save adapter_model.safetensors instead"
+        )
     if extra:
         raise ValueError(f"Adapter artifact contains unrecognized files: {', '.join(extra)}")
+    if weights != ["adapter_model.safetensors"]:
+        raise ValueError(
+            "Finalized adapter artifacts require adapter_model.safetensors"
+        )
 
     config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
     if not isinstance(config, dict) or str(config.get("peft_type") or "").upper() != "LORA":

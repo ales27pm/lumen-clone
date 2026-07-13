@@ -28,6 +28,7 @@ EXPERIMENT_VARIANTS = (
     "internal_plus_public_baseline",
     "internal_plus_public_optimized",
 )
+RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 CONTAINER_IMAGE_DIGEST_SOURCE = "operator_declared"
 RUNTIME_IMAGE_BINDING_STATUS = "manual_validation_required"
 REQUIRED_VARIANT_DATASET_FILES = (
@@ -92,6 +93,21 @@ def _experiment_variant(value: str) -> str:
             f"Expected one of: {', '.join(EXPERIMENT_VARIANTS)}"
         )
     return variant
+
+
+def _resolve_run_workspace(run_id: str, variant: str) -> tuple[str, Path]:
+    marker = f"-{variant}"
+    qualified_run_id = run_id if run_id.endswith(marker) else f"{run_id}{marker}"
+    if RUN_ID_PATTERN.fullmatch(qualified_run_id) is None:
+        raise ValueError("run_id contains unsupported characters or exceeds 128 characters")
+
+    work_root = Path(
+        os.environ.get("LUMEN_ZERO_GPU_WORKDIR", "/tmp/lumen_zerogpu_runs")
+    ).resolve()
+    run_root = (work_root / qualified_run_id).resolve()
+    if run_root.parent != work_root:
+        raise ValueError("run_id escapes the ZeroGPU work directory")
+    return qualified_run_id, run_root
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -192,6 +208,8 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
         "effectiveTrainingConfigSHA256": _canonical_sha256(effective_controlled),
         "baseModelRevision": manifest["baseModelRevision"],
         "baseModelIndexDigest": manifest["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": manifest["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": manifest["baseModelIndexShardBindingSHA256"],
         "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
         "baseModelWeightShards": manifest["baseModelWeightShards"],
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
@@ -224,6 +242,7 @@ def _training_environment(manifest: dict[str, Any]) -> dict[str, Any]:
         "containerImageDigestSource": digest_source,
         "runtimeImageBindingStatus": binding_status,
         "runtimeImageBindingVerified": binding_verified,
+        "effectiveSeed": int(manifest["seed"]),
         "environmentLock": lock,
     }
     return {**payload, "trainingEnvironmentSHA256": _canonical_sha256(payload)}
@@ -309,6 +328,8 @@ def _prepare_configs(
         for field in (
             "baseModelRevision",
             "baseModelIndexDigest",
+            "baseModelIndexReferencedShardNames",
+            "baseModelIndexShardBindingSHA256",
             "baseModelArtifactDigest",
             "baseModelWeightShards",
             "baseModelTokenizerDigest",
@@ -363,6 +384,8 @@ def _prepare_configs(
                 "base_model_name": base,
                 "baseModelRevision": cfg["baseModelRevision"],
                 "baseModelIndexDigest": cfg["baseModelIndexDigest"],
+                "baseModelIndexReferencedShardNames": cfg["baseModelIndexReferencedShardNames"],
+                "baseModelIndexShardBindingSHA256": cfg["baseModelIndexShardBindingSHA256"],
                 "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
                 "baseModelWeightShards": cfg["baseModelWeightShards"],
                 "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
@@ -460,8 +483,19 @@ def _convert_lora_to_gguf(run_root: Path, prepared: list[dict[str, Any]], token:
             raise RuntimeError("Base-model artifact digest is not bound to the declared weight shards")
         index = json.loads((base_snapshot / "model.safetensors.index.json").read_text(encoding="utf-8"))
         referenced_shards = sorted(set((index.get("weight_map") or {}).values()))
-        if referenced_shards != [value["filename"] for value in shards]:
+        if (
+            referenced_shards != [value["filename"] for value in shards]
+            or referenced_shards != item["baseModelIndexReferencedShardNames"]
+        ):
             raise RuntimeError("Base-model index shard set does not match the declared weight shards")
+        index_binding = {
+            "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+            "indexDigest": item["baseModelIndexDigest"],
+            "referencedShardNames": referenced_shards,
+            "shardContractDigest": item["baseModelArtifactDigest"],
+        }
+        if _canonical_sha256(index_binding) != item["baseModelIndexShardBindingSHA256"]:
+            raise RuntimeError("Base-model index-to-shard binding digest mismatch during conversion")
         for value in shards:
             path = base_snapshot / value["filename"]
             if path.stat().st_size != value["size"] or _sha256(path) != value["sha256"]:
@@ -619,6 +653,8 @@ def _verify_finalized_variant_lineage(
     for field in (
         "baseModelRevision",
         "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
         "baseModelArtifactDigest",
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
@@ -687,11 +723,7 @@ def train_lumen_adapters(
         dataset_path = os.environ.get("LUMEN_ZERO_GPU_DATASET_PATH", str(DEFAULTS["dataset_path_in_repo"]))
         adapter_repo = os.environ.get("LUMEN_ZERO_GPU_ADAPTER_REPO", str(DEFAULTS["adapter_repo"]))
         run_id = run_id.strip() or os.environ.get("LUMEN_ZERO_GPU_RUN_ID", str(DEFAULTS["run_id"]))
-        variant_marker = f"-{experiment_variant}"
-        if variant_marker not in run_id:
-            run_id += variant_marker
-
-        run_root = Path(os.environ.get("LUMEN_ZERO_GPU_WORKDIR", "/tmp/lumen_zerogpu_runs")) / run_id
+        run_id, run_root = _resolve_run_workspace(run_id, experiment_variant)
         if run_root.exists() and not resume:
             shutil.rmtree(run_root)
         run_root.mkdir(parents=True, exist_ok=True)

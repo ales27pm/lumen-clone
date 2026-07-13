@@ -87,6 +87,11 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
     assert runtime_manifest["mode"] == "adapter_first"
     assert runtime_manifest["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
     assert runtime_manifest["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
+    assert runtime_manifest["sharedBaseModelIndexReferencedShardNames"] == [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+    ]
+    assert len(runtime_manifest["sharedBaseModelIndexShardBindingSHA256"]) == 64
     assert runtime_manifest["adapterRepoID"] == EXPECTED_ADAPTER_REPO
     assert runtime_manifest["runtimeStrategy"]["loadBaseModelOnce"] is True
     assert runtime_manifest["runtimeStrategy"]["selectAdapterByAgentSlot"] is True
@@ -118,6 +123,7 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert config["adapterExport"]["adapterGGUFArtifact"] == expected_adapter_gguf
         assert config["adapterExport"]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
         assert config["adapterExport"]["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
+        assert config["preference_trainer"] == "dpo"
         assert config["adapterExport"]["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
         assert config["adapterExport"]["trainBaseModelWeights"] is False
         assert config["adapterExport"]["saveAdapterByDefault"] is True
@@ -488,7 +494,17 @@ def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> N
 
 
 def test_unsloth_output_dirs_include_agent_and_finetune_marker(compiled_fine_tuning: tuple) -> None:
-    markers = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned"}
+    markers = {
+        "sft",
+        "dpo",
+        "orpo",
+        "lora",
+        "merged",
+        "adapter",
+        "finetune",
+        "finetuned",
+        "training",
+    }
     _, _, fine_tuning = compiled_fine_tuning
 
     for agent in AGENTS:

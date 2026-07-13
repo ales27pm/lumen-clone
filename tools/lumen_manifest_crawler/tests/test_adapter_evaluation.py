@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -68,6 +69,7 @@ def _training_environment(manifest: dict, digest_character: str = "c") -> dict:
         "containerImageDigestSource": "operator_declared",
         "runtimeImageBindingStatus": "manual_validation_required",
         "runtimeImageBindingVerified": False,
+        "effectiveSeed": manifest["seed"],
         "environmentLock": manifest["trainingEnvironmentLock"],
     }
 
@@ -766,23 +768,91 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
     custom_weight_shards = [
         {"filename": "weights.safetensors", "size": 7, "sha256": "d" * 64}
     ]
+    custom_index_bytes = json.dumps(
+        {"weight_map": {"model.layer.weight": "weights.safetensors"}},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    custom_index_digest = hashlib.sha256(custom_index_bytes).hexdigest()
     environment_lock = adapter_evaluation.default_training_environment_lock()
     environment_lock["baseTokenizerSHA256"] = custom_tokenizer_digest
     custom = build_experiment_variant_manifest(
         **kwargs,
         base_model_revision="b" * 40,
-        base_model_index_digest="c" * 64,
+        base_model_index_digest=custom_index_digest,
         base_model_artifact_digest=adapter_evaluation.base_model_artifact_digest(
             custom_weight_shards
         ),
         base_model_weight_shards=custom_weight_shards,
         base_model_tokenizer_digest=custom_tokenizer_digest,
+        base_model_index_bytes=custom_index_bytes,
         training_environment_lock=environment_lock,
     )
 
     assert custom["baseModelID"] == "example/other-model"
     assert custom["baseModelRevision"] == "b" * 40
     assert custom["trainingEnvironmentLock"] == environment_lock
+    assert custom["baseModelIndexReferencedShardNames"] == ["weights.safetensors"]
+
+
+def test_variant_manifest_rejects_index_whose_shards_differ_from_contract() -> None:
+    index_bytes = json.dumps(
+        {"weight_map": {"model.layer.weight": "different.safetensors"}},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    shards = [{"filename": "weights.safetensors", "size": 7, "sha256": "d" * 64}]
+    environment_lock = adapter_evaluation.default_training_environment_lock()
+    environment_lock["baseTokenizerSHA256"] = "e" * 64
+
+    with pytest.raises(ValueError, match="index shard set does not match"):
+        build_experiment_variant_manifest(
+            agent="executor",
+            variant="internal_only",
+            base_model_id="example/other-model",
+            base_model_revision="b" * 40,
+            base_model_index_digest=hashlib.sha256(index_bytes).hexdigest(),
+            base_model_artifact_digest=adapter_evaluation.base_model_artifact_digest(shards),
+            base_model_weight_shards=shards,
+            base_model_tokenizer_digest="e" * 64,
+            base_model_index_bytes=index_bytes,
+            training_environment_lock=environment_lock,
+            seed=42,
+            training_config={"epochs": 1},
+            train_sft=[],
+            validation_sft=[],
+            dpo_records=[],
+            evaluation_records=[],
+        )
+
+
+def test_default_model_registry_rejects_shard_contract_drift() -> None:
+    drifted_shards = [
+        {
+            "filename": "different.safetensors",
+            "size": 7,
+            "sha256": "d" * 64,
+        }
+    ]
+    with pytest.raises(ValueError, match="registry does not match"):
+        build_experiment_variant_manifest(
+            agent="executor",
+            variant="internal_only",
+            base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+            base_model_revision=adapter_evaluation.DEFAULT_BASE_MODEL_REVISION,
+            base_model_index_digest=adapter_evaluation.DEFAULT_BASE_MODEL_INDEX_DIGEST,
+            base_model_artifact_digest=adapter_evaluation.base_model_artifact_digest(
+                drifted_shards
+            ),
+            base_model_weight_shards=drifted_shards,
+            base_model_tokenizer_digest=adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+            seed=42,
+            training_config={"epochs": 1},
+            train_sft=[],
+            validation_sft=[],
+            dpo_records=[],
+            evaluation_records=[],
+        )
 
 
 def test_variant_manifest_rejects_weight_shards_not_bound_to_artifact_digest() -> None:
@@ -807,6 +877,16 @@ def test_variant_manifest_rejects_weight_shards_not_bound_to_artifact_digest() -
 
     assert adapter_evaluation._valid_variant_manifest(
         tampered,
+        agent="executor",
+        expected_variant="internal_only",
+    ) is False
+
+    tampered_binding = dict(manifest)
+    tampered_binding.pop("variantManifestSHA256")
+    tampered_binding["baseModelIndexShardBindingSHA256"] = "0" * 64
+    tampered_binding["variantManifestSHA256"] = canonical_sha256(tampered_binding)
+    assert adapter_evaluation._valid_variant_manifest(
+        tampered_binding,
         agent="executor",
         expected_variant="internal_only",
     ) is False
@@ -928,7 +1008,7 @@ def test_finalizer_rejects_rebinding_an_already_trained_manifest() -> None:
     ("training_phase", "parent_sft_adapter_sha256", "error"),
     (
         ("unsupported", None, "training_phase must be"),
-        ("sft", "a" * 64, "must not declare a parent"),
+        ("sft", "a" * 64, "must not declare preference-training lineage"),
         ("sft_dpo", None, "require a parent SFT adapter"),
         ("sft_dpo", "not-a-digest", "require a parent SFT adapter"),
     ),
@@ -958,6 +1038,93 @@ def test_finalizer_rejects_invalid_training_phase_parent_combinations(
             training_environment=_training_environment(pending),
             training_phase=training_phase,
             parent_sft_adapter_sha256=parent_sft_adapter_sha256,
+        )
+
+
+def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    parent = "a" * 64
+    artifact = _adapter_artifact("b", phase="sft_dpo", parent=parent)
+
+    finalized = finalize_experiment_variant_manifest(
+        pending,
+        adapter_sha256=artifact["adapterSHA256"],
+        adapter_artifact_manifest=artifact,
+        training_environment=_training_environment(pending),
+        training_phase="sft_dpo",
+        parent_sft_adapter_sha256=parent,
+        reference_sft_adapter_sha256=parent,
+        preference_trainer="dpo",
+    )
+
+    assert finalized["artifact"]["effectiveSeed"] == 42
+    assert finalized["artifact"]["referenceSFTAdapterSHA256"] == parent
+    assert finalized["dpoTraining"]["referenceSFTAdapterSHA256"] == parent
+    assert adapter_evaluation._valid_variant_manifest(
+        finalized,
+        agent="executor",
+        expected_variant="internal_only",
+        require_trained_artifact=True,
+    )
+
+    tampered = json.loads(json.dumps(finalized))
+    tampered.pop("variantManifestSHA256")
+    tampered["dpoTraining"]["preferenceTrainer"] = "orpo"
+    tampered["variantManifestSHA256"] = canonical_sha256(tampered)
+    assert not adapter_evaluation._valid_variant_manifest(
+        tampered,
+        agent="executor",
+        expected_variant="internal_only",
+        require_trained_artifact=True,
+    )
+
+
+def test_finalizer_rejects_runtime_seed_drift_and_missing_dpo_reference() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    artifact = _adapter_artifact("b", phase="sft_dpo", parent="a" * 64)
+    drifted_environment = _training_environment(pending)
+    drifted_environment["effectiveSeed"] = 7
+
+    with pytest.raises(ValueError, match="training_environment must match"):
+        finalize_experiment_variant_manifest(
+            pending,
+            adapter_sha256=artifact["adapterSHA256"],
+            adapter_artifact_manifest=artifact,
+            training_environment=drifted_environment,
+            training_phase="sft_dpo",
+            parent_sft_adapter_sha256="a" * 64,
+            reference_sft_adapter_sha256="a" * 64,
+            preference_trainer="dpo",
+        )
+    with pytest.raises(ValueError, match="exact frozen parent SFT"):
+        finalize_experiment_variant_manifest(
+            pending,
+            adapter_sha256=artifact["adapterSHA256"],
+            adapter_artifact_manifest=artifact,
+            training_environment=_training_environment(pending),
+            training_phase="sft_dpo",
+            parent_sft_adapter_sha256="a" * 64,
+            preference_trainer="dpo",
         )
 
 
@@ -1139,24 +1306,7 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
         artifact_sha256=digest_a,
     )
     assert wrong_artifact_report["promotionEvidenceBound"] is False
-    lineage = {
-        field: baseline_manifest[field]
-        for field in (
-            "agent",
-            "baseModelID",
-            "baseModelRevision",
-            "baseModelIndexDigest",
-            "baseModelArtifactDigest",
-            "baseModelWeightShards",
-            "baseModelTokenizerDigest",
-            "trainingEnvironmentLockSHA256",
-            "trainingEnvironmentSHA256",
-            "seed",
-            "trainingConfigSHA256",
-            "frozenEvaluationSHA256",
-            "publicEvaluationBundleSHA256",
-        )
-    }
+    lineage = adapter_evaluation._variant_controlled_lineage(baseline_manifest)
     baseline_outputs = {eval_id: {"approved": False}}
     optimized_outputs = {eval_id: {"approved": True}}
     baseline = score_evaluation_suite(
@@ -1194,6 +1344,59 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
     assert decision["promoted"] is False
     assert decision["runtimePointerAction"] == "leave_current_pointer_unchanged"
     assert "runtime_image_promotion_unsupported" in decision["failures"]
+
+    parent_sft_digest = "c" * 64
+    dpo_artifact = _adapter_artifact(
+        "d", phase="sft_dpo", parent=parent_sft_digest
+    )
+    dpo_manifest = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_plus_public_optimized",
+        base_model_id="Qwen/Qwen3-1.7B",
+        seed=42,
+        training_config=config,
+        train_sft=optimized_training,
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=evaluation,
+        contamination_report=clean,
+    )
+    dpo_manifest = finalize_experiment_variant_manifest(
+        dpo_manifest,
+        adapter_sha256=dpo_artifact["adapterSHA256"],
+        adapter_artifact_manifest=dpo_artifact,
+        training_environment=_training_environment(dpo_manifest),
+        training_phase="sft_dpo",
+        parent_sft_adapter_sha256=parent_sft_digest,
+        reference_sft_adapter_sha256=parent_sft_digest,
+        preference_trainer="dpo",
+    )
+    dpo_report = score_evaluation_suite(
+        evaluation,
+        optimized_outputs,
+        agent="executor",
+        variant="internal_plus_public_optimized",
+        controlled_lineage=adapter_evaluation._variant_controlled_lineage(
+            dpo_manifest
+        ),
+        variant_manifest=dpo_manifest,
+        artifact_sha256=dpo_artifact["adapterSHA256"],
+    )
+    method_drift = decide_adapter_promotion(
+        agent="executor",
+        baseline_report=baseline,
+        optimized_report=dpo_report,
+        baseline_variant_manifest=baseline_manifest,
+        optimized_variant_manifest=dpo_manifest,
+        evaluation_records=evaluation,
+        baseline_candidate_outputs=baseline_outputs,
+        optimized_candidate_outputs=optimized_outputs,
+        baseline_contamination_report=baseline_clean,
+        optimized_contamination_report=clean,
+        baseline_artifact_sha256=digest_a,
+        optimized_artifact_sha256=dpo_artifact["adapterSHA256"],
+    )
+    assert "preference_training_lineage_mismatch" in method_drift["failures"]
 
     identical_optimized_manifest = build_experiment_variant_manifest(
         agent="executor",
@@ -1245,24 +1448,9 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
     drifted_manifest["trainingEnvironment"] = drifted_environment
     drifted_manifest["trainingEnvironmentSHA256"] = canonical_sha256(drifted_environment)
     drifted_manifest["variantManifestSHA256"] = canonical_sha256(drifted_manifest)
-    drifted_lineage = {
-        field: drifted_manifest[field]
-        for field in (
-            "agent",
-            "baseModelID",
-            "baseModelRevision",
-            "baseModelIndexDigest",
-            "baseModelArtifactDigest",
-            "baseModelWeightShards",
-            "baseModelTokenizerDigest",
-            "trainingEnvironmentLockSHA256",
-            "trainingEnvironmentSHA256",
-            "seed",
-            "trainingConfigSHA256",
-            "frozenEvaluationSHA256",
-            "publicEvaluationBundleSHA256",
-        )
-    }
+    drifted_lineage = adapter_evaluation._variant_controlled_lineage(
+        drifted_manifest
+    )
     drifted_report = score_evaluation_suite(
         evaluation,
         optimized_outputs,

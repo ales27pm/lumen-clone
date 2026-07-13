@@ -80,6 +80,75 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     )
 
 
+def test_resolve_run_workspace_rejects_unsafe_identifiers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    work_root = tmp_path / "work"
+    monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
+
+    for run_id in ("../../escape", "/tmp/escape", "nested/run", ".hidden"):
+        with pytest.raises(ValueError, match="run_id contains unsupported characters"):
+            module._resolve_run_workspace(run_id, "internal_only")
+
+    qualified_run_id, run_root = module._resolve_run_workspace(
+        "audit-2026.07.13",
+        "internal_only",
+    )
+    assert qualified_run_id == "audit-2026.07.13-internal_only"
+    assert run_root == work_root.resolve() / qualified_run_id
+
+
+def test_resolve_run_workspace_rejects_symlink_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    work_root = tmp_path / "work"
+    outside = tmp_path / "outside"
+    work_root.mkdir()
+    outside.mkdir()
+    (work_root / "linked-internal_only").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
+
+    with pytest.raises(ValueError, match="run_id escapes the ZeroGPU work directory"):
+        module._resolve_run_workspace("linked", "internal_only")
+
+
+def test_training_endpoint_rejects_absolute_run_id_before_deletion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    work_root = tmp_path / "work"
+    outside = tmp_path / "outside-internal_only"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+
+    result = module.train_lumen_adapters(
+        str(outside),
+        "executor",
+        "",
+        42,
+        True,
+        False,
+        False,
+        False,
+        "large",
+        "internal_only",
+        True,
+    )
+
+    assert result["ok"] is False
+    assert result["error_type"] == "ValueError"
+    assert "run_id contains unsupported characters" in result["error"]
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
 def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any]]:
     agent_root = root / "executor"
     variant_root = agent_root / "experiments" / "internal_plus_public_optimized"
@@ -110,6 +179,10 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "base_model_name": "Qwen/Qwen3-1.7B",
         "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
         "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+        "baseModelIndexReferencedShardNames": [
+            "model-00001-of-00002.safetensors",
+            "model-00002-of-00002.safetensors",
+        ],
         "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
         "baseModelWeightShards": weight_shards,
         "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
@@ -127,6 +200,14 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "merge_adapters_by_default": False,
         "release_bake_enabled_by_default": False,
     }
+    config["baseModelIndexShardBindingSHA256"] = module._canonical_sha256(
+        {
+            "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+            "indexDigest": config["baseModelIndexDigest"],
+            "referencedShardNames": config["baseModelIndexReferencedShardNames"],
+            "shardContractDigest": config["baseModelArtifactDigest"],
+        }
+    )
     environment_lock = {
         "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
         "pythonVersion": "3.10",
@@ -145,6 +226,8 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "baseModelID": "Qwen/Qwen3-1.7B",
         "baseModelRevision": config["baseModelRevision"],
         "baseModelIndexDigest": config["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": config["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": config["baseModelIndexShardBindingSHA256"],
         "baseModelArtifactDigest": config["baseModelArtifactDigest"],
         "baseModelWeightShards": config["baseModelWeightShards"],
         "baseModelTokenizerDigest": config["baseModelTokenizerDigest"],
@@ -211,6 +294,7 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
             "containerImageDigestSource": "operator_declared",
             "runtimeImageBindingStatus": "manual_validation_required",
             "runtimeImageBindingVerified": False,
+            "effectiveSeed": 42,
             "environmentLock": manifest["trainingEnvironmentLock"],
         }
     )
@@ -244,6 +328,7 @@ def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
         "containerImageDigestSource": config["trainingContainerImageDigestSource"],
         "runtimeImageBindingStatus": config["trainingRuntimeImageBindingStatus"],
         "runtimeImageBindingVerified": config["trainingRuntimeImageBindingVerified"],
+        "effectiveSeed": config["seed"],
         "environmentLock": config["trainingEnvironmentLock"],
     }
     finalized = {
@@ -253,6 +338,8 @@ def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
         "baseModelID": item["base_model_name"],
         "baseModelRevision": item["baseModelRevision"],
         "baseModelIndexDigest": item["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": item["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": item["baseModelIndexShardBindingSHA256"],
         "baseModelArtifactDigest": item["baseModelArtifactDigest"],
         "baseModelWeightShards": item["baseModelWeightShards"],
         "baseModelTokenizerDigest": item["baseModelTokenizerDigest"],

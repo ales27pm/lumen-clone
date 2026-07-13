@@ -8,6 +8,11 @@
   "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+  "baseModelIndexReferencedShardNames": [
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors"
+  ],
+  "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
   "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
   "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
   "baseModelWeightShards": [
@@ -28,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "640ca4ff54b5ec8a5592d01bdf0aa5df2517be9ec5fd002b95e9bb47f61d0012"
+        "reportSHA256": "70978934663d078b87606006a9be0e8a6cbedc19cc6404e3e65e9d583e9fd18f"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -36,7 +41,7 @@
       "recordCount": 114,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+    "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 16,
@@ -46,7 +51,7 @@
     "recordCounts": {
       "eval": 114,
       "train_dpo": 14,
-      "train_sft": 968,
+      "train_sft": 967,
       "val_dpo": 2,
       "val_sft": 172
     },
@@ -116,6 +121,8 @@
       "baseModelID",
       "baseModelRevision",
       "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
@@ -125,7 +132,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "0492174df9e08d611369696e3206cd8ef2da9ffd88dbe880dcafd9c2acf6f599",
+    "experimentManifestSHA256": "01a2016e8df12d6aec6e8c26bbcf8ee7a7a53aa4074dc96855f8284012c9d02d",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,

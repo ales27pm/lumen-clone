@@ -11,6 +11,8 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
     DEFAULT_BASE_MODEL_ID,
     DEFAULT_BASE_MODEL_INDEX_DIGEST,
+    DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES,
+    DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
     DEFAULT_BASE_MODEL_REVISION,
     DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
@@ -2735,6 +2737,12 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         "baseModelID": DEFAULT_BASE_MODEL_ID,
         "baseModelRevision": DEFAULT_BASE_MODEL_REVISION,
         "baseModelIndexDigest": DEFAULT_BASE_MODEL_INDEX_DIGEST,
+        "baseModelIndexReferencedShardNames": list(
+            DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES
+        ),
+        "baseModelIndexShardBindingSHA256": (
+            DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256
+        ),
         "baseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
         "baseModelWeightShards": [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS],
         "baseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
@@ -2750,6 +2758,7 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         "gradient_accumulation_steps": 8,
         "num_train_epochs": 2 if high_reasoning else 1,
         "warmup_steps": 20,
+        "preference_trainer": "dpo",
         "dataset_dir": f"generated/fine_tuning/{agent}",
         "output_dir": f"models/training_runs/{agent}",
         "adapter_output_dir": f"models/lora/{agent}",

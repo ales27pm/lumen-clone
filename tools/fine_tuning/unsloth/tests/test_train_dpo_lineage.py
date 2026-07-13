@@ -52,16 +52,20 @@ def _write_finalized_sft_manifest(
     agent: str = "executor",
     variant: str = "internal_plus_public_optimized",
     source_variant_sha256: str = "c" * 64,
+    seed: int = 42,
 ) -> None:
     payload = {
         "agent": agent,
         "variant": variant,
+        "seed": seed,
         "sourceVariantManifestSHA256": source_variant_sha256,
+        "trainingEnvironment": {"effectiveSeed": seed},
         "artifact": {
             "status": "trained",
             "trainingPhase": "sft",
             "adapterSHA256": artifact["adapterSHA256"],
             "adapterManifestSHA256": artifact["adapterSHA256"],
+            "effectiveSeed": seed,
         },
     }
     payload["variantManifestSHA256"] = train_dpo._canonical_sha256(payload)
@@ -79,6 +83,7 @@ def test_verified_sft_parent_rejects_identity_digest_and_file_drift(
         "agent": "executor",
         "variant": "internal_plus_public_optimized",
         "variantManifestSHA256": "c" * 64,
+        "seed": 42,
     }
 
     _write_finalized_sft_manifest(finalized, artifact, agent="cortex")
@@ -138,6 +143,133 @@ def test_dpo_output_path_must_be_role_scoped_and_separate(tmp_path: Path) -> Non
         train_dpo.validate_dpo_artifact_paths(cfg, sft_adapter_dir=sft)
 
 
+def test_controlled_seed_rejects_cli_and_environment_drift() -> None:
+    assert train_sft._resolve_controlled_seed(
+        {"seed": 42}, cli_seed=42, environ={"LUMEN_TRAIN_SEED": "42"}
+    ) == (42, "cli_verified")
+
+    with pytest.raises(ValueError, match="CLI seed override"):
+        train_sft._resolve_controlled_seed({"seed": 42}, cli_seed=7, environ={})
+    with pytest.raises(ValueError, match="LUMEN_TRAIN_SEED override"):
+        train_sft._resolve_controlled_seed(
+            {"seed": 42}, environ={"LUMEN_TRAIN_SEED": "7"}
+        )
+
+
+def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
+    class ConfigProbe:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    class DPOTrainerProbe:
+        def __init__(
+            self,
+            *,
+            model: object,
+            ref_model: object,
+            args: ConfigProbe,
+            train_dataset: object,
+            eval_dataset: object,
+            processing_class: object,
+        ) -> None:
+            self.inputs = (model, ref_model, args, train_dataset, eval_dataset, processing_class)
+
+    class ORPOTrainerProbe:
+        def __init__(
+            self,
+            *,
+            model: object,
+            args: ConfigProbe,
+            train_dataset: object,
+            eval_dataset: object,
+            processing_class: object,
+        ) -> None:
+            self.inputs = (model, args, train_dataset, eval_dataset, processing_class)
+
+    cfg = {
+        "batch_size": 1,
+        "gradient_accumulation_steps": 2,
+        "learning_rate": 1e-5,
+        "num_train_epochs": 1,
+        "warmup_steps": 0,
+        "max_seq_length": 512,
+    }
+    common = {
+        "seed": 42,
+        "model": object(),
+        "tokenizer": object(),
+        "train_dataset": object(),
+        "val_dataset": None,
+        "output_dir": Path("executor-dpo-training"),
+        "dpo_config_class": ConfigProbe,
+        "dpo_trainer_class": DPOTrainerProbe,
+        "orpo_config_class": ConfigProbe,
+        "orpo_trainer_class": ORPOTrainerProbe,
+    }
+
+    dpo_trainer, dpo_args = train_dpo._build_preference_trainer(
+        cfg, preference_trainer="dpo", **common
+    )
+    assert isinstance(dpo_trainer, DPOTrainerProbe)
+    assert dpo_args.kwargs["model_adapter_name"] == train_dpo.POLICY_ADAPTER_NAME
+    assert dpo_args.kwargs["ref_adapter_name"] == train_dpo.REFERENCE_ADAPTER_NAME
+    assert dpo_args.kwargs["seed"] == dpo_args.kwargs["data_seed"] == 42
+
+    orpo_trainer, orpo_args = train_dpo._build_preference_trainer(
+        cfg, preference_trainer="orpo", **common
+    )
+    assert isinstance(orpo_trainer, ORPOTrainerProbe)
+    assert "model_adapter_name" not in orpo_args.kwargs
+    assert orpo_args.kwargs["seed"] == orpo_args.kwargs["data_seed"] == 42
+
+
+def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) -> None:
+    events: list[tuple[str, object]] = []
+
+    class Model:
+        def load_adapter(self, path: str, *, adapter_name: str, is_trainable: bool) -> None:
+            events.append(("load", (path, adapter_name, is_trainable)))
+
+        def set_adapter(self, adapter_name: str) -> None:
+            events.append(("set", adapter_name))
+
+        def save_pretrained(self, path: str, **kwargs: object) -> None:
+            events.append(("save", (path, kwargs)))
+
+    class PeftModelProbe:
+        @staticmethod
+        def from_pretrained(
+            base_model: object,
+            path: str,
+            *,
+            adapter_name: str,
+            is_trainable: bool,
+        ) -> Model:
+            events.append(
+                ("from", (base_model, path, adapter_name, is_trainable))
+            )
+            return Model()
+
+    adapter_dir = tmp_path / "executor-sft-adapter"
+    model = train_dpo._load_sft_policy(
+        object(),
+        peft_model_class=PeftModelProbe,
+        sft_adapter_dir=adapter_dir,
+        preference_trainer="dpo",
+    )
+    train_dpo._save_policy_adapter(model, tmp_path / "executor-dpo-adapter")
+
+    assert events[0][1][2:] == (train_dpo.POLICY_ADAPTER_NAME, True)
+    assert events[1] == (
+        "load",
+        (str(adapter_dir), train_dpo.REFERENCE_ADAPTER_NAME, False),
+    )
+    assert events[-1][1][1] == {
+        "safe_serialization": True,
+        "selected_adapters": [train_dpo.POLICY_ADAPTER_NAME],
+    }
+
+
 def test_verify_base_model_lineage_checks_pinned_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -164,31 +296,35 @@ def test_verify_base_model_lineage_checks_pinned_artifacts(
         "huggingface_hub",
         types.SimpleNamespace(hf_hub_download=hf_hub_download),
     )
+    shard_contract = {
+        "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
+        "shards": [
+            {
+                "filename": shard_name,
+                "size": len(artifacts[shard_name]),
+                "sha256": hashlib.sha256(artifacts[shard_name]).hexdigest(),
+            }
+        ],
+    }
+    index_digest = hashlib.sha256(artifacts["model.safetensors.index.json"]).hexdigest()
+    artifact_digest = train_dpo._canonical_sha256(shard_contract)
     train_dpo._verify_base_model_lineage(
         {
             "base_model_name": "example/model",
             "baseModelRevision": revision,
-            "baseModelIndexDigest": hashlib.sha256(artifacts["model.safetensors.index.json"]).hexdigest(),
-            "baseModelWeightShards": [
+            "baseModelIndexDigest": index_digest,
+            "baseModelIndexReferencedShardNames": [shard_name],
+            "baseModelIndexShardBindingSHA256": train_dpo._canonical_sha256(
                 {
-                    "filename": shard_name,
-                    "size": len(artifacts[shard_name]),
-                    "sha256": hashlib.sha256(artifacts[shard_name]).hexdigest(),
-                }
-            ],
-            "baseModelTokenizerDigest": hashlib.sha256(artifacts["tokenizer.json"]).hexdigest(),
-            "baseModelArtifactDigest": train_dpo._canonical_sha256(
-                {
-                    "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-                    "shards": [
-                        {
-                            "filename": shard_name,
-                            "size": len(artifacts[shard_name]),
-                            "sha256": hashlib.sha256(artifacts[shard_name]).hexdigest(),
-                        }
-                    ],
+                    "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+                    "indexDigest": index_digest,
+                    "referencedShardNames": [shard_name],
+                    "shardContractDigest": artifact_digest,
                 }
             ),
+            "baseModelWeightShards": shard_contract["shards"],
+            "baseModelTokenizerDigest": hashlib.sha256(artifacts["tokenizer.json"]).hexdigest(),
+            "baseModelArtifactDigest": artifact_digest,
         }
     )
 
@@ -266,18 +402,29 @@ def test_sft_lineage_rejects_modified_weight_shard(
     declared_shards = [
         {"filename": shard.name, "size": 8, "sha256": hashlib.sha256(b"expected").hexdigest()}
     ]
+    index_digest = hashlib.sha256(index.read_bytes()).hexdigest()
+    artifact_digest = train_sft._canonical_sha256(
+        {
+            "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
+            "shards": declared_shards,
+        }
+    )
     with pytest.raises(RuntimeError, match="weight shard digest mismatch"):
         train_sft._verify_base_model_lineage(
             {
                 "base_model_name": "example/model",
                 "baseModelRevision": "a" * 40,
-                "baseModelIndexDigest": hashlib.sha256(index.read_bytes()).hexdigest(),
-                "baseModelArtifactDigest": train_sft._canonical_sha256(
+                "baseModelIndexDigest": index_digest,
+                "baseModelIndexReferencedShardNames": [shard.name],
+                "baseModelIndexShardBindingSHA256": train_sft._canonical_sha256(
                     {
-                        "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-                        "shards": declared_shards,
+                        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+                        "indexDigest": index_digest,
+                        "referencedShardNames": [shard.name],
+                        "shardContractDigest": artifact_digest,
                     }
                 ),
+                "baseModelArtifactDigest": artifact_digest,
                 "baseModelWeightShards": declared_shards,
                 "baseModelTokenizerDigest": hashlib.sha256(tokenizer.read_bytes()).hexdigest(),
             }

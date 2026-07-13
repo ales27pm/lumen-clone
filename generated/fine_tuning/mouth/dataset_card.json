@@ -1,6 +1,6 @@
 {
   "agent": "mouth",
-  "availableSFTRecords": 812,
+  "availableSFTRecords": 811,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "c83ae260ff16c7e9b6c2ba80caa9e2b31f1348459a3e01959a328a770c185f2c"
+      "reportSHA256": "a10ffea8d63d864ade6f63022b253a01634f21b40b9803c7f4265e746d13627f"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "0d2f1928bea15728abf219a353d803626935ff24853ef02ed89923c277c0213f",
-      "optimizedTrainingCorpusSHA256": "b282f2721e8c3e2f470c390237e04f507c72984dfef399b085006d7327c76e90",
+      "baselineTrainingCorpusSHA256": "104d3bfda4cd8faf8f89aa35beb4e2ce1b6fd816434ceb6bf2be3d8cfbec38ab",
+      "optimizedTrainingCorpusSHA256": "89da9624c8acca28e7ed5f710bbb951e4287d8f02814f36d8418c4207f23ac5b",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 1051,
@@ -36,6 +36,8 @@
       "baseModelID",
       "baseModelRevision",
       "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
@@ -45,7 +47,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "eacf013e90aa2d0a9812e9ec808fdefc635d7b09cc851a09e5315b5c01acbc14",
+    "experimentManifestSHA256": "b9db30440ca0928b7a828723ce096b67ab57e4dbb8002fcacd244e5ef3816049",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -70,7 +72,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 33,
@@ -123,13 +125,13 @@
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 6,
-      "train_sft": 65,
+      "train_sft": 64,
       "val_dpo": 1,
       "val_sft": 5
     },
     "rejectedByTokenCap": {
       "train_dpo": 419,
-      "train_sft": 403,
+      "train_sft": 404,
       "val_dpo": 74,
       "val_sft": 78
     },
@@ -149,9 +151,9 @@
         "minimum": 0.806221
       },
       "selected": {
-        "count": 77,
+        "count": 76,
         "maximum": 0.897506,
-        "mean": 0.858647,
+        "mean": 0.858135,
         "minimum": 0.808721
       }
     },
@@ -233,14 +235,14 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "McGill-NLP/FaithDial": 43,
+      "McGill-NLP/FaithDial": 42,
       "OpenAssistant/oasst2": 33,
       "Team-ACE/ToolACE": 1
     },
     "sourceSplitCounts": {
       "McGill-NLP/FaithDial": {
         "train_dpo": 6,
-        "train_sft": 33,
+        "train_sft": 32,
         "val_dpo": 1,
         "val_sft": 3
       },
@@ -263,8 +265,8 @@
         "total": 0.328394
       },
       "train_sft": {
-        "target": 0.161672,
-        "total": 0.349956
+        "target": 0.162005,
+        "total": 0.349473
       },
       "val_dpo": {
         "target": 0.171171,
@@ -289,7 +291,7 @@
   "recordCounts": {
     "eval": 8,
     "train_dpo": 28,
-    "train_sft": 238,
+    "train_sft": 236,
     "val_dpo": 5,
     "val_sft": 35
   },

@@ -11,7 +11,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 try:
     from .adapter_artifact import write_adapter_artifact_manifest
@@ -24,6 +24,8 @@ REQUIRED_CONFIG_KEYS = {
     "base_model_name",
     "baseModelRevision",
     "baseModelIndexDigest",
+    "baseModelIndexReferencedShardNames",
+    "baseModelIndexShardBindingSHA256",
     "baseModelArtifactDigest",
     "baseModelWeightShards",
     "baseModelTokenizerDigest",
@@ -48,6 +50,7 @@ REQUIRED_CONFIG_KEYS = {
     "dataset_dir",
     "variant",
     "variantManifestSHA256",
+    "seed",
 }
 AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
 FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned", "training"}
@@ -56,7 +59,12 @@ FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train per-agent SFT adapters with Unsloth.")
     parser.add_argument("--config", required=True, help="Path to agent Unsloth JSON config.")
-    parser.add_argument("--seed", type=int, default=None, help="Deterministic seed (overrides config seed; falls back to LUMEN_TRAIN_SEED env var).")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Controlled deterministic seed; any CLI or LUMEN_TRAIN_SEED value must match the config.",
+    )
     parser.add_argument("--resume-from-checkpoint", action="store_true", help="Resume from the latest checkpoint in output_dir if present.")
     parser.add_argument("--assistant-only-loss", action="store_true", help="Compute loss only on assistant turns (TRL assistant_only_loss).")
     return parser.parse_args()
@@ -352,12 +360,18 @@ def tokenize_assistant_only_row(
 
 
 def _seed_everything(seed: int) -> None:
-    os.environ.setdefault("PYTHONHASHSEED", str(seed))
+    os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     try:
         import numpy as np  # type: ignore
 
         np.random.seed(seed)
+    except Exception:
+        pass
+    try:
+        import transformers  # type: ignore
+
+        transformers.set_seed(seed)
     except Exception:
         pass
     try:
@@ -371,12 +385,39 @@ def _seed_everything(seed: int) -> None:
         torch.use_deterministic_algorithms(False)
     except Exception:
         pass
-    try:
-        import transformers  # type: ignore
 
-        transformers.set_seed(seed)
-    except Exception:
-        pass
+
+def _resolve_controlled_seed(
+    cfg: Mapping[str, Any],
+    *,
+    cli_seed: int | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> tuple[int, str]:
+    controlled_seed = cfg.get("seed")
+    if type(controlled_seed) is not int:
+        raise ValueError("Config seed must be an integer controlled by the variant manifest")
+
+    environment = os.environ if environ is None else environ
+    env_text = environment.get("LUMEN_TRAIN_SEED")
+    try:
+        env_seed = int(env_text) if env_text is not None and env_text.strip() else None
+    except ValueError as exc:
+        raise ValueError("LUMEN_TRAIN_SEED must be an integer") from exc
+
+    if cli_seed is not None and int(cli_seed) != controlled_seed:
+        raise ValueError(
+            f"CLI seed override would break controlled lineage: expected {controlled_seed}, got {cli_seed}"
+        )
+    if env_seed is not None and env_seed != controlled_seed:
+        raise ValueError(
+            "LUMEN_TRAIN_SEED override would break controlled lineage: "
+            f"expected {controlled_seed}, got {env_seed}"
+        )
+    if cli_seed is not None:
+        return controlled_seed, "cli_verified"
+    if env_seed is not None:
+        return controlled_seed, "env_verified"
+    return controlled_seed, "config"
 
 
 def _hash_file(path: Path) -> str:
@@ -463,6 +504,7 @@ def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
         "containerImageDigestSource": digest_source,
         "runtimeImageBindingStatus": binding_status,
         "runtimeImageBindingVerified": binding_verified,
+        "effectiveSeed": int(cfg["seed"]),
         "environmentLock": lock,
     }
     digest = _canonical_sha256(payload)
@@ -510,6 +552,22 @@ def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
     expected_shards = [item["filename"] for item in shard_contract["shards"]]
     if referenced_shards != expected_shards:
         raise RuntimeError("Pinned base-model index shard set does not match baseModelWeightShards")
+    declared_referenced_shards = cfg.get("baseModelIndexReferencedShardNames")
+    if declared_referenced_shards != referenced_shards:
+        raise RuntimeError(
+            "Pinned base-model index shard set does not match baseModelIndexReferencedShardNames"
+        )
+    index_shard_binding = {
+        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+        "indexDigest": expected["model.safetensors.index.json"],
+        "referencedShardNames": referenced_shards,
+        "shardContractDigest": cfg["baseModelArtifactDigest"],
+    }
+    if _canonical_sha256(index_shard_binding) != _require_sha256(
+        cfg.get("baseModelIndexShardBindingSHA256"),
+        name="baseModelIndexShardBindingSHA256",
+    ):
+        raise RuntimeError("baseModelIndexShardBindingSHA256 does not bind the verified index and shards")
     for item in shard_contract["shards"]:
         path = Path(
             hf_hub_download(
@@ -657,18 +715,7 @@ def main() -> None:
     cfg_path = Path(args.config).resolve()
     cfg = load_config(cfg_path)
 
-    seed_source = "default"
-    if args.seed is not None:
-        seed = int(args.seed)
-        seed_source = "cli"
-    elif os.environ.get("LUMEN_TRAIN_SEED"):
-        seed = int(os.environ["LUMEN_TRAIN_SEED"])
-        seed_source = "env"
-    elif "seed" in cfg:
-        seed = int(cfg["seed"])
-        seed_source = "config"
-    else:
-        seed = 42
+    seed, seed_source = _resolve_controlled_seed(cfg, cli_seed=args.seed)
     _seed_everything(seed)
 
     dataset_dir = Path(cfg["dataset_dir"]).resolve()
@@ -786,7 +833,7 @@ def main() -> None:
         resume_checkpoint = True if checkpoints else False
 
     train_result = trainer.train(resume_from_checkpoint=resume_checkpoint or None)
-    trainer.model.save_pretrained(str(adapter_output_dir))
+    trainer.model.save_pretrained(str(adapter_output_dir), safe_serialization=True)
     tokenizer.save_pretrained(str(adapter_output_dir))
     adapter_artifact_manifest = write_adapter_artifact_manifest(
         adapter_output_dir,
@@ -806,6 +853,12 @@ def main() -> None:
         "base_model_name": cfg["base_model_name"],
         "baseModelRevision": cfg["baseModelRevision"],
         "baseModelIndexDigest": cfg["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": cfg[
+            "baseModelIndexReferencedShardNames"
+        ],
+        "baseModelIndexShardBindingSHA256": cfg[
+            "baseModelIndexShardBindingSHA256"
+        ],
         "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
         "baseModelWeightShards": cfg["baseModelWeightShards"],
         "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],

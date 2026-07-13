@@ -1,6 +1,6 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 13060,
+  "availableSFTRecords": 13445,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "bcc192d2181f8cd4fbe92de7b9e135bd31f22be40841ee81046c0195f5940725"
+      "reportSHA256": "a11cca7d894b437923e192ccfdf8b6e98b792f244a53c688bf02e8fb710622e7"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "5cfe2c79d37411be4627696883d4394676fa0de0f4dfd082b39490548577a79f",
-      "optimizedTrainingCorpusSHA256": "f9970bdc6e6ee84be110037cace7663a9fa37bbc2a2beb64740dd7457ff1fa8c",
+      "baselineTrainingCorpusSHA256": "47df83f254ab6b6a9e7cc51dfab79539378ed764b0bf06c71197000ea6bd44c1",
+      "optimizedTrainingCorpusSHA256": "41297b58f7269c84ee584b18f861bdecbc4e5070277f44b696deaa2532bd7952",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 662,
@@ -36,6 +36,8 @@
       "baseModelID",
       "baseModelRevision",
       "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
@@ -45,7 +47,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "d05ddc99b4b1c383ce6822e7fa501688c46c880e5eb5965d298e59c1bf21e37a",
+    "experimentManifestSHA256": "223a3e4dc0791abef9f518eaea8286e73493f3c0a304d46e166f1326f875dd1a",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -70,7 +72,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 16,
@@ -247,24 +249,24 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.003393,
-        "total": 0.012682
+        "target": 0.003294,
+        "total": 0.012314
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.004929,
-        "total": 0.016866
+        "target": 0.004705,
+        "total": 0.016178
       }
     }
   },
   "quality": {
-    "cortexCodebaseChunkRecordCount": 4519,
-    "cortexCodebaseFileRecordCount": 2270,
+    "cortexCodebaseChunkRecordCount": 4690,
+    "cortexCodebaseFileRecordCount": 2302,
     "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_excluding_generated_outputs",
-    "cortexCodebaseSelfAwarenessRecordCount": 6863,
+    "cortexCodebaseSelfAwarenessRecordCount": 7066,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 25,
@@ -273,9 +275,9 @@
   "recordCounts": {
     "eval": 558,
     "train_dpo": 14,
-    "train_sft": 11091,
+    "train_sft": 11418,
     "val_dpo": 2,
-    "val_sft": 1956
+    "val_sft": 2014
   },
   "sourceFamilies": [
     "adapter_ultra_specific",

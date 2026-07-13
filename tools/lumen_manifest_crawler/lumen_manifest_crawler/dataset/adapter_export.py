@@ -6,6 +6,8 @@ from typing import Any
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
     DEFAULT_BASE_MODEL_INDEX_DIGEST,
+    DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES,
+    DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
     DEFAULT_BASE_MODEL_REVISION,
     DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
@@ -85,6 +87,14 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out.setdefault("baseModelID", base_model_id)
     out.setdefault("baseModelRevision", DEFAULT_BASE_MODEL_REVISION)
     out.setdefault("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST)
+    out.setdefault(
+        "baseModelIndexReferencedShardNames",
+        list(DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES),
+    )
+    out.setdefault(
+        "baseModelIndexShardBindingSHA256",
+        DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
+    )
     out.setdefault("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST)
     out.setdefault("baseModelWeightShards", [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS])
     out.setdefault("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST)
@@ -110,6 +120,8 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "baseModelID": base_model_id,
         "baseModelRevision": out["baseModelRevision"],
         "baseModelIndexDigest": out["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": out["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": out["baseModelIndexShardBindingSHA256"],
         "baseModelArtifactDigest": out["baseModelArtifactDigest"],
         "baseModelWeightShards": out["baseModelWeightShards"],
         "baseModelTokenizerDigest": out["baseModelTokenizerDigest"],
@@ -144,6 +156,14 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "baseModelID": base_model_id,
         "baseModelRevision": config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
         "baseModelIndexDigest": config.get("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST),
+        "baseModelIndexReferencedShardNames": config.get(
+            "baseModelIndexReferencedShardNames",
+            list(DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES),
+        ),
+        "baseModelIndexShardBindingSHA256": config.get(
+            "baseModelIndexShardBindingSHA256",
+            DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
+        ),
         "baseModelArtifactDigest": config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
         "baseModelWeightShards": config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
         "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
@@ -229,6 +249,14 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "baseModelID": base_model_id,
                 "baseModelRevision": unsloth_config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
                 "baseModelIndexDigest": unsloth_config.get("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST),
+                "baseModelIndexReferencedShardNames": unsloth_config.get(
+                    "baseModelIndexReferencedShardNames",
+                    list(DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES),
+                ),
+                "baseModelIndexShardBindingSHA256": unsloth_config.get(
+                    "baseModelIndexShardBindingSHA256",
+                    DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
+                ),
                 "baseModelArtifactDigest": unsloth_config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
                 "baseModelWeightShards": unsloth_config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
                 "baseModelTokenizerDigest": unsloth_config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
@@ -247,6 +275,12 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "sharedBaseModelID": shared_base_model_id,
         "sharedBaseModelRevision": DEFAULT_BASE_MODEL_REVISION,
         "sharedBaseModelIndexDigest": DEFAULT_BASE_MODEL_INDEX_DIGEST,
+        "sharedBaseModelIndexReferencedShardNames": list(
+            DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES
+        ),
+        "sharedBaseModelIndexShardBindingSHA256": (
+            DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256
+        ),
         "sharedBaseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
         "sharedBaseModelWeightShards": DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
         "sharedBaseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,

@@ -28,6 +28,8 @@ def _write_config(tmp_path: Path, *, agent: str = "cortex", merge_by_default: bo
         "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
         "baseModelRevision": "a" * 40,
         "baseModelIndexDigest": "b" * 64,
+        "baseModelIndexReferencedShardNames": ["model.safetensors"],
+        "baseModelIndexShardBindingSHA256": "f" * 64,
         "baseModelArtifactDigest": "c" * 64,
         "baseModelWeightShards": [
             {"filename": "model.safetensors", "size": 1, "sha256": "d" * 64}
@@ -147,6 +149,8 @@ def test_skip_existing_requires_matching_current_lineage(
         "sourceVariantManifestSHA256": "3" * 64,
         "baseModelRevision": cfg["baseModelRevision"],
         "baseModelIndexDigest": cfg["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": cfg["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": cfg["baseModelIndexShardBindingSHA256"],
         "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
         "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
         "trainingEnvironmentSHA256": "4" * 64,
