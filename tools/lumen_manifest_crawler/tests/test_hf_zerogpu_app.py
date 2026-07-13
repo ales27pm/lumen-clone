@@ -5,7 +5,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -36,6 +36,12 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     app_root = tmp_path / "space"
     app_root.mkdir()
     shutil.copy2(source, app_root / "app.py")
+    unsloth_root = Path(__file__).resolve().parents[2] / "fine_tuning" / "unsloth"
+    shutil.copy2(unsloth_root / "training_lineage.py", app_root / "training_lineage.py")
+    shutil.copy2(
+        Path(__file__).resolve().parents[2] / "hf_zerogpu" / "space_template" / "requirements.txt",
+        app_root / "requirements.txt",
+    )
     (app_root / "lumen_zero_gpu_defaults.json").write_text(
         json.dumps(
             {
@@ -48,6 +54,7 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
                 "container_image_digest_source": "operator_declared",
                 "runtime_image_binding_status": "manual_validation_required",
                 "runtime_image_binding_verified": False,
+                "dataset_revision": "a" * 40,
             }
         ),
         encoding="utf-8",
@@ -65,6 +72,7 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setitem(sys.modules, "gradio", gradio)
     monkeypatch.setitem(sys.modules, "spaces", spaces)
     monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.syspath_prepend(str(app_root))
 
     spec = importlib.util.spec_from_file_location("lumen_zerogpu_test_app", app_root / "app.py")
     assert spec is not None and spec.loader is not None
@@ -127,8 +135,14 @@ def test_training_endpoint_rejects_absolute_run_id_before_deletion(
     sentinel = outside / "keep.txt"
     sentinel.write_text("keep", encoding="utf-8")
     monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
-    monkeypatch.setenv("HF_TOKEN", "test-token")
-
+    with pytest.raises(ValueError, match="run_id contains unsupported characters"):
+        module._resolve_run_workspace(str(outside), "internal_only")
+    admin_token = "Lumen-Admin-Token-0123456789-ABCDEF"
+    monkeypatch.setenv("LUMEN_ZERO_GPU_ADMIN_TOKEN", admin_token)
+    monkeypatch.setenv(
+        "LUMEN_ZERO_GPU_HUB_TOKEN",
+        "hf_fine_grained_repository_token",
+    )
     result = module.train_lumen_adapters(
         str(outside),
         "executor",
@@ -141,11 +155,11 @@ def test_training_endpoint_rejects_absolute_run_id_before_deletion(
         "large",
         "internal_only",
         True,
+        False,
+        request=SimpleNamespace(headers={"x-lumen-admin-token": admin_token}),
     )
-
-    assert result["ok"] is False
-    assert result["error_type"] == "ValueError"
-    assert "run_id contains unsupported characters" in result["error"]
+    assert result["error_code"] == "training_failed"
+    assert str(outside) not in json.dumps(result)
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
@@ -304,6 +318,59 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
     assert config["variantAttestation"]["runtimeImageBindingVerified"] is False
 
 
+def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    source_root = tmp_path / "datasets"
+    source_root.mkdir()
+    _write_variant_fixture(module, source_root)
+    config_path = source_root / "executor" / "unsloth_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["runtimeSourceKind"] = "unresolved"
+    config["runtimeSourceRevision"] = None
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    runtime = {
+        "trainingCodeManifest": {"phase": "sft"},
+        "trainingCodeSHA256": "1" * 64,
+        "trainingDependencyLock": {"schema": "lock"},
+        "trainingDependencyLockSHA256": "2" * 64,
+        "requirementsSHA256": "3" * 64,
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": "4" * 40,
+    }
+    run_root = tmp_path / "run"
+    lineage = module._build_run_resume_lineage(
+        run_id="run-internal_plus_public_optimized",
+        run_root=run_root,
+        source_root=source_root,
+        dataset_repo="user/dataset",
+        dataset_revision="5" * 40,
+        dataset_path="runs/test/fine_tuning",
+        agents=["executor"],
+        variant="internal_plus_public_optimized",
+        seed=42,
+        assistant_only_loss=True,
+        runtime_lineage=runtime,
+    )
+    prepared = module._prepare_configs(
+        source_root=source_root,
+        run_root=run_root,
+        agents=["executor"],
+        base_model_override="",
+        seed=42,
+        variant="internal_plus_public_optimized",
+        run_lineage=lineage,
+        runtime_lineage=runtime,
+    )
+
+    resolved = json.loads(Path(prepared[0]["config"]).read_text(encoding="utf-8"))
+    assert resolved["runtimeSourceKind"] == "huggingface_space"
+    assert resolved["runtimeSourceRevision"] == "4" * 40
+    assert resolved["trainingCodeSHA256"] == "1" * 64
+
+
 def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -431,7 +498,6 @@ def test_variant_dataset_rejects_tampered_lane_and_control_drift(
             seed=42,
             variant="internal_plus_public_optimized",
         )
-
     _write_variant_fixture(module, source_root)
     with pytest.raises(ValueError, match="Seed override"):
         module._prepare_configs(
@@ -441,4 +507,359 @@ def test_variant_dataset_rejects_tampered_lane_and_control_drift(
             base_model_override="",
             seed=7,
             variant="internal_plus_public_optimized",
+        )
+
+
+def _authorized_request(token: str) -> SimpleNamespace:
+    return SimpleNamespace(headers={"x-lumen-admin-token": token})
+
+
+def test_training_endpoint_authorizes_before_gpu_or_filesystem(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    work_root = tmp_path / "work"
+    admin_token = "Lumen-Admin-Token-0123456789-ABCDEF"
+    monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
+    calls: list[str] = []
+    monkeypatch.setattr(
+        module,
+        "_train_lumen_adapters_gpu",
+        lambda *_args: calls.append("gpu") or {"ok": True},
+    )
+    monkeypatch.setattr(
+        module,
+        "HfApi",
+        lambda *_args, **_kwargs: pytest.fail("HfApi must not be instantiated"),
+    )
+
+    missing_configuration = module.train_lumen_adapters(
+        "run", "executor", "", 42, True, False, False, False, "large"
+    )
+    assert missing_configuration["error_code"] == "authorization_not_configured"
+    assert calls == []
+    assert not work_root.exists()
+    monkeypatch.setenv("LUMEN_ZERO_GPU_ADMIN_TOKEN", admin_token)
+
+    missing = module.train_lumen_adapters(
+        "run", "executor", "", 42, True, False, False, False, "large"
+    )
+    wrong = module.train_lumen_adapters(
+        "run",
+        "executor",
+        "",
+        42,
+        True,
+        False,
+        False,
+        False,
+        "large",
+        request=_authorized_request("Wrong-Admin-Token-0123456789-ABCDEF"),
+    )
+    assert missing["error_code"] == "unauthorized"
+    assert wrong["error_code"] == "unauthorized"
+    assert calls == []
+    assert not work_root.exists()
+
+    missing_repository_token = module.train_lumen_adapters(
+        "run",
+        "executor",
+        "",
+        42,
+        True,
+        False,
+        False,
+        False,
+        "large",
+        request=_authorized_request(admin_token),
+    )
+    assert (
+        missing_repository_token["error_code"]
+        == "repository_authorization_not_configured"
+    )
+    assert calls == []
+    assert not work_root.exists()
+
+    monkeypatch.setenv("LUMEN_ZERO_GPU_HUB_TOKEN", "hf_fine_grained_repository_token")
+    accepted = module.train_lumen_adapters(
+        "run",
+        "executor",
+        "",
+        42,
+        True,
+        False,
+        False,
+        False,
+        "large",
+        request=_authorized_request(admin_token),
+    )
+    assert accepted == {"ok": True}
+    assert calls == ["gpu"]
+
+
+def test_training_endpoint_rejects_concurrency_and_sanitizes_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    work_root = tmp_path / "sensitive-work"
+    admin_token = "Lumen-Admin-Token-0123456789-ABCDEF"
+    hub_token = "hf_secret_repository_token"
+    monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
+    monkeypatch.setenv("LUMEN_ZERO_GPU_ADMIN_TOKEN", admin_token)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_HUB_TOKEN", hub_token)
+    request = _authorized_request(admin_token)
+
+    with module._exclusive_training_operation():
+        conflict = module.train_lumen_adapters(
+            "run", "executor", "", 42, True, False, False, False, "large", request=request
+        )
+    assert conflict["error_code"] == "training_already_active"
+
+    monkeypatch.setattr(
+        module,
+        "_train_lumen_adapters_gpu",
+        lambda *_args: (_ for _ in ()).throw(
+            RuntimeError(f"secret={hub_token} path={work_root}")
+        ),
+    )
+    failed = module.train_lumen_adapters(
+        "run", "executor", "", 42, True, False, False, False, "large", request=request
+    )
+    rendered = json.dumps(failed)
+    assert failed["error_code"] == "training_failed"
+    assert "traceback" not in rendered.casefold()
+    assert hub_token not in rendered
+    assert str(work_root) not in rendered
+
+
+def _write_resume_fixture(
+    module: Any,
+    *,
+    work_root: Path,
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    run_id = "resume-test-internal_plus_public_optimized"
+    run_root = work_root / run_id
+    source_root = run_root / "generated" / "fine_tuning"
+    source_root.mkdir(parents=True)
+    _write_variant_fixture(module, source_root)
+    runtime = {
+        "trainingCodeManifest": {"phase": "sft"},
+        "trainingCodeSHA256": "1" * 64,
+        "trainingDependencyLock": {"schema": "lock"},
+        "trainingDependencyLockSHA256": "2" * 64,
+        "requirementsSHA256": "3" * 64,
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": "4" * 40,
+    }
+    lineage = module._build_run_resume_lineage(
+        run_id=run_id,
+        run_root=run_root,
+        source_root=source_root,
+        dataset_repo="user/dataset",
+        dataset_revision="5" * 40,
+        dataset_path="runs/test/fine_tuning",
+        agents=["executor"],
+        variant="internal_plus_public_optimized",
+        seed=42,
+        assistant_only_loss=True,
+        runtime_lineage=runtime,
+    )
+    prepared = module._prepare_configs(
+        source_root=source_root,
+        run_root=run_root,
+        agents=["executor"],
+        base_model_override="",
+        seed=42,
+        variant="internal_plus_public_optimized",
+        run_lineage=lineage,
+        runtime_lineage=runtime,
+    )
+    module._write_fresh_run_contract(
+        run_root=run_root,
+        run_lineage=lineage,
+        prepared=prepared,
+    )
+    checkpoint = run_root / "training" / "executor" / "checkpoint-1"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "trainer_state.json").write_text("{}\n", encoding="utf-8")
+    checkpoint_digest = module._checkpoint_directory_manifest(checkpoint)[
+        "checkpointSHA256"
+    ]
+    checkpoint_path = Path(lineage["agents"][0]["checkpointLineagePath"])
+    record = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    record["checkpoints"] = [
+        {"path": "checkpoint-1", "checkpointSHA256": checkpoint_digest}
+    ]
+    record = module._self_hashed(record, field="checkpointLineageSHA256")
+    module._atomic_write_json(checkpoint_path, record)
+    return run_root, lineage, runtime
+
+
+def test_resume_contract_accepts_unchanged_lineage_without_snapshot_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    work_root = tmp_path / "work"
+    run_root, lineage, runtime = _write_resume_fixture(module, work_root=work_root)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
+    monkeypatch.setenv("LUMEN_ZERO_GPU_DATASET_REPO", "user/dataset")
+    monkeypatch.setenv("LUMEN_ZERO_GPU_DATASET_REVISION", "5" * 40)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_DATASET_PATH", "runs/test/fine_tuning")
+    monkeypatch.setenv("LUMEN_ZERO_GPU_HUB_TOKEN", "fine-grained-token")
+    module.DEFAULTS.update(
+        {
+            "dataset_repo": "user/dataset",
+            "dataset_revision": "5" * 40,
+            "dataset_path_in_repo": "runs/test/fine_tuning",
+        }
+    )
+    monkeypatch.setattr(module, "_verify_runtime_lineage", lambda: runtime)
+    monkeypatch.setattr(
+        module,
+        "_copy_dataset_snapshot",
+        lambda *_args, **_kwargs: pytest.fail("resume must not replace the snapshot"),
+    )
+    original_rmtree = module.shutil.rmtree
+    monkeypatch.setattr(
+        module.shutil,
+        "rmtree",
+        lambda *_args, **_kwargs: pytest.fail("resume must not recursively delete"),
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_verify_trained_adapter",
+        lambda item: (
+            Path(item["adapter_dir"]),
+            {"artifact": {"adapterSHA256": "a" * 64}, "variantManifestSHA256": "b" * 64},
+        ),
+    )
+    try:
+        result = module._train_lumen_adapters_gpu(
+            "resume-test",
+            "executor",
+            "",
+            42,
+            True,
+            True,
+            False,
+            False,
+            "large",
+            "internal_plus_public_optimized",
+            True,
+            False,
+        )
+    finally:
+        monkeypatch.setattr(module.shutil, "rmtree", original_rmtree)
+    assert result["ok"] is True
+    assert result["runResumeLineageSHA256"] == lineage["runResumeLineageSHA256"]
+    assert result["requirementsSHA256"] == lineage["requirementsSHA256"]
+    assert run_root.is_dir()
+
+
+@pytest.mark.parametrize(
+    "field,replacement",
+    [
+        ("datasetRevision", "6" * 40),
+        ("experimentVariant", "internal_only"),
+        ("seed", 7),
+        ("assistantOnlyLoss", False),
+        ("trainingCodeSHA256", "7" * 64),
+        ("trainingDependencyLockSHA256", "8" * 64),
+        ("requirementsSHA256", "9" * 64),
+        ("runtimeSourceRevision", "a" * 40),
+    ],
+)
+def test_resume_contract_rejects_top_level_lineage_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    replacement: Any,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    run_root, lineage, _ = _write_resume_fixture(module, work_root=tmp_path / "work-run")
+    drifted = json.loads(json.dumps(lineage))
+    drifted[field] = replacement
+    unsigned = dict(drifted)
+    unsigned.pop("runResumeLineageSHA256")
+    drifted["runResumeLineageSHA256"] = module._canonical_sha256(unsigned)
+    with pytest.raises(ValueError, match="Resume lineage"):
+        module._load_resume_contract(run_root=run_root, expected_lineage=drifted)
+
+
+def test_resume_contract_rejects_agent_lane_base_and_manifest_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    run_root, lineage, _ = _write_resume_fixture(module, work_root=tmp_path / "work")
+    for mutate in (
+        lambda value: value["agents"][0]["laneHashes"].update({"trainSFT": "9" * 64}),
+        lambda value: value["agents"][0].update({"sourceVariantManifestSHA256": "a" * 64}),
+        lambda value: value["agents"][0].update({"baseModelRevision": "b" * 40}),
+        lambda value: value["agents"][0].update({"baseModelArtifactDigest": "c" * 64}),
+        lambda value: value["agents"][0].update({"baseModelIndexShardBindingSHA256": "d" * 64}),
+        lambda value: value["agents"][0].update({"trainingEnvironmentLockSHA256": "e" * 64}),
+    ):
+        drifted = json.loads(json.dumps(lineage))
+        mutate(drifted)
+        unsigned = dict(drifted)
+        unsigned.pop("runResumeLineageSHA256")
+        drifted["runResumeLineageSHA256"] = module._canonical_sha256(unsigned)
+        with pytest.raises(ValueError, match="Resume lineage"):
+            module._load_resume_contract(run_root=run_root, expected_lineage=drifted)
+
+
+def test_resume_contract_requires_run_and_checkpoint_manifests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    run_root, lineage, _ = _write_resume_fixture(module, work_root=tmp_path / "work")
+    run_manifest = run_root / module.RUN_MANIFEST_NAME
+    run_manifest.unlink()
+    with pytest.raises(FileNotFoundError, match="lineage manifest"):
+        module._load_resume_contract(run_root=run_root, expected_lineage=lineage)
+
+    run_root, lineage, _ = _write_resume_fixture(
+        module, work_root=tmp_path / "work-checkpoint"
+    )
+    checkpoint_manifest = Path(lineage["agents"][0]["checkpointLineagePath"])
+    checkpoint_manifest.unlink()
+    with pytest.raises(FileNotFoundError, match="lineage manifest"):
+        module._load_resume_contract(run_root=run_root, expected_lineage=lineage)
+
+
+def test_resume_reads_run_manifest_before_runtime_or_snapshot_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    work_root = tmp_path / "work"
+    run_root = work_root / "missing-manifest-internal_plus_public_optimized"
+    run_root.mkdir(parents=True)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_WORKDIR", str(work_root))
+    monkeypatch.setattr(
+        module,
+        "_verify_runtime_lineage",
+        lambda: pytest.fail("runtime lineage must not be read before the run manifest"),
+    )
+
+    with pytest.raises(FileNotFoundError, match="lineage manifest"):
+        module._train_lumen_adapters_gpu(
+            "missing-manifest",
+            "executor",
+            "",
+            42,
+            True,
+            True,
+            False,
+            False,
+            "large",
+            "internal_plus_public_optimized",
+            True,
+            False,
         )

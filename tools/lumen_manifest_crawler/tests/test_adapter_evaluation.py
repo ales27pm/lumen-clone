@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 import lumen_manifest_crawler.dataset.adapter_evaluation as adapter_evaluation
@@ -62,7 +63,13 @@ def _tool_contracts() -> dict:
     }
 
 
-def _training_environment(manifest: dict, digest_character: str = "c") -> dict:
+def _training_environment(
+    manifest: dict,
+    digest_character: str = "c",
+    *,
+    code_phase: str = "sft",
+    runtime_revision: str = "1" * 40,
+) -> dict:
     return {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": "sha256:" + digest_character * 64,
@@ -71,6 +78,13 @@ def _training_environment(manifest: dict, digest_character: str = "c") -> dict:
         "runtimeImageBindingVerified": False,
         "effectiveSeed": manifest["seed"],
         "environmentLock": manifest["trainingEnvironmentLock"],
+        "trainingCodeSHA256": manifest["trainingCodeSHA256ByPhase"][code_phase],
+        "trainingDependencyLockSHA256": manifest[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": manifest["requirementsSHA256"],
+        "runtimeSourceKind": "git",
+        "runtimeSourceRevision": runtime_revision,
     }
 
 
@@ -705,6 +719,20 @@ def test_experiment_manifest_requires_all_controlled_variants_and_marks_dpo_untr
     assert experiment["controlledVariables"]["baseModelArtifactDigest"] == "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218"
     assert experiment["controlledVariables"]["baseModelWeightShards"] == adapter_evaluation.DEFAULT_BASE_MODEL_WEIGHT_SHARDS
     assert experiment["controlledVariables"]["baseModelTokenizerDigest"] == "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    for field in (
+        "trainingCodeSHA256",
+        "trainingCodeBundleSHA256",
+        "trainingDependencyLockSHA256",
+        "requirementsSHA256",
+    ):
+        assert experiment["controlledVariables"][field] == manifests[
+            "internal_only"
+        ][field]
+    assert all(
+        variant["runtimeSourceKind"] == "unresolved"
+        and variant["runtimeSourceRevision"] is None
+        for variant in experiment["variants"]
+    )
     assert all(variant["trainingEnvironmentSHA256"] is None for variant in experiment["variants"])
     assert all(
         variant["dpoTraining"]["status"] == "generated_not_trained"
@@ -714,6 +742,144 @@ def test_experiment_manifest_requires_all_controlled_variants_and_marks_dpo_untr
 
     with pytest.raises(ValueError, match="variants must be exactly"):
         build_experiment_manifest(agent="executor", variants={"internal_only": manifests["internal_only"]})
+
+
+def test_training_lineage_mutation_and_missing_runtime_revision_fail_closed() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    assert pending["trainingCodeManifest"]["phase"] == "sft"
+    assert pending["trainingCodeSHA256"] == pending["trainingCodeSHA256ByPhase"][
+        "sft"
+    ]
+    assert pending["trainingDependencyLockSHA256"] == pending[
+        "trainingDependencyLock"
+    ]["trainingDependencyLockSHA256"]
+    assert pending["requirementsSHA256"] == pending["trainingDependencyLock"][
+        "requirementsSHA256"
+    ]
+    assert "runtimeSourceKind" not in pending["controlledTrainingConfig"]
+    assert "runtimeSourceRevision" not in pending["controlledTrainingConfig"]
+
+    mutated = json.loads(json.dumps(pending))
+    mutated.pop("variantManifestSHA256")
+    mutated["trainingCodeManifest"]["files"][0]["sizeBytes"] += 1
+    mutated["variantManifestSHA256"] = canonical_sha256(mutated)
+    assert not adapter_evaluation._valid_variant_manifest(
+        mutated,
+        agent="executor",
+        expected_variant="internal_only",
+    )
+
+    environment = _training_environment(pending)
+    environment.pop("runtimeSourceRevision")
+    with pytest.raises(ValueError, match="immutable runtime source revision"):
+        finalize_experiment_variant_manifest(
+            pending,
+            adapter_sha256=_adapter_artifact("a")["adapterSHA256"],
+            adapter_artifact_manifest=_adapter_artifact("a"),
+            training_environment=environment,
+        )
+
+
+def test_experiment_manifest_rejects_training_code_and_dependency_drift() -> None:
+    manifests = {
+        variant: build_experiment_variant_manifest(
+            agent="executor",
+            variant=variant,
+            base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+            seed=42,
+            training_config={"epochs": 1},
+            train_sft=[],
+            validation_sft=[],
+            dpo_records=[],
+            evaluation_records=[],
+        )
+        for variant in EXPERIMENT_VARIANTS
+    }
+
+    code_drift = json.loads(
+        json.dumps(manifests["internal_plus_public_optimized"])
+    )
+    code_drift.pop("variantManifestSHA256")
+    sft_manifest = code_drift["trainingCodeManifestsByPhase"]["sft"]
+    sft_manifest.pop("trainingCodeSHA256")
+    sft_manifest["files"][0]["sha256"] = "9" * 64
+    sft_manifest["trainingCodeSHA256"] = canonical_sha256(sft_manifest)
+    code_drift["trainingCodeManifest"] = sft_manifest
+    code_drift["trainingCodeSHA256"] = sft_manifest["trainingCodeSHA256"]
+    code_drift["trainingCodeSHA256ByPhase"]["sft"] = sft_manifest[
+        "trainingCodeSHA256"
+    ]
+    bundle = adapter_evaluation._TRAINING_LINEAGE.build_training_code_bundle(
+        code_drift["trainingCodeManifestsByPhase"]
+    )
+    code_drift["trainingCodeBundleSHA256"] = bundle["trainingCodeSHA256"]
+    code_drift["variantManifestSHA256"] = canonical_sha256(code_drift)
+    assert adapter_evaluation._valid_variant_manifest(
+        code_drift,
+        agent="executor",
+        expected_variant="internal_plus_public_optimized",
+    )
+    with pytest.raises(ValueError, match="share trainingCodeSHA256"):
+        build_experiment_manifest(
+            agent="executor",
+            variants={
+                **manifests,
+                "internal_plus_public_optimized": code_drift,
+            },
+        )
+
+    dependency_drift = json.loads(
+        json.dumps(manifests["internal_plus_public_optimized"])
+    )
+    dependency_drift.pop("variantManifestSHA256")
+    dependency_lock = dependency_drift["trainingDependencyLock"]
+    dependency_lock.pop("trainingDependencyLockSHA256")
+    dependency_lock["requirementsSHA256"] = "8" * 64
+    dependency_lock["trainingDependencyLockSHA256"] = canonical_sha256(
+        dependency_lock
+    )
+    dependency_drift["trainingDependencyLockSHA256"] = dependency_lock[
+        "trainingDependencyLockSHA256"
+    ]
+    dependency_drift["requirementsSHA256"] = dependency_lock[
+        "requirementsSHA256"
+    ]
+    environment_lock = dependency_drift["trainingEnvironmentLock"]
+    environment_lock["trainingDependencyLockSHA256"] = dependency_lock[
+        "trainingDependencyLockSHA256"
+    ]
+    environment_lock["requirementsSHA256"] = dependency_lock[
+        "requirementsSHA256"
+    ]
+    dependency_drift["trainingEnvironmentLockSHA256"] = canonical_sha256(
+        environment_lock
+    )
+    dependency_drift["variantManifestSHA256"] = canonical_sha256(
+        dependency_drift
+    )
+    assert adapter_evaluation._valid_variant_manifest(
+        dependency_drift,
+        agent="executor",
+        expected_variant="internal_plus_public_optimized",
+    )
+    with pytest.raises(ValueError, match="share trainingEnvironmentLockSHA256"):
+        build_experiment_manifest(
+            agent="executor",
+            variants={
+                **manifests,
+                "internal_plus_public_optimized": dependency_drift,
+            },
+        )
 
 
 def test_non_default_base_model_requires_non_default_explicit_provenance() -> None:
@@ -1060,7 +1226,7 @@ def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
         pending,
         adapter_sha256=artifact["adapterSHA256"],
         adapter_artifact_manifest=artifact,
-        training_environment=_training_environment(pending),
+        training_environment=_training_environment(pending, code_phase="dpo"),
         training_phase="sft_dpo",
         parent_sft_adapter_sha256=parent,
         reference_sft_adapter_sha256=parent,
@@ -1102,7 +1268,7 @@ def test_finalizer_rejects_runtime_seed_drift_and_missing_dpo_reference() -> Non
         evaluation_records=[],
     )
     artifact = _adapter_artifact("b", phase="sft_dpo", parent="a" * 64)
-    drifted_environment = _training_environment(pending)
+    drifted_environment = _training_environment(pending, code_phase="dpo")
     drifted_environment["effectiveSeed"] = 7
 
     with pytest.raises(ValueError, match="training_environment must match"):
@@ -1295,8 +1461,17 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
         optimized_manifest,
         adapter_sha256=digest_b,
         adapter_artifact_manifest=adapter_artifact_b,
-        training_environment=_training_environment(optimized_manifest),
+        training_environment=_training_environment(
+            optimized_manifest,
+            runtime_revision="2" * 40,
+        ),
     )
+    assert baseline_manifest["runtimeSourceRevision"] != optimized_manifest[
+        "runtimeSourceRevision"
+    ]
+    assert adapter_evaluation._variant_controlled_lineage(
+        baseline_manifest
+    ) == adapter_evaluation._variant_controlled_lineage(optimized_manifest)
     wrong_artifact_report = score_evaluation_suite(
         evaluation,
         {eval_id: {"approved": True}},
@@ -1365,7 +1540,7 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
         dpo_manifest,
         adapter_sha256=dpo_artifact["adapterSHA256"],
         adapter_artifact_manifest=dpo_artifact,
-        training_environment=_training_environment(dpo_manifest),
+        training_environment=_training_environment(dpo_manifest, code_phase="dpo"),
         training_phase="sft_dpo",
         parent_sft_adapter_sha256=parent_sft_digest,
         reference_sft_adapter_sha256=parent_sft_digest,
@@ -1445,6 +1620,8 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
     drifted_manifest = dict(optimized_manifest)
     drifted_manifest.pop("variantManifestSHA256")
     drifted_environment = _training_environment(drifted_manifest, "d")
+    drifted_environment.pop("runtimeSourceKind")
+    drifted_environment.pop("runtimeSourceRevision")
     drifted_manifest["trainingEnvironment"] = drifted_environment
     drifted_manifest["trainingEnvironmentSHA256"] = canonical_sha256(drifted_environment)
     drifted_manifest["variantManifestSHA256"] = canonical_sha256(drifted_manifest)
@@ -1608,6 +1785,75 @@ def test_fine_tuning_cards_and_export_plans_publish_honest_eval_and_dpo_contract
         assert len({manifest[field] for manifest in variant_manifests}) == 1
     written_report = json.loads((tmp_path / "executor" / "contamination_report.json").read_text())
     assert written_report["reportSHA256"] == executor.contamination_report["reportSHA256"]
+
+
+def test_all_persisted_variant_artifacts_are_self_consistent() -> None:
+    root = Path(__file__).resolve().parents[3] / "generated" / "fine_tuning"
+    agents = ("cortex", "executor", "fleet", "mimicry", "mouth", "rem")
+    lane_files = {
+        "trainSFT": "train_sft.jsonl",
+        "validationSFT": "val_sft.jsonl",
+        "trainDPO": "train_dpo.jsonl",
+        "validationDPO": "val_dpo.jsonl",
+    }
+    validated = 0
+
+    for agent in agents:
+        experiment = json.loads(
+            (root / agent / "experiment_manifest.json").read_text(encoding="utf-8")
+        )
+        unsigned_experiment = dict(experiment)
+        experiment_digest = unsigned_experiment.pop("experimentManifestSHA256")
+        assert canonical_sha256(unsigned_experiment) == experiment_digest
+        embedded_variants = {
+            item["variant"]: item for item in experiment["variants"]
+        }
+
+        for variant in EXPERIMENT_VARIANTS:
+            variant_root = root / agent / "experiments" / variant
+            manifest = json.loads(
+                (variant_root / "variant_manifest.json").read_text(encoding="utf-8")
+            )
+            assert adapter_evaluation._valid_variant_manifest(
+                manifest,
+                agent=agent,
+                expected_variant=variant,
+            )
+            assert embedded_variants[variant] == manifest
+
+            lane_records: dict[str, list[dict]] = {}
+            for lane, filename in lane_files.items():
+                with (variant_root / filename).open(encoding="utf-8") as handle:
+                    records = [json.loads(line) for line in handle if line.strip()]
+                lane_records[lane] = records
+                assert manifest["datasets"][lane] == {
+                    "count": len(records),
+                    "sha256": canonical_sha256(records),
+                }
+            assert manifest["trainingCorpusSHA256"] == canonical_sha256(
+                [
+                    *lane_records["trainSFT"],
+                    *lane_records["validationSFT"],
+                    *lane_records["trainDPO"],
+                    *lane_records["validationDPO"],
+                ]
+            )
+
+            contamination = json.loads(
+                (variant_root / "contamination_report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            assert adapter_evaluation._valid_contamination_report(contamination)
+            assert adapter_evaluation._contamination_matches_variant(
+                contamination,
+                manifest,
+            )
+            assert contamination["matchCount"] == 0
+            assert contamination["contaminated"] is False
+            validated += 1
+
+    assert validated == 18
 
 
 def test_native_fleet_orchestration_evals_flow_into_executable_fine_tuning_contracts() -> None:

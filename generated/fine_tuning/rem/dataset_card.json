@@ -1,6 +1,6 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 6050,
+  "availableSFTRecords": 6111,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "b77e47cde909a8373bc1b8c03415be39473ceb566f7bfdb9cbde8898f67988a7"
+      "reportSHA256": "ca6848ac320cc75727bb2e502df8134006f75ee58c479bb273e2ea4296a5c9b5"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "c72adcc08399e937e0a2fb286b966fdf07012dc113159aa50a78f7d4dafb719b",
-      "optimizedTrainingCorpusSHA256": "605f0e0e916ffbeaa7754fc9b969e187c4d5b8807d3e0489c62126c86373a82d",
+      "baselineTrainingCorpusSHA256": "b948ba21089aec009eb20814d47af876f250928dce8d28c4b8edacef7bd4891a",
+      "optimizedTrainingCorpusSHA256": "40372af1bb47909af36e00250b3e882aae8fd65be660cd181e0e83591598781a",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -42,12 +42,16 @@
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
       "trainingEnvironmentLockSHA256",
+      "trainingCodeSHA256",
+      "trainingCodeBundleSHA256",
+      "trainingDependencyLockSHA256",
+      "requirementsSHA256",
       "seed",
       "trainingConfigSHA256",
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "68f670ab0bfcb38ca74f84ccca58c627f8b9e085889cf98af538c027929e6c10",
+    "experimentManifestSHA256": "7690597100c9e56d946c02c77f1354d039160197f1b1d836e5301b187c68d002",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -59,11 +63,14 @@
       "requiresArtifactDigests": true,
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,
+      "requiresIdenticalTrainingCode": true,
+      "requiresIdenticalTrainingDependencyLock": true,
       "requiresIdenticalTrainingEnvironment": true,
       "requiresImmutableBaseModelRevisionAndDigest": true,
       "requiresPublicEvaluationFingerprintBinding": true,
       "requiresVerifiedRuntimeImageBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
+      "runtimeSourceRevisionIsAuditOnly": true,
       "schemaVersion": "lumen.adapter-promotion/1.0.0"
     },
     "requiredVariants": [
@@ -72,7 +79,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
+  "manifestCommit": "f2acf093f88155576a993b2ad1a0cea172cde59f",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 13,
@@ -265,16 +272,16 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.013378,
-        "total": 0.037459
+        "target": 0.01325,
+        "total": 0.037106
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.013427,
-        "total": 0.037998
+        "target": 0.013253,
+        "total": 0.037529
       }
     }
   },
@@ -291,9 +298,9 @@
   "recordCounts": {
     "eval": 6,
     "train_dpo": 11,
-    "train_sft": 5136,
+    "train_sft": 5188,
     "val_dpo": 2,
-    "val_sft": 909
+    "val_sft": 918
   },
   "sourceFamilies": [
     "adapter_ultra_specific",

@@ -12,10 +12,11 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
     EXPERIMENT_VARIANTS,
+    default_training_lineage_contract,
     promotion_contract,
 )
 
-ADAPTER_EXPORT_SCHEMA_VERSION = "1.2.0"
+ADAPTER_EXPORT_SCHEMA_VERSION = "1.3.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
 DEFAULT_TRAINING_OUTPUT_ROOT = "models/training_runs_qwen3_bootstrap"
@@ -98,6 +99,8 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out.setdefault("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST)
     out.setdefault("baseModelWeightShards", [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS])
     out.setdefault("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST)
+    for key, value in default_training_lineage_contract().items():
+        out.setdefault(key, value)
     out["artifactMode"] = "adapter_first"
     out["defaultExportArtifact"] = "lora_adapter"
     out["artifact_mode"] = "adapter_first"
@@ -125,6 +128,12 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "baseModelArtifactDigest": out["baseModelArtifactDigest"],
         "baseModelWeightShards": out["baseModelWeightShards"],
         "baseModelTokenizerDigest": out["baseModelTokenizerDigest"],
+        "trainingCodeSHA256": out["trainingCodeSHA256"],
+        "trainingCodeBundleSHA256": out["trainingCodeBundleSHA256"],
+        "trainingDependencyLockSHA256": out["trainingDependencyLockSHA256"],
+        "requirementsSHA256": out["requirementsSHA256"],
+        "runtimeSourceKind": out["runtimeSourceKind"],
+        "runtimeSourceRevision": out["runtimeSourceRevision"],
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "trainBaseModelWeights": False,
@@ -167,6 +176,12 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "baseModelArtifactDigest": config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
         "baseModelWeightShards": config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
         "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
+        "trainingCodeSHA256": config.get("trainingCodeSHA256"),
+        "trainingCodeBundleSHA256": config.get("trainingCodeBundleSHA256"),
+        "trainingDependencyLockSHA256": config.get("trainingDependencyLockSHA256"),
+        "requirementsSHA256": config.get("requirementsSHA256"),
+        "runtimeSourceKind": config.get("runtimeSourceKind"),
+        "runtimeSourceRevision": config.get("runtimeSourceRevision"),
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
@@ -233,11 +248,24 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
 def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
     adapters: list[dict[str, Any]] = []
     base_model_ids: set[str] = set()
+    training_code_digests: set[str] = set()
+    training_code_bundle_digests: set[str] = set()
+    dependency_lock_digests: set[str] = set()
+    requirements_digests: set[str] = set()
     for agent, dataset in sorted(datasets.items()):
         unsloth_config = getattr(dataset, "unsloth_config", {}) or {}
         dataset_card = getattr(dataset, "dataset_card", {}) or {}
         base_model_id = base_model_id_from_config(unsloth_config)
         base_model_ids.add(base_model_id)
+        for values, key in (
+            (training_code_digests, "trainingCodeSHA256"),
+            (training_code_bundle_digests, "trainingCodeBundleSHA256"),
+            (dependency_lock_digests, "trainingDependencyLockSHA256"),
+            (requirements_digests, "requirementsSHA256"),
+        ):
+            value = unsloth_config.get(key)
+            if isinstance(value, str) and value:
+                values.add(value)
         adapters.append(
             {
                 "agent": agent,
@@ -260,6 +288,12 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "baseModelArtifactDigest": unsloth_config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
                 "baseModelWeightShards": unsloth_config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
                 "baseModelTokenizerDigest": unsloth_config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
+                "trainingCodeSHA256": unsloth_config.get("trainingCodeSHA256"),
+                "trainingCodeBundleSHA256": unsloth_config.get("trainingCodeBundleSHA256"),
+                "trainingDependencyLockSHA256": unsloth_config.get("trainingDependencyLockSHA256"),
+                "requirementsSHA256": unsloth_config.get("requirementsSHA256"),
+                "runtimeSourceKind": unsloth_config.get("runtimeSourceKind"),
+                "runtimeSourceRevision": unsloth_config.get("runtimeSourceRevision"),
                 "systemPrompt": dataset_card.get("systemPrompt"),
                 "recordCounts": dataset_card.get("recordCounts", {}),
                 "evaluation": dataset_card.get("evaluation", {}),
@@ -284,6 +318,26 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "sharedBaseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
         "sharedBaseModelWeightShards": DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
         "sharedBaseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+        "sharedTrainingCodeSHA256": (
+            next(iter(training_code_digests))
+            if len(training_code_digests) == 1
+            else None
+        ),
+        "sharedTrainingCodeBundleSHA256": (
+            next(iter(training_code_bundle_digests))
+            if len(training_code_bundle_digests) == 1
+            else None
+        ),
+        "sharedTrainingDependencyLockSHA256": (
+            next(iter(dependency_lock_digests))
+            if len(dependency_lock_digests) == 1
+            else None
+        ),
+        "sharedRequirementsSHA256": (
+            next(iter(requirements_digests))
+            if len(requirements_digests) == 1
+            else None
+        ),
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,

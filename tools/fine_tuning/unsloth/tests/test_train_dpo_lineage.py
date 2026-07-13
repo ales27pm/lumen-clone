@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -10,6 +12,14 @@ import pytest
 
 from tools.fine_tuning.unsloth import train_dpo, train_sft
 from tools.fine_tuning.unsloth.adapter_artifact import write_adapter_artifact_manifest
+
+
+QWEN_MODEL_ID = "Qwen/Qwen3-1.7B"
+QWEN_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+SFT_CODE_SHA256 = "e" * 64
+DEPENDENCY_LOCK_SHA256 = "f" * 64
+REQUIREMENTS_SHA256 = "0" * 64
+RUNTIME_SOURCE_REVISION = "a" * 40
 
 
 def _safetensors_bytes(data: bytes = b"\x00\x00\x00\x00") -> bytes:
@@ -60,6 +70,10 @@ def _write_finalized_sft_manifest(
         "seed": seed,
         "sourceVariantManifestSHA256": source_variant_sha256,
         "trainingEnvironment": {"effectiveSeed": seed},
+        "trainingCodeSHA256": SFT_CODE_SHA256,
+        "trainingDependencyLockSHA256": DEPENDENCY_LOCK_SHA256,
+        "requirementsSHA256": REQUIREMENTS_SHA256,
+        "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,
         "artifact": {
             "status": "trained",
             "trainingPhase": "sft",
@@ -84,6 +98,9 @@ def test_verified_sft_parent_rejects_identity_digest_and_file_drift(
         "variant": "internal_plus_public_optimized",
         "variantManifestSHA256": "c" * 64,
         "seed": 42,
+        "trainingCodeSHA256ByPhase": {"sft": SFT_CODE_SHA256},
+        "trainingDependencyLockSHA256": DEPENDENCY_LOCK_SHA256,
+        "requirementsSHA256": REQUIREMENTS_SHA256,
     }
 
     _write_finalized_sft_manifest(finalized, artifact, agent="cortex")
@@ -156,6 +173,174 @@ def test_controlled_seed_rejects_cli_and_environment_drift() -> None:
         )
 
 
+def _valid_preference_row() -> dict:
+    return {
+        "prompt": [
+            {"role": "system", "content": "Ground the answer in trusted observations."},
+            {"role": "user", "content": "What did the tool report?"},
+        ],
+        "chosen": {"role": "assistant", "content": "The tool reported success."},
+        "rejected": {"role": "assistant", "content": "I guessed that it worked."},
+        "metadata": {"source": "test"},
+    }
+
+
+def test_preference_rows_remain_conversational_for_trl_chat_templates() -> None:
+    source = _valid_preference_row()
+    normalized = train_dpo.row_to_preference(source)
+
+    assert normalized == {
+        "prompt": source["prompt"],
+        "chosen": [source["chosen"]],
+        "rejected": [source["rejected"]],
+    }
+    assert isinstance(normalized["prompt"], list)
+    assert normalized["prompt"][-1]["role"] == "user"
+    assert normalized["chosen"][0]["role"] == "assistant"
+    assert normalized["rejected"][0]["role"] == "assistant"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda row: row.pop("prompt"), "non-empty message list"),
+        (lambda row: row.__setitem__("prompt", "question"), "non-empty message list"),
+        (lambda row: row.__setitem__("prompt", []), "non-empty message list"),
+        (
+            lambda row: row.__setitem__("prompt", [{"role": "tool", "content": "result"}]),
+            "unsupported role",
+        ),
+        (
+            lambda row: row.__setitem__("prompt", [{"role": "user", "content": "  "}]),
+            "non-empty text",
+        ),
+        (
+            lambda row: row.__setitem__(
+                "prompt", [{"role": "user", "content": "question", "name": "ignored"}]
+            ),
+            "only role and content",
+        ),
+        (
+            lambda row: row.__setitem__(
+                "prompt",
+                [
+                    {"role": "user", "content": "question"},
+                    {"role": "assistant", "content": "partial answer"},
+                ],
+            ),
+            "must end with a user message",
+        ),
+        (
+            lambda row: row.__setitem__(
+                "prompt",
+                [
+                    {"role": "user", "content": "one"},
+                    {"role": "user", "content": "two"},
+                ],
+            ),
+            "must alternate",
+        ),
+        (lambda row: row.pop("chosen"), "include chosen and rejected"),
+        (lambda row: row.pop("rejected"), "include chosen and rejected"),
+        (lambda row: row.__setitem__("chosen", "answer"), "exactly one assistant message"),
+        (
+            lambda row: row.__setitem__(
+                "chosen",
+                [
+                    {"role": "assistant", "content": "one"},
+                    {"role": "assistant", "content": "two"},
+                ],
+            ),
+            "exactly one assistant message",
+        ),
+        (
+            lambda row: row.__setitem__("chosen", {"role": "user", "content": "answer"}),
+            "unsupported role",
+        ),
+        (
+            lambda row: row.__setitem__("rejected", {"role": "assistant", "content": "\t"}),
+            "non-empty text",
+        ),
+        (
+            lambda row: row.__setitem__(
+                "rejected", {"role": "assistant", "content": "The  tool\nreported success."}
+            ),
+            "must differ",
+        ),
+    ],
+)
+def test_preference_rows_fail_closed_instead_of_synthesizing_defaults(
+    mutate: object,
+    message: str,
+) -> None:
+    row = _valid_preference_row()
+    mutate(row)  # type: ignore[operator]
+
+    with pytest.raises(ValueError, match=message):
+        train_dpo.row_to_preference(row)
+
+
+@pytest.mark.e2e
+def test_pinned_qwen_trl_chat_template_preserves_assistant_boundaries() -> None:
+    transformers = pytest.importorskip(
+        "transformers",
+        reason="Pinned Qwen chat-template integration requires transformers==4.57.6",
+    )
+    trl = pytest.importorskip(
+        "trl",
+        reason="Pinned Qwen chat-template integration requires trl==0.24.0",
+    )
+    if trl.__version__ != "0.24.0":
+        pytest.skip(f"Pinned chat-template integration requires trl==0.24.0, found {trl.__version__}")
+    if transformers.__version__ != "4.57.6":
+        pytest.skip(
+            "Pinned chat-template integration requires transformers==4.57.6, "
+            f"found {transformers.__version__}"
+        )
+
+    allow_network = os.environ.get("LUMEN_ENABLE_NETWORK_TESTS") == "1"
+    try:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            QWEN_MODEL_ID,
+            revision=QWEN_REVISION,
+            local_files_only=not allow_network,
+        )
+    except (OSError, ValueError):
+        if allow_network:
+            raise
+        pytest.skip(
+            "Pinned Qwen tokenizer is not cached; set LUMEN_ENABLE_NETWORK_TESTS=1 "
+            "to enable this network-backed integration test"
+        )
+
+    from trl.data_utils import maybe_apply_chat_template
+
+    normalized = train_dpo.row_to_preference(_valid_preference_row())
+    prepared = maybe_apply_chat_template(normalized, tokenizer)
+    without_generation_boundary = tokenizer.apply_chat_template(
+        normalized["prompt"],
+        tokenize=False,
+        add_generation_prompt=False,
+    )
+    generation_boundary = prepared["prompt"][len(without_generation_boundary) :]
+
+    assert prepared["prompt"].startswith(without_generation_boundary)
+    assert generation_boundary
+    assert "assistant" in generation_boundary
+    assert prepared["chosen"].rstrip().endswith(tokenizer.eos_token)
+    assert prepared["rejected"].rstrip().endswith(tokenizer.eos_token)
+    assert "The tool reported success." in prepared["chosen"]
+    assert "I guessed that it worked." in prepared["rejected"]
+
+    old_flattened = {
+        "prompt": without_generation_boundary,
+        "chosen": normalized["chosen"][0]["content"],
+        "rejected": normalized["rejected"][0]["content"],
+    }
+    assert maybe_apply_chat_template(old_flattened, tokenizer) == old_flattened
+    assert prepared != old_flattened
+
+
 def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     class ConfigProbe:
         def __init__(self, **kwargs: object) -> None:
@@ -221,6 +406,66 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     assert isinstance(orpo_trainer, ORPOTrainerProbe)
     assert "model_adapter_name" not in orpo_args.kwargs
     assert orpo_args.kwargs["seed"] == orpo_args.kwargs["data_seed"] == 42
+
+
+@pytest.mark.e2e
+def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
+    trl = pytest.importorskip(
+        "trl",
+        reason="Pinned constructor integration requires trl==0.24.0",
+    )
+    if trl.__version__ != "0.24.0":
+        pytest.skip(
+            f"Pinned constructor integration requires trl==0.24.0, found {trl.__version__}"
+        )
+
+    class DPOConstructorBinding:
+        def __init__(self, **kwargs: object) -> None:
+            inspect.signature(trl.DPOTrainer.__init__).bind(object(), **kwargs)
+
+    class ORPOConstructorBinding:
+        def __init__(self, **kwargs: object) -> None:
+            inspect.signature(trl.ORPOTrainer.__init__).bind(object(), **kwargs)
+
+    cfg = {
+        "batch_size": 1,
+        "gradient_accumulation_steps": 2,
+        "learning_rate": 1e-5,
+        "num_train_epochs": 1,
+        "warmup_steps": 0,
+        "max_seq_length": 512,
+        "fp16": False,
+    }
+    common = {
+        "seed": 42,
+        "model": object(),
+        "tokenizer": object(),
+        "train_dataset": object(),
+        "val_dataset": None,
+        "output_dir": Path("executor-preference-training"),
+        "dpo_config_class": trl.DPOConfig,
+        "dpo_trainer_class": DPOConstructorBinding,
+        "orpo_config_class": trl.ORPOConfig,
+        "orpo_trainer_class": ORPOConstructorBinding,
+    }
+
+    _, dpo_args = train_dpo._build_preference_trainer(
+        cfg,
+        preference_trainer="dpo",
+        **common,
+    )
+    _, orpo_args = train_dpo._build_preference_trainer(
+        cfg,
+        preference_trainer="orpo",
+        **common,
+    )
+
+    assert isinstance(dpo_args, trl.DPOConfig)
+    assert isinstance(orpo_args, trl.ORPOConfig)
+    assert dpo_args.model_adapter_name == train_dpo.POLICY_ADAPTER_NAME
+    assert dpo_args.ref_adapter_name == train_dpo.REFERENCE_ADAPTER_NAME
+    assert dpo_args.seed == dpo_args.data_seed == 42
+    assert orpo_args.seed == orpo_args.data_seed == 42
 
 
 def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) -> None:

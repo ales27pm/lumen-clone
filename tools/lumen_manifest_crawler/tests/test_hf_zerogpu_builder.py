@@ -94,6 +94,7 @@ def test_long_lived_space_stream_disconnect_is_terminal() -> None:
 
 def test_gradio_trigger_carries_selected_experiment_variant(monkeypatch: pytest.MonkeyPatch) -> None:
     posts: list[dict[str, Any]] = []
+    headers: list[dict[str, str]] = []
 
     class FakeResponse:
         def __enter__(self) -> FakeResponse:
@@ -123,6 +124,7 @@ def test_gradio_trigger_carries_selected_experiment_variant(monkeypatch: pytest.
 
         def post(self, _url: str, **kwargs: Any) -> FakeResponse:
             posts.append(kwargs["json"])
+            headers.append(kwargs["headers"])
             return FakeResponse()
 
         def stream(self, *_args: Any, **_kwargs: Any) -> FakeResponse:
@@ -141,9 +143,12 @@ def test_gradio_trigger_carries_selected_experiment_variant(monkeypatch: pytest.
         gpu_size="large",
         experiment_variant="internal_only",
         token="token",
+        admin_token="Lumen-Admin-Token-0123456789-ABCDEF",
     )
 
-    assert posts[0]["data"][-2:] == ["internal_only", True]
+    assert posts[0]["data"][-3:] == ["internal_only", True, False]
+    assert posts[0]["data"][5] is False
+    assert headers[0]["X-Lumen-Admin-Token"] == "Lumen-Admin-Token-0123456789-ABCDEF"
 
 
 def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -> None:
@@ -187,6 +192,11 @@ def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -
     assert defaults["runtime_image_binding_status"] == "manual_validation_required"
     assert defaults["runtime_image_binding_verified"] is False
     assert defaults["dataset_path_in_repo"] == "runs/test-run/fine_tuning"
+    assert defaults["dataset_revision"] == "pending_dataset_upload"
+    assert defaults["trainingCodeManifest"]["phase"] == "sft"
+    assert len(defaults["trainingCodeSHA256"]) == 64
+    assert len(defaults["trainingDependencyLockSHA256"]) == 64
+    assert len(defaults["requirementsSHA256"]) == 64
     assert (build.space_dir / "app.py").exists()
     assert (build.space_dir / "lumen_train_sft.py").exists()
     assert (build.space_dir / "adapter_artifact.py").exists()
@@ -252,8 +262,10 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
         def create_repo(self, **kwargs: Any) -> None:
             calls.append(("create_repo", kwargs))
 
-        def upload_folder(self, **kwargs: Any) -> None:
+        def upload_folder(self, **kwargs: Any) -> Any:
             calls.append(("upload_folder", kwargs))
+            revision = "d" * 40 if kwargs["repo_type"] == "dataset" else "e" * 40
+            return SimpleNamespace(oid=revision)
 
         def add_space_secret(self, **kwargs: Any) -> None:
             calls.append(("add_space_secret", kwargs))
@@ -299,6 +311,7 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
         private_adapters=True,
         zero_gpu_hardware="zero-a10g",
         token="token",
+        admin_token="Lumen-Admin-Token-0123456789-ABCDEF",
         dry_run=False,
     )
 
@@ -319,3 +332,158 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
     )
     assert call_names[-2:] == ["request_space_hardware", "restart_space"]
     assert call_names.count("restart_space") == 1
+    assert variable_calls["LUMEN_ZERO_GPU_DATASET_REVISION"] == "d" * 40
+    assert variable_calls["LUMEN_ZERO_GPU_RUNTIME_SOURCE_REVISION"] == "e" * 40
+    defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
+    assert defaults["dataset_revision"] == "d" * 40
+    uploads = [details for name, details in calls if name == "upload_folder"]
+    assert [details["repo_type"] for details in uploads] == ["dataset", "space"]
+    secret_keys = {
+        details["key"] for name, details in calls if name == "add_space_secret"
+    }
+    assert secret_keys == {
+        "LUMEN_ZERO_GPU_HUB_TOKEN",
+        "LUMEN_ZERO_GPU_ADMIN_TOKEN",
+    }
+
+
+def test_upload_to_hub_requires_dedicated_repository_token_before_hf_api(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        builder,
+        "import_hf_api",
+        lambda: pytest.fail("missing credentials must fail before HfApi is imported"),
+    )
+    space_dir = tmp_path / "space"
+    dataset_dir = tmp_path / "dataset"
+    space_dir.mkdir()
+    dataset_dir.mkdir()
+    defaults_path = space_dir / "lumen_zero_gpu_defaults.json"
+    defaults_path.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="LUMEN_ZERO_GPU_HUB_TOKEN"):
+        builder.upload_to_hub(
+            build=SpaceBuild(
+                run_id="test-run",
+                run_root=tmp_path,
+                space_dir=space_dir,
+                dataset_dir=dataset_dir,
+                dataset_path_in_repo="runs/test-run/fine_tuning",
+                defaults_path=defaults_path,
+            ),
+            space_repo="user/space",
+            dataset_repo="user/dataset",
+            adapter_repo="user/adapters",
+            private_space=True,
+            private_dataset=True,
+            private_adapters=True,
+            zero_gpu_hardware="zero-a10g",
+            token=None,
+            admin_token="Lumen-Admin-Token-0123456789-ABCDEF",
+            dry_run=False,
+        )
+
+
+def test_main_rejects_legacy_hf_token_for_real_operations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "LUMEN_ZERO_GPU_ADMIN_TOKEN",
+        "Lumen-Admin-Token-0123456789-ABCDEF",
+    )
+    monkeypatch.delenv("LUMEN_ZERO_GPU_HUB_TOKEN", raising=False)
+    monkeypatch.setenv("HF_TOKEN", "legacy-broad-token")
+    monkeypatch.setattr(
+        builder,
+        "import_hf_api",
+        lambda: pytest.fail("legacy credentials must fail before HfApi is imported"),
+    )
+
+    with pytest.raises(ValueError, match="LUMEN_ZERO_GPU_HUB_TOKEN"):
+        builder.main(
+            [
+                "--run-id", "run",
+                "--run-root", str(tmp_path / "run"),
+                "--dataset-source", str(tmp_path / "missing-dataset"),
+                "--space-repo", "user/space",
+                "--dataset-repo", "user/dataset",
+                "--adapter-repo", "user/adapters",
+                "--experiment-variant", "internal_only",
+                "--container-image-digest", "sha256:" + "a" * 64,
+            ]
+        )
+
+
+def test_space_visibility_is_private_by_default_and_public_requires_flag() -> None:
+    defaults = builder.parse_args(
+        [
+            "--run-id", "run",
+            "--run-root", "run-root",
+            "--dataset-source", "datasets",
+            "--space-repo", "user/space",
+            "--dataset-repo", "user/dataset",
+            "--adapter-repo", "user/adapters",
+            "--experiment-variant", "internal_only",
+            "--container-image-digest", "sha256:" + "a" * 64,
+        ]
+    )
+    assert defaults.public_space is False
+    public = builder.parse_args(
+        [
+            "--run-id", "run",
+            "--run-root", "run-root",
+            "--dataset-source", "datasets",
+            "--space-repo", "user/space",
+            "--dataset-repo", "user/dataset",
+            "--adapter-repo", "user/adapters",
+            "--experiment-variant", "internal_only",
+            "--container-image-digest", "sha256:" + "a" * 64,
+            "--public-space",
+        ]
+    )
+    assert public.public_space is True
+
+
+def test_resume_trigger_does_not_rebuild_or_upload_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "LUMEN_ZERO_GPU_ADMIN_TOKEN",
+        "Lumen-Admin-Token-0123456789-ABCDEF",
+    )
+    monkeypatch.setenv("LUMEN_ZERO_GPU_HUB_TOKEN", "fine-grained-token")
+    monkeypatch.setattr(
+        builder,
+        "write_space_bundle",
+        lambda **_kwargs: pytest.fail("resume must not rebuild the Space"),
+    )
+    monkeypatch.setattr(
+        builder,
+        "upload_to_hub",
+        lambda **_kwargs: pytest.fail("resume must not upload a new snapshot"),
+    )
+    monkeypatch.setattr(
+        builder,
+        "import_hf_api",
+        lambda: (lambda **_kwargs: object()),
+    )
+
+    assert builder.main(
+        [
+            "--run-id", "resume-run",
+            "--run-root", str(tmp_path / "missing-run-root"),
+            "--dataset-source", str(tmp_path / "missing-dataset"),
+            "--space-repo", "user/space",
+            "--dataset-repo", "user/dataset",
+            "--adapter-repo", "user/adapters",
+            "--experiment-variant", "internal_only",
+            "--container-image-digest", "sha256:" + "a" * 64,
+            "--resume",
+            "--trigger",
+            "--dry-run",
+        ]
+    ) == 0

@@ -1,19 +1,34 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import importlib.metadata as importlib_metadata
 import json
+import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import traceback
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
+import fcntl
 
 import gradio as gr
 import spaces
 from huggingface_hub import HfApi, snapshot_download
+from training_lineage import (
+    installed_controlled_package_versions,
+    validate_runtime_source,
+    verify_training_code_manifest,
+    verify_training_dependency_lock,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -29,6 +44,12 @@ EXPERIMENT_VARIANTS = (
     "internal_plus_public_optimized",
 )
 RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+IMMUTABLE_HUB_REVISION = re.compile(r"[0-9a-f]{40}")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+MIN_ADMIN_TOKEN_LENGTH = 32
+RUN_MANIFEST_NAME = "lumen_zerogpu_run_manifest.json"
+CHECKPOINT_LINEAGE_SCHEMA = "lumen.zerogpu.checkpoint_lineage/1.0.0"
+RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.0.0"
 CONTAINER_IMAGE_DIGEST_SOURCE = "operator_declared"
 RUNTIME_IMAGE_BINDING_STATUS = "manual_validation_required"
 REQUIRED_VARIANT_DATASET_FILES = (
@@ -54,10 +75,41 @@ RUNTIME_LINEAGE_CONFIG_FIELDS = {
     "trainingRuntimeImageBindingVerified",
     "trainingContainerImageDigest",
     "trainingEnvironmentSHA256",
+    "checkpointLineagePath",
+    "datasetRepository",
+    "datasetRevision",
+    "requirementsSHA256",
+    "runResumeLineage",
+    "runResumeLineageSHA256",
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
+    "trainingCodeSHA256",
+    "trainingCodeManifest",
+    "trainingDependencyLock",
+    "trainingDependencyLockSHA256",
     "variant",
     "variantAttestation",
     "variantManifestSHA256",
 }
+
+
+class RequestAuthorizationError(Exception):
+    pass
+
+
+class AuthorizationConfigurationError(Exception):
+    pass
+
+
+class RepositoryCredentialConfigurationError(Exception):
+    pass
+
+
+class TrainingConflictError(Exception):
+    pass
+
+
+LOGGER = logging.getLogger("lumen.zerogpu")
 
 
 def _csv_agents(value: str) -> list[str]:
@@ -67,6 +119,8 @@ def _csv_agents(value: str) -> list[str]:
         raise ValueError(f"Unsupported agents: {', '.join(unsupported)}")
     if not agents:
         raise ValueError("Select at least one agent")
+    if len(agents) != len(set(agents)):
+        raise ValueError("Selected agents must be unique")
     return agents
 
 
@@ -83,6 +137,223 @@ def _sha256(path: Path) -> str:
 def _canonical_sha256(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _require_sha256(value: Any, *, label: str) -> str:
+    digest = str(value or "")
+    if SHA256_PATTERN.fullmatch(digest) is None:
+        raise ValueError(f"{label} must be a lowercase SHA-256 digest")
+    return digest
+
+
+def _immutable_hub_revision(value: Any, *, label: str) -> str:
+    revision = str(value or "").strip().lower()
+    if IMMUTABLE_HUB_REVISION.fullmatch(revision) is None:
+        raise ValueError(f"{label} must be a full immutable Hub commit SHA")
+    return revision
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        try:
+            Path(temporary_name).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _self_hashed(payload: dict[str, Any], *, field: str) -> dict[str, Any]:
+    unsigned = dict(payload)
+    unsigned.pop(field, None)
+    return {**unsigned, field: _canonical_sha256(unsigned)}
+
+
+def _read_self_hashed_json(
+    path: Path,
+    *,
+    schema: str,
+    hash_field: str,
+) -> dict[str, Any]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing required lineage manifest: {path.name}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema") != schema:
+        raise ValueError(f"Invalid lineage manifest contract: {path.name}")
+    expected = payload.get(hash_field)
+    unsigned = dict(payload)
+    unsigned.pop(hash_field, None)
+    if (
+        not isinstance(expected, str)
+        or SHA256_PATTERN.fullmatch(expected) is None
+        or _canonical_sha256(unsigned) != expected
+    ):
+        raise ValueError(f"Lineage manifest integrity check failed: {path.name}")
+    return payload
+
+
+def _checkpoint_directory_manifest(path: Path) -> dict[str, Any]:
+    if not path.is_dir():
+        raise FileNotFoundError("Checkpoint directory is missing")
+    files = [candidate for candidate in path.rglob("*") if candidate.is_file()]
+    if not files:
+        raise ValueError("Checkpoint directory is empty")
+    entries = [
+        {
+            "path": candidate.relative_to(path).as_posix(),
+            "sizeBytes": candidate.stat().st_size,
+            "sha256": _sha256(candidate),
+        }
+        for candidate in sorted(files, key=lambda value: value.relative_to(path).as_posix())
+    ]
+    payload = {
+        "schema": "lumen.zerogpu.checkpoint_directory/1.0.0",
+        "files": entries,
+    }
+    return {**payload, "checkpointSHA256": _canonical_sha256(payload)}
+
+
+def _validate_admin_token(value: str | None) -> str:
+    token = value or ""
+    if (
+        len(token) < MIN_ADMIN_TOKEN_LENGTH
+        or any(character.isspace() for character in token)
+        or len(set(token)) < 12
+    ):
+        raise AuthorizationConfigurationError(
+            "ZeroGPU administrative authorization is not configured"
+        )
+    return token
+
+
+def _request_header(request: Any, name: str) -> str:
+    headers = getattr(request, "headers", None)
+    if headers is None:
+        return ""
+    getter = getattr(headers, "get", None)
+    if getter is None:
+        return ""
+    return str(getter(name) or getter(name.lower()) or "")
+
+
+def _authorize_request(request: Any) -> None:
+    expected = _validate_admin_token(os.environ.get("LUMEN_ZERO_GPU_ADMIN_TOKEN"))
+    supplied = _request_header(request, "X-Lumen-Admin-Token")
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise RequestAuthorizationError("Administrative authorization required")
+
+
+@contextmanager
+def _exclusive_training_operation() -> Any:
+    work_root = Path(
+        os.environ.get("LUMEN_ZERO_GPU_WORKDIR", "/tmp/lumen_zerogpu_runs")
+    ).resolve()
+    work_root.mkdir(parents=True, exist_ok=True)
+    lock_path = work_root / ".lumen-training.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise TrainingConflictError("Another training operation is active") from exc
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def _external_failure(*, code: str, correlation_id: str, message: str) -> dict[str, Any]:
+    return {
+        "schema": "lumen.zerogpu.training_response/1.0.0",
+        "ok": False,
+        "error_code": code,
+        "correlation_id": correlation_id,
+        "message": message,
+    }
+
+
+def _installed_unsloth_revision() -> str:
+    distribution = importlib_metadata.distribution("unsloth")
+    direct_url = distribution.read_text("direct_url.json")
+    if not direct_url:
+        raise ValueError("Installed Unsloth package lacks VCS provenance")
+    payload = json.loads(direct_url)
+    revision = ((payload.get("vcs_info") or {}).get("commit_id"))
+    if not isinstance(revision, str) or IMMUTABLE_HUB_REVISION.fullmatch(revision) is None:
+        raise ValueError("Installed Unsloth package lacks an immutable VCS revision")
+    return revision
+
+
+def _verify_runtime_lineage() -> dict[str, Any]:
+    code_manifest = DEFAULTS.get("trainingCodeManifest")
+    code_digest = _require_sha256(
+        DEFAULTS.get("trainingCodeSHA256"),
+        label="trainingCodeSHA256",
+    )
+    if not isinstance(code_manifest, dict):
+        raise ValueError("Missing training-code manifest")
+    if verify_training_code_manifest(code_manifest, root=APP_ROOT) != code_digest:
+        raise ValueError("Deployed training-code digest mismatch")
+
+    dependency_lock = DEFAULTS.get("trainingDependencyLock")
+    dependency_digest = _require_sha256(
+        DEFAULTS.get("trainingDependencyLockSHA256"),
+        label="trainingDependencyLockSHA256",
+    )
+    requirements_digest = _require_sha256(
+        DEFAULTS.get("requirementsSHA256"),
+        label="requirementsSHA256",
+    )
+    if not isinstance(dependency_lock, dict):
+        raise ValueError("Missing training dependency lock")
+    installed_versions = installed_controlled_package_versions(dependency_lock)
+    import torch
+
+    runtime_python_version = ".".join(platform.python_version_tuple()[:2])
+    runtime_cuda_version = str(torch.version.cuda or "")
+    if (
+        verify_training_dependency_lock(
+            dependency_lock,
+            requirements_path=APP_ROOT / "requirements.txt",
+            installed_versions=installed_versions,
+            installed_unsloth_revision=_installed_unsloth_revision(),
+            runtime_python_version=runtime_python_version,
+            runtime_cuda_version=runtime_cuda_version,
+        )
+        != dependency_digest
+        or dependency_lock.get("requirementsSHA256") != requirements_digest
+    ):
+        raise ValueError("Training dependency lineage mismatch")
+
+    runtime_source_kind, runtime_source_revision = validate_runtime_source(
+        kind=os.environ.get(
+            "LUMEN_ZERO_GPU_RUNTIME_SOURCE_KIND",
+            DEFAULTS.get("runtimeSourceKind"),
+        ),
+        revision=os.environ.get("LUMEN_ZERO_GPU_RUNTIME_SOURCE_REVISION"),
+    )
+    return {
+        "trainingCodeManifest": code_manifest,
+        "trainingCodeSHA256": code_digest,
+        "trainingDependencyLock": dependency_lock,
+        "trainingDependencyLockSHA256": dependency_digest,
+        "requirementsSHA256": requirements_digest,
+        "runtimeSourceKind": runtime_source_kind,
+        "runtimeSourceRevision": runtime_source_revision,
+    }
 
 
 def _experiment_variant(value: str) -> str:
@@ -215,12 +486,23 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
         "trainingEnvironmentLockSHA256": manifest["trainingEnvironmentLockSHA256"],
         "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
+        "trainingCodeSHA256": cfg.get("trainingCodeSHA256"),
+        "trainingDependencyLockSHA256": cfg.get(
+            "trainingDependencyLockSHA256"
+        ),
+        "requirementsSHA256": cfg.get("requirementsSHA256"),
+        "runtimeSourceKind": cfg.get("runtimeSourceKind"),
+        "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
         "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
         "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
     }
 
 
-def _training_environment(manifest: dict[str, Any]) -> dict[str, Any]:
+def _training_environment(
+    manifest: dict[str, Any],
+    *,
+    runtime_lineage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     container_digest = str(DEFAULTS.get("container_image_digest") or "")
     if re.fullmatch(r"sha256:[0-9a-f]{64}", container_digest) is None:
         raise ValueError("An explicit operator-declared container image digest is required before training")
@@ -245,6 +527,16 @@ def _training_environment(manifest: dict[str, Any]) -> dict[str, Any]:
         "effectiveSeed": int(manifest["seed"]),
         "environmentLock": lock,
     }
+    if runtime_lineage is not None:
+        payload.update(
+            {
+                "trainingCodeSHA256": runtime_lineage["trainingCodeSHA256"],
+                "trainingDependencyLockSHA256": runtime_lineage[
+                    "trainingDependencyLockSHA256"
+                ],
+                "requirementsSHA256": runtime_lineage["requirementsSHA256"],
+            }
+        )
     return {**payload, "trainingEnvironmentSHA256": _canonical_sha256(payload)}
 
 
@@ -257,6 +549,7 @@ def _optional_int_env(name: str) -> int | None:
 
 
 def _copy_dataset_snapshot(run_root: Path, dataset_repo: str, revision: str, path_in_repo: str, token: str) -> Path:
+    revision = _immutable_hub_revision(revision, label="Dataset revision")
     allow_pattern = f"{path_in_repo}/**"
     snapshot = Path(
         snapshot_download(
@@ -272,10 +565,301 @@ def _copy_dataset_snapshot(run_root: Path, dataset_repo: str, revision: str, pat
         raise FileNotFoundError(f"Downloaded dataset snapshot did not contain {path_in_repo}")
     target = run_root / "generated" / "fine_tuning"
     if target.exists():
-        shutil.rmtree(target)
+        raise FileExistsError("Fresh dataset snapshot destination already exists")
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, target)
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        shutil.copytree(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
     return target
+
+
+def _agent_run_lineage(
+    *,
+    source_root: Path,
+    run_root: Path,
+    agent: str,
+    variant: str,
+) -> dict[str, Any]:
+    variant_root, manifest = _variant_dataset(
+        source_root / agent,
+        agent=agent,
+        variant=variant,
+    )
+    dataset_files = {
+        filename: _sha256(variant_root / filename)
+        for filename in REQUIRED_VARIANT_DATASET_FILES
+    }
+    lane_hashes = {
+        name: contract["sha256"]
+        for name, contract in sorted(manifest["datasets"].items())
+        if isinstance(contract, dict) and isinstance(contract.get("sha256"), str)
+    }
+    return {
+        "agent": agent,
+        "sourceVariantManifestSHA256": _require_sha256(
+            manifest.get("variantManifestSHA256"),
+            label=f"{agent} variant manifest",
+        ),
+        "laneHashes": lane_hashes,
+        "datasetFileSHA256": dataset_files,
+        "trainingCorpusSHA256": _require_sha256(
+            manifest.get("trainingCorpusSHA256"),
+            label=f"{agent} training corpus",
+        ),
+        "controlledTrainingConfigSHA256": _require_sha256(
+            manifest.get("trainingConfigSHA256"),
+            label=f"{agent} training config",
+        ),
+        "baseModelID": manifest.get("baseModelID"),
+        "baseModelRevision": manifest.get("baseModelRevision"),
+        "baseModelIndexDigest": manifest.get("baseModelIndexDigest"),
+        "baseModelIndexShardBindingSHA256": manifest.get(
+            "baseModelIndexShardBindingSHA256"
+        ),
+        "baseModelArtifactDigest": manifest.get("baseModelArtifactDigest"),
+        "baseModelWeightShards": manifest.get("baseModelWeightShards"),
+        "baseModelTokenizerDigest": manifest.get("baseModelTokenizerDigest"),
+        "seed": manifest.get("seed"),
+        "trainingEnvironmentLockSHA256": manifest.get(
+            "trainingEnvironmentLockSHA256"
+        ),
+        "configPath": str(run_root / "configs" / f"{agent}.json"),
+        "checkpointLineagePath": str(
+            run_root / "checkpoint_lineage" / f"{agent}.json"
+        ),
+        "checkpointRoot": str(run_root / "training" / agent),
+        "outputDirectory": str(run_root / "training" / agent),
+        "adapterOutputDirectory": str(
+            run_root / "models" / "lora_qwen3_bootstrap" / agent
+        ),
+    }
+
+
+def _build_run_resume_lineage(
+    *,
+    run_id: str,
+    run_root: Path,
+    source_root: Path,
+    dataset_repo: str,
+    dataset_revision: str,
+    dataset_path: str,
+    agents: list[str],
+    variant: str,
+    seed: int,
+    assistant_only_loss: bool,
+    runtime_lineage: dict[str, Any],
+) -> dict[str, Any]:
+    dataset_revision = _immutable_hub_revision(
+        dataset_revision,
+        label="Dataset revision",
+    )
+    agent_lineage = [
+        _agent_run_lineage(
+            source_root=source_root,
+            run_root=run_root,
+            agent=agent,
+            variant=variant,
+        )
+        for agent in agents
+    ]
+    if any(item.get("seed") != int(seed) for item in agent_lineage):
+        raise ValueError("Requested seed drifted from the controlled agent lineage")
+    payload = {
+        "schema": RUN_RESUME_LINEAGE_SCHEMA,
+        "runID": run_id,
+        "datasetRepository": dataset_repo,
+        "datasetRevision": dataset_revision,
+        "datasetPath": dataset_path,
+        "localDatasetSnapshot": str(run_root / "generated" / "fine_tuning"),
+        "selectedAgents": agents,
+        "experimentVariant": variant,
+        "seed": int(seed),
+        "assistantOnlyLoss": bool(assistant_only_loss),
+        "trainingCodeSHA256": runtime_lineage["trainingCodeSHA256"],
+        "trainingDependencyLockSHA256": runtime_lineage[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": runtime_lineage["requirementsSHA256"],
+        "runtimeSourceKind": runtime_lineage["runtimeSourceKind"],
+        "runtimeSourceRevision": runtime_lineage["runtimeSourceRevision"],
+        "agents": agent_lineage,
+    }
+    return {**payload, "runResumeLineageSHA256": _canonical_sha256(payload)}
+
+
+def _initial_checkpoint_lineage(
+    *,
+    run_lineage: dict[str, Any],
+    agent_lineage: dict[str, Any],
+    config_path: Path,
+) -> dict[str, Any]:
+    payload = {
+        "schema": CHECKPOINT_LINEAGE_SCHEMA,
+        "agent": agent_lineage["agent"],
+        "runResumeLineageSHA256": run_lineage["runResumeLineageSHA256"],
+        "configSHA256": _sha256(config_path),
+        "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
+        "laneHashes": agent_lineage["laneHashes"],
+        "checkpointRoot": agent_lineage["checkpointRoot"],
+        "outputDirectory": agent_lineage["outputDirectory"],
+        "checkpoints": [],
+    }
+    return _self_hashed(payload, field="checkpointLineageSHA256")
+
+
+def _validate_checkpoint_lineage(
+    *,
+    run_lineage: dict[str, Any],
+    agent_lineage: dict[str, Any],
+) -> dict[str, Any]:
+    record_path = Path(agent_lineage["checkpointLineagePath"])
+    record = _read_self_hashed_json(
+        record_path,
+        schema=CHECKPOINT_LINEAGE_SCHEMA,
+        hash_field="checkpointLineageSHA256",
+    )
+    expected_static = {
+        "agent": agent_lineage["agent"],
+        "runResumeLineageSHA256": run_lineage["runResumeLineageSHA256"],
+        "configSHA256": _sha256(Path(agent_lineage["configPath"])),
+        "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
+        "laneHashes": agent_lineage["laneHashes"],
+        "checkpointRoot": agent_lineage["checkpointRoot"],
+        "outputDirectory": agent_lineage["outputDirectory"],
+    }
+    if any(record.get(key) != value for key, value in expected_static.items()):
+        raise ValueError("Checkpoint lineage drifted from the requested run")
+    checkpoints = record.get("checkpoints")
+    if not isinstance(checkpoints, list) or not checkpoints:
+        raise ValueError("Resume requires at least one checkpoint bound to the run")
+    root = Path(agent_lineage["checkpointRoot"]).resolve()
+    valid: list[dict[str, str]] = []
+    steps: list[int] = []
+    for entry in checkpoints:
+        if not isinstance(entry, dict):
+            raise ValueError("Checkpoint lineage entries must be objects")
+        relative = str(entry.get("path") or "")
+        if re.fullmatch(r"checkpoint-[1-9][0-9]*", relative) is None:
+            raise ValueError("Checkpoint lineage contains an invalid checkpoint path")
+        steps.append(int(relative.removeprefix("checkpoint-")))
+        checkpoint = (root / relative).resolve()
+        if checkpoint.parent != root:
+            raise ValueError("Checkpoint lineage escapes the checkpoint root")
+        manifest = _checkpoint_directory_manifest(checkpoint)
+        if manifest["checkpointSHA256"] != entry.get("checkpointSHA256"):
+            raise ValueError("Checkpoint contents do not match checkpoint lineage")
+        valid.append(
+            {"path": relative, "checkpointSHA256": manifest["checkpointSHA256"]}
+        )
+    if valid != checkpoints:
+        raise ValueError("Checkpoint lineage entries are not canonical")
+    if steps != sorted(set(steps)):
+        raise ValueError("Checkpoint lineage entries must be unique and step-sorted")
+    return record
+
+
+def _write_fresh_run_contract(
+    *,
+    run_root: Path,
+    run_lineage: dict[str, Any],
+    prepared: list[dict[str, Any]],
+) -> Path:
+    for agent_lineage in run_lineage["agents"]:
+        config_path = Path(agent_lineage["configPath"])
+        checkpoint_record = _initial_checkpoint_lineage(
+            run_lineage=run_lineage,
+            agent_lineage=agent_lineage,
+            config_path=config_path,
+        )
+        _atomic_write_json(
+            Path(agent_lineage["checkpointLineagePath"]),
+            checkpoint_record,
+        )
+    payload = {
+        "schema": "lumen.zerogpu.training_run/2.0.0",
+        "runResumeLineage": run_lineage,
+        "runResumeLineageSHA256": run_lineage["runResumeLineageSHA256"],
+        "preparedAgents": prepared,
+    }
+    manifest = _self_hashed(payload, field="runManifestSHA256")
+    path = run_root / RUN_MANIFEST_NAME
+    _atomic_write_json(path, manifest)
+    return path
+
+
+def _load_resume_contract(
+    *,
+    run_root: Path,
+    expected_lineage: dict[str, Any],
+    existing_manifest: dict[str, Any] | None = None,
+) -> tuple[Path, list[dict[str, Any]]]:
+    path = run_root / RUN_MANIFEST_NAME
+    manifest = existing_manifest or _read_self_hashed_json(
+        path,
+        schema="lumen.zerogpu.training_run/2.0.0",
+        hash_field="runManifestSHA256",
+    )
+    if (
+        manifest.get("runResumeLineage") != expected_lineage
+        or manifest.get("runResumeLineageSHA256")
+        != expected_lineage["runResumeLineageSHA256"]
+    ):
+        raise ValueError("Resume lineage does not match the original run")
+    prepared = manifest.get("preparedAgents")
+    if not isinstance(prepared, list) or len(prepared) != len(expected_lineage["agents"]):
+        raise ValueError("Run manifest prepared-agent contract is invalid")
+    prepared_by_agent = {
+        item.get("agent"): item for item in prepared if isinstance(item, dict)
+    }
+    if set(prepared_by_agent) != set(expected_lineage["selectedAgents"]):
+        raise ValueError("Run manifest selected-agent contract is invalid")
+    for agent_lineage in expected_lineage["agents"]:
+        agent = agent_lineage["agent"]
+        item = prepared_by_agent[agent]
+        if (
+            item.get("config") != agent_lineage["configPath"]
+            or item.get("checkpointLineagePath")
+            != agent_lineage["checkpointLineagePath"]
+            or item.get("datasetRepository")
+            != expected_lineage["datasetRepository"]
+            or item.get("datasetRevision") != expected_lineage["datasetRevision"]
+            or item.get("datasetPath") != expected_lineage["datasetPath"]
+            or item.get("runResumeLineageSHA256")
+            != expected_lineage["runResumeLineageSHA256"]
+            or item.get("trainingCodeSHA256")
+            != expected_lineage["trainingCodeSHA256"]
+            or item.get("trainingDependencyLockSHA256")
+            != expected_lineage["trainingDependencyLockSHA256"]
+            or item.get("requirementsSHA256")
+            != expected_lineage["requirementsSHA256"]
+            or item.get("runtimeSourceKind")
+            != expected_lineage["runtimeSourceKind"]
+            or item.get("runtimeSourceRevision")
+            != expected_lineage["runtimeSourceRevision"]
+        ):
+            raise ValueError("Run manifest path lineage drifted")
+        config_path = Path(agent_lineage["configPath"])
+        if not config_path.is_file():
+            raise FileNotFoundError("Prepared resume config is missing")
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(config, dict)
+            or config.get("runResumeLineage") != expected_lineage
+            or config.get("runResumeLineageSHA256")
+            != expected_lineage["runResumeLineageSHA256"]
+            or config.get("checkpointLineagePath")
+            != agent_lineage["checkpointLineagePath"]
+        ):
+            raise ValueError("Prepared resume config lineage drifted")
+        _validate_checkpoint_lineage(
+            run_lineage=expected_lineage,
+            agent_lineage=agent_lineage,
+        )
+    return path, [prepared_by_agent[agent] for agent in expected_lineage["selectedAgents"]]
 
 
 def _prepare_configs(
@@ -286,6 +870,8 @@ def _prepare_configs(
     base_model_override: str,
     seed: int,
     variant: str,
+    run_lineage: dict[str, Any] | None = None,
+    runtime_lineage: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     runtime_manifest = json.loads((source_root / "adapter_runtime_manifest.json").read_text(encoding="utf-8"))
     base_by_agent = {
@@ -305,7 +891,12 @@ def _prepare_configs(
             raise ValueError(f"Generated training config is not an object: {cfg_path}")
         controlled = variant_manifest.get("controlledTrainingConfig")
         controlled_keys = set(controlled) if isinstance(controlled, dict) else set()
-        unexpected_fields = set(cfg) - controlled_keys - UNCONTROLLED_CONFIG_FIELDS
+        unexpected_fields = (
+            set(cfg)
+            - controlled_keys
+            - UNCONTROLLED_CONFIG_FIELDS
+            - RUNTIME_LINEAGE_CONFIG_FIELDS
+        )
         if (
             not isinstance(controlled, dict)
             or variant_manifest.get("trainingConfigSHA256") != _canonical_sha256(controlled)
@@ -337,7 +928,10 @@ def _prepare_configs(
         ):
             if cfg.get(field) != variant_manifest.get(field):
                 raise ValueError(f"{field} drifted from the controlled variant for {agent}")
-        environment = _training_environment(variant_manifest)
+        environment = _training_environment(
+            variant_manifest,
+            runtime_lineage=runtime_lineage,
+        )
         cfg["trainingContainerImageDigest"] = environment["containerImageDigest"]
         cfg["trainingContainerImageDigestSource"] = environment["containerImageDigestSource"]
         cfg["trainingRuntimeImageBindingStatus"] = environment["runtimeImageBindingStatus"]
@@ -353,6 +947,32 @@ def _prepare_configs(
         cfg["seed"] = int(seed)
         cfg["merge_adapters_by_default"] = False
         cfg["release_bake_enabled_by_default"] = False
+        if run_lineage is not None:
+            agent_lineage = next(
+                item
+                for item in run_lineage["agents"]
+                if item["agent"] == agent
+            )
+            cfg["runResumeLineage"] = run_lineage
+            cfg["runResumeLineageSHA256"] = run_lineage[
+                "runResumeLineageSHA256"
+            ]
+            cfg["checkpointLineagePath"] = agent_lineage[
+                "checkpointLineagePath"
+            ]
+            cfg["datasetRepository"] = run_lineage["datasetRepository"]
+            cfg["datasetRevision"] = run_lineage["datasetRevision"]
+            cfg["runtimeSourceKind"] = run_lineage["runtimeSourceKind"]
+            cfg["runtimeSourceRevision"] = run_lineage["runtimeSourceRevision"]
+        if runtime_lineage is not None:
+            for field in (
+                "trainingCodeManifest",
+                "trainingCodeSHA256",
+                "trainingDependencyLock",
+                "trainingDependencyLockSHA256",
+                "requirementsSHA256",
+            ):
+                cfg[field] = runtime_lineage[field]
         for env_name, key in (
             ("LUMEN_ZERO_GPU_MAX_TRAIN_RECORDS", "max_train_records"),
             ("LUMEN_ZERO_GPU_MAX_VAL_RECORDS", "max_val_records"),
@@ -372,7 +992,7 @@ def _prepare_configs(
         cfg["variantAttestation"] = attestation
 
         out = config_root / f"{agent}.json"
-        out.write_text(json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _atomic_write_json(out, cfg)
         prepared.append(
             {
                 "agent": agent,
@@ -398,6 +1018,36 @@ def _prepare_configs(
                     training_dir / "finalized_variant_manifest.json"
                 ),
                 "adapter_gguf": str(adapter_gguf),
+                "checkpointLineagePath": (
+                    agent_lineage["checkpointLineagePath"]
+                    if run_lineage is not None
+                    else str(run_root / "checkpoint_lineage" / f"{agent}.json")
+                ),
+                **(
+                    {
+                        "datasetRepository": run_lineage["datasetRepository"],
+                        "datasetRevision": run_lineage["datasetRevision"],
+                        "datasetPath": run_lineage["datasetPath"],
+                        "runResumeLineageSHA256": run_lineage[
+                            "runResumeLineageSHA256"
+                        ],
+                        "trainingCodeSHA256": run_lineage[
+                            "trainingCodeSHA256"
+                        ],
+                        "trainingDependencyLockSHA256": run_lineage[
+                            "trainingDependencyLockSHA256"
+                        ],
+                        "requirementsSHA256": run_lineage[
+                            "requirementsSHA256"
+                        ],
+                        "runtimeSourceKind": run_lineage["runtimeSourceKind"],
+                        "runtimeSourceRevision": run_lineage[
+                            "runtimeSourceRevision"
+                        ],
+                    }
+                    if run_lineage is not None
+                    else {}
+                ),
             }
         )
     return prepared
@@ -659,6 +1309,11 @@ def _verify_finalized_variant_lineage(
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
         "trainingEnvironmentSHA256",
+        "trainingCodeSHA256",
+        "trainingDependencyLockSHA256",
+        "requirementsSHA256",
+        "runtimeSourceKind",
+        "runtimeSourceRevision",
     ):
         if finalized.get(field) != item.get(field):
             raise ValueError(f"Finalized manifest {field} mismatch: {finalized_manifest}")
@@ -696,6 +1351,213 @@ def _verify_finalized_variant_lineage(
 
 
 @spaces.GPU(size=DEFAULT_GPU_SIZE, duration=DEFAULT_GPU_DURATION)
+def _train_lumen_adapters_gpu(
+    run_id: str,
+    agents_csv: str,
+    base_model_override: str,
+    seed: int,
+    assistant_only_loss: bool,
+    resume: bool,
+    convert_gguf: bool,
+    upload_outputs: bool,
+    gpu_size: str,
+    experiment_variant: str = "",
+    confirm_experiment_variant: bool = False,
+    destructive_reset: bool = False,
+) -> dict[str, Any]:
+    del gpu_size
+    agents = _csv_agents(agents_csv)
+    experiment_variant = _experiment_variant(experiment_variant)
+    if not confirm_experiment_variant:
+        raise RuntimeError("Confirm the explicitly selected experiment variant before training")
+    run_id = run_id.strip() or os.environ.get(
+        "LUMEN_ZERO_GPU_RUN_ID", str(DEFAULTS["run_id"])
+    )
+    run_id, run_root = _resolve_run_workspace(run_id, experiment_variant)
+    existing_run_manifest: dict[str, Any] | None = None
+    if resume:
+        if destructive_reset:
+            raise ValueError("Resume and destructive reset are mutually exclusive")
+        if not run_root.is_dir():
+            raise FileNotFoundError("Resume requires an existing run workspace")
+        existing_run_manifest = _read_self_hashed_json(
+            run_root / RUN_MANIFEST_NAME,
+            schema="lumen.zerogpu.training_run/2.0.0",
+            hash_field="runManifestSHA256",
+        )
+    dataset_repo = os.environ.get(
+        "LUMEN_ZERO_GPU_DATASET_REPO", str(DEFAULTS["dataset_repo"])
+    )
+    if dataset_repo != str(DEFAULTS["dataset_repo"]):
+        raise ValueError("Dataset repository drifted from the deployed defaults")
+    default_dataset_revision = _immutable_hub_revision(
+        DEFAULTS.get("dataset_revision"),
+        label="Deployed dataset revision",
+    )
+    dataset_revision = _immutable_hub_revision(
+        os.environ.get(
+            "LUMEN_ZERO_GPU_DATASET_REVISION",
+            str(DEFAULTS.get("dataset_revision", "")),
+        ),
+        label="Dataset revision",
+    )
+    if dataset_revision != default_dataset_revision:
+        raise ValueError("Dataset revision drifted from the deployed immutable snapshot")
+    dataset_path = os.environ.get(
+        "LUMEN_ZERO_GPU_DATASET_PATH", str(DEFAULTS["dataset_path_in_repo"])
+    )
+    if dataset_path != str(DEFAULTS["dataset_path_in_repo"]):
+        raise ValueError("Dataset path drifted from the deployed defaults")
+    adapter_repo = os.environ.get(
+        "LUMEN_ZERO_GPU_ADAPTER_REPO", str(DEFAULTS["adapter_repo"])
+    )
+    runtime_lineage = _verify_runtime_lineage()
+
+    if resume:
+        assert existing_run_manifest is not None
+        source_root = run_root / "generated" / "fine_tuning"
+        if not source_root.is_dir():
+            raise FileNotFoundError("Resume requires the original local dataset snapshot")
+        expected_lineage = _build_run_resume_lineage(
+            run_id=run_id,
+            run_root=run_root,
+            source_root=source_root,
+            dataset_repo=dataset_repo,
+            dataset_revision=dataset_revision,
+            dataset_path=dataset_path,
+            agents=agents,
+            variant=experiment_variant,
+            seed=int(seed),
+            assistant_only_loss=bool(assistant_only_loss),
+            runtime_lineage=runtime_lineage,
+        )
+        if base_model_override.strip() and any(
+            item.get("baseModelID") != base_model_override.strip()
+            for item in expected_lineage["agents"]
+        ):
+            raise ValueError("Base-model override drifted from the original run")
+        run_manifest_path, prepared = _load_resume_contract(
+            run_root=run_root,
+            expected_lineage=expected_lineage,
+            existing_manifest=existing_run_manifest,
+        )
+    else:
+        if run_root.exists():
+            if not destructive_reset:
+                raise FileExistsError(
+                    "Fresh run destination already exists; explicitly request destructive reset"
+                )
+            shutil.rmtree(run_root)
+        run_root.mkdir(parents=True, exist_ok=True)
+        token = os.environ.get("LUMEN_ZERO_GPU_HUB_TOKEN")
+        if not token:
+            raise RuntimeError("A fine-grained LUMEN_ZERO_GPU_HUB_TOKEN Space secret is required")
+        source_root = _copy_dataset_snapshot(run_root, dataset_repo, dataset_revision, dataset_path, token)
+        _validate_nonempty_assistant_outputs(source_root, agents, experiment_variant)
+        expected_lineage = _build_run_resume_lineage(
+            run_id=run_id,
+            run_root=run_root,
+            source_root=source_root,
+            dataset_repo=dataset_repo,
+            dataset_revision=dataset_revision,
+            dataset_path=dataset_path,
+            agents=agents,
+            variant=experiment_variant,
+            seed=int(seed),
+            assistant_only_loss=bool(assistant_only_loss),
+            runtime_lineage=runtime_lineage,
+        )
+        prepared = _prepare_configs(
+            source_root=source_root,
+            run_root=run_root,
+            agents=agents,
+            base_model_override=base_model_override,
+            seed=int(seed),
+            variant=experiment_variant,
+            run_lineage=expected_lineage,
+            runtime_lineage=runtime_lineage,
+        )
+        run_manifest_path = _write_fresh_run_contract(
+            run_root=run_root,
+            run_lineage=expected_lineage,
+            prepared=prepared,
+        )
+
+    # Access the repository credential only after authorization and the complete
+    # fresh/resume lineage contract have passed.
+    token = os.environ.get("LUMEN_ZERO_GPU_HUB_TOKEN")
+    if not token:
+        raise RuntimeError("A fine-grained LUMEN_ZERO_GPU_HUB_TOKEN Space secret is required")
+
+    for item in prepared:
+        agent = item["agent"]
+        command = [
+            sys.executable,
+            str(APP_ROOT / "lumen_train_sft.py"),
+            "--config",
+            item["config"],
+            "--seed",
+            str(seed),
+        ]
+        if assistant_only_loss:
+            command.append("--assistant-only-loss")
+        if resume:
+            command.append("--resume-from-checkpoint")
+        _run(command, cwd=APP_ROOT, log_path=run_root / "logs" / f"train_{agent}.log")
+
+    for item in prepared:
+        _, finalized = _verify_trained_adapter(item)
+        item["adapterSHA256"] = finalized["artifact"]["adapterSHA256"]
+        item["finalizedVariantManifestSHA256"] = finalized[
+            "variantManifestSHA256"
+        ]
+
+    if convert_gguf:
+        _convert_lora_to_gguf(run_root, prepared, token)
+
+    for item in prepared:
+        gguf = Path(item["adapter_gguf"])
+        if gguf.exists():
+            item["adapter_gguf_sha256"] = _sha256(gguf)
+            item["adapter_gguf_size_bytes"] = gguf.stat().st_size
+
+    uploads = (
+        _upload_outputs(run_root, prepared, adapter_repo, run_id, token, convert_gguf)
+        if upload_outputs
+        else {}
+    )
+    summary = {
+        "schema": "lumen.zerogpu.training_summary/2.0.0",
+        "ok": True,
+        "run_id": run_id,
+        "run_root": str(run_root),
+        "dataset_repo": dataset_repo,
+        "dataset_revision": dataset_revision,
+        "dataset_path": dataset_path,
+        "adapter_repo": adapter_repo,
+        "variant": experiment_variant,
+        "run_manifest": str(run_manifest_path),
+        "runResumeLineageSHA256": expected_lineage[
+            "runResumeLineageSHA256"
+        ],
+        "trainingCodeSHA256": expected_lineage["trainingCodeSHA256"],
+        "trainingDependencyLockSHA256": expected_lineage[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": expected_lineage["requirementsSHA256"],
+        "runtimeSourceKind": expected_lineage["runtimeSourceKind"],
+        "runtimeSourceRevision": expected_lineage["runtimeSourceRevision"],
+        "agents": prepared,
+        "uploads": uploads,
+        "fresh_run": not resume,
+        "resume": bool(resume),
+        "assistant_only_loss": bool(assistant_only_loss),
+        "convert_gguf": bool(convert_gguf),
+    }
+    _atomic_write_json(run_root / "lumen_zerogpu_training_summary.json", summary)
+    return summary
+
+
 def train_lumen_adapters(
     run_id: str,
     agents_csv: str,
@@ -708,106 +1570,66 @@ def train_lumen_adapters(
     gpu_size: str,
     experiment_variant: str = "",
     confirm_experiment_variant: bool = False,
+    destructive_reset: bool = False,
+    request: gr.Request = None,
 ) -> dict[str, Any]:
+    correlation_id = str(uuid.uuid4())
     try:
-        del gpu_size
-        token = os.environ.get("HF_TOKEN")
-        if not token:
-            raise RuntimeError("HF_TOKEN Space secret is required")
-        agents = _csv_agents(agents_csv)
-        experiment_variant = _experiment_variant(experiment_variant)
-        if not confirm_experiment_variant:
-            raise RuntimeError("Confirm the explicitly selected experiment variant before training")
-        dataset_repo = os.environ.get("LUMEN_ZERO_GPU_DATASET_REPO", str(DEFAULTS["dataset_repo"]))
-        dataset_revision = os.environ.get("LUMEN_ZERO_GPU_DATASET_REVISION", str(DEFAULTS.get("dataset_revision", "main")))
-        dataset_path = os.environ.get("LUMEN_ZERO_GPU_DATASET_PATH", str(DEFAULTS["dataset_path_in_repo"]))
-        adapter_repo = os.environ.get("LUMEN_ZERO_GPU_ADAPTER_REPO", str(DEFAULTS["adapter_repo"]))
-        run_id = run_id.strip() or os.environ.get("LUMEN_ZERO_GPU_RUN_ID", str(DEFAULTS["run_id"]))
-        run_id, run_root = _resolve_run_workspace(run_id, experiment_variant)
-        if run_root.exists() and not resume:
-            shutil.rmtree(run_root)
-        run_root.mkdir(parents=True, exist_ok=True)
-
-        source_root = _copy_dataset_snapshot(run_root, dataset_repo, dataset_revision, dataset_path, token)
-        _validate_nonempty_assistant_outputs(source_root, agents, experiment_variant)
-        prepared = _prepare_configs(
-            source_root=source_root,
-            run_root=run_root,
-            agents=agents,
-            base_model_override=base_model_override,
-            seed=int(seed),
-            variant=experiment_variant,
+        _authorize_request(request)
+        if not os.environ.get("LUMEN_ZERO_GPU_HUB_TOKEN"):
+            raise RepositoryCredentialConfigurationError(
+                "ZeroGPU repository authorization is not configured"
+            )
+        with _exclusive_training_operation():
+            return _train_lumen_adapters_gpu(
+                run_id,
+                agents_csv,
+                base_model_override,
+                seed,
+                assistant_only_loss,
+                resume,
+                convert_gguf,
+                upload_outputs,
+                gpu_size,
+                experiment_variant,
+                confirm_experiment_variant,
+                destructive_reset,
+            )
+    except RequestAuthorizationError:
+        return _external_failure(
+            code="unauthorized",
+            correlation_id=correlation_id,
+            message="Administrative authorization is required.",
         )
-        run_manifest = {
-            "schema": "lumen.zerogpu.training_run/1.0.0",
-            "run_id": run_id,
-            "dataset_repo": dataset_repo,
-            "dataset_revision": dataset_revision,
-            "dataset_path": dataset_path,
-            "variant": experiment_variant,
-            "agents": prepared,
-        }
-        (run_root / "lumen_zerogpu_run_manifest.json").write_text(
-            json.dumps(run_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+    except AuthorizationConfigurationError:
+        return _external_failure(
+            code="authorization_not_configured",
+            correlation_id=correlation_id,
+            message="Administrative authorization is not configured.",
         )
-
-        for item in prepared:
-            agent = item["agent"]
-            command = [sys.executable, str(APP_ROOT / "lumen_train_sft.py"), "--config", item["config"], "--seed", str(seed)]
-            if assistant_only_loss:
-                command.append("--assistant-only-loss")
-            if resume:
-                command.append("--resume-from-checkpoint")
-            _run(command, cwd=APP_ROOT, log_path=run_root / "logs" / f"train_{agent}.log")
-
-        for item in prepared:
-            _, finalized = _verify_trained_adapter(item)
-            item["adapterSHA256"] = finalized["artifact"]["adapterSHA256"]
-            item["finalizedVariantManifestSHA256"] = finalized[
-                "variantManifestSHA256"
-            ]
-
-        if convert_gguf:
-            _convert_lora_to_gguf(run_root, prepared, token)
-
-        for item in prepared:
-            gguf = Path(item["adapter_gguf"])
-            if gguf.exists():
-                item["adapter_gguf_sha256"] = _sha256(gguf)
-                item["adapter_gguf_size_bytes"] = gguf.stat().st_size
-
-        uploads = _upload_outputs(run_root, prepared, adapter_repo, run_id, token, convert_gguf) if upload_outputs else {}
-        summary = {
-            "schema": "lumen.zerogpu.training_summary/1.0.0",
-            "ok": True,
-            "run_id": run_id,
-            "run_root": str(run_root),
-            "dataset_repo": dataset_repo,
-            "dataset_revision": dataset_revision,
-            "dataset_path": dataset_path,
-            "adapter_repo": adapter_repo,
-            "variant": experiment_variant,
-            "run_manifest": str(run_root / "lumen_zerogpu_run_manifest.json"),
-            "agents": prepared,
-            "uploads": uploads,
-            "fresh_run": not resume,
-            "resume": bool(resume),
-            "assistant_only_loss": bool(assistant_only_loss),
-            "convert_gguf": bool(convert_gguf),
-        }
-        (run_root / "lumen_zerogpu_training_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return summary
-    except Exception as exc:
-        return {
-            "schema": "lumen.zerogpu.training_summary/1.0.0",
-            "ok": False,
-            "run_id": run_id,
-            "variant": experiment_variant,
-            "error_type": type(exc).__name__,
-            "error": str(exc),
-            "traceback": traceback.format_exc(limit=12),
-        }
+    except RepositoryCredentialConfigurationError:
+        return _external_failure(
+            code="repository_authorization_not_configured",
+            correlation_id=correlation_id,
+            message="Repository authorization is not configured.",
+        )
+    except TrainingConflictError:
+        return _external_failure(
+            code="training_already_active",
+            correlation_id=correlation_id,
+            message="Another training operation is already active.",
+        )
+    except Exception:
+        LOGGER.error(
+            "ZeroGPU training request failed correlation_id=%s\n%s",
+            correlation_id,
+            traceback.format_exc(),
+        )
+        return _external_failure(
+            code="training_failed",
+            correlation_id=correlation_id,
+            message="Training failed. Consult server logs with the correlation ID.",
+        )
 
 
 with gr.Blocks() as demo:
@@ -830,11 +1652,15 @@ with gr.Blocks() as demo:
         convert = gr.Checkbox(value=True, label="Convert LoRA to GGUF")
         upload = gr.Checkbox(value=True, label="Upload outputs")
         confirm_variant = gr.Checkbox(value=False, label="I confirm this experiment variant")
+        destructive_reset = gr.Checkbox(
+            value=False,
+            label="Explicitly replace an existing fresh-run workspace",
+        )
     output = gr.JSON(label="Training summary")
     run = gr.Button("Train adapters", variant="primary")
     run.click(
         fn=train_lumen_adapters,
-        inputs=[run_id, agents, base_model, seed, assistant_loss, resume, convert, upload, gpu_size, experiment_variant, confirm_variant],
+        inputs=[run_id, agents, base_model, seed, assistant_loss, resume, convert, upload, gpu_size, experiment_variant, confirm_variant, destructive_reset],
         outputs=output,
         api_name="train_lumen_adapters",
     )

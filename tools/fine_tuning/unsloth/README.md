@@ -18,8 +18,10 @@ python -m lumen_manifest_crawler generate \
 2. Inspect each `generated/fine_tuning/<agent>/dataset_card.json`.
 
 3. Train SFT with a run-scoped config that binds the explicit experiment variant, base-model
-lineage, and declared runtime-image audit value. The Ubuntu launcher prepares those configs and
-trains all selected agents.
+lineage, phase-specific training-code digest, dependency lock, source Git commit, and declared
+runtime-image audit value. The Ubuntu launcher prepares those configs and trains all selected
+agents. Local AIO resume remains disabled until it emits the same run/checkpoint contract as the
+ZeroGPU path; direct `--resume-from-checkpoint` calls without that contract fail closed.
 ```bash
 export LUMEN_AIO_EXPERIMENT_VARIANT="internal_plus_public_baseline"
 export LUMEN_AIO_CONTAINER_IMAGE_DIGEST="sha256:<64-lowercase-hex-digest>"
@@ -28,7 +30,8 @@ bash scripts/ubuntu_train_lumen_adapters_aio.sh
 ```
 
 4. Optionally train DPO/ORPO per agent from the verified finalized SFT artifact. DPO writes a
-separate `sft_dpo` adapter and records the parent SFT digest.
+separate `sft_dpo` adapter and records the parent SFT digest. Preference records remain structured
+message lists so pinned TRL 0.24 applies the Qwen chat template and assistant-turn boundaries.
 ```bash
 python tools/fine_tuning/unsloth/train_dpo.py \
   --config "$LUMEN_AIO_RUN_ROOT/configs/cortex.json" \
@@ -67,6 +70,24 @@ python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unslot
 8. Evaluate with `generated/fine_tuning/<agent>/eval.jsonl`.
 
 9. Never train on private app exports unless explicitly sanitized.
+
+## ZeroGPU authorization and resume
+
+Use `scripts/hf_zerogpu_train_lumen_adapters_aio.sh` with separate
+`LUMEN_ZERO_GPU_ADMIN_TOKEN` and fine-grained `LUMEN_ZERO_GPU_HUB_TOKEN` credentials. The Space is
+private by default; `LUMEN_ZERO_GPU_PUBLIC_SPACE=1` is the only public override and does not bypass
+the admin header. Dataset uploads are pinned by their returned Hub commit SHA.
+
+`LUMEN_ZERO_GPU_RESUME=1` is accepted only when the existing self-hashed run manifest, original
+local dataset snapshot, prepared configs, checkpoint-lineage records, and at least one checkpoint
+all match the requested lineage. Fresh runs reject existing workspaces unless
+`LUMEN_ZERO_GPU_DESTRUCTIVE_RESET=1` is explicit. Resume and destructive reset are mutually
+exclusive.
+
+Before model loading, the runtime verifies the deployed phase-specific code manifest, complete
+direct-dependency lock, requirements hash, and immutable Space/source revision. This evidence is
+propagated into training reports and finalized manifests, but promotion is still unsupported until
+a trusted runtime-image attestation exists.
 
 ## Deployment Notes
 

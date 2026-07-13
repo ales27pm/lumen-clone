@@ -9,14 +9,29 @@ import random
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 try:
     from .adapter_artifact import write_adapter_artifact_manifest
+    from .training_lineage import (
+        installed_controlled_package_versions,
+        repository_training_code_bundle,
+        validate_runtime_source,
+        verify_training_code_manifest,
+        verify_training_dependency_lock,
+    )
 except ImportError:
     from adapter_artifact import write_adapter_artifact_manifest
+    from training_lineage import (
+        installed_controlled_package_versions,
+        repository_training_code_bundle,
+        validate_runtime_source,
+        verify_training_code_manifest,
+        verify_training_dependency_lock,
+    )
 
 
 REQUIRED_CONFIG_KEYS = {
@@ -35,6 +50,13 @@ REQUIRED_CONFIG_KEYS = {
     "trainingRuntimeImageBindingStatus",
     "trainingRuntimeImageBindingVerified",
     "trainingEnvironmentSHA256",
+    "trainingCodeManifest",
+    "trainingCodeSHA256",
+    "trainingDependencyLock",
+    "trainingDependencyLockSHA256",
+    "requirementsSHA256",
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
     "max_seq_length",
     "load_in_4bit",
     "lora_r",
@@ -54,6 +76,9 @@ REQUIRED_CONFIG_KEYS = {
 }
 AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
 FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned", "training"}
+CHECKPOINT_LINEAGE_SCHEMA = "lumen.zerogpu.checkpoint_lineage/1.0.0"
+CHECKPOINT_DIRECTORY_SCHEMA = "lumen.zerogpu.checkpoint_directory/1.0.0"
+RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.0.0"
 
 
 def parse_args() -> argparse.Namespace:
@@ -435,6 +460,304 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _read_self_hashed_json(
+    path: Path,
+    *,
+    schema: str,
+    hash_field: str,
+) -> dict[str, Any]:
+    if not path.is_file():
+        raise RuntimeError(f"Missing required lineage manifest: {path.name}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema") != schema:
+        raise RuntimeError(f"Invalid lineage manifest contract: {path.name}")
+    expected = payload.get(hash_field)
+    unsigned = dict(payload)
+    unsigned.pop(hash_field, None)
+    if (
+        not isinstance(expected, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected) is None
+        or _canonical_sha256(unsigned) != expected
+    ):
+        raise RuntimeError(f"Lineage manifest integrity check failed: {path.name}")
+    return payload
+
+
+def _checkpoint_directory_manifest(path: Path) -> dict[str, Any]:
+    if not path.is_dir():
+        raise RuntimeError("Checkpoint directory is missing")
+    files = [candidate for candidate in path.rglob("*") if candidate.is_file()]
+    if not files:
+        raise RuntimeError("Checkpoint directory is empty")
+    entries = [
+        {
+            "path": candidate.relative_to(path).as_posix(),
+            "sizeBytes": candidate.stat().st_size,
+            "sha256": _hash_file(candidate),
+        }
+        for candidate in sorted(
+            files,
+            key=lambda value: value.relative_to(path).as_posix(),
+        )
+    ]
+    payload = {
+        "schema": CHECKPOINT_DIRECTORY_SCHEMA,
+        "files": entries,
+    }
+    return {**payload, "checkpointSHA256": _canonical_sha256(payload)}
+
+
+def _checkpoint_step(value: str) -> int:
+    match = re.fullmatch(r"checkpoint-([1-9][0-9]*)", value)
+    if match is None:
+        raise RuntimeError("Checkpoint lineage contains an invalid checkpoint path")
+    return int(match.group(1))
+
+
+def _agent_resume_lineage(cfg: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    run_lineage = cfg.get("runResumeLineage")
+    if not isinstance(run_lineage, dict) or run_lineage.get("schema") != RUN_RESUME_LINEAGE_SCHEMA:
+        raise RuntimeError("runResumeLineage must be a canonical run-resume lineage object")
+    expected_digest = cfg.get("runResumeLineageSHA256")
+    unsigned = dict(run_lineage)
+    embedded_digest = unsigned.pop("runResumeLineageSHA256", None)
+    actual_digest = _canonical_sha256(unsigned)
+    if (
+        not isinstance(expected_digest, str)
+        or expected_digest != embedded_digest
+        or expected_digest != actual_digest
+    ):
+        raise RuntimeError("runResumeLineageSHA256 does not match the run-resume lineage")
+    agents = run_lineage.get("agents")
+    if not isinstance(agents, list):
+        raise RuntimeError("runResumeLineage.agents must be a list")
+    matches = [item for item in agents if isinstance(item, dict) and item.get("agent") == cfg.get("agent")]
+    if len(matches) != 1:
+        raise RuntimeError("runResumeLineage must contain exactly one entry for this agent")
+    return run_lineage, matches[0]
+
+
+def _validate_run_resume_config(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+    assistant_only_loss: bool,
+) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    run_lineage, agent_lineage = _agent_resume_lineage(cfg)
+    checkpoint_path = Path(str(cfg.get("checkpointLineagePath") or "")).resolve()
+    expected_static = {
+        "experimentVariant": cfg.get("variant"),
+        "seed": cfg.get("seed"),
+        "trainingCodeSHA256": cfg.get("trainingCodeSHA256"),
+        "trainingDependencyLockSHA256": cfg.get("trainingDependencyLockSHA256"),
+        "requirementsSHA256": cfg.get("requirementsSHA256"),
+        "runtimeSourceKind": cfg.get("runtimeSourceKind"),
+        "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
+        "assistantOnlyLoss": bool(assistant_only_loss),
+    }
+    if any(run_lineage.get(key) != value for key, value in expected_static.items()):
+        raise RuntimeError("Training config drifted from the run-resume lineage")
+    variant_attestation = cfg.get("variantAttestation")
+    if not isinstance(variant_attestation, dict):
+        raise RuntimeError("Training config is missing its variant attestation")
+    expected_agent = {
+        "sourceVariantManifestSHA256": cfg.get("variantManifestSHA256"),
+        "laneHashes": variant_attestation.get("laneHashes"),
+        "trainingCorpusSHA256": variant_attestation.get("trainingCorpusSHA256"),
+        "controlledTrainingConfigSHA256": variant_attestation.get(
+            "effectiveTrainingConfigSHA256"
+        ),
+        "baseModelID": cfg.get("baseModelID", cfg.get("base_model_name")),
+        "baseModelRevision": cfg.get("baseModelRevision"),
+        "baseModelIndexDigest": cfg.get("baseModelIndexDigest"),
+        "baseModelIndexShardBindingSHA256": cfg.get(
+            "baseModelIndexShardBindingSHA256"
+        ),
+        "baseModelArtifactDigest": cfg.get("baseModelArtifactDigest"),
+        "baseModelWeightShards": cfg.get("baseModelWeightShards"),
+        "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "seed": cfg.get("seed"),
+        "trainingEnvironmentLockSHA256": variant_attestation.get(
+            "trainingEnvironmentLockSHA256"
+        ),
+        "configPath": str(cfg_path),
+        "checkpointLineagePath": str(checkpoint_path),
+        "checkpointRoot": str(Path(str(cfg["output_dir"])).resolve()),
+        "outputDirectory": str(Path(str(cfg["output_dir"])).resolve()),
+        "adapterOutputDirectory": str(Path(str(cfg["adapter_output_dir"])).resolve()),
+    }
+    if any(agent_lineage.get(key) != value for key, value in expected_agent.items()):
+        raise RuntimeError("Agent training config drifted from the run-resume lineage")
+    dataset_dir = Path(str(cfg["dataset_dir"])).resolve()
+    expected_dataset_files = agent_lineage.get("datasetFileSHA256")
+    if not isinstance(expected_dataset_files, dict):
+        raise RuntimeError("Run-resume lineage is missing dataset file hashes")
+    actual_dataset_files = {
+        filename: _hash_file(dataset_dir / filename)
+        for filename in sorted(expected_dataset_files)
+    }
+    if actual_dataset_files != expected_dataset_files:
+        raise RuntimeError("Dataset snapshot drifted from the run-resume lineage")
+    return run_lineage, agent_lineage, checkpoint_path
+
+
+def _validate_checkpoint_lineage(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+    require_checkpoint: bool,
+    assistant_only_loss: bool = False,
+) -> tuple[Path | None, Path | None]:
+    has_lineage = any(
+        key in cfg
+        for key in (
+            "runResumeLineage",
+            "runResumeLineageSHA256",
+            "checkpointLineagePath",
+        )
+    )
+    if not has_lineage:
+        if require_checkpoint:
+            raise RuntimeError(
+                "--resume-from-checkpoint requires run and checkpoint lineage evidence"
+            )
+        return None, None
+    run_lineage, agent_lineage, record_path = _validate_run_resume_config(
+        cfg,
+        cfg_path=cfg_path,
+        assistant_only_loss=assistant_only_loss,
+    )
+    record = _read_self_hashed_json(
+        record_path,
+        schema=CHECKPOINT_LINEAGE_SCHEMA,
+        hash_field="checkpointLineageSHA256",
+    )
+    dataset_files = agent_lineage["datasetFileSHA256"]
+    expected_record = {
+        "agent": cfg.get("agent"),
+        "runResumeLineageSHA256": run_lineage["runResumeLineageSHA256"],
+        "configSHA256": _hash_file(cfg_path),
+        "datasetFileSHA256": dataset_files,
+        "laneHashes": agent_lineage["laneHashes"],
+        "checkpointRoot": agent_lineage["checkpointRoot"],
+        "outputDirectory": agent_lineage["outputDirectory"],
+    }
+    if any(record.get(key) != value for key, value in expected_record.items()):
+        raise RuntimeError("Checkpoint lineage drifted from the training config")
+    checkpoints = record.get("checkpoints")
+    if not isinstance(checkpoints, list):
+        raise RuntimeError("Checkpoint lineage checkpoints must be a list")
+    if not require_checkpoint:
+        if checkpoints:
+            raise RuntimeError(
+                "Fresh training cannot reuse recorded checkpoints; select resume or reset the run"
+            )
+        return None, record_path
+    if not checkpoints:
+        raise RuntimeError("Resume requires at least one checkpoint bound to the run")
+    root = Path(agent_lineage["checkpointRoot"]).resolve()
+    validated: list[tuple[int, Path]] = []
+    for entry in checkpoints:
+        if not isinstance(entry, dict) or set(entry) != {"path", "checkpointSHA256"}:
+            raise RuntimeError("Checkpoint lineage entries must contain only path and digest")
+        relative = str(entry["path"])
+        step = _checkpoint_step(relative)
+        checkpoint = (root / relative).resolve()
+        if checkpoint.parent != root:
+            raise RuntimeError("Checkpoint lineage escapes the checkpoint root")
+        manifest = _checkpoint_directory_manifest(checkpoint)
+        if manifest["checkpointSHA256"] != entry["checkpointSHA256"]:
+            raise RuntimeError("Checkpoint contents do not match checkpoint lineage")
+        validated.append((step, checkpoint))
+    if [step for step, _ in validated] != sorted({step for step, _ in validated}):
+        raise RuntimeError("Checkpoint lineage entries must be unique and step-sorted")
+    return validated[-1][1], record_path
+
+
+def _record_checkpoint(record_path: Path, checkpoint: Path) -> None:
+    record = _read_self_hashed_json(
+        record_path,
+        schema=CHECKPOINT_LINEAGE_SCHEMA,
+        hash_field="checkpointLineageSHA256",
+    )
+    checkpoint_root = Path(str(record.get("checkpointRoot") or "")).resolve()
+    checkpoint = checkpoint.resolve()
+    if checkpoint.parent != checkpoint_root:
+        raise RuntimeError("Saved checkpoint escapes the recorded checkpoint root")
+    relative = checkpoint.name
+    _checkpoint_step(relative)
+    if not isinstance(record.get("checkpoints"), list):
+        raise RuntimeError("Checkpoint lineage checkpoints must be a list")
+    current_checkpoints = sorted(
+        (
+            candidate
+            for candidate in checkpoint_root.glob("checkpoint-*")
+            if candidate.is_dir()
+        ),
+        key=lambda candidate: _checkpoint_step(candidate.name),
+    )
+    if checkpoint not in current_checkpoints:
+        raise RuntimeError("Saved checkpoint is absent from the checkpoint root")
+    entries = [
+        {
+            "path": candidate.name,
+            "checkpointSHA256": _checkpoint_directory_manifest(candidate)[
+                "checkpointSHA256"
+            ],
+        }
+        for candidate in current_checkpoints
+    ]
+    unsigned = dict(record)
+    unsigned.pop("checkpointLineageSHA256", None)
+    # Trainer may rotate old checkpoints before invoking on_save. Rebuild the
+    # record from the currently present checkpoint set so resume never points
+    # at a checkpoint that save_total_limit has already removed.
+    unsigned["checkpoints"] = entries
+    updated = {
+        **unsigned,
+        "checkpointLineageSHA256": _canonical_sha256(unsigned),
+    }
+    _atomic_write_json(record_path, updated)
+
+
+def _checkpoint_lineage_callback(
+    trainer_callback_type: type,
+    *,
+    record_path: Path,
+) -> Any:
+    class CheckpointLineageCallback(trainer_callback_type):
+        def on_save(self, args: Any, state: Any, control: Any, **_kwargs: Any) -> Any:
+            checkpoint = Path(args.output_dir).resolve() / f"checkpoint-{state.global_step}"
+            _record_checkpoint(record_path, checkpoint)
+            return control
+
+    return CheckpointLineageCallback()
+
+
 def _require_sha256(value: Any, *, name: str, prefix: bool = False) -> str:
     text = str(value or "")
     pattern = r"sha256:[0-9a-f]{64}" if prefix else r"[0-9a-f]{64}"
@@ -506,11 +829,112 @@ def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
         "runtimeImageBindingVerified": binding_verified,
         "effectiveSeed": int(cfg["seed"]),
         "environmentLock": lock,
+        "trainingCodeSHA256": _require_sha256(
+            cfg.get("trainingCodeSHA256"), name="trainingCodeSHA256"
+        ),
+        "trainingDependencyLockSHA256": _require_sha256(
+            cfg.get("trainingDependencyLockSHA256"),
+            name="trainingDependencyLockSHA256",
+        ),
+        "requirementsSHA256": _require_sha256(
+            cfg.get("requirementsSHA256"), name="requirementsSHA256"
+        ),
     }
     digest = _canonical_sha256(payload)
     if digest != cfg.get("trainingEnvironmentSHA256"):
         raise RuntimeError("trainingEnvironmentSHA256 is not bound to the recorded environment payload")
     return {**payload, "trainingEnvironmentSHA256": digest}
+
+
+def _installed_unsloth_revision() -> str:
+    import importlib.metadata as metadata
+
+    direct_url_text = metadata.distribution("unsloth").read_text("direct_url.json")
+    if not direct_url_text:
+        raise RuntimeError("Installed Unsloth lacks PEP 610 VCS provenance")
+    direct_url = json.loads(direct_url_text)
+    vcs_info = direct_url.get("vcs_info") if isinstance(direct_url, dict) else None
+    revision = vcs_info.get("commit_id") if isinstance(vcs_info, dict) else None
+    if not isinstance(revision, str):
+        raise RuntimeError("Installed Unsloth lacks an immutable VCS revision")
+    return revision
+
+
+def _training_runtime_lineage(
+    cfg: Mapping[str, Any],
+    *,
+    phase: str = "sft",
+) -> dict[str, Any]:
+    code_manifest = cfg.get("trainingCodeManifest")
+    if not isinstance(code_manifest, dict) or code_manifest.get("phase") != phase:
+        raise RuntimeError(
+            f"trainingCodeManifest must be the {phase} phase manifest"
+        )
+    expected_code_digest = _require_sha256(
+        cfg.get("trainingCodeSHA256"),
+        name="trainingCodeSHA256",
+    )
+    source_path = Path(__file__).resolve()
+    deployed_requirements = source_path.parent / "requirements.txt"
+    if source_path.name == "lumen_train_sft.py" and deployed_requirements.is_file():
+        actual_code_digest = verify_training_code_manifest(
+            code_manifest,
+            root=source_path.parent,
+        )
+        requirements_path = deployed_requirements
+    else:
+        repo_root = source_path.parents[3]
+        current_manifest = repository_training_code_bundle(repo_root)["phases"][phase]
+        if current_manifest != code_manifest:
+            raise RuntimeError("Repository training-code files drifted from the config")
+        actual_code_digest = verify_training_code_manifest(code_manifest)
+        requirements_path = (
+            repo_root / "tools/hf_zerogpu/space_template/requirements.txt"
+        )
+    if actual_code_digest != expected_code_digest:
+        raise RuntimeError(
+            f"trainingCodeSHA256 does not match the verified {phase} code"
+        )
+
+    dependency_lock = cfg.get("trainingDependencyLock")
+    if not isinstance(dependency_lock, dict):
+        raise RuntimeError("trainingDependencyLock must be an object")
+    expected_dependency_digest = _require_sha256(
+        cfg.get("trainingDependencyLockSHA256"),
+        name="trainingDependencyLockSHA256",
+    )
+    try:
+        installed_versions = installed_controlled_package_versions(dependency_lock)
+        dependency_digest = verify_training_dependency_lock(
+            dependency_lock,
+            requirements_path=requirements_path,
+            installed_versions=installed_versions,
+            installed_unsloth_revision=_installed_unsloth_revision(),
+        )
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        raise RuntimeError("Training dependency lineage verification failed") from exc
+    if (
+        dependency_digest != expected_dependency_digest
+        or dependency_lock.get("requirementsSHA256")
+        != _require_sha256(cfg.get("requirementsSHA256"), name="requirementsSHA256")
+    ):
+        raise RuntimeError("Training dependency or requirements digest mismatch")
+    try:
+        runtime_source_kind, runtime_source_revision = validate_runtime_source(
+            kind=cfg.get("runtimeSourceKind"),
+            revision=cfg.get("runtimeSourceRevision"),
+        )
+    except ValueError as exc:
+        raise RuntimeError("Training runtime source lineage is invalid") from exc
+    return {
+        "trainingCodeManifest": code_manifest,
+        "trainingCodeSHA256": actual_code_digest,
+        "trainingDependencyLock": dependency_lock,
+        "trainingDependencyLockSHA256": dependency_digest,
+        "requirementsSHA256": dependency_lock["requirementsSHA256"],
+        "runtimeSourceKind": runtime_source_kind,
+        "runtimeSourceRevision": runtime_source_revision,
+    }
 
 
 def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
@@ -667,6 +1091,7 @@ def _finalize_variant_manifest(
     *,
     adapter_artifact_manifest: dict[str, Any],
     training_environment: dict[str, Any],
+    training_runtime_lineage: dict[str, Any],
     output_dir: Path,
 ) -> dict[str, Any]:
     source_path = Path(cfg["dataset_dir"]).resolve() / "variant_manifest.json"
@@ -699,7 +1124,22 @@ def _finalize_variant_manifest(
         source,
         adapter_sha256=adapter_artifact_manifest["adapterSHA256"],
         adapter_artifact_manifest=adapter_artifact_manifest,
-        training_environment=training_environment,
+        training_environment={
+            **training_environment,
+            "trainingCodeSHA256": training_runtime_lineage[
+                "trainingCodeSHA256"
+            ],
+            "trainingDependencyLockSHA256": training_runtime_lineage[
+                "trainingDependencyLockSHA256"
+            ],
+            "requirementsSHA256": training_runtime_lineage[
+                "requirementsSHA256"
+            ],
+            "runtimeSourceKind": training_runtime_lineage["runtimeSourceKind"],
+            "runtimeSourceRevision": training_runtime_lineage[
+                "runtimeSourceRevision"
+            ],
+        },
         training_phase="sft",
     )
     destination = output_dir / "finalized_variant_manifest.json"
@@ -723,11 +1163,24 @@ def main() -> None:
     val_path = dataset_dir / "val_sft.jsonl"
     if not train_path.exists() or not val_path.exists():
         raise FileNotFoundError(f"Expected {train_path} and {val_path}")
+    resume_checkpoint, checkpoint_lineage_path = _validate_checkpoint_lineage(
+        cfg,
+        cfg_path=cfg_path,
+        require_checkpoint=bool(args.resume_from_checkpoint),
+        assistant_only_loss=bool(
+            args.assistant_only_loss or cfg.get("assistant_only_loss", False)
+        ),
+    )
+
+    training_runtime_lineage = _training_runtime_lineage(cfg)
+    training_environment = _training_environment(cfg)
+    _verify_base_model_lineage(cfg)
 
     try:
         from unsloth import FastLanguageModel
         from datasets import Dataset
         from trl import SFTConfig, SFTTrainer
+        from transformers import TrainerCallback
     except ImportError as exc:
         raise RuntimeError(
             "Missing dependencies for Unsloth SFT training. Install: unsloth, trl, datasets, transformers, peft, accelerate, bitsandbytes."
@@ -739,9 +1192,6 @@ def main() -> None:
                 "This host imported Unsloth, but Torch is not compiled with CUDA enabled."
             ) from exc
         raise
-
-    training_environment = _training_environment(cfg)
-    _verify_base_model_lineage(cfg)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],
@@ -825,14 +1275,19 @@ def main() -> None:
         eval_dataset=eval_dataset,
         args=training_args,
     )
+    if checkpoint_lineage_path is not None:
+        trainer.add_callback(
+            _checkpoint_lineage_callback(
+                TrainerCallback,
+                record_path=checkpoint_lineage_path,
+            )
+        )
 
-    resume_checkpoint: bool | str = False
-    if args.resume_from_checkpoint:
-        # Trainer accepts True to auto-discover the latest checkpoint in output_dir.
-        checkpoints = sorted(output_dir.glob("checkpoint-*"))
-        resume_checkpoint = True if checkpoints else False
-
-    train_result = trainer.train(resume_from_checkpoint=resume_checkpoint or None)
+    train_result = trainer.train(
+        resume_from_checkpoint=(
+            str(resume_checkpoint) if resume_checkpoint is not None else None
+        )
+    )
     trainer.model.save_pretrained(str(adapter_output_dir), safe_serialization=True)
     tokenizer.save_pretrained(str(adapter_output_dir))
     adapter_artifact_manifest = write_adapter_artifact_manifest(
@@ -843,6 +1298,7 @@ def main() -> None:
         cfg,
         adapter_artifact_manifest=adapter_artifact_manifest,
         training_environment=training_environment,
+        training_runtime_lineage=training_runtime_lineage,
         output_dir=output_dir,
     )
 
@@ -864,9 +1320,13 @@ def main() -> None:
         "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
         "trainingEnvironment": training_environment,
         "trainingEnvironmentSHA256": training_environment["trainingEnvironmentSHA256"],
+        **training_runtime_lineage,
         "config_path": str(cfg_path),
         "config_sha256": _hash_file(cfg_path),
         "dataset_dir": str(dataset_dir),
+        "datasetRepository": cfg.get("datasetRepository"),
+        "datasetRevision": cfg.get("datasetRevision"),
+        "runResumeLineageSHA256": cfg.get("runResumeLineageSHA256"),
         "train_path": str(train_path),
         "val_path": str(val_path),
         "train_sha256": _hash_file(train_path),
@@ -878,7 +1338,11 @@ def main() -> None:
         "packing": bool(cfg.get("packing", False)),
         "gradient_checkpointing": bool(cfg.get("gradient_checkpointing", True)),
         "assistant_only_loss": assistant_only_loss,
-        "resume_from_checkpoint": bool(resume_checkpoint),
+        "resume_from_checkpoint": resume_checkpoint is not None,
+        "resume_checkpoint": str(resume_checkpoint) if resume_checkpoint else None,
+        "checkpoint_lineage": (
+            str(checkpoint_lineage_path) if checkpoint_lineage_path else None
+        ),
         "seed": seed,
         "seed_source": seed_source,
         "output_dir": str(output_dir),
