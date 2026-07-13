@@ -22,6 +22,9 @@ REQUIRED_CONFIG_KEYS = {
     "baseModelTokenizerDigest",
     "trainingEnvironmentLock",
     "trainingContainerImageDigest",
+    "trainingContainerImageDigestSource",
+    "trainingRuntimeImageBindingStatus",
+    "trainingRuntimeImageBindingVerified",
     "trainingEnvironmentSHA256",
     "max_seq_length",
     "load_in_4bit",
@@ -381,6 +384,17 @@ def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
         name="trainingContainerImageDigest",
         prefix=True,
     )
+    digest_source = cfg.get("trainingContainerImageDigestSource")
+    binding_status = cfg.get("trainingRuntimeImageBindingStatus")
+    binding_verified = cfg.get("trainingRuntimeImageBindingVerified")
+    if (
+        digest_source != "operator_declared"
+        or binding_status != "manual_validation_required"
+        or binding_verified is not False
+    ):
+        raise RuntimeError(
+            "Training container provenance must remain operator-declared and manually unverified"
+        )
     expected_python = str(lock.get("pythonVersion") or "")
     actual_python = f"{sys.version_info.major}.{sys.version_info.minor}"
     if actual_python != expected_python:
@@ -419,11 +433,14 @@ def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": container_digest,
+        "containerImageDigestSource": digest_source,
+        "runtimeImageBindingStatus": binding_status,
+        "runtimeImageBindingVerified": binding_verified,
         "environmentLock": lock,
     }
     digest = _canonical_sha256(payload)
     if digest != cfg.get("trainingEnvironmentSHA256"):
-        raise RuntimeError("trainingEnvironmentSHA256 is not bound to the effective immutable environment")
+        raise RuntimeError("trainingEnvironmentSHA256 is not bound to the recorded environment payload")
     return {**payload, "trainingEnvironmentSHA256": digest}
 
 

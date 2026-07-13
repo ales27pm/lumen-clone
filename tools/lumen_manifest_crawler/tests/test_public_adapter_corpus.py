@@ -330,6 +330,36 @@ def test_download_verified_uses_isolated_temporary_files_for_concurrent_download
     assert not list(tmp_path.glob("*.part"))
 
 
+def test_download_verified_removes_temporary_file_when_opening_response_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_paths: list[Path] = []
+    real_named_temporary_file = corpus.tempfile.NamedTemporaryFile
+
+    def tracking_named_temporary_file(*args: object, **kwargs: object):
+        handle = real_named_temporary_file(*args, **kwargs)
+        created_paths.append(Path(handle.name))
+        return handle
+
+    def failing_urlopen(*_: object, **__: object) -> None:
+        raise OSError("connection failed")
+
+    monkeypatch.setattr(corpus.tempfile, "NamedTemporaryFile", tracking_named_temporary_file)
+    monkeypatch.setattr(corpus.urllib.request, "urlopen", failing_urlopen)
+
+    with pytest.raises(OSError, match="connection failed"):
+        corpus._download_verified(
+            "https://example.test/unavailable",
+            tmp_path / "artifact.jsonl",
+            "0" * 64,
+        )
+
+    assert len(created_paths) == 1
+    assert not created_paths[0].exists()
+    assert not list(tmp_path.glob("*.part"))
+
+
 @pytest.mark.parametrize("partition", ["validation", "test", "future-holdout"])
 def test_source_manifest_fails_closed_for_unapproved_ml_partitions(
     tmp_path: Path,

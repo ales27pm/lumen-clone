@@ -306,7 +306,7 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         case "consent_required":
             return .consentRequired
         case "access_denied":
-            return .signInCancelled
+            return .consentRequired
         case "invalid_scope":
             return .invalidScope
         case "temporarily_unavailable", "server_error":

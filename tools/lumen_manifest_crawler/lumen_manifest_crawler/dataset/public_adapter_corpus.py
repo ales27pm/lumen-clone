@@ -653,16 +653,17 @@ def _download_verified(url: str, destination: Path, expected_sha256: str) -> Non
             prefix=destination.name + ".",
             suffix=".part",
             delete=False,
-        ) as output, urllib.request.urlopen(request, timeout=60) as response:
+        ) as output:
             temp = Path(output.name)
-            while chunk := response.read(1024 * 1024):
-                total += len(chunk)
-                if total > MAX_ARTIFACT_BYTES:
-                    raise PublicCorpusError(f"Artifact exceeds {MAX_ARTIFACT_BYTES} bytes: {url}")
-                digest.update(chunk)
-                output.write(chunk)
-            output.flush()
-            os.fsync(output.fileno())
+            with urllib.request.urlopen(request, timeout=60) as response:
+                while chunk := response.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > MAX_ARTIFACT_BYTES:
+                        raise PublicCorpusError(f"Artifact exceeds {MAX_ARTIFACT_BYTES} bytes: {url}")
+                    digest.update(chunk)
+                    output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
         actual = digest.hexdigest()
         if actual != expected_sha256:
             raise PublicCorpusError(f"Downloaded artifact hash mismatch: expected {expected_sha256}, found {actual}")

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +82,43 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _hash_file(path: Path) -> str:
+    if not path.exists():
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _require_sha256(value: Any, *, name: str) -> str:
+    text = str(value or "")
+    if re.fullmatch(r"[0-9a-f]{64}", text) is None:
+        raise RuntimeError(f"{name} must be an immutable lowercase SHA-256 digest")
+    return text
+
+
+def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
+    revision = str(cfg.get("baseModelRevision") or "")
+    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise RuntimeError("baseModelRevision must be a full lowercase Hugging Face commit SHA")
+    expected = {
+        "model.safetensors.index.json": _require_sha256(
+            cfg.get("baseModelArtifactDigest"), name="baseModelArtifactDigest"
+        ),
+        "tokenizer.json": _require_sha256(
+            cfg.get("baseModelTokenizerDigest"), name="baseModelTokenizerDigest"
+        ),
+    }
+    from huggingface_hub import hf_hub_download  # type: ignore
+
+    for filename, digest in expected.items():
+        path = Path(hf_hub_download(repo_id=cfg["base_model_name"], filename=filename, revision=revision))
+        if _hash_file(path) != digest:
+            raise RuntimeError(f"Pinned base-model artifact digest mismatch: {filename}")
+
+
 def render_messages(tokenizer: Any, messages: list[dict[str, Any]]) -> str:
     if hasattr(tokenizer, "apply_chat_template"):
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -129,6 +168,8 @@ def main() -> None:
             from trl import DPOTrainer as PreferenceTrainer
     except ImportError as exc:
         raise RuntimeError("TRL preference trainer import failed. Ensure `trl` is installed and supports DPO/ORPO.") from exc
+
+    _verify_base_model_lineage(cfg)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],

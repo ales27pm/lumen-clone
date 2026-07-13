@@ -39,7 +39,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "cc24fd2c7313f951784cbce97e0d048d0c563e13174ca98afc8059ae0cfc29da",
+    "experimentManifestSHA256": "a1df6bde4322b543e712a66bf9ed2f593ff5b1eff0294604787267478ae025a3",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -52,6 +52,7 @@
       "requiresIdenticalTrainingEnvironment": true,
       "requiresImmutableBaseModelRevisionAndDigest": true,
       "requiresPublicEvaluationFingerprintBinding": true,
+      "requiresVerifiedRuntimeImageBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
       "schemaVersion": "lumen.adapter-promotion/1.0.0"
     },

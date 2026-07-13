@@ -19,6 +19,8 @@ EXPERIMENT_VARIANTS = (
     "internal_plus_public_baseline",
     "internal_plus_public_optimized",
 )
+CONTAINER_IMAGE_DIGEST_SOURCE = "operator_declared"
+RUNTIME_IMAGE_BINDING_STATUS = "manual_validation_required"
 SPACE_TEMPLATE = Path(__file__).resolve().parent / "space_template"
 LEGACY_DURATION_SECRET_KEYS = (
     "LUMEN_ZERO_GPU_DURATION_SECONDS",
@@ -122,7 +124,7 @@ def write_space_bundle(
 ) -> SpaceBuild:
     experiment_variant = parse_experiment_variant(experiment_variant)
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", container_image_digest):
-        raise ValueError("container_image_digest must be an explicit immutable sha256:<digest>")
+        raise ValueError("container_image_digest must be an operator-declared sha256:<digest>")
     run_root.mkdir(parents=True, exist_ok=True)
     space_dir = run_root / "space"
     dataset_dir = run_root / "dataset_snapshot" / "fine_tuning"
@@ -148,6 +150,9 @@ def write_space_bundle(
         "gpu_duration_seconds": gpu_duration_seconds,
         "requested_experiment_variant": experiment_variant,
         "container_image_digest": container_image_digest,
+        "container_image_digest_source": CONTAINER_IMAGE_DIGEST_SOURCE,
+        "runtime_image_binding_status": RUNTIME_IMAGE_BINDING_STATUS,
+        "runtime_image_binding_verified": False,
         "fresh_run": True,
         "resume_default": False,
         "adapter_first": True,
@@ -519,7 +524,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--container-image-digest",
         required=True,
-        help="Immutable sha256:<digest> of the production training container image.",
+        help=(
+            "Operator-declared sha256:<digest> for the intended training image. "
+            "Gradio ZeroGPU does not expose trusted runtime-image binding, so promotion "
+            "still requires separate manual verification."
+        ),
     )
     parser.add_argument("--trigger", action="store_true", help="Trigger Space training after upload.")
     parser.add_argument("--trigger-timeout-seconds", type=int, default=900, help="Time to wait for Space readiness before triggering.")

@@ -5,7 +5,7 @@ IFS=$'\n\t'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${LUMEN_AIO_EXPERIMENT_VARIANT:?Select an explicit experiment variant}"
-: "${LUMEN_AIO_CONTAINER_IMAGE_DIGEST:?Set the immutable training container image sha256 digest}"
+: "${LUMEN_AIO_CONTAINER_IMAGE_DIGEST:?Declare the intended training container image sha256 digest for manual verification}"
 EXPERIMENT_VARIANT="$LUMEN_AIO_EXPERIMENT_VARIANT"
 CONTAINER_IMAGE_DIGEST="$LUMEN_AIO_CONTAINER_IMAGE_DIGEST"
 RUN_ID_BASE="${LUMEN_AIO_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -137,7 +137,13 @@ uncontrolled_config_fields = {
     "gguf_output_dir", "gguf_repo_id", "mergeExport", "output_dir",
 }
 runtime_lineage_config_fields = {"variant", "variantAttestation", "variantManifestSHA256"}
-runtime_lineage_config_fields.update({"trainingContainerImageDigest", "trainingEnvironmentSHA256"})
+runtime_lineage_config_fields.update({
+    "trainingContainerImageDigest",
+    "trainingContainerImageDigestSource",
+    "trainingRuntimeImageBindingStatus",
+    "trainingRuntimeImageBindingVerified",
+    "trainingEnvironmentSHA256",
+})
 def canonical_sha256(value):
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -222,6 +228,8 @@ def training_attestation(cfg, manifest):
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
         "trainingEnvironmentLockSHA256": manifest["trainingEnvironmentLockSHA256"],
         "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
+        "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
+        "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
     }
 
 runtime_manifest = json.loads((src_root / "adapter_runtime_manifest.json").read_text(encoding="utf-8"))
@@ -271,9 +279,15 @@ for agent in agents:
     environment = {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": container_image_digest,
+        "containerImageDigestSource": "operator_declared",
+        "runtimeImageBindingStatus": "manual_validation_required",
+        "runtimeImageBindingVerified": False,
         "environmentLock": variant_manifest["trainingEnvironmentLock"],
     }
     cfg["trainingContainerImageDigest"] = container_image_digest
+    cfg["trainingContainerImageDigestSource"] = environment["containerImageDigestSource"]
+    cfg["trainingRuntimeImageBindingStatus"] = environment["runtimeImageBindingStatus"]
+    cfg["trainingRuntimeImageBindingVerified"] = environment["runtimeImageBindingVerified"]
     cfg["trainingEnvironmentSHA256"] = canonical_sha256(environment)
     cfg["dataset_dir"] = str(variant_dir)
     cfg["variant"] = variant

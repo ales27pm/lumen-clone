@@ -80,8 +80,8 @@ struct OutlookToolAvailabilityTests {
         }
     }
 
-    @Test func authorizationAccessDeniedIsCancellationNotMissingConsent() {
-        #expect(NativeMicrosoftOAuthClient.authErrorForAuthorizationFailure(errorCode: "access_denied") == .signInCancelled)
+    @Test func authorizationAccessDeniedRequiresConsentWhileSheetCancellationRemainsSeparate() {
+        #expect(NativeMicrosoftOAuthClient.authErrorForAuthorizationFailure(errorCode: "access_denied") == .consentRequired)
         #expect(NativeMicrosoftOAuthClient.authErrorForAuthorizationFailure(errorCode: "consent_required") == .consentRequired)
     }
 

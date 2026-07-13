@@ -17,10 +17,10 @@
     "frozenEvaluationSHA256": "e9a6957f9697c53a3d60b141250c8976739126a18831e68672ab4cf596515342",
     "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
     "seed": 42,
-    "trainingConfigSHA256": "a96c4a8becce13f49092cda83a68e41e9cc3c1774e9f84716ca2e7871a5b8cfe",
-    "trainingEnvironmentLockSHA256": "f1a26b951c49732bfa7e1e640c4ebbd61851b506db7ac351f381ff6448ba591a"
+    "trainingConfigSHA256": "22b1ff1f68ebe5b0b605fa574c3302e97cdf5e565be5d67307b483a876f31584",
+    "trainingEnvironmentLockSHA256": "0fb18027c4f8cebb390e4171c3a4714dda9bf08eb2fa6afbc3bd2578c18a06bb"
   },
-  "experimentManifestSHA256": "761367ba3ce4bf1f71f2a6a11337af34353e8147b005229a6163fca4e86015eb",
+  "experimentManifestSHA256": "957fab92a5abac75146cc77c74fdf72a0171016ac745813fe9a2099266521652",
   "promotionContract": {
     "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
     "maximumContaminationMatches": 0,
@@ -33,6 +33,7 @@
     "requiresIdenticalTrainingEnvironment": true,
     "requiresImmutableBaseModelRevisionAndDigest": true,
     "requiresPublicEvaluationFingerprintBinding": true,
+    "requiresVerifiedRuntimeImageBinding": true,
     "runtimePointerPolicy": "unchanged_until_promoted",
     "schemaVersion": "lumen.adapter-promotion/1.0.0"
   },
@@ -91,7 +92,7 @@
         "seed": 42,
         "trainingEnvironmentLock": {
           "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-          "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+          "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
           "cudaVersion": "12.8",
           "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
           "packageVersions": {
@@ -146,12 +147,12 @@
       },
       "schemaVersion": "lumen.adapter-experiment-variant/1.0.0",
       "seed": 42,
-      "trainingConfigSHA256": "a96c4a8becce13f49092cda83a68e41e9cc3c1774e9f84716ca2e7871a5b8cfe",
+      "trainingConfigSHA256": "22b1ff1f68ebe5b0b605fa574c3302e97cdf5e565be5d67307b483a876f31584",
       "trainingCorpusSHA256": "cbf3754d7c05f4c3b6cad6fbd02980a4db28bfb33a447171acd56f75f3a0cf81",
       "trainingEnvironment": null,
       "trainingEnvironmentLock": {
         "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-        "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+        "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
         "packageVersions": {
@@ -167,10 +168,10 @@
         "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
         "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe"
       },
-      "trainingEnvironmentLockSHA256": "f1a26b951c49732bfa7e1e640c4ebbd61851b506db7ac351f381ff6448ba591a",
+      "trainingEnvironmentLockSHA256": "0fb18027c4f8cebb390e4171c3a4714dda9bf08eb2fa6afbc3bd2578c18a06bb",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_only",
-      "variantManifestSHA256": "e231f7670dcb1f232e9cbd984ef8f187ef78a5393fbbf64e274f01b7add12a74"
+      "variantManifestSHA256": "e7f0078d767a3777d18e3c30c93927a2b879fa38c6623e0ff1d15c0a1ba5635d"
     },
     {
       "agent": "mimicry",
@@ -229,7 +230,7 @@
         "seed": 42,
         "trainingEnvironmentLock": {
           "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-          "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+          "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
           "cudaVersion": "12.8",
           "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
           "packageVersions": {
@@ -286,12 +287,12 @@
       },
       "schemaVersion": "lumen.adapter-experiment-variant/1.0.0",
       "seed": 42,
-      "trainingConfigSHA256": "a96c4a8becce13f49092cda83a68e41e9cc3c1774e9f84716ca2e7871a5b8cfe",
+      "trainingConfigSHA256": "22b1ff1f68ebe5b0b605fa574c3302e97cdf5e565be5d67307b483a876f31584",
       "trainingCorpusSHA256": "dd57e8d30d9d9842a08bb2136680a33749d43d4c6950dd63316f4a496f840a13",
       "trainingEnvironment": null,
       "trainingEnvironmentLock": {
         "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-        "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+        "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
         "packageVersions": {
@@ -307,10 +308,10 @@
         "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
         "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe"
       },
-      "trainingEnvironmentLockSHA256": "f1a26b951c49732bfa7e1e640c4ebbd61851b506db7ac351f381ff6448ba591a",
+      "trainingEnvironmentLockSHA256": "0fb18027c4f8cebb390e4171c3a4714dda9bf08eb2fa6afbc3bd2578c18a06bb",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_plus_public_baseline",
-      "variantManifestSHA256": "66acc4ef3e81e9517ea0b13b293c9153bbab7c8a4513aa6253b50e0ab70f4879"
+      "variantManifestSHA256": "571cbdb3c98901b13364cfc55b90cf0d8740113fc31f86f562e499da6947b8ea"
     },
     {
       "agent": "mimicry",
@@ -369,7 +370,7 @@
         "seed": 42,
         "trainingEnvironmentLock": {
           "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-          "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+          "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
           "cudaVersion": "12.8",
           "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
           "packageVersions": {
@@ -426,12 +427,12 @@
       },
       "schemaVersion": "lumen.adapter-experiment-variant/1.0.0",
       "seed": 42,
-      "trainingConfigSHA256": "a96c4a8becce13f49092cda83a68e41e9cc3c1774e9f84716ca2e7871a5b8cfe",
+      "trainingConfigSHA256": "22b1ff1f68ebe5b0b605fa574c3302e97cdf5e565be5d67307b483a876f31584",
       "trainingCorpusSHA256": "d78b8f989e07804a9f2e4a456016e71d831261b3b025672d0a72accf6b56472a",
       "trainingEnvironment": null,
       "trainingEnvironmentLock": {
         "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-        "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+        "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
         "packageVersions": {
@@ -447,10 +448,10 @@
         "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
         "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe"
       },
-      "trainingEnvironmentLockSHA256": "f1a26b951c49732bfa7e1e640c4ebbd61851b506db7ac351f381ff6448ba591a",
+      "trainingEnvironmentLockSHA256": "0fb18027c4f8cebb390e4171c3a4714dda9bf08eb2fa6afbc3bd2578c18a06bb",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_plus_public_optimized",
-      "variantManifestSHA256": "f16a7b5161430b17ddd77835cc6033f59d60c0a0d3ed6b02ac3f24ab96b22526"
+      "variantManifestSHA256": "38985b2d55661662e94f4ea55ba23d3254ffb767d41ee7c9b32c88a05140e901"
     }
   ]
 }

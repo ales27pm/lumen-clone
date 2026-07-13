@@ -10,7 +10,7 @@ USE_ACTIVE_PYTHON="${LUMEN_ZERO_GPU_USE_ACTIVE_PYTHON:-0}"
 SKIP_INSTALL="${LUMEN_ZERO_GPU_SKIP_INSTALL:-0}"
 
 : "${LUMEN_ZERO_GPU_EXPERIMENT_VARIANT:?Select an explicit experiment variant}"
-: "${LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST:?Set the immutable training container image sha256 digest}"
+: "${LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST:?Declare the intended training container image sha256 digest for manual verification}"
 EXPERIMENT_VARIANT="$LUMEN_ZERO_GPU_EXPERIMENT_VARIANT"
 CONTAINER_IMAGE_DIGEST="$LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST"
 RUN_ID_BASE="${LUMEN_ZERO_GPU_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
