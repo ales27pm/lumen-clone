@@ -44,6 +44,7 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
                 "adapter_repo": "user/adapters",
                 "run_id": "test",
                 "agents": ["executor"],
+                "container_image_digest": "sha256:" + "c" * 64,
             }
         ),
         encoding="utf-8",
@@ -92,7 +93,9 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "agent": "executor",
         "baseModelID": "Qwen/Qwen3-1.7B",
         "base_model_name": "Qwen/Qwen3-1.7B",
-        "baseModelID": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+        "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
         "max_seq_length": 128,
         "load_in_4bit": True,
         "lora_r": 8,
@@ -106,14 +109,29 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "warmup_steps": 0,
         "merge_adapters_by_default": False,
         "release_bake_enabled_by_default": False,
-        "merge_adapters_by_default": False,
-        "release_bake_enabled_by_default": False,
     }
+    environment_lock = {
+        "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
+        "pythonVersion": "3.10",
+        "cudaVersion": "12.8",
+        "packageVersions": {"torch": "2.8.0"},
+        "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe",
+        "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
+        "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+    }
+    config["trainingEnvironmentLock"] = environment_lock
     (agent_root / "unsloth_config.json").write_text(json.dumps(config), encoding="utf-8")
     manifest = {
         "agent": "executor",
         "variant": "internal_plus_public_optimized",
         "baseModelID": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": config["baseModelRevision"],
+        "baseModelArtifactDigest": config["baseModelArtifactDigest"],
+        "baseModelTokenizerDigest": config["baseModelTokenizerDigest"],
+        "trainingEnvironmentLock": environment_lock,
+        "trainingEnvironmentLockSHA256": module._canonical_sha256(environment_lock),
+        "trainingEnvironmentSHA256": None,
         "seed": 42,
         "controlledTrainingConfig": config,
         "trainingConfigSHA256": module._canonical_sha256(config),
@@ -163,6 +181,16 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
     assert config["dataset_dir"] == str(variant_root)
     assert config["variantManifestSHA256"] == manifest["variantManifestSHA256"]
     assert config["variantAttestation"]["trainingCorpusSHA256"] == manifest["trainingCorpusSHA256"]
+    assert config["trainingContainerImageDigest"] == "sha256:" + "c" * 64
+    assert config["trainingEnvironmentSHA256"] == module._canonical_sha256(
+        {
+            "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+            "containerImageDigest": "sha256:" + "c" * 64,
+            "environmentLock": manifest["trainingEnvironmentLock"],
+        }
+    )
+    assert config["variantAttestation"]["baseModelRevision"] == manifest["baseModelRevision"]
+    assert config["variantAttestation"]["trainingEnvironmentSHA256"] == config["trainingEnvironmentSHA256"]
 
 
 def test_variant_dataset_rejects_tampered_lane_and_control_drift(

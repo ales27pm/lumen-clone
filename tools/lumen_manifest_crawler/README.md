@@ -172,9 +172,11 @@ Fine-tuning generation emits three controlled datasets per adapter under
 `<agent>/experiments/`: `internal_only`, `internal_plus_public_baseline`, and
 `internal_plus_public_optimized`. Each variant manifest binds the four train/validation SFT/DPO
 lanes, controlled hyperparameters, frozen Lumen evaluation set, public evaluation fingerprint
-bundle, and contamination report. Training runners default to the optimized variant but require an
-explicit valid variant name, verify every lane and controlled field before training, and record a
-run attestation. DPO files remain `generated_not_trained` until the separate preference phase runs.
+bundle, immutable base-model lineage, software-environment lock, and contamination report. Training
+runners have no default experiment variant: the operator must select one explicitly, supply the
+immutable training-container digest, verify every lane and controlled field before training, and
+record a run attestation. DPO files remain `generated_not_trained` until the separate preference
+phase runs.
 
 BFCL v3 simple, multiple, parallel, and irrelevance cases are registered strictly as evaluation
 data. The pinned hash-only bundle contains per-row normalized digests and bounded five-token

@@ -100,12 +100,14 @@ struct RAGSearchTool: LocalTool {
         if let minScore { results = results.filter { $0.score >= minScore } }
         var failureDiagnostic = isFailureDiagnostic(retrieval.diagnostic) ? (retrieval.diagnostic ?? "unknown") : nil
         var scopedCorpusEmpty = false
-        if results.isEmpty, let sourceTypes = sourceScope.sourceTypes {
+        if results.isEmpty {
             let counts = RAGStore.countsWithDiagnostics(context: modelContext)
             if counts.mode == "failed" || isFailureDiagnostic(counts.diagnostic) {
                 failureDiagnostic = counts.diagnostic ?? "counts_failed"
-            } else {
+            } else if let sourceTypes = sourceScope.sourceTypes {
                 scopedCorpusEmpty = sourceTypes.reduce(0) { $0 + (counts.counts[$1] ?? 0) } == 0
+            } else {
+                scopedCorpusEmpty = counts.counts.values.reduce(0, +) == 0
             }
         }
 

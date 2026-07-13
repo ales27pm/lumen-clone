@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -27,12 +28,6 @@ EXPERIMENT_VARIANTS = (
     "internal_plus_public_baseline",
     "internal_plus_public_optimized",
 )
-DEFAULT_EXPERIMENT_VARIANT = str(
-    os.environ.get(
-        "LUMEN_ZERO_GPU_EXPERIMENT_VARIANT",
-        DEFAULTS.get("experiment_variant", "internal_plus_public_optimized"),
-    )
-)
 REQUIRED_VARIANT_DATASET_FILES = (
     "train_sft.jsonl",
     "val_sft.jsonl",
@@ -50,6 +45,8 @@ UNCONTROLLED_CONFIG_FIELDS = {
     "output_dir",
 }
 RUNTIME_LINEAGE_CONFIG_FIELDS = {
+    "trainingContainerImageDigest",
+    "trainingEnvironmentSHA256",
     "variant",
     "variantAttestation",
     "variantManifestSHA256",
@@ -89,9 +86,6 @@ def _experiment_variant(value: str) -> str:
             f"Expected one of: {', '.join(EXPERIMENT_VARIANTS)}"
         )
     return variant
-
-
-DEFAULT_EXPERIMENT_VARIANT = _experiment_variant(DEFAULT_EXPERIMENT_VARIANT)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -190,7 +184,27 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
             if isinstance(contract, dict) and isinstance(contract.get("sha256"), str)
         },
         "effectiveTrainingConfigSHA256": _canonical_sha256(effective_controlled),
+        "baseModelRevision": manifest["baseModelRevision"],
+        "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
+        "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
+        "trainingEnvironmentLockSHA256": manifest["trainingEnvironmentLockSHA256"],
+        "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
     }
+
+
+def _training_environment(manifest: dict[str, Any]) -> dict[str, Any]:
+    container_digest = str(DEFAULTS.get("container_image_digest") or "")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", container_digest) is None:
+        raise ValueError("An explicit immutable container image digest is required before training")
+    lock = manifest.get("trainingEnvironmentLock")
+    if not isinstance(lock, dict) or _canonical_sha256(lock) != manifest.get("trainingEnvironmentLockSHA256"):
+        raise ValueError("Experiment variant training-environment lock is invalid")
+    payload = {
+        "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+        "containerImageDigest": container_digest,
+        "environmentLock": lock,
+    }
+    return {**payload, "trainingEnvironmentSHA256": _canonical_sha256(payload)}
 
 
 def _optional_int_env(name: str) -> int | None:
@@ -268,6 +282,17 @@ def _prepare_configs(
 
         cfg["base_model_name"] = base
         cfg["baseModelID"] = base
+        for field in (
+            "baseModelRevision",
+            "baseModelArtifactDigest",
+            "baseModelTokenizerDigest",
+            "trainingEnvironmentLock",
+        ):
+            if cfg.get(field) != variant_manifest.get(field):
+                raise ValueError(f"{field} drifted from the controlled variant for {agent}")
+        environment = _training_environment(variant_manifest)
+        cfg["trainingContainerImageDigest"] = environment["containerImageDigest"]
+        cfg["trainingEnvironmentSHA256"] = environment["trainingEnvironmentSHA256"]
         cfg["dataset_dir"] = str(variant_dir)
         cfg["variant"] = variant
         cfg["variantManifestSHA256"] = variant_manifest["variantManifestSHA256"]
@@ -306,6 +331,10 @@ def _prepare_configs(
                 "variantManifestSHA256": variant_manifest["variantManifestSHA256"],
                 "variantAttestation": attestation,
                 "base_model_name": base,
+                "baseModelRevision": cfg["baseModelRevision"],
+                "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
+                "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+                "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
                 "adapter_dir": str(adapter_dir),
                 "adapter_gguf": str(adapter_gguf),
             }
@@ -349,16 +378,41 @@ def _run(command: list[str], *, cwd: Path, log_path: Path) -> None:
 
 
 def _convert_lora_to_gguf(run_root: Path, prepared: list[dict[str, Any]], token: str) -> None:
+    # The revision itself is carried in each generated config's immutable environment lock.
+    first_config = json.loads(Path(prepared[0]["config"]).read_text(encoding="utf-8"))
+    llama_cpp_revision = str(first_config["trainingEnvironmentLock"]["llamaCppRevision"])
     converter = Path(os.environ.get("LUMEN_LORA_CONVERTER", str(Path.home() / ".unsloth/llama.cpp/convert_lora_to_gguf.py")))
     if not converter.exists():
         clone_dir = run_root / "llama.cpp"
-        _run(["git", "clone", "--depth", "1", "https://github.com/ggerganov/llama.cpp", str(clone_dir)], cwd=run_root, log_path=run_root / "logs" / "clone_llama_cpp.log")
+        _run(["git", "init", str(clone_dir)], cwd=run_root, log_path=run_root / "logs" / "clone_llama_cpp.log")
+        _run(["git", "-C", str(clone_dir), "remote", "add", "origin", "https://github.com/ggml-org/llama.cpp"], cwd=run_root, log_path=run_root / "logs" / "clone_llama_cpp_remote.log")
+        _run(["git", "-C", str(clone_dir), "fetch", "--depth", "1", "origin", llama_cpp_revision], cwd=run_root, log_path=run_root / "logs" / "clone_llama_cpp_fetch.log")
+        _run(["git", "-C", str(clone_dir), "checkout", "--detach", "FETCH_HEAD"], cwd=run_root, log_path=run_root / "logs" / "clone_llama_cpp_checkout.log")
         converter = clone_dir / "convert_lora_to_gguf.py"
     if not converter.exists():
         raise FileNotFoundError(f"Missing convert_lora_to_gguf.py: {converter}")
+    converter_revision = subprocess.check_output(
+        ["git", "-C", str(converter.parent), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
+    if converter_revision != llama_cpp_revision:
+        raise RuntimeError(
+            f"llama.cpp converter revision drifted: expected {llama_cpp_revision}, got {converter_revision}"
+        )
 
     for item in prepared:
         agent = item["agent"]
+        base_snapshot = Path(snapshot_download(
+            repo_id=item["base_model_name"],
+            revision=item["baseModelRevision"],
+            token=token,
+        ))
+        for filename, expected in (
+            ("model.safetensors.index.json", item["baseModelArtifactDigest"]),
+            ("tokenizer.json", item["baseModelTokenizerDigest"]),
+        ):
+            if _sha256(base_snapshot / filename) != expected:
+                raise RuntimeError(f"Pinned base-model artifact digest mismatch during conversion: {filename}")
         outfile = Path(item["adapter_gguf"])
         outfile.parent.mkdir(parents=True, exist_ok=True)
         _run(
@@ -368,8 +422,8 @@ def _convert_lora_to_gguf(run_root: Path, prepared: list[dict[str, Any]], token:
                 item["adapter_dir"],
                 "--outfile",
                 str(outfile),
-                "--base-model-id",
-                item["base_model_name"],
+                "--base",
+                str(base_snapshot),
             ],
             cwd=run_root,
             log_path=run_root / "logs" / f"convert_{agent}.log",
@@ -430,7 +484,8 @@ def train_lumen_adapters(
     convert_gguf: bool,
     upload_outputs: bool,
     gpu_size: str,
-    experiment_variant: str = DEFAULT_EXPERIMENT_VARIANT,
+    experiment_variant: str = "",
+    confirm_experiment_variant: bool = False,
 ) -> dict[str, Any]:
     try:
         del gpu_size
@@ -439,11 +494,16 @@ def train_lumen_adapters(
             raise RuntimeError("HF_TOKEN Space secret is required")
         agents = _csv_agents(agents_csv)
         experiment_variant = _experiment_variant(experiment_variant)
+        if not confirm_experiment_variant:
+            raise RuntimeError("Confirm the explicitly selected experiment variant before training")
         dataset_repo = os.environ.get("LUMEN_ZERO_GPU_DATASET_REPO", str(DEFAULTS["dataset_repo"]))
         dataset_revision = os.environ.get("LUMEN_ZERO_GPU_DATASET_REVISION", str(DEFAULTS.get("dataset_revision", "main")))
         dataset_path = os.environ.get("LUMEN_ZERO_GPU_DATASET_PATH", str(DEFAULTS["dataset_path_in_repo"]))
         adapter_repo = os.environ.get("LUMEN_ZERO_GPU_ADAPTER_REPO", str(DEFAULTS["adapter_repo"]))
         run_id = run_id.strip() or os.environ.get("LUMEN_ZERO_GPU_RUN_ID", str(DEFAULTS["run_id"]))
+        variant_marker = f"-{experiment_variant}"
+        if variant_marker not in run_id:
+            run_id += variant_marker
 
         run_root = Path(os.environ.get("LUMEN_ZERO_GPU_WORKDIR", "/tmp/lumen_zerogpu_runs")) / run_id
         if run_root.exists() and not resume:
@@ -535,8 +595,8 @@ with gr.Blocks() as demo:
         seed = gr.Number(value=42, precision=0, label="Seed")
         gpu_size = gr.Dropdown(choices=["large", "xlarge"], value=DEFAULT_GPU_SIZE, label="ZeroGPU size")
         experiment_variant = gr.Dropdown(
-            choices=list(EXPERIMENT_VARIANTS),
-            value=DEFAULT_EXPERIMENT_VARIANT,
+            choices=[("Select a variant", ""), *[(value, value) for value in EXPERIMENT_VARIANTS]],
+            value="",
             label="Experiment variant",
         )
     with gr.Row():
@@ -544,11 +604,12 @@ with gr.Blocks() as demo:
         resume = gr.Checkbox(value=False, label="Resume")
         convert = gr.Checkbox(value=True, label="Convert LoRA to GGUF")
         upload = gr.Checkbox(value=True, label="Upload outputs")
+        confirm_variant = gr.Checkbox(value=False, label="I confirm this experiment variant")
     output = gr.JSON(label="Training summary")
     run = gr.Button("Train adapters", variant="primary")
     run.click(
         fn=train_lumen_adapters,
-        inputs=[run_id, agents, base_model, seed, assistant_loss, resume, convert, upload, gpu_size, experiment_variant],
+        inputs=[run_id, agents, base_model, seed, assistant_loss, resume, convert, upload, gpu_size, experiment_variant, confirm_variant],
         outputs=output,
         api_name="train_lumen_adapters",
     )

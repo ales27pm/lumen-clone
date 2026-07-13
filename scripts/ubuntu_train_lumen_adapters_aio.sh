@@ -4,7 +4,16 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN_ID="${LUMEN_AIO_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+: "${LUMEN_AIO_EXPERIMENT_VARIANT:?Select an explicit experiment variant}"
+: "${LUMEN_AIO_CONTAINER_IMAGE_DIGEST:?Set the immutable training container image sha256 digest}"
+EXPERIMENT_VARIANT="$LUMEN_AIO_EXPERIMENT_VARIANT"
+CONTAINER_IMAGE_DIGEST="$LUMEN_AIO_CONTAINER_IMAGE_DIGEST"
+RUN_ID_BASE="${LUMEN_AIO_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+if [[ "$RUN_ID_BASE" == *"-${EXPERIMENT_VARIANT}" ]]; then
+  RUN_ID="$RUN_ID_BASE"
+else
+  RUN_ID="${RUN_ID_BASE}-${EXPERIMENT_VARIANT}"
+fi
 RUN_ROOT="${LUMEN_AIO_RUN_ROOT:-$ROOT/.local/ubuntu_finetune_runs/$RUN_ID}"
 DATASET_SOURCE="${LUMEN_AIO_DATASET_SOURCE:-$ROOT/generated/agent_manifest/fine_tuning}"
 AGENTS_CSV="${LUMEN_AIO_AGENTS:-cortex,executor,mouth,mimicry,rem,fleet}"
@@ -12,7 +21,7 @@ BASE_MODEL_OVERRIDE="${LUMEN_AIO_BASE_MODEL:-}"
 SEED="${LUMEN_AIO_SEED:-42}"
 VENV="${LUMEN_AIO_VENV:-$ROOT/.venv-unsloth}"
 PYTHON_BIN="${LUMEN_AIO_PYTHON:-python3}"
-TORCH_INDEX_URL="${LUMEN_AIO_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}"
+TORCH_INDEX_URL="${LUMEN_AIO_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}"
 ASSISTANT_ONLY_LOSS="${LUMEN_AIO_ASSISTANT_ONLY_LOSS:-1}"
 RESUME="${LUMEN_AIO_RESUME:-0}"
 SKIP_INSTALL="${LUMEN_AIO_SKIP_INSTALL:-0}"
@@ -23,7 +32,6 @@ UPLOAD="${LUMEN_AIO_UPLOAD:-0}"
 HF_PRIVATE="${LUMEN_AIO_HF_PRIVATE:-0}"
 OVERWRITE="${LUMEN_AIO_OVERWRITE:-0}"
 PREPARE_ONLY="${LUMEN_AIO_PREPARE_ONLY:-0}"
-EXPERIMENT_VARIANT="${LUMEN_AIO_EXPERIMENT_VARIANT:-internal_plus_public_optimized}"
 
 log() {
   printf '[lumen-aio] %s\n' "$*"
@@ -42,6 +50,7 @@ case "$EXPERIMENT_VARIANT" in
   internal_only|internal_plus_public_baseline|internal_plus_public_optimized) ;;
   *) die "unsupported experiment variant: $EXPERIMENT_VARIANT (expected internal_only, internal_plus_public_baseline, or internal_plus_public_optimized)" ;;
 esac
+[[ "$CONTAINER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "LUMEN_AIO_CONTAINER_IMAGE_DIGEST must be sha256:<64 lowercase hex characters>"
 
 if [[ ! -d "$DATASET_SOURCE" && -d "$ROOT/generated/fine_tuning" ]]; then
   DATASET_SOURCE="$ROOT/generated/fine_tuning"
@@ -75,12 +84,9 @@ fi
 
 if [[ "$SKIP_INSTALL" != "1" ]]; then
   log "installing/updating Python training dependencies"
-  "$TRAIN_PY" -m pip install -U pip setuptools wheel packaging ninja cmake
-  "$TRAIN_PY" -m pip install -U torch torchvision torchaudio --index-url "$TORCH_INDEX_URL"
-  "$TRAIN_PY" -m pip install -U \
-    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git" \
-    trl datasets transformers accelerate peft bitsandbytes sentencepiece protobuf \
-    huggingface_hub hf_transfer
+  "$TRAIN_PY" -m pip install pip==26.1.1 setuptools==80.9.0 wheel==0.46.3
+  "$TRAIN_PY" -m pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url "$TORCH_INDEX_URL"
+  "$TRAIN_PY" -m pip install -r "$ROOT/tools/hf_zerogpu/space_template/requirements.txt"
 else
   log "LUMEN_AIO_SKIP_INSTALL=1; using existing Python environment: $TRAIN_PY"
 fi
@@ -95,9 +101,10 @@ print(f"CUDA OK: {torch.cuda.get_device_name(0)}")
 PY
 fi
 
-"$TRAIN_PY" - "$ROOT" "$RUN_ROOT" "$AGENTS_CSV" "$BASE_MODEL_OVERRIDE" "$SEED" "$EXPERIMENT_VARIANT" <<'PY'
+"$TRAIN_PY" - "$ROOT" "$RUN_ROOT" "$AGENTS_CSV" "$BASE_MODEL_OVERRIDE" "$SEED" "$EXPERIMENT_VARIANT" "$CONTAINER_IMAGE_DIGEST" <<'PY'
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -108,6 +115,7 @@ agents = [item.strip() for item in sys.argv[3].split(",") if item.strip()]
 base_override = sys.argv[4].strip()
 seed = int(sys.argv[5])
 variant = sys.argv[6]
+container_image_digest = sys.argv[7]
 src_root = run_root / "generated" / "fine_tuning"
 
 allowed_variants = {
@@ -129,6 +137,7 @@ uncontrolled_config_fields = {
     "gguf_output_dir", "gguf_repo_id", "mergeExport", "output_dir",
 }
 runtime_lineage_config_fields = {"variant", "variantAttestation", "variantManifestSHA256"}
+runtime_lineage_config_fields.update({"trainingContainerImageDigest", "trainingEnvironmentSHA256"})
 def canonical_sha256(value):
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -208,6 +217,11 @@ def training_attestation(cfg, manifest):
             if isinstance(contract, dict) and isinstance(contract.get("sha256"), str)
         },
         "effectiveTrainingConfigSHA256": canonical_sha256(effective_controlled),
+        "baseModelRevision": manifest["baseModelRevision"],
+        "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
+        "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
+        "trainingEnvironmentLockSHA256": manifest["trainingEnvironmentLockSHA256"],
+        "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
     }
 
 runtime_manifest = json.loads((src_root / "adapter_runtime_manifest.json").read_text(encoding="utf-8"))
@@ -249,6 +263,18 @@ for agent in agents:
 
     cfg["base_model_name"] = base
     cfg["baseModelID"] = base
+    for field in ("baseModelRevision", "baseModelArtifactDigest", "baseModelTokenizerDigest", "trainingEnvironmentLock"):
+        if cfg.get(field) != variant_manifest.get(field):
+            raise SystemExit(f"{field} drifted from the controlled variant for {agent}")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", container_image_digest) is None:
+        raise SystemExit("LUMEN_AIO_CONTAINER_IMAGE_DIGEST must be sha256:<64 lowercase hex characters>")
+    environment = {
+        "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+        "containerImageDigest": container_image_digest,
+        "environmentLock": variant_manifest["trainingEnvironmentLock"],
+    }
+    cfg["trainingContainerImageDigest"] = container_image_digest
+    cfg["trainingEnvironmentSHA256"] = canonical_sha256(environment)
     cfg["dataset_dir"] = str(variant_dir)
     cfg["variant"] = variant
     cfg["variantManifestSHA256"] = variant_manifest["variantManifestSHA256"]
@@ -354,18 +380,30 @@ done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
 
 if [[ "$CONVERT_GGUF" == "1" ]]; then
   CONVERTER="${LUMEN_AIO_LORA_CONVERTER:-$HOME/.unsloth/llama.cpp/convert_lora_to_gguf.py}"
+  LLAMA_CPP_REVISION="34558825a27f4d74dcfd7a91bfde4464baa2a30a"
   if [[ ! -f "$CONVERTER" ]]; then
     log "LoRA converter not found at $CONVERTER; cloning llama.cpp into run workspace"
-    git clone --depth 1 https://github.com/ggerganov/llama.cpp "$RUN_ROOT/llama.cpp"
+    git init "$RUN_ROOT/llama.cpp"
+    git -C "$RUN_ROOT/llama.cpp" remote add origin https://github.com/ggml-org/llama.cpp
+    git -C "$RUN_ROOT/llama.cpp" fetch --depth 1 origin "$LLAMA_CPP_REVISION"
+    git -C "$RUN_ROOT/llama.cpp" checkout --detach FETCH_HEAD
     CONVERTER="$RUN_ROOT/llama.cpp/convert_lora_to_gguf.py"
   fi
   [[ -f "$CONVERTER" ]] || die "missing convert_lora_to_gguf.py"
+  [[ "$(git -C "$(dirname "$CONVERTER")" rev-parse HEAD)" == "$LLAMA_CPP_REVISION" ]] || die "llama.cpp converter revision does not match the pinned training environment"
 
   while IFS= read -r agent; do
     [[ -n "$agent" ]] || continue
     base_model="$("$TRAIN_PY" - "$RUN_ROOT/configs/$agent.json" <<'PY'
-import json, sys
-print(json.loads(open(sys.argv[1], encoding="utf-8").read())["base_model_name"])
+import hashlib, json, sys
+from huggingface_hub import snapshot_download
+cfg=json.loads(open(sys.argv[1], encoding="utf-8").read())
+snapshot=snapshot_download(repo_id=cfg["base_model_name"], revision=cfg["baseModelRevision"])
+for filename, expected in (("model.safetensors.index.json", cfg["baseModelArtifactDigest"]), ("tokenizer.json", cfg["baseModelTokenizerDigest"])):
+    digest=hashlib.sha256(open(f"{snapshot}/{filename}", "rb").read()).hexdigest()
+    if digest != expected:
+        raise SystemExit(f"Pinned base-model artifact digest mismatch during conversion: {filename}")
+print(snapshot)
 PY
 )"
     adapter_dir="$RUN_ROOT/models/lora_qwen3_bootstrap/$agent"
@@ -373,7 +411,7 @@ PY
     log "converting adapter to GGUF: $agent"
     "$TRAIN_PY" "$CONVERTER" "$adapter_dir" \
       --outfile "$outfile" \
-      --base-model-id "$base_model" \
+      --base "$base_model" \
       2>&1 | tee "$RUN_ROOT/logs/convert_$agent.log"
   done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
 fi

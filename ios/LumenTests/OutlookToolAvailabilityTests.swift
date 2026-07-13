@@ -80,6 +80,11 @@ struct OutlookToolAvailabilityTests {
         }
     }
 
+    @Test func authorizationAccessDeniedIsCancellationNotMissingConsent() {
+        #expect(NativeMicrosoftOAuthClient.authErrorForAuthorizationFailure(errorCode: "access_denied") == .signInCancelled)
+        #expect(NativeMicrosoftOAuthClient.authErrorForAuthorizationFailure(errorCode: "consent_required") == .consentRequired)
+    }
+
     @Test func cachedAccessTokenDoesNotRequireGrantOnlyOfflineAccessScope() {
         #expect(NativeMicrosoftOAuthClient.accessTokenScopesSatisfy(
             grantedScopes: "User.Read Mail.Read",

@@ -7,7 +7,9 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FineTuningDatasetConfig,
     _build_experiment_variants,
     _cap_public_corpus_token_share,
+    _experiment_public_group_limit,
     _public_validation_group_keys,
+    _route_record_agents,
     _stable_split,
     _unique_sorted_records,
     compile_agent_fine_tuning_datasets,
@@ -352,6 +354,25 @@ def test_fleet_routing_uses_structured_ownership_without_absorbing_peer_samples(
     assert len(structured_fleet_samples) == 1
 
 
+def test_known_fleet_slot_metadata_without_adapter_mapping_routes_to_fleet() -> None:
+    assert _route_record_agents(
+        source_family="custom_slot_contract",
+        record={"metadata": {"slotRole": "planner"}},
+        task_type="custom_slot_contract",
+        tool_ids=[],
+        slot_ids={"planner-slot"},
+        slot_roles={"planner"},
+    ) == ["fleet"]
+    assert _route_record_agents(
+        source_family="custom_slot_contract",
+        record={"metadata": {"slotID": "planner-slot"}},
+        task_type="custom_slot_contract",
+        tool_ids=[],
+        slot_ids={"planner-slot"},
+        slot_roles={"planner"},
+    ) == ["fleet"]
+
+
 def test_public_corpus_provenance_validation_fails_closed() -> None:
     valid = _provenance(target="mouth", group="d" * 64, row="safe-row")
     failures: list[Any] = []
@@ -622,10 +643,6 @@ def test_experiment_variants_separate_internal_baseline_and_quality_optimized_co
         available_val_sft=[],
         available_train_dpo=[],
         available_val_dpo=[],
-        optimized_train_sft=optimized,
-        optimized_val_sft=[],
-        optimized_train_dpo=[],
-        optimized_val_dpo=[],
         evaluation_records=[],
         training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
         max_public_share=0.10,
@@ -647,3 +664,119 @@ def test_experiment_variants_separate_internal_baseline_and_quality_optimized_co
         "internal_plus_public_baseline",
         "internal_plus_public_optimized",
     ]
+
+
+def test_experiment_selection_policies_produce_distinct_corpora_for_all_adapters() -> None:
+    for agent in AGENTS:
+        internal = [{
+            "messages": [
+                {"role": "user", "content": " ".join([f"{agent}-internal-user"] * 100)},
+                {"role": "assistant", "content": " ".join([f"{agent}-internal-target"] * 100)},
+            ],
+            "metadata": {"agent": agent},
+        }]
+        public: list[dict[str, Any]] = []
+        for index in range(10):
+            provenance = _provenance(
+                target=agent,
+                group=f"{agent}-policy-group-{index}",
+                row=f"{agent}-policy-{index}",
+            )
+            provenance["stratum"] = f"stratum-{index % 2}"
+            provenance["selectionScore"] = {"overall": 0.5}
+            public.append({
+                "messages": [
+                    {"role": "user", "content": " ".join([f"{agent}-public-user-{index}"] * 10)},
+                    {"role": "assistant", "content": " ".join([f"{agent}-public-target-{index}"] * 10)},
+                ],
+                "metadata": {"agent": agent, "publicCorpus": provenance},
+            })
+
+        group_limit = _experiment_public_group_limit([*internal, *public])
+        assert group_limit == 8
+        baseline_probe = _cap_public_corpus_token_share(
+            [*internal, *public],
+            0.80,
+            prefer_quality=False,
+            max_public_groups=group_limit,
+        )
+        baseline_groups = {
+            record["metadata"]["publicCorpus"]["sourceGroupID"]
+            for record in baseline_probe
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        }
+        for record in public:
+            public_metadata = record["metadata"]["publicCorpus"]
+            public_metadata["selectionScore"]["overall"] = (
+                0.0 if public_metadata["sourceGroupID"] in baseline_groups else 1.0
+            )
+
+        variants, experiment = _build_experiment_variants(
+            agent=agent,
+            available_train_sft=[*internal, *public],
+            available_val_sft=[],
+            available_train_dpo=[],
+            available_val_dpo=[],
+            evaluation_records=[],
+            training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
+            max_public_share=0.80,
+        )
+        baseline_manifest = variants["internal_plus_public_baseline"]["variant_manifest"]
+        optimized_manifest = variants["internal_plus_public_optimized"]["variant_manifest"]
+        assert baseline_manifest["trainingCorpusSHA256"] != optimized_manifest["trainingCorpusSHA256"]
+        assert baseline_manifest["publicSelectionPolicy"]["qualityScorePreference"] is False
+        assert optimized_manifest["publicSelectionPolicy"]["qualityScorePreference"] is True
+        assert (
+            baseline_manifest["publicSelectionPolicy"]["lanePublicGroupLimits"]
+            == optimized_manifest["publicSelectionPolicy"]["lanePublicGroupLimits"]
+        )
+        assert experiment["comparisonEligibility"] == {
+            "status": "eligible",
+            "promotionEligible": True,
+            "promotionProhibited": False,
+            "reason": "distinct_public_selection_corpora",
+            "publicRecordCount": 10,
+            "baselineTrainingCorpusSHA256": baseline_manifest["trainingCorpusSHA256"],
+            "optimizedTrainingCorpusSHA256": optimized_manifest["trainingCorpusSHA256"],
+        }
+
+
+def test_identical_public_variant_corpora_are_marked_not_applicable_for_promotion() -> None:
+    internal = [{
+        "messages": [
+            {"role": "user", "content": "internal request"},
+            {"role": "assistant", "content": "internal response"},
+        ],
+        "metadata": {"agent": "mouth"},
+    }]
+    provenance = _provenance(target="mouth", group="only-public-group", row="only-public")
+    provenance["selectionScore"] = {"overall": 1.0}
+    public = [{
+        "messages": [
+            {"role": "user", "content": "public request"},
+            {"role": "assistant", "content": "public response"},
+        ],
+        "metadata": {"agent": "mouth", "publicCorpus": provenance},
+    }]
+
+    variants, experiment = _build_experiment_variants(
+        agent="mouth",
+        available_train_sft=[*internal, *public],
+        available_val_sft=[],
+        available_train_dpo=[],
+        available_val_dpo=[],
+        evaluation_records=[],
+        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
+        max_public_share=0.80,
+    )
+
+    baseline_manifest = variants["internal_plus_public_baseline"]["variant_manifest"]
+    optimized_manifest = variants["internal_plus_public_optimized"]["variant_manifest"]
+    assert baseline_manifest["trainingCorpusSHA256"] == optimized_manifest["trainingCorpusSHA256"]
+    assert experiment["comparisonEligibility"]["status"] == "not_applicable"
+    assert experiment["comparisonEligibility"]["promotionEligible"] is False
+    assert experiment["comparisonEligibility"]["promotionProhibited"] is True
+    assert (
+        experiment["comparisonEligibility"]["reason"]
+        == "identical_baseline_and_optimized_training_corpora"
+    )

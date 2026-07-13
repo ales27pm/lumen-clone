@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -205,7 +206,7 @@ def _write_dataset_index(path: Path, datasets: dict[str, list[dict[str, Any]]]) 
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["family", "recordCount", "splits", "roles", "taskTypes"])
         for name, records in sorted(datasets.items()):
-            if name == "dataset_manifest":
+            if name == "dataset_manifest" or not records:
                 continue
             splits = sorted({str(record.get("split")) for record in records if record.get("split") is not None})
             roles = sorted({str(record.get("agentRole")) for record in records if record.get("agentRole") is not None})
@@ -450,6 +451,15 @@ def _write_fine_tuning_outputs(root: Path, datasets: dict[str, AgentFineTuningDa
             encoding="utf-8",
         )
         experiments_root = d / "experiments"
+        current_variants = set(dataset.experiment_variants)
+        if experiments_root.exists():
+            for existing in experiments_root.iterdir():
+                if existing.name in current_variants:
+                    continue
+                if existing.is_dir() and not existing.is_symlink():
+                    shutil.rmtree(existing)
+                else:
+                    existing.unlink()
         for variant, artifacts in sorted(dataset.experiment_variants.items()):
             variant_root = experiments_root / variant
             variant_root.mkdir(parents=True, exist_ok=True)

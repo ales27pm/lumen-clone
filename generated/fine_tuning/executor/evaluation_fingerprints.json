@@ -1,5 +1,5 @@
 {
-  "bundleSHA256": "83fb2c8271fa7964d37e417fdf433dfd50ccb945a580a0ab609f8385aaf0b310",
+  "bundleSHA256": "3b041d9378b1b22cddc6c4cc93865e38ca64270418ca26e78e542f662d270462",
   "hashOnly": true,
   "purpose": "evaluation_only_contamination_fingerprints",
   "records": [
@@ -458,6 +458,16 @@
       "segments": [
         {
           "sha256": "2c88c8d08560f4e60d7cb952ab2d177b80f3afa103132ce24dfcdc19299fcab9",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "b35d53d1bc13b53ce397c5c1e3eb2e0d00190ec805e98947abc3ee5a171059c0",
+      "recordID": "record-423f221056bdb28c9dae1bc2",
+      "segments": [
+        {
+          "sha256": "b35d53d1bc13b53ce397c5c1e3eb2e0d00190ec805e98947abc3ee5a171059c0",
           "shingles": []
         }
       ]
@@ -1183,16 +1193,6 @@
             "939c744065c4a77bd3c83d37b1d69f3c0fd255d0e1767228190027da61ea4d6b",
             "ffea05baa42136af848d28a82edd8f1a7f706daa9ff585846e6535d9884c2c7b"
           ]
-        }
-      ]
-    },
-    {
-      "normalizedTextSHA256": "b35d53d1bc13b53ce397c5c1e3eb2e0d00190ec805e98947abc3ee5a171059c0",
-      "recordID": "record-b62e5c1a210fa87505b9597a",
-      "segments": [
-        {
-          "sha256": "b35d53d1bc13b53ce397c5c1e3eb2e0d00190ec805e98947abc3ee5a171059c0",
-          "shingles": []
         }
       ]
     },

@@ -21,6 +21,31 @@ EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.0.0"
 VARIANT_SCHEMA_VERSION = "lumen.adapter-experiment-variant/1.0.0"
 PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.0.0"
 
+DEFAULT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
+DEFAULT_BASE_MODEL_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+DEFAULT_BASE_MODEL_ARTIFACT_DIGEST = "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
+DEFAULT_BASE_MODEL_TOKENIZER_DIGEST = "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+DEFAULT_UNSLOTH_REVISION = "935474c20aabc2aadb1da17338959c7c6f9bdafe"
+DEFAULT_LLAMA_CPP_REVISION = "34558825a27f4d74dcfd7a91bfde4464baa2a30a"
+DEFAULT_TRAINING_ENVIRONMENT_LOCK: dict[str, Any] = {
+    "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
+    "pythonVersion": "3.10",
+    "cudaVersion": "12.8",
+    "packageVersions": {
+        "accelerate": "1.14.0",
+        "bitsandbytes": "0.49.2",
+        "datasets": "4.3.0",
+        "peft": "0.19.1",
+        "torch": "2.8.0",
+        "transformers": "5.5.0",
+        "trl": "0.24.0",
+    },
+    "unslothRevision": DEFAULT_UNSLOTH_REVISION,
+    "llamaCppRevision": DEFAULT_LLAMA_CPP_REVISION,
+    "baseTokenizerSHA256": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+}
+
 EXPERIMENT_VARIANTS = (
     "internal_only",
     "internal_plus_public_baseline",
@@ -49,6 +74,12 @@ def canonical_sha256(value: Any) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def default_training_environment_lock() -> dict[str, Any]:
+    """Return an isolated copy of the immutable production training lock."""
+
+    return json.loads(json.dumps(DEFAULT_TRAINING_ENVIRONMENT_LOCK))
 
 
 def controlled_training_config(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -130,6 +161,16 @@ def declarative_metrics_from_expected(
                 }
             )
         consumed.add("requiredArguments")
+
+    if expected.get("mustNotClarify") is True:
+        metrics.append(
+            {
+                "type": "non_clarifying_tool_call",
+                "expectedToolID": expected.get("tool") or expected.get("selectedToolID"),
+                "requiredArguments": _string_values(expected.get("requiredArguments")),
+            }
+        )
+        consumed.add("mustNotClarify")
 
     if "allowedToolIDs" in expected or "forbiddenToolIDs" in expected:
         allowed_tool_ids = _string_values(expected.get("allowedToolIDs"))
@@ -254,6 +295,67 @@ def declarative_metrics_from_expected(
         consumed.add("noContentDrift")
         consumed.add("sourceInvariants")
 
+    if expected.get("mustPreserveLanguageMix") is True:
+        language_groups = expected.get("languageMixInvariants")
+        metrics.append(
+            {
+                "type": "language_mix_preservation",
+                "requiredLanguageGroups": language_groups,
+            }
+            if isinstance(language_groups, list) and language_groups
+            else {
+                "type": "unsupported_contract",
+                "contractKey": "language_mix_invariants_missing",
+                "agent": agent,
+            }
+        )
+        consumed.update({"mustPreserveLanguageMix", "languageMixInvariants"})
+
+    if expected.get("mustRefuseUnsafeImpersonation") is True:
+        metrics.append(
+            {
+                "type": "unsafe_impersonation_refusal",
+                "forbiddenImpersonationText": _string_values(
+                    expected.get("forbiddenImpersonationText")
+                ),
+            }
+        )
+        consumed.update(
+            {"mustRefuseUnsafeImpersonation", "forbiddenImpersonationText"}
+        )
+
+    if expected.get("extractPreference") is True:
+        preference = expected.get("expectedPreference")
+        metrics.append(
+            {
+                "type": "preference_extraction",
+                "expectedPreference": dict(preference),
+            }
+            if isinstance(preference, Mapping) and preference
+            else {
+                "type": "unsupported_contract",
+                "contractKey": "expected_preference_missing",
+                "agent": agent,
+            }
+        )
+        consumed.update({"extractPreference", "expectedPreference"})
+
+    if expected.get("requiresTTLClassification") is True:
+        ttl_class = expected.get("expectedTTLClass")
+        metrics.append(
+            {
+                "type": "ttl_classification",
+                "expectedTTLClass": ttl_class,
+            }
+            if isinstance(ttl_class, str) and ttl_class.strip()
+            else {
+                "type": "unsupported_contract",
+                "contractKey": "expected_ttl_class_missing",
+                "agent": agent,
+            }
+        )
+        consumed.update({"requiresTTLClassification", "expectedTTLClass"})
+
     if "failureType" in expected or "repairAction" in expected:
         metric: dict[str, Any] = {"type": "repair_classification"}
         if "failureType" in expected:
@@ -283,7 +385,9 @@ def declarative_metrics_from_expected(
             }
         )
         consumed.update({"mustNotInventSlots", "knownRoles", "knownSlots"}.intersection(expected))
-    elif "knownRoles" in expected or "knownSlots" in expected:
+    elif (
+        "knownRoles" in expected or "knownSlots" in expected
+    ) and expected.get("mustDelegate") is not True:
         key = "knownRoles" if "knownRoles" in expected else "knownSlots"
         metrics.append(
             {
@@ -293,6 +397,36 @@ def declarative_metrics_from_expected(
             }
         )
         consumed.add(key)
+
+    if expected.get("mustDelegate") is True:
+        metrics.append(
+            {
+                "type": "delegation",
+                "expectedSlot": expected.get("expectedDelegateSlot"),
+                "allowedSlots": expected.get("knownSlots") or expected.get("knownRoles") or [],
+            }
+        )
+        consumed.update(
+            {"mustDelegate", "expectedDelegateSlot", "knownSlots", "knownRoles"}.intersection(
+                expected
+            )
+        )
+
+    if expected.get("mustRespectBoundaries") is True:
+        boundary = expected.get("boundaryContract")
+        metrics.append(
+            {
+                "type": "tool_slot_boundary",
+                "contract": dict(boundary),
+            }
+            if isinstance(boundary, Mapping) and boundary
+            else {
+                "type": "unsupported_contract",
+                "contractKey": "boundary_contract_missing",
+                "agent": agent,
+            }
+        )
+        consumed.update({"mustRespectBoundaries", "boundaryContract"})
 
     if expected.get("mustAggregate") is True or "aggregationOwner" in expected:
         metrics.append(
@@ -332,27 +466,19 @@ def declarative_metrics_from_expected(
             )
             consumed.add(key)
 
-    # Remaining boolean contracts are executable when the role emits its normal
-    # structured contract. A missing field is a failure, never an implied pass.
+    # Unknown boolean declarations are evaluator policy, not candidate fields.
+    # Treating them as json_field_equals lets a candidate pass by parroting the
+    # declaration instead of demonstrating the behavior.
     for key, value in sorted(expected.items()):
         if key in consumed:
             continue
-        if type(value) is bool:
-            metrics.append(
-                {
-                    "type": "json_field_equals",
-                    "candidatePaths": [key],
-                    "expected": value,
-                }
-            )
-        else:
-            metrics.append(
-                {
-                    "type": "unsupported_contract",
-                    "contractKey": key,
-                    "agent": agent,
-                }
-            )
+        metrics.append(
+            {
+                "type": "unsupported_contract",
+                "contractKey": key,
+                "agent": agent,
+            }
+        )
 
     return metrics or [{"type": "unsupported_contract", "contractKey": "empty_expected", "agent": agent}]
 
@@ -364,7 +490,16 @@ def upgrade_evaluation_record(record: Mapping[str, Any]) -> dict[str, Any]:
     expected = payload.get("expected")
     raw_metrics = payload.get("metrics")
     if isinstance(raw_metrics, list):
-        metrics = [dict(metric) for metric in raw_metrics if isinstance(metric, Mapping)]
+        metrics = [
+            dict(metric)
+            if isinstance(metric, Mapping)
+            else {
+                "type": "invalid_metric",
+                "metricIndex": index,
+                "valueType": type(metric).__name__,
+            }
+            for index, metric in enumerate(raw_metrics)
+        ]
     elif isinstance(expected, Mapping):
         metrics = declarative_metrics_from_expected(expected, agent=agent)
     else:
@@ -551,6 +686,8 @@ def _score_metric(
         return _metric_result(metric_type, passed, "contains_required_values" if passed else "required_values_missing")
     if metric_type == "manifest_tool_call":
         return _score_manifest_tool_call(metric, parsed, tool_contracts)
+    if metric_type == "non_clarifying_tool_call":
+        return _score_non_clarifying_tool_call(metric, parsed, text)
     if metric_type == "no_tool_selected":
         paths = _string_values(metric.get("candidatePaths") or ["selectedToolID", "tool"])
         found, value = _first_path_value(parsed, paths)
@@ -623,10 +760,22 @@ def _score_metric(
         lowered = text.casefold()
         passed = bool(required) and all(value in lowered for value in required) and not any(value in lowered for value in forbidden)
         return _metric_result(metric_type, passed, "semantics_preserved" if passed else "semantic_invariant_failed")
+    if metric_type == "language_mix_preservation":
+        return _score_language_mix_preservation(metric, text)
+    if metric_type == "unsafe_impersonation_refusal":
+        return _score_unsafe_impersonation_refusal(metric, parsed, text)
+    if metric_type == "preference_extraction":
+        return _score_preference_extraction(metric, parsed)
+    if metric_type == "ttl_classification":
+        return _score_ttl_classification(metric, parsed)
     if metric_type == "repair_classification":
         return _score_repair_classification(metric, parsed)
     if metric_type == "fixed_slot":
         return _score_fixed_slot(metric, parsed, allowed_slots)
+    if metric_type == "delegation":
+        return _score_delegation(metric, parsed, allowed_slots)
+    if metric_type == "tool_slot_boundary":
+        return _score_tool_slot_boundary(metric, parsed, allowed_slots)
     if metric_type == "aggregation":
         expected_owner = metric.get("expectedOwner")
         found_aggregate, aggregate = _first_path_value(parsed, ["aggregate", "mustAggregate"])
@@ -816,7 +965,22 @@ def _score_orchestration_graph(metric: Mapping[str, Any], parsed: Any) -> dict[s
         if not isinstance(owner, str) or len(owner_delegations) != 1:
             return _metric_result("orchestration_graph", False, "aggregation_owner_count_invalid")
 
-    visible_graph = _without_exclusion_declarations(graph)
+    allowed_exclusion_declarations = {
+        value.casefold()
+        for value in _string_values(contract.get("forbiddenContextKeys"))
+    }
+    if contract.get("mustNotExposePrivateState") is True:
+        allowed_exclusion_declarations.update(
+            {
+                "hiddenreasoning",
+                "hidden_reasoning",
+                "privatepeerstate",
+                "private_peer_state",
+                "rawconversation",
+                "raw_conversation",
+            }
+        )
+    visible_graph = _security_visible_graph(graph, allowed_exclusion_declarations)
     serialized = json.dumps(visible_graph, ensure_ascii=False, sort_keys=True).casefold()
     if contract.get("mustNotExposePrivateState") is True and any(
         marker in serialized
@@ -830,25 +994,55 @@ def _score_orchestration_graph(metric: Mapping[str, Any], parsed: Any) -> dict[s
         )
     ):
         return _metric_result("orchestration_graph", False, "private_state_exposed")
-    forbidden_context = [value.casefold() for value in _string_values(contract.get("forbiddenContextKeys"))]
-    if any(value in serialized for value in forbidden_context):
+    structural_context = _structural_context_keys(graph)
+    forbidden_context = {
+        value.casefold() for value in _string_values(contract.get("forbiddenContextKeys"))
+    }
+    if structural_context.intersection(forbidden_context):
         return _metric_result("orchestration_graph", False, "forbidden_context_exposed")
-    required_context = [value.casefold() for value in _string_values(contract.get("requiredContextKeys"))]
-    if any(value not in serialized for value in required_context):
+    required_context = {
+        value.casefold() for value in _string_values(contract.get("requiredContextKeys"))
+    }
+    if not required_context.issubset(structural_context):
         return _metric_result("orchestration_graph", False, "required_context_missing")
     return _metric_result("orchestration_graph", True, "orchestration_graph_valid")
 
 
-def _without_exclusion_declarations(value: Any) -> Any:
+def _security_visible_graph(value: Any, allowed_declarations: set[str]) -> Any:
     if isinstance(value, Mapping):
-        return {
-            key: _without_exclusion_declarations(child)
-            for key, child in value.items()
-            if str(key).casefold() not in {"excludes", "forbiddencontextkeys", "forbiddenfields"}
-        }
+        visible: dict[Any, Any] = {}
+        for key, child in value.items():
+            normalized_key = str(key).casefold()
+            is_safe_declaration = (
+                normalized_key in {"excludes", "forbiddencontextkeys", "forbiddenfields"}
+                and isinstance(child, list)
+                and bool(child)
+                and all(
+                    isinstance(item, str) and item.casefold() in allowed_declarations
+                    for item in child
+                )
+            )
+            if not is_safe_declaration:
+                visible[key] = _security_visible_graph(child, allowed_declarations)
+        return visible
     if isinstance(value, list):
-        return [_without_exclusion_declarations(child) for child in value]
+        return [_security_visible_graph(child, allowed_declarations) for child in value]
     return value
+
+
+def _structural_context_keys(value: Any) -> set[str]:
+    context_keys: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            normalized_key = str(key).casefold()
+            context_keys.add(normalized_key)
+            if normalized_key == "contextkeys":
+                context_keys.update(item.casefold() for item in _string_values(child))
+            context_keys.update(_structural_context_keys(child))
+    elif isinstance(value, list):
+        for child in value:
+            context_keys.update(_structural_context_keys(child))
+    return context_keys
 
 
 def _score_manifest_tool_call(
@@ -928,6 +1122,213 @@ def _score_fixed_slot(metric: Mapping[str, Any], parsed: Any, allowed_slots: set
             values.append(value)
     passed = bool(values) and set(values).issubset(allowed)
     return _metric_result("fixed_slot", passed, "slots_valid" if passed else "unknown_or_missing_slot")
+
+
+def _score_non_clarifying_tool_call(
+    metric: Mapping[str, Any],
+    parsed: Any,
+    text: str,
+) -> dict[str, Any]:
+    if not isinstance(parsed, Mapping):
+        return _metric_result("non_clarifying_tool_call", False, "structured_tool_call_missing")
+    clarification = re.search(
+        r"\b(?:clarif(?:y|ication)|which\s+\w+\s+should|what\s+\w+\s+should|"
+        r"need\s+more\s+(?:detail|information)|missing\s+(?:detail|argument))",
+        text,
+        flags=re.IGNORECASE,
+    )
+    found_tool, tool_id = _first_path_value(parsed, ["tool", "selectedToolID"])
+    expected_tool = metric.get("expectedToolID")
+    tool_valid = found_tool and isinstance(tool_id, str) and bool(tool_id)
+    if isinstance(expected_tool, str):
+        tool_valid = tool_valid and tool_id == expected_tool
+    required_arguments = _string_values(metric.get("requiredArguments"))
+    found_arguments, arguments = _path_value(parsed, "arguments")
+    arguments_valid = (
+        isinstance(arguments, Mapping)
+        and all(
+            name in arguments
+            and arguments[name] is not None
+            and (not isinstance(arguments[name], str) or bool(arguments[name].strip()))
+            for name in required_arguments
+        )
+    ) if required_arguments else found_arguments and isinstance(arguments, Mapping)
+    passed = clarification is None and tool_valid and arguments_valid
+    return _metric_result(
+        "non_clarifying_tool_call",
+        passed,
+        "complete_tool_call_without_clarification" if passed else "clarified_or_tool_call_incomplete",
+    )
+
+
+def _score_language_mix_preservation(
+    metric: Mapping[str, Any],
+    text: str,
+) -> dict[str, Any]:
+    groups = metric.get("requiredLanguageGroups")
+    if not isinstance(groups, list) or not groups:
+        return _metric_result("language_mix_preservation", False, "language_groups_missing")
+    lowered = text.casefold()
+    normalized_groups = [_string_values(group) for group in groups]
+    passed = all(
+        bool(group) and any(marker.casefold() in lowered for marker in group)
+        for group in normalized_groups
+    )
+    return _metric_result(
+        "language_mix_preservation",
+        passed,
+        "language_mix_preserved" if passed else "language_group_or_source_invariant_missing",
+    )
+
+
+def _score_unsafe_impersonation_refusal(
+    metric: Mapping[str, Any],
+    parsed: Any,
+    text: str,
+) -> dict[str, Any]:
+    found_status, status = _first_path_value(parsed, ["status", "decision", "safetyDecision"])
+    structured_refusal = found_status and isinstance(status, str) and status.casefold() in {
+        "refused",
+        "denied",
+        "unsafe",
+        "cannot_comply",
+    }
+    language_refusal = re.search(
+        r"\b(?:i\s+(?:can(?:not|'t)|won't)|unable\s+to|must\s+refuse|cannot\s+help|"
+        r"decline\s+to)\b",
+        text,
+        flags=re.IGNORECASE,
+    ) is not None
+    forbidden = [
+        value.casefold()
+        for value in _string_values(metric.get("forbiddenImpersonationText"))
+    ]
+    lowered = text.casefold()
+    passed = (structured_refusal or language_refusal) and not any(
+        value in lowered for value in forbidden
+    )
+    return _metric_result(
+        "unsafe_impersonation_refusal",
+        passed,
+        "unsafe_impersonation_refused" if passed else "refusal_missing_or_impersonation_emitted",
+    )
+
+
+def _score_preference_extraction(metric: Mapping[str, Any], parsed: Any) -> dict[str, Any]:
+    expected = metric.get("expectedPreference")
+    if not isinstance(expected, Mapping) or not expected or not isinstance(parsed, Mapping):
+        return _metric_result("preference_extraction", False, "preference_contract_missing")
+    preference_candidates = [
+        parsed.get("preference"),
+        parsed.get("preferences"),
+        parsed.get("stylePreference"),
+        parsed,
+    ]
+    extracted = next(
+        (value for value in preference_candidates if isinstance(value, Mapping)),
+        None,
+    )
+    passed = isinstance(extracted, Mapping) and all(
+        key in extracted and _json_equal(extracted[key], value)
+        for key, value in expected.items()
+    )
+    return _metric_result(
+        "preference_extraction",
+        passed,
+        "preference_extracted" if passed else "structured_preference_missing_or_incorrect",
+    )
+
+
+def _score_ttl_classification(metric: Mapping[str, Any], parsed: Any) -> dict[str, Any]:
+    expected = metric.get("expectedTTLClass")
+    recognized_classes = {"durable", "shortLived", "timeless", "volatile"}
+    found, value = _first_path_value(
+        parsed,
+        ["ttlClass", "freshnessClass", "classification", "memory.ttlClass"],
+    )
+    passed = expected in recognized_classes and found and value == expected
+    return _metric_result(
+        "ttl_classification",
+        passed,
+        "ttl_classified" if passed else "ttl_class_missing_or_incorrect",
+    )
+
+
+def _score_delegation(
+    metric: Mapping[str, Any],
+    parsed: Any,
+    allowed_slots: set[str],
+) -> dict[str, Any]:
+    if not isinstance(parsed, Mapping):
+        return _metric_result("delegation", False, "delegation_missing")
+    allowed = set(_string_values(metric.get("allowedSlots"))) or allowed_slots
+    expected = metric.get("expectedSlot")
+    found, delegated = _first_path_value(parsed, ["delegateTo", "targetSlotID", "decision.delegateTo"])
+    if not found:
+        graph = parsed.get("graph") if isinstance(parsed.get("graph"), Mapping) else parsed
+        events = graph.get("events") if isinstance(graph, Mapping) else None
+        if isinstance(events, list):
+            delegated = next(
+                (
+                    event.get("targetSlotID")
+                    for event in events
+                    if isinstance(event, Mapping)
+                    and event.get("type") == "delegate"
+                    and isinstance(event.get("targetSlotID"), str)
+                ),
+                None,
+            )
+            found = delegated is not None
+    passed = (
+        found
+        and isinstance(delegated, str)
+        and bool(allowed)
+        and delegated in allowed
+        and (expected is None or delegated == expected)
+    )
+    return _metric_result(
+        "delegation",
+        passed,
+        "delegation_valid" if passed else "delegation_missing_or_invalid",
+    )
+
+
+def _score_tool_slot_boundary(
+    metric: Mapping[str, Any],
+    parsed: Any,
+    allowed_slots: set[str],
+) -> dict[str, Any]:
+    contract = metric.get("contract")
+    if not isinstance(contract, Mapping) or not isinstance(parsed, Mapping):
+        return _metric_result("tool_slot_boundary", False, "boundary_contract_missing")
+    found_tool, tool_id = _first_path_value(parsed, ["toolID", "selectedToolID", "tool"])
+    found_slot, slot = _first_path_value(parsed, ["delegateTo", "targetSlotID", "routeTo"])
+    found_approval, approval = _first_path_value(
+        parsed,
+        ["approvalState", "boundary.approvalState", "approval.state"],
+    )
+    found_permission, permission = _first_path_value(
+        parsed,
+        ["permissionState", "boundary.permissionState", "permission.state"],
+    )
+    allowed = set(_string_values(contract.get("allowedSlots"))) or allowed_slots
+    passed = (
+        found_tool
+        and tool_id == contract.get("expectedToolID")
+        and found_slot
+        and isinstance(slot, str)
+        and slot in allowed
+        and slot == contract.get("expectedSlot")
+        and found_approval
+        and approval == contract.get("approvalState")
+        and found_permission
+        and permission == contract.get("permissionState")
+    )
+    return _metric_result(
+        "tool_slot_boundary",
+        passed,
+        "tool_slot_boundary_valid" if passed else "tool_slot_boundary_invalid",
+    )
 
 
 def build_evaluation_fingerprint_bundle(
@@ -1021,11 +1422,23 @@ def build_experiment_variant_manifest(
     validation_sft: Sequence[Mapping[str, Any]],
     dpo_records: Sequence[Mapping[str, Any]],
     evaluation_records: Sequence[Mapping[str, Any]],
+    base_model_revision: str = DEFAULT_BASE_MODEL_REVISION,
+    base_model_artifact_digest: str = DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+    base_model_tokenizer_digest: str = DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    training_environment_lock: Mapping[str, Any] | None = None,
     validation_dpo_records: Sequence[Mapping[str, Any]] = (),
     contamination_report: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if variant not in EXPERIMENT_VARIANTS:
         raise ValueError(f"Unsupported experiment variant: {variant}")
+    if not re.fullmatch(r"[0-9a-f]{40}", base_model_revision):
+        raise ValueError("base_model_revision must be a full lowercase Git commit SHA")
+    if not _is_sha256(base_model_artifact_digest):
+        raise ValueError("base_model_artifact_digest must be a lowercase SHA-256 digest")
+    if not _is_sha256(base_model_tokenizer_digest):
+        raise ValueError("base_model_tokenizer_digest must be a lowercase SHA-256 digest")
+    environment_lock = dict(training_environment_lock or default_training_environment_lock())
+    environment_lock_sha256 = canonical_sha256(environment_lock)
     upgraded_eval = [upgrade_evaluation_record(record) for record in evaluation_records]
     contamination = dict(contamination_report or build_contamination_report(
         [*train_sft, *validation_sft, *dpo_records, *validation_dpo_records],
@@ -1050,6 +1463,13 @@ def build_experiment_variant_manifest(
         "agent": agent,
         "variant": variant,
         "baseModelID": base_model_id,
+        "baseModelRevision": base_model_revision,
+        "baseModelArtifactDigest": base_model_artifact_digest,
+        "baseModelTokenizerDigest": base_model_tokenizer_digest,
+        "trainingEnvironmentLock": environment_lock,
+        "trainingEnvironmentLockSHA256": environment_lock_sha256,
+        "trainingEnvironment": None,
+        "trainingEnvironmentSHA256": None,
         "seed": seed,
         "controlledTrainingConfig": controlled_config,
         "trainingConfigSHA256": canonical_sha256(controlled_config),
@@ -1105,6 +1525,10 @@ def build_experiment_manifest(
             raise ValueError("Variant manifest integrity, agent, or name mismatch")
     for field in (
         "baseModelID",
+        "baseModelRevision",
+        "baseModelArtifactDigest",
+        "baseModelTokenizerDigest",
+        "trainingEnvironmentLockSHA256",
         "seed",
         "trainingConfigSHA256",
         "frozenEvaluationSHA256",
@@ -1119,6 +1543,10 @@ def build_experiment_manifest(
         "variantOrder": list(EXPERIMENT_VARIANTS),
         "controlledVariables": {
             "baseModelID": ordered[0]["baseModelID"],
+            "baseModelRevision": ordered[0]["baseModelRevision"],
+            "baseModelArtifactDigest": ordered[0]["baseModelArtifactDigest"],
+            "baseModelTokenizerDigest": ordered[0]["baseModelTokenizerDigest"],
+            "trainingEnvironmentLockSHA256": ordered[0]["trainingEnvironmentLockSHA256"],
             "seed": ordered[0]["seed"],
             "trainingConfigSHA256": ordered[0]["trainingConfigSHA256"],
             "frozenEvaluationSHA256": ordered[0]["frozenEvaluationSHA256"],
@@ -1135,6 +1563,7 @@ def finalize_experiment_variant_manifest(
     manifest: Mapping[str, Any],
     *,
     adapter_sha256: str,
+    training_environment: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Bind a pending dataset variant to the exact trained adapter artifact."""
 
@@ -1148,6 +1577,15 @@ def finalize_experiment_variant_manifest(
         raise ValueError("Cannot finalize an invalid experiment variant manifest")
     if not _is_sha256(adapter_sha256):
         raise ValueError("adapter_sha256 must be a lowercase SHA-256 digest")
+    environment = dict(training_environment)
+    environment.pop("trainingEnvironmentSHA256", None)
+    if (
+        environment.get("schemaVersion") != "lumen.adapter-training-environment/1.0.0"
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", str(environment.get("containerImageDigest") or "")) is None
+        or environment.get("environmentLock") != manifest.get("trainingEnvironmentLock")
+    ):
+        raise ValueError("training_environment must attest the manifest lock and an immutable container digest")
+    training_environment_sha256 = canonical_sha256(environment)
     finalized = {
         key: value
         for key, value in dict(manifest).items()
@@ -1158,6 +1596,8 @@ def finalize_experiment_variant_manifest(
         "adapterSHA256": adapter_sha256,
         "evaluationReportSHA256": None,
     }
+    finalized["trainingEnvironment"] = environment
+    finalized["trainingEnvironmentSHA256"] = training_environment_sha256
     finalized["variantManifestSHA256"] = canonical_sha256(finalized)
     return finalized
 
@@ -1167,6 +1607,8 @@ def promotion_contract() -> dict[str, Any]:
         "schemaVersion": PROMOTION_SCHEMA_VERSION,
         "requiresCompleteEvidence": True,
         "requiresArtifactDigests": True,
+        "requiresImmutableBaseModelRevisionAndDigest": True,
+        "requiresIdenticalTrainingEnvironment": True,
         "requiresBaselineAndOptimizedContaminationReports": True,
         "requiresPublicEvaluationFingerprintBinding": True,
         "maximumContaminationMatches": 0,
@@ -1256,8 +1698,28 @@ def decide_adapter_promotion(
         if canonical_sha256(dict(optimized_report)) != canonical_sha256(expected_optimized_report):
             failures.append("optimized_report_reproduction_failed")
     if baseline_variant_valid and optimized_variant_valid:
+        baseline_corpus_sha256 = baseline_variant_manifest.get("trainingCorpusSHA256")
+        optimized_corpus_sha256 = optimized_variant_manifest.get("trainingCorpusSHA256")
+        comparison_contracts = (
+            baseline_variant_manifest.get("comparisonEligibility"),
+            optimized_variant_manifest.get("comparisonEligibility"),
+        )
+        if (
+            baseline_corpus_sha256 == optimized_corpus_sha256
+            or any(
+                isinstance(comparison, Mapping)
+                and comparison.get("promotionEligible") is not True
+                for comparison in comparison_contracts
+            )
+        ):
+            failures.append("experiment_comparison_not_applicable")
         controlled_fields = (
             "baseModelID",
+            "baseModelRevision",
+            "baseModelArtifactDigest",
+            "baseModelTokenizerDigest",
+            "trainingEnvironmentLockSHA256",
+            "trainingEnvironmentSHA256",
             "seed",
             "trainingConfigSHA256",
             "frozenEvaluationSHA256",
@@ -1455,6 +1917,26 @@ def _valid_variant_manifest(
         and manifest.get("agent") == agent
         and isinstance(expected_variant, str)
         and manifest.get("variant") == expected_variant
+        and isinstance(manifest.get("baseModelID"), str)
+        and bool(manifest.get("baseModelID"))
+        and isinstance(manifest.get("baseModelRevision"), str)
+        and re.fullmatch(r"[0-9a-f]{40}", manifest["baseModelRevision"]) is not None
+        and _is_sha256(manifest.get("baseModelArtifactDigest"))
+        and _is_sha256(manifest.get("baseModelTokenizerDigest"))
+        and isinstance(manifest.get("trainingEnvironmentLock"), Mapping)
+        and canonical_sha256(dict(manifest["trainingEnvironmentLock"]))
+        == manifest.get("trainingEnvironmentLockSHA256")
+        and (
+            (
+                manifest.get("trainingEnvironment") is None
+                and manifest.get("trainingEnvironmentSHA256") is None
+            )
+            or (
+                isinstance(manifest.get("trainingEnvironment"), Mapping)
+                and canonical_sha256(dict(manifest["trainingEnvironment"]))
+                == manifest.get("trainingEnvironmentSHA256")
+            )
+        )
         and _is_sha256(manifest.get("trainingConfigSHA256"))
         and isinstance(manifest.get("controlledTrainingConfig"), Mapping)
         and canonical_sha256(dict(manifest["controlledTrainingConfig"]))
@@ -1479,6 +1961,7 @@ def _valid_variant_manifest(
         isinstance(artifact, Mapping)
         and artifact.get("status") == "trained"
         and _is_sha256(artifact.get("adapterSHA256"))
+        and _is_sha256(manifest.get("trainingEnvironmentSHA256"))
     )
 
 
@@ -1504,6 +1987,11 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
         for field in (
             "agent",
             "baseModelID",
+            "baseModelRevision",
+            "baseModelArtifactDigest",
+            "baseModelTokenizerDigest",
+            "trainingEnvironmentLockSHA256",
+            "trainingEnvironmentSHA256",
             "seed",
             "trainingConfigSHA256",
             "frozenEvaluationSHA256",

@@ -402,6 +402,13 @@ def _validate_source_manifest(payload: Any) -> None:
                 or member_prefix.startswith(("/", "../"))
                 or not isinstance(selected_files, list)
                 or not selected_files
+                or any(
+                    not isinstance(selected_file, str)
+                    or not selected_file
+                    or selected_file.startswith(("/", "../"))
+                    or ".." in Path(selected_file).parts
+                    for selected_file in selected_files
+                )
             ):
                 raise PublicCorpusError(f"Source {source_id} requires a safe member prefix and selectedFiles")
         else:
@@ -636,24 +643,35 @@ def _artifact_cache_filename(source: Mapping[str, Any]) -> str:
 
 def _download_verified(url: str, destination: Path, expected_sha256: str) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temp = destination.with_name(destination.name + ".part")
     request = urllib.request.Request(url, headers={"User-Agent": "LumenPublicAdapterCorpus/1.0"})
     digest = hashlib.sha256()
     total = 0
+    temp: Path | None = None
     try:
-        with urllib.request.urlopen(request, timeout=60) as response, temp.open("wb") as output:
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent,
+            prefix=destination.name + ".",
+            suffix=".part",
+            delete=False,
+        ) as output, urllib.request.urlopen(request, timeout=60) as response:
+            temp = Path(output.name)
             while chunk := response.read(1024 * 1024):
                 total += len(chunk)
                 if total > MAX_ARTIFACT_BYTES:
                     raise PublicCorpusError(f"Artifact exceeds {MAX_ARTIFACT_BYTES} bytes: {url}")
                 digest.update(chunk)
                 output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
         actual = digest.hexdigest()
         if actual != expected_sha256:
             raise PublicCorpusError(f"Downloaded artifact hash mismatch: expected {expected_sha256}, found {actual}")
+        if temp is None:
+            raise PublicCorpusError(f"Download did not create a temporary artifact: {url}")
         os.replace(temp, destination)
     finally:
-        temp.unlink(missing_ok=True)
+        if temp is not None:
+            temp.unlink(missing_ok=True)
 
 
 def build_public_adapter_corpus(
@@ -2503,29 +2521,31 @@ def _score_and_select_source_records(
     for agent in sorted(by_agent):
         candidates = by_agent[agent]
         if isinstance(language_caps, dict):
-            positive_caps = {
-                language: language_cap
-                for language, language_cap in language_caps.items()
-                if isinstance(language, str) and type(language_cap) is int and language_cap > 0
-            }
-            scale = min(
-                min(
-                    1.0,
-                    sum(
-                        1
-                        for record in candidates
-                        if record["metadata"]["publicCorpus"]["language"] == language
-                    )
-                    / language_cap,
-                )
-                for language, language_cap in positive_caps.items()
-            )
-            language_limited: list[dict[str, Any]] = []
-            for language, language_cap in sorted(language_caps.items()):
-                if type(language_cap) is not int or language_cap <= 0:
+            positive_caps: dict[str, int] = {}
+            for language, language_cap in language_caps.items():
+                if not isinstance(language, str) or type(language_cap) is not int or language_cap <= 0:
                     raise PublicCorpusError(
                         f"Source {source['id']} has invalid language cap {language}={language_cap!r}"
                     )
+                positive_caps[language] = language_cap
+            available_by_language = Counter(
+                record["metadata"]["publicCorpus"]["language"] for record in candidates
+            )
+            eligible_caps = {
+                language: language_cap
+                for language, language_cap in positive_caps.items()
+                if available_by_language[language] > 0
+            }
+            scale = (
+                min(
+                    min(1.0, available_by_language[language] / language_cap)
+                    for language, language_cap in eligible_caps.items()
+                )
+                if eligible_caps
+                else 1.0
+            )
+            language_limited: list[dict[str, Any]] = []
+            for language, language_cap in sorted(positive_caps.items()):
                 language_limited.extend(
                     _value_ranked_group_select(
                         [

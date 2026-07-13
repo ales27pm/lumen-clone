@@ -9,7 +9,16 @@ VENV="${LUMEN_ZERO_GPU_VENV:-$ROOT/.venv-hf-zerogpu}"
 USE_ACTIVE_PYTHON="${LUMEN_ZERO_GPU_USE_ACTIVE_PYTHON:-0}"
 SKIP_INSTALL="${LUMEN_ZERO_GPU_SKIP_INSTALL:-0}"
 
-RUN_ID="${LUMEN_ZERO_GPU_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+: "${LUMEN_ZERO_GPU_EXPERIMENT_VARIANT:?Select an explicit experiment variant}"
+: "${LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST:?Set the immutable training container image sha256 digest}"
+EXPERIMENT_VARIANT="$LUMEN_ZERO_GPU_EXPERIMENT_VARIANT"
+CONTAINER_IMAGE_DIGEST="$LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST"
+RUN_ID_BASE="${LUMEN_ZERO_GPU_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+if [[ "$RUN_ID_BASE" == *"-${EXPERIMENT_VARIANT}" ]]; then
+  RUN_ID="$RUN_ID_BASE"
+else
+  RUN_ID="${RUN_ID_BASE}-${EXPERIMENT_VARIANT}"
+fi
 RUN_ROOT_BASE="${LUMEN_ZERO_GPU_RUN_ROOT_BASE:-$ROOT/.local/hf_zerogpu_runs}"
 RUN_ROOT="${LUMEN_ZERO_GPU_RUN_ROOT:-$RUN_ROOT_BASE/$RUN_ID}"
 DATASET_SOURCE="${LUMEN_ZERO_GPU_DATASET_SOURCE:-$ROOT/generated/agent_manifest/fine_tuning}"
@@ -28,7 +37,6 @@ DRY_RUN="${LUMEN_ZERO_GPU_DRY_RUN:-0}"
 PRIVATE_SPACE="${LUMEN_ZERO_GPU_PRIVATE_SPACE:-1}"
 PRIVATE_DATASET="${LUMEN_ZERO_GPU_PRIVATE_DATASET:-1}"
 PRIVATE_ADAPTERS="${LUMEN_ZERO_GPU_PRIVATE_ADAPTERS:-1}"
-EXPERIMENT_VARIANT="${LUMEN_ZERO_GPU_EXPERIMENT_VARIANT:-internal_plus_public_optimized}"
 
 log() {
   printf '[lumen-zerogpu] %s\n' "$*"
@@ -75,6 +83,7 @@ run_training_batch() {
     --trigger-timeout-seconds "$TRIGGER_TIMEOUT_SECONDS"
     --seed "$SEED"
     --experiment-variant "$EXPERIMENT_VARIANT"
+    --container-image-digest "$CONTAINER_IMAGE_DIGEST"
   )
 
   if [[ -n "$BASE_MODEL" ]]; then
@@ -112,6 +121,7 @@ case "$EXPERIMENT_VARIANT" in
   internal_only|internal_plus_public_baseline|internal_plus_public_optimized) ;;
   *) die "unsupported experiment variant: $EXPERIMENT_VARIANT" ;;
 esac
+[[ "$CONTAINER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST must be sha256:<64 lowercase hex characters>"
 [[ "$AGENT_BATCH_SIZE" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be a positive integer"
 (( AGENT_BATCH_SIZE > 0 )) || die "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE must be greater than zero"
 [[ "$TRIGGER_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS must be a positive integer"
@@ -126,8 +136,9 @@ fi
 
 if [[ "$SKIP_INSTALL" != "1" ]]; then
   log "installing/updating local HF automation dependencies"
-  "$TRAIN_PY" -m pip install -U pip setuptools wheel
-  "$TRAIN_PY" -m pip install -U huggingface_hub gradio_client
+  "$TRAIN_PY" -m pip install \
+    pip==26.1.1 setuptools==80.9.0 wheel==0.46.3 \
+    huggingface_hub==1.23.0 gradio_client==2.5.0
 fi
 
 log "run id: $RUN_ID"

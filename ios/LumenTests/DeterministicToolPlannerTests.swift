@@ -89,6 +89,23 @@ struct DeterministicToolPlannerTests {
             availableToolIDs: ["rag.search"]
         )
         #expect(missing == nil)
+
+        for barePrompt in ["Search Personal Data", "please use search personal data.", "RAG search"] {
+            #expect(DeterministicToolPlanner.plan(
+                routing: routing,
+                prompt: barePrompt,
+                availableToolIDs: ["rag.search"]
+            ) == nil)
+        }
+
+        let concrete = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "RAG search for architecture notes",
+            availableToolIDs: ["rag.search"]
+        )
+        #expect(concrete?.tool == "rag.search")
+        let concreteQuery = concrete?.args["query"]?.stringValue ?? ""
+        #expect(concreteQuery.contains("architecture"))
     }
 
     @Test func unreadEmailsPreferMailboxListOverRead() async throws {

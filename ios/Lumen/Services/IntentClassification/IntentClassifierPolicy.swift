@@ -281,11 +281,16 @@ nonisolated enum IntentClarificationPolicy {
         if text.rangeOfCharacter(from: .decimalDigits) != nil, matchesAny(text, ["call", "phone", "dial"]) {
             return false
         }
-        let withoutMetaInstruction = text.replacingOccurrences(
-            of: #"(?i)\s*,?\s*(?:and|but)?\s*ask\s+for\s+clarification\s+if\s+required\s+details\s+are\s+missing\b.*$"#,
-            with: "",
-            options: .regularExpression
-        )
+        let withoutMetaInstruction: String
+        if text.hasPrefix("use ") {
+            withoutMetaInstruction = text.replacingOccurrences(
+                of: #"(?i)\s*,\s*but\s+ask\s+for\s+clarification\s+if\s+required\s+details\s+are\s+missing\b.*$"#,
+                with: "",
+                options: .regularExpression
+            )
+        } else {
+            withoutMetaInstruction = text
+        }
         let stripped = stripPhrases(phrases, from: withoutMetaInstruction)
         return !hasMeaningfulTarget(stripped)
     }

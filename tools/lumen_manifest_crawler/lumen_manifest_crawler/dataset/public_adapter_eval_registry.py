@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -220,8 +221,12 @@ def load_public_adapter_eval_fingerprint_bundle(
     return payload
 
 
-@lru_cache(maxsize=1)
 def _load_default_public_adapter_eval_fingerprint_bundle() -> dict[str, Any]:
+    return deepcopy(_cached_default_public_adapter_eval_fingerprint_bundle())
+
+
+@lru_cache(maxsize=1)
+def _cached_default_public_adapter_eval_fingerprint_bundle() -> dict[str, Any]:
     return load_public_adapter_eval_fingerprint_bundle()
 
 

@@ -87,6 +87,15 @@ def test_fingerprint_bundle_is_deterministic_hash_only_and_has_no_training_targe
     )
 
 
+def test_default_fingerprint_bundle_callers_cannot_mutate_cached_evidence() -> None:
+    first = build_public_adapter_eval_fingerprint_bundle()
+    original_digest = first["artifacts"][0]["rows"][0]["normalizedRowSHA256"]
+    first["artifacts"][0]["rows"][0]["normalizedRowSHA256"] = "0" * 64
+
+    second = build_public_adapter_eval_fingerprint_bundle()
+    assert second["artifacts"][0]["rows"][0]["normalizedRowSHA256"] == original_digest
+
+
 def test_committed_bundle_contains_only_hash_contract_fields() -> None:
     bundle = load_public_adapter_eval_fingerprint_bundle()
     encoded = json.dumps(bundle, sort_keys=True)

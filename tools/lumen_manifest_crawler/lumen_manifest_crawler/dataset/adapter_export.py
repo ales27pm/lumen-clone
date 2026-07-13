@@ -4,6 +4,9 @@ import re
 from typing import Any
 
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
+    DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+    DEFAULT_BASE_MODEL_REVISION,
+    DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
     EXPERIMENT_VARIANTS,
     promotion_contract,
 )
@@ -68,6 +71,9 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out = dict(config or {})
     base_model_id = base_model_id_from_config(out)
     out.setdefault("baseModelID", base_model_id)
+    out.setdefault("baseModelRevision", DEFAULT_BASE_MODEL_REVISION)
+    out.setdefault("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST)
+    out.setdefault("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST)
     out["artifactMode"] = "adapter_first"
     out["defaultExportArtifact"] = "lora_adapter"
     out["artifact_mode"] = "adapter_first"
@@ -87,6 +93,9 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "adapterGGUFArtifact": adapter_gguf_output_path(agent),
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
         "baseModelID": base_model_id,
+        "baseModelRevision": out["baseModelRevision"],
+        "baseModelArtifactDigest": out["baseModelArtifactDigest"],
+        "baseModelTokenizerDigest": out["baseModelTokenizerDigest"],
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "trainBaseModelWeights": False,
@@ -110,11 +119,15 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
 
 def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_config: dict[str, Any] | None) -> dict[str, Any]:
     base_model_id = base_model_id_from_config(unsloth_config)
+    config = unsloth_config or {}
     return {
         "schemaVersion": ADAPTER_EXPORT_SCHEMA_VERSION,
         "mode": "adapter_first",
         "agent": agent,
         "baseModelID": base_model_id,
+        "baseModelRevision": config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
+        "baseModelArtifactDigest": config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
+        "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
@@ -190,6 +203,9 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "adapterGGUFArtifact": adapter_gguf_output_path(agent),
                 "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
                 "baseModelID": base_model_id,
+                "baseModelRevision": unsloth_config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
+                "baseModelArtifactDigest": unsloth_config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
+                "baseModelTokenizerDigest": unsloth_config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
                 "systemPrompt": dataset_card.get("systemPrompt"),
                 "recordCounts": dataset_card.get("recordCounts", {}),
                 "evaluation": dataset_card.get("evaluation", {}),
@@ -203,6 +219,9 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "schemaVersion": ADAPTER_EXPORT_SCHEMA_VERSION,
         "mode": "adapter_first",
         "sharedBaseModelID": shared_base_model_id,
+        "sharedBaseModelRevision": DEFAULT_BASE_MODEL_REVISION,
+        "sharedBaseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+        "sharedBaseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
