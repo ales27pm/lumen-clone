@@ -1,6 +1,6 @@
 {
   "agent": "executor",
-  "availableSFTRecords": 1145,
+  "availableSFTRecords": 1144,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "640ca4ff54b5ec8a5592d01bdf0aa5df2517be9ec5fd002b95e9bb47f61d0012"
+      "reportSHA256": "70978934663d078b87606006a9be0e8a6cbedc19cc6404e3e65e9d583e9fd18f"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "13f704816bb3537645d99a17817196ba699b6b9d8eaf9d23a75acd085caef6b3",
-      "optimizedTrainingCorpusSHA256": "4e11cae1751374d4dcc923bf23f2b4583146d8f9816b1f7c5a62221b7128cc64",
+      "baselineTrainingCorpusSHA256": "7c66539830fe2e96188779db4932eec7a1033b539c3f710c7ffd1089a5541903",
+      "optimizedTrainingCorpusSHA256": "ed9aac8035d226816715300cf8ce3581153bd639d11601eb684898419939ba9f",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 462,
@@ -36,6 +36,8 @@
       "baseModelID",
       "baseModelRevision",
       "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
@@ -45,7 +47,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "0492174df9e08d611369696e3206cd8ef2da9ffd88dbe880dcafd9c2acf6f599",
+    "experimentManifestSHA256": "01a2016e8df12d6aec6e8c26bbcf8ee7a7a53aa4074dc96855f8284012c9d02d",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -70,7 +72,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 16,
@@ -247,16 +249,16 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.182243,
-        "total": 0.32265
+        "target": 0.184374,
+        "total": 0.324568
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.104213,
-        "total": 0.223578
+        "target": 0.102818,
+        "total": 0.22191
       }
     }
   },
@@ -273,7 +275,7 @@
   "recordCounts": {
     "eval": 114,
     "train_dpo": 14,
-    "train_sft": 968,
+    "train_sft": 967,
     "val_dpo": 2,
     "val_sft": 172
   },

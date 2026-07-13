@@ -224,6 +224,8 @@ def training_attestation(cfg, manifest):
         "effectiveTrainingConfigSHA256": canonical_sha256(effective_controlled),
         "baseModelRevision": manifest["baseModelRevision"],
         "baseModelIndexDigest": manifest["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": manifest["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": manifest["baseModelIndexShardBindingSHA256"],
         "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
         "baseModelWeightShards": manifest["baseModelWeightShards"],
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
@@ -274,7 +276,16 @@ for agent in agents:
 
     cfg["base_model_name"] = base
     cfg["baseModelID"] = base
-    for field in ("baseModelRevision", "baseModelIndexDigest", "baseModelArtifactDigest", "baseModelWeightShards", "baseModelTokenizerDigest", "trainingEnvironmentLock"):
+    for field in (
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
+        "baseModelArtifactDigest",
+        "baseModelWeightShards",
+        "baseModelTokenizerDigest",
+        "trainingEnvironmentLock",
+    ):
         if cfg.get(field) != variant_manifest.get(field):
             raise SystemExit(f"{field} drifted from the controlled variant for {agent}")
     environment = {
@@ -283,6 +294,7 @@ for agent in agents:
         "containerImageDigestSource": "operator_declared",
         "runtimeImageBindingStatus": "manual_validation_required",
         "runtimeImageBindingVerified": False,
+        "effectiveSeed": seed,
         "environmentLock": variant_manifest["trainingEnvironmentLock"],
     }
     cfg["trainingContainerImageDigest"] = container_image_digest
@@ -452,6 +464,8 @@ for agent in agents:
     for field in (
         "baseModelRevision",
         "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
         "baseModelArtifactDigest",
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
@@ -527,8 +541,17 @@ contract={"schemaVersion":"lumen.base-model-weight-shards/1.0.0","shards":shards
 if hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest() != cfg["baseModelArtifactDigest"]:
     raise SystemExit("Base-model artifact digest is not bound to the declared weight shards")
 index=json.load(open(f"{snapshot}/model.safetensors.index.json", encoding="utf-8"))
-if sorted(set(index.get("weight_map", {}).values())) != [item["filename"] for item in shards]:
+referenced=sorted(set(index.get("weight_map", {}).values()))
+if referenced != [item["filename"] for item in shards] or referenced != cfg["baseModelIndexReferencedShardNames"]:
     raise SystemExit("Base-model index shard set does not match the declared weight shards")
+binding={
+    "schemaVersion":"lumen.base-model-index-shard-binding/1.0.0",
+    "indexDigest":cfg["baseModelIndexDigest"],
+    "referencedShardNames":referenced,
+    "shardContractDigest":cfg["baseModelArtifactDigest"],
+}
+if hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest() != cfg["baseModelIndexShardBindingSHA256"]:
+    raise SystemExit("Base-model index-to-shard binding digest mismatch during conversion")
 for item in shards:
     path=f"{snapshot}/{item['filename']}"
     digest=sha256(path)

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import pickle
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -72,7 +70,7 @@ def test_adapter_artifact_manifest_rejects_missing_extra_and_modified_files(
         verify_adapter_artifact(adapter)
 
     (adapter / "adapter_model.safetensors").unlink()
-    with pytest.raises(ValueError, match="canonical PEFT weight file"):
+    with pytest.raises(ValueError, match="require adapter_model.safetensors"):
         verify_adapter_artifact(adapter)
 
 
@@ -162,36 +160,13 @@ def test_adapter_artifact_rejects_safetensor_shape_byte_mismatch(
         write_adapter_artifact_manifest(adapter, training_phase="sft")
 
 
-def test_adapter_artifact_rejects_forged_pytorch_zip_magic(tmp_path: Path) -> None:
+def test_adapter_artifact_rejects_pytorch_bin_for_finalized_artifacts(
+    tmp_path: Path,
+) -> None:
     adapter = tmp_path / "adapter"
     _write_adapter(adapter)
     (adapter / "adapter_model.safetensors").unlink()
     (adapter / "adapter_model.bin").write_bytes(b"PK\x03\x04" + b"x" * 32)
 
-    with pytest.raises(ValueError, match="valid PyTorch ZIP"):
-        write_adapter_artifact_manifest(adapter, training_phase="sft")
-
-
-def test_adapter_artifact_accepts_structural_pytorch_zip(tmp_path: Path) -> None:
-    adapter = tmp_path / "adapter"
-    _write_adapter(adapter)
-    (adapter / "adapter_model.safetensors").unlink()
-    with zipfile.ZipFile(adapter / "adapter_model.bin", "w") as archive:
-        archive.writestr("archive/data.pkl", pickle.dumps({"weight": "storage"}))
-        archive.writestr("archive/data/0", b"tensor-bytes")
-
-    manifest = write_adapter_artifact_manifest(adapter, training_phase="sft")
-
-    assert verify_adapter_artifact(adapter) == manifest
-
-
-def test_adapter_artifact_rejects_invalid_pytorch_pickle(tmp_path: Path) -> None:
-    adapter = tmp_path / "adapter"
-    _write_adapter(adapter)
-    (adapter / "adapter_model.safetensors").unlink()
-    with zipfile.ZipFile(adapter / "adapter_model.bin", "w") as archive:
-        archive.writestr("archive/data.pkl", b"not-a-pickle")
-        archive.writestr("archive/data/0", b"tensor-bytes")
-
-    with pytest.raises(ValueError, match="invalid PyTorch pickle"):
+    with pytest.raises(ValueError, match="adapter_model.bin"):
         write_adapter_artifact_manifest(adapter, training_phase="sft")

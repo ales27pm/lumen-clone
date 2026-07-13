@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "3fcc8a3df132a638d51408409c9e34128d9f6843bd427eed31442a8425e377e4"
+      "reportSHA256": "e5d0c18f35beea659c404d367deaa87c58970668173115ac84ff9fb5f4c5f756"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "dd57e8d30d9d9842a08bb2136680a33749d43d4c6950dd63316f4a496f840a13",
-      "optimizedTrainingCorpusSHA256": "d78b8f989e07804a9f2e4a456016e71d831261b3b025672d0a72accf6b56472a",
+      "baselineTrainingCorpusSHA256": "8383dfa95cdbc17879959075698a4cb9bdac24f71d6db0de084c5155fb7bf7f3",
+      "optimizedTrainingCorpusSHA256": "e0bd94befab6c89ecc2dac232fa0e488f43ef60906ab7c7bc141d856477c9f03",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 600,
@@ -36,6 +36,8 @@
       "baseModelID",
       "baseModelRevision",
       "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
@@ -45,7 +47,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "8689f3d527f48e19e19fec66359840a0cff32556d448af95334d2c04e2e6d603",
+    "experimentManifestSHA256": "2c6abf7f0484515e85cc31aa5e81ed444b3916b4a0157b2053ad6ef7c372e934",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -70,7 +72,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 12,
@@ -104,13 +106,13 @@
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 107,
+      "train_sft": 108,
       "val_dpo": 0,
       "val_sft": 13
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 404,
+      "train_sft": 403,
       "val_dpo": 0,
       "val_sft": 76
     },
@@ -130,9 +132,9 @@
         "minimum": 0.720013
       },
       "selected": {
-        "count": 120,
+        "count": 121,
         "maximum": 0.7565,
-        "mean": 0.737054,
+        "mean": 0.736925,
         "minimum": 0.720445
       }
     },
@@ -214,12 +216,12 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "grammarly/coedit": 120
+      "grammarly/coedit": 121
     },
     "sourceSplitCounts": {
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 107,
+        "train_sft": 108,
         "val_dpo": 0,
         "val_sft": 13
       }
@@ -230,8 +232,8 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.187,
-        "total": 0.349808
+        "target": 0.186706,
+        "total": 0.349755
       },
       "val_dpo": {
         "target": 0.0,
@@ -256,7 +258,7 @@
   "recordCounts": {
     "eval": 5,
     "train_dpo": 10,
-    "train_sft": 183,
+    "train_sft": 184,
     "val_dpo": 2,
     "val_sft": 26
   },

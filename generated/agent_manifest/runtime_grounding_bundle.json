@@ -3,11 +3,11 @@
   "codebaseHome": {
     "languageCounts": {
       "csv": 5,
-      "json": 58,
+      "json": 59,
       "markdown": 73,
       "mixed": 1,
       "plist": 3,
-      "python": 118,
+      "python": 128,
       "shell": 16,
       "swift": 505,
       "text": 8,
@@ -76,21 +76,21 @@
       "runtime-audits/2026-07-02-latest-e2e": 1,
       "scripts": 22,
       "tools": 13,
-      "tools/fine_tuning/unsloth": 19,
+      "tools/fine_tuning/unsloth": 23,
       "tools/hf_artifacts": 2,
       "tools/hf_zerogpu": 1,
       "tools/hf_zerogpu/space_template": 3,
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 4,
       "tools/lumen_manifest_crawler/generated": 23,
-      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 41,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 44,
       "tools/lumen_manifest_crawler/scripts": 1,
-      "tools/lumen_manifest_crawler/tests": 26,
+      "tools/lumen_manifest_crawler/tests": 30,
       "tools/pipeline": 7,
       "tools/pipeline/tests": 7,
       "tools/security": 1
     },
-    "recordCount": 793,
+    "recordCount": 804,
     "selectedFiles": [
       {
         "imports": [
@@ -1819,7 +1819,7 @@
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift",
         "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, IntentClarificationPolicy, resolve, resolveMediumConfidence, clarificationForAmbiguousModelResult, rankedAlternatives, shouldClarifyBetween, clarificationPrompt, clarificationLabel, sanitized.",
-        "sha256": "fcf033b1209f41a182b02e5748fcb58d3e5504a63b2853425859deaa4441176b",
+        "sha256": "d21206b1fc5cc723ae56c931704d7bdd49cbc85355f493c566b5ee3a7473946c",
         "symbols": [
           "IntentClassifierPolicy",
           "IntentClarificationPolicy",
@@ -2206,7 +2206,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",

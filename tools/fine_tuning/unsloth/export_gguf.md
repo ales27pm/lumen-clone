@@ -1,10 +1,11 @@
 # Export GGUF
 
-Use the automated exporter to create deterministic, per-agent merged GGUF artifacts.
+Use the automated exporter to create explicit, deterministic per-agent release-baked GGUF artifacts.
 
 ```bash
 .venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
-  --config-dir tools/fine_tuning/unsloth/configs \
+  --release-bake \
+  --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
   --agents cortex,executor,mouth,mimicry,rem,fleet \
   --quantization q4_k_m \
   --output-root models/gguf_merged \
@@ -15,7 +16,8 @@ Use the automated exporter to create deterministic, per-agent merged GGUF artifa
 
 ```bash
 .venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
-  --config-dir tools/fine_tuning/unsloth/configs \
+  --release-bake \
+  --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
   --agents cortex,executor,mouth,mimicry,rem,fleet \
   --quantization q4_k_m \
   --output-root models/gguf_merged \
@@ -27,16 +29,16 @@ Use the automated exporter to create deterministic, per-agent merged GGUF artifa
 
 Each exported file is normalized to:
 
-`lumen-<agent>-merged-<quantization>.gguf`
+`lumen-<agent>-release-bake-<quantization>.gguf`
 
 Examples:
 
-- `lumen-cortex-merged-q4_k_m.gguf`
-- `lumen-executor-merged-q4_k_m.gguf`
-- `lumen-mouth-merged-q4_k_m.gguf`
-- `lumen-mimicry-merged-q4_k_m.gguf`
-- `lumen-rem-merged-q4_k_m.gguf`
-- `lumen-fleet-merged-q4_k_m.gguf`
+- `lumen-cortex-release-bake-q4_k_m.gguf`
+- `lumen-executor-release-bake-q4_k_m.gguf`
+- `lumen-mouth-release-bake-q4_k_m.gguf`
+- `lumen-mimicry-release-bake-q4_k_m.gguf`
+- `lumen-rem-release-bake-q4_k_m.gguf`
+- `lumen-fleet-release-bake-q4_k_m.gguf`
 
 The generated manifest includes size and SHA256 for each artifact:
 

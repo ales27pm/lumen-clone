@@ -1,6 +1,6 @@
 {
   "agent": "fleet",
-  "availableSFTRecords": 5896,
+  "availableSFTRecords": 6078,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,18 +14,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "e35f843806ebc4f254e8c0ed3cbf2b7f09a073a1c2d21665edca166740230229"
+      "reportSHA256": "34b4122669cec986cc5ce62d87fd9aab4614a0e4d53e798812ec0dbeb98289c8"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "ec07bf2e1919856329c3406d39ee133e299a1f8854f550635e3529f990e88849",
+    "frozenEvaluationSHA256": "42db83d8f06ec1dd522e369840ac4995d2de80b53864439e30b20d5c6cefe5af",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "11f396963d0c9ddfd918983a9cc83e698f0766158c5e6b118e6b283f397d738c",
-      "optimizedTrainingCorpusSHA256": "8414c7de5d271f6c199acb2b4c07efdba14baf9f73a374ea695c9bb0472f6a68",
+      "baselineTrainingCorpusSHA256": "cc928d646a3cd391ddc5056a6f89a3ac2859d310d1fa6560353ee47a380d90db",
+      "optimizedTrainingCorpusSHA256": "637d8607d560119abd4916379da2402e25ab0aab91456313b3725cec9d5e10be",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -36,6 +36,8 @@
       "baseModelID",
       "baseModelRevision",
       "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
@@ -45,7 +47,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "669d7911ef3868facd1f3a6c9bfa63ba44f1dd0f90cfa85f3475fee450d8cdcd",
+    "experimentManifestSHA256": "69228184f7e85501e096f340e433872b7d32c7d1683048b54df97434d82730a5",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -70,7 +72,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "a5a5181294be023414896f5d4f7fba724e5fb5c9",
+  "manifestCommit": "d2c11debbf65ea34ccf732258ba51f03b4466121",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 18,
@@ -230,16 +232,16 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.000526,
-        "total": 0.017805
+        "target": 0.00051,
+        "total": 0.017271
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.000513,
-        "total": 0.017439
+        "target": 0.000493,
+        "total": 0.016794
       }
     }
   },
@@ -256,9 +258,9 @@
   "recordCounts": {
     "eval": 15,
     "train_dpo": 15,
-    "train_sft": 5004,
+    "train_sft": 5159,
     "val_dpo": 3,
-    "val_sft": 883
+    "val_sft": 910
   },
   "sourceFamilies": [
     "adapter_ultra_specific",

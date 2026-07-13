@@ -8,6 +8,11 @@
   "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "baseModelID": "Qwen/Qwen3-1.7B",
   "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+  "baseModelIndexReferencedShardNames": [
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors"
+  ],
+  "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
   "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
   "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
   "baseModelWeightShards": [
@@ -23,8 +28,8 @@
     }
   ],
   "comparisonEligibility": {
-    "baselineTrainingCorpusSHA256": "dd57e8d30d9d9842a08bb2136680a33749d43d4c6950dd63316f4a496f840a13",
-    "optimizedTrainingCorpusSHA256": "d78b8f989e07804a9f2e4a456016e71d831261b3b025672d0a72accf6b56472a",
+    "baselineTrainingCorpusSHA256": "8383dfa95cdbc17879959075698a4cb9bdac24f71d6db0de084c5155fb7bf7f3",
+    "optimizedTrainingCorpusSHA256": "e0bd94befab6c89ecc2dac232fa0e488f43ef60906ab7c7bc141d856477c9f03",
     "promotionEligible": true,
     "promotionProhibited": false,
     "publicRecordCount": 600,
@@ -37,8 +42,8 @@
     "matchCount": 0,
     "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
     "publicEvaluationRowCount": 1040,
-    "reportSHA256": "3fcc8a3df132a638d51408409c9e34128d9f6843bd427eed31442a8425e377e4",
-    "trainingRecordsSHA256": "d78b8f989e07804a9f2e4a456016e71d831261b3b025672d0a72accf6b56472a"
+    "reportSHA256": "e5d0c18f35beea659c404d367deaa87c58970668173115ac84ff9fb5f4c5f756",
+    "trainingRecordsSHA256": "e0bd94befab6c89ecc2dac232fa0e488f43ef60906ab7c7bc141d856477c9f03"
   },
   "controlledTrainingConfig": {
     "agent": "mimicry",
@@ -47,6 +52,11 @@
     "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
     "baseModelID": "Qwen/Qwen3-1.7B",
     "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+    "baseModelIndexReferencedShardNames": [
+      "model-00001-of-00002.safetensors",
+      "model-00002-of-00002.safetensors"
+    ],
+    "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
     "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
     "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
     "baseModelWeightShards": [
@@ -77,6 +87,7 @@
     "merge_adapters_by_default": false,
     "merge_target": null,
     "num_train_epochs": 1,
+    "preference_trainer": "dpo",
     "release_bake_enabled_by_default": false,
     "seed": 42,
     "trainingEnvironmentLock": {
@@ -105,8 +116,8 @@
       "sha256": "a9e5dc43ea41b21a39f577eb69035ded805868479e44911a54e3e71e300eb560"
     },
     "trainSFT": {
-      "count": 183,
-      "sha256": "046837bfac2d6c3cdb42f7182891a4ae184ed4a5deb5c6dbbf0997f4f6f13d0b"
+      "count": 184,
+      "sha256": "dfae505888bfff979f073aa6053896b082683c845209cb04913d2dbf17938dec"
     },
     "validationDPO": {
       "count": 2,
@@ -114,7 +125,7 @@
     },
     "validationSFT": {
       "count": 26,
-      "sha256": "9bef269af5dd5d86d79be40fbc22285f59ec4e556e4e01aee2d868f7ad54f795"
+      "sha256": "2b25a06cb4c89d3979e29866fca11e52971a2916eef67e88c19a30d1e81a2ff0"
     }
   },
   "dpoTraining": {
@@ -138,8 +149,8 @@
   },
   "schemaVersion": "lumen.adapter-experiment-variant/1.0.0",
   "seed": 42,
-  "trainingConfigSHA256": "e9c91fc8d6b14e43d604e5b6a8ea67616d72b15e293d5e120d0da79aa59721ef",
-  "trainingCorpusSHA256": "d78b8f989e07804a9f2e4a456016e71d831261b3b025672d0a72accf6b56472a",
+  "trainingConfigSHA256": "8b007bf3f4b5c9f703814e8ddfcb20ec4e47636466418d501f96ed011bd33750",
+  "trainingCorpusSHA256": "e0bd94befab6c89ecc2dac232fa0e488f43ef60906ab7c7bc141d856477c9f03",
   "trainingEnvironment": null,
   "trainingEnvironmentLock": {
     "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
@@ -162,5 +173,5 @@
   "trainingEnvironmentLockSHA256": "0fb18027c4f8cebb390e4171c3a4714dda9bf08eb2fa6afbc3bd2578c18a06bb",
   "trainingEnvironmentSHA256": null,
   "variant": "internal_plus_public_optimized",
-  "variantManifestSHA256": "87e3eaaf5755437b0344cfe9f76099e53e5bb3a829ebd5efc4629ad3f4b7bab2"
+  "variantManifestSHA256": "65ef0b4afd88c7688aa068925a363cb26c38a5d5a129fb53b0203e70d69623c9"
 }
