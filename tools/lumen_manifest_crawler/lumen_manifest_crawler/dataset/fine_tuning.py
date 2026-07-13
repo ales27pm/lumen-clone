@@ -2526,7 +2526,14 @@ def _required_eval_templates(manifest: AgentBehaviorManifest, known_tools: set[s
             break
     sentinel_list = sorted(manifest.sentinels.forbiddenInUserOutput)
     slots = [slot.id for slot in manifest.fleet.slots] or ["cortex", "executor"]
-    boundary_slot = "executor" if "executor" in slots else sorted(slots)[0]
+    boundary_slot = next(
+        (
+            slot.id
+            for slot in manifest.fleet.slots
+            if _normalize_agent_role(slot.role) == "executor"
+        ),
+        "executor" if "executor" in slots else sorted(slots)[0],
+    )
 
     return {
         "cortex": [

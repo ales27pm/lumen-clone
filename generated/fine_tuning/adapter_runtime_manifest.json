@@ -42,7 +42,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "471d2ada55b5d0bcb9119c346dfa7c6dda96d8cf4b153767649bb2165546ff0b",
+        "experimentManifestSHA256": "d789d71d2c636810098fc6fa3cdf72328747568c1803204a32d26061e55ce17a",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -55,6 +55,7 @@
           "requiresIdenticalTrainingEnvironment": true,
           "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
         },
@@ -120,7 +121,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "cc24fd2c7313f951784cbce97e0d048d0c563e13174ca98afc8059ae0cfc29da",
+        "experimentManifestSHA256": "a1df6bde4322b543e712a66bf9ed2f593ff5b1eff0294604787267478ae025a3",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -133,6 +134,7 @@
           "requiresIdenticalTrainingEnvironment": true,
           "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
         },
@@ -198,7 +200,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "826f78e2e7f45c802d3c6ab949090fa1600a166da3b73b686724de6e54131170",
+        "experimentManifestSHA256": "b69dae2a5bac2f809dacba8400af892cd0dabda267093a09a367b72b13d92f42",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -211,6 +213,7 @@
           "requiresIdenticalTrainingEnvironment": true,
           "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
         },
@@ -276,7 +279,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "761367ba3ce4bf1f71f2a6a11337af34353e8147b005229a6163fca4e86015eb",
+        "experimentManifestSHA256": "957fab92a5abac75146cc77c74fdf72a0171016ac745813fe9a2099266521652",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -289,6 +292,7 @@
           "requiresIdenticalTrainingEnvironment": true,
           "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
         },
@@ -354,7 +358,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "ba6c0492ed97c94f3f449fa7d7259e9b583188bb6971ec1fabaa9e3852a12c90",
+        "experimentManifestSHA256": "da1557502fe4544d6a414b29c021b672c8ecf1ba2c153460a0347e167e8bf733",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -367,6 +371,7 @@
           "requiresIdenticalTrainingEnvironment": true,
           "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
         },
@@ -432,7 +437,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "e2c63d81a4a52eacdcd3647c0b301014a52e7de05fb88346e89311aa680d8388",
+        "experimentManifestSHA256": "1f86d3c3aac5193940a1bcb2638dcb5b2086d7c73c7cfb1779514b4872e70df6",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -445,6 +450,7 @@
           "requiresIdenticalTrainingEnvironment": true,
           "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
         },

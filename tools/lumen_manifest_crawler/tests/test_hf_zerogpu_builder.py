@@ -183,6 +183,9 @@ def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -
     assert defaults["adapter_first"] is True
     assert defaults["requested_experiment_variant"] == "internal_plus_public_optimized"
     assert defaults["container_image_digest"] == "sha256:" + "c" * 64
+    assert defaults["container_image_digest_source"] == "operator_declared"
+    assert defaults["runtime_image_binding_status"] == "manual_validation_required"
+    assert defaults["runtime_image_binding_verified"] is False
     assert defaults["dataset_path_in_repo"] == "runs/test-run/fine_tuning"
     assert (build.space_dir / "app.py").exists()
     assert (build.space_dir / "lumen_train_sft.py").exists()

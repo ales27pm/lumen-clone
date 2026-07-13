@@ -95,7 +95,7 @@
     "variantPathTemplate": "experiments/{variant}"
   },
   "experimentPolicy": {
-    "experimentManifestSHA256": "e2c63d81a4a52eacdcd3647c0b301014a52e7de05fb88346e89311aa680d8388",
+    "experimentManifestSHA256": "1f86d3c3aac5193940a1bcb2638dcb5b2086d7c73c7cfb1779514b4872e70df6",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -108,6 +108,7 @@
       "requiresIdenticalTrainingEnvironment": true,
       "requiresImmutableBaseModelRevisionAndDigest": true,
       "requiresPublicEvaluationFingerprintBinding": true,
+      "requiresVerifiedRuntimeImageBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
       "schemaVersion": "lumen.adapter-promotion/1.0.0"
     },

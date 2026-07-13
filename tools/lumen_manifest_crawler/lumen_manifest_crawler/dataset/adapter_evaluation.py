@@ -43,7 +43,7 @@ DEFAULT_TRAINING_ENVIRONMENT_LOCK: dict[str, Any] = {
     "unslothRevision": DEFAULT_UNSLOTH_REVISION,
     "llamaCppRevision": DEFAULT_LLAMA_CPP_REVISION,
     "baseTokenizerSHA256": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
-    "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+    "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
 }
 
 EXPERIMENT_VARIANTS = (
@@ -469,7 +469,7 @@ def declarative_metrics_from_expected(
     # Unknown boolean declarations are evaluator policy, not candidate fields.
     # Treating them as json_field_equals lets a candidate pass by parroting the
     # declaration instead of demonstrating the behavior.
-    for key, value in sorted(expected.items()):
+    for key in sorted(expected):
         if key in consumed:
             continue
         metrics.append(
@@ -1422,15 +1422,37 @@ def build_experiment_variant_manifest(
     validation_sft: Sequence[Mapping[str, Any]],
     dpo_records: Sequence[Mapping[str, Any]],
     evaluation_records: Sequence[Mapping[str, Any]],
-    base_model_revision: str = DEFAULT_BASE_MODEL_REVISION,
-    base_model_artifact_digest: str = DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
-    base_model_tokenizer_digest: str = DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    base_model_revision: str | None = None,
+    base_model_artifact_digest: str | None = None,
+    base_model_tokenizer_digest: str | None = None,
     training_environment_lock: Mapping[str, Any] | None = None,
     validation_dpo_records: Sequence[Mapping[str, Any]] = (),
     contamination_report: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if variant not in EXPERIMENT_VARIANTS:
         raise ValueError(f"Unsupported experiment variant: {variant}")
+    supplied_provenance = (
+        base_model_revision,
+        base_model_artifact_digest,
+        base_model_tokenizer_digest,
+    )
+    default_provenance = (
+        DEFAULT_BASE_MODEL_REVISION,
+        DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+        DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    )
+    if base_model_id == DEFAULT_BASE_MODEL_ID:
+        base_model_revision = base_model_revision or DEFAULT_BASE_MODEL_REVISION
+        base_model_artifact_digest = (
+            base_model_artifact_digest or DEFAULT_BASE_MODEL_ARTIFACT_DIGEST
+        )
+        base_model_tokenizer_digest = (
+            base_model_tokenizer_digest or DEFAULT_BASE_MODEL_TOKENIZER_DIGEST
+        )
+    elif any(value is None for value in supplied_provenance):
+        raise ValueError("Non-default base models require explicit immutable provenance")
+    elif supplied_provenance == default_provenance:
+        raise ValueError("Qwen default provenance cannot describe a non-default base model")
     if not re.fullmatch(r"[0-9a-f]{40}", base_model_revision):
         raise ValueError("base_model_revision must be a full lowercase Git commit SHA")
     if not _is_sha256(base_model_artifact_digest):
@@ -1438,6 +1460,8 @@ def build_experiment_variant_manifest(
     if not _is_sha256(base_model_tokenizer_digest):
         raise ValueError("base_model_tokenizer_digest must be a lowercase SHA-256 digest")
     environment_lock = dict(training_environment_lock or default_training_environment_lock())
+    if environment_lock.get("baseTokenizerSHA256") != base_model_tokenizer_digest:
+        raise ValueError("training_environment_lock must match the base-model tokenizer digest")
     environment_lock_sha256 = canonical_sha256(environment_lock)
     upgraded_eval = [upgrade_evaluation_record(record) for record in evaluation_records]
     contamination = dict(contamination_report or build_contamination_report(
@@ -1579,10 +1603,9 @@ def finalize_experiment_variant_manifest(
         raise ValueError("adapter_sha256 must be a lowercase SHA-256 digest")
     environment = dict(training_environment)
     environment.pop("trainingEnvironmentSHA256", None)
-    if (
-        environment.get("schemaVersion") != "lumen.adapter-training-environment/1.0.0"
-        or re.fullmatch(r"sha256:[0-9a-f]{64}", str(environment.get("containerImageDigest") or "")) is None
-        or environment.get("environmentLock") != manifest.get("trainingEnvironmentLock")
+    if not _valid_training_environment(
+        environment,
+        manifest.get("trainingEnvironmentLock"),
     ):
         raise ValueError("training_environment must attest the manifest lock and an immutable container digest")
     training_environment_sha256 = canonical_sha256(environment)
@@ -1609,6 +1632,7 @@ def promotion_contract() -> dict[str, Any]:
         "requiresArtifactDigests": True,
         "requiresImmutableBaseModelRevisionAndDigest": True,
         "requiresIdenticalTrainingEnvironment": True,
+        "requiresVerifiedRuntimeImageBinding": True,
         "requiresBaselineAndOptimizedContaminationReports": True,
         "requiresPublicEvaluationFingerprintBinding": True,
         "maximumContaminationMatches": 0,
@@ -1669,6 +1693,11 @@ def decide_adapter_promotion(
         failures.append("contamination_report_integrity_invalid")
     if not baseline_variant_valid or not optimized_variant_valid:
         failures.append("variant_manifest_integrity_invalid")
+    if not all(
+        _runtime_image_binding_verified(manifest)
+        for manifest in (baseline_variant_manifest, optimized_variant_manifest)
+    ):
+        failures.append("runtime_image_binding_unverified")
     if baseline_variant_valid:
         expected_baseline_report = score_evaluation_suite(
             evaluation_records,
@@ -1923,7 +1952,22 @@ def _valid_variant_manifest(
         and re.fullmatch(r"[0-9a-f]{40}", manifest["baseModelRevision"]) is not None
         and _is_sha256(manifest.get("baseModelArtifactDigest"))
         and _is_sha256(manifest.get("baseModelTokenizerDigest"))
+        and (
+            manifest.get("baseModelID") == DEFAULT_BASE_MODEL_ID
+            or (
+                manifest.get("baseModelRevision"),
+                manifest.get("baseModelArtifactDigest"),
+                manifest.get("baseModelTokenizerDigest"),
+            )
+            != (
+                DEFAULT_BASE_MODEL_REVISION,
+                DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+                DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+            )
+        )
         and isinstance(manifest.get("trainingEnvironmentLock"), Mapping)
+        and manifest["trainingEnvironmentLock"].get("baseTokenizerSHA256")
+        == manifest.get("baseModelTokenizerDigest")
         and canonical_sha256(dict(manifest["trainingEnvironmentLock"]))
         == manifest.get("trainingEnvironmentLockSHA256")
         and (
@@ -1932,7 +1976,10 @@ def _valid_variant_manifest(
                 and manifest.get("trainingEnvironmentSHA256") is None
             )
             or (
-                isinstance(manifest.get("trainingEnvironment"), Mapping)
+                _valid_training_environment(
+                    manifest.get("trainingEnvironment"),
+                    manifest.get("trainingEnvironmentLock"),
+                )
                 and canonical_sha256(dict(manifest["trainingEnvironment"]))
                 == manifest.get("trainingEnvironmentSHA256")
             )
@@ -1962,6 +2009,45 @@ def _valid_variant_manifest(
         and artifact.get("status") == "trained"
         and _is_sha256(artifact.get("adapterSHA256"))
         and _is_sha256(manifest.get("trainingEnvironmentSHA256"))
+    )
+
+
+def _valid_training_environment(
+    environment: Any,
+    environment_lock: Any,
+) -> bool:
+    provenance = (
+        environment.get("containerImageDigestSource"),
+        environment.get("runtimeImageBindingStatus"),
+        environment.get("runtimeImageBindingVerified"),
+    ) if isinstance(environment, Mapping) else None
+    return (
+        isinstance(environment, Mapping)
+        and environment.get("schemaVersion")
+        == "lumen.adapter-training-environment/1.0.0"
+        and re.fullmatch(
+            r"sha256:[0-9a-f]{64}",
+            str(environment.get("containerImageDigest") or ""),
+        )
+        is not None
+        and isinstance(environment_lock, Mapping)
+        and environment.get("environmentLock") == environment_lock
+        and provenance
+        in {
+            ("operator_declared", "manual_validation_required", False),
+            ("trusted_platform_attestation", "verified", True),
+        }
+    )
+
+
+def _runtime_image_binding_verified(manifest: Mapping[str, Any]) -> bool:
+    environment = manifest.get("trainingEnvironment")
+    return (
+        isinstance(environment, Mapping)
+        and environment.get("containerImageDigestSource")
+        == "trusted_platform_attestation"
+        and environment.get("runtimeImageBindingStatus") == "verified"
+        and environment.get("runtimeImageBindingVerified") is True
     )
 
 

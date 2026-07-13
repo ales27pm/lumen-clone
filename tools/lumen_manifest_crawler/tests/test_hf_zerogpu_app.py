@@ -45,6 +45,9 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
                 "run_id": "test",
                 "agents": ["executor"],
                 "container_image_digest": "sha256:" + "c" * 64,
+                "container_image_digest_source": "operator_declared",
+                "runtime_image_binding_status": "manual_validation_required",
+                "runtime_image_binding_verified": False,
             }
         ),
         encoding="utf-8",
@@ -118,7 +121,7 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
         "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-        "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+        "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
     }
     config["trainingEnvironmentLock"] = environment_lock
     (agent_root / "unsloth_config.json").write_text(json.dumps(config), encoding="utf-8")
@@ -182,15 +185,23 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
     assert config["variantManifestSHA256"] == manifest["variantManifestSHA256"]
     assert config["variantAttestation"]["trainingCorpusSHA256"] == manifest["trainingCorpusSHA256"]
     assert config["trainingContainerImageDigest"] == "sha256:" + "c" * 64
+    assert config["trainingContainerImageDigestSource"] == "operator_declared"
+    assert config["trainingRuntimeImageBindingStatus"] == "manual_validation_required"
+    assert config["trainingRuntimeImageBindingVerified"] is False
     assert config["trainingEnvironmentSHA256"] == module._canonical_sha256(
         {
             "schemaVersion": "lumen.adapter-training-environment/1.0.0",
             "containerImageDigest": "sha256:" + "c" * 64,
+            "containerImageDigestSource": "operator_declared",
+            "runtimeImageBindingStatus": "manual_validation_required",
+            "runtimeImageBindingVerified": False,
             "environmentLock": manifest["trainingEnvironmentLock"],
         }
     )
     assert config["variantAttestation"]["baseModelRevision"] == manifest["baseModelRevision"]
     assert config["variantAttestation"]["trainingEnvironmentSHA256"] == config["trainingEnvironmentSHA256"]
+    assert config["variantAttestation"]["runtimeImageBindingStatus"] == "manual_validation_required"
+    assert config["variantAttestation"]["runtimeImageBindingVerified"] is False
 
 
 def test_variant_dataset_rejects_tampered_lane_and_control_drift(

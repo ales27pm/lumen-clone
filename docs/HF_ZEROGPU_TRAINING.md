@@ -12,8 +12,11 @@ bash scripts/hf_zerogpu_train_lumen_adapters_aio.sh
 ```
 
 There is deliberately no default experiment variant or container digest. Choose the baseline,
-optimized, or internal-only corpus explicitly for every production run, and bind the run to the
-immutable image that actually executes training. The selected variant is included in the run ID.
+optimized, or internal-only corpus explicitly for every production run. The digest is an
+operator-declared audit value for the intended image; Gradio ZeroGPU does not expose trusted
+runtime-image provenance that Lumen can compare with it. Runs therefore record
+`manual_validation_required` and cannot use the declaration alone as promotion evidence. The
+selected variant is included in the run ID.
 
 The script:
 

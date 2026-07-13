@@ -28,6 +28,8 @@ EXPERIMENT_VARIANTS = (
     "internal_plus_public_baseline",
     "internal_plus_public_optimized",
 )
+CONTAINER_IMAGE_DIGEST_SOURCE = "operator_declared"
+RUNTIME_IMAGE_BINDING_STATUS = "manual_validation_required"
 REQUIRED_VARIANT_DATASET_FILES = (
     "train_sft.jsonl",
     "val_sft.jsonl",
@@ -45,6 +47,9 @@ UNCONTROLLED_CONFIG_FIELDS = {
     "output_dir",
 }
 RUNTIME_LINEAGE_CONFIG_FIELDS = {
+    "trainingContainerImageDigestSource",
+    "trainingRuntimeImageBindingStatus",
+    "trainingRuntimeImageBindingVerified",
     "trainingContainerImageDigest",
     "trainingEnvironmentSHA256",
     "variant",
@@ -189,19 +194,33 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
         "trainingEnvironmentLockSHA256": manifest["trainingEnvironmentLockSHA256"],
         "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
+        "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
+        "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
     }
 
 
 def _training_environment(manifest: dict[str, Any]) -> dict[str, Any]:
     container_digest = str(DEFAULTS.get("container_image_digest") or "")
     if re.fullmatch(r"sha256:[0-9a-f]{64}", container_digest) is None:
-        raise ValueError("An explicit immutable container image digest is required before training")
+        raise ValueError("An explicit operator-declared container image digest is required before training")
     lock = manifest.get("trainingEnvironmentLock")
     if not isinstance(lock, dict) or _canonical_sha256(lock) != manifest.get("trainingEnvironmentLockSHA256"):
         raise ValueError("Experiment variant training-environment lock is invalid")
+    digest_source = DEFAULTS.get("container_image_digest_source")
+    binding_status = DEFAULTS.get("runtime_image_binding_status")
+    binding_verified = DEFAULTS.get("runtime_image_binding_verified")
+    if (
+        digest_source != CONTAINER_IMAGE_DIGEST_SOURCE
+        or binding_status != RUNTIME_IMAGE_BINDING_STATUS
+        or binding_verified is not False
+    ):
+        raise ValueError("ZeroGPU runtime-image provenance must remain explicitly unverified")
     payload = {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": container_digest,
+        "containerImageDigestSource": digest_source,
+        "runtimeImageBindingStatus": binding_status,
+        "runtimeImageBindingVerified": binding_verified,
         "environmentLock": lock,
     }
     return {**payload, "trainingEnvironmentSHA256": _canonical_sha256(payload)}
@@ -292,6 +311,9 @@ def _prepare_configs(
                 raise ValueError(f"{field} drifted from the controlled variant for {agent}")
         environment = _training_environment(variant_manifest)
         cfg["trainingContainerImageDigest"] = environment["containerImageDigest"]
+        cfg["trainingContainerImageDigestSource"] = environment["containerImageDigestSource"]
+        cfg["trainingRuntimeImageBindingStatus"] = environment["runtimeImageBindingStatus"]
+        cfg["trainingRuntimeImageBindingVerified"] = environment["runtimeImageBindingVerified"]
         cfg["trainingEnvironmentSHA256"] = environment["trainingEnvironmentSHA256"]
         cfg["dataset_dir"] = str(variant_dir)
         cfg["variant"] = variant
@@ -335,6 +357,8 @@ def _prepare_configs(
                 "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
                 "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
                 "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
+                "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
+                "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
                 "adapter_dir": str(adapter_dir),
                 "adapter_gguf": str(adapter_gguf),
             }

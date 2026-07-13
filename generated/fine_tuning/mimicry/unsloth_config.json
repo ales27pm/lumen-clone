@@ -62,7 +62,7 @@
   "seed": 42,
   "trainingEnvironmentLock": {
     "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-    "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+    "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
     "cudaVersion": "12.8",
     "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
     "packageVersions": {
