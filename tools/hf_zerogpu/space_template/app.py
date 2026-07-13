@@ -559,15 +559,104 @@ def _verify_trained_adapter(item: dict[str, Any]) -> tuple[Path, dict[str, Any]]
             f"Missing finalized experiment variant manifest: {finalized_manifest}"
         )
     finalized = json.loads(finalized_manifest.read_text(encoding="utf-8"))
+    _verify_finalized_variant_lineage(item, finalized, finalized_manifest)
     artifact = finalized.get("artifact") if isinstance(finalized, dict) else None
-    if not isinstance(artifact, dict) or not isinstance(artifact.get("adapterSHA256"), str):
+    if not isinstance(artifact, dict):
         raise ValueError(f"Finalized manifest lacks adapter lineage: {finalized_manifest}")
     verify_adapter_artifact(
         adapter_dir,
         expected_adapter_sha256=artifact["adapterSHA256"],
-        expected_training_phase=str(artifact.get("trainingPhase") or ""),
+        expected_training_phase="sft",
     )
+    adapter_config = json.loads(
+        (adapter_dir / "adapter_config.json").read_text(encoding="utf-8")
+    )
+    if (
+        not isinstance(adapter_config, dict)
+        or adapter_config.get("base_model_name_or_path")
+        != item.get("base_model_name")
+    ):
+        raise ValueError("Trained adapter is not bound to the prepared base model")
     return adapter_dir, finalized
+
+
+def _verify_finalized_variant_lineage(
+    item: dict[str, Any],
+    finalized: Any,
+    finalized_manifest: Path,
+) -> None:
+    if not isinstance(finalized, dict):
+        raise ValueError(f"Finalized manifest must be a JSON object: {finalized_manifest}")
+    expected_sha = finalized.get("variantManifestSHA256")
+    unsigned = dict(finalized)
+    unsigned.pop("variantManifestSHA256", None)
+    if (
+        not isinstance(expected_sha, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected_sha) is None
+        or _canonical_sha256(unsigned) != expected_sha
+    ):
+        raise ValueError(f"Finalized manifest integrity check failed: {finalized_manifest}")
+    if (
+        finalized.get("agent") != item.get("agent")
+        or finalized.get("variant") != item.get("variant")
+        or finalized.get("sourceVariantManifestSHA256")
+        != item.get("variantManifestSHA256")
+    ):
+        raise ValueError(f"Finalized manifest identity or source lineage mismatch: {finalized_manifest}")
+
+    artifact = finalized.get("artifact")
+    if (
+        not isinstance(artifact, dict)
+        or artifact.get("status") != "trained"
+        or artifact.get("trainingPhase") != "sft"
+        or artifact.get("parentSFTAdapterSHA256") is not None
+        or re.fullmatch(r"[0-9a-f]{64}", str(artifact.get("adapterSHA256") or ""))
+        is None
+        or artifact.get("adapterManifestSHA256") != artifact.get("adapterSHA256")
+    ):
+        raise ValueError(f"Finalized manifest lacks valid SFT adapter lineage: {finalized_manifest}")
+
+    for field in (
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelArtifactDigest",
+        "baseModelWeightShards",
+        "baseModelTokenizerDigest",
+        "trainingEnvironmentSHA256",
+    ):
+        if finalized.get(field) != item.get(field):
+            raise ValueError(f"Finalized manifest {field} mismatch: {finalized_manifest}")
+    training_environment = finalized.get("trainingEnvironment")
+    if (
+        finalized.get("baseModelID") != item.get("base_model_name")
+        or not isinstance(training_environment, dict)
+        or _canonical_sha256(training_environment)
+        != item.get("trainingEnvironmentSHA256")
+        or training_environment.get("runtimeImageBindingStatus")
+        != item.get("runtimeImageBindingStatus")
+        or training_environment.get("runtimeImageBindingVerified")
+        is not item.get("runtimeImageBindingVerified")
+    ):
+        raise ValueError(f"Finalized manifest base or runtime lineage mismatch: {finalized_manifest}")
+    attestation = item.get("variantAttestation")
+    if (
+        not isinstance(attestation, dict)
+        or attestation.get("variant") != item.get("variant")
+        or attestation.get("variantManifestSHA256") != item.get("variantManifestSHA256")
+        or attestation.get("trainingEnvironmentSHA256")
+        != item.get("trainingEnvironmentSHA256")
+        or finalized.get("trainingCorpusSHA256") != attestation.get("trainingCorpusSHA256")
+        or finalized.get("trainingConfigSHA256")
+        != attestation.get("effectiveTrainingConfigSHA256")
+        or {
+            name: contract.get("sha256")
+            for name, contract in sorted((finalized.get("datasets") or {}).items())
+            if isinstance(contract, dict)
+            and isinstance(contract.get("sha256"), str)
+        }
+        != attestation.get("laneHashes")
+    ):
+        raise ValueError(f"Finalized manifest does not match the prepared attestation: {finalized_manifest}")
 
 
 @spaces.GPU(size=DEFAULT_GPU_SIZE, duration=DEFAULT_GPU_DURATION)

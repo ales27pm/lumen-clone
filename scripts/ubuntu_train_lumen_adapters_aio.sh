@@ -104,7 +104,6 @@ fi
 "$TRAIN_PY" - "$ROOT" "$RUN_ROOT" "$AGENTS_CSV" "$BASE_MODEL_OVERRIDE" "$SEED" "$EXPERIMENT_VARIANT" "$CONTAINER_IMAGE_DIGEST" <<'PY'
 import hashlib
 import json
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -278,8 +277,6 @@ for agent in agents:
     for field in ("baseModelRevision", "baseModelIndexDigest", "baseModelArtifactDigest", "baseModelWeightShards", "baseModelTokenizerDigest", "trainingEnvironmentLock"):
         if cfg.get(field) != variant_manifest.get(field):
             raise SystemExit(f"{field} drifted from the controlled variant for {agent}")
-    if re.fullmatch(r"sha256:[0-9a-f]{64}", container_image_digest) is None:
-        raise SystemExit("LUMEN_AIO_CONTAINER_IMAGE_DIGEST must be sha256:<64 lowercase hex characters>")
     environment = {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": container_image_digest,
@@ -400,7 +397,9 @@ while IFS= read -r agent; do
 done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
 
 "$TRAIN_PY" - "$ROOT" "$RUN_ROOT" "$AGENTS_CSV" <<'PY'
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -410,18 +409,85 @@ agents = [item.strip() for item in sys.argv[3].split(",") if item.strip()]
 sys.path.insert(0, str(root))
 from tools.fine_tuning.unsloth.adapter_artifact import verify_adapter_artifact
 
+def canonical_sha256(value):
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
 for agent in agents:
     adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
     finalized_path = run_root / "training" / agent / "finalized_variant_manifest.json"
     finalized = json.loads(finalized_path.read_text(encoding="utf-8"))
+    config_path = run_root / "configs" / f"{agent}.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(finalized, dict) or not isinstance(config, dict):
+        raise SystemExit(f"Finalized manifest or config is not a JSON object for {agent}")
+    finalized_sha = finalized.get("variantManifestSHA256")
+    unsigned = dict(finalized)
+    unsigned.pop("variantManifestSHA256", None)
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(finalized_sha or "")) is None
+        or canonical_sha256(unsigned) != finalized_sha
+    ):
+        raise SystemExit(f"Finalized variant manifest integrity check failed: {finalized_path}")
+    if (
+        finalized.get("agent") != agent
+        or finalized.get("variant") != config.get("variant")
+        or finalized.get("sourceVariantManifestSHA256")
+        != config.get("variantManifestSHA256")
+    ):
+        raise SystemExit(f"Finalized variant manifest identity or source lineage mismatch: {finalized_path}")
     artifact = finalized.get("artifact") if isinstance(finalized, dict) else None
-    if not isinstance(artifact, dict):
+    if (
+        not isinstance(artifact, dict)
+        or artifact.get("status") != "trained"
+        or artifact.get("trainingPhase") != "sft"
+        or artifact.get("parentSFTAdapterSHA256") is not None
+        or re.fullmatch(r"[0-9a-f]{64}", str(artifact.get("adapterSHA256") or "")) is None
+        or artifact.get("adapterManifestSHA256") != artifact.get("adapterSHA256")
+    ):
         raise SystemExit(f"Finalized variant manifest lacks adapter lineage: {finalized_path}")
+    attestation = config.get("variantAttestation")
+    if not isinstance(attestation, dict):
+        raise SystemExit(f"Prepared config lacks variant attestation: {config_path}")
+    for field in (
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelArtifactDigest",
+        "baseModelWeightShards",
+        "baseModelTokenizerDigest",
+        "trainingEnvironmentSHA256",
+    ):
+        if finalized.get(field) != attestation.get(field):
+            raise SystemExit(f"Finalized variant manifest {field} does not match the prepared attestation")
+    if (
+        finalized.get("baseModelID") != config.get("baseModelID")
+        or attestation.get("variant") != config.get("variant")
+        or attestation.get("variantManifestSHA256") != config.get("variantManifestSHA256")
+        or finalized.get("trainingCorpusSHA256") != attestation.get("trainingCorpusSHA256")
+        or finalized.get("trainingConfigSHA256")
+        != attestation.get("effectiveTrainingConfigSHA256")
+        or not isinstance(finalized.get("trainingEnvironment"), dict)
+        or canonical_sha256(finalized["trainingEnvironment"])
+        != config.get("trainingEnvironmentSHA256")
+        or {
+            name: contract.get("sha256")
+            for name, contract in sorted((finalized.get("datasets") or {}).items())
+            if isinstance(contract, dict) and isinstance(contract.get("sha256"), str)
+        }
+        != attestation.get("laneHashes")
+    ):
+        raise SystemExit(f"Finalized variant manifest does not match the prepared attestation: {finalized_path}")
     verify_adapter_artifact(
         adapter_dir,
-        expected_adapter_sha256=artifact.get("adapterSHA256"),
-        expected_training_phase=artifact.get("trainingPhase"),
+        expected_adapter_sha256=artifact["adapterSHA256"],
+        expected_training_phase="sft",
     )
+    adapter_config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
+    if (
+        not isinstance(adapter_config, dict)
+        or adapter_config.get("base_model_name_or_path") != config.get("base_model_name")
+    ):
+        raise SystemExit(f"Adapter base model does not match the prepared config: {adapter_dir}")
 print("canonical adapter artifact verification passed")
 PY
 

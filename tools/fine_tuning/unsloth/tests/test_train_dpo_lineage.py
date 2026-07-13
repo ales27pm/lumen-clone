@@ -12,12 +12,34 @@ from tools.fine_tuning.unsloth import train_dpo, train_sft
 from tools.fine_tuning.unsloth.adapter_artifact import write_adapter_artifact_manifest
 
 
+def _safetensors_bytes(data: bytes = b"\x00\x00\x00\x00") -> bytes:
+    header = json.dumps(
+        {
+            "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": {
+                "dtype": "F32",
+                "shape": [1],
+                "data_offsets": [0, len(data)],
+            }
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    header += b" " * (-len(header) % 8)
+    return len(header).to_bytes(8, "little") + header + data
+
+
 def _write_sft_adapter(path: Path) -> dict:
     path.mkdir()
     (path / "adapter_config.json").write_text(
-        json.dumps({"peft_type": "LORA"}), encoding="utf-8"
+        json.dumps(
+            {
+                "peft_type": "LORA",
+                "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+                "target_modules": ["q_proj"],
+            }
+        ),
+        encoding="utf-8",
     )
-    (path / "adapter_model.safetensors").write_bytes(b"weights")
+    (path / "adapter_model.safetensors").write_bytes(_safetensors_bytes())
     (path / "tokenizer.json").write_text("{}", encoding="utf-8")
     (path / "tokenizer_config.json").write_text("{}", encoding="utf-8")
     return write_adapter_artifact_manifest(path, training_phase="sft")
@@ -90,7 +112,9 @@ def test_verified_sft_parent_rejects_identity_digest_and_file_drift(
         )
 
     _write_finalized_sft_manifest(finalized, artifact)
-    (adapter / "adapter_model.safetensors").write_bytes(b"modified")
+    (adapter / "adapter_model.safetensors").write_bytes(
+        _safetensors_bytes(b"\x01\x00\x00\x00")
+    )
     with pytest.raises(ValueError, match="do not match"):
         train_dpo._verified_sft_parent(
             cfg, adapter_dir=adapter, finalized_manifest_path=finalized

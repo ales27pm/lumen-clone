@@ -289,6 +289,9 @@ def test_download_verified_uses_isolated_temporary_files_for_concurrent_download
     real_named_temporary_file = corpus.tempfile.NamedTemporaryFile
 
     class Response(io.BytesIO):
+        def geturl(self) -> str:
+            return "https://example.test/artifact"
+
         def __enter__(self) -> "Response":
             barrier.wait(timeout=5)
             return self
@@ -296,8 +299,12 @@ def test_download_verified_uses_isolated_temporary_files_for_concurrent_download
         def __exit__(self, *_: object) -> None:
             self.close()
 
-    def fake_urlopen(*_: object, **__: object) -> Response:
-        return Response(payload)
+    class Opener:
+        def open(self, *_: object, **__: object) -> Response:
+            return Response(payload)
+
+    def fake_build_opener(*_: object) -> Opener:
+        return Opener()
 
     def tracking_named_temporary_file(*args: object, **kwargs: object):
         handle = real_named_temporary_file(*args, **kwargs)
@@ -305,8 +312,13 @@ def test_download_verified_uses_isolated_temporary_files_for_concurrent_download
             created_paths.append(Path(handle.name))
         return handle
 
-    monkeypatch.setattr(corpus.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(corpus.urllib.request, "build_opener", fake_build_opener)
     monkeypatch.setattr(corpus.tempfile, "NamedTemporaryFile", tracking_named_temporary_file)
+    monkeypatch.setattr(
+        corpus,
+        "_APPROVED_ARTIFACT_DOWNLOAD_HOSTS",
+        corpus._APPROVED_ARTIFACT_DOWNLOAD_HOSTS | {"example.test"},
+    )
     destination = tmp_path / "shared.jsonl"
     failures: list[BaseException] = []
 
@@ -342,11 +354,21 @@ def test_download_verified_removes_temporary_file_when_opening_response_fails(
         created_paths.append(Path(handle.name))
         return handle
 
-    def failing_urlopen(*_: object, **__: object) -> None:
-        raise OSError("connection failed")
+    class FailingOpener:
+        def open(self, *_: object, **__: object) -> None:
+            raise OSError("connection failed")
 
     monkeypatch.setattr(corpus.tempfile, "NamedTemporaryFile", tracking_named_temporary_file)
-    monkeypatch.setattr(corpus.urllib.request, "urlopen", failing_urlopen)
+    monkeypatch.setattr(
+        corpus.urllib.request,
+        "build_opener",
+        lambda *_: FailingOpener(),
+    )
+    monkeypatch.setattr(
+        corpus,
+        "_APPROVED_ARTIFACT_DOWNLOAD_HOSTS",
+        corpus._APPROVED_ARTIFACT_DOWNLOAD_HOSTS | {"example.test"},
+    )
 
     with pytest.raises(OSError, match="connection failed"):
         corpus._download_verified(
@@ -358,6 +380,32 @@ def test_download_verified_removes_temporary_file_when_opening_response_fails(
     assert len(created_paths) == 1
     assert not created_paths[0].exists()
     assert not list(tmp_path.glob("*.part"))
+
+
+@pytest.mark.parametrize(
+    "target",
+    (
+        "http://example.test/artifact",
+        "https://evil.example/artifact",
+        "https://example.test.evil.example/artifact",
+    ),
+)
+def test_download_redirect_validation_rejects_unapproved_targets(target: str) -> None:
+    source_origin = corpus._validated_download_origin("https://codeload.github.com/artifact")
+
+    with pytest.raises(corpus.PublicCorpusError):
+        corpus._validate_download_target(target, source_origin=source_origin)
+
+
+def test_download_redirect_validation_allows_pinned_hugging_face_cdn() -> None:
+    source_origin = corpus._validated_download_origin(
+        "https://huggingface.co/datasets/example/resolve/revision/data.parquet"
+    )
+
+    assert corpus._validate_download_target(
+        "https://us.aws.cdn.hf.co/datasets/example/data.parquet?signature=opaque",
+        source_origin=source_origin,
+    ).startswith("https://us.aws.cdn.hf.co/")
 
 
 @pytest.mark.parametrize("partition", ["validation", "test", "future-holdout"])
@@ -403,6 +451,28 @@ def test_manifest_tool_validation_rejects_missing_extra_and_wrong_types(tmp_path
     assert not corpus._validate_tool_call(
         {"tool": "foreign.weather", "arguments": {}}, contract.tools
     )
+
+
+def test_download_redirect_validation_rejects_cross_source_and_nonstandard_port() -> None:
+    source_origin = corpus._validated_download_origin("https://huggingface.co/source")
+    with pytest.raises(corpus.PublicCorpusError, match="off-origin"):
+        corpus._validate_download_target(
+            "https://codeload.github.com/owner/repo/tar.gz/revision",
+            source_origin=source_origin,
+        )
+    with pytest.raises(corpus.PublicCorpusError, match="not approved"):
+        corpus._validated_download_origin("https://huggingface.co:8443/source")
+
+
+def test_download_redirect_validation_normalizes_default_https_port() -> None:
+    source_origin = corpus._validated_download_origin(
+        "https://codeload.github.com/source"
+    )
+
+    assert corpus._validate_download_target(
+        "https://codeload.github.com:443/redirected",
+        source_origin=source_origin,
+    ).endswith("/redirected")
 
 
 def test_massive_transform_uses_only_lumen_intents_and_valid_tool_envelopes(tmp_path: Path) -> None:

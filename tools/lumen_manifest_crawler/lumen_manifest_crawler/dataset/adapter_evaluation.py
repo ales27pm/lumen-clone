@@ -1703,6 +1703,12 @@ def finalize_experiment_variant_manifest(
         raise ValueError("Only a pending, untrained experiment variant manifest can be finalized")
     if not _is_sha256(adapter_sha256):
         raise ValueError("adapter_sha256 must be a lowercase SHA-256 digest")
+    if training_phase not in {"sft", "sft_dpo"}:
+        raise ValueError("training_phase must be either 'sft' or 'sft_dpo'")
+    if training_phase == "sft" and parent_sft_adapter_sha256 is not None:
+        raise ValueError("SFT artifacts must not declare a parent SFT adapter")
+    if training_phase == "sft_dpo" and not _is_sha256(parent_sft_adapter_sha256):
+        raise ValueError("SFT-to-DPO artifacts require a parent SFT adapter SHA-256")
     artifact_manifest = dict(adapter_artifact_manifest)
     if not _valid_adapter_artifact_manifest(
         artifact_manifest,
