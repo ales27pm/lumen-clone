@@ -299,12 +299,14 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         }
     }
 
-    nonisolated private static func authErrorForAuthorizationFailure(errorCode: String) -> MicrosoftGraphAuthError {
+    nonisolated static func authErrorForAuthorizationFailure(errorCode: String) -> MicrosoftGraphAuthError {
         switch errorCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "interaction_required", "login_required", "account_selection_required":
             return .interactionRequired
-        case "consent_required", "access_denied":
+        case "consent_required":
             return .consentRequired
+        case "access_denied":
+            return .signInCancelled
         case "invalid_scope":
             return .invalidScope
         case "temporarily_unavailable", "server_error":

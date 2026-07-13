@@ -14,15 +14,24 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "74c02ed58fc54e56b49591ca9405acfe7ad0ca2481c756c50e02ba0a2a47737b"
+      "reportSHA256": "bcc192d2181f8cd4fbe92de7b9e135bd31f22be40841ee81046c0195f5940725"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "03e21e574b6143088c1b220e0c17828ee60d755270412b87c3c019db938fec57",
+    "frozenEvaluationSHA256": "5cf2b250c836fae8728f4a771167804ebbca5fce4c7c51e371b400326c4266c8",
     "recordCount": 558,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
+    "comparisonEligibility": {
+      "baselineTrainingCorpusSHA256": "5cfe2c79d37411be4627696883d4394676fa0de0f4dfd082b39490548577a79f",
+      "optimizedTrainingCorpusSHA256": "f9970bdc6e6ee84be110037cace7663a9fa37bbc2a2beb64740dd7457ff1fa8c",
+      "promotionEligible": true,
+      "promotionProhibited": false,
+      "publicRecordCount": 662,
+      "reason": "distinct_public_selection_corpora",
+      "status": "eligible"
+    },
     "controlledVariables": [
       "baseModelID",
       "seed",
@@ -30,7 +39,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "2d14996841f5acfa07ef93ea9fad572eb366d0cf4c71984e06eae4f6e7a362e8",
+    "experimentManifestSHA256": "471d2ada55b5d0bcb9119c346dfa7c6dda96d8cf4b153767649bb2165546ff0b",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -40,6 +49,8 @@
       "requiresArtifactDigests": true,
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,
+      "requiresIdenticalTrainingEnvironment": true,
+      "requiresImmutableBaseModelRevisionAndDigest": true,
       "requiresPublicEvaluationFingerprintBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
       "schemaVersion": "lumen.adapter-promotion/1.0.0"

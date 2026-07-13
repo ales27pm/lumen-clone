@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
+import threading
 from collections import Counter
 from pathlib import Path
 
@@ -250,6 +251,83 @@ def test_source_manifest_schema_versions_new_explicit_contract(tmp_path: Path) -
 
     with pytest.raises(corpus.PublicCorpusError, match="Unsupported public corpus source manifest schema"):
         corpus.load_public_corpus_source_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "selected_files",
+    ([123], [""], ["../required.json"], ["nested/../../required.json"]),
+)
+def test_source_manifest_rejects_unsafe_selected_tar_members(
+    tmp_path: Path,
+    selected_files: list[object],
+) -> None:
+    artifact = tmp_path / "source.tar.gz"
+    artifact.write_bytes(b"artifact")
+    source = _source(
+        "json-schema-test",
+        artifact,
+        artifact_format="tar.gz-json",
+        adapter_caps={"rem": 1},
+        artifactMemberPrefix="tests/draft2020-12/",
+        selectedFiles=selected_files,
+    )
+    path = _source_manifest(tmp_path / "sources.json", [source])
+
+    with pytest.raises(corpus.PublicCorpusError, match="safe member prefix and selectedFiles"):
+        corpus.load_public_corpus_source_manifest(path)
+
+
+def test_download_verified_uses_isolated_temporary_files_for_concurrent_downloads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b"verified artifact"
+    expected = corpus._sha256_bytes(payload)
+    barrier = threading.Barrier(2)
+    created_paths: list[Path] = []
+    created_paths_lock = threading.Lock()
+    real_named_temporary_file = corpus.tempfile.NamedTemporaryFile
+
+    class Response(io.BytesIO):
+        def __enter__(self) -> "Response":
+            barrier.wait(timeout=5)
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            self.close()
+
+    def fake_urlopen(*_: object, **__: object) -> Response:
+        return Response(payload)
+
+    def tracking_named_temporary_file(*args: object, **kwargs: object):
+        handle = real_named_temporary_file(*args, **kwargs)
+        with created_paths_lock:
+            created_paths.append(Path(handle.name))
+        return handle
+
+    monkeypatch.setattr(corpus.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(corpus.tempfile, "NamedTemporaryFile", tracking_named_temporary_file)
+    destination = tmp_path / "shared.jsonl"
+    failures: list[BaseException] = []
+
+    def download() -> None:
+        try:
+            corpus._download_verified("https://example.test/artifact", destination, expected)
+        except BaseException as error:  # pragma: no cover - asserted below
+            failures.append(error)
+
+    threads = [threading.Thread(target=download) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert not failures
+    assert all(not thread.is_alive() for thread in threads)
+    assert len(created_paths) == 2
+    assert len(set(created_paths)) == 2
+    assert destination.read_bytes() == payload
+    assert not list(tmp_path.glob("*.part"))
 
 
 @pytest.mark.parametrize("partition", ["validation", "test", "future-holdout"])
@@ -1065,6 +1143,46 @@ def test_value_scoring_and_group_selection_are_deterministic(tmp_path: Path) -> 
         first[0]["metadata"]["publicCorpus"]["selectionScore"]["reasons"]
     )
     assert first[0]["metadata"]["publicCorpus"]["quality"]["humanReviewed"] is True
+
+
+def test_language_balance_ignores_declared_languages_without_candidates(tmp_path: Path) -> None:
+    artifact = tmp_path / "oasst.json"
+    artifact.write_text("[]", encoding="utf-8")
+    source = _source(
+        "oasst2-test",
+        artifact,
+        artifact_format="json",
+        adapter_caps={"mouth": 2},
+        artifactPath="data/train.json",
+        qualityProfile="human_dialogue_grounding",
+        languageCaps={"en": 2, "fr": 1},
+    )
+    records = [
+        corpus._make_record(
+            source,
+            "test.1",
+            agent="mouth",
+            user=f"Trusted observation: item {index} is available.",
+            assistant=f"Item {index} is available.",
+            task_type="public_grounded_response_finalization",
+            transformation="fixture",
+            group_hash=corpus._opaque_group_hash(str(index)),
+            source_content_sha256=corpus._source_content_sha256({"index": index}),
+            source_path="data/train.json",
+            stratum=f"stratum-{index}",
+            language="en",
+            quality={"humanReviewed": True, "synthetic": False},
+        )
+        for index in range(2)
+    ]
+
+    selected = corpus._score_and_select_source_records(
+        [record for record in records if record is not None],
+        source,
+    )
+
+    assert len(selected) == 2
+    assert {record["metadata"]["publicCorpus"]["language"] for record in selected} == {"en"}
 
 
 def test_local_override_source_never_falls_back_to_network(tmp_path: Path) -> None:

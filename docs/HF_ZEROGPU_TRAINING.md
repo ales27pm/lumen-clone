@@ -6,8 +6,14 @@ Lumen can publish a self-contained Gradio Space that trains the role adapters on
 
 ```bash
 export HF_TOKEN="hf_..."
+export LUMEN_ZERO_GPU_EXPERIMENT_VARIANT="internal_plus_public_baseline"
+export LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST="sha256:<64-lowercase-hex-digest>"
 bash scripts/hf_zerogpu_train_lumen_adapters_aio.sh
 ```
+
+There is deliberately no default experiment variant or container digest. Choose the baseline,
+optimized, or internal-only corpus explicitly for every production run, and bind the run to the
+immutable image that actually executes training. The selected variant is included in the run ID.
 
 The script:
 
@@ -31,6 +37,8 @@ export LUMEN_ZERO_GPU_SPACE_REPO="ales27pm/lumen-zerogpu-adapter-trainer"
 export LUMEN_ZERO_GPU_DATASET_REPO="ales27pm/lumen-zerogpu-training-datasets"
 export LUMEN_ZERO_GPU_ADAPTER_REPO="ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
 export LUMEN_ZERO_GPU_AGENTS="cortex,executor,mouth,mimicry,rem,fleet"
+export LUMEN_ZERO_GPU_EXPERIMENT_VARIANT="internal_plus_public_baseline"
+export LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST="sha256:<64-lowercase-hex-digest>"
 export LUMEN_ZERO_GPU_SIZE="large"                 # or xlarge
 export LUMEN_ZERO_GPU_DURATION_SECONDS="1200"
 export LUMEN_ZERO_GPU_TRIGGER="1"                  # set 0 to only deploy

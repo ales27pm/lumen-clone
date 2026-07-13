@@ -219,6 +219,19 @@ struct IntentClassifierPolicyTests {
         #expect(!alarm.requiresClarification)
     }
 
+    @Test func reminderContentMatchingDiagnosticClarificationTextIsPreserved() async {
+        let prompts = [
+            "Remind me to ask for clarification if required details are missing",
+            "Remind me to call Alex and ask for clarification if required details are missing."
+        ]
+
+        for prompt in prompts {
+            let reminder = await IntentClassifierService.shared.classify(prompt)
+            #expect(reminder.intent == .reminder)
+            #expect(!reminder.requiresClarification)
+        }
+    }
+
     @Test func alarmReadAndPermissionCommandsDoNotAskForTimeClarification() async {
         let prompts = [
             "Show alarm permission status.",

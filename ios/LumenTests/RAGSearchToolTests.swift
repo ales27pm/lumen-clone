@@ -235,6 +235,39 @@ final class RAGSearchToolTests: XCTestCase {
         XCTAssertFalse(result.modelText.contains("Import local files"))
     }
 
+    @MainActor func testAllScopeReportsEmptyCorpusGuidanceWhenLocalIndexIsEmpty() async throws {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let context = ModelContext(container)
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "rag.search.secure",
+            arguments: ["query": "architecture notes", "sourceScope": "all"],
+            source: .system,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+
+        let result = await RAGSearchTool().execute(
+            invocation: invocation,
+            context: .init(isForeground: true, appState: nil, modelContext: context, permissionRegistry: .shared, metricsStore: .shared)
+        )
+
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(result.structuredPayload?["diagnostic"], "scoped_index_empty:all")
+        XCTAssertTrue(result.modelText.contains("local index appears empty"))
+        XCTAssertTrue(result.modelText.contains("Import or create local content"))
+    }
+
     @MainActor func testRAGStoreFallsBackToLexicalWhenEmbeddingBudgetDenied() async {
         ResourceBudgetGate.testSnapshotOverride = .init(
             scenePhase: .background,

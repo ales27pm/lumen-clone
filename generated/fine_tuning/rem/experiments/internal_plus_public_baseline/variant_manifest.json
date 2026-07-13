@@ -5,21 +5,36 @@
     "evaluationReportSHA256": null,
     "status": "pending_training"
   },
+  "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
   "baseModelID": "Qwen/Qwen3-1.7B",
+  "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+  "comparisonEligibility": {
+    "baselineTrainingCorpusSHA256": "5dd6809179f3e050799f8ca73076a4d9ae07d463c1c537c5b8dbf84a6f1b0dd9",
+    "optimizedTrainingCorpusSHA256": "a7934573392262b4bc5c0748d203e382c73bfef1cd0e7d44261bec8c1ef6915b",
+    "promotionEligible": true,
+    "promotionProhibited": false,
+    "publicRecordCount": 505,
+    "reason": "distinct_public_selection_corpora",
+    "status": "eligible"
+  },
   "contamination": {
     "contaminated": false,
-    "evaluationRecordsSHA256": "5ccb346d6c881fd79dd45ff72f0000eded0930a803cb140e71feab1a94439efc",
+    "evaluationRecordsSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
     "matchCount": 0,
     "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
     "publicEvaluationRowCount": 1040,
-    "reportSHA256": "49528c731a6e7d95bb694863004283bfe4ea84fc63a0e513dcd5fa99a2b0042b",
-    "trainingRecordsSHA256": "ea575f5b7dbe1b1f2181c39a405451ffefe4143cb94530d98692fd375ae0936e"
+    "reportSHA256": "65fd5c725d646e927682db1b2dcba7387e3cec264114fe857bd81bce0f981b43",
+    "trainingRecordsSHA256": "5dd6809179f3e050799f8ca73076a4d9ae07d463c1c537c5b8dbf84a6f1b0dd9"
   },
   "controlledTrainingConfig": {
     "agent": "rem",
     "artifactMode": "adapter_first",
     "artifact_mode": "adapter_first",
+    "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
     "baseModelID": "Qwen/Qwen3-1.7B",
+    "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+    "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
     "base_model_name": "Qwen/Qwen3-1.7B",
     "batch_size": 2,
     "defaultExportArtifact": "lora_adapter",
@@ -38,6 +53,24 @@
     "num_train_epochs": 2,
     "release_bake_enabled_by_default": false,
     "seed": 42,
+    "trainingEnvironmentLock": {
+      "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+      "cudaVersion": "12.8",
+      "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
+      "packageVersions": {
+        "accelerate": "1.14.0",
+        "bitsandbytes": "0.49.2",
+        "datasets": "4.3.0",
+        "peft": "0.19.1",
+        "torch": "2.8.0",
+        "transformers": "5.5.0",
+        "trl": "0.24.0"
+      },
+      "pythonVersion": "3.10",
+      "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
+      "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe"
+    },
     "warmup_steps": 20
   },
   "datasets": {
@@ -46,16 +79,16 @@
       "sha256": "f65590d7bf9c7cbaa604acd508cdcc5e9bd18ab700d1319f1aa81c8929ba1332"
     },
     "trainSFT": {
-      "count": 4981,
-      "sha256": "1ad1f8872213b48cee8948f7966254d4aa86638effe59630a93ebc6d33c91c51"
+      "count": 4895,
+      "sha256": "86403f2a7509f20a3ee7d0d42d4bcdb401f4c7574849145d761f8d7fd98d5827"
     },
     "validationDPO": {
       "count": 2,
       "sha256": "20b876237e1d1d273bfd307359898734438e50967fce90338ffe7b324193b9b6"
     },
     "validationSFT": {
-      "count": 882,
-      "sha256": "79e5bbc4c388e47d078fd8701470e10d7c6e1828db820a6904582e3fdd1392a9"
+      "count": 866,
+      "sha256": "1c63c7b7633c0ae98bf15fd59b9899c22d96949bf798106c4443c96f78e50880"
     }
   },
   "dpoTraining": {
@@ -63,12 +96,45 @@
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
-  "frozenEvaluationSHA256": "5ccb346d6c881fd79dd45ff72f0000eded0930a803cb140e71feab1a94439efc",
+  "frozenEvaluationSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
   "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
+  "publicSelectionPolicy": {
+    "lanePublicGroupLimits": {
+      "train_dpo": null,
+      "train_sft": 341,
+      "val_dpo": null,
+      "val_sft": 62
+    },
+    "maxPublicCorpusTokenShare": 0.35,
+    "qualityScorePreference": false,
+    "sourceBalancing": "round_robin_equal_source_opportunity",
+    "strategy": "deterministic_source_stratified_group_balanced_v1"
+  },
   "schemaVersion": "lumen.adapter-experiment-variant/1.0.0",
   "seed": 42,
-  "trainingConfigSHA256": "7ae58b74120bb7c9dee8764e95f11b52d9693c2155fa4eb7dcbbe30ee09b775e",
-  "trainingCorpusSHA256": "ea575f5b7dbe1b1f2181c39a405451ffefe4143cb94530d98692fd375ae0936e",
+  "trainingConfigSHA256": "692650b27a8a4f728f3dfeb397162c76f9eb2a8c9e50b57a89961a1193e0252b",
+  "trainingCorpusSHA256": "5dd6809179f3e050799f8ca73076a4d9ae07d463c1c537c5b8dbf84a6f1b0dd9",
+  "trainingEnvironment": null,
+  "trainingEnvironmentLock": {
+    "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "containerImageDigestPolicy": "required_immutable_sha256_at_training",
+    "cudaVersion": "12.8",
+    "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
+    "packageVersions": {
+      "accelerate": "1.14.0",
+      "bitsandbytes": "0.49.2",
+      "datasets": "4.3.0",
+      "peft": "0.19.1",
+      "torch": "2.8.0",
+      "transformers": "5.5.0",
+      "trl": "0.24.0"
+    },
+    "pythonVersion": "3.10",
+    "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
+    "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe"
+  },
+  "trainingEnvironmentLockSHA256": "f1a26b951c49732bfa7e1e640c4ebbd61851b506db7ac351f381ff6448ba591a",
+  "trainingEnvironmentSHA256": null,
   "variant": "internal_plus_public_baseline",
-  "variantManifestSHA256": "3356f2ac58ec021d5e4437938e3501127776958e07f0caff773d70af906fc8c4"
+  "variantManifestSHA256": "6b2c40b2f00451d4bef0ea46bf4293a615f35f87de4068d5dc11d32ee83dcc53"
 }

@@ -260,7 +260,7 @@ nonisolated enum DeterministicToolPlanner {
             }
             if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
                 let cleanedPrompt = strippingClarificationMetaInstruction(prompt)
-                guard normalized(cleanedPrompt) != "use search personal data" else { return nil }
+                guard isConcreteRAGSearchIntent(cleanedPrompt) else { return nil }
                 let query = expandRAGQueryIfNeeded(originalPrompt: cleanedPrompt)
                 var args: AgentJSONArguments = ["query": .string(query)]
                 if let scope = RAGSourceScope.inferred(fromUserPrompt: cleanedPrompt) {
@@ -430,6 +430,26 @@ nonisolated enum DeterministicToolPlanner {
         var query = fallback
         for term in architectureTerms where !lower.contains(term) { query += " " + term }
         return query
+    }
+
+    private static func isConcreteRAGSearchIntent(_ cleanedPrompt: String) -> Bool {
+        let words = cleanedPrompt
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let unwrapped = words
+            .replacingOccurrences(of: #"^(?:please\s+)?(?:use\s+)?"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let bareRequests: Set<String> = [
+            "search personal data",
+            "search my files",
+            "search local files",
+            "search my documents",
+            "search my notes",
+            "rag search"
+        ]
+        return !unwrapped.isEmpty && !bareRequests.contains(unwrapped)
     }
 
     static func extractWebQuery(from text: String) -> String { SlotAgentService.shared_extractWebQuery(text) }

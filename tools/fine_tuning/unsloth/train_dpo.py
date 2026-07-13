@@ -9,6 +9,9 @@ from typing import Any
 REQUIRED_CONFIG_KEYS = {
     "agent",
     "base_model_name",
+    "baseModelRevision",
+    "baseModelArtifactDigest",
+    "baseModelTokenizerDigest",
     "max_seq_length",
     "load_in_4bit",
     "lora_r",
@@ -129,6 +132,7 @@ def main() -> None:
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],
+        revision=cfg["baseModelRevision"],
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=bool(cfg["load_in_4bit"]),
     )

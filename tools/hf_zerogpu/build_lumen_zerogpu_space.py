@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -18,7 +19,6 @@ EXPERIMENT_VARIANTS = (
     "internal_plus_public_baseline",
     "internal_plus_public_optimized",
 )
-DEFAULT_EXPERIMENT_VARIANT = "internal_plus_public_optimized"
 SPACE_TEMPLATE = Path(__file__).resolve().parent / "space_template"
 LEGACY_DURATION_SECRET_KEYS = (
     "LUMEN_ZERO_GPU_DURATION_SECONDS",
@@ -69,7 +69,7 @@ def read_json(path: Path) -> dict[str, Any]:
 def require_dataset_source(
     path: Path,
     agents: Sequence[str],
-    experiment_variant: str = DEFAULT_EXPERIMENT_VARIANT,
+    experiment_variant: str,
 ) -> None:
     experiment_variant = parse_experiment_variant(experiment_variant)
     if not path.is_dir():
@@ -117,9 +117,12 @@ def write_space_bundle(
     base_model: str,
     gpu_size: str,
     gpu_duration_seconds: int,
-    experiment_variant: str = DEFAULT_EXPERIMENT_VARIANT,
+    experiment_variant: str,
+    container_image_digest: str,
 ) -> SpaceBuild:
     experiment_variant = parse_experiment_variant(experiment_variant)
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", container_image_digest):
+        raise ValueError("container_image_digest must be an explicit immutable sha256:<digest>")
     run_root.mkdir(parents=True, exist_ok=True)
     space_dir = run_root / "space"
     dataset_dir = run_root / "dataset_snapshot" / "fine_tuning"
@@ -143,7 +146,8 @@ def write_space_bundle(
         "base_model_override": base_model,
         "gpu_size": gpu_size,
         "gpu_duration_seconds": gpu_duration_seconds,
-        "experiment_variant": experiment_variant,
+        "requested_experiment_variant": experiment_variant,
+        "container_image_digest": container_image_digest,
         "fresh_run": True,
         "resume_default": False,
         "adapter_first": True,
@@ -173,7 +177,7 @@ def import_hf_api() -> Any:
     try:
         from huggingface_hub import HfApi
     except ImportError as exc:
-        raise RuntimeError("Missing huggingface_hub. Install with: pip install -U huggingface_hub") from exc
+        raise RuntimeError("Missing pinned huggingface_hub dependency; install the project automation lock") from exc
     return HfApi
 
 
@@ -349,7 +353,6 @@ def upload_to_hub(
         "LUMEN_ZERO_GPU_SIZE": str(defaults.get("gpu_size", "large")),
         "LUMEN_ZERO_GPU_DURATION_SECONDS": gpu_duration_seconds,
         "LUMEN_ZERO_GPU_MAX_DURATION_SECONDS": gpu_duration_seconds,
-        "LUMEN_ZERO_GPU_EXPERIMENT_VARIANT": str(defaults.get("experiment_variant", DEFAULT_EXPERIMENT_VARIANT)),
     }
     # Always overwrite optional knobs. A neutral zero makes the Space retain
     # each generated per-agent config value and clears stale caps from an older run.
@@ -373,7 +376,7 @@ def trigger_space_training(
     token: str | None,
     timeout_seconds: int,
     dry_run: bool,
-    experiment_variant: str = DEFAULT_EXPERIMENT_VARIANT,
+    experiment_variant: str,
 ) -> None:
     experiment_variant = parse_experiment_variant(experiment_variant)
     print(f"Trigger Space training via Gradio API: {space_repo}")
@@ -450,6 +453,7 @@ def _trigger_space_training_via_gradio_api(
             True,
             gpu_size,
             experiment_variant,
+            True,
         ]
     }
     with httpx.Client(timeout=None) as client:
@@ -509,8 +513,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--experiment-variant",
         choices=EXPERIMENT_VARIANTS,
-        default=DEFAULT_EXPERIMENT_VARIANT,
+        required=True,
         help="Controlled dataset variant to train.",
+    )
+    parser.add_argument(
+        "--container-image-digest",
+        required=True,
+        help="Immutable sha256:<digest> of the production training container image.",
     )
     parser.add_argument("--trigger", action="store_true", help="Trigger Space training after upload.")
     parser.add_argument("--trigger-timeout-seconds", type=int, default=900, help="Time to wait for Space readiness before triggering.")
@@ -529,10 +538,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     agents = parse_agents(args.agents)
     require_dataset_source(dataset_source, agents, args.experiment_variant)
     read_json(dataset_source / "adapter_runtime_manifest.json")
+    run_id = args.run_id
+    variant_marker = f"-{args.experiment_variant}"
+    if variant_marker not in run_id:
+        run_id += variant_marker
 
     build = write_space_bundle(
         root=root,
-        run_id=args.run_id,
+        run_id=run_id,
         run_root=run_root,
         dataset_source=dataset_source,
         space_repo=args.space_repo,
@@ -543,6 +556,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         gpu_size=args.gpu_size,
         gpu_duration_seconds=args.gpu_duration_seconds,
         experiment_variant=args.experiment_variant,
+        container_image_digest=args.container_image_digest,
     )
     print(f"Wrote Space bundle: {build.space_dir}")
     print(f"Wrote dataset snapshot: {build.dataset_dir}")
@@ -573,7 +587,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         trigger_space_training(
             space_repo=args.space_repo,
-            run_id=args.run_id,
+            run_id=run_id,
             agents=agents,
             base_model=args.base_model,
             seed=args.seed,

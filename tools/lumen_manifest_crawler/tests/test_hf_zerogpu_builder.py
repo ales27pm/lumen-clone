@@ -69,7 +69,7 @@ def test_parse_agents_rejects_unknown_agent() -> None:
         parse_agents("executor,unknown")
 
 
-def test_experiment_variant_is_strict_and_defaults_to_optimized() -> None:
+def test_experiment_variant_is_strict() -> None:
     assert parse_experiment_variant("internal_plus_public_optimized") == "internal_plus_public_optimized"
     with pytest.raises(ValueError):
         parse_experiment_variant("optimized")
@@ -80,10 +80,10 @@ def test_require_dataset_source_requires_selected_variant_files(tmp_path: Path) 
     dataset.mkdir()
     (dataset / "adapter_runtime_manifest.json").write_text("{}\n", encoding="utf-8")
     _write_agent_fixture(dataset, "executor")
-    require_dataset_source(dataset, ["executor"])
+    require_dataset_source(dataset, ["executor"], "internal_plus_public_optimized")
     (dataset / "executor" / "experiments" / "internal_plus_public_optimized" / "variant_manifest.json").unlink()
     with pytest.raises(FileNotFoundError):
-        require_dataset_source(dataset, ["executor"])
+        require_dataset_source(dataset, ["executor"], "internal_plus_public_optimized")
 
 
 def test_long_lived_space_stream_disconnect_is_terminal() -> None:
@@ -143,7 +143,7 @@ def test_gradio_trigger_carries_selected_experiment_variant(monkeypatch: pytest.
         token="token",
     )
 
-    assert posts[0]["data"][-1] == "internal_only"
+    assert posts[0]["data"][-2:] == ["internal_only", True]
 
 
 def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -> None:
@@ -173,13 +173,16 @@ def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -
         base_model="",
         gpu_size="large",
         gpu_duration_seconds=3600,
+        experiment_variant="internal_plus_public_optimized",
+        container_image_digest="sha256:" + "c" * 64,
     )
 
     defaults = json.loads(build.defaults_path.read_text(encoding="utf-8"))
     assert defaults["fresh_run"] is True
     assert defaults["resume_default"] is False
     assert defaults["adapter_first"] is True
-    assert defaults["experiment_variant"] == "internal_plus_public_optimized"
+    assert defaults["requested_experiment_variant"] == "internal_plus_public_optimized"
+    assert defaults["container_image_digest"] == "sha256:" + "c" * 64
     assert defaults["dataset_path_in_repo"] == "runs/test-run/fine_tuning"
     assert (build.space_dir / "app.py").exists()
     assert (build.space_dir / "lumen_train_sft.py").exists()

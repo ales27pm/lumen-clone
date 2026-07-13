@@ -8,21 +8,33 @@
       "adapterID": "lumen-cortex-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "cortex",
+      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
       "evaluation": {
         "contamination": {
           "contaminated": false,
           "matchCount": 0,
           "promotionRequiresZeroMatches": true,
-          "reportSHA256": "74c02ed58fc54e56b49591ca9405acfe7ad0ca2481c756c50e02ba0a2a47737b"
+          "reportSHA256": "bcc192d2181f8cd4fbe92de7b9e135bd31f22be40841ee81046c0195f5940725"
         },
         "executableDeclarativeMetrics": true,
         "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "03e21e574b6143088c1b220e0c17828ee60d755270412b87c3c019db938fec57",
+        "frozenEvaluationSHA256": "5cf2b250c836fae8728f4a771167804ebbca5fce4c7c51e371b400326c4266c8",
         "recordCount": 558,
         "schemaVersion": "lumen.adapter-eval/1.0.0"
       },
       "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "5cfe2c79d37411be4627696883d4394676fa0de0f4dfd082b39490548577a79f",
+          "optimizedTrainingCorpusSHA256": "f9970bdc6e6ee84be110037cace7663a9fa37bbc2a2beb64740dd7457ff1fa8c",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 662,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
         "controlledVariables": [
           "baseModelID",
           "seed",
@@ -30,7 +42,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "2d14996841f5acfa07ef93ea9fad572eb366d0cf4c71984e06eae4f6e7a362e8",
+        "experimentManifestSHA256": "471d2ada55b5d0bcb9119c346dfa7c6dda96d8cf4b153767649bb2165546ff0b",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -40,6 +52,8 @@
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
@@ -72,21 +86,33 @@
       "adapterID": "lumen-executor-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "executor",
+      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
       "evaluation": {
         "contamination": {
           "contaminated": false,
           "matchCount": 0,
           "promotionRequiresZeroMatches": true,
-          "reportSHA256": "0305fd86ea3ee6f6ac4329a57e311d2ea7ac4ccd45c02e9c104a055265d14a70"
+          "reportSHA256": "640ca4ff54b5ec8a5592d01bdf0aa5df2517be9ec5fd002b95e9bb47f61d0012"
         },
         "executableDeclarativeMetrics": true,
         "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "e791d2c636070811f7dc4f62aad5b5c015cb2d46021a7d5fe352b37d6e505df8",
+        "frozenEvaluationSHA256": "b4e05ca27a99d487eec2b964c4294437cc555ea0cd4b31aaf3ee4e8cfa690e11",
         "recordCount": 114,
         "schemaVersion": "lumen.adapter-eval/1.0.0"
       },
       "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "13f704816bb3537645d99a17817196ba699b6b9d8eaf9d23a75acd085caef6b3",
+          "optimizedTrainingCorpusSHA256": "4e11cae1751374d4dcc923bf23f2b4583146d8f9816b1f7c5a62221b7128cc64",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 462,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
         "controlledVariables": [
           "baseModelID",
           "seed",
@@ -94,7 +120,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "362354e87967e0c17bf464db3b7336ecb6e9267b8d4bec341deb42da7f30eb4c",
+        "experimentManifestSHA256": "cc24fd2c7313f951784cbce97e0d048d0c563e13174ca98afc8059ae0cfc29da",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -104,6 +130,8 @@
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
@@ -136,21 +164,33 @@
       "adapterID": "lumen-fleet-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "fleet",
+      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
       "evaluation": {
         "contamination": {
           "contaminated": false,
           "matchCount": 0,
           "promotionRequiresZeroMatches": true,
-          "reportSHA256": "acaac3d0529ff9fe362d54c187516c350f525249478270f17d3ebee48b384342"
+          "reportSHA256": "e35f843806ebc4f254e8c0ed3cbf2b7f09a073a1c2d21665edca166740230229"
         },
         "executableDeclarativeMetrics": true,
         "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "8fbc7129dea37f4f9bb4777336e2f9e65afe68fb63bf633dab78f3090ff0b26d",
+        "frozenEvaluationSHA256": "ec07bf2e1919856329c3406d39ee133e299a1f8854f550635e3529f990e88849",
         "recordCount": 15,
         "schemaVersion": "lumen.adapter-eval/1.0.0"
       },
       "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "11f396963d0c9ddfd918983a9cc83e698f0766158c5e6b118e6b283f397d738c",
+          "optimizedTrainingCorpusSHA256": "8414c7de5d271f6c199acb2b4c07efdba14baf9f73a374ea695c9bb0472f6a68",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 500,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
         "controlledVariables": [
           "baseModelID",
           "seed",
@@ -158,7 +198,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "9761ba0e99a2f2d8eb494921075ec2a96cdd2b79e7dee0f64f61c2cf4967cda9",
+        "experimentManifestSHA256": "826f78e2e7f45c802d3c6ab949090fa1600a166da3b73b686724de6e54131170",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -168,6 +208,8 @@
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
@@ -180,16 +222,16 @@
       },
       "preferenceTraining": {
         "includedInCheckpoint": false,
-        "recordCount": 8,
+        "recordCount": 18,
         "requiredPhase": "post_sft_preference_training",
         "status": "generated_not_trained"
       },
       "recordCounts": {
         "eval": 15,
-        "train_dpo": 7,
-        "train_sft": 4983,
-        "val_dpo": 1,
-        "val_sft": 879
+        "train_dpo": 15,
+        "train_sft": 5004,
+        "val_dpo": 3,
+        "val_sft": 883
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
     },
@@ -200,21 +242,33 @@
       "adapterID": "lumen-mimicry-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mimicry",
+      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
       "evaluation": {
         "contamination": {
           "contaminated": false,
           "matchCount": 0,
           "promotionRequiresZeroMatches": true,
-          "reportSHA256": "ab14c680040e65e6034fcd037fdd742dd54deda9322f641c1c79bed2b56e3c4d"
+          "reportSHA256": "3fcc8a3df132a638d51408409c9e34128d9f6843bd427eed31442a8425e377e4"
         },
         "executableDeclarativeMetrics": true,
         "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "91a9d6eae5545f7189c16519d5c4b1810afcaea3bda71b8c6324b9e9fb619445",
+        "frozenEvaluationSHA256": "e9a6957f9697c53a3d60b141250c8976739126a18831e68672ab4cf596515342",
         "recordCount": 5,
         "schemaVersion": "lumen.adapter-eval/1.0.0"
       },
       "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "dd57e8d30d9d9842a08bb2136680a33749d43d4c6950dd63316f4a496f840a13",
+          "optimizedTrainingCorpusSHA256": "d78b8f989e07804a9f2e4a456016e71d831261b3b025672d0a72accf6b56472a",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 600,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
         "controlledVariables": [
           "baseModelID",
           "seed",
@@ -222,7 +276,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "829463de2e547d206cede25b74e90a72d46c6ff759c6502d69792954623ef809",
+        "experimentManifestSHA256": "761367ba3ce4bf1f71f2a6a11337af34353e8147b005229a6163fca4e86015eb",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -232,6 +286,8 @@
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
@@ -264,7 +320,10 @@
       "adapterID": "lumen-mouth-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mouth",
+      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
       "evaluation": {
         "contamination": {
           "contaminated": false,
@@ -279,6 +338,15 @@
         "schemaVersion": "lumen.adapter-eval/1.0.0"
       },
       "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "0d2f1928bea15728abf219a353d803626935ff24853ef02ed89923c277c0213f",
+          "optimizedTrainingCorpusSHA256": "b282f2721e8c3e2f470c390237e04f507c72984dfef399b085006d7327c76e90",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 1051,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
         "controlledVariables": [
           "baseModelID",
           "seed",
@@ -286,7 +354,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "d3a21162c608537aaf5fb94f127abeb4405c96de35b4f89748434743a9ab1754",
+        "experimentManifestSHA256": "ba6c0492ed97c94f3f449fa7d7259e9b583188bb6971ec1fabaa9e3852a12c90",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -296,6 +364,8 @@
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
@@ -328,21 +398,33 @@
       "adapterID": "lumen-rem-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "rem",
+      "baseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
       "evaluation": {
         "contamination": {
           "contaminated": false,
           "matchCount": 0,
           "promotionRequiresZeroMatches": true,
-          "reportSHA256": "49528c731a6e7d95bb694863004283bfe4ea84fc63a0e513dcd5fa99a2b0042b"
+          "reportSHA256": "8c3a8c6e4869e8a5a7f2f29148967743d203039c1273badbc710d4a556f68233"
         },
         "executableDeclarativeMetrics": true,
         "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "5ccb346d6c881fd79dd45ff72f0000eded0930a803cb140e71feab1a94439efc",
+        "frozenEvaluationSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
         "recordCount": 6,
         "schemaVersion": "lumen.adapter-eval/1.0.0"
       },
       "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "5dd6809179f3e050799f8ca73076a4d9ae07d463c1c537c5b8dbf84a6f1b0dd9",
+          "optimizedTrainingCorpusSHA256": "a7934573392262b4bc5c0748d203e382c73bfef1cd0e7d44261bec8c1ef6915b",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 505,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
         "controlledVariables": [
           "baseModelID",
           "seed",
@@ -350,7 +432,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "f6e250774b05b26b943972b629a0349a5eca9bf2c6750e1e23121086bb73368b",
+        "experimentManifestSHA256": "e2c63d81a4a52eacdcd3647c0b301014a52e7de05fb88346e89311aa680d8388",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -360,6 +442,8 @@
           "requiresArtifactDigests": true,
           "requiresBaselineAndOptimizedContaminationReports": true,
           "requiresCompleteEvidence": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
           "requiresPublicEvaluationFingerprintBinding": true,
           "runtimePointerPolicy": "unchanged_until_promoted",
           "schemaVersion": "lumen.adapter-promotion/1.0.0"
@@ -405,6 +489,9 @@
   },
   "schemaVersion": "1.2.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseModelArtifactDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
   "sharedBaseModelID": "Qwen/Qwen3-1.7B",
+  "sharedBaseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "sharedBaseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf"
 }

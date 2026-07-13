@@ -6,7 +6,9 @@ import json
 import os
 import platform
 import random
+import re
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,12 @@ from typing import Any
 REQUIRED_CONFIG_KEYS = {
     "agent",
     "base_model_name",
+    "baseModelRevision",
+    "baseModelArtifactDigest",
+    "baseModelTokenizerDigest",
+    "trainingEnvironmentLock",
+    "trainingContainerImageDigest",
+    "trainingEnvironmentSHA256",
     "max_seq_length",
     "load_in_4bit",
     "lora_r",
@@ -351,6 +359,94 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _require_sha256(value: Any, *, name: str, prefix: bool = False) -> str:
+    text = str(value or "")
+    pattern = r"sha256:[0-9a-f]{64}" if prefix else r"[0-9a-f]{64}"
+    if re.fullmatch(pattern, text) is None:
+        raise RuntimeError(f"{name} must be an immutable lowercase SHA-256 digest")
+    return text
+
+
+def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
+    lock = cfg.get("trainingEnvironmentLock")
+    if not isinstance(lock, dict):
+        raise RuntimeError("trainingEnvironmentLock must be an object")
+    container_digest = _require_sha256(
+        cfg.get("trainingContainerImageDigest"),
+        name="trainingContainerImageDigest",
+        prefix=True,
+    )
+    expected_python = str(lock.get("pythonVersion") or "")
+    actual_python = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if actual_python != expected_python:
+        raise RuntimeError(f"Training Python drifted from lock: expected {expected_python}, got {actual_python}")
+
+    expected_packages = lock.get("packageVersions")
+    if not isinstance(expected_packages, dict) or not expected_packages:
+        raise RuntimeError("trainingEnvironmentLock.packageVersions must be non-empty")
+    actual_packages = {name: _package_version(name) for name in sorted(expected_packages)}
+    if actual_packages != expected_packages:
+        raise RuntimeError(
+            "Training package versions drifted from lock: "
+            + json.dumps({"expected": expected_packages, "actual": actual_packages}, sort_keys=True)
+        )
+
+    import importlib.metadata as metadata
+
+    direct_url_text = metadata.distribution("unsloth").read_text("direct_url.json")
+    if not direct_url_text:
+        raise RuntimeError("Installed Unsloth lacks PEP 610 VCS provenance")
+    direct_url = json.loads(direct_url_text)
+    vcs_info = direct_url.get("vcs_info") if isinstance(direct_url, dict) else None
+    unsloth_revision = vcs_info.get("commit_id") if isinstance(vcs_info, dict) else None
+    if unsloth_revision != lock.get("unslothRevision"):
+        raise RuntimeError(
+            f"Installed Unsloth revision drifted from lock: expected {lock.get('unslothRevision')}, "
+            f"got {unsloth_revision or '<unattested>'}"
+        )
+
+    import torch  # type: ignore
+
+    expected_cuda = str(lock.get("cudaVersion") or "")
+    actual_cuda = str(torch.version.cuda or "")
+    if actual_cuda != expected_cuda:
+        raise RuntimeError(f"Training CUDA drifted from lock: expected {expected_cuda}, got {actual_cuda or '<none>'}")
+    payload = {
+        "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+        "containerImageDigest": container_digest,
+        "environmentLock": lock,
+    }
+    digest = _canonical_sha256(payload)
+    if digest != cfg.get("trainingEnvironmentSHA256"):
+        raise RuntimeError("trainingEnvironmentSHA256 is not bound to the effective immutable environment")
+    return {**payload, "trainingEnvironmentSHA256": digest}
+
+
+def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
+    revision = str(cfg.get("baseModelRevision") or "")
+    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise RuntimeError("baseModelRevision must be a full lowercase Hugging Face commit SHA")
+    expected = {
+        "model.safetensors.index.json": _require_sha256(
+            cfg.get("baseModelArtifactDigest"), name="baseModelArtifactDigest"
+        ),
+        "tokenizer.json": _require_sha256(
+            cfg.get("baseModelTokenizerDigest"), name="baseModelTokenizerDigest"
+        ),
+    }
+    from huggingface_hub import hf_hub_download  # type: ignore
+
+    for filename, digest in expected.items():
+        path = Path(hf_hub_download(repo_id=cfg["base_model_name"], filename=filename, revision=revision))
+        if _hash_file(path) != digest:
+            raise RuntimeError(f"Pinned base-model artifact digest mismatch: {filename}")
+
+
 def _git_sha(repo_root: Path) -> str:
     try:
         return subprocess.check_output(
@@ -440,8 +536,12 @@ def main() -> None:
             ) from exc
         raise
 
+    training_environment = _training_environment(cfg)
+    _verify_base_model_lineage(cfg)
+
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],
+        revision=cfg["baseModelRevision"],
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=bool(cfg["load_in_4bit"]),
     )
@@ -536,6 +636,11 @@ def main() -> None:
         "schema": "lumen.train_sft.manifest/1.0.0",
         "agent": cfg["agent"],
         "base_model_name": cfg["base_model_name"],
+        "baseModelRevision": cfg["baseModelRevision"],
+        "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
+        "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+        "trainingEnvironment": training_environment,
+        "trainingEnvironmentSHA256": training_environment["trainingEnvironmentSHA256"],
         "config_path": str(cfg_path),
         "config_sha256": _hash_file(cfg_path),
         "dataset_dir": str(dataset_dir),
