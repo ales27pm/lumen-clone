@@ -16,7 +16,9 @@ optimized, or internal-only corpus explicitly for every production run. The dige
 operator-declared audit value for the intended image; Gradio ZeroGPU does not expose trusted
 runtime-image provenance that Lumen can compare with it. Runs therefore record
 `manual_validation_required` and cannot use the declaration alone as promotion evidence. The
-selected variant is included in the run ID.
+selected variant is included in the run ID. Automated promotion is intentionally unsupported
+until Lumen has an independently verifiable runtime-image attestation; manifest JSON cannot
+self-assert a trusted binding.
 
 The script:
 
@@ -72,6 +74,8 @@ The default path is intentionally fresh:
 - each run gets a new run id and dataset snapshot path,
 - the Space deletes the run workdir before training unless `resume` is explicitly selected,
 - LoRA adapters are written under `runs/<run-id>/adapters/<agent>` in the adapter repo,
+- each adapter upload contains a canonical per-file digest manifest and a finalized experiment
+  manifest bound to that adapter digest,
 - merge/release-bake remains disabled by default.
 
 This prevents accidental continuation from old checkpoints. It does not prove dataset quality; if the generated dataset contains contaminated examples, the training run will still learn them. The Space performs the same basic null-output guard as the local Ubuntu AIO runner before launching GPU work.

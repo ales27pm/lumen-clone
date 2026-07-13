@@ -65,11 +65,28 @@ def _training_environment(manifest: dict, digest_character: str = "c") -> dict:
     return {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": "sha256:" + digest_character * 64,
-        "containerImageDigestSource": "trusted_platform_attestation",
-        "runtimeImageBindingStatus": "verified",
-        "runtimeImageBindingVerified": True,
+        "containerImageDigestSource": "operator_declared",
+        "runtimeImageBindingStatus": "manual_validation_required",
+        "runtimeImageBindingVerified": False,
         "environmentLock": manifest["trainingEnvironmentLock"],
     }
+
+
+def _adapter_artifact(marker: str, *, phase: str = "sft", parent: str | None = None) -> dict:
+    payload = {
+        "schemaVersion": "lumen.peft-lora-adapter-artifact/1.0.0",
+        "artifactType": "peft_lora_directory",
+        "trainingPhase": phase,
+        "parentSFTAdapterSHA256": parent,
+        "files": [
+            {"path": "adapter_config.json", "sizeBytes": 1, "sha256": marker * 64},
+            {"path": "adapter_model.safetensors", "sizeBytes": 2, "sha256": marker * 64},
+            {"path": "tokenizer.json", "sizeBytes": 3, "sha256": marker * 64},
+            {"path": "tokenizer_config.json", "sizeBytes": 4, "sha256": marker * 64},
+        ],
+    }
+    payload["adapterSHA256"] = canonical_sha256(payload)
+    return payload
 
 
 def test_legacy_expectations_upgrade_to_versioned_executable_metrics() -> None:
@@ -682,7 +699,9 @@ def test_experiment_manifest_requires_all_controlled_variants_and_marks_dpo_untr
     experiment = build_experiment_manifest(agent="executor", variants=manifests)
     assert experiment["variantOrder"] == list(EXPERIMENT_VARIANTS)
     assert experiment["controlledVariables"]["baseModelRevision"] == "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
-    assert experiment["controlledVariables"]["baseModelArtifactDigest"] == "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
+    assert experiment["controlledVariables"]["baseModelIndexDigest"] == "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
+    assert experiment["controlledVariables"]["baseModelArtifactDigest"] == "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218"
+    assert experiment["controlledVariables"]["baseModelWeightShards"] == adapter_evaluation.DEFAULT_BASE_MODEL_WEIGHT_SHARDS
     assert experiment["controlledVariables"]["baseModelTokenizerDigest"] == "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
     assert all(variant["trainingEnvironmentSHA256"] is None for variant in experiment["variants"])
     assert all(
@@ -721,7 +740,9 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
         build_experiment_variant_manifest(
             **kwargs,
             base_model_revision=adapter_evaluation.DEFAULT_BASE_MODEL_REVISION,
+            base_model_index_digest=adapter_evaluation.DEFAULT_BASE_MODEL_INDEX_DIGEST,
             base_model_artifact_digest=adapter_evaluation.DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+            base_model_weight_shards=adapter_evaluation.DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
             base_model_tokenizer_digest=adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
         )
 
@@ -742,12 +763,19 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
     ) is False
 
     custom_tokenizer_digest = "e" * 64
+    custom_weight_shards = [
+        {"filename": "weights.safetensors", "size": 7, "sha256": "d" * 64}
+    ]
     environment_lock = adapter_evaluation.default_training_environment_lock()
     environment_lock["baseTokenizerSHA256"] = custom_tokenizer_digest
     custom = build_experiment_variant_manifest(
         **kwargs,
         base_model_revision="b" * 40,
-        base_model_artifact_digest="c" * 64,
+        base_model_index_digest="c" * 64,
+        base_model_artifact_digest=adapter_evaluation.base_model_artifact_digest(
+            custom_weight_shards
+        ),
+        base_model_weight_shards=custom_weight_shards,
         base_model_tokenizer_digest=custom_tokenizer_digest,
         training_environment_lock=environment_lock,
     )
@@ -757,14 +785,41 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
     assert custom["trainingEnvironmentLock"] == environment_lock
 
 
+def test_variant_manifest_rejects_weight_shards_not_bound_to_artifact_digest() -> None:
+    manifest = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    tampered = dict(manifest)
+    tampered.pop("variantManifestSHA256")
+    tampered["baseModelWeightShards"] = [
+        {**item, "size": item["size"] + 1}
+        for item in manifest["baseModelWeightShards"]
+    ]
+    tampered["variantManifestSHA256"] = canonical_sha256(tampered)
+
+    assert adapter_evaluation._valid_variant_manifest(
+        tampered,
+        agent="executor",
+        expected_variant="internal_only",
+    ) is False
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("schemaVersion", "lumen.adapter-training-environment/0.0.0"),
         ("containerImageDigest", "operator-declared"),
-        ("containerImageDigestSource", "operator_declared"),
-        ("runtimeImageBindingStatus", "manual_validation_required"),
-        ("runtimeImageBindingVerified", False),
+        ("containerImageDigestSource", "trusted_platform_attestation"),
+        ("runtimeImageBindingStatus", "verified"),
+        ("runtimeImageBindingVerified", True),
         ("environmentLock", {"schemaVersion": "mismatched"}),
     ],
 )
@@ -783,9 +838,11 @@ def test_variant_manifest_validation_rejects_semantically_invalid_training_envir
         dpo_records=[],
         evaluation_records=[],
     )
+    adapter_artifact = _adapter_artifact("a")
     finalized = finalize_experiment_variant_manifest(
         pending,
-        adapter_sha256="a" * 64,
+        adapter_sha256=adapter_artifact["adapterSHA256"],
+        adapter_artifact_manifest=adapter_artifact,
         training_environment=_training_environment(pending),
     )
     environment = dict(finalized["trainingEnvironment"])
@@ -807,7 +864,96 @@ def test_variant_manifest_validation_rejects_semantically_invalid_training_envir
     ) is False
 
 
-def test_promotion_rejects_operator_declared_runtime_image_binding() -> None:
+def test_finalizer_rejects_self_declared_trusted_runtime_image_binding() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    forged = _training_environment(pending)
+    forged.update(
+        {
+            "containerImageDigestSource": "trusted_platform_attestation",
+            "runtimeImageBindingStatus": "verified",
+            "runtimeImageBindingVerified": True,
+        }
+    )
+
+    adapter_artifact = _adapter_artifact("a")
+    with pytest.raises(ValueError, match="training_environment must match"):
+        finalize_experiment_variant_manifest(
+            pending,
+            adapter_sha256=adapter_artifact["adapterSHA256"],
+            adapter_artifact_manifest=adapter_artifact,
+            training_environment=forged,
+        )
+
+
+def test_finalizer_rejects_rebinding_an_already_trained_manifest() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    adapter_artifact = _adapter_artifact("a")
+    finalized = finalize_experiment_variant_manifest(
+        pending,
+        adapter_sha256=adapter_artifact["adapterSHA256"],
+        adapter_artifact_manifest=adapter_artifact,
+        training_environment=_training_environment(pending),
+    )
+
+    with pytest.raises(ValueError, match="Only a pending, untrained"):
+        finalize_experiment_variant_manifest(
+            finalized,
+            adapter_sha256=adapter_artifact["adapterSHA256"],
+            adapter_artifact_manifest=adapter_artifact,
+            training_environment=_training_environment(pending),
+        )
+
+
+def test_finalizer_rejects_forged_extra_adapter_artifact_file() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    forged = _adapter_artifact("a")
+    forged["files"].append(
+        {"path": "untracked_payload.bin", "sizeBytes": 1, "sha256": "b" * 64}
+    )
+    forged["adapterSHA256"] = canonical_sha256(
+        {key: value for key, value in forged.items() if key != "adapterSHA256"}
+    )
+
+    with pytest.raises(ValueError, match="does not bind a canonical PEFT/LoRA"):
+        finalize_experiment_variant_manifest(
+            pending,
+            adapter_sha256=forged["adapterSHA256"],
+            adapter_artifact_manifest=forged,
+            training_environment=_training_environment(pending),
+        )
+
+
+def test_promotion_reports_runtime_image_attestation_as_unsupported() -> None:
     evaluation = [
         upgrade_evaluation_record(
             _eval("executor", "json", [{"type": "json_valid"}])
@@ -817,10 +963,12 @@ def test_promotion_rejects_operator_declared_runtime_image_binding() -> None:
     reports = {}
     contamination_reports = {}
     outputs = {evaluation[0]["evalID"]: {"status": "ok"}}
-    for variant, content, digest in (
-        ("internal_plus_public_baseline", "baseline", "a" * 64),
-        ("internal_plus_public_optimized", "optimized", "b" * 64),
+    for variant, content, marker in (
+        ("internal_plus_public_baseline", "baseline", "a"),
+        ("internal_plus_public_optimized", "optimized", "b"),
     ):
+        adapter_artifact = _adapter_artifact(marker)
+        digest = adapter_artifact["adapterSHA256"]
         training = [{"messages": [{"role": "user", "content": content}]}]
         contamination = build_contamination_report(training, evaluation)
         pending = build_experiment_variant_manifest(
@@ -835,18 +983,11 @@ def test_promotion_rejects_operator_declared_runtime_image_binding() -> None:
             evaluation_records=evaluation,
             contamination_report=contamination,
         )
-        environment = _training_environment(pending)
-        environment.update(
-            {
-                "containerImageDigestSource": "operator_declared",
-                "runtimeImageBindingStatus": "manual_validation_required",
-                "runtimeImageBindingVerified": False,
-            }
-        )
         finalized = finalize_experiment_variant_manifest(
             pending,
             adapter_sha256=digest,
-            training_environment=environment,
+            adapter_artifact_manifest=adapter_artifact,
+            training_environment=_training_environment(pending),
         )
         manifests[variant] = finalized
         contamination_reports[variant] = contamination
@@ -880,13 +1021,20 @@ def test_promotion_rejects_operator_declared_runtime_image_binding() -> None:
     )
 
     assert decision["promoted"] is False
-    assert "runtime_image_binding_unverified" in decision["failures"]
+    assert "runtime_image_promotion_unsupported" in decision["failures"]
+    assert decision["contract"]["promotionSupported"] is False
+    assert (
+        decision["contract"]["promotionUnsupportedReason"]
+        == "verifiable_runtime_image_attestation_unavailable"
+    )
     assert decision["contract"]["requiresVerifiedRuntimeImageBinding"] is True
 
 
 def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -> None:
-    digest_a = "a" * 64
-    digest_b = "b" * 64
+    adapter_artifact_a = _adapter_artifact("a")
+    adapter_artifact_b = _adapter_artifact("b")
+    digest_a = adapter_artifact_a["adapterSHA256"]
+    digest_b = adapter_artifact_b["adapterSHA256"]
     evaluation = [upgrade_evaluation_record(
         _eval(
             "executor",
@@ -936,11 +1084,13 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
     baseline_manifest = finalize_experiment_variant_manifest(
         baseline_manifest,
         adapter_sha256=digest_a,
+        adapter_artifact_manifest=adapter_artifact_a,
         training_environment=_training_environment(baseline_manifest),
     )
     optimized_manifest = finalize_experiment_variant_manifest(
         optimized_manifest,
         adapter_sha256=digest_b,
+        adapter_artifact_manifest=adapter_artifact_b,
         training_environment=_training_environment(optimized_manifest),
     )
     wrong_artifact_report = score_evaluation_suite(
@@ -958,7 +1108,9 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
             "agent",
             "baseModelID",
             "baseModelRevision",
+            "baseModelIndexDigest",
             "baseModelArtifactDigest",
+            "baseModelWeightShards",
             "baseModelTokenizerDigest",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",
@@ -1002,8 +1154,9 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
         baseline_artifact_sha256=digest_a,
         optimized_artifact_sha256=digest_b,
     )
-    assert decision["promoted"] is True
-    assert decision["runtimePointerAction"] == "promote_optimized_candidate"
+    assert decision["promoted"] is False
+    assert decision["runtimePointerAction"] == "leave_current_pointer_unchanged"
+    assert "runtime_image_promotion_unsupported" in decision["failures"]
 
     identical_optimized_manifest = build_experiment_variant_manifest(
         agent="executor",
@@ -1020,6 +1173,7 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
     identical_optimized_manifest = finalize_experiment_variant_manifest(
         identical_optimized_manifest,
         adapter_sha256=digest_b,
+        adapter_artifact_manifest=adapter_artifact_b,
         training_environment=_training_environment(identical_optimized_manifest),
     )
     identical_optimized_report = score_evaluation_suite(
@@ -1060,7 +1214,9 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
             "agent",
             "baseModelID",
             "baseModelRevision",
+            "baseModelIndexDigest",
             "baseModelArtifactDigest",
+            "baseModelWeightShards",
             "baseModelTokenizerDigest",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",
@@ -1143,6 +1299,9 @@ def test_fine_tuning_cards_and_export_plans_publish_honest_eval_and_dpo_contract
         "requiredPhase": "post_sft_preference_training",
         "recordCount": len(executor.train_dpo) + len(executor.val_dpo),
     }
+    assert executor.dataset_card["experimentPolicy"]["controlledVariables"] == list(
+        executor.experiment_manifest["controlledVariables"]
+    )
     assert all(record["schemaVersion"] == EVALUATION_SCHEMA_VERSION for record in executor.eval)
     assert all(record["metrics"] for record in executor.eval)
 

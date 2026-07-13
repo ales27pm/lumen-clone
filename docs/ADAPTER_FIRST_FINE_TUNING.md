@@ -5,6 +5,8 @@ Lumen should keep one shared agent base model plus role-specific adapters during
 ## Default training artifact
 
 The default output of a role fine-tuning round is a LoRA/adapter artifact, not a merged full model.
+Its identity is the canonical digest of the sorted, allowlisted PEFT/LoRA file manifest; missing,
+extra, or modified files invalidate the artifact.
 
 ```text
 Qwen/Qwen3-1.7B base model
@@ -85,6 +87,13 @@ Adapter-first training gives Lumen:
 The promotion/rollback unit is the adapter, not the base model.
 
 Promote an adapter only if it passes the role-specific gates in `docs/APP_PLAN.md`.
+Promotion is currently fail-closed as unsupported because the available Ubuntu and ZeroGPU
+launchers can record only an operator-declared runtime-image digest. A signed or independently
+verifiable runtime-image attestation must exist before the promotion gate can be enabled.
+
+When preference training is enabled, DPO must start from a verified finalized SFT adapter, write
+to a separate adapter directory, and identify the SFT parent digest. It must never overwrite or
+replace the SFT artifact in place.
 
 Rollback immediately if an adapter causes:
 

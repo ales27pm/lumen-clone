@@ -134,6 +134,12 @@ def write_space_bundle(
     shutil.copytree(dataset_source, dataset_dir, dirs_exist_ok=True)
     copy_template_tree(SPACE_TEMPLATE, space_dir)
     shutil.copy2(root / "tools/fine_tuning/unsloth/train_sft.py", space_dir / "lumen_train_sft.py")
+    shutil.copy2(root / "tools/fine_tuning/unsloth/adapter_artifact.py", space_dir / "adapter_artifact.py")
+    shutil.copytree(
+        root / "tools/lumen_manifest_crawler/lumen_manifest_crawler",
+        space_dir / "lumen_manifest_crawler",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
 
     dataset_path_in_repo = f"runs/{run_id}/fine_tuning"
     defaults = {

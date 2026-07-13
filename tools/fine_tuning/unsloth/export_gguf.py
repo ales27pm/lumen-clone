@@ -9,6 +9,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from .adapter_artifact import verify_adapter_artifact
+    from .train_sft import _verify_base_model_lineage
+except ImportError:
+    module_dir = str(Path(__file__).resolve().parent)
+    if module_dir not in sys.path:
+        sys.path.insert(0, module_dir)
+    from adapter_artifact import verify_adapter_artifact
+    from train_sft import _verify_base_model_lineage
+
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 GGUF_MARKERS = {"gguf", "merged", "release", "bake", "finetune", "finetuned"}
@@ -216,6 +226,8 @@ def export_agent_gguf(
     adapter_dir = _adapter_dir(cfg)
     if not adapter_dir.exists():
         raise FileNotFoundError(f"Adapter directory not found for {agent}: {adapter_dir}")
+    _verify_base_model_lineage(cfg)
+    verify_adapter_artifact(adapter_dir)
 
     quantization = str(
         quantization_override

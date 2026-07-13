@@ -66,7 +66,7 @@ if [[ -e "$RUN_ROOT" ]]; then
   fi
 fi
 
-mkdir -p "$RUN_ROOT/generated/fine_tuning" "$RUN_ROOT/configs" "$RUN_ROOT/logs" "$RUN_ROOT/models/lora_qwen3_bootstrap" "$RUN_ROOT/models/lora_qwen3_gguf"
+mkdir -p "$RUN_ROOT/generated/fine_tuning" "$RUN_ROOT/configs" "$RUN_ROOT/logs" "$RUN_ROOT/training" "$RUN_ROOT/models/lora_qwen3_bootstrap" "$RUN_ROOT/models/lora_qwen3_dpo" "$RUN_ROOT/models/lora_qwen3_gguf"
 cp -a "$DATASET_SOURCE/." "$RUN_ROOT/generated/fine_tuning/"
 
 log "repo root: $ROOT"
@@ -133,7 +133,7 @@ required_dataset_files = (
     "val_dpo.jsonl",
 )
 uncontrolled_config_fields = {
-    "adapterExport", "adapter_gguf_output_path", "adapter_output_dir", "dataset_dir",
+    "adapterExport", "adapter_gguf_output_path", "adapter_output_dir", "dataset_dir", "dpo_output_dir",
     "gguf_output_dir", "gguf_repo_id", "mergeExport", "output_dir",
 }
 runtime_lineage_config_fields = {"variant", "variantAttestation", "variantManifestSHA256"}
@@ -224,7 +224,9 @@ def training_attestation(cfg, manifest):
         },
         "effectiveTrainingConfigSHA256": canonical_sha256(effective_controlled),
         "baseModelRevision": manifest["baseModelRevision"],
+        "baseModelIndexDigest": manifest["baseModelIndexDigest"],
         "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
+        "baseModelWeightShards": manifest["baseModelWeightShards"],
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
         "trainingEnvironmentLockSHA256": manifest["trainingEnvironmentLockSHA256"],
         "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
@@ -266,12 +268,14 @@ for agent in agents:
     if variant_manifest.get("seed") != seed:
         raise SystemExit(f"Seed override would break the controlled variant for {agent}: {seed}")
     adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
+    training_dir = run_root / "training" / agent
+    dpo_adapter_dir = run_root / "models" / "lora_qwen3_dpo" / agent
     adapter_gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
     release_bake = run_root / "models" / "gguf_release_bake_qwen3_bootstrap" / f"{agent}_merged_gguf"
 
     cfg["base_model_name"] = base
     cfg["baseModelID"] = base
-    for field in ("baseModelRevision", "baseModelArtifactDigest", "baseModelTokenizerDigest", "trainingEnvironmentLock"):
+    for field in ("baseModelRevision", "baseModelIndexDigest", "baseModelArtifactDigest", "baseModelWeightShards", "baseModelTokenizerDigest", "trainingEnvironmentLock"):
         if cfg.get(field) != variant_manifest.get(field):
             raise SystemExit(f"{field} drifted from the controlled variant for {agent}")
     if re.fullmatch(r"sha256:[0-9a-f]{64}", container_image_digest) is None:
@@ -292,8 +296,9 @@ for agent in agents:
     cfg["dataset_dir"] = str(variant_dir)
     cfg["variant"] = variant
     cfg["variantManifestSHA256"] = variant_manifest["variantManifestSHA256"]
-    cfg["output_dir"] = str(adapter_dir)
+    cfg["output_dir"] = str(training_dir)
     cfg["adapter_output_dir"] = str(adapter_dir)
+    cfg["dpo_output_dir"] = str(dpo_adapter_dir)
     cfg["adapter_gguf_output_path"] = str(adapter_gguf)
     cfg["gguf_output_dir"] = str(release_bake)
     cfg["seed"] = seed
@@ -319,6 +324,8 @@ for agent in agents:
         "variantAttestation": attestation,
         "base_model_name": base,
         "adapter_dir": str(adapter_dir),
+        "training_dir": str(training_dir),
+        "finalized_variant_manifest": str(training_dir / "finalized_variant_manifest.json"),
         "adapter_gguf": str(adapter_gguf),
     })
 
@@ -392,6 +399,32 @@ while IFS= read -r agent; do
     2>&1 | tee "$RUN_ROOT/logs/train_$agent.log"
 done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
 
+"$TRAIN_PY" - "$ROOT" "$RUN_ROOT" "$AGENTS_CSV" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+run_root = Path(sys.argv[2])
+agents = [item.strip() for item in sys.argv[3].split(",") if item.strip()]
+sys.path.insert(0, str(root))
+from tools.fine_tuning.unsloth.adapter_artifact import verify_adapter_artifact
+
+for agent in agents:
+    adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
+    finalized_path = run_root / "training" / agent / "finalized_variant_manifest.json"
+    finalized = json.loads(finalized_path.read_text(encoding="utf-8"))
+    artifact = finalized.get("artifact") if isinstance(finalized, dict) else None
+    if not isinstance(artifact, dict):
+        raise SystemExit(f"Finalized variant manifest lacks adapter lineage: {finalized_path}")
+    verify_adapter_artifact(
+        adapter_dir,
+        expected_adapter_sha256=artifact.get("adapterSHA256"),
+        expected_training_phase=artifact.get("trainingPhase"),
+    )
+print("canonical adapter artifact verification passed")
+PY
+
 if [[ "$CONVERT_GGUF" == "1" ]]; then
   CONVERTER="${LUMEN_AIO_LORA_CONVERTER:-$HOME/.unsloth/llama.cpp/convert_lora_to_gguf.py}"
   LLAMA_CPP_REVISION="34558825a27f4d74dcfd7a91bfde4464baa2a30a"
@@ -409,14 +442,32 @@ if [[ "$CONVERT_GGUF" == "1" ]]; then
   while IFS= read -r agent; do
     [[ -n "$agent" ]] || continue
     base_model="$("$TRAIN_PY" - "$RUN_ROOT/configs/$agent.json" <<'PY'
-import hashlib, json, sys
+import hashlib, json, os, sys
 from huggingface_hub import snapshot_download
 cfg=json.loads(open(sys.argv[1], encoding="utf-8").read())
 snapshot=snapshot_download(repo_id=cfg["base_model_name"], revision=cfg["baseModelRevision"])
-for filename, expected in (("model.safetensors.index.json", cfg["baseModelArtifactDigest"]), ("tokenizer.json", cfg["baseModelTokenizerDigest"])):
-    digest=hashlib.sha256(open(f"{snapshot}/{filename}", "rb").read()).hexdigest()
+def sha256(path):
+    digest=hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+for filename, expected in (("model.safetensors.index.json", cfg["baseModelIndexDigest"]), ("tokenizer.json", cfg["baseModelTokenizerDigest"])):
+    digest=sha256(f"{snapshot}/{filename}")
     if digest != expected:
         raise SystemExit(f"Pinned base-model artifact digest mismatch during conversion: {filename}")
+shards=sorted(cfg["baseModelWeightShards"], key=lambda item: item["filename"])
+contract={"schemaVersion":"lumen.base-model-weight-shards/1.0.0","shards":shards}
+if hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest() != cfg["baseModelArtifactDigest"]:
+    raise SystemExit("Base-model artifact digest is not bound to the declared weight shards")
+index=json.load(open(f"{snapshot}/model.safetensors.index.json", encoding="utf-8"))
+if sorted(set(index.get("weight_map", {}).values())) != [item["filename"] for item in shards]:
+    raise SystemExit("Base-model index shard set does not match the declared weight shards")
+for item in shards:
+    path=f"{snapshot}/{item['filename']}"
+    digest=sha256(path)
+    if os.path.getsize(path) != item["size"] or digest != item["sha256"]:
+        raise SystemExit(f"Pinned base-model weight shard mismatch during conversion: {item['filename']}")
 print(snapshot)
 PY
 )"
@@ -458,13 +509,19 @@ summary = {
 for agent in agents:
     adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
     gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
-    report = adapter_dir / "training_report.json"
+    training_dir = run_root / "training" / agent
+    report = training_dir / "training_report.json"
+    finalized_manifest = training_dir / "finalized_variant_manifest.json"
+    finalized = json.loads(finalized_manifest.read_text(encoding="utf-8"))
     config = json.loads((run_root / "configs" / f"{agent}.json").read_text(encoding="utf-8"))
     summary["agents"][agent] = {
         "adapter_dir": str(adapter_dir),
         "adapter_dir_exists": adapter_dir.exists(),
         "training_report": str(report),
         "training_report_exists": report.exists(),
+        "finalized_variant_manifest": str(finalized_manifest),
+        "finalized_variant_manifest_sha256": finalized["variantManifestSHA256"],
+        "adapter_sha256": finalized["artifact"]["adapterSHA256"],
         "adapter_gguf": str(gguf),
         "adapter_gguf_exists": gguf.exists(),
         "adapter_gguf_sha256": sha(gguf),
@@ -496,9 +553,16 @@ PY
   if [[ "$HF_PRIVATE" == "1" ]]; then
     create_args+=(--private)
   fi
-  log "uploading adapter GGUFs to Hugging Face repo: $adapter_repo"
+  log "uploading canonical adapters, finalized manifests, and optional GGUFs to Hugging Face repo: $adapter_repo"
   "$HF_CLI" "${create_args[@]}"
-  "$HF_CLI" upload "$adapter_repo" "$RUN_ROOT/models/lora_qwen3_gguf" "." --repo-type model
+  while IFS= read -r agent; do
+    [[ -n "$agent" ]] || continue
+    "$HF_CLI" upload "$adapter_repo" "$RUN_ROOT/models/lora_qwen3_bootstrap/$agent" "runs/$RUN_ID/adapters/$agent" --repo-type model
+    "$HF_CLI" upload "$adapter_repo" "$RUN_ROOT/training/$agent/finalized_variant_manifest.json" "runs/$RUN_ID/manifests/$agent/variant_manifest.json" --repo-type model
+  done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
+  if [[ "$CONVERT_GGUF" == "1" ]]; then
+    "$HF_CLI" upload "$adapter_repo" "$RUN_ROOT/models/lora_qwen3_gguf" "runs/$RUN_ID/gguf" --repo-type model
+  fi
 fi
 
 log "done"

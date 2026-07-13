@@ -41,6 +41,7 @@ UNCONTROLLED_CONFIG_FIELDS = {
     "adapter_gguf_output_path",
     "adapter_output_dir",
     "dataset_dir",
+    "dpo_output_dir",
     "gguf_output_dir",
     "gguf_repo_id",
     "mergeExport",
@@ -190,7 +191,9 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
         },
         "effectiveTrainingConfigSHA256": _canonical_sha256(effective_controlled),
         "baseModelRevision": manifest["baseModelRevision"],
+        "baseModelIndexDigest": manifest["baseModelIndexDigest"],
         "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
+        "baseModelWeightShards": manifest["baseModelWeightShards"],
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
         "trainingEnvironmentLockSHA256": manifest["trainingEnvironmentLockSHA256"],
         "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
@@ -296,14 +299,18 @@ def _prepare_configs(
             raise ValueError(f"Base-model override would break the controlled variant for {agent}: {base}")
         if variant_manifest.get("seed") != int(seed):
             raise ValueError(f"Seed override would break the controlled variant for {agent}: {seed}")
+        training_dir = run_root / "training" / agent
         adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
+        dpo_adapter_dir = run_root / "models" / "lora_qwen3_dpo" / agent
         adapter_gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
 
         cfg["base_model_name"] = base
         cfg["baseModelID"] = base
         for field in (
             "baseModelRevision",
+            "baseModelIndexDigest",
             "baseModelArtifactDigest",
+            "baseModelWeightShards",
             "baseModelTokenizerDigest",
             "trainingEnvironmentLock",
         ):
@@ -318,8 +325,9 @@ def _prepare_configs(
         cfg["dataset_dir"] = str(variant_dir)
         cfg["variant"] = variant
         cfg["variantManifestSHA256"] = variant_manifest["variantManifestSHA256"]
-        cfg["output_dir"] = str(adapter_dir)
+        cfg["output_dir"] = str(training_dir)
         cfg["adapter_output_dir"] = str(adapter_dir)
+        cfg["dpo_output_dir"] = str(dpo_adapter_dir)
         cfg["adapter_gguf_output_path"] = str(adapter_gguf)
         cfg["seed"] = int(seed)
         cfg["merge_adapters_by_default"] = False
@@ -354,12 +362,18 @@ def _prepare_configs(
                 "variantAttestation": attestation,
                 "base_model_name": base,
                 "baseModelRevision": cfg["baseModelRevision"],
+                "baseModelIndexDigest": cfg["baseModelIndexDigest"],
                 "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
+                "baseModelWeightShards": cfg["baseModelWeightShards"],
                 "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
                 "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
                 "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
                 "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
                 "adapter_dir": str(adapter_dir),
+                "training_dir": str(training_dir),
+                "finalized_variant_manifest": str(
+                    training_dir / "finalized_variant_manifest.json"
+                ),
                 "adapter_gguf": str(adapter_gguf),
             }
         )
@@ -432,11 +446,28 @@ def _convert_lora_to_gguf(run_root: Path, prepared: list[dict[str, Any]], token:
             token=token,
         ))
         for filename, expected in (
-            ("model.safetensors.index.json", item["baseModelArtifactDigest"]),
+            ("model.safetensors.index.json", item["baseModelIndexDigest"]),
             ("tokenizer.json", item["baseModelTokenizerDigest"]),
         ):
             if _sha256(base_snapshot / filename) != expected:
                 raise RuntimeError(f"Pinned base-model artifact digest mismatch during conversion: {filename}")
+        shards = sorted(item["baseModelWeightShards"], key=lambda value: value["filename"])
+        shard_contract = {
+            "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
+            "shards": shards,
+        }
+        if _canonical_sha256(shard_contract) != item["baseModelArtifactDigest"]:
+            raise RuntimeError("Base-model artifact digest is not bound to the declared weight shards")
+        index = json.loads((base_snapshot / "model.safetensors.index.json").read_text(encoding="utf-8"))
+        referenced_shards = sorted(set((index.get("weight_map") or {}).values()))
+        if referenced_shards != [value["filename"] for value in shards]:
+            raise RuntimeError("Base-model index shard set does not match the declared weight shards")
+        for value in shards:
+            path = base_snapshot / value["filename"]
+            if path.stat().st_size != value["size"] or _sha256(path) != value["sha256"]:
+                raise RuntimeError(
+                    f"Pinned base-model weight shard mismatch during conversion: {value['filename']}"
+                )
         outfile = Path(item["adapter_gguf"])
         outfile.parent.mkdir(parents=True, exist_ok=True)
         _run(
@@ -462,7 +493,7 @@ def _upload_outputs(run_root: Path, prepared: list[dict[str, Any]], adapter_repo
     uploaded: dict[str, Any] = {}
     for item in prepared:
         agent = item["agent"]
-        adapter_dir = Path(item["adapter_dir"])
+        adapter_dir, finalized = _verify_trained_adapter(item)
         adapter_path = f"runs/{run_id}/adapters/{agent}"
         api.upload_folder(
             folder_path=str(adapter_dir),
@@ -472,12 +503,33 @@ def _upload_outputs(run_root: Path, prepared: list[dict[str, Any]], adapter_repo
             commit_message=f"Upload Lumen {agent} adapter {run_id}",
             token=token,
         )
+        finalized_manifest = Path(item["finalized_variant_manifest"])
+        if not finalized_manifest.is_file():
+            raise FileNotFoundError(
+                f"Missing finalized experiment variant manifest: {finalized_manifest}"
+            )
+        artifact = finalized.get("artifact") if isinstance(finalized, dict) else None
+        if not isinstance(artifact, dict) or artifact.get("adapterSHA256") is None:
+            raise ValueError(f"Finalized manifest lacks adapter lineage: {finalized_manifest}")
+        manifest_path = f"runs/{run_id}/manifests/{agent}/variant_manifest.json"
+        api.upload_file(
+            path_or_fileobj=str(finalized_manifest),
+            repo_id=adapter_repo,
+            repo_type="model",
+            path_in_repo=manifest_path,
+            commit_message=f"Upload Lumen {agent} finalized variant manifest {run_id}",
+            token=token,
+        )
         entry: dict[str, Any] = {
             "adapter_dir": str(adapter_dir),
             "adapter_repo": adapter_repo,
             "adapter_path_in_repo": adapter_path,
             "variant": item["variant"],
-            "variantManifestSHA256": item["variantManifestSHA256"],
+            "sourceVariantManifestSHA256": item["variantManifestSHA256"],
+            "variantManifestSHA256": finalized["variantManifestSHA256"],
+            "adapterSHA256": artifact["adapterSHA256"],
+            "finalized_variant_manifest": str(finalized_manifest),
+            "finalized_variant_manifest_path_in_repo": manifest_path,
         }
         gguf = Path(item["adapter_gguf"])
         if include_gguf and gguf.exists():
@@ -495,6 +547,27 @@ def _upload_outputs(run_root: Path, prepared: list[dict[str, Any]], adapter_repo
             entry["adapter_gguf_size_bytes"] = gguf.stat().st_size
         uploaded[agent] = entry
     return uploaded
+
+
+def _verify_trained_adapter(item: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    from adapter_artifact import verify_adapter_artifact
+
+    adapter_dir = Path(item["adapter_dir"])
+    finalized_manifest = Path(item["finalized_variant_manifest"])
+    if not finalized_manifest.is_file():
+        raise FileNotFoundError(
+            f"Missing finalized experiment variant manifest: {finalized_manifest}"
+        )
+    finalized = json.loads(finalized_manifest.read_text(encoding="utf-8"))
+    artifact = finalized.get("artifact") if isinstance(finalized, dict) else None
+    if not isinstance(artifact, dict) or not isinstance(artifact.get("adapterSHA256"), str):
+        raise ValueError(f"Finalized manifest lacks adapter lineage: {finalized_manifest}")
+    verify_adapter_artifact(
+        adapter_dir,
+        expected_adapter_sha256=artifact["adapterSHA256"],
+        expected_training_phase=str(artifact.get("trainingPhase") or ""),
+    )
+    return adapter_dir, finalized
 
 
 @spaces.GPU(size=DEFAULT_GPU_SIZE, duration=DEFAULT_GPU_DURATION)
@@ -566,6 +639,13 @@ def train_lumen_adapters(
             if resume:
                 command.append("--resume-from-checkpoint")
             _run(command, cwd=APP_ROOT, log_path=run_root / "logs" / f"train_{agent}.log")
+
+        for item in prepared:
+            _, finalized = _verify_trained_adapter(item)
+            item["adapterSHA256"] = finalized["artifact"]["adapterSHA256"]
+            item["finalizedVariantManifestSHA256"] = finalized[
+                "variantManifestSHA256"
+            ]
 
         if convert_gguf:
             _convert_lora_to_gguf(run_root, prepared, token)

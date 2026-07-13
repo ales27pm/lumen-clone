@@ -23,7 +23,21 @@ PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.0.0"
 
 DEFAULT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_BASE_MODEL_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
-DEFAULT_BASE_MODEL_ARTIFACT_DIGEST = "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
+DEFAULT_BASE_MODEL_INDEX_DIGEST = "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
+BASE_MODEL_WEIGHT_SHARD_SCHEMA_VERSION = "lumen.base-model-weight-shards/1.0.0"
+DEFAULT_BASE_MODEL_WEIGHT_SHARDS: list[dict[str, Any]] = [
+    {
+        "filename": "model-00001-of-00002.safetensors",
+        "size": 3_441_185_608,
+        "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+    },
+    {
+        "filename": "model-00002-of-00002.safetensors",
+        "size": 622_329_984,
+        "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+    },
+]
+DEFAULT_BASE_MODEL_ARTIFACT_DIGEST = "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218"
 DEFAULT_BASE_MODEL_TOKENIZER_DIGEST = "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
 DEFAULT_UNSLOTH_REVISION = "935474c20aabc2aadb1da17338959c7c6f9bdafe"
 DEFAULT_LLAMA_CPP_REVISION = "34558825a27f4d74dcfd7a91bfde4464baa2a30a"
@@ -59,6 +73,7 @@ _NON_TRAINING_CONFIG_FIELDS = {
     "adapter_gguf_output_path",
     "adapter_output_dir",
     "dataset_dir",
+    "dpo_output_dir",
     "gguf_output_dir",
     "gguf_repo_id",
     "mergeExport",
@@ -74,6 +89,53 @@ def canonical_sha256(value: Any) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def canonical_base_model_weight_shards(
+    value: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Validate and canonicalize every weight shard referenced by a base model."""
+
+    shards: list[dict[str, Any]] = []
+    filenames: set[str] = set()
+    for item in value:
+        filename = item.get("filename")
+        size = item.get("size")
+        digest = item.get("sha256")
+        if (
+            not isinstance(filename, str)
+            or not filename
+            or filename != filename.rsplit("/", 1)[-1]
+            or not filename.endswith(".safetensors")
+            or filename in filenames
+            or type(size) is not int
+            or size <= 0
+            or not _is_sha256(digest)
+        ):
+            raise ValueError("base_model_weight_shards must contain unique safe shard metadata")
+        filenames.add(filename)
+        shards.append({"filename": filename, "size": size, "sha256": digest})
+    if not shards:
+        raise ValueError("base_model_weight_shards must not be empty")
+    return {
+        "schemaVersion": BASE_MODEL_WEIGHT_SHARD_SCHEMA_VERSION,
+        "shards": sorted(shards, key=lambda item: item["filename"]),
+    }
+
+
+def base_model_artifact_digest(value: Sequence[Mapping[str, Any]]) -> str:
+    """Hash the canonical filename, size, and SHA-256 contract for all weight shards."""
+
+    return canonical_sha256(canonical_base_model_weight_shards(value))
+
+
+def _valid_base_model_weight_shards(value: Any, artifact_digest: Any) -> bool:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return False
+    try:
+        return base_model_artifact_digest(value) == artifact_digest
+    except (AttributeError, TypeError, ValueError):
+        return False
 
 
 def default_training_environment_lock() -> dict[str, Any]:
@@ -1423,7 +1485,9 @@ def build_experiment_variant_manifest(
     dpo_records: Sequence[Mapping[str, Any]],
     evaluation_records: Sequence[Mapping[str, Any]],
     base_model_revision: str | None = None,
+    base_model_index_digest: str | None = None,
     base_model_artifact_digest: str | None = None,
+    base_model_weight_shards: Sequence[Mapping[str, Any]] | None = None,
     base_model_tokenizer_digest: str | None = None,
     training_environment_lock: Mapping[str, Any] | None = None,
     validation_dpo_records: Sequence[Mapping[str, Any]] = (),
@@ -1433,30 +1497,48 @@ def build_experiment_variant_manifest(
         raise ValueError(f"Unsupported experiment variant: {variant}")
     supplied_provenance = (
         base_model_revision,
+        base_model_index_digest,
         base_model_artifact_digest,
+        base_model_weight_shards,
         base_model_tokenizer_digest,
-    )
-    default_provenance = (
-        DEFAULT_BASE_MODEL_REVISION,
-        DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
-        DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
     )
     if base_model_id == DEFAULT_BASE_MODEL_ID:
         base_model_revision = base_model_revision or DEFAULT_BASE_MODEL_REVISION
+        base_model_index_digest = (
+            base_model_index_digest or DEFAULT_BASE_MODEL_INDEX_DIGEST
+        )
         base_model_artifact_digest = (
             base_model_artifact_digest or DEFAULT_BASE_MODEL_ARTIFACT_DIGEST
+        )
+        base_model_weight_shards = (
+            base_model_weight_shards or DEFAULT_BASE_MODEL_WEIGHT_SHARDS
         )
         base_model_tokenizer_digest = (
             base_model_tokenizer_digest or DEFAULT_BASE_MODEL_TOKENIZER_DIGEST
         )
     elif any(value is None for value in supplied_provenance):
         raise ValueError("Non-default base models require explicit immutable provenance")
-    elif supplied_provenance == default_provenance:
-        raise ValueError("Qwen default provenance cannot describe a non-default base model")
     if not re.fullmatch(r"[0-9a-f]{40}", base_model_revision):
         raise ValueError("base_model_revision must be a full lowercase Git commit SHA")
+    if not _is_sha256(base_model_index_digest):
+        raise ValueError("base_model_index_digest must be a lowercase SHA-256 digest")
     if not _is_sha256(base_model_artifact_digest):
         raise ValueError("base_model_artifact_digest must be a lowercase SHA-256 digest")
+    canonical_weight_shards = canonical_base_model_weight_shards(
+        base_model_weight_shards or ()
+    )
+    if canonical_sha256(canonical_weight_shards) != base_model_artifact_digest:
+        raise ValueError("base_model_artifact_digest must match base_model_weight_shards")
+    if (
+        base_model_id != DEFAULT_BASE_MODEL_ID
+        and base_model_revision == DEFAULT_BASE_MODEL_REVISION
+        and base_model_index_digest == DEFAULT_BASE_MODEL_INDEX_DIGEST
+        and base_model_artifact_digest == DEFAULT_BASE_MODEL_ARTIFACT_DIGEST
+        and canonical_weight_shards
+        == canonical_base_model_weight_shards(DEFAULT_BASE_MODEL_WEIGHT_SHARDS)
+        and base_model_tokenizer_digest == DEFAULT_BASE_MODEL_TOKENIZER_DIGEST
+    ):
+        raise ValueError("Qwen default provenance cannot describe a non-default base model")
     if not _is_sha256(base_model_tokenizer_digest):
         raise ValueError("base_model_tokenizer_digest must be a lowercase SHA-256 digest")
     environment_lock = dict(training_environment_lock or default_training_environment_lock())
@@ -1488,7 +1570,9 @@ def build_experiment_variant_manifest(
         "variant": variant,
         "baseModelID": base_model_id,
         "baseModelRevision": base_model_revision,
+        "baseModelIndexDigest": base_model_index_digest,
         "baseModelArtifactDigest": base_model_artifact_digest,
+        "baseModelWeightShards": canonical_weight_shards["shards"],
         "baseModelTokenizerDigest": base_model_tokenizer_digest,
         "trainingEnvironmentLock": environment_lock,
         "trainingEnvironmentLockSHA256": environment_lock_sha256,
@@ -1550,7 +1634,9 @@ def build_experiment_manifest(
     for field in (
         "baseModelID",
         "baseModelRevision",
+        "baseModelIndexDigest",
         "baseModelArtifactDigest",
+        "baseModelWeightShards",
         "baseModelTokenizerDigest",
         "trainingEnvironmentLockSHA256",
         "seed",
@@ -1558,8 +1644,10 @@ def build_experiment_manifest(
         "frozenEvaluationSHA256",
         "publicEvaluationBundleSHA256",
     ):
-        values = {manifest.get(field) for manifest in ordered}
-        if len(values) != 1 or None in values:
+        values = [manifest.get(field) for manifest in ordered]
+        if any(value is None for value in values) or any(
+            value != values[0] for value in values[1:]
+        ):
             raise ValueError(f"All variants must share {field}")
     payload = {
         "schemaVersion": EXPERIMENT_SCHEMA_VERSION,
@@ -1568,7 +1656,9 @@ def build_experiment_manifest(
         "controlledVariables": {
             "baseModelID": ordered[0]["baseModelID"],
             "baseModelRevision": ordered[0]["baseModelRevision"],
+            "baseModelIndexDigest": ordered[0]["baseModelIndexDigest"],
             "baseModelArtifactDigest": ordered[0]["baseModelArtifactDigest"],
+            "baseModelWeightShards": ordered[0]["baseModelWeightShards"],
             "baseModelTokenizerDigest": ordered[0]["baseModelTokenizerDigest"],
             "trainingEnvironmentLockSHA256": ordered[0]["trainingEnvironmentLockSHA256"],
             "seed": ordered[0]["seed"],
@@ -1587,7 +1677,10 @@ def finalize_experiment_variant_manifest(
     manifest: Mapping[str, Any],
     *,
     adapter_sha256: str,
+    adapter_artifact_manifest: Mapping[str, Any],
     training_environment: Mapping[str, Any],
+    training_phase: str = "sft",
+    parent_sft_adapter_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Bind a pending dataset variant to the exact trained adapter artifact."""
 
@@ -1599,15 +1692,34 @@ def finalize_experiment_variant_manifest(
         expected_variant=variant if isinstance(variant, str) else None,
     ):
         raise ValueError("Cannot finalize an invalid experiment variant manifest")
+    pending_artifact = manifest.get("artifact")
+    if (
+        not isinstance(pending_artifact, Mapping)
+        or pending_artifact.get("status") != "pending_training"
+        or pending_artifact.get("adapterSHA256") is not None
+        or manifest.get("trainingEnvironment") is not None
+        or manifest.get("trainingEnvironmentSHA256") is not None
+    ):
+        raise ValueError("Only a pending, untrained experiment variant manifest can be finalized")
     if not _is_sha256(adapter_sha256):
         raise ValueError("adapter_sha256 must be a lowercase SHA-256 digest")
+    artifact_manifest = dict(adapter_artifact_manifest)
+    if not _valid_adapter_artifact_manifest(
+        artifact_manifest,
+        expected_sha256=adapter_sha256,
+        expected_training_phase=training_phase,
+        expected_parent_sft_sha256=parent_sft_adapter_sha256,
+    ):
+        raise ValueError("adapter_artifact_manifest does not bind a canonical PEFT/LoRA directory")
     environment = dict(training_environment)
     environment.pop("trainingEnvironmentSHA256", None)
     if not _valid_training_environment(
         environment,
         manifest.get("trainingEnvironmentLock"),
     ):
-        raise ValueError("training_environment must attest the manifest lock and an immutable container digest")
+        raise ValueError(
+            "training_environment must match the manifest lock and declare an unverified immutable container digest"
+        )
     training_environment_sha256 = canonical_sha256(environment)
     finalized = {
         key: value
@@ -1616,8 +1728,21 @@ def finalize_experiment_variant_manifest(
     }
     finalized["artifact"] = {
         "status": "trained",
+        "artifactType": "peft_lora_directory",
+        "trainingPhase": training_phase,
         "adapterSHA256": adapter_sha256,
+        "adapterManifestSHA256": adapter_sha256,
+        "adapterFileCount": len(artifact_manifest["files"]),
+        "parentSFTAdapterSHA256": parent_sft_adapter_sha256,
         "evaluationReportSHA256": None,
+    }
+    finalized["sourceVariantManifestSHA256"] = manifest["variantManifestSHA256"]
+    finalized["dpoTraining"] = {
+        **dict(finalized.get("dpoTraining") or {}),
+        "status": "trained" if training_phase == "sft_dpo" else "generated_not_trained",
+        "includedInCheckpoint": training_phase == "sft_dpo",
+        "requiredPhase": "post_sft_preference_training",
+        "parentSFTAdapterSHA256": parent_sft_adapter_sha256,
     }
     finalized["trainingEnvironment"] = environment
     finalized["trainingEnvironmentSHA256"] = training_environment_sha256
@@ -1625,9 +1750,64 @@ def finalize_experiment_variant_manifest(
     return finalized
 
 
+def _valid_adapter_artifact_manifest(
+    artifact: Any,
+    *,
+    expected_sha256: Any,
+    expected_training_phase: Any,
+    expected_parent_sft_sha256: Any,
+) -> bool:
+    if not isinstance(artifact, Mapping):
+        return False
+    files = artifact.get("files")
+    if not isinstance(files, list) or not files:
+        return False
+    paths: list[str] = []
+    for item in files:
+        if (
+            not isinstance(item, Mapping)
+            or not isinstance(item.get("path"), str)
+            or not item["path"]
+            or "/" in item["path"]
+            or item["path"] in paths
+            or type(item.get("sizeBytes")) is not int
+            or item["sizeBytes"] < 0
+            or not _is_sha256(item.get("sha256"))
+        ):
+            return False
+        paths.append(item["path"])
+    allowed_paths = {
+        "README.md",
+        "adapter_config.json",
+        "adapter_model.bin",
+        "adapter_model.safetensors",
+        "added_tokens.json",
+        "chat_template.jinja",
+        "generation_config.json",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+    }
+    unsigned = {key: value for key, value in artifact.items() if key != "adapterSHA256"}
+    return (
+        artifact.get("schemaVersion") == "lumen.peft-lora-adapter-artifact/1.0.0"
+        and artifact.get("artifactType") == "peft_lora_directory"
+        and artifact.get("trainingPhase") == expected_training_phase
+        and artifact.get("parentSFTAdapterSHA256") == expected_parent_sft_sha256
+        and paths == sorted(paths)
+        and set(paths).issubset(allowed_paths)
+        and {"adapter_config.json", "tokenizer.json", "tokenizer_config.json"}.issubset(paths)
+        and len({"adapter_model.safetensors", "adapter_model.bin"}.intersection(paths)) == 1
+        and artifact.get("adapterSHA256") == expected_sha256
+        and canonical_sha256(unsigned) == expected_sha256
+    )
+
+
 def promotion_contract() -> dict[str, Any]:
     return {
         "schemaVersion": PROMOTION_SCHEMA_VERSION,
+        "promotionSupported": False,
+        "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
         "requiresCompleteEvidence": True,
         "requiresArtifactDigests": True,
         "requiresImmutableBaseModelRevisionAndDigest": True,
@@ -1693,11 +1873,7 @@ def decide_adapter_promotion(
         failures.append("contamination_report_integrity_invalid")
     if not baseline_variant_valid or not optimized_variant_valid:
         failures.append("variant_manifest_integrity_invalid")
-    if not all(
-        _runtime_image_binding_verified(manifest)
-        for manifest in (baseline_variant_manifest, optimized_variant_manifest)
-    ):
-        failures.append("runtime_image_binding_unverified")
+    failures.append("runtime_image_promotion_unsupported")
     if baseline_variant_valid:
         expected_baseline_report = score_evaluation_suite(
             evaluation_records,
@@ -1745,7 +1921,9 @@ def decide_adapter_promotion(
         controlled_fields = (
             "baseModelID",
             "baseModelRevision",
+            "baseModelIndexDigest",
             "baseModelArtifactDigest",
+            "baseModelWeightShards",
             "baseModelTokenizerDigest",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",
@@ -1950,18 +2128,27 @@ def _valid_variant_manifest(
         and bool(manifest.get("baseModelID"))
         and isinstance(manifest.get("baseModelRevision"), str)
         and re.fullmatch(r"[0-9a-f]{40}", manifest["baseModelRevision"]) is not None
+        and _is_sha256(manifest.get("baseModelIndexDigest"))
         and _is_sha256(manifest.get("baseModelArtifactDigest"))
+        and _valid_base_model_weight_shards(
+            manifest.get("baseModelWeightShards"),
+            manifest.get("baseModelArtifactDigest"),
+        )
         and _is_sha256(manifest.get("baseModelTokenizerDigest"))
         and (
             manifest.get("baseModelID") == DEFAULT_BASE_MODEL_ID
             or (
                 manifest.get("baseModelRevision"),
+                manifest.get("baseModelIndexDigest"),
                 manifest.get("baseModelArtifactDigest"),
+                manifest.get("baseModelWeightShards"),
                 manifest.get("baseModelTokenizerDigest"),
             )
             != (
                 DEFAULT_BASE_MODEL_REVISION,
+                DEFAULT_BASE_MODEL_INDEX_DIGEST,
                 DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+                DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
                 DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
             )
         )
@@ -2007,7 +2194,23 @@ def _valid_variant_manifest(
     return (
         isinstance(artifact, Mapping)
         and artifact.get("status") == "trained"
+        and artifact.get("artifactType") == "peft_lora_directory"
+        and artifact.get("trainingPhase") in {"sft", "sft_dpo"}
         and _is_sha256(artifact.get("adapterSHA256"))
+        and artifact.get("adapterManifestSHA256") == artifact.get("adapterSHA256")
+        and _is_sha256(manifest.get("sourceVariantManifestSHA256"))
+        and type(artifact.get("adapterFileCount")) is int
+        and artifact["adapterFileCount"] >= 4
+        and (
+            (
+                artifact.get("trainingPhase") == "sft"
+                and artifact.get("parentSFTAdapterSHA256") is None
+            )
+            or (
+                artifact.get("trainingPhase") == "sft_dpo"
+                and _is_sha256(artifact.get("parentSFTAdapterSHA256"))
+            )
+        )
         and _is_sha256(manifest.get("trainingEnvironmentSHA256"))
     )
 
@@ -2032,22 +2235,7 @@ def _valid_training_environment(
         is not None
         and isinstance(environment_lock, Mapping)
         and environment.get("environmentLock") == environment_lock
-        and provenance
-        in {
-            ("operator_declared", "manual_validation_required", False),
-            ("trusted_platform_attestation", "verified", True),
-        }
-    )
-
-
-def _runtime_image_binding_verified(manifest: Mapping[str, Any]) -> bool:
-    environment = manifest.get("trainingEnvironment")
-    return (
-        isinstance(environment, Mapping)
-        and environment.get("containerImageDigestSource")
-        == "trusted_platform_attestation"
-        and environment.get("runtimeImageBindingStatus") == "verified"
-        and environment.get("runtimeImageBindingVerified") is True
+        and provenance == ("operator_declared", "manual_validation_required", False)
     )
 
 
@@ -2074,7 +2262,9 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
             "agent",
             "baseModelID",
             "baseModelRevision",
+            "baseModelIndexDigest",
             "baseModelArtifactDigest",
+            "baseModelWeightShards",
             "baseModelTokenizerDigest",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",

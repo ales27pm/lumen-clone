@@ -189,6 +189,13 @@ def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -
     assert defaults["dataset_path_in_repo"] == "runs/test-run/fine_tuning"
     assert (build.space_dir / "app.py").exists()
     assert (build.space_dir / "lumen_train_sft.py").exists()
+    assert (build.space_dir / "adapter_artifact.py").exists()
+    assert (
+        build.space_dir
+        / "lumen_manifest_crawler"
+        / "dataset"
+        / "adapter_evaluation.py"
+    ).exists()
     assert (build.dataset_dir / "executor" / "train_sft.jsonl").exists()
 
 
