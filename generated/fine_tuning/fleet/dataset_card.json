@@ -1,6 +1,6 @@
 {
   "agent": "fleet",
-  "availableSFTRecords": 6139,
+  "availableSFTRecords": 6148,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,18 +14,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "03d113712ff42a2815558a8ea2dee3608f3889d3e3eaf15c92cb3575e51091da"
+      "reportSHA256": "86561fec41e6e02955a08de2378c78629569a615e29f1ed12c776955a7046b67"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "352cf6f30bd0a954f57c4dc604a92322fd2984da8a4abed0f7cd01233d4fa04e",
-    "recordCount": 15,
+    "frozenEvaluationSHA256": "287bb796c1de81a917fd4149d1b8189b9609934dba34aaad7c1a95d981cc2f0b",
+    "recordCount": 6,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "3dac87662a46c1715e2acfd4b91a15491213af3e2e4f849174259d4e51f04008",
-      "optimizedTrainingCorpusSHA256": "db89494e9136e54b7221a54bac5b3125d42bbe45e9e43381068fc2f0004dad5b",
+      "baselineTrainingCorpusSHA256": "0631ac1743581d71b7326a5dd01822fe5dfd7d019093fd54c0789d021a21d83a",
+      "optimizedTrainingCorpusSHA256": "1d60effe4ed1c1bae4f71b8307e7550b07863601bbef52274362cdaada06d053",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -43,6 +43,7 @@
       "baseModelTokenizerDigest",
       "trainingEnvironmentLockSHA256",
       "trainingCodeSHA256",
+      "trainingCodeSHA256ByPhase",
       "trainingCodeBundleSHA256",
       "trainingDependencyLockSHA256",
       "requirementsSHA256",
@@ -51,7 +52,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "dc24d4ef4dd9a3d7c098bbe02ee5effb5451bd7a0ef5f589e7e5488ee21e95db",
+    "experimentManifestSHA256": "9b085ede422869d6861d95d688f1f9987e89d7c80a83829f46ebd3fa9a2e2c7f",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -63,6 +64,7 @@
       "requiresArtifactDigests": true,
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,
+      "requiresHonestRuntimeSourceBindingAudit": true,
       "requiresIdenticalTrainingCode": true,
       "requiresIdenticalTrainingDependencyLock": true,
       "requiresIdenticalTrainingEnvironment": true,
@@ -70,6 +72,7 @@
       "requiresPublicEvaluationFingerprintBinding": true,
       "requiresVerifiedRuntimeImageBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
+      "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
       "runtimeSourceRevisionIsAuditOnly": true,
       "schemaVersion": "lumen.adapter-promotion/1.0.0"
     },
@@ -79,10 +82,10 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "f2acf093f88155576a993b2ad1a0cea172cde59f",
+  "manifestCommit": "c9d7b8770cb2eb057f287ee0e968cc3a722a1f76",
   "preferenceTraining": {
     "includedInCheckpoint": false,
-    "recordCount": 18,
+    "recordCount": 4,
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
@@ -239,16 +242,16 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.000505,
-        "total": 0.017094
+        "target": 0.000506,
+        "total": 0.017119
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.000489,
-        "total": 0.01665
+        "target": 0.000484,
+        "total": 0.016488
       }
     }
   },
@@ -263,19 +266,16 @@
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
-    "eval": 15,
-    "train_dpo": 15,
-    "train_sft": 5211,
-    "val_dpo": 3,
-    "val_sft": 919
+    "eval": 6,
+    "train_dpo": 3,
+    "train_sft": 5226,
+    "val_dpo": 1,
+    "val_sft": 922
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
     "codebase_home_chunk_sft",
     "codebase_home_sft",
-    "cross_model_training",
-    "fleet_orchestration_native",
-    "fleet_system_prompts",
     "manifest_grounding_cards",
     "public_adapter_corpus_massive_en_us_1_1",
     "self_model_cards",
@@ -286,23 +286,10 @@
     "codebase_home_grounding",
     "codebase_home_overview",
     "codebase_source_chunk_grounding",
-    "fleet_delegation",
-    "fleet_delegation_preference",
-    "fleet_orchestration_event_graph",
-    "fleet_orchestration_event_graph_preference",
-    "fleet_peer_knowledge",
-    "fleet_peer_source_knowledge",
-    "fleet_private_state_boundary",
-    "fleet_self_knowledge",
-    "fleet_whole_system_identity",
     "manifest_grounding_cards",
     "public_capability_delegation",
-    "role_directory",
     "self_model_card_grounding",
     "self_model_grounded_answer",
-    "source_code_self_knowledge",
-    "source_routing_knowledge",
-    "source_tool_registry_knowledge",
     "ultra_specific_fleet_delegation",
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"

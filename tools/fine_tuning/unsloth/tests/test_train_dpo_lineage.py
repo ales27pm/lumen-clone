@@ -10,15 +10,13 @@ from pathlib import Path
 
 import pytest
 
+from lumen_manifest_crawler.dataset import adapter_evaluation
 from tools.fine_tuning.unsloth import train_dpo, train_sft
 from tools.fine_tuning.unsloth.adapter_artifact import write_adapter_artifact_manifest
 
 
 QWEN_MODEL_ID = "Qwen/Qwen3-1.7B"
 QWEN_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
-SFT_CODE_SHA256 = "e" * 64
-DEPENDENCY_LOCK_SHA256 = "f" * 64
-REQUIREMENTS_SHA256 = "0" * 64
 RUNTIME_SOURCE_REVISION = "a" * 40
 
 
@@ -37,13 +35,17 @@ def _safetensors_bytes(data: bytes = b"\x00\x00\x00\x00") -> bytes:
     return len(header).to_bytes(8, "little") + header + data
 
 
-def _write_sft_adapter(path: Path) -> dict:
+def _write_sft_adapter(
+    path: Path,
+    *,
+    base_model_name: str = QWEN_MODEL_ID,
+) -> dict:
     path.mkdir()
     (path / "adapter_config.json").write_text(
         json.dumps(
             {
                 "peft_type": "LORA",
-                "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+                "base_model_name_or_path": base_model_name,
                 "target_modules": ["q_proj"],
             }
         ),
@@ -55,89 +57,208 @@ def _write_sft_adapter(path: Path) -> dict:
     return write_adapter_artifact_manifest(path, training_phase="sft")
 
 
-def _write_finalized_sft_manifest(
-    path: Path,
-    artifact: dict,
-    *,
-    agent: str = "executor",
-    variant: str = "internal_plus_public_optimized",
-    source_variant_sha256: str = "c" * 64,
-    seed: int = 42,
-) -> None:
-    payload = {
-        "agent": agent,
-        "variant": variant,
-        "seed": seed,
-        "sourceVariantManifestSHA256": source_variant_sha256,
-        "trainingEnvironment": {"effectiveSeed": seed},
-        "trainingCodeSHA256": SFT_CODE_SHA256,
-        "trainingDependencyLockSHA256": DEPENDENCY_LOCK_SHA256,
-        "requirementsSHA256": REQUIREMENTS_SHA256,
-        "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,
-        "artifact": {
-            "status": "trained",
-            "trainingPhase": "sft",
-            "adapterSHA256": artifact["adapterSHA256"],
-            "adapterManifestSHA256": artifact["adapterSHA256"],
-            "effectiveSeed": seed,
-        },
-    }
-    payload["variantManifestSHA256"] = train_dpo._canonical_sha256(payload)
-    path.write_text(json.dumps(payload), encoding="utf-8")
-
-
-def test_verified_sft_parent_rejects_identity_digest_and_file_drift(
+def _sft_parent_fixture(
     tmp_path: Path,
-) -> None:
+    *,
+    adapter_base_model_name: str = QWEN_MODEL_ID,
+) -> tuple[Path, Path, dict, dict]:
+    pending = adapter_evaluation.build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_plus_public_optimized",
+        base_model_id=QWEN_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
     adapter = tmp_path / "sft" / "executor"
     adapter.parent.mkdir()
-    artifact = _write_sft_adapter(adapter)
-    finalized = tmp_path / "sft-finalized.json"
-    cfg = {
-        "agent": "executor",
-        "variant": "internal_plus_public_optimized",
-        "variantManifestSHA256": "c" * 64,
-        "seed": 42,
-        "trainingCodeSHA256ByPhase": {"sft": SFT_CODE_SHA256},
-        "trainingDependencyLockSHA256": DEPENDENCY_LOCK_SHA256,
-        "requirementsSHA256": REQUIREMENTS_SHA256,
+    artifact = _write_sft_adapter(
+        adapter,
+        base_model_name=adapter_base_model_name,
+    )
+    environment = {
+        "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+        "containerImageDigest": "sha256:" + "b" * 64,
+        "containerImageDigestSource": "operator_declared",
+        "runtimeImageBindingStatus": "manual_validation_required",
+        "runtimeImageBindingVerified": False,
+        "effectiveSeed": pending["seed"],
+        "environmentLock": pending["trainingEnvironmentLock"],
+        "trainingCodeSHA256": pending["trainingCodeSHA256ByPhase"]["sft"],
+        "trainingDependencyLockSHA256": pending[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": pending["requirementsSHA256"],
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,
+        "expectedRuntimeSourceRevision": RUNTIME_SOURCE_REVISION,
+        "observedRepositoryRevision": RUNTIME_SOURCE_REVISION,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
     }
+    finalized_payload = adapter_evaluation.finalize_experiment_variant_manifest(
+        pending,
+        adapter_sha256=artifact["adapterSHA256"],
+        adapter_artifact_manifest=artifact,
+        training_environment=environment,
+    )
+    finalized = tmp_path / "sft-finalized.json"
+    finalized.write_text(json.dumps(finalized_payload), encoding="utf-8")
+    cfg = {
+        "agent": pending["agent"],
+        "variant": pending["variant"],
+        "variantManifestSHA256": pending["variantManifestSHA256"],
+        "seed": pending["seed"],
+        "base_model_name": pending["baseModelID"],
+        "baseModelID": pending["baseModelID"],
+        "baseModelRevision": pending["baseModelRevision"],
+        "baseModelIndexDigest": pending["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": pending[
+            "baseModelIndexReferencedShardNames"
+        ],
+        "baseModelIndexShardBindingSHA256": pending[
+            "baseModelIndexShardBindingSHA256"
+        ],
+        "baseModelArtifactDigest": pending["baseModelArtifactDigest"],
+        "baseModelWeightShards": pending["baseModelWeightShards"],
+        "baseModelTokenizerDigest": pending["baseModelTokenizerDigest"],
+        "trainingEnvironmentLock": pending["trainingEnvironmentLock"],
+        "trainingEnvironmentLockSHA256": pending[
+            "trainingEnvironmentLockSHA256"
+        ],
+        "trainingCodeSHA256ByPhase": pending["trainingCodeSHA256ByPhase"],
+        "trainingDependencyLockSHA256": pending[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": pending["requirementsSHA256"],
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,
+        "expectedRuntimeSourceRevision": RUNTIME_SOURCE_REVISION,
+        "observedRepositoryRevision": RUNTIME_SOURCE_REVISION,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
+        "variantAttestation": {
+            "trainingEnvironmentLockSHA256": pending[
+                "trainingEnvironmentLockSHA256"
+            ]
+        },
+    }
+    return adapter, finalized, cfg, finalized_payload
 
-    _write_finalized_sft_manifest(finalized, artifact, agent="cortex")
-    with pytest.raises(RuntimeError, match="finalized SFT artifact"):
-        train_dpo._verified_sft_parent(
-            cfg, adapter_dir=adapter, finalized_manifest_path=finalized
-        )
 
-    _write_finalized_sft_manifest(finalized, artifact, variant="internal_only")
-    with pytest.raises(RuntimeError, match="finalized SFT artifact"):
-        train_dpo._verified_sft_parent(
-            cfg, adapter_dir=adapter, finalized_manifest_path=finalized
-        )
+def test_verified_sft_parent_returns_complete_audit_lineage(tmp_path: Path) -> None:
+    adapter, finalized, cfg, payload = _sft_parent_fixture(tmp_path)
+    _, artifact, lineage = train_dpo._verified_sft_parent(
+        cfg,
+        adapter_dir=adapter,
+        finalized_manifest_path=finalized,
+    )
+    assert lineage["adapterSHA256"] == artifact["adapterSHA256"]
+    assert lineage["variantManifestSHA256"] == payload["variantManifestSHA256"]
+    assert lineage["runtimeSourceRevision"] == RUNTIME_SOURCE_REVISION
+    assert lineage["baseModelWeightShards"] == cfg["baseModelWeightShards"]
 
-    _write_finalized_sft_manifest(finalized, artifact, source_variant_sha256="d" * 64)
-    with pytest.raises(RuntimeError, match="finalized SFT artifact"):
-        train_dpo._verified_sft_parent(
-            cfg, adapter_dir=adapter, finalized_manifest_path=finalized
-        )
 
-    _write_finalized_sft_manifest(finalized, artifact)
-    payload = json.loads(finalized.read_text(encoding="utf-8"))
-    payload["artifact"]["adapterSHA256"] = "f" * 64
+@pytest.mark.parametrize(
+    "field",
+    (
+        "agent",
+        "variant",
+        "sourceVariantManifestSHA256",
+        "seed",
+        "baseModelID",
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
+        "baseModelArtifactDigest",
+        "baseModelWeightShards",
+        "baseModelTokenizerDigest",
+        "trainingEnvironmentLockSHA256",
+        "trainingDependencyLockSHA256",
+        "requirementsSHA256",
+        "runtimeSourceKind",
+        "trainingCodeSHA256",
+    ),
+)
+def test_verified_sft_parent_rejects_every_controlled_lineage_drift(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    adapter, finalized, cfg, payload = _sft_parent_fixture(tmp_path)
+    value = payload[field]
+    if isinstance(value, int):
+        payload[field] = value + 1
+    elif isinstance(value, list):
+        payload[field] = list(reversed(value)) if len(value) > 1 else []
+    else:
+        payload[field] = "f" * len(str(value))
     payload["variantManifestSHA256"] = train_dpo._canonical_sha256(
-        {key: value for key, value in payload.items() if key != "variantManifestSHA256"}
+        {key: item for key, item in payload.items() if key != "variantManifestSHA256"}
     )
     finalized.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(ValueError, match="expected finalized lineage"):
+
+    with pytest.raises(RuntimeError):
         train_dpo._verified_sft_parent(
             cfg, adapter_dir=adapter, finalized_manifest_path=finalized
         )
 
-    _write_finalized_sft_manifest(finalized, artifact)
-    (adapter / "adapter_model.safetensors").write_bytes(
-        _safetensors_bytes(b"\x01\x00\x00\x00")
+
+@pytest.mark.parametrize(
+    ("artifact_field", "value"),
+    (
+        ("status", "pending_training"),
+        ("trainingPhase", "sft_dpo"),
+        ("effectiveSeed", 7),
+        ("adapterSHA256", "f" * 64),
+        ("adapterManifestSHA256", "f" * 64),
+    ),
+)
+def test_verified_sft_parent_rejects_invalid_artifact_lineage(
+    tmp_path: Path,
+    artifact_field: str,
+    value: object,
+) -> None:
+    adapter, finalized, cfg, payload = _sft_parent_fixture(tmp_path)
+    payload["artifact"][artifact_field] = value
+    payload["variantManifestSHA256"] = train_dpo._canonical_sha256(
+        {key: item for key, item in payload.items() if key != "variantManifestSHA256"}
     )
-    with pytest.raises(ValueError, match="do not match"):
+    finalized.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        train_dpo._verified_sft_parent(
+            cfg, adapter_dir=adapter, finalized_manifest_path=finalized
+        )
+
+
+def test_verified_sft_parent_rejects_adapter_base_model_mismatch(tmp_path: Path) -> None:
+    adapter, finalized, cfg, _ = _sft_parent_fixture(
+        tmp_path,
+        adapter_base_model_name="Qwen/Another-Model",
+    )
+    with pytest.raises(RuntimeError, match="adapter base model"):
+        train_dpo._verified_sft_parent(
+            cfg, adapter_dir=adapter, finalized_manifest_path=finalized
+        )
+
+
+@pytest.mark.parametrize("mutation", ("modified", "missing"))
+def test_verified_sft_parent_rejects_adapter_file_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    adapter, finalized, cfg, _ = _sft_parent_fixture(tmp_path)
+    weights = adapter / "adapter_model.safetensors"
+    if mutation == "modified":
+        weights.write_bytes(_safetensors_bytes(b"\x01\x00\x00\x00"))
+    else:
+        weights.unlink()
+    with pytest.raises(ValueError):
         train_dpo._verified_sft_parent(
             cfg, adapter_dir=adapter, finalized_manifest_path=finalized
         )

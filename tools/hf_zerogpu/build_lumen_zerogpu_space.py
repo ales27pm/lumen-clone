@@ -197,10 +197,20 @@ def write_space_bundle(
 
     shutil.copytree(dataset_source, dataset_dir, dirs_exist_ok=True)
     copy_template_tree(SPACE_TEMPLATE, space_dir)
-    shutil.copy2(root / "tools/fine_tuning/unsloth/train_sft.py", space_dir / "lumen_train_sft.py")
-    shutil.copy2(root / "tools/fine_tuning/unsloth/train_dpo.py", space_dir / "lumen_train_dpo.py")
-    shutil.copy2(root / "tools/fine_tuning/unsloth/adapter_artifact.py", space_dir / "adapter_artifact.py")
-    shutil.copy2(root / "tools/fine_tuning/unsloth/training_lineage.py", space_dir / "training_lineage.py")
+    training_source = root / "tools/fine_tuning/unsloth"
+    training_package = space_dir / "lumen_training"
+    training_package.mkdir()
+    for filename in (
+        "adapter_artifact.py",
+        "train_dpo.py",
+        "train_sft.py",
+        "training_lineage.py",
+    ):
+        shutil.copy2(training_source / filename, training_package / filename)
+    shutil.copy2(
+        training_source / "lumen_training/__init__.py",
+        training_package / "__init__.py",
+    )
     shutil.copytree(
         root / "tools/lumen_manifest_crawler/lumen_manifest_crawler",
         space_dir / "lumen_manifest_crawler",
@@ -402,9 +412,18 @@ def upload_to_hub(
     HfApi = import_hf_api()
     api = HfApi(token=token)
 
-    print(f"Create/update dataset repo: {dataset_repo}")
-    print(f"Create/update adapter repo: {adapter_repo}")
-    print(f"Create/update Space repo: {space_repo}")
+    print(
+        f"Create/update dataset repo: {dataset_repo} "
+        f"({'private' if private_dataset else 'public'})"
+    )
+    print(
+        f"Create/update adapter repo: {adapter_repo} "
+        f"({'private' if private_adapters else 'public'})"
+    )
+    print(
+        f"Create/update Space repo: {space_repo} "
+        f"({'private' if private_space else 'public'})"
+    )
     if not dry_run:
         api.create_repo(repo_id=dataset_repo, repo_type="dataset", private=private_dataset, exist_ok=True, token=token)
         api.create_repo(repo_id=adapter_repo, repo_type="model", private=private_adapters, exist_ok=True, token=token)
@@ -495,6 +514,7 @@ def upload_to_hub(
         "LUMEN_ZERO_GPU_ADAPTER_REPO": adapter_repo,
         "LUMEN_ZERO_GPU_RUN_ID": build.run_id,
         "LUMEN_ZERO_GPU_RUNTIME_SOURCE_KIND": "huggingface_space",
+        "LUMEN_ZERO_GPU_EXPECTED_RUNTIME_SOURCE_REVISION": runtime_source_revision,
         "LUMEN_ZERO_GPU_RUNTIME_SOURCE_REVISION": runtime_source_revision,
         "LUMEN_ZERO_GPU_SIZE": str(defaults.get("gpu_size", "large")),
         "LUMEN_ZERO_GPU_DURATION_SECONDS": gpu_duration_seconds,
@@ -689,19 +709,39 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--trigger", action="store_true", help="Trigger Space training after upload.")
     parser.add_argument("--trigger-timeout-seconds", type=int, default=900, help="Time to wait for Space readiness before triggering.")
-    visibility = parser.add_mutually_exclusive_group()
-    visibility.add_argument(
+    space_visibility = parser.add_mutually_exclusive_group()
+    space_visibility.add_argument(
         "--public-space",
         action="store_true",
         help="Explicitly create/update the Space as public. Application-level authorization remains required.",
     )
-    visibility.add_argument(
+    space_visibility.add_argument(
         "--private-space",
         action="store_true",
         help=argparse.SUPPRESS,
     )
-    parser.add_argument("--private-dataset", action="store_true", help="Create/update dataset repo as private.")
-    parser.add_argument("--private-adapters", action="store_true", help="Create/update adapter model repo as private.")
+    dataset_visibility = parser.add_mutually_exclusive_group()
+    dataset_visibility.add_argument(
+        "--public-dataset",
+        action="store_true",
+        help="Explicitly create/update the dataset repository as public.",
+    )
+    dataset_visibility.add_argument(
+        "--private-dataset",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    adapter_visibility = parser.add_mutually_exclusive_group()
+    adapter_visibility.add_argument(
+        "--public-adapters",
+        action="store_true",
+        help="Explicitly create/update the adapter model repository as public.",
+    )
+    adapter_visibility.add_argument(
+        "--private-adapters",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument(
         "--destructive-reset",
         action="store_true",
@@ -793,8 +833,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         dataset_repo=args.dataset_repo,
         adapter_repo=args.adapter_repo,
         private_space=not args.public_space,
-        private_dataset=args.private_dataset,
-        private_adapters=args.private_adapters,
+        private_dataset=not args.public_dataset,
+        private_adapters=not args.public_adapters,
         zero_gpu_hardware=args.zero_gpu_hardware,
         token=token,
         admin_token=admin_token,

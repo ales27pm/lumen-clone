@@ -81,6 +81,96 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     return module
 
 
+def test_runtime_source_repository_head_is_supplemental_and_unverified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+
+    class FakeApi:
+        def __init__(self, *, token: str | None) -> None:
+            assert token == "fine-grained-token"
+
+        def space_info(self, **_kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(sha="4" * 40)
+
+    monkeypatch.setenv("LUMEN_ZERO_GPU_HUB_TOKEN", "fine-grained-token")
+    monkeypatch.setattr(module, "HfApi", FakeApi)
+    module.DEFAULTS["space_repo"] = "user/space"
+
+    lineage = module._resolve_runtime_source_binding(
+        kind="huggingface_space",
+        expected_revision="4" * 40,
+    )
+
+    assert lineage == {
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": "4" * 40,
+        "expectedRuntimeSourceRevision": "4" * 40,
+        "observedRepositoryRevision": "4" * 40,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
+    }
+
+
+def test_runtime_source_rejects_malformed_or_mismatched_expected_revision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    instantiated = False
+
+    class FakeApi:
+        def __init__(self, *, token: str | None) -> None:
+            nonlocal instantiated
+            instantiated = True
+
+        def space_info(self, **_kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(sha="5" * 40)
+
+    monkeypatch.setattr(module, "HfApi", FakeApi)
+    module.DEFAULTS["space_repo"] = "user/space"
+
+    with pytest.raises(ValueError, match="full lowercase commit SHA"):
+        module._resolve_runtime_source_binding(
+            kind="huggingface_space",
+            expected_revision="main",
+        )
+    assert instantiated is False
+
+    with pytest.raises(ValueError, match="does not match the expected revision"):
+        module._resolve_runtime_source_binding(
+            kind="huggingface_space",
+            expected_revision="4" * 40,
+        )
+
+
+def test_absent_runtime_source_observation_never_becomes_verified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+
+    class UnavailableApi:
+        def __init__(self, *, token: str | None) -> None:
+            pass
+
+        def space_info(self, **_kwargs: Any) -> SimpleNamespace:
+            raise RuntimeError("offline")
+
+    monkeypatch.setattr(module, "HfApi", UnavailableApi)
+    module.DEFAULTS["space_repo"] = "user/space"
+    lineage = module._resolve_runtime_source_binding(
+        kind="huggingface_space",
+        expected_revision="4" * 40,
+    )
+    assert lineage["observedRepositoryRevision"] is None
+    assert lineage["observedRuntimeRevision"] is None
+    assert lineage["runtimeSourceBindingStatus"] == "operator_declared_unverified"
+    assert lineage["runtimeSourceBindingMethod"] == "operator_declared_only"
+
+
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     path.write_text(
         "".join(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records),
@@ -339,6 +429,11 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
         "requirementsSHA256": "3" * 64,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "4" * 40,
+        "expectedRuntimeSourceRevision": "4" * 40,
+        "observedRepositoryRevision": "4" * 40,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
     }
     run_root = tmp_path / "run"
     lineage = module._build_run_resume_lineage(
@@ -368,6 +463,14 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
     resolved = json.loads(Path(prepared[0]["config"]).read_text(encoding="utf-8"))
     assert resolved["runtimeSourceKind"] == "huggingface_space"
     assert resolved["runtimeSourceRevision"] == "4" * 40
+    assert resolved["expectedRuntimeSourceRevision"] == "4" * 40
+    assert resolved["observedRepositoryRevision"] == "4" * 40
+    assert resolved["observedRuntimeRevision"] is None
+    assert resolved["runtimeSourceBindingStatus"] == "operator_declared_unverified"
+    assert (
+        resolved["runtimeSourceBindingMethod"]
+        == "huggingface_repository_head_supplemental"
+    )
     assert resolved["trainingCodeSHA256"] == "1" * 64
 
 
@@ -652,6 +755,11 @@ def _write_resume_fixture(
         "requirementsSHA256": "3" * 64,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "4" * 40,
+        "expectedRuntimeSourceRevision": "4" * 40,
+        "observedRepositoryRevision": "4" * 40,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
     }
     lineage = module._build_run_resume_lineage(
         run_id=run_id,
@@ -771,6 +879,10 @@ def test_resume_contract_accepts_unchanged_lineage_without_snapshot_replacement(
         ("trainingDependencyLockSHA256", "8" * 64),
         ("requirementsSHA256", "9" * 64),
         ("runtimeSourceRevision", "a" * 40),
+        ("expectedRuntimeSourceRevision", "a" * 40),
+        ("observedRepositoryRevision", "a" * 40),
+        ("runtimeSourceBindingStatus", "verified"),
+        ("runtimeSourceBindingMethod", "self_declared"),
     ],
 )
 def test_resume_contract_rejects_top_level_lineage_drift(

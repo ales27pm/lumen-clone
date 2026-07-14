@@ -37,8 +37,8 @@ SEED="${LUMEN_ZERO_GPU_SEED:-42}"
 TRIGGER="${LUMEN_ZERO_GPU_TRIGGER:-1}"
 DRY_RUN="${LUMEN_ZERO_GPU_DRY_RUN:-0}"
 PUBLIC_SPACE="${LUMEN_ZERO_GPU_PUBLIC_SPACE:-0}"
-PRIVATE_DATASET="${LUMEN_ZERO_GPU_PRIVATE_DATASET:-1}"
-PRIVATE_ADAPTERS="${LUMEN_ZERO_GPU_PRIVATE_ADAPTERS:-1}"
+PUBLIC_DATASET="${LUMEN_ZERO_GPU_PUBLIC_DATASET:-0}"
+PUBLIC_ADAPTERS="${LUMEN_ZERO_GPU_PUBLIC_ADAPTERS:-0}"
 DESTRUCTIVE_RESET="${LUMEN_ZERO_GPU_DESTRUCTIVE_RESET:-0}"
 RESUME="${LUMEN_ZERO_GPU_RESUME:-0}"
 
@@ -102,11 +102,11 @@ run_training_batch() {
   if [[ "$PUBLIC_SPACE" == "1" ]]; then
     args+=(--public-space)
   fi
-  if [[ "$PRIVATE_DATASET" == "1" ]]; then
-    args+=(--private-dataset)
+  if [[ "$PUBLIC_DATASET" == "1" ]]; then
+    args+=(--public-dataset)
   fi
-  if [[ "$PRIVATE_ADAPTERS" == "1" ]]; then
-    args+=(--private-adapters)
+  if [[ "$PUBLIC_ADAPTERS" == "1" ]]; then
+    args+=(--public-adapters)
   fi
   if [[ "$DESTRUCTIVE_RESET" == "1" ]]; then
     args+=(--destructive-reset)

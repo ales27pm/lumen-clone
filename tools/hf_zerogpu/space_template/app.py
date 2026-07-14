@@ -23,12 +23,22 @@ import fcntl
 import gradio as gr
 import spaces
 from huggingface_hub import HfApi, snapshot_download
-from training_lineage import (
-    installed_controlled_package_versions,
-    validate_runtime_source,
-    verify_training_code_manifest,
-    verify_training_dependency_lock,
-)
+try:
+    from lumen_training.training_lineage import (
+        installed_controlled_package_versions,
+        validate_runtime_source,
+        verify_training_code_manifest,
+        verify_training_dependency_lock,
+    )
+except ImportError:
+    # Allows the template to be loaded directly by repository tests. Built
+    # Spaces always use the package import above.
+    from training_lineage import (
+        installed_controlled_package_versions,
+        validate_runtime_source,
+        verify_training_code_manifest,
+        verify_training_dependency_lock,
+    )
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -52,6 +62,20 @@ CHECKPOINT_LINEAGE_SCHEMA = "lumen.zerogpu.checkpoint_lineage/1.0.0"
 RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.0.0"
 CONTAINER_IMAGE_DIGEST_SOURCE = "operator_declared"
 RUNTIME_IMAGE_BINDING_STATUS = "manual_validation_required"
+RUNTIME_SOURCE_BINDING_UNVERIFIED = "operator_declared_unverified"
+RUNTIME_SOURCE_BINDING_METHOD_REPOSITORY_HEAD = (
+    "huggingface_repository_head_supplemental"
+)
+RUNTIME_SOURCE_BINDING_METHOD_DECLARATION = "operator_declared_only"
+RUNTIME_SOURCE_LINEAGE_FIELDS = (
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
+)
 REQUIRED_VARIANT_DATASET_FILES = (
     "train_sft.jsonl",
     "val_sft.jsonl",
@@ -83,6 +107,11 @@ RUNTIME_LINEAGE_CONFIG_FIELDS = {
     "runResumeLineageSHA256",
     "runtimeSourceKind",
     "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
     "trainingCodeSHA256",
     "trainingCodeManifest",
     "trainingDependencyLock",
@@ -178,6 +207,77 @@ def _self_hashed(payload: dict[str, Any], *, field: str) -> dict[str, Any]:
     unsigned = dict(payload)
     unsigned.pop(field, None)
     return {**unsigned, field: _canonical_sha256(unsigned)}
+
+
+def _optional_observed_revision(value: Any, *, label: str) -> str | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return _immutable_hub_revision(value, label=label)
+
+
+def _resolve_runtime_source_binding(
+    *,
+    kind: Any,
+    expected_revision: Any,
+) -> dict[str, Any]:
+    runtime_source_kind, revision = validate_runtime_source(
+        kind=kind,
+        revision=expected_revision,
+    )
+    if runtime_source_kind != "huggingface_space":
+        raise ValueError("ZeroGPU runtimeSourceKind must be huggingface_space")
+
+    observed_repository_revision: str | None = None
+    observed_runtime_revision: str | None = None
+    method = RUNTIME_SOURCE_BINDING_METHOD_DECLARATION
+    space_repo = str(
+        os.environ.get("SPACE_ID") or DEFAULTS.get("space_repo") or ""
+    ).strip()
+    token = os.environ.get("LUMEN_ZERO_GPU_HUB_TOKEN")
+    if space_repo:
+        try:
+            api = HfApi(token=token)
+            repository_info = api.space_info(
+                repo_id=space_repo,
+                files_metadata=False,
+                token=token,
+            )
+            observed_repository_revision = _optional_observed_revision(
+                getattr(repository_info, "sha", None),
+                label="Observed Space repository revision",
+            )
+        except ValueError:
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Unable to resolve supplemental Space source evidence"
+            )
+
+    # Hugging Face exposes repository identity and head revision, but no
+    # independently attested executing-container revision. Repository-head
+    # equality is useful audit context only and must never upgrade this binding.
+    if (
+        observed_repository_revision is not None
+        and observed_repository_revision != revision
+    ):
+        raise ValueError(
+            "Observed Space repository revision does not match the expected revision"
+        )
+    status = RUNTIME_SOURCE_BINDING_UNVERIFIED
+    if observed_repository_revision is not None:
+        method = RUNTIME_SOURCE_BINDING_METHOD_REPOSITORY_HEAD
+
+    return {
+        "runtimeSourceKind": runtime_source_kind,
+        # Retained as a compatibility alias. It is always the expected revision,
+        # never an assertion about the running container.
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": observed_repository_revision,
+        "observedRuntimeRevision": observed_runtime_revision,
+        "runtimeSourceBindingStatus": status,
+        "runtimeSourceBindingMethod": method,
+    }
 
 
 def _read_self_hashed_json(
@@ -338,12 +438,22 @@ def _verify_runtime_lineage() -> dict[str, Any]:
     ):
         raise ValueError("Training dependency lineage mismatch")
 
-    runtime_source_kind, runtime_source_revision = validate_runtime_source(
+    configured_revision = os.environ.get(
+        "LUMEN_ZERO_GPU_EXPECTED_RUNTIME_SOURCE_REVISION"
+    )
+    legacy_revision = os.environ.get("LUMEN_ZERO_GPU_RUNTIME_SOURCE_REVISION")
+    if (
+        configured_revision is not None
+        and legacy_revision is not None
+        and configured_revision != legacy_revision
+    ):
+        raise ValueError("Configured runtime-source revisions disagree")
+    runtime_source = _resolve_runtime_source_binding(
         kind=os.environ.get(
             "LUMEN_ZERO_GPU_RUNTIME_SOURCE_KIND",
             DEFAULTS.get("runtimeSourceKind"),
         ),
-        revision=os.environ.get("LUMEN_ZERO_GPU_RUNTIME_SOURCE_REVISION"),
+        expected_revision=configured_revision or legacy_revision,
     )
     return {
         "trainingCodeManifest": code_manifest,
@@ -351,8 +461,7 @@ def _verify_runtime_lineage() -> dict[str, Any]:
         "trainingDependencyLock": dependency_lock,
         "trainingDependencyLockSHA256": dependency_digest,
         "requirementsSHA256": requirements_digest,
-        "runtimeSourceKind": runtime_source_kind,
-        "runtimeSourceRevision": runtime_source_revision,
+        **runtime_source,
     }
 
 
@@ -493,6 +602,13 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
         "requirementsSHA256": cfg.get("requirementsSHA256"),
         "runtimeSourceKind": cfg.get("runtimeSourceKind"),
         "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
+        "expectedRuntimeSourceRevision": cfg.get(
+            "expectedRuntimeSourceRevision"
+        ),
+        "observedRepositoryRevision": cfg.get("observedRepositoryRevision"),
+        "observedRuntimeRevision": cfg.get("observedRuntimeRevision"),
+        "runtimeSourceBindingStatus": cfg.get("runtimeSourceBindingStatus"),
+        "runtimeSourceBindingMethod": cfg.get("runtimeSourceBindingMethod"),
         "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
         "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
     }
@@ -686,6 +802,21 @@ def _build_run_resume_lineage(
         "requirementsSHA256": runtime_lineage["requirementsSHA256"],
         "runtimeSourceKind": runtime_lineage["runtimeSourceKind"],
         "runtimeSourceRevision": runtime_lineage["runtimeSourceRevision"],
+        "expectedRuntimeSourceRevision": runtime_lineage[
+            "expectedRuntimeSourceRevision"
+        ],
+        "observedRepositoryRevision": runtime_lineage[
+            "observedRepositoryRevision"
+        ],
+        "observedRuntimeRevision": runtime_lineage[
+            "observedRuntimeRevision"
+        ],
+        "runtimeSourceBindingStatus": runtime_lineage[
+            "runtimeSourceBindingStatus"
+        ],
+        "runtimeSourceBindingMethod": runtime_lineage[
+            "runtimeSourceBindingMethod"
+        ],
         "agents": agent_lineage,
     }
     return {**payload, "runResumeLineageSHA256": _canonical_sha256(payload)}
@@ -704,6 +835,10 @@ def _initial_checkpoint_lineage(
         "configSHA256": _sha256(config_path),
         "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
         "laneHashes": agent_lineage["laneHashes"],
+        "runtimeSourceBinding": {
+            field: run_lineage[field]
+            for field in RUNTIME_SOURCE_LINEAGE_FIELDS
+        },
         "checkpointRoot": agent_lineage["checkpointRoot"],
         "outputDirectory": agent_lineage["outputDirectory"],
         "checkpoints": [],
@@ -728,6 +863,10 @@ def _validate_checkpoint_lineage(
         "configSHA256": _sha256(Path(agent_lineage["configPath"])),
         "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
         "laneHashes": agent_lineage["laneHashes"],
+        "runtimeSourceBinding": {
+            field: run_lineage[field]
+            for field in RUNTIME_SOURCE_LINEAGE_FIELDS
+        },
         "checkpointRoot": agent_lineage["checkpointRoot"],
         "outputDirectory": agent_lineage["outputDirectory"],
     }
@@ -840,6 +979,10 @@ def _load_resume_contract(
             != expected_lineage["runtimeSourceKind"]
             or item.get("runtimeSourceRevision")
             != expected_lineage["runtimeSourceRevision"]
+            or any(
+                item.get(field) != expected_lineage.get(field)
+                for field in RUNTIME_SOURCE_LINEAGE_FIELDS
+            )
         ):
             raise ValueError("Run manifest path lineage drifted")
         config_path = Path(agent_lineage["configPath"])
@@ -962,8 +1105,8 @@ def _prepare_configs(
             ]
             cfg["datasetRepository"] = run_lineage["datasetRepository"]
             cfg["datasetRevision"] = run_lineage["datasetRevision"]
-            cfg["runtimeSourceKind"] = run_lineage["runtimeSourceKind"]
-            cfg["runtimeSourceRevision"] = run_lineage["runtimeSourceRevision"]
+            for field in RUNTIME_SOURCE_LINEAGE_FIELDS:
+                cfg[field] = run_lineage[field]
         if runtime_lineage is not None:
             for field in (
                 "trainingCodeManifest",
@@ -1043,6 +1186,21 @@ def _prepare_configs(
                         "runtimeSourceKind": run_lineage["runtimeSourceKind"],
                         "runtimeSourceRevision": run_lineage[
                             "runtimeSourceRevision"
+                        ],
+                        "expectedRuntimeSourceRevision": run_lineage[
+                            "expectedRuntimeSourceRevision"
+                        ],
+                        "observedRepositoryRevision": run_lineage[
+                            "observedRepositoryRevision"
+                        ],
+                        "observedRuntimeRevision": run_lineage[
+                            "observedRuntimeRevision"
+                        ],
+                        "runtimeSourceBindingStatus": run_lineage[
+                            "runtimeSourceBindingStatus"
+                        ],
+                        "runtimeSourceBindingMethod": run_lineage[
+                            "runtimeSourceBindingMethod"
                         ],
                     }
                     if run_lineage is not None
@@ -1312,8 +1470,7 @@ def _verify_finalized_variant_lineage(
         "trainingCodeSHA256",
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
-        "runtimeSourceKind",
-        "runtimeSourceRevision",
+        *RUNTIME_SOURCE_LINEAGE_FIELDS,
     ):
         if finalized.get(field) != item.get(field):
             raise ValueError(f"Finalized manifest {field} mismatch: {finalized_manifest}")
@@ -1493,7 +1650,8 @@ def _train_lumen_adapters_gpu(
         agent = item["agent"]
         command = [
             sys.executable,
-            str(APP_ROOT / "lumen_train_sft.py"),
+            "-m",
+            "lumen_training.train_sft",
             "--config",
             item["config"],
             "--seed",
@@ -1547,6 +1705,21 @@ def _train_lumen_adapters_gpu(
         "requirementsSHA256": expected_lineage["requirementsSHA256"],
         "runtimeSourceKind": expected_lineage["runtimeSourceKind"],
         "runtimeSourceRevision": expected_lineage["runtimeSourceRevision"],
+        "expectedRuntimeSourceRevision": expected_lineage[
+            "expectedRuntimeSourceRevision"
+        ],
+        "observedRepositoryRevision": expected_lineage[
+            "observedRepositoryRevision"
+        ],
+        "observedRuntimeRevision": expected_lineage[
+            "observedRuntimeRevision"
+        ],
+        "runtimeSourceBindingStatus": expected_lineage[
+            "runtimeSourceBindingStatus"
+        ],
+        "runtimeSourceBindingMethod": expected_lineage[
+            "runtimeSourceBindingMethod"
+        ],
         "agents": prepared,
         "uploads": uploads,
         "fresh_run": not resume,

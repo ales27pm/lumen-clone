@@ -34,9 +34,9 @@ The script:
    `generated/fine_tuning`.
 3. Uploads that snapshot first and captures the full Hugging Face dataset commit SHA. The Space is
    configured with that exact commit; `main` is rejected for real training.
-4. Creates or updates:
-   - a dataset repo for the run snapshot,
-   - a model repo for adapters,
+4. Creates or updates three private repositories by default:
+   - a private dataset repo for the run snapshot,
+   - a private model repo for adapters,
    - a private Gradio Space for training.
 5. Uploads a self-verifying Space bundle, captures the Space commit SHA, and configures the dataset
    revision, runtime source revision, admin secret, and repository-scoped Hub token.
@@ -60,9 +60,17 @@ export LUMEN_ZERO_GPU_DRY_RUN="1"                  # local validation only
 export LUMEN_ZERO_GPU_RESUME="0"                   # set 1 only for an unchanged existing run
 export LUMEN_ZERO_GPU_DESTRUCTIVE_RESET="0"        # explicit replacement of an existing fresh-run workspace
 export LUMEN_ZERO_GPU_PUBLIC_SPACE="0"             # private by default; public requires explicit 1
+export LUMEN_ZERO_GPU_PUBLIC_DATASET="0"           # private by default; public requires explicit 1
+export LUMEN_ZERO_GPU_PUBLIC_ADAPTERS="0"          # private by default; public requires explicit 1
 ```
 
-Public deployment never disables application authorization. A missing or invalid admin header is
+Omitting all three public variables keeps the Space, dataset, and adapter/model repositories
+private. Set only the repository-specific override whose visibility is intentionally public. The
+standalone builder exposes the equivalent `--public-space`, `--public-dataset`, and
+`--public-adapters` flags; its deprecated hidden `--private-*` aliases do not change the
+private-by-default behavior. Repository visibility is printed before upload, without credentials.
+
+Public Space deployment never disables application authorization. A missing or invalid admin header is
 rejected before GPU allocation, filesystem changes, snapshot access, Hub-token access, or Hub API
 construction. Conflicting requests return a stable `training_already_active` error. External
 failures expose only a safe code, correlation ID, and concise message; the traceback remains in
@@ -109,15 +117,70 @@ The trainer enforces the same checkpoint record when invoked directly with
 
 ## Training code and dependency evidence
 
-The builder hashes a sorted, phase-specific manifest of the deployed SFT/DPO trainer,
-adapter-artifact verifier, finalizer modules, Space application, lineage verifier, and requirements
-lock. The Space recomputes that manifest before model loading. Requirements and installed direct
-dependencies, the Unsloth VCS commit, Python/CUDA versions, and the optional llama.cpp converter
-revision must match the generated dependency lock.
+The builder assembles the executable trainers as a real package:
 
-`runtimeSourceRevision` records the exact uploaded Space commit. It is audit evidence, while
-`trainingCodeSHA256` is the controlled comparison identity: two run-specific Space commits may be
-compared only when their verified training-code and dependency digests are identical.
+```text
+lumen_training/
+├── __init__.py
+├── train_sft.py
+├── train_dpo.py
+├── adapter_artifact.py
+└── training_lineage.py
+```
+
+The deployed entrypoints are `python -m lumen_training.train_sft` and
+`python -m lumen_training.train_dpo`; the latter selects the pinned DPO or ORPO implementation from
+the prepared config. This layout keeps relative imports identical in clean Space subprocesses and
+does not depend on a repository checkout being present on `PYTHONPATH`.
+
+The training-code bundle covers `app.py`, `requirements.txt`, the entire deployed
+`lumen_training` package, and every behavior-affecting `.py`, `.json`, `.jsonl`, `.txt`, config,
+shell, and YAML/TOML resource under the deployed `lumen_manifest_crawler` package. Its explicit
+`closurePolicy` records the covered roots, included extensions, volatile directory names, and the
+run-specific exclusions (`lumen_zero_gpu_defaults.json` and
+`lumen_zero_gpu_run_manifest.json`). Verification is bidirectional: a
+missing or changed declared file fails, and so does any unexpected behavior-affecting file under a
+covered tree. `.git`, logs, checkpoints, outputs, uploads, `__pycache__`, and bytecode are excluded
+as volatile runtime state; credentials remain environment secrets and are not deployed files.
+
+The bundle records `trainingCodeBundleSHA256` plus separate
+`trainingCodeSHA256ByPhase.{sft,dpo,orpo}` identities. The Space reconstructs the deployed tree and
+verifies the requested phase before model loading. This means a package initializer, transitively
+imported crawler helper, evaluation registry/fingerprint JSON resource, trainer, Space app, or
+requirements change changes the controlled identity. Requirements and installed direct
+dependencies, the Unsloth VCS commit, Python/CUDA versions, and the optional llama.cpp converter
+revision must also match the generated dependency lock.
+
+Runtime-source evidence deliberately separates:
+
+- `expectedRuntimeSourceRevision`: the immutable Space commit configured by the builder;
+- `observedRepositoryRevision`: an authenticated observation of the Space repository head;
+- `observedRuntimeRevision`: a platform-provided executing revision, when such trusted metadata is
+  actually available;
+- `runtimeSourceBindingStatus` and `runtimeSourceBindingMethod`: the confidence and source of the
+  observation.
+
+A well-formed environment variable or a repository-head match is not proof of which Space commit
+the running container executes. When Hugging Face supplies no independently attested runtime
+revision, the binding remains `operator_declared_unverified`; repository head is supplemental audit
+evidence only. `trainingCodeSHA256` remains the controlled comparison identity, so distinct
+run-specific Space commits can be compared only when their verified training-code and dependency
+digests match. Expected and observed source evidence is retained in run, checkpoint, training, and
+finalized lineage rather than being collapsed into one asserted revision.
+
+## Preference-training parent boundary
+
+DPO and ORPO accept only a self-hash-valid, trained, finalized SFT variant whose canonical adapter
+directory verifies against its declared digest. Parent validation matches the active preference
+config across agent, experiment variant, source variant manifest, effective seed, complete base
+model/index/shard/tokenizer contract, environment and dependency locks, requirements digest,
+runtime source kind, and the SFT phase code digest. `adapter_config.json` must name the same base
+model, and any missing, extra, or modified adapter file fails verification.
+
+Preference reports keep three concepts distinct: `parentSFTLineage` records the immutable SFT
+parent and its original runtime audit evidence; DPO additionally records the same verified frozen
+policy as `referenceSFTLineage`; and `preferenceTrainingRuntime` records the DPO/ORPO execution.
+ORPO has no separate reference policy but still enforces the complete parent contract.
 
 These controls do not make the operator-declared container digest trustworthy. Promotion remains
 unsupported until the platform supplies an independently verifiable runtime-image attestation.
