@@ -82,8 +82,11 @@ public enum AgentManifestStore {
         let bundledHash = try readHash(from: bundledHashURL(resourceName: resourceName, bundle: bundle))
         let storedHash = try readHash(from: destinationHashURL)
         let hashDiffers = bundledHash != nil && storedHash != nil && bundledHash != storedHash
-        let commitDiffers = bundledManifest.sourceIntegrity?.commit != storedManifest.sourceIntegrity?.commit
-        if hashDiffers || commitDiffers {
+        let sourceIdentityDiffers = sourceIntegrityDiffers(
+            bundledManifest.sourceIntegrity,
+            storedManifest.sourceIntegrity
+        )
+        if hashDiffers || sourceIdentityDiffers {
             try fileManager.removeItem(at: destinationDirectory)
             try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
             try copyBundledManifestAndHash(
@@ -96,6 +99,13 @@ public enum AgentManifestStore {
             return "application-support-stale-replaced"
         }
         return "application-support-current:\(directoryName)/\(fileName)"
+    }
+
+    static func sourceIntegrityDiffers(
+        _ bundled: ManifestSourceIntegrity?,
+        _ stored: ManifestSourceIntegrity?
+    ) -> Bool {
+        bundled != stored
     }
 
     private static func copyBundledManifestAndHash(

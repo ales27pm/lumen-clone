@@ -83,9 +83,22 @@ dataset repository, and adapter/model repository are private by default. Their o
 overrides are `LUMEN_ZERO_GPU_PUBLIC_SPACE=1`, `LUMEN_ZERO_GPU_PUBLIC_DATASET=1`, and
 `LUMEN_ZERO_GPU_PUBLIC_ADAPTERS=1`, respectively. Each changes only its named repository, and a
 public Space still requires the admin header. Dataset uploads are pinned by their returned Hub
-commit SHA. Existing repositories have their requested visibility updated and read back before any
-upload; an update error or mismatch stops deployment. The browser page does not expose a training
-button because browser events cannot attach the required header. Use the authenticated launcher.
+commit SHA. Existing repositories with matching visibility are reused without a settings mutation;
+a mismatch stops deployment unless the operator sets that repository's explicit
+`LUMEN_ZERO_GPU_CONFIRM_*_VISIBILITY_CHANGE=1` migration confirmation. Confirmed changes and new
+repositories are read back before any upload. The browser page does not expose a training button
+because browser events cannot attach the required header. Use the authenticated launcher.
+The Space also rechecks adapter-repository visibility without mutating it immediately before
+uploading trained artifacts.
+
+At Space startup, Lumen hashes the complete installed distribution environment once and records its
+digest plus scan timing/count/byte metrics. Trainer subprocesses reuse only that exact manifest via
+a process-local HMAC; direct trainer use without the cache key rescans the environment. The
+configured ZeroGPU size must match the deployed decorator before allocation, duration must not be
+clamped, and the observed CUDA inventory remains unverified audit evidence compared across
+experimental variants. Startup scan timing and cache signatures remain audit evidence outside the
+immutable resume hash; a restarted process can authorize its new signature only against the same
+persisted resolved-environment digest.
 
 `LUMEN_ZERO_GPU_RESUME=1` is accepted only when the existing self-hashed run manifest, original
 local dataset snapshot, prepared configs, checkpoint-lineage records, and at least one checkpoint

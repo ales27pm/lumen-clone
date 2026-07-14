@@ -2,10 +2,11 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Manifest commit: `c0ed6b251aca550856127f6aef6c795407430e64`
+- Base commit: `ff65aa9b8f3c82484edc17d230f6d4a6999f1932`
+- Working-tree digest: `105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `810`
+- Codebase-home records: `787`
 
 ## Top Modules
 - `ios/LumenTests`: 161 files
@@ -16,7 +17,6 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `tools/lumen_manifest_crawler/tests`: 31 files
 - `Assistant`: 29 files
 - `tools/fine_tuning/unsloth`: 27 files
-- `tools/lumen_manifest_crawler/generated`: 23 files
 - `scripts`: 22 files
 - `Diagnostics`: 21 files
 - `Services/LLM`: 21 files
@@ -32,9 +32,10 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `Services/LLM/Models`: 9 files
 - `Services/LLM/Policy`: 9 files
 - `AppIntents`: 8 files
+- `Memory`: 8 files
 
 ## Key Files
-- `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` owns AgentBehaviorManifest behavior and defines: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, Man Symbols: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent, ManifestRoutingEntry.
+- `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` (Services/AgentGrounding): Compatibility accessor for code that predates the explicit base-commit provenance contract. Symbols: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, CodingKeys, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent.
 - `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` owns AgentBehaviorTrace behavior and defines: AgentBehaviorTrace, SelfModelDecisionSummary, Event, CodingKeys, AgentBehaviorTraceEmitter, AgentDiagnosticFileRe Symbols: AgentBehaviorTrace, SelfModelDecisionSummary, Event, CodingKeys, AgentBehaviorTraceEmitter, AgentDiagnosticFileRedactor, AgentBehaviorAuditReport, AgentBehaviorViolation.
 - `ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTrac Symbols: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage.
 - `ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift` owns AgentGroundingPromptComposer behavior and defines: AgentGroundingPromptComposer, GenerateRequest, composeSystemPrompt, groundingSystemPrompt, fa Symbols: AgentGroundingPromptComposer, GenerateRequest, composeSystemPrompt, groundingSystemPrompt, fallback, store, bundledPrompt, loadedRuntimeGrounding.

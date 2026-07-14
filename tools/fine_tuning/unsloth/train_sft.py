@@ -18,23 +18,29 @@ try:
     from .adapter_artifact import write_adapter_artifact_manifest
     from .training_lineage import (
         build_resolved_training_environment,
+        build_resolved_training_environment_snapshot,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
         verify_resolved_training_environment,
+        verify_resolved_training_environment_cache,
         verify_training_code_manifest,
         verify_training_dependency_lock,
+        ZERO_GPU_ALLOWED_SIZES,
     )
 except ImportError:
     from adapter_artifact import write_adapter_artifact_manifest
     from training_lineage import (
         build_resolved_training_environment,
+        build_resolved_training_environment_snapshot,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
         verify_resolved_training_environment,
+        verify_resolved_training_environment_cache,
         verify_training_code_manifest,
         verify_training_dependency_lock,
+        ZERO_GPU_ALLOWED_SIZES,
     )
 
 
@@ -59,6 +65,9 @@ REQUIRED_CONFIG_KEYS = {
     "trainingDependencyLock",
     "trainingDependencyLockSHA256",
     "requirementsSHA256",
+    "zeroGPUSize",
+    "zeroGPUDurationSeconds",
+    "observedAccelerator",
     "runtimeSourceKind",
     "runtimeSourceRevision",
     "expectedRuntimeSourceRevision",
@@ -88,6 +97,63 @@ FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune
 CHECKPOINT_LINEAGE_SCHEMA = "lumen.zerogpu.checkpoint_lineage/1.0.0"
 CHECKPOINT_DIRECTORY_SCHEMA = "lumen.zerogpu.checkpoint_directory/1.0.0"
 RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.0.0"
+ZERO_GPU_LINEAGE_FIELDS = (
+    "zeroGPUSize",
+    "zeroGPUDurationSeconds",
+    "observedAccelerator",
+)
+
+
+def _runtime_accelerator_audit() -> dict[str, Any]:
+    import torch  # type: ignore
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("Training requires a CUDA accelerator")
+    device_count = int(torch.cuda.device_count())
+    if device_count <= 0:
+        raise RuntimeError("Training runtime exposed no CUDA devices")
+    devices: list[dict[str, Any]] = []
+    for index in range(device_count):
+        properties = torch.cuda.get_device_properties(index)
+        capability = torch.cuda.get_device_capability(index)
+        devices.append(
+            {
+                "index": index,
+                "name": str(properties.name),
+                "totalMemoryBytes": int(properties.total_memory),
+                "computeCapability": [int(capability[0]), int(capability[1])],
+            }
+        )
+    return {
+        "bindingStatus": "runtime_observed_unverified",
+        "backend": "cuda",
+        "deviceCount": device_count,
+        "devices": devices,
+    }
+
+
+def _validated_hardware_lineage(cfg: Mapping[str, Any]) -> dict[str, Any]:
+    size = cfg.get("zeroGPUSize")
+    duration = cfg.get("zeroGPUDurationSeconds")
+    configured_accelerator = cfg.get("observedAccelerator")
+    observed_accelerator = _runtime_accelerator_audit()
+    if cfg.get("runtimeSourceKind") == "huggingface_space":
+        if size not in ZERO_GPU_ALLOWED_SIZES:
+            raise RuntimeError("ZeroGPU training requires a supported deployed size")
+        if (
+            type(duration) is not int
+            or duration <= 0
+        ):
+            raise RuntimeError("ZeroGPU training requires a positive deployed duration")
+        if configured_accelerator != observed_accelerator:
+            raise RuntimeError("Observed accelerator drifted from the ZeroGPU lease")
+    elif size is not None or duration is not None:
+        raise RuntimeError("Non-Space training must not claim a ZeroGPU allocation")
+    return {
+        "zeroGPUSize": size,
+        "zeroGPUDurationSeconds": duration,
+        "observedAccelerator": observed_accelerator,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -588,6 +654,9 @@ def _validate_run_resume_config(
         "resolvedTrainingEnvironmentSHA256": cfg.get(
             "resolvedTrainingEnvironmentSHA256"
         ),
+        "zeroGPUSize": cfg.get("zeroGPUSize"),
+        "zeroGPUDurationSeconds": cfg.get("zeroGPUDurationSeconds"),
+        "observedAccelerator": cfg.get("observedAccelerator"),
         "spaceConfigurationSHA256": cfg.get("spaceConfigurationSHA256"),
         "runtimeSourceKind": cfg.get("runtimeSourceKind"),
         "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
@@ -687,6 +756,9 @@ def _validate_checkpoint_lineage(
         "resolvedTrainingEnvironmentSHA256": run_lineage.get(
             "resolvedTrainingEnvironmentSHA256"
         ),
+        "zeroGPUSize": run_lineage.get("zeroGPUSize"),
+        "zeroGPUDurationSeconds": run_lineage.get("zeroGPUDurationSeconds"),
+        "observedAccelerator": run_lineage.get("observedAccelerator"),
         "spaceConfigurationSHA256": run_lineage.get(
             "spaceConfigurationSHA256"
         ),
@@ -895,6 +967,21 @@ def _training_environment(
         "runtimeImageBindingVerified": binding_verified,
         "effectiveSeed": int(cfg["seed"]),
         "environmentLock": lock,
+        "zeroGPUSize": (
+            runtime_lineage.get("zeroGPUSize")
+            if runtime_lineage is not None
+            else cfg.get("zeroGPUSize")
+        ),
+        "zeroGPUDurationSeconds": (
+            runtime_lineage.get("zeroGPUDurationSeconds")
+            if runtime_lineage is not None
+            else cfg.get("zeroGPUDurationSeconds")
+        ),
+        "observedAccelerator": (
+            runtime_lineage.get("observedAccelerator")
+            if runtime_lineage is not None
+            else cfg.get("observedAccelerator")
+        ),
         "trainingCodeSHA256": _require_sha256(
             cfg.get("trainingCodeSHA256"), name="trainingCodeSHA256"
         ),
@@ -932,6 +1019,83 @@ def _installed_unsloth_revision() -> str:
     return revision
 
 
+def _resolved_environment_runtime_lineage(
+    cfg: Mapping[str, Any],
+    *,
+    deployed_space: bool,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    configured = cfg.get("resolvedTrainingEnvironment")
+    if configured is not None and not isinstance(configured, Mapping):
+        raise RuntimeError("resolvedTrainingEnvironment must be an object")
+    cache_attestation = cfg.get("resolvedTrainingEnvironmentCacheAttestation")
+    runtime_cache_attestation = os.environ.get(
+        "LUMEN_ZERO_GPU_RESOLVED_ENVIRONMENT_CACHE_ATTESTATION",
+        "",
+    )
+    if runtime_cache_attestation:
+        try:
+            parsed_cache_attestation = json.loads(runtime_cache_attestation)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Resolved training environment cache authorization is invalid"
+            ) from exc
+        if not isinstance(parsed_cache_attestation, Mapping):
+            raise RuntimeError(
+                "Resolved training environment cache authorization is invalid"
+            )
+        cache_attestation = parsed_cache_attestation
+    cache_key_hex = os.environ.get(
+        "LUMEN_ZERO_GPU_RESOLVED_ENVIRONMENT_CACHE_HMAC_KEY",
+        "",
+    )
+    if deployed_space and cache_key_hex:
+        if (
+            not isinstance(configured, Mapping)
+            or not isinstance(cache_attestation, Mapping)
+            or re.fullmatch(r"[0-9a-f]{64}", cache_key_hex) is None
+        ):
+            raise RuntimeError(
+                "Resolved training environment cache authorization is invalid"
+            )
+        try:
+            scan = verify_resolved_training_environment_cache(
+                configured,
+                cache_attestation,
+                key=bytes.fromhex(cache_key_hex),
+            )
+        except ValueError as exc:
+            raise RuntimeError(
+                "Resolved training environment cache verification failed"
+            ) from exc
+        resolved = dict(configured)
+    else:
+        resolved, scan = build_resolved_training_environment_snapshot()
+    try:
+        digest = verify_resolved_training_environment(resolved)
+        if configured is not None:
+            configured_digest = verify_resolved_training_environment(configured)
+            if configured_digest != digest or dict(configured) != resolved:
+                raise ValueError("Installed resolved training environment drifted")
+        configured_scan = cfg.get("resolvedTrainingEnvironmentScanAudit")
+        if isinstance(configured_scan, Mapping) and any(
+            configured_scan.get(field) != scan.get(field)
+            for field in (
+                "schemaVersion",
+                "resolvedTrainingEnvironmentSHA256",
+                "distributionCount",
+                "installedFileCount",
+                "totalHashedBytes",
+            )
+        ):
+            raise ValueError("Resolved training environment scan audit drifted")
+    except ValueError as exc:
+        raise RuntimeError("Resolved training environment verification failed") from exc
+    configured_digest = cfg.get("resolvedTrainingEnvironmentSHA256")
+    if configured_digest is not None and configured_digest != digest:
+        raise RuntimeError("resolvedTrainingEnvironmentSHA256 drifted")
+    return resolved, digest, scan
+
+
 def _training_runtime_lineage(
     cfg: Mapping[str, Any],
     *,
@@ -950,10 +1114,11 @@ def _training_runtime_lineage(
     deployed_root = source_path.parents[1]
     deployed_requirements = deployed_root / "requirements.txt"
     local_repository_root: Path | None = None
-    if (
+    deployed_space = (
         source_path.parent.name == "lumen_training"
         and deployed_requirements.is_file()
-    ):
+    )
+    if deployed_space:
         actual_code_digest = verify_training_code_manifest(
             code_manifest,
             root=deployed_root,
@@ -999,34 +1164,14 @@ def _training_runtime_lineage(
         != _require_sha256(cfg.get("requirementsSHA256"), name="requirementsSHA256")
     ):
         raise RuntimeError("Training dependency or requirements digest mismatch")
-    configured_resolved_environment = cfg.get("resolvedTrainingEnvironment")
-    if configured_resolved_environment is not None and not isinstance(
-        configured_resolved_environment,
-        Mapping,
-    ):
-        raise RuntimeError("resolvedTrainingEnvironment must be an object")
-    resolved_environment = build_resolved_training_environment()
-    try:
-        resolved_environment_digest = verify_resolved_training_environment(
-            resolved_environment,
-        )
-        if configured_resolved_environment is not None:
-            configured_digest = verify_resolved_training_environment(
-                configured_resolved_environment,
-            )
-            if (
-                configured_digest != resolved_environment_digest
-                or dict(configured_resolved_environment) != resolved_environment
-            ):
-                raise ValueError("Installed resolved training environment drifted")
-    except ValueError as exc:
-        raise RuntimeError("Resolved training environment verification failed") from exc
-    configured_resolved_digest = cfg.get("resolvedTrainingEnvironmentSHA256")
-    if (
-        configured_resolved_digest is not None
-        and configured_resolved_digest != resolved_environment_digest
-    ):
-        raise RuntimeError("resolvedTrainingEnvironmentSHA256 drifted")
+    (
+        resolved_environment,
+        resolved_environment_digest,
+        resolved_environment_scan,
+    ) = _resolved_environment_runtime_lineage(
+        cfg,
+        deployed_space=deployed_space,
+    )
     observed_local_revision: str | None = None
     if cfg.get("runtimeSourceKind") == "git":
         if local_repository_root is None:
@@ -1059,6 +1204,7 @@ def _training_runtime_lineage(
         raise RuntimeError(
             "Local training must not claim a Hugging Face Space configuration"
         )
+    hardware_lineage = _validated_hardware_lineage(cfg)
     return {
         "trainingCodeManifest": code_manifest,
         "trainingCodeSHA256": actual_code_digest,
@@ -1067,6 +1213,8 @@ def _training_runtime_lineage(
         "requirementsSHA256": dependency_lock["requirementsSHA256"],
         "resolvedTrainingEnvironment": resolved_environment,
         "resolvedTrainingEnvironmentSHA256": resolved_environment_digest,
+        "resolvedTrainingEnvironmentScanAudit": resolved_environment_scan,
+        **hardware_lineage,
         "spaceConfigurationSHA256": space_configuration_sha256,
         **runtime_source,
     }

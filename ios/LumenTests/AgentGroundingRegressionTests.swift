@@ -11,6 +11,24 @@ struct AgentGroundingRegressionTests {
         "outlook.message.delete", "outlook.message.reply", "outlook.message.reply_all", "outlook.message.forward"
     ]
 
+    @Test func manifestStoreDetectsDirtyTreeSourceIdentityDrift() {
+        let stored = ManifestSourceIntegrity(
+            baseCommit: "same-base",
+            workingTreeDigest: "old-tree",
+            dirtyState: true,
+            files: []
+        )
+        let bundled = ManifestSourceIntegrity(
+            baseCommit: "same-base",
+            workingTreeDigest: "new-tree",
+            dirtyState: true,
+            files: []
+        )
+
+        #expect(AgentManifestStore.sourceIntegrityDiffers(bundled, stored))
+        #expect(!AgentManifestStore.sourceIntegrityDiffers(bundled, bundled))
+    }
+
     private func packageWithPlainTextModelEvidence(
         kind: E2ETestKind,
         expectedIntent: UserIntent,

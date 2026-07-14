@@ -58,6 +58,52 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     assert spec is not None and spec.loader is not None
     lineage = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(lineage)
+    distribution_payload = {
+        "name": "synthetic-runtime",
+        "version": "1.0.0",
+        "directURL": None,
+        "installer": "test",
+        "recordSHA256": "1" * 64,
+        "installedFileCount": 1,
+        "installedContentSHA256": "2" * 64,
+    }
+    distribution = {
+        **distribution_payload,
+        "distributionSHA256": lineage.canonical_sha256(distribution_payload),
+    }
+    resolved_payload = {
+        "schemaVersion": "lumen.resolved-training-environment/1.0.0",
+        "recordPolicy": {
+            "hashAlgorithm": "sha256",
+            "verifyDeclaredFileHashes": True,
+            "excludeUnhashedSelfRecord": True,
+            "excludeUnhashedGeneratedBytecode": True,
+            "rejectOtherUnhashedFiles": True,
+        },
+        "distributions": [distribution],
+    }
+    resolved_environment = {
+        **resolved_payload,
+        "resolvedTrainingEnvironmentSHA256": lineage.canonical_sha256(
+            resolved_payload
+        ),
+    }
+    resolved_scan = {
+        "schemaVersion": "lumen.resolved-training-environment-cache/1.0.0",
+        "resolvedTrainingEnvironmentSHA256": resolved_environment[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "durationMilliseconds": 7,
+        "distributionCount": 1,
+        "installedFileCount": 1,
+        "totalHashedBytes": 128,
+    }
+    monkeypatch.setattr(
+        lineage,
+        "build_resolved_training_environment_snapshot",
+        lambda: (resolved_environment, resolved_scan),
+    )
+    monkeypatch.setitem(sys.modules, "training_lineage", lineage)
     space_configuration = lineage.build_space_configuration(app_root / "README.md")
     (app_root / "lumen_zero_gpu_defaults.json").write_text(
         json.dumps(
@@ -99,45 +145,8 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    resolved_payload = {
-        "schemaVersion": "lumen.resolved-training-environment/1.0.0",
-        "recordPolicy": {
-            "hashAlgorithm": "sha256",
-            "verifyDeclaredFileHashes": True,
-            "excludeUnhashedSelfRecord": True,
-            "excludeUnhashedGeneratedBytecode": True,
-            "rejectOtherUnhashedFiles": True,
-        },
-        "distributions": [
-            {
-                "name": "synthetic-runtime",
-                "version": "1.0.0",
-                "directURL": None,
-                "installer": "test",
-                "recordSHA256": "1" * 64,
-                "installedFileCount": 1,
-                "installedContentSHA256": "2" * 64,
-                "distributionSHA256": "3" * 64,
-            }
-        ],
-    }
-    resolved_environment = {
-        **resolved_payload,
-        "resolvedTrainingEnvironmentSHA256": module._canonical_sha256(
-            resolved_payload
-        ),
-    }
-    monkeypatch.setattr(
-        module,
-        "build_resolved_training_environment",
-        lambda: resolved_environment,
-    )
-    monkeypatch.setattr(
-        module,
-        "verify_resolved_training_environment",
-        lambda value, **_kwargs: value["resolvedTrainingEnvironmentSHA256"],
-    )
     module.TEST_RESOLVED_TRAINING_ENVIRONMENT = resolved_environment
+    module.TEST_RESOLVED_TRAINING_ENVIRONMENT_SCAN = resolved_scan
     return module
 
 
@@ -526,11 +535,14 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
             "containerImageDigest": "sha256:" + "c" * 64,
             "containerImageDigestSource": "operator_declared",
             "runtimeImageBindingStatus": "manual_validation_required",
-            "runtimeImageBindingVerified": False,
-            "effectiveSeed": 42,
-            "environmentLock": manifest["trainingEnvironmentLock"],
-        }
-    )
+                "runtimeImageBindingVerified": False,
+                "effectiveSeed": 42,
+                "environmentLock": manifest["trainingEnvironmentLock"],
+                "zeroGPUSize": None,
+                "zeroGPUDurationSeconds": None,
+                "observedAccelerator": None,
+            }
+        )
     assert config["variantAttestation"]["baseModelRevision"] == manifest["baseModelRevision"]
     assert config["variantAttestation"]["trainingEnvironmentSHA256"] == config["trainingEnvironmentSHA256"]
     assert config["variantAttestation"]["runtimeImageBindingStatus"] == "manual_validation_required"
@@ -557,12 +569,17 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
         "trainingDependencyLockSHA256": "2" * 64,
         "requirementsSHA256": "3" * 64,
         "resolvedTrainingEnvironment": module.TEST_RESOLVED_TRAINING_ENVIRONMENT,
-        "resolvedTrainingEnvironmentSHA256": module.TEST_RESOLVED_TRAINING_ENVIRONMENT[
-            "resolvedTrainingEnvironmentSHA256"
-        ],
-        "spaceConfigurationSHA256": module.DEFAULTS[
-            "spaceConfigurationSHA256"
-        ],
+            "resolvedTrainingEnvironmentSHA256": module.TEST_RESOLVED_TRAINING_ENVIRONMENT[
+                "resolvedTrainingEnvironmentSHA256"
+            ],
+            "resolvedTrainingEnvironmentCacheAttestation": module._STARTUP_ENVIRONMENT_ATTESTATION,
+            "resolvedTrainingEnvironmentScanAudit": module.TEST_RESOLVED_TRAINING_ENVIRONMENT_SCAN,
+            "zeroGPUSize": "large",
+            "zeroGPUDurationSeconds": 1200,
+            "observedAccelerator": _test_accelerator(),
+            "spaceConfigurationSHA256": module.DEFAULTS[
+                "spaceConfigurationSHA256"
+            ],
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "4" * 40,
         "expectedRuntimeSourceRevision": "4" * 40,
@@ -639,6 +656,9 @@ def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
         "runtimeImageBindingVerified": config["trainingRuntimeImageBindingVerified"],
         "effectiveSeed": config["seed"],
         "environmentLock": config["trainingEnvironmentLock"],
+        "zeroGPUSize": item.get("zeroGPUSize"),
+        "zeroGPUDurationSeconds": item.get("zeroGPUDurationSeconds"),
+        "observedAccelerator": item.get("observedAccelerator"),
     }
     finalized = {
         "agent": item["agent"],
@@ -654,6 +674,9 @@ def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
         "baseModelTokenizerDigest": item["baseModelTokenizerDigest"],
         "trainingEnvironmentSHA256": item["trainingEnvironmentSHA256"],
         "trainingEnvironment": training_environment,
+        "zeroGPUSize": item.get("zeroGPUSize"),
+        "zeroGPUDurationSeconds": item.get("zeroGPUDurationSeconds"),
+        "observedAccelerator": item.get("observedAccelerator"),
         "trainingCorpusSHA256": attestation["trainingCorpusSHA256"],
         "trainingConfigSHA256": attestation["effectiveTrainingConfigSHA256"],
         "datasets": {
@@ -707,6 +730,76 @@ def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
         )
 
 
+@pytest.mark.parametrize("private", [True, False])
+def test_adapter_upload_requires_matching_repository_visibility(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    private: bool,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    calls: list[str] = []
+
+    class FakeApi:
+        def __init__(self, *, token: str) -> None:
+            assert token == "fine-grained-token"
+
+        def model_info(self, **_kwargs: Any) -> SimpleNamespace:
+            calls.append("model_info")
+            return SimpleNamespace(private=private)
+
+    monkeypatch.setattr(module, "HfApi", FakeApi)
+    monkeypatch.setenv(
+        "LUMEN_ZERO_GPU_PRIVATE_ADAPTERS",
+        "1" if private else "0",
+    )
+
+    assert module._upload_outputs(
+        tmp_path,
+        [],
+        "user/adapters",
+        "test-run",
+        "fine-grained-token",
+        False,
+    ) == {}
+    assert calls == ["model_info"]
+
+
+def test_adapter_upload_rejects_visibility_drift_before_upload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    calls: list[str] = []
+
+    class FakeApi:
+        def __init__(self, *, token: str) -> None:
+            assert token == "fine-grained-token"
+
+        def model_info(self, **_kwargs: Any) -> SimpleNamespace:
+            calls.append("model_info")
+            return SimpleNamespace(private=False)
+
+        def upload_folder(self, **_kwargs: Any) -> None:
+            calls.append("upload_folder")
+
+        def upload_file(self, **_kwargs: Any) -> None:
+            calls.append("upload_file")
+
+    monkeypatch.setattr(module, "HfApi", FakeApi)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_PRIVATE_ADAPTERS", "1")
+
+    with pytest.raises(RuntimeError, match="visibility postcondition failed"):
+        module._upload_outputs(
+            tmp_path,
+            [{"agent": "executor"}],
+            "user/adapters",
+            "test-run",
+            "fine-grained-token",
+            False,
+        )
+    assert calls == ["model_info"]
+
+
 def test_variant_dataset_rejects_tampered_lane_and_control_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -756,6 +849,22 @@ def _authorized_request(token: str) -> SimpleNamespace:
     return SimpleNamespace(headers={"x-lumen-admin-token": token})
 
 
+def _test_accelerator() -> dict[str, Any]:
+    return {
+        "bindingStatus": "runtime_observed_unverified",
+        "backend": "cuda",
+        "deviceCount": 1,
+        "devices": [
+            {
+                "index": 0,
+                "name": "Synthetic CUDA",
+                "totalMemoryBytes": 24 * 1024 * 1024 * 1024,
+                "computeCapability": [8, 0],
+            }
+        ],
+    }
+
+
 def test_space_browser_surface_is_api_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -780,6 +889,68 @@ def test_space_browser_surface_is_api_only(
         module.destructive_reset,
     ):
         assert component.kwargs["visible"] is False
+
+
+def test_startup_environment_cache_is_reused_without_package_rescan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "build_resolved_training_environment_snapshot",
+        lambda: pytest.fail("request preflight must reuse the startup scan"),
+    )
+
+    first = module._verified_startup_environment_cache()
+    second = module._verified_startup_environment_cache()
+
+    assert first == second
+    assert first[1]["distributionCount"] == 1
+    assert first[1]["totalHashedBytes"] == 128
+    child_environment = module._startup_environment_child_variable()
+    assert json.loads(
+        child_environment[
+            "LUMEN_ZERO_GPU_RESOLVED_ENVIRONMENT_CACHE_ATTESTATION"
+        ]
+    ) == first[2]
+    assert len(
+        child_environment[
+            "LUMEN_ZERO_GPU_RESOLVED_ENVIRONMENT_CACHE_HMAC_KEY"
+        ]
+    ) == 64
+
+
+def test_training_endpoint_rejects_gpu_contract_drift_before_allocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    admin_token = "Lumen-Admin-Token-0123456789-ABCDEF"
+    monkeypatch.setenv("LUMEN_ZERO_GPU_ADMIN_TOKEN", admin_token)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_HUB_TOKEN", "hf_repository_token")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        module,
+        "_train_lumen_adapters_gpu",
+        lambda *_args: calls.append("gpu") or {"ok": True},
+    )
+
+    response = module.train_lumen_adapters(
+        "run",
+        "executor",
+        "",
+        42,
+        True,
+        False,
+        False,
+        False,
+        "xlarge",
+        request=_authorized_request(admin_token),
+    )
+
+    assert response["error_code"] == "training_failed"
+    assert calls == []
 
 
 def test_training_endpoint_authorizes_before_gpu_or_filesystem(
@@ -922,6 +1093,11 @@ def _write_resume_fixture(
         "resolvedTrainingEnvironmentSHA256": module.TEST_RESOLVED_TRAINING_ENVIRONMENT[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "resolvedTrainingEnvironmentCacheAttestation": module._STARTUP_ENVIRONMENT_ATTESTATION,
+        "resolvedTrainingEnvironmentScanAudit": module.TEST_RESOLVED_TRAINING_ENVIRONMENT_SCAN,
+        "zeroGPUSize": "large",
+        "zeroGPUDurationSeconds": 1200,
+        "observedAccelerator": _test_accelerator(),
         "spaceConfigurationSHA256": module.DEFAULTS[
             "spaceConfigurationSHA256"
         ],
@@ -960,6 +1136,9 @@ def _write_resume_fixture(
         run_root=run_root,
         run_lineage=lineage,
         prepared=prepared,
+        resolved_environment_scan_audit=runtime[
+            "resolvedTrainingEnvironmentScanAudit"
+        ],
     )
     checkpoint = run_root / "training" / "executor" / "checkpoint-1"
     checkpoint.mkdir(parents=True)
@@ -997,6 +1176,7 @@ def test_resume_contract_accepts_unchanged_lineage_without_snapshot_replacement(
         }
     )
     monkeypatch.setattr(module, "_verify_runtime_lineage", lambda: runtime)
+    monkeypatch.setattr(module, "_observed_accelerator", _test_accelerator)
     monkeypatch.setattr(
         module,
         "_copy_dataset_snapshot",
@@ -1038,6 +1218,49 @@ def test_resume_contract_accepts_unchanged_lineage_without_snapshot_replacement(
     assert result["runResumeLineageSHA256"] == lineage["runResumeLineageSHA256"]
     assert result["requirementsSHA256"] == lineage["requirementsSHA256"]
     assert run_root.is_dir()
+
+
+def test_resume_lineage_ignores_new_startup_scan_timing_and_cache_signature(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    run_root, lineage, runtime = _write_resume_fixture(
+        module,
+        work_root=tmp_path / "work",
+    )
+    restarted_runtime = json.loads(json.dumps(runtime))
+    restarted_runtime["resolvedTrainingEnvironmentScanAudit"][
+        "durationMilliseconds"
+    ] += 19
+    restarted_runtime["resolvedTrainingEnvironmentCacheAttestation"][
+        "startupID"
+    ] = "f" * 32
+    restarted_runtime["resolvedTrainingEnvironmentCacheAttestation"][
+        "cacheHMACSHA256"
+    ] = "e" * 64
+    source_root = run_root / "generated" / "fine_tuning"
+    expected = module._build_run_resume_lineage(
+        run_id=lineage["runID"],
+        run_root=run_root,
+        source_root=source_root,
+        dataset_repo=lineage["datasetRepository"],
+        dataset_revision=lineage["datasetRevision"],
+        dataset_path=lineage["datasetPath"],
+        agents=lineage["selectedAgents"],
+        variant=lineage["experimentVariant"],
+        seed=lineage["seed"],
+        assistant_only_loss=lineage["assistantOnlyLoss"],
+        runtime_lineage=restarted_runtime,
+    )
+
+    assert expected == lineage
+    manifest_path, prepared = module._load_resume_contract(
+        run_root=run_root,
+        expected_lineage=expected,
+    )
+    assert manifest_path == run_root / module.RUN_MANIFEST_NAME
+    assert [item["agent"] for item in prepared] == ["executor"]
 
 
 @pytest.mark.parametrize(

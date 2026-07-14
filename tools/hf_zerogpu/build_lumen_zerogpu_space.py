@@ -406,35 +406,67 @@ def ensure_repository_visibility(
     private: bool,
     token: str,
     space_sdk: str | None = None,
+    confirm_visibility_change: bool = False,
 ) -> None:
-    create_kwargs: dict[str, Any] = {
-        "repo_id": repo_id,
-        "repo_type": repo_type,
-        "private": private,
-        "exist_ok": True,
-        "token": token,
-    }
-    if space_sdk is not None:
-        create_kwargs["space_sdk"] = space_sdk
-    try:
-        api.create_repo(**create_kwargs)
-    except TypeError:
-        if space_sdk is None:
-            raise
-        create_kwargs.pop("space_sdk")
-        api.create_repo(**create_kwargs)
-
-    api.update_repo_settings(
-        repo_id=repo_id,
-        repo_type=repo_type,
-        private=private,
-        token=token,
-    )
     info_method = getattr(api, f"{repo_type}_info", None)
     if info_method is None:
         raise RuntimeError(
             f"Installed huggingface_hub cannot verify {repo_type} repository visibility"
         )
+
+    existing_private: bool | None = None
+    try:
+        existing_info = info_method(
+            repo_id=repo_id,
+            files_metadata=False,
+            token=token,
+        )
+    except Exception as exc:
+        response = getattr(exc, "response", None)
+        if getattr(response, "status_code", None) != 404:
+            raise
+    else:
+        existing_private = getattr(existing_info, "private", None)
+        if not isinstance(existing_private, bool):
+            raise RuntimeError(
+                f"Unable to determine existing {repo_type} repository visibility "
+                f"for {repo_id}"
+            )
+
+    if existing_private is not None:
+        if existing_private is not private:
+            if not confirm_visibility_change:
+                current = "private" if existing_private else "public"
+                requested = "private" if private else "public"
+                raise RuntimeError(
+                    f"Existing {repo_type} repository {repo_id} is {current}, but "
+                    f"the requested visibility is {requested}; explicitly confirm "
+                    "this repository visibility migration before deployment"
+                )
+            api.update_repo_settings(
+                repo_id=repo_id,
+                repo_type=repo_type,
+                private=private,
+                token=token,
+            )
+    else:
+        create_kwargs: dict[str, Any] = {
+            "repo_id": repo_id,
+            "repo_type": repo_type,
+            "private": private,
+            "exist_ok": False,
+            "token": token,
+        }
+        if space_sdk is not None:
+            create_kwargs["space_sdk"] = space_sdk
+        try:
+            api.create_repo(**create_kwargs)
+        except TypeError:
+            if space_sdk is None:
+                raise
+            create_kwargs.pop("space_sdk")
+            api.create_repo(**create_kwargs)
+
     info = info_method(
         repo_id=repo_id,
         files_metadata=False,
@@ -465,6 +497,9 @@ def upload_to_hub(
     private_space: bool,
     private_dataset: bool,
     private_adapters: bool,
+    confirm_space_visibility_change: bool = False,
+    confirm_dataset_visibility_change: bool = False,
+    confirm_adapter_visibility_change: bool = False,
     zero_gpu_hardware: str,
     token: str | None,
     admin_token: str,
@@ -497,6 +532,7 @@ def upload_to_hub(
             repo_type="dataset",
             private=private_dataset,
             token=token,
+            confirm_visibility_change=confirm_dataset_visibility_change,
         )
         ensure_repository_visibility(
             api,
@@ -504,6 +540,7 @@ def upload_to_hub(
             repo_type="model",
             private=private_adapters,
             token=token,
+            confirm_visibility_change=confirm_adapter_visibility_change,
         )
         ensure_repository_visibility(
             api,
@@ -512,6 +549,7 @@ def upload_to_hub(
             private=private_space,
             token=token,
             space_sdk="gradio",
+            confirm_visibility_change=confirm_space_visibility_change,
         )
 
     print(f"Upload dataset snapshot: {build.dataset_dir} -> {dataset_repo}/{build.dataset_path_in_repo}")
@@ -581,6 +619,7 @@ def upload_to_hub(
         "LUMEN_ZERO_GPU_DATASET_REVISION": dataset_revision,
         "LUMEN_ZERO_GPU_DATASET_PATH": build.dataset_path_in_repo,
         "LUMEN_ZERO_GPU_ADAPTER_REPO": adapter_repo,
+        "LUMEN_ZERO_GPU_PRIVATE_ADAPTERS": "1" if private_adapters else "0",
         "LUMEN_ZERO_GPU_RUN_ID": build.run_id,
         "LUMEN_ZERO_GPU_RUNTIME_SOURCE_KIND": "huggingface_space",
         "LUMEN_ZERO_GPU_EXPECTED_RUNTIME_SOURCE_REVISION": runtime_source_revision,
@@ -812,6 +851,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
+        "--confirm-space-visibility-change",
+        action="store_true",
+        help="Confirm changing the visibility of an existing Space repository.",
+    )
+    parser.add_argument(
+        "--confirm-dataset-visibility-change",
+        action="store_true",
+        help="Confirm changing the visibility of an existing dataset repository.",
+    )
+    parser.add_argument(
+        "--confirm-adapter-visibility-change",
+        action="store_true",
+        help="Confirm changing the visibility of an existing adapter/model repository.",
+    )
+    parser.add_argument(
         "--destructive-reset",
         action="store_true",
         help="When triggering a fresh run, explicitly replace an existing run workspace.",
@@ -904,6 +958,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         private_space=not args.public_space,
         private_dataset=not args.public_dataset,
         private_adapters=not args.public_adapters,
+        confirm_space_visibility_change=args.confirm_space_visibility_change,
+        confirm_dataset_visibility_change=args.confirm_dataset_visibility_change,
+        confirm_adapter_visibility_change=args.confirm_adapter_visibility_change,
         zero_gpu_hardware=args.zero_gpu_hardware,
         token=token,
         admin_token=admin_token,

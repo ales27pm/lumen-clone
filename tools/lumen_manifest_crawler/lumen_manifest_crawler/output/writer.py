@@ -306,6 +306,8 @@ def _write_runtime_grounding_outputs(
         "schemaVersion": "1.0.0",
         "artifactKind": "agent_grounding_runtime_bundle",
         "sourceFamilies": ["codebase_home_corpus", "codebase_home_sft", "codebase_home_chunks", "codebase_home_chunk_sft"],
+        "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+        # Compatibility for existing runtime-grounding consumers.
         "manifestCommit": manifest.sourceIntegrity.commit,
         "manifestToolCount": len(manifest.tools),
         "manifestIntentCount": len(manifest.intents),
@@ -382,7 +384,8 @@ def _runtime_grounding_prompt(bundle: dict[str, Any]) -> str:
         "",
         "Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.",
         "",
-        f"- Manifest commit: `{bundle.get('manifestCommit') or 'unknown'}`",
+        f"- Base commit: `{(bundle.get('sourceIntegrity') or {}).get('baseCommit') or 'unknown'}`",
+        f"- Working-tree digest: `{(bundle.get('sourceIntegrity') or {}).get('workingTreeDigest') or 'unknown'}`",
         f"- Tools: `{bundle.get('manifestToolCount')}`",
         f"- Intents: `{bundle.get('manifestIntentCount')}`",
         f"- Codebase-home records: `{home.get('recordCount')}`",

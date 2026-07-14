@@ -8,6 +8,7 @@ import logging
 import os
 import platform
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -26,26 +27,32 @@ from huggingface_hub import HfApi, snapshot_download
 try:
     from lumen_training.adapter_artifact import verify_adapter_artifact
     from lumen_training.training_lineage import (
-        build_resolved_training_environment,
+        build_resolved_training_environment_snapshot,
         installed_controlled_package_versions,
+        sign_resolved_training_environment_cache,
         validate_runtime_source,
         verify_resolved_training_environment,
+        verify_resolved_training_environment_cache,
         verify_space_configuration,
         verify_training_code_manifest,
         verify_training_dependency_lock,
+        ZERO_GPU_ALLOWED_SIZES,
     )
 except ImportError:
     # Allows the template to be loaded directly by repository tests. Built
     # Spaces always use the package import above.
     from adapter_artifact import verify_adapter_artifact
     from training_lineage import (
-        build_resolved_training_environment,
+        build_resolved_training_environment_snapshot,
         installed_controlled_package_versions,
+        sign_resolved_training_environment_cache,
         validate_runtime_source,
         verify_resolved_training_environment,
+        verify_resolved_training_environment_cache,
         verify_space_configuration,
         verify_training_code_manifest,
         verify_training_dependency_lock,
+        ZERO_GPU_ALLOWED_SIZES,
     )
 
 
@@ -84,6 +91,11 @@ RUNTIME_SOURCE_LINEAGE_FIELDS = (
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
 )
+ZERO_GPU_LINEAGE_FIELDS = (
+    "zeroGPUSize",
+    "zeroGPUDurationSeconds",
+    "observedAccelerator",
+)
 REQUIRED_VARIANT_DATASET_FILES = (
     "train_sft.jsonl",
     "val_sft.jsonl",
@@ -112,6 +124,8 @@ RUNTIME_LINEAGE_CONFIG_FIELDS = {
     "datasetRevision",
     "requirementsSHA256",
     "resolvedTrainingEnvironment",
+    "resolvedTrainingEnvironmentCacheAttestation",
+    "resolvedTrainingEnvironmentScanAudit",
     "resolvedTrainingEnvironmentSHA256",
     "runResumeLineage",
     "runResumeLineageSHA256",
@@ -123,6 +137,7 @@ RUNTIME_LINEAGE_CONFIG_FIELDS = {
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
     "spaceConfigurationSHA256",
+    *ZERO_GPU_LINEAGE_FIELDS,
     "trainingCodeSHA256",
     "trainingCodeManifest",
     "trainingDependencyLock",
@@ -150,6 +165,11 @@ class TrainingConflictError(Exception):
 
 
 LOGGER = logging.getLogger("lumen.zerogpu")
+_STARTUP_ENVIRONMENT_BYTES: bytes | None = None
+_STARTUP_ENVIRONMENT_SCAN: dict[str, Any] | None = None
+_STARTUP_ENVIRONMENT_ATTESTATION: dict[str, Any] | None = None
+_STARTUP_ENVIRONMENT_HMAC_KEY: bytes | None = None
+_STARTUP_ENVIRONMENT_ERROR: str | None = None
 
 
 def _csv_agents(value: str) -> list[str]:
@@ -177,6 +197,156 @@ def _sha256(path: Path) -> str:
 def _canonical_sha256(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _initialize_startup_environment_cache() -> None:
+    """Hash the installed environment once, before any ZeroGPU lease exists."""
+
+    global _STARTUP_ENVIRONMENT_ATTESTATION
+    global _STARTUP_ENVIRONMENT_BYTES
+    global _STARTUP_ENVIRONMENT_ERROR
+    global _STARTUP_ENVIRONMENT_HMAC_KEY
+    global _STARTUP_ENVIRONMENT_SCAN
+    try:
+        environment, scan = build_resolved_training_environment_snapshot()
+        verify_resolved_training_environment(environment)
+        key = secrets.token_bytes(32)
+        attestation = sign_resolved_training_environment_cache(
+            environment,
+            scan,
+            key=key,
+            startup_id=uuid.uuid4().hex,
+        )
+        _STARTUP_ENVIRONMENT_BYTES = json.dumps(
+            environment,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        _STARTUP_ENVIRONMENT_SCAN = dict(scan)
+        _STARTUP_ENVIRONMENT_ATTESTATION = attestation
+        _STARTUP_ENVIRONMENT_HMAC_KEY = key
+        _STARTUP_ENVIRONMENT_ERROR = None
+    except Exception:
+        _STARTUP_ENVIRONMENT_BYTES = None
+        _STARTUP_ENVIRONMENT_SCAN = None
+        _STARTUP_ENVIRONMENT_ATTESTATION = None
+        _STARTUP_ENVIRONMENT_HMAC_KEY = None
+        _STARTUP_ENVIRONMENT_ERROR = "startup_environment_attestation_failed"
+        LOGGER.error(
+            "ZeroGPU startup environment attestation failed\n%s",
+            traceback.format_exc(),
+        )
+
+
+def _verified_startup_environment_cache() -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+]:
+    if (
+        _STARTUP_ENVIRONMENT_ERROR is not None
+        or _STARTUP_ENVIRONMENT_BYTES is None
+        or _STARTUP_ENVIRONMENT_SCAN is None
+        or _STARTUP_ENVIRONMENT_ATTESTATION is None
+        or _STARTUP_ENVIRONMENT_HMAC_KEY is None
+    ):
+        raise RuntimeError("ZeroGPU startup environment attestation is unavailable")
+    environment = json.loads(_STARTUP_ENVIRONMENT_BYTES)
+    if not isinstance(environment, dict):
+        raise RuntimeError("ZeroGPU startup environment cache is malformed")
+    scan = verify_resolved_training_environment_cache(
+        environment,
+        _STARTUP_ENVIRONMENT_ATTESTATION,
+        key=_STARTUP_ENVIRONMENT_HMAC_KEY,
+    )
+    if scan != _STARTUP_ENVIRONMENT_SCAN:
+        raise RuntimeError("ZeroGPU startup environment scan audit drifted")
+    return environment, dict(scan), dict(_STARTUP_ENVIRONMENT_ATTESTATION)
+
+
+def _startup_environment_child_variable() -> dict[str, str]:
+    if (
+        _STARTUP_ENVIRONMENT_HMAC_KEY is None
+        or _STARTUP_ENVIRONMENT_ATTESTATION is None
+    ):
+        raise RuntimeError("ZeroGPU startup environment attestation is unavailable")
+    return {
+        "LUMEN_ZERO_GPU_RESOLVED_ENVIRONMENT_CACHE_HMAC_KEY": (
+            _STARTUP_ENVIRONMENT_HMAC_KEY.hex()
+        ),
+        "LUMEN_ZERO_GPU_RESOLVED_ENVIRONMENT_CACHE_ATTESTATION": json.dumps(
+            _STARTUP_ENVIRONMENT_ATTESTATION,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    }
+
+
+def _startup_environment_status() -> str:
+    if _STARTUP_ENVIRONMENT_ERROR is not None or _STARTUP_ENVIRONMENT_SCAN is None:
+        return "Runtime environment attestation: unavailable. Training is disabled."
+    return (
+        "Runtime environment attestation: ready; digest `"
+        f"{_STARTUP_ENVIRONMENT_SCAN['resolvedTrainingEnvironmentSHA256']}`; "
+        f"distributions {_STARTUP_ENVIRONMENT_SCAN['distributionCount']}; "
+        f"hashed bytes {_STARTUP_ENVIRONMENT_SCAN['totalHashedBytes']}; "
+        f"startup scan {_STARTUP_ENVIRONMENT_SCAN['durationMilliseconds']} ms."
+    )
+
+
+def _deployed_zero_gpu_contract(*, requested_size: str | None = None) -> dict[str, Any]:
+    configured_size = str(DEFAULTS.get("gpu_size", "large"))
+    configured_duration = int(DEFAULTS.get("gpu_duration_seconds", 1200))
+    if configured_size not in ZERO_GPU_ALLOWED_SIZES:
+        raise ValueError("Deployed ZeroGPU size is unsupported")
+    if configured_duration <= 0:
+        raise ValueError("Deployed ZeroGPU duration must be positive")
+    if DEFAULT_GPU_SIZE != configured_size:
+        raise ValueError("ZeroGPU size drifted from the deployed Space configuration")
+    if (
+        REQUESTED_GPU_DURATION != configured_duration
+        or DEFAULT_GPU_DURATION != configured_duration
+        or MAX_ZERO_GPU_DURATION < configured_duration
+    ):
+        raise ValueError(
+            "ZeroGPU duration drifted or would be clamped from the deployed Space configuration"
+        )
+    if requested_size is not None and requested_size != configured_size:
+        raise ValueError("Requested GPU size differs from deployed Space configuration")
+    return {
+        "zeroGPUSize": configured_size,
+        "zeroGPUDurationSeconds": configured_duration,
+    }
+
+
+def _observed_accelerator() -> dict[str, Any]:
+    import torch
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("ZeroGPU lease did not expose a CUDA accelerator")
+    device_count = int(torch.cuda.device_count())
+    if device_count <= 0:
+        raise RuntimeError("ZeroGPU lease exposed no CUDA devices")
+    devices: list[dict[str, Any]] = []
+    for index in range(device_count):
+        properties = torch.cuda.get_device_properties(index)
+        capability = torch.cuda.get_device_capability(index)
+        devices.append(
+            {
+                "index": index,
+                "name": str(properties.name),
+                "totalMemoryBytes": int(properties.total_memory),
+                "computeCapability": [int(capability[0]), int(capability[1])],
+            }
+        )
+    return {
+        "bindingStatus": "runtime_observed_unverified",
+        "backend": "cuda",
+        "deviceCount": device_count,
+        "devices": devices,
+    }
 
 
 def _require_sha256(value: Any, *, label: str) -> str:
@@ -463,7 +633,11 @@ def _verify_runtime_lineage() -> dict[str, Any]:
         or dependency_lock.get("requirementsSHA256") != requirements_digest
     ):
         raise ValueError("Training dependency lineage mismatch")
-    resolved_environment = build_resolved_training_environment()
+    (
+        resolved_environment,
+        resolved_environment_scan,
+        resolved_environment_cache_attestation,
+    ) = _verified_startup_environment_cache()
     resolved_environment_digest = verify_resolved_training_environment(
         resolved_environment,
     )
@@ -492,8 +666,13 @@ def _verify_runtime_lineage() -> dict[str, Any]:
         "trainingDependencyLockSHA256": dependency_digest,
         "requirementsSHA256": requirements_digest,
         "resolvedTrainingEnvironment": resolved_environment,
+        "resolvedTrainingEnvironmentCacheAttestation": (
+            resolved_environment_cache_attestation
+        ),
+        "resolvedTrainingEnvironmentScanAudit": resolved_environment_scan,
         "resolvedTrainingEnvironmentSHA256": resolved_environment_digest,
         "spaceConfigurationSHA256": space_configuration_digest,
+        **_deployed_zero_gpu_contract(),
         **runtime_source,
     }
 
@@ -636,6 +815,9 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
         "resolvedTrainingEnvironmentSHA256": cfg.get(
             "resolvedTrainingEnvironmentSHA256"
         ),
+        "zeroGPUSize": cfg.get("zeroGPUSize"),
+        "zeroGPUDurationSeconds": cfg.get("zeroGPUDurationSeconds"),
+        "observedAccelerator": cfg.get("observedAccelerator"),
         "spaceConfigurationSHA256": cfg.get("spaceConfigurationSHA256"),
         "runtimeSourceKind": cfg.get("runtimeSourceKind"),
         "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
@@ -679,6 +861,21 @@ def _training_environment(
         "runtimeImageBindingVerified": binding_verified,
         "effectiveSeed": int(manifest["seed"]),
         "environmentLock": lock,
+        "zeroGPUSize": (
+            runtime_lineage.get("zeroGPUSize")
+            if runtime_lineage is not None
+            else None
+        ),
+        "zeroGPUDurationSeconds": (
+            runtime_lineage.get("zeroGPUDurationSeconds")
+            if runtime_lineage is not None
+            else None
+        ),
+        "observedAccelerator": (
+            runtime_lineage.get("observedAccelerator")
+            if runtime_lineage is not None
+            else None
+        ),
     }
     if runtime_lineage is not None:
         payload.update(
@@ -849,6 +1046,11 @@ def _build_run_resume_lineage(
         "resolvedTrainingEnvironmentSHA256": runtime_lineage[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": runtime_lineage["zeroGPUSize"],
+        "zeroGPUDurationSeconds": runtime_lineage[
+            "zeroGPUDurationSeconds"
+        ],
+        "observedAccelerator": runtime_lineage["observedAccelerator"],
         "spaceConfigurationSHA256": runtime_lineage[
             "spaceConfigurationSHA256"
         ],
@@ -890,6 +1092,9 @@ def _initial_checkpoint_lineage(
         "resolvedTrainingEnvironmentSHA256": run_lineage[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": run_lineage["zeroGPUSize"],
+        "zeroGPUDurationSeconds": run_lineage["zeroGPUDurationSeconds"],
+        "observedAccelerator": run_lineage["observedAccelerator"],
         "spaceConfigurationSHA256": run_lineage[
             "spaceConfigurationSHA256"
         ],
@@ -924,6 +1129,9 @@ def _validate_checkpoint_lineage(
         "resolvedTrainingEnvironmentSHA256": run_lineage[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": run_lineage["zeroGPUSize"],
+        "zeroGPUDurationSeconds": run_lineage["zeroGPUDurationSeconds"],
+        "observedAccelerator": run_lineage["observedAccelerator"],
         "spaceConfigurationSHA256": run_lineage[
             "spaceConfigurationSHA256"
         ],
@@ -970,6 +1178,7 @@ def _write_fresh_run_contract(
     run_root: Path,
     run_lineage: dict[str, Any],
     prepared: list[dict[str, Any]],
+    resolved_environment_scan_audit: dict[str, Any],
 ) -> Path:
     for agent_lineage in run_lineage["agents"]:
         config_path = Path(agent_lineage["configPath"])
@@ -986,6 +1195,7 @@ def _write_fresh_run_contract(
         "schema": "lumen.zerogpu.training_run/2.0.0",
         "runResumeLineage": run_lineage,
         "runResumeLineageSHA256": run_lineage["runResumeLineageSHA256"],
+        "resolvedTrainingEnvironmentScanAudit": resolved_environment_scan_audit,
         "preparedAgents": prepared,
     }
     manifest = _self_hashed(payload, field="runManifestSHA256")
@@ -1041,6 +1251,10 @@ def _load_resume_contract(
             != expected_lineage["requirementsSHA256"]
             or item.get("resolvedTrainingEnvironmentSHA256")
             != expected_lineage["resolvedTrainingEnvironmentSHA256"]
+            or any(
+                item.get(field) != expected_lineage.get(field)
+                for field in ZERO_GPU_LINEAGE_FIELDS
+            )
             or item.get("spaceConfigurationSHA256")
             != expected_lineage["spaceConfigurationSHA256"]
             or item.get("runtimeSourceKind")
@@ -1183,7 +1397,10 @@ def _prepare_configs(
                 "trainingDependencyLockSHA256",
                 "requirementsSHA256",
                 "resolvedTrainingEnvironment",
+                "resolvedTrainingEnvironmentCacheAttestation",
+                "resolvedTrainingEnvironmentScanAudit",
                 "resolvedTrainingEnvironmentSHA256",
+                *ZERO_GPU_LINEAGE_FIELDS,
                 "spaceConfigurationSHA256",
             ):
                 cfg[field] = runtime_lineage[field]
@@ -1224,6 +1441,9 @@ def _prepare_configs(
                 "baseModelWeightShards": cfg["baseModelWeightShards"],
                 "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
                 "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
+                "zeroGPUSize": cfg.get("zeroGPUSize"),
+                "zeroGPUDurationSeconds": cfg.get("zeroGPUDurationSeconds"),
+                "observedAccelerator": cfg.get("observedAccelerator"),
                 "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
                 "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
                 "adapter_dir": str(adapter_dir),
@@ -1256,6 +1476,13 @@ def _prepare_configs(
                         ],
                         "resolvedTrainingEnvironmentSHA256": run_lineage[
                             "resolvedTrainingEnvironmentSHA256"
+                        ],
+                        "zeroGPUSize": run_lineage["zeroGPUSize"],
+                        "zeroGPUDurationSeconds": run_lineage[
+                            "zeroGPUDurationSeconds"
+                        ],
+                        "observedAccelerator": run_lineage[
+                            "observedAccelerator"
                         ],
                         "spaceConfigurationSHA256": run_lineage[
                             "spaceConfigurationSHA256"
@@ -1306,10 +1533,26 @@ def _validate_nonempty_assistant_outputs(source_root: Path, agents: list[str], v
         raise RuntimeError("Refusing to train on empty/null assistant outputs:\n" + "\n".join(bad[:20]))
 
 
-def _run(command: list[str], *, cwd: Path, log_path: Path) -> None:
+def _run(
+    command: list[str],
+    *,
+    cwd: Path,
+    log_path: Path,
+    environment: dict[str, str] | None = None,
+) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as handle:
-        process = subprocess.Popen(command, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        child_environment = dict(os.environ)
+        if environment:
+            child_environment.update(environment)
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd),
+            env=child_environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
         assert process.stdout is not None
         for line in process.stdout:
             print(line, end="", flush=True)
@@ -1407,7 +1650,25 @@ def _convert_lora_to_gguf(run_root: Path, prepared: list[dict[str, Any]], token:
 def _upload_outputs(run_root: Path, prepared: list[dict[str, Any]], adapter_repo: str, run_id: str, token: str, include_gguf: bool) -> dict[str, Any]:
     api = HfApi(token=token)
     private = os.environ.get("LUMEN_ZERO_GPU_PRIVATE_ADAPTERS", "1") == "1"
-    api.create_repo(repo_id=adapter_repo, repo_type="model", private=private, exist_ok=True, token=token)
+    info = api.model_info(
+        repo_id=adapter_repo,
+        files_metadata=False,
+        token=token,
+    )
+    actual_private = getattr(info, "private", None)
+    if not isinstance(actual_private, bool) or actual_private is not private:
+        expected = "private" if private else "public"
+        actual = (
+            "private"
+            if actual_private is True
+            else "public"
+            if actual_private is False
+            else "unknown"
+        )
+        raise RuntimeError(
+            "Adapter repository visibility postcondition failed before upload: "
+            f"expected {expected}, observed {actual}"
+        )
 
     uploaded: dict[str, Any] = {}
     for item in prepared:
@@ -1546,6 +1807,7 @@ def _verify_finalized_variant_lineage(
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
         "resolvedTrainingEnvironmentSHA256",
+        *ZERO_GPU_LINEAGE_FIELDS,
         "spaceConfigurationSHA256",
         *RUNTIME_SOURCE_LINEAGE_FIELDS,
     ):
@@ -1561,6 +1823,10 @@ def _verify_finalized_variant_lineage(
         != item.get("runtimeImageBindingStatus")
         or training_environment.get("runtimeImageBindingVerified")
         is not item.get("runtimeImageBindingVerified")
+        or any(
+            training_environment.get(field) != item.get(field)
+            for field in ZERO_GPU_LINEAGE_FIELDS
+        )
     ):
         raise ValueError(f"Finalized manifest base or runtime lineage mismatch: {finalized_manifest}")
     attestation = item.get("variantAttestation")
@@ -1599,7 +1865,7 @@ def _train_lumen_adapters_gpu(
     confirm_experiment_variant: bool = False,
     destructive_reset: bool = False,
 ) -> dict[str, Any]:
-    del gpu_size
+    _deployed_zero_gpu_contract(requested_size=gpu_size)
     agents = _csv_agents(agents_csv)
     experiment_variant = _experiment_variant(experiment_variant)
     if not confirm_experiment_variant:
@@ -1645,7 +1911,10 @@ def _train_lumen_adapters_gpu(
     adapter_repo = os.environ.get(
         "LUMEN_ZERO_GPU_ADAPTER_REPO", str(DEFAULTS["adapter_repo"])
     )
-    runtime_lineage = _verify_runtime_lineage()
+    runtime_lineage = {
+        **_verify_runtime_lineage(),
+        "observedAccelerator": _observed_accelerator(),
+    }
 
     if resume:
         assert existing_run_manifest is not None
@@ -1715,6 +1984,9 @@ def _train_lumen_adapters_gpu(
             run_root=run_root,
             run_lineage=expected_lineage,
             prepared=prepared,
+            resolved_environment_scan_audit=runtime_lineage[
+                "resolvedTrainingEnvironmentScanAudit"
+            ],
         )
 
     # Access the repository credential only after authorization and the complete
@@ -1738,7 +2010,12 @@ def _train_lumen_adapters_gpu(
             command.append("--assistant-only-loss")
         if resume:
             command.append("--resume-from-checkpoint")
-        _run(command, cwd=APP_ROOT, log_path=run_root / "logs" / f"train_{agent}.log")
+        _run(
+            command,
+            cwd=APP_ROOT,
+            log_path=run_root / "logs" / f"train_{agent}.log",
+            environment=_startup_environment_child_variable(),
+        )
 
     for item in prepared:
         _, finalized = _verify_trained_adapter(item)
@@ -1783,6 +2060,14 @@ def _train_lumen_adapters_gpu(
         "resolvedTrainingEnvironmentSHA256": expected_lineage[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "resolvedTrainingEnvironmentScanAudit": runtime_lineage[
+            "resolvedTrainingEnvironmentScanAudit"
+        ],
+        "zeroGPUSize": expected_lineage["zeroGPUSize"],
+        "zeroGPUDurationSeconds": expected_lineage[
+            "zeroGPUDurationSeconds"
+        ],
+        "observedAccelerator": expected_lineage["observedAccelerator"],
         "spaceConfigurationSHA256": expected_lineage[
             "spaceConfigurationSHA256"
         ],
@@ -1832,10 +2117,12 @@ def train_lumen_adapters(
     correlation_id = str(uuid.uuid4())
     try:
         _authorize_request(request)
+        _deployed_zero_gpu_contract(requested_size=gpu_size)
         if not os.environ.get("LUMEN_ZERO_GPU_HUB_TOKEN"):
             raise RepositoryCredentialConfigurationError(
                 "ZeroGPU repository authorization is not configured"
             )
+        _verified_startup_environment_cache()
         with _exclusive_training_operation():
             return _train_lumen_adapters_gpu(
                 run_id,
@@ -1887,6 +2174,8 @@ def train_lumen_adapters(
             message="Training failed. Consult server logs with the correlation ID.",
         )
 
+_initialize_startup_environment_cache()
+
 
 with gr.Blocks() as demo:
     gr.Markdown("# Lumen ZeroGPU Adapter Trainer")
@@ -1894,6 +2183,7 @@ with gr.Blocks() as demo:
         "Training is API-only. Use the authenticated Lumen ZeroGPU launcher; "
         "browser requests cannot provide the required administrative header."
     )
+    gr.Markdown(_startup_environment_status())
     with gr.Row():
         run_id = gr.Textbox(
             value=str(DEFAULTS.get("run_id", "")),

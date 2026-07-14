@@ -34,8 +34,9 @@ The script:
    `generated/fine_tuning`.
 3. Uploads that snapshot first and captures the full Hugging Face dataset commit SHA. The Space is
    configured with that exact commit; `main` is rejected for real training.
-4. Creates or updates three private repositories by default, applies the requested visibility to
-   existing repositories, and reads it back before any upload:
+4. Creates three private repositories by default and reads back their visibility before any
+   upload. An existing repository is reused only when its current visibility already matches;
+   changing it requires a repository-specific migration confirmation:
    - a private dataset repo for the run snapshot,
    - a private model repo for adapters,
    - a private Gradio Space for training.
@@ -64,20 +65,48 @@ export LUMEN_ZERO_GPU_DESTRUCTIVE_RESET="0"        # explicit replacement of an 
 export LUMEN_ZERO_GPU_PUBLIC_SPACE="0"             # private by default; public requires explicit 1
 export LUMEN_ZERO_GPU_PUBLIC_DATASET="0"           # private by default; public requires explicit 1
 export LUMEN_ZERO_GPU_PUBLIC_ADAPTERS="0"          # private by default; public requires explicit 1
+export LUMEN_ZERO_GPU_CONFIRM_SPACE_VISIBILITY_CHANGE="0"
+export LUMEN_ZERO_GPU_CONFIRM_DATASET_VISIBILITY_CHANGE="0"
+export LUMEN_ZERO_GPU_CONFIRM_ADAPTER_VISIBILITY_CHANGE="0"
 ```
 
 Omitting all three public variables keeps the Space, dataset, and adapter/model repositories
 private. Set only the repository-specific override whose visibility is intentionally public. The
 standalone builder exposes the equivalent `--public-space`, `--public-dataset`, and
 `--public-adapters` flags; its deprecated hidden `--private-*` aliases do not change the
-private-by-default behavior. Repository visibility is printed without credentials, then enforced
-and read back as a precondition before any dataset, adapter, or Space upload.
+private-by-default behavior. If an existing repository has different visibility, deployment stops
+before mutation unless the matching `LUMEN_ZERO_GPU_CONFIRM_*_VISIBILITY_CHANGE=1` is set (or the
+standalone builder receives its corresponding `--confirm-*-visibility-change` flag). This includes
+the default adapter repository if it is already public: an ordinary private-by-default run will not
+silently privatize previously published adapters. Repository visibility is printed without
+credentials, then enforced and read back as a precondition before any dataset, adapter, or Space
+upload. The running Space performs a second read-only adapter-repository visibility check
+immediately before trained-artifact upload, so a post-deployment visibility drift also fails closed.
 
 Public Space deployment never disables application authorization. A missing or invalid admin header is
 rejected before GPU allocation, filesystem changes, snapshot access, Hub-token access, or Hub API
 construction. Conflicting requests return a stable `training_already_active` error. External
 failures expose only a safe code, correlation ID, and concise message; the traceback remains in
 server logs under that correlation ID.
+
+The deployed ZeroGPU size and duration are part of the run contract. A request whose size differs
+from the decorator-bound Space configuration is rejected before GPU allocation, and a configured
+duration that would be silently clamped is rejected. Once the lease is attached, Lumen records the
+CUDA device name, memory, device count, and compute capability as
+`runtime_observed_unverified` audit evidence. Size, duration, and observed accelerator must match
+between controlled variants, but these fields do not upgrade the unverified container-image
+attestation.
+
+The complete installed-distribution `RECORD` scan runs once while the Space starts, before any GPU
+lease. The Space retains canonical environment bytes and passes an HMAC-authenticated cache
+attestation to trainer subprocesses; the process-local key is never serialized. A direct trainer
+invocation without that authorization performs a fresh full scan. The status page exposes only the
+environment digest, scan duration, distribution count, and total hashed bytes. Run manifests and
+summaries retain those non-secret metrics so real deployment evidence can quantify startup cost
+without spending the GPU lease rescanning PyTorch and CUDA wheels for every agent. Scan duration
+and the process-local cache signature are not controlled resume inputs; after a process restart,
+the current startup signature may authorize reuse only when the persisted resolved-environment
+digest and all other resume lineage remain unchanged.
 
 The Space page is intentionally API-only: it displays launcher guidance and does not expose a
 browser training button. Browser events cannot attach the required administrative header. Use the

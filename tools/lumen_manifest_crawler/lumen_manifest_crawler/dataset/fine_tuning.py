@@ -336,6 +336,8 @@ def compile_agent_fine_tuning_datasets(
         dataset_card = {
             "agent": agent,
             "systemPrompt": SYSTEM_PROMPTS[agent],
+            "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+            # Compatibility for consumers of the legacy dataset-card field.
             "manifestCommit": manifest.sourceIntegrity.commit,
             "deterministic": config.deterministic,
             "recordCounts": {
@@ -517,6 +519,7 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
     normalized_assistant = assistant.strip()
     if not normalized_assistant or normalized_assistant.lower() in {"null", "none"}:
         return None
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     normalized = {
         "messages": messages,
         "user": user,
@@ -525,7 +528,12 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
         "sourceFamily": str(record.get("sourceFamily") or source_family),
         "toolIDs": sorted(_extract_tool_ids(record)),
         "risk": _infer_risk(record),
-        "manifestCommit": ((record.get("metadata") or {}).get("manifestCommit") or None),
+        "sourceIntegrity": (
+            dict(metadata["sourceIntegrity"])
+            if isinstance(metadata.get("sourceIntegrity"), dict)
+            else None
+        ),
+        "manifestCommit": (metadata.get("manifestCommit") or None),
     }
     public_corpus = _public_corpus_metadata(record)
     if public_corpus is not None:
@@ -597,6 +605,8 @@ def _to_sft_record(
         "toolIDs": tool_ids,
         "risk": normalized["risk"],
         "sourceFamily": normalized["sourceFamily"],
+        "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+        # Compatibility for existing training-record consumers.
         "manifestCommit": manifest.sourceIntegrity.commit,
         "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
     }
@@ -769,6 +779,8 @@ def _cortex_codebase_overview_records(
         "toolCount": len(manifest.tools),
         "intentCount": len(manifest.intents),
         "slotCount": len(manifest.fleet.slots),
+        "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+        # Compatibility for existing source-awareness records.
         "sourceIntegrityCommit": manifest.sourceIntegrity.commit,
         "boundary": "Cortex knows this extracted source map, exact source chunks, line ranges, and source hashes; it must not claim access to private runtime state, hidden reasoning, or files outside the generated map.",
     }
@@ -1574,6 +1586,8 @@ def _adapter_sft_record(
             "toolIDs": sorted(set(tool_ids)),
             "risk": risk,
             "sourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
+            "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+            # Compatibility for existing training-record consumers.
             "manifestCommit": manifest.sourceIntegrity.commit,
             "specificity": "ultra_specific",
             "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
@@ -2613,6 +2627,8 @@ def _backfill_rem_runtime_repairs(
             "toolIDs": [],
             "risk": "boundary",
             "sourceFamily": "runtime_audit_repairs",
+            "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+            # Compatibility for existing training-record consumers.
             "manifestCommit": manifest.sourceIntegrity.commit,
         },
     }

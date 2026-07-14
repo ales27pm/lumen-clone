@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "cf78d728254edea011b9572e68f1dc8f97fd3fc7e6f2173d049ced450c58c31e"
+        "reportSHA256": "0be75222b3aa5cec45392be79baeb7ee0dc81569ce7922b2b139940d4f8b7688"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,7 +41,7 @@
       "recordCount": 558,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
+    "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 6,
@@ -51,9 +51,9 @@
     "recordCounts": {
       "eval": 558,
       "train_dpo": 5,
-      "train_sft": 11667,
+      "train_sft": 11618,
       "val_dpo": 1,
-      "val_sft": 2057
+      "val_sft": 2049
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -65,6 +65,11 @@
       "public_adapter_corpus_massive_en_us_1_1",
       "public_adapter_corpus_toolace_train"
     ],
+    "sourceIntegrity": {
+      "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+      "dirtyState": true,
+      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+    },
     "taskTypes": [
       "codebase_home_grounding",
       "codebase_home_overview",
@@ -122,7 +127,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "76d8b201a13ec3cf072812bc0ffa262b1c4c239fe0ffa861115c4c79831c8cab",
+    "experimentManifestSHA256": "c25f55a0d4ca1c78ef98f42a87cb7bc32e9e8b6959c5e062bf7b57847e97d22a",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -181,12 +186,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
-  "trainingCodeBundleSHA256": "fce7f4974ed10d2d6ac489d1e5a0e03b5156ac0d221a6f138ac2608231e9f16b",
-  "trainingCodeSHA256": "9017d9dce749e9b2df85ede534bb74ccf5cd8ad964d5c04cda20fddce0a802bd",
+  "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+  "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "21d7fb7a7c9dc3f225f46136aeafa7501b414d3a05177f0bd301708c98660f75",
-    "orpo": "cce3f4782fb298f978e9f198118a7e97fddd28244538b62d0cecb90da9aabd6a",
-    "sft": "9017d9dce749e9b2df85ede534bb74ccf5cd8ad964d5c04cda20fddce0a802bd"
+    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

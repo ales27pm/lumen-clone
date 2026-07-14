@@ -3,11 +3,13 @@ from __future__ import annotations
 import base64
 import csv
 import hashlib
+import hmac
 import importlib.metadata as importlib_metadata
 import io
 import json
 import re
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -22,6 +24,10 @@ TRAINING_DEPENDENCY_LOCK_SCHEMA_VERSION = (
 RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION = (
     "lumen.resolved-training-environment/1.0.0"
 )
+RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION = (
+    "lumen.resolved-training-environment-cache/1.0.0"
+)
+ZERO_GPU_ALLOWED_SIZES = frozenset({"large", "xlarge"})
 RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY = {
     "hashAlgorithm": "sha256",
     "verifyDeclaredFileHashes": True,
@@ -788,13 +794,18 @@ def _normalized_distribution_name(value: str) -> str:
     return normalized
 
 
-def _safe_direct_url(value: str | None) -> dict[str, Any] | None:
+def _normalized_direct_url(
+    value: str | Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
     if value is None:
         return None
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise ValueError("Installed distribution has malformed direct_url.json") from exc
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Installed distribution has malformed direct_url.json") from exc
+    else:
+        parsed = value
     if not isinstance(parsed, Mapping) or set(parsed) - {
         "url",
         "vcs_info",
@@ -882,7 +893,20 @@ def _safe_direct_url(value: str | None) -> dict[str, Any] | None:
     return sanitized
 
 
-def _installed_distribution_entry(distribution: Any) -> dict[str, Any]:
+def _validated_installer(value: Any) -> str | None:
+    if value is not None and (
+        not isinstance(value, str)
+        or re.fullmatch(r"[A-Za-z0-9._-]{1,64}", value) is None
+    ):
+        raise ValueError("Installed distribution has invalid installer metadata")
+    return value
+
+
+def _installed_distribution_entry(
+    distribution: Any,
+    *,
+    statistics: dict[str, int] | None = None,
+) -> dict[str, Any]:
     raw_name = distribution.metadata.get("Name")
     version = distribution.version
     if not isinstance(raw_name, str) or not isinstance(version, str) or not version:
@@ -994,13 +1018,22 @@ def _installed_distribution_entry(distribution: Any) -> dict[str, Any]:
             }
         )
     files.sort(key=lambda item: item["path"])
-    installer = (distribution.read_text("INSTALLER") or "").strip() or None
-    if installer is not None and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", installer) is None:
-        raise ValueError(f"Installed distribution {name} has invalid installer metadata")
+    if statistics is not None:
+        statistics["installedFileCount"] = statistics.get(
+            "installedFileCount", 0
+        ) + len(files)
+        statistics["totalHashedBytes"] = statistics.get(
+            "totalHashedBytes", 0
+        ) + sum(item["size"] for item in files)
+    installer = _validated_installer(
+        (distribution.read_text("INSTALLER") or "").strip() or None
+    )
     payload = {
         "name": name,
         "version": version,
-        "directURL": _safe_direct_url(distribution.read_text("direct_url.json")),
+        "directURL": _normalized_direct_url(
+            distribution.read_text("direct_url.json")
+        ),
         "installer": installer,
         "recordSHA256": hashlib.sha256(record_text.encode("utf-8")).hexdigest(),
         "installedFileCount": len(files),
@@ -1014,15 +1047,30 @@ def build_resolved_training_environment(
 ) -> dict[str, Any]:
     """Attest every installed distribution and all files declared by its RECORD.
 
-    This complements, rather than replaces, the direct requirements lock. It is
-    intentionally computed inside the training runtime so transitive wheels and
-    platform-provided distributions participate in resume and comparison lineage.
+    This complements, rather than replaces, the direct requirements lock. The
+    owning runtime computes it before training so transitive wheels and
+    platform-provided distributions participate in resume and comparison
+    lineage; ZeroGPU reuses an authenticated startup scan outside the GPU lease.
     """
 
+    environment, _ = build_resolved_training_environment_snapshot(distributions)
+    return environment
+
+
+def build_resolved_training_environment_snapshot(
+    distributions: Any | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build one complete environment attestation plus non-secret scan metrics."""
+
+    started = time.perf_counter()
     installed = list(
         importlib_metadata.distributions() if distributions is None else distributions
     )
-    entries = [_installed_distribution_entry(item) for item in installed]
+    statistics = {"installedFileCount": 0, "totalHashedBytes": 0}
+    entries = [
+        _installed_distribution_entry(item, statistics=statistics)
+        for item in installed
+    ]
     entries.sort(key=lambda item: item["name"])
     names = [item["name"] for item in entries]
     if not entries or len(names) != len(set(names)):
@@ -1032,7 +1080,122 @@ def build_resolved_training_environment(
         "recordPolicy": RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY,
         "distributions": entries,
     }
-    return {**payload, "resolvedTrainingEnvironmentSHA256": canonical_sha256(payload)}
+    environment = {
+        **payload,
+        "resolvedTrainingEnvironmentSHA256": canonical_sha256(payload),
+    }
+    scan = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION,
+        "resolvedTrainingEnvironmentSHA256": environment[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "durationMilliseconds": max(
+            0,
+            int(round((time.perf_counter() - started) * 1000)),
+        ),
+        "distributionCount": len(entries),
+        "installedFileCount": statistics["installedFileCount"],
+        "totalHashedBytes": statistics["totalHashedBytes"],
+    }
+    return environment, scan
+
+
+def sign_resolved_training_environment_cache(
+    environment: Mapping[str, Any],
+    scan: Mapping[str, Any],
+    *,
+    key: bytes,
+    startup_id: str,
+) -> dict[str, Any]:
+    """Authenticate a Space-startup scan for child trainer processes.
+
+    The HMAC key is process-local and must be inherited only by trainer
+    subprocesses. It is never written into configs, reports, or summaries.
+    """
+
+    if len(key) < 32:
+        raise ValueError("Resolved-environment cache key must contain 32 bytes")
+    digest = verify_resolved_training_environment(environment)
+    if (
+        not isinstance(startup_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", startup_id) is None
+        or set(scan) != {
+            "schemaVersion",
+            "resolvedTrainingEnvironmentSHA256",
+            "durationMilliseconds",
+            "distributionCount",
+            "installedFileCount",
+            "totalHashedBytes",
+        }
+        or scan.get("schemaVersion")
+        != RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION
+        or scan.get("resolvedTrainingEnvironmentSHA256") != digest
+        or any(
+            type(scan.get(field)) is not int or scan[field] < 0
+            for field in (
+                "durationMilliseconds",
+                "distributionCount",
+                "installedFileCount",
+                "totalHashedBytes",
+            )
+        )
+        or scan.get("distributionCount") != len(environment["distributions"])
+    ):
+        raise ValueError("Invalid resolved-environment startup scan")
+    payload = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION,
+        "verificationMode": "space_startup_full_scan",
+        "startupID": startup_id,
+        "resolvedTrainingEnvironmentSHA256": digest,
+        "scan": dict(scan),
+    }
+    signature = hmac.new(
+        key,
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {**payload, "cacheHMACSHA256": signature}
+
+
+def verify_resolved_training_environment_cache(
+    environment: Mapping[str, Any],
+    attestation: Mapping[str, Any],
+    *,
+    key: bytes,
+) -> dict[str, Any]:
+    if set(attestation) != {
+        "schemaVersion",
+        "verificationMode",
+        "startupID",
+        "resolvedTrainingEnvironmentSHA256",
+        "scan",
+        "cacheHMACSHA256",
+    }:
+        raise ValueError("Invalid resolved-environment cache attestation")
+    expected = sign_resolved_training_environment_cache(
+        environment,
+        attestation.get("scan") if isinstance(attestation.get("scan"), Mapping) else {},
+        key=key,
+        startup_id=str(attestation.get("startupID") or ""),
+    )
+    if (
+        attestation.get("schemaVersion") != expected["schemaVersion"]
+        or attestation.get("verificationMode") != expected["verificationMode"]
+        or attestation.get("resolvedTrainingEnvironmentSHA256")
+        != expected["resolvedTrainingEnvironmentSHA256"]
+        or not isinstance(attestation.get("cacheHMACSHA256"), str)
+        or not hmac.compare_digest(
+            attestation["cacheHMACSHA256"],
+            expected["cacheHMACSHA256"],
+        )
+    ):
+        raise ValueError("Resolved-environment cache attestation is not authentic")
+    return dict(expected["scan"])
 
 
 def verify_resolved_training_environment(
@@ -1069,19 +1232,16 @@ def verify_resolved_training_environment(
         unsigned = {
             key: value for key, value in entry.items() if key != "distributionSHA256"
         }
+        direct_url = entry.get("directURL")
+        normalized_direct_url = _normalized_direct_url(direct_url)
+        installer = _validated_installer(entry.get("installer"))
         if (
             not isinstance(entry.get("name"), str)
             or entry["name"] != _normalized_distribution_name(entry["name"])
             or not isinstance(entry.get("version"), str)
             or not entry["version"]
-            or (
-                entry.get("directURL") is not None
-                and not isinstance(entry.get("directURL"), Mapping)
-            )
-            or (
-                entry.get("installer") is not None
-                and not isinstance(entry.get("installer"), str)
-            )
+            or normalized_direct_url != direct_url
+            or installer != entry.get("installer")
             or not isinstance(entry.get("recordSHA256"), str)
             or _SHA256_PATTERN.fullmatch(entry["recordSHA256"]) is None
             or type(entry.get("installedFileCount")) is not int
