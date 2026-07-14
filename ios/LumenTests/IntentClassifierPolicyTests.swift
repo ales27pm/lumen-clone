@@ -198,6 +198,11 @@ struct IntentClassifierPolicyTests {
         #expect(file.intent == .files)
         #expect(file.requiresClarification)
         #expect(file.clarificationPrompt == "Which file should I read?")
+
+        let rag = await IntentClassifierService.shared.classify("Use Search Personal Data, but ask for clarification if required details are missing.")
+        #expect(rag.intent == .rag)
+        #expect(rag.requiresClarification)
+        #expect(rag.clarificationPrompt == "What should I search for?")
     }
 
     @Test func clearDirectCommandsDoNotOverAskClarification() async {
@@ -212,6 +217,19 @@ struct IntentClassifierPolicyTests {
         let alarm = await IntentClassifierService.shared.classify("Set an alarm for 6")
         #expect(alarm.intent == .alarm)
         #expect(!alarm.requiresClarification)
+    }
+
+    @Test func reminderContentMatchingDiagnosticClarificationTextIsPreserved() async {
+        let prompts = [
+            "Remind me to ask for clarification if required details are missing",
+            "Remind me to call Alex and ask for clarification if required details are missing."
+        ]
+
+        for prompt in prompts {
+            let reminder = await IntentClassifierService.shared.classify(prompt)
+            #expect(reminder.intent == .reminder)
+            #expect(!reminder.requiresClarification)
+        }
     }
 
     @Test func alarmReadAndPermissionCommandsDoNotAskForTimeClarification() async {

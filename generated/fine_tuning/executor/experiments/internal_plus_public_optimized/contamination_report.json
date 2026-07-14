@@ -1,0 +1,16 @@
+{
+  "contaminated": false,
+  "evaluationRecordCount": 114,
+  "evaluationRecordsSHA256": "b4e05ca27a99d487eec2b964c4294437cc555ea0cd4b31aaf3ee4e8cfa690e11",
+  "hashOnly": true,
+  "matchCount": 0,
+  "matches": [],
+  "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
+  "publicEvaluationRowCount": 1040,
+  "reportSHA256": "f0cc3c0f58b7400e2e7b99db9ca67405e4bbe6b54c466a52c2e65d12e2b0f732",
+  "schemaVersion": "lumen.adapter-contamination/1.0.0",
+  "shingleSize": 13,
+  "threshold": 0.8,
+  "trainingRecordCount": 1022,
+  "trainingRecordsSHA256": "6d48ebe3d4fa8d720c8f491bd1b47292f26ef92d0fa0eba3f38d3d2adb95bf6d"
+}

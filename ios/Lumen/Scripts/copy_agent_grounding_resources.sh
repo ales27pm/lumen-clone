@@ -185,7 +185,7 @@ require_file "$AGENT_MANIFEST_DIR/dataset/dpo_preference_pairs.jsonl" 'dataset/d
 require_file "$AGENT_MANIFEST_DIR/dataset/eval_scenarios.jsonl" 'dataset/eval_scenarios.jsonl'
 require_file "$AGENT_MANIFEST_DIR/dataset/tool_schema_cards.jsonl" 'dataset/tool_schema_cards.jsonl'
 require_file "$AGENT_MANIFEST_DIR/dataset/manifest_grounding_cards.jsonl" 'dataset/manifest_grounding_cards.jsonl'
-require_file "$AGENT_MANIFEST_DIR/dataset/runtime_audit_repairs.jsonl" 'dataset/runtime_audit_repairs.jsonl'
+# runtime_audit_repairs.jsonl is optional when the generator emits no repair records.
 require_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_corpus.jsonl" 'dataset/codebase_home_corpus.jsonl'
 require_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_sft.jsonl" 'dataset/codebase_home_sft.jsonl'
 

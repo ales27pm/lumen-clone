@@ -394,6 +394,7 @@ def _normalize_record(
     config: DatasetCompilerConfig,
 ) -> dict[str, Any]:
     lineage_commit = None if config.deterministic else manifest.sourceIntegrity.commit
+    source_integrity = _dataset_source_integrity_lineage(manifest, config)
     messages = _normalize_messages(record)
     role = _infer_role(family, record, messages)
     task = _infer_task(family, record)
@@ -428,6 +429,8 @@ def _normalize_record(
         "metadata": {
             "generatedAt": config.generated_at,
             "manifestSchemaVersion": manifest.schemaVersion,
+            "sourceIntegrity": source_integrity,
+            # Compatibility for consumers of the legacy record field.
             "manifestCommit": lineage_commit,
             "sourceIndex": index,
             "invalidContrastToolIDs": [tool_id for tool_id in all_tool_ids if tool_id not in known_tool_ids],
@@ -567,7 +570,26 @@ def _normalized_grounding(record: dict[str, Any], manifest: AgentBehaviorManifes
         **grounding,
         "manifestSchemaVersion": manifest.schemaVersion,
         "source": grounding.get("source", "AgentBehaviorManifest.json"),
+        "sourceIntegrity": _dataset_source_integrity_lineage(manifest, config),
+        # Compatibility for consumers of the legacy grounding field.
         "sourceIntegrityCommit": lineage_commit,
+    }
+
+
+def _dataset_source_integrity_lineage(
+    manifest: AgentBehaviorManifest,
+    config: DatasetCompilerConfig,
+) -> dict[str, str | bool | None]:
+    lineage = manifest.sourceIntegrity.lineage_dict()
+    if not config.deterministic:
+        return lineage
+    # The content digest is deterministic for the same source snapshot. Commit
+    # and dirty-state values depend on when that snapshot was committed, so the
+    # deterministic dataset form intentionally omits those two audit fields.
+    return {
+        "baseCommit": None,
+        "workingTreeDigest": lineage["workingTreeDigest"],
+        "dirtyState": None,
     }
 
 
@@ -1587,6 +1609,7 @@ def _build_dataset_manifest(
         A manifest dictionary containing schema version, generation timestamp, source metadata, record counts, content hashes, and training policies. In deterministic mode, the manifest commit is omitted to avoid drift in CI validation when source behavior remains unchanged.
     """
     lineage_commit = None if config.deterministic else manifest.sourceIntegrity.commit
+    source_integrity = _dataset_source_integrity_lineage(manifest, config)
     counts = {name: len(records) for name, records in {**raw_role_records, **compiled_records}.items()}
     compiled_hashes = {name: _records_hash(records) for name, records in compiled_records.items()}
     runtime_formats = sorted({str(report.get("_sourceFormat")) for report in runtime_audit_reports if report.get("_sourceFormat")})
@@ -1596,6 +1619,8 @@ def _build_dataset_manifest(
         "deterministic": config.deterministic,
         "manifest": {
             "schemaVersion": manifest.schemaVersion,
+            "sourceIntegrity": source_integrity,
+            # Compatibility for consumers of the legacy dataset-manifest field.
             "commit": lineage_commit,
             "toolCount": len(manifest.tools),
             "intentCount": len(manifest.intents),

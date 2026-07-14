@@ -1,0 +1,70 @@
+{
+  "bundleSHA256": "c4ac1dd43e25fcdc3599747aae641f3877a68ccfc30c90bcf15b5e56c134dd8c",
+  "hashOnly": true,
+  "purpose": "evaluation_only_contamination_fingerprints",
+  "records": [
+    {
+      "normalizedTextSHA256": "db15460f047d84fda55d44dfd8948b0b71d6b865ec06d6509c81610d35398ea4",
+      "recordID": "record-23c52198acb5d442bd577391",
+      "segments": [
+        {
+          "sha256": "db15460f047d84fda55d44dfd8948b0b71d6b865ec06d6509c81610d35398ea4",
+          "shingles": []
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "ee625674a5b160f59c5c8b2baccdf47dd1c5f13e61d2fef66c6a7ac1bd327add",
+      "recordID": "record-77599d92b1d2f4926778c07c",
+      "segments": [
+        {
+          "sha256": "ee625674a5b160f59c5c8b2baccdf47dd1c5f13e61d2fef66c6a7ac1bd327add",
+          "shingles": [
+            "0933c50ea43e21287cdd8918fc4b9ee2244725fc8601087a37af2bb7d38a8bcc",
+            "72db3ec8bf77929ebe74f4721c01b214c546d64dd810c21a96f655c3af0263cb",
+            "7bb90a006980d93538a8e39ec3bc0f2b312b7d6b8b80129c6c3955abca65b2f4",
+            "d12d54385ea786728c140a87b140ac30d46d53450438d9eb118fe0d9dbc85995",
+            "f16d53cab18dddc2f8c9d285b4df9bad214e920d7ed79d1bd45e60288b0130ce"
+          ]
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "c28454958c5d15c33881084e60b3aca068950b18c12b30ef9dbb9103751ea1b3",
+      "recordID": "record-82d1fed94058581d6e35b55b",
+      "segments": [
+        {
+          "sha256": "c28454958c5d15c33881084e60b3aca068950b18c12b30ef9dbb9103751ea1b3",
+          "shingles": [
+            "afed6d0cf2eca3792044e9c415eb20c00df2a7b0f46b62833b576af71964a53b"
+          ]
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "36671654e1e02d3390fdf4d21357753bc2015180b10d67015801b79530ae9685",
+      "recordID": "record-bf79c6243847761d95853b92",
+      "segments": [
+        {
+          "sha256": "36671654e1e02d3390fdf4d21357753bc2015180b10d67015801b79530ae9685",
+          "shingles": [
+            "8879e44ce62ca8e07fcf2b027702cc547275023a2e77f641783399cae67914f6",
+            "98b507f8f4171c84bda480c40187bc762e68b29ad25c5c3860afff6b9eae5b7f"
+          ]
+        }
+      ]
+    },
+    {
+      "normalizedTextSHA256": "08157c35e176a198ef2c06b5eab3660438c643e5e288df92df9098a2c3e087ff",
+      "recordID": "record-cca9f79e25c8b1d0a0355f6e",
+      "segments": [
+        {
+          "sha256": "08157c35e176a198ef2c06b5eab3660438c643e5e288df92df9098a2c3e087ff",
+          "shingles": []
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "lumen.adapter-contamination/1.0.0",
+  "shingleSize": 13
+}

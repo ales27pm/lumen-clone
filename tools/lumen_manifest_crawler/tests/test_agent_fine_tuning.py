@@ -7,6 +7,7 @@ import pytest
 
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
+from lumen_manifest_crawler.dataset.compiler import _records_hash
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
     CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
@@ -56,9 +57,11 @@ def _write_fine_tuning_fixture(tmp_path: Path, compiled_fine_tuning: tuple) -> P
 
 
 def test_per_agent_directories_are_produced(tmp_path: Path, compiled_fine_tuning: tuple) -> None:
+    manifest, _, _ = compiled_fine_tuning
     fine_tuning_output = _write_fine_tuning_fixture(tmp_path, compiled_fine_tuning)
 
     assert (fine_tuning_output / "adapter_runtime_manifest.json").exists()
+    assert (fine_tuning_output / "public_evaluation_fingerprints.json").exists()
     for agent in AGENTS:
         agent_dir = fine_tuning_output / agent
         assert agent_dir.exists()
@@ -67,10 +70,19 @@ def test_per_agent_directories_are_produced(tmp_path: Path, compiled_fine_tuning
             "val_sft.jsonl",
             "eval.jsonl",
             "dataset_card.json",
+            "experiment_manifest.json",
             "unsloth_config.json",
             "adapter_export_plan.json",
         ):
             assert (agent_dir / filename).exists(), f"missing {agent}/{filename}"
+        dataset_card = json.loads((agent_dir / "dataset_card.json").read_text(encoding="utf-8"))
+        assert dataset_card["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
+        adapter_plan = json.loads((agent_dir / "adapter_export_plan.json").read_text(encoding="utf-8"))
+        assert adapter_plan["datasetCard"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
+        for variant in ("internal_only", "internal_plus_public_baseline", "internal_plus_public_optimized"):
+            variant_dir = agent_dir / "experiments" / variant
+            assert (variant_dir / "variant_manifest.json").exists()
+            assert (variant_dir / "contamination_report.json").exists()
 
 
 def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_fine_tuning: tuple) -> None:
@@ -80,6 +92,15 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
     assert runtime_manifest["mode"] == "adapter_first"
     assert runtime_manifest["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
     assert runtime_manifest["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
+    assert runtime_manifest["sharedBaseModelIndexReferencedShardNames"] == [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+    ]
+    assert len(runtime_manifest["sharedBaseModelIndexShardBindingSHA256"]) == 64
+    assert len(runtime_manifest["sharedTrainingCodeSHA256"]) == 64
+    assert len(runtime_manifest["sharedTrainingCodeBundleSHA256"]) == 64
+    assert len(runtime_manifest["sharedTrainingDependencyLockSHA256"]) == 64
+    assert len(runtime_manifest["sharedRequirementsSHA256"]) == 64
     assert runtime_manifest["adapterRepoID"] == EXPECTED_ADAPTER_REPO
     assert runtime_manifest["runtimeStrategy"]["loadBaseModelOnce"] is True
     assert runtime_manifest["runtimeStrategy"]["selectAdapterByAgentSlot"] is True
@@ -90,15 +111,20 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
     adapters_by_agent = {entry["agent"]: entry for entry in runtime_manifest["adapters"]}
     for agent in AGENTS:
         expected_adapter_dir = f"models/lora_qwen3_bootstrap/{agent}"
+        expected_training_dir = f"models/training_runs_qwen3_bootstrap/{agent}"
+        expected_dpo_dir = f"models/lora_qwen3_dpo/{agent}"
         expected_adapter_gguf = f"models/lora_qwen3_gguf/lumen-{agent}-lora.gguf"
         agent_dir = fine_tuning_output / agent
         config = json.loads((agent_dir / "unsloth_config.json").read_text(encoding="utf-8"))
         plan = json.loads((agent_dir / "adapter_export_plan.json").read_text(encoding="utf-8"))
+        experiment = json.loads((agent_dir / "experiment_manifest.json").read_text(encoding="utf-8"))
+        controlled_variables = set(experiment["controlledVariables"])
 
         assert config["artifactMode"] == "adapter_first"
         assert config["defaultExportArtifact"] == "lora_adapter"
         assert config["adapter_output_dir"] == expected_adapter_dir
-        assert config["output_dir"] == expected_adapter_dir
+        assert config["output_dir"] == expected_training_dir
+        assert config["dpo_output_dir"] == expected_dpo_dir
         assert config["adapter_gguf_output_path"] == expected_adapter_gguf
         assert config["adapterExport"]["agent"] == agent
         assert config["adapterExport"]["adapterArtifact"] == expected_adapter_dir
@@ -106,6 +132,19 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert config["adapterExport"]["adapterGGUFArtifact"] == expected_adapter_gguf
         assert config["adapterExport"]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
         assert config["adapterExport"]["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
+        assert config["preference_trainer"] == "dpo"
+        assert config["trainingCodeManifest"]["phase"] == "sft"
+        assert config["trainingCodeSHA256"] == config[
+            "trainingCodeSHA256ByPhase"
+        ]["sft"]
+        assert config["trainingDependencyLockSHA256"] == config[
+            "trainingDependencyLock"
+        ]["trainingDependencyLockSHA256"]
+        assert config["requirementsSHA256"] == config["trainingDependencyLock"][
+            "requirementsSHA256"
+        ]
+        assert config["runtimeSourceKind"] == "unresolved"
+        assert config["runtimeSourceRevision"] is None
         assert config["adapterExport"]["sharedBaseFileName"] == EXPECTED_SHARED_BASE_FILE
         assert config["adapterExport"]["trainBaseModelWeights"] is False
         assert config["adapterExport"]["saveAdapterByDefault"] is True
@@ -117,6 +156,16 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert adapters_by_agent[agent]["adapterDirectory"] == expected_adapter_dir
         assert adapters_by_agent[agent]["adapterGGUFArtifact"] == expected_adapter_gguf
         assert adapters_by_agent[agent]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
+        assert adapters_by_agent[agent]["trainingCodeSHA256"] == config[
+            "trainingCodeSHA256"
+        ]
+        assert adapters_by_agent[agent]["trainingDependencyLockSHA256"] == config[
+            "trainingDependencyLockSHA256"
+        ]
+        assert (
+            set(adapters_by_agent[agent]["experimentPolicy"]["controlledVariables"])
+            == controlled_variables
+        )
         assert plan["mode"] == "adapter_first"
         assert plan["agent"] == agent
         assert plan["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
@@ -125,6 +174,11 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert plan["adapterArtifact"] == expected_adapter_dir
         assert plan["adapterDirectory"] == expected_adapter_dir
         assert plan["adapterGGUFArtifact"] == expected_adapter_gguf
+        assert plan["trainingCodeSHA256"] == config["trainingCodeSHA256"]
+        assert plan["trainingDependencyLockSHA256"] == config[
+            "trainingDependencyLockSHA256"
+        ]
+        assert set(plan["experimentPolicy"]["controlledVariables"]) == controlled_variables
         assert plan["expectedArtifacts"]["adapterDirectory"] == expected_adapter_dir
         assert plan["expectedArtifacts"]["adapterGGUF"] == expected_adapter_gguf
         assert plan["runtimeBinding"]["loadBaseModelOnce"] is True
@@ -145,6 +199,20 @@ def test_sft_records_use_chat_format(compiled_fine_tuning: tuple) -> None:
             assert messages[2]["role"] == "assistant"
             assert isinstance(messages[2]["content"], str)
             assert messages[2]["content"].strip()
+
+
+def test_eval_records_use_supported_executable_metric_contracts(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    for agent in AGENTS:
+        assert fine_tuning[agent].eval
+        for record in fine_tuning[agent].eval:
+            assert record["schemaVersion"] == "lumen.adapter-eval/1.0.0"
+            assert record["metrics"]
+            assert not [
+                metric
+                for metric in record["metrics"]
+                if metric.get("type") == "unsupported_contract"
+            ], (agent, record.get("metadata"), record["metrics"])
 
 
 def test_sft_records_do_not_train_null_assistant_outputs(compiled_fine_tuning: tuple) -> None:
@@ -179,6 +247,110 @@ def test_each_adapter_has_ultra_specific_dataset_records(compiled_fine_tuning: t
         assert card_quality["ultraSpecificSourceFamily"] == ULTRA_SPECIFIC_SOURCE_FAMILY
         assert card_quality["ultraSpecificRecordCount"] == len(ultra_specific)
         assert all((record.get("metadata") or {}).get("specificity") == "ultra_specific" for record in ultra_specific)
+
+
+def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, datasets, fine_tuning = compiled_fine_tuning
+    snapshot = json.loads(
+        (_repo_root() / "datasets/public_adapter_corpus/manifest.json").read_text(encoding="utf-8")
+    )
+    dataset_manifest = datasets["dataset_manifest"][0]
+    public_source_manifest = dataset_manifest["sources"]["publicAdapterCorpus"]
+    assert public_source_manifest["lumenContractSHA256"] == snapshot["lumenContractSHA256"]
+    assert public_source_manifest["partitionPolicy"] == snapshot["partitionPolicy"]
+
+    group_lanes: dict[tuple[str, str, str], str] = {}
+    for agent, expected_count in snapshot["countsByAgent"].items():
+        family = f"public_adapter_corpus_{agent}"
+        assert len(datasets[family]) == expected_count
+        assert dataset_manifest["hashes"][family] == _records_hash(datasets[family])
+
+        train_public_sft = [
+            record
+            for record in fine_tuning[agent].train_sft
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        val_public_sft = [
+            record
+            for record in fine_tuning[agent].val_sft
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        train_public_dpo = [
+            record
+            for record in fine_tuning[agent].train_dpo
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        val_public_dpo = [
+            record
+            for record in fine_tuning[agent].val_dpo
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        train_public = [*train_public_sft, *train_public_dpo]
+        val_public = [*val_public_sft, *val_public_dpo]
+        selected_public = [*train_public, *val_public]
+        assert selected_public
+        assert all(
+            record["metadata"]["publicCorpus"]["targetAdapter"] == agent
+            for record in selected_public
+        )
+        loaded_groups = {
+            record["metadata"]["publicCorpus"]["sourceGroupID"]
+            for record in datasets[family]
+        }
+        assert {
+            record["metadata"]["publicCorpus"]["sourceGroupID"]
+            for record in selected_public
+        } <= loaded_groups
+        train_groups = {
+            record["metadata"]["publicCorpus"]["sourceGroupID"] for record in train_public
+        }
+        val_groups = {
+            record["metadata"]["publicCorpus"]["sourceGroupID"] for record in val_public
+        }
+        assert train_groups.isdisjoint(val_groups)
+        for lane, records in (("train", train_public), ("validation", val_public)):
+            for record in records:
+                public = record["metadata"]["publicCorpus"]
+                key = (
+                    public["sourceRepository"],
+                    public["sourceRevision"],
+                    public["sourceGroupID"],
+                )
+                assert group_lanes.setdefault(key, lane) == lane
+        public_card = fine_tuning[agent].dataset_card["publicCorpus"]
+        assert public_card["snapshotIntegrity"]["recordsSHA256"] == snapshot["recordsSHA256"]
+        assert public_card["snapshotIntegrity"]["sourceManifestSHA256"] == snapshot["sourceManifestSHA256"]
+        assert public_card["selectionContract"]["policyVersions"] == [snapshot["selectionPolicyVersion"]]
+        assert len(public_card["selectionContract"]["sha256"]) == 64
+        assert sum(public_card["recordCounts"].values()) == len(selected_public)
+        for lane, selected_count in public_card["recordCounts"].items():
+            available_count = public_card["availableRecordCounts"][lane]
+            assert selected_count <= available_count
+            assert public_card["rejectedByTokenCap"][lane] == available_count - selected_count
+        assert sum(public_card["availableSourceCounts"].values()) == sum(
+            public_card["availableRecordCounts"].values()
+        )
+
+    assert sum(fine_tuning["mouth"].dataset_card["publicCorpus"]["recordCounts"][lane] for lane in ("train_dpo", "val_dpo")) > 0
+    mouth_public = fine_tuning["mouth"].dataset_card["publicCorpus"]
+    for lane in ("train_dpo", "val_dpo"):
+        assert mouth_public["tokenShares"][lane]["total"] <= 0.35
+        assert mouth_public["tokenShares"][lane]["target"] <= 0.35
+
+    for agent in AGENTS:
+        public_records = [
+            record
+            for record in (
+                fine_tuning[agent].train_sft
+                + fine_tuning[agent].val_sft
+                + fine_tuning[agent].train_dpo
+                + fine_tuning[agent].val_dpo
+            )
+            if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+        ]
+        assert all(record["metadata"]["agent"] == agent for record in public_records)
 
 
 def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: tuple) -> None:
@@ -322,7 +494,9 @@ def test_codebase_home_excludes_generated_manifest_outputs() -> None:
     overview = next(record for record in datasets["codebase_home_corpus"] if record.get("path") == ".")
 
     assert "ios/Lumen/AgentBehaviorManifest.json" not in paths
+    assert not any(path.startswith("datasets/public_adapter_corpus/") for path in paths)
     assert not any(path.startswith("generated/agent_manifest/") for path in paths)
+    assert not any("generated" in Path(path).parts for path in paths)
     assert overview["metadata"]["coverage"] == "git_tracked_text_files_excluding_generated_outputs"
     assert overview["metadata"]["selectedGeneratedFiles"] == []
     assert "ios/Lumen/AgentBehaviorManifest.json" in overview["metadata"]["excludedRelpaths"]
@@ -352,7 +526,17 @@ def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> N
 
 
 def test_unsloth_output_dirs_include_agent_and_finetune_marker(compiled_fine_tuning: tuple) -> None:
-    markers = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned"}
+    markers = {
+        "sft",
+        "dpo",
+        "orpo",
+        "lora",
+        "merged",
+        "adapter",
+        "finetune",
+        "finetuned",
+        "training",
+    }
     _, _, fine_tuning = compiled_fine_tuning
 
     for agent in AGENTS:

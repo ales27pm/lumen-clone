@@ -35,6 +35,16 @@ training corpora with different source snapshots and large duplicate payloads.
 
 `AgentBehaviorManifest.json` is generated from source by the manifest crawler. It is intentionally a deterministic source artifact, so `app.generatedAt` may be fixed to the Unix epoch (`1970-01-01T00:00:00+00:00`) when no real build metadata is being injected. That fixed timestamp is not a placeholder for TestFlight activity; it exists so repeated crawler runs with identical inputs produce stable JSON and hashes.
 
+Source provenance is intentionally non-self-referential. `sourceIntegrity.baseCommit`
+identifies the checked-out commit on which generation started,
+`sourceIntegrity.workingTreeDigest` identifies the current non-generated repository
+snapshot, and `sourceIntegrity.dirtyState` says whether that snapshot differs from
+the base commit. Generated output trees and the synced iOS manifest are excluded
+from the working-tree digest so writing the manifest cannot change its own identity.
+The legacy `sourceIntegrity.commit` key is accepted when older manifests are read,
+but new manifests do not emit it as though a dirty pre-commit generation already
+belonged to a future commit.
+
 The manifest must declare:
 
 ```json

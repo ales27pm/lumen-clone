@@ -5,22 +5,46 @@ Lumen can publish a self-contained Gradio Space that trains the role adapters on
 ## One-click command
 
 ```bash
-export HF_TOKEN="hf_..."
+export LUMEN_ZERO_GPU_HUB_TOKEN="hf_fine_grained_repository_token"
+export LUMEN_ZERO_GPU_ADMIN_TOKEN="<random-secret-of-at-least-32-characters>"
+export LUMEN_ZERO_GPU_EXPERIMENT_VARIANT="internal_plus_public_baseline"
+export LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST="sha256:<64-lowercase-hex-digest>"
 bash scripts/hf_zerogpu_train_lumen_adapters_aio.sh
 ```
+
+`LUMEN_ZERO_GPU_HUB_TOKEN` and `LUMEN_ZERO_GPU_ADMIN_TOKEN` are separate security
+boundaries. The Hub token must be a fine-grained token limited to the selected Space, dataset,
+and adapter repositories. The admin token authorizes the application endpoint and is sent only in
+`X-Lumen-Admin-Token`; it is never written to defaults, run manifests, summaries, or errors.
+
+There is deliberately no default experiment variant or container digest. Choose the baseline,
+optimized, or internal-only corpus explicitly for every production run. The digest is an
+operator-declared audit value for the intended image; Gradio ZeroGPU does not expose trusted
+runtime-image provenance that Lumen can compare with it. Runs therefore record
+`manual_validation_required` and cannot use the declaration alone as promotion evidence. The
+selected variant is included in the run ID. Automated promotion is intentionally unsupported
+until Lumen has an independently verifiable runtime-image attestation; manifest JSON cannot
+self-assert a trusted binding.
 
 The script:
 
 1. Creates an ignored local run directory under `.local/hf_zerogpu_runs/<run-id>`.
-2. Copies `generated/agent_manifest/fine_tuning` into an immutable dataset snapshot for that run.
-3. Creates or updates:
-   - a dataset repo for the run snapshot,
-   - a model repo for adapters,
-   - a Gradio Space for training.
-4. Uploads the dataset snapshot and Space bundle.
-5. Adds Space variables/secrets for the dataset and adapter repos.
+2. Copies the configured fine-tuning source into an immutable dataset snapshot for that run. The
+   launcher uses `generated/agent_manifest/fine_tuning` when present and otherwise falls back to
+   `generated/fine_tuning`.
+3. Uploads that snapshot first and captures the full Hugging Face dataset commit SHA. The Space is
+   configured with that exact commit; `main` is rejected for real training.
+4. Creates three private repositories by default and reads back their visibility before any
+   upload. An existing repository is reused only when its current visibility already matches;
+   changing it requires a repository-specific migration confirmation:
+   - a private dataset repo for the run snapshot,
+   - a private model repo for adapters,
+   - a private Gradio Space for training.
+5. Uploads a self-verifying Space bundle, captures the Space commit SHA, and configures the dataset
+   revision, runtime source revision, admin secret, and repository-scoped Hub token.
 6. Requests ZeroGPU hardware through the Hugging Face Hub API when supported by the installed `huggingface_hub`.
-7. Triggers the Space training API by default.
+7. Triggers the authenticated Space training API by default. Only one training operation may hold
+   the process lock at a time.
 
 ## Important variables
 
@@ -29,21 +53,193 @@ export LUMEN_ZERO_GPU_SPACE_REPO="ales27pm/lumen-zerogpu-adapter-trainer"
 export LUMEN_ZERO_GPU_DATASET_REPO="ales27pm/lumen-zerogpu-training-datasets"
 export LUMEN_ZERO_GPU_ADAPTER_REPO="ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
 export LUMEN_ZERO_GPU_AGENTS="cortex,executor,mouth,mimicry,rem,fleet"
+export LUMEN_ZERO_GPU_EXPERIMENT_VARIANT="internal_plus_public_baseline"
+export LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST="sha256:<64-lowercase-hex-digest>"
 export LUMEN_ZERO_GPU_SIZE="large"                 # or xlarge
-export LUMEN_ZERO_GPU_DURATION_SECONDS="3600"
+export LUMEN_ZERO_GPU_DURATION_SECONDS="1200"
 export LUMEN_ZERO_GPU_TRIGGER="1"                  # set 0 to only deploy
 export LUMEN_ZERO_GPU_DRY_RUN="1"                  # local validation only
+export LUMEN_ZERO_GPU_RESUME="0"                   # set 1 only for an unchanged existing run
+export LUMEN_ZERO_GPU_RESUME_BATCH=""              # required when resuming one of multiple batches
+export LUMEN_ZERO_GPU_DESTRUCTIVE_RESET="0"        # explicit replacement of an existing fresh-run workspace
+export LUMEN_ZERO_GPU_PUBLIC_SPACE="0"             # private by default; public requires explicit 1
+export LUMEN_ZERO_GPU_PUBLIC_DATASET="0"           # private by default; public requires explicit 1
+export LUMEN_ZERO_GPU_PUBLIC_ADAPTERS="0"          # private by default; public requires explicit 1
+export LUMEN_ZERO_GPU_CONFIRM_SPACE_VISIBILITY_CHANGE="0"
+export LUMEN_ZERO_GPU_CONFIRM_DATASET_VISIBILITY_CHANGE="0"
+export LUMEN_ZERO_GPU_CONFIRM_ADAPTER_VISIBILITY_CHANGE="0"
 ```
+
+Omitting all three public variables keeps the Space, dataset, and adapter/model repositories
+private. Set only the repository-specific override whose visibility is intentionally public. The
+standalone builder exposes the equivalent `--public-space`, `--public-dataset`, and
+`--public-adapters` flags; its deprecated hidden `--private-*` aliases do not change the
+private-by-default behavior. If an existing repository has different visibility, deployment stops
+before mutation unless the matching `LUMEN_ZERO_GPU_CONFIRM_*_VISIBILITY_CHANGE=1` is set (or the
+standalone builder receives its corresponding `--confirm-*-visibility-change` flag). This includes
+the default adapter repository if it is already public: an ordinary private-by-default run will not
+silently privatize previously published adapters. Repository visibility is printed without
+credentials, then enforced and read back as a precondition before any dataset, adapter, or Space
+upload. The running Space performs a second read-only adapter-repository visibility check
+immediately before trained-artifact upload, so a post-deployment visibility drift also fails closed.
+
+Public Space deployment never disables application authorization. A missing or invalid admin header is
+rejected before GPU allocation, filesystem changes, snapshot access, Hub-token access, or Hub API
+construction. Conflicting requests return a stable `training_already_active` error. External
+failures expose only a safe code, correlation ID, and concise message; the traceback remains in
+server logs under that correlation ID.
+
+The deployed ZeroGPU size and duration are part of the run contract. A request whose size differs
+from the decorator-bound Space configuration is rejected before GPU allocation, and a configured
+duration that would be silently clamped is rejected. Once the lease is attached, Lumen records the
+CUDA device name, memory, device count, and compute capability as
+`runtime_observed_unverified` audit evidence. Size, duration, and observed accelerator must match
+between controlled variants, but these fields do not upgrade the unverified container-image
+attestation.
+
+The complete installed-distribution `RECORD` scan runs once while the Space starts, before any GPU
+lease. The Space retains canonical environment bytes and passes an HMAC-authenticated cache
+attestation to trainer subprocesses; the process-local key is never serialized. A direct trainer
+invocation without that authorization performs a fresh full scan. The status page exposes only the
+environment digest, scan duration, distribution count, and total hashed bytes. Run manifests and
+summaries retain those non-secret metrics so real deployment evidence can quantify startup cost
+without spending the GPU lease rescanning PyTorch and CUDA wheels for every agent. Scan duration
+and the process-local cache signature are not controlled resume inputs; after a process restart,
+the current startup signature may authorize reuse only when the persisted resolved-environment
+digest and all other resume lineage remain unchanged.
+
+The Space page is intentionally API-only: it displays launcher guidance and does not expose a
+browser training button. Browser events cannot attach the required administrative header. Use the
+one-click launcher or the authenticated machine endpoint; do not place the admin token in a visible
+Gradio input.
 
 If the Hub API rejects the hardware id, select ZeroGPU manually in the Space settings and rerun with `LUMEN_ZERO_GPU_TRIGGER=1`.
 
-## Freshness policy
+The launcher always overwrites optional record, sequence-length, and epoch Space variables. When
+the corresponding local environment variable is unset it writes `0`, which means “use the
+generated per-adapter config.” This prevents smoke-test caps from a previous Space run from
+silently limiting a full training run.
 
-The default path is intentionally fresh:
+ZeroGPU duration limits are account- and GPU-size-dependent. The Hub may weight a requested wall
+duration by the selected GPU size, so a nominal duration can exceed the scheduler maximum. Treat
+`ZeroGPU illegal duration`, quota errors, and a disconnected long-lived event stream as terminal
+for that attempt; do not automatically restart an uncapped training job.
 
-- each run gets a new run id and dataset snapshot path,
-- the Space deletes the run workdir before training unless `resume` is explicitly selected,
+The current uncapped Cortex dataset is substantially larger than the other adapter datasets and
+may not finish inside one ZeroGPU lease. Use a dedicated GPU backend or implement durable,
+Hub-backed checkpoint sharding before claiming full Cortex training. Reducing record or epoch
+counts is a sampled training run, not a full run.
+
+## Fresh runs and resume
+
+The default path is intentionally fresh and fail-closed:
+
+- each run gets a new run ID, immutable dataset commit, and local dataset snapshot path;
+- an existing run directory is rejected unless `LUMEN_ZERO_GPU_DESTRUCTIVE_RESET=1` is explicitly
+  selected; fresh training never silently deletes a resumable run;
 - LoRA adapters are written under `runs/<run-id>/adapters/<agent>` in the adapter repo,
+- each adapter upload contains a canonical per-file digest manifest and a finalized experiment
+  manifest bound to that adapter digest,
 - merge/release-bake remains disabled by default.
 
-This prevents accidental continuation from old checkpoints. It does not prove dataset quality; if the generated dataset contains contaminated examples, the training run will still learn them. The Space performs the same basic null-output guard as the local Ubuntu AIO runner before launching GPU work.
+Resume reuses the original local snapshot and reads the existing self-hashed run manifest before
+any mutation. It rejects dataset-commit, dataset-file, lane, variant, seed, base-model,
+environment, training-code, dependency, runtime-source, assistant-loss, and path drift. Every
+checkpoint is associated with the run through a self-hashed checkpoint-lineage record and a
+canonical recursive file digest. Resume requires at least one recorded checkpoint and never
+redownloads, recopies, or replaces the snapshot or configs.
+
+The trainer enforces the same checkpoint record when invoked directly with
+`--resume-from-checkpoint`; Trainer auto-discovery alone is not accepted.
+
+The one-click launcher defaults to one agent per batch. When such a run has multiple batches,
+`LUMEN_ZERO_GPU_RESUME=1` also requires `LUMEN_ZERO_GPU_RESUME_BATCH=<1-based-batch-number>` and
+invokes only that batch. Ambiguous multi-batch resume fails before creating a virtual environment
+or calling the builder. The selected batch must still match the Space's existing run and checkpoint
+lineage. Space-local disk is ephemeral across restart or redeployment, so this mechanism resumes an
+intact running deployment; it is not restart-safe until checkpoints are persisted to an attached
+volume or private Hub repository.
+
+## Training code and dependency evidence
+
+The builder assembles the executable trainers as a real package:
+
+```text
+lumen_training/
+├── __init__.py
+├── train_sft.py
+├── train_dpo.py
+├── adapter_artifact.py
+└── training_lineage.py
+```
+
+The deployed entrypoints are `python -m lumen_training.train_sft` and
+`python -m lumen_training.train_dpo`; the latter selects the pinned DPO or ORPO implementation from
+the prepared config. This layout keeps relative imports identical in clean Space subprocesses and
+does not depend on a repository checkout being present on `PYTHONPATH`.
+
+The training-code bundle covers `app.py`, `requirements.txt`, the entire deployed
+`lumen_training` package, and every behavior-affecting `.py`, `.json`, `.jsonl`, `.txt`, config,
+shell, and YAML/TOML resource under the deployed `lumen_manifest_crawler` package. Its explicit
+`closurePolicy` records the covered roots, included extensions, volatile directory names, and the
+run-specific exclusions (`lumen_zero_gpu_defaults.json` and
+`lumen_zero_gpu_run_manifest.json`). Verification is bidirectional: a
+missing or changed declared file fails, and so does any unexpected behavior-affecting file under a
+covered tree. `.git`, logs, checkpoints, outputs, uploads, `__pycache__`, and bytecode are excluded
+as volatile runtime state; credentials remain environment secrets and are not deployed files.
+
+The bundle records `trainingCodeBundleSHA256` plus separate
+`trainingCodeSHA256ByPhase.{sft,dpo,orpo}` identities. The Space reconstructs the deployed tree and
+verifies the requested phase before model loading. This means a package initializer, transitively
+imported crawler helper, evaluation registry/fingerprint JSON resource, trainer, Space app, or
+requirements change changes the controlled identity. Requirements and installed direct
+dependencies, the Unsloth VCS commit, Python/CUDA versions, and the optional llama.cpp converter
+revision must also match the generated dependency lock.
+
+The direct lock is complemented by a runtime-built `resolvedTrainingEnvironment` covering every
+installed distribution. Its canonical identity binds normalized package name and version,
+secret-safe direct URL/VCS provenance, the distribution `RECORD`, and every behavior-bearing file
+hash and size declared by that record. Only generated bytecode and the self-referential `RECORD`
+row are explicit volatile exclusions. The resulting `resolvedTrainingEnvironmentSHA256` is part of
+run, checkpoint, training, finalization, evaluation, and comparison evidence, so transitive-package
+or installed-artifact drift cannot be mistaken for an equivalent baseline/optimized environment.
+
+Space runtime configuration has a separate canonical identity. The builder parses the deployed
+README front matter and permits exactly the supported Gradio entrypoint contract (`sdk: gradio`,
+`app_file: app.py`, Python 3.10, and no README-selected hardware). Runtime preflight parses it again
+and requires the same `spaceConfigurationSHA256`; unknown or changed runtime fields fail before
+model loading. ZeroGPU hardware remains requested through the Hub API.
+
+Runtime-source evidence deliberately separates:
+
+- `expectedRuntimeSourceRevision`: the immutable Space commit configured by the builder;
+- `observedRepositoryRevision`: an authenticated observation of the Space repository head;
+- `observedRuntimeRevision`: a platform-provided executing revision, when such trusted metadata is
+  actually available;
+- `runtimeSourceBindingStatus` and `runtimeSourceBindingMethod`: the confidence and source of the
+  observation.
+
+A well-formed environment variable or a repository-head match is not proof of which Space commit
+the running container executes. When Hugging Face supplies no independently attested runtime
+revision, the binding remains `operator_declared_unverified`; repository head is supplemental audit
+evidence only. `trainingCodeSHA256` remains the controlled comparison identity, so distinct
+run-specific Space commits can be compared only when their verified training-code and dependency
+digests match. Expected and observed source evidence is retained in run, checkpoint, training, and
+finalized lineage rather than being collapsed into one asserted revision.
+
+## Preference-training parent boundary
+
+DPO and ORPO accept only a self-hash-valid, trained, finalized SFT variant whose canonical adapter
+directory verifies against its declared digest. Parent validation matches the active preference
+config across agent, experiment variant, source variant manifest, effective seed, complete base
+model/index/shard/tokenizer contract, environment and dependency locks, requirements digest,
+runtime source kind, and the SFT phase code digest. `adapter_config.json` must name the same base
+model, and any missing, extra, or modified adapter file fails verification.
+
+Preference reports keep three concepts distinct: `parentSFTLineage` records the immutable SFT
+parent and its original runtime audit evidence; DPO additionally records the same verified frozen
+policy as `referenceSFTLineage`; and `preferenceTrainingRuntime` records the DPO/ORPO execution.
+ORPO has no separate reference policy but still enforces the complete parent contract.
+
+These controls do not make the operator-declared container digest trustworthy. Promotion remains
+unsupported until the platform supplies an independently verifiable runtime-image attestation.

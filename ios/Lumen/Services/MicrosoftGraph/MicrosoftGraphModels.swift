@@ -16,7 +16,12 @@ nonisolated enum MicrosoftGraphAuthError: LocalizedError, Equatable, Sendable {
     case missingClientID
     case msalNotLinked
     case noAccount
+    case invalidGrant
     case interactionRequired
+    case consentRequired
+    case invalidScope
+    case tokenEndpointThrottled
+    case tokenEndpointUnavailable
     case presentationAnchorUnavailable
     case signInCancelled
     case invalidConfiguration(String)
@@ -29,8 +34,18 @@ nonisolated enum MicrosoftGraphAuthError: LocalizedError, Equatable, Sendable {
             return "MSAL is not linked. Add microsoft-authentication-library-for-objc with Swift Package Manager to enable Microsoft sign-in."
         case .noAccount:
             return "No Microsoft account is currently signed in."
+        case .invalidGrant:
+            return "Microsoft authorization expired or was revoked. Reconnect Outlook to continue."
         case .interactionRequired:
             return "Microsoft requires an interactive sign-in before this action can continue."
+        case .consentRequired:
+            return "Microsoft requires consent for the requested Outlook permissions."
+        case .invalidScope:
+            return "Microsoft did not grant the requested Outlook permission scope."
+        case .tokenEndpointThrottled:
+            return "Microsoft is throttling authentication requests. Try again later."
+        case .tokenEndpointUnavailable:
+            return "Microsoft authentication is temporarily unavailable. Try again later."
         case .presentationAnchorUnavailable:
             return "No active view controller is available for Microsoft sign-in."
         case .signInCancelled:

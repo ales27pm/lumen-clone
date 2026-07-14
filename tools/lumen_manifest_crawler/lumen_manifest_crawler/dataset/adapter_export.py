@@ -3,9 +3,25 @@ from __future__ import annotations
 import re
 from typing import Any
 
-ADAPTER_EXPORT_SCHEMA_VERSION = "1.1.0"
+from lumen_manifest_crawler.dataset.adapter_evaluation import (
+    DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+    DEFAULT_BASE_MODEL_INDEX_DIGEST,
+    DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES,
+    DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
+    DEFAULT_BASE_MODEL_REVISION,
+    DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
+    EXPERIMENT_VARIANTS,
+    RUNTIME_SOURCE_AUDIT_FIELDS,
+    default_training_lineage_contract,
+    promotion_contract,
+)
+
+ADAPTER_EXPORT_SCHEMA_VERSION = "1.4.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
+DEFAULT_TRAINING_OUTPUT_ROOT = "models/training_runs_qwen3_bootstrap"
+DEFAULT_DPO_OUTPUT_ROOT = "models/lora_qwen3_dpo"
 DEFAULT_ADAPTER_GGUF_OUTPUT_ROOT = "models/lora_qwen3_gguf"
 DEFAULT_RELEASE_BAKE_OUTPUT_ROOT = "models/gguf_release_bake_qwen3_bootstrap"
 DEFAULT_ADAPTER_REPO_ID = "ales27pm/lumen-qwen3-bootstrap-adapters-gguf"
@@ -20,6 +36,14 @@ def adapter_artifact_name(agent: str) -> str:
 
 def adapter_output_dir(agent: str) -> str:
     return f"{DEFAULT_LORA_OUTPUT_ROOT}/{agent}"
+
+
+def training_output_dir(agent: str) -> str:
+    return f"{DEFAULT_TRAINING_OUTPUT_ROOT}/{agent}"
+
+
+def dpo_output_dir(agent: str) -> str:
+    return f"{DEFAULT_DPO_OUTPUT_ROOT}/{agent}"
 
 
 def adapter_gguf_output_path(agent: str) -> str:
@@ -63,6 +87,21 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out = dict(config or {})
     base_model_id = base_model_id_from_config(out)
     out.setdefault("baseModelID", base_model_id)
+    out.setdefault("baseModelRevision", DEFAULT_BASE_MODEL_REVISION)
+    out.setdefault("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST)
+    out.setdefault(
+        "baseModelIndexReferencedShardNames",
+        list(DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES),
+    )
+    out.setdefault(
+        "baseModelIndexShardBindingSHA256",
+        DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
+    )
+    out.setdefault("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST)
+    out.setdefault("baseModelWeightShards", [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS])
+    out.setdefault("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST)
+    for key, value in default_training_lineage_contract().items():
+        out.setdefault(key, value)
     out["artifactMode"] = "adapter_first"
     out["defaultExportArtifact"] = "lora_adapter"
     out["artifact_mode"] = "adapter_first"
@@ -70,7 +109,8 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out["merge_adapters_by_default"] = False
     out["release_bake_enabled_by_default"] = False
     out["adapter_output_dir"] = adapter_output_dir(agent)
-    out["output_dir"] = adapter_output_dir(agent)
+    out["output_dir"] = training_output_dir(agent)
+    out["dpo_output_dir"] = dpo_output_dir(agent)
     out["adapter_gguf_output_path"] = adapter_gguf_output_path(agent)
     out["gguf_output_dir"] = release_bake_output_dir(agent)
     out["adapterExport"] = {
@@ -82,12 +122,29 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "adapterGGUFArtifact": adapter_gguf_output_path(agent),
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
         "baseModelID": base_model_id,
+        "baseModelRevision": out["baseModelRevision"],
+        "baseModelIndexDigest": out["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": out["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": out["baseModelIndexShardBindingSHA256"],
+        "baseModelArtifactDigest": out["baseModelArtifactDigest"],
+        "baseModelWeightShards": out["baseModelWeightShards"],
+        "baseModelTokenizerDigest": out["baseModelTokenizerDigest"],
+        "trainingCodeSHA256": out["trainingCodeSHA256"],
+        "trainingCodeSHA256ByPhase": dict(out["trainingCodeSHA256ByPhase"]),
+        "trainingCodeBundleSHA256": out["trainingCodeBundleSHA256"],
+        "trainingDependencyLockSHA256": out["trainingDependencyLockSHA256"],
+        "requirementsSHA256": out["requirementsSHA256"],
+        **{field: out[field] for field in RUNTIME_SOURCE_AUDIT_FIELDS},
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "trainBaseModelWeights": False,
         "saveAdapterByDefault": True,
         "mergeAdaptersByDefault": False,
         "rollbackUnit": "adapter",
+        "trainingPhases": {
+            "sft": "enabled",
+            "dpo": "generated_not_trained",
+        },
     }
     out["mergeExport"] = {
         "enabledByDefault": False,
@@ -101,11 +158,33 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
 
 def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_config: dict[str, Any] | None) -> dict[str, Any]:
     base_model_id = base_model_id_from_config(unsloth_config)
+    config = unsloth_config or {}
     return {
         "schemaVersion": ADAPTER_EXPORT_SCHEMA_VERSION,
         "mode": "adapter_first",
         "agent": agent,
         "baseModelID": base_model_id,
+        "baseModelRevision": config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
+        "baseModelIndexDigest": config.get("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST),
+        "baseModelIndexReferencedShardNames": config.get(
+            "baseModelIndexReferencedShardNames",
+            list(DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES),
+        ),
+        "baseModelIndexShardBindingSHA256": config.get(
+            "baseModelIndexShardBindingSHA256",
+            DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
+        ),
+        "baseModelArtifactDigest": config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
+        "baseModelWeightShards": config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
+        "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
+        "trainingCodeSHA256": config.get("trainingCodeSHA256"),
+        "trainingCodeSHA256ByPhase": dict(
+            config.get("trainingCodeSHA256ByPhase") or {}
+        ),
+        "trainingCodeBundleSHA256": config.get("trainingCodeBundleSHA256"),
+        "trainingDependencyLockSHA256": config.get("trainingDependencyLockSHA256"),
+        "requirementsSHA256": config.get("requirementsSHA256"),
+        **{field: config.get(field) for field in RUNTIME_SOURCE_AUDIT_FIELDS},
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
@@ -115,10 +194,14 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "adapterGGUFArtifact": adapter_gguf_output_path(agent),
         "systemPrompt": dataset_card.get("systemPrompt"),
         "datasetCard": {
+            "sourceIntegrity": dataset_card.get("sourceIntegrity"),
+            # Compatibility for existing adapter-plan consumers.
             "manifestCommit": dataset_card.get("manifestCommit"),
             "recordCounts": dataset_card.get("recordCounts", {}),
             "sourceFamilies": dataset_card.get("sourceFamilies", []),
             "taskTypes": dataset_card.get("taskTypes", []),
+            "evaluation": dataset_card.get("evaluation", {}),
+            "preferenceTraining": dataset_card.get("preferenceTraining", {}),
         },
         "runtimeBinding": {
             "loadBaseModelOnce": True,
@@ -136,6 +219,17 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
             "requiresPassingEvalGatesBeforeMerge": True,
             "rollbackUnit": "adapter",
         },
+        "experimentPolicy": {
+            "requiredVariants": list(EXPERIMENT_VARIANTS),
+            "controlledVariables": list(
+                (dataset_card.get("experimentPolicy") or {}).get(
+                    "controlledVariables", []
+                )
+            ),
+            "promotionContract": promotion_contract(),
+            "runtimePointerPolicy": "unchanged_until_promoted",
+            "experimentManifestSHA256": (dataset_card.get("experimentPolicy") or {}).get("experimentManifestSHA256"),
+        },
         "expectedArtifacts": {
             "adapterDirectory": adapter_output_dir(agent),
             "adapterGGUF": adapter_gguf_output_path(agent),
@@ -146,6 +240,12 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
             "eval": "eval.jsonl",
             "datasetCard": "dataset_card.json",
             "trainingConfig": "unsloth_config.json",
+            "evaluationFingerprints": "evaluation_fingerprints.json",
+            "contaminationReport": "contamination_report.json",
+            "experimentManifest": "experiment_manifest.json",
+            "experimentRoot": "experiments",
+            "variantPathTemplate": "experiments/{variant}",
+            "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
         },
     }
 
@@ -153,11 +253,29 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
 def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
     adapters: list[dict[str, Any]] = []
     base_model_ids: set[str] = set()
+    training_code_digests: set[str] = set()
+    training_code_phase_digests: list[dict[str, str] | None] = []
+    training_code_bundle_digests: set[str] = set()
+    dependency_lock_digests: set[str] = set()
+    requirements_digests: set[str] = set()
     for agent, dataset in sorted(datasets.items()):
         unsloth_config = getattr(dataset, "unsloth_config", {}) or {}
         dataset_card = getattr(dataset, "dataset_card", {}) or {}
         base_model_id = base_model_id_from_config(unsloth_config)
         base_model_ids.add(base_model_id)
+        for values, key in (
+            (training_code_digests, "trainingCodeSHA256"),
+            (training_code_bundle_digests, "trainingCodeBundleSHA256"),
+            (dependency_lock_digests, "trainingDependencyLockSHA256"),
+            (requirements_digests, "requirementsSHA256"),
+        ):
+            value = unsloth_config.get(key)
+            if isinstance(value, str) and value:
+                values.add(value)
+        phase_digests = unsloth_config.get("trainingCodeSHA256ByPhase")
+        training_code_phase_digests.append(
+            dict(phase_digests) if isinstance(phase_digests, dict) else None
+        )
         adapters.append(
             {
                 "agent": agent,
@@ -167,8 +285,35 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "adapterGGUFArtifact": adapter_gguf_output_path(agent),
                 "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
                 "baseModelID": base_model_id,
+                "baseModelRevision": unsloth_config.get("baseModelRevision", DEFAULT_BASE_MODEL_REVISION),
+                "baseModelIndexDigest": unsloth_config.get("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST),
+                "baseModelIndexReferencedShardNames": unsloth_config.get(
+                    "baseModelIndexReferencedShardNames",
+                    list(DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES),
+                ),
+                "baseModelIndexShardBindingSHA256": unsloth_config.get(
+                    "baseModelIndexShardBindingSHA256",
+                    DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
+                ),
+                "baseModelArtifactDigest": unsloth_config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
+                "baseModelWeightShards": unsloth_config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
+                "baseModelTokenizerDigest": unsloth_config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
+                "trainingCodeSHA256": unsloth_config.get("trainingCodeSHA256"),
+                "trainingCodeSHA256ByPhase": dict(
+                    unsloth_config.get("trainingCodeSHA256ByPhase") or {}
+                ),
+                "trainingCodeBundleSHA256": unsloth_config.get("trainingCodeBundleSHA256"),
+                "trainingDependencyLockSHA256": unsloth_config.get("trainingDependencyLockSHA256"),
+                "requirementsSHA256": unsloth_config.get("requirementsSHA256"),
+                **{
+                    field: unsloth_config.get(field)
+                    for field in RUNTIME_SOURCE_AUDIT_FIELDS
+                },
                 "systemPrompt": dataset_card.get("systemPrompt"),
                 "recordCounts": dataset_card.get("recordCounts", {}),
+                "evaluation": dataset_card.get("evaluation", {}),
+                "preferenceTraining": dataset_card.get("preferenceTraining", {}),
+                "experimentPolicy": dataset_card.get("experimentPolicy", {}),
             }
         )
 
@@ -177,6 +322,47 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "schemaVersion": ADAPTER_EXPORT_SCHEMA_VERSION,
         "mode": "adapter_first",
         "sharedBaseModelID": shared_base_model_id,
+        "sharedBaseModelRevision": DEFAULT_BASE_MODEL_REVISION,
+        "sharedBaseModelIndexDigest": DEFAULT_BASE_MODEL_INDEX_DIGEST,
+        "sharedBaseModelIndexReferencedShardNames": list(
+            DEFAULT_BASE_MODEL_INDEX_REFERENCED_SHARD_NAMES
+        ),
+        "sharedBaseModelIndexShardBindingSHA256": (
+            DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256
+        ),
+        "sharedBaseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
+        "sharedBaseModelWeightShards": DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
+        "sharedBaseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+        "sharedTrainingCodeSHA256": (
+            next(iter(training_code_digests))
+            if len(training_code_digests) == 1
+            else None
+        ),
+        "sharedTrainingCodeSHA256ByPhase": (
+            training_code_phase_digests[0]
+            if training_code_phase_digests
+            and training_code_phase_digests[0] is not None
+            and all(
+                value == training_code_phase_digests[0]
+                for value in training_code_phase_digests[1:]
+            )
+            else None
+        ),
+        "sharedTrainingCodeBundleSHA256": (
+            next(iter(training_code_bundle_digests))
+            if len(training_code_bundle_digests) == 1
+            else None
+        ),
+        "sharedTrainingDependencyLockSHA256": (
+            next(iter(dependency_lock_digests))
+            if len(dependency_lock_digests) == 1
+            else None
+        ),
+        "sharedRequirementsSHA256": (
+            next(iter(requirements_digests))
+            if len(requirements_digests) == 1
+            else None
+        ),
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,

@@ -169,7 +169,7 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
     static let regression: [E2ETestScenario] = [
         E2ETestScenario(id: "weather-here-no-calendar", title: "Weather here must not create events", kind: .regression, prompt: "What is the weather here?", expectedIntent: .weather, requiredAllowedToolIDs: ["weather", "location.current"], forbiddenToolIDs: ["calendar.create", "calendar.list", "reminders.create", "web.search"], requiredTextHints: [], forbiddenTextHints: ["created a new event", "calendar event", "will start in", "search web for diy underground shelter"], requiresAgentRun: true),
         E2ETestScenario(id: "web-search-no-calendar", title: "Web search must not create calendar event", kind: .regression, prompt: "Search web for diy underground shelter", expectedIntent: .webSearch, requiredAllowedToolIDs: ["web.search"], forbiddenToolIDs: ["calendar.create", "calendar.list", "reminders.create", "maps.search"], requiredTextHints: [], forbiddenTextHints: ["created a new event", "calendar event", "will start in"], requiresAgentRun: true),
-        E2ETestScenario(id: "vague-email-clarifies", title: "Vague email draft asks clarification", kind: .routing, prompt: "Draft a email", expectedIntent: .emailDraft, requiredAllowedToolIDs: ["mail.draft", "contacts.search"], forbiddenToolIDs: ["calendar.create", "weather", "web.search", "reminders.create"], requiredTextHints: ["who should", "what should"], forbiddenTextHints: ["i will be in touch soon", "created a new event"], requiresAgentRun: true),
+        E2ETestScenario(id: "vague-email-clarifies", title: "Vague email draft asks clarification", kind: .routing, prompt: "Draft a email", expectedIntent: .emailDraft, requiredAllowedToolIDs: ["mail.draft", "contacts.search"], forbiddenToolIDs: ["calendar.create", "weather", "web.search", "reminders.create"], requiredTextHints: ["who should", "what should"], forbiddenTextHints: ["i will be in touch soon", "created a new event"], requiresAgentRun: true, evidenceMode: .policyFirstAllowed),
         E2ETestScenario(id: "normal-chat-no-forced-tool", title: "Normal chat does not force tools", kind: .chat, prompt: "Explain why a sharp chisel is safer than a dull one.", expectedIntent: .chat, requiredAllowedToolIDs: [], forbiddenToolIDs: ["calendar.create", "weather", "web.search", "mail.draft", "reminders.create"], requiredTextHints: [], forbiddenTextHints: ["created a new event", "weather for"], requiresAgentRun: true)
     ]
 
@@ -1146,7 +1146,19 @@ nonisolated enum E2ETestRunner {
                                forbiddenCanonicalToolIDs.contains(ToolRouteGuard.canonicalToolID(toolID)) {
                                 failures.append("Forbidden tool selected by agent: \(toolID)")
                             }
-                        case .stepDelta, .toolInvocation, .toolResult, .diagnostic:
+                        case .toolResult(let result):
+                            if let errorCode = result.errorCode {
+                                let availability = result.structuredPayload?["availability"] ?? "unknown"
+                                await event(
+                                    "tool-result",
+                                    "status=\(result.status.rawValue), errorCode=\(errorCode), availability=\(availability)"
+                                )
+                            }
+                        case .diagnostic(let diagnostic):
+                            if let diagnosticEvidence = structuredKernelDiagnosticEvidence(diagnostic) {
+                                await event("kernel-diagnostic", diagnosticEvidence)
+                            }
+                        case .stepDelta, .toolInvocation:
                             break
                         case .token(let chunk), .finalDelta(let chunk):
                             rawFinalText += chunk
@@ -1383,8 +1395,10 @@ nonisolated enum E2ETestRunner {
                 if scenario.expectedIntent == .rag
                     && scenario.requiresAgentRun
                     && scenario.requiredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID).contains("rag.search")
-                    && !ragEmptyRetrieval {
-                    if !lowerFinal.contains("module") && !lowerFinal.contains("modules") {
+                    && ragRetrievalEvidence == .positive {
+                    if ragScenarioRequiresArchitectureGrounding(scenario)
+                        && !lowerFinal.contains("module")
+                        && !lowerFinal.contains("modules") {
                         failures.append("RAG final response must mention module/modules")
                     }
                     let hasGroundingMarkers = finalText.contains("[") || lowerFinal.contains("snippet") || lowerFinal.contains("source")
@@ -2359,7 +2373,48 @@ nonisolated enum E2ETestRunner {
         return evidence.contains("cpu-watchdog-degraded")
     }
 
+    nonisolated private static func structuredKernelDiagnosticEvidence(
+        _ diagnostic: AgentKernelDiagnosticEvent
+    ) -> String? {
+        guard diagnostic.stage.hasPrefix("structured-agent-json-") else { return nil }
+        let allowedMetadataKeys: Set<String> = [
+            "stepIndex",
+            "runtimePath",
+            "parseError",
+            "modelLoaded",
+            "streamStarted",
+            "firstChunkReceived",
+            "textChunkCount",
+            "finalChunkReceived",
+            "streamTerminationReason",
+            "emptyOutputReason"
+        ]
+        let safeMetadata = diagnostic.metadata
+            .filter { allowedMetadataKeys.contains($0.key) }
+            .map { key, value in
+                let safeKey = PersistentRuntimeDiagnosticsRedactor.safeCode(key)
+                let safeValue = String(PersistentRuntimeDiagnosticsRedactor.redact(value).prefix(96))
+                return "\(safeKey)=\(safeValue)"
+            }
+            .sorted()
+        guard !safeMetadata.isEmpty else { return nil }
+        let stage = PersistentRuntimeDiagnosticsRedactor.safeCode(diagnostic.stage)
+        return (["stage=\(stage)"] + safeMetadata).joined(separator: ", ")
+    }
+
 #if DEBUG
+    nonisolated static func structuredKernelDiagnosticEvidenceForTests(
+        _ diagnostic: AgentKernelDiagnosticEvent
+    ) -> String? {
+        structuredKernelDiagnosticEvidence(diagnostic)
+    }
+
+    nonisolated static func ragScenarioRequiresArchitectureGroundingForTests(
+        _ scenario: E2ETestScenario
+    ) -> Bool {
+        ragScenarioRequiresArchitectureGrounding(scenario)
+    }
+
     nonisolated static func scenarioTemporarilyEnablesNetworkAccessForTests(
         _ scenario: E2ETestScenario,
         routing: IntentRoutingDecision,
@@ -3199,7 +3254,9 @@ nonisolated enum E2ETestRunner {
                 "no matching files found",
                 "import or create local files"
             ]
-            if retrievalUnavailableSignals.contains(where: { evidence.contains($0) }) {
+            if evidence.contains("cleanup_deferred:disk_write_budget_denied") {
+                quarantine("ragMaintenanceDeferred", evidenceKind: "resource-budget-deferred")
+            } else if retrievalUnavailableSignals.contains(where: { evidence.contains($0) }) {
                 quarantine("ragStorageUnavailable", evidenceKind: "retrieval-unavailable")
             } else if storageUnavailableSignals.contains(where: { evidence.contains($0) }) {
                 quarantine("ragStorageUnavailable", evidenceKind: "storage-unavailable")
@@ -3207,6 +3264,54 @@ nonisolated enum E2ETestRunner {
         }
 
         if scenario.expectedIntent == .outlook || scenario.expectedToolID?.hasPrefix("outlook.") == true {
+            let structuredFailureCodes = Set(events
+                .filter { $0.phase == "tool-result" }
+                .compactMap { event -> String? in
+                    guard let range = event.message.range(of: #"errorCode=([^,\s]+)"#, options: .regularExpression) else {
+                        return nil
+                    }
+                    return String(event.message[range])
+                        .replacingOccurrences(of: "errorCode=", with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                })
+            let configurationCodes: Set<String> = ["outlook_not_configured"]
+            let authenticationCodes: Set<String> = [
+                "outlook_auth_unavailable",
+                "outlook_interaction_required",
+                "outlook_reauthentication_required"
+            ]
+            let permissionCodes: Set<String> = [
+                "outlook_consent_required",
+                "outlook_permission_denied",
+                "outlook_scope_not_granted"
+            ]
+            let providerCodes: Set<String> = [
+                "outlook_auth_provider_unavailable",
+                "outlook_network_unavailable",
+                "outlook_provider_error",
+                "outlook_provider_throttled"
+            ]
+            let knownFailureCodes = configurationCodes
+                .union(authenticationCodes)
+                .union(permissionCodes)
+                .union(providerCodes)
+            if let safeFailureCode = structuredFailureCodes
+                .intersection(knownFailureCodes)
+                .sorted()
+                .first {
+                metadata["toolFailureCode"] = safeFailureCode
+            }
+            if !structuredFailureCodes.isDisjoint(with: configurationCodes) {
+                quarantine("outlookRuntimeUnavailable", evidenceKind: "tool-configuration-unavailable")
+            } else if !structuredFailureCodes.isDisjoint(with: authenticationCodes) {
+                quarantine("outlookAuthenticationUnavailable", evidenceKind: "tool-authentication-unavailable")
+            } else if !structuredFailureCodes.isDisjoint(with: permissionCodes) {
+                quarantine("outlookPermissionUnavailable", evidenceKind: "tool-permission-unavailable")
+            } else if !structuredFailureCodes.isDisjoint(with: providerCodes) {
+                quarantine("outlookProviderUnavailable", evidenceKind: "tool-provider-unavailable")
+            }
+
             let unavailableSignals = [
                 "outlook config",
                 "outlook auth",
@@ -3216,7 +3321,8 @@ nonisolated enum E2ETestRunner {
                 "authentication required",
                 "authorization required"
             ]
-            if unavailableSignals.contains(where: { evidence.contains($0) }) {
+            if metadata["failureKind"] == nil,
+               unavailableSignals.contains(where: { evidence.contains($0) }) {
                 quarantine("outlookRuntimeUnavailable", evidenceKind: "tool-configuration-unavailable")
             }
         }
@@ -3254,8 +3360,16 @@ nonisolated enum E2ETestRunner {
                 return "Runtime infrastructure unavailable: RAG retrieval unavailable."
             }
             return "Runtime infrastructure unavailable: RAG storage unavailable."
+        case "ragMaintenanceDeferred":
+            return "Runtime preflight unavailable: RAG maintenance deferred by the disk-write budget."
         case "outlookRuntimeUnavailable":
             return "Runtime infrastructure unavailable: Outlook configuration unavailable."
+        case "outlookAuthenticationUnavailable":
+            return "Runtime infrastructure unavailable: Outlook authentication unavailable."
+        case "outlookPermissionUnavailable":
+            return "Runtime infrastructure unavailable: Outlook permission or consent unavailable."
+        case "outlookProviderUnavailable":
+            return "Runtime infrastructure unavailable: Outlook provider unavailable."
         case "liveRuntimeCPUWatchdogDegraded":
             return "Runtime preflight unavailable: CPU watchdog degraded before valid generation."
         case "liveRuntimePreflightUnavailable":
@@ -3318,6 +3432,12 @@ nonisolated enum E2ETestRunner {
     nonisolated private static func referencesRetrievedSnippet(_ lowerFinal: String) -> Bool {
         let signals = ["[1]", "[2]", "snippet", "source", "file", "pdf", "note", "retrieved"]
         return signals.contains { lowerFinal.contains($0) }
+    }
+
+    nonisolated private static func ragScenarioRequiresArchitectureGrounding(_ scenario: E2ETestScenario) -> Bool {
+        if scenario.id == "training-rag-grounding" { return true }
+        let prompt = scenario.prompt.lowercased()
+        return prompt.contains("architecture") || prompt.contains("module") || prompt.contains("modules")
     }
 
     nonisolated private static func ragFinalIndicatesNoRetrievedSnippets(_ lowerFinal: String) -> Bool {

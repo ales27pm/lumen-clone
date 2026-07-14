@@ -670,20 +670,9 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
-    @Test func clarificationScenarioAcceptsPolicyFirstClarificationEvidence() {
+    @Test func clarificationScenarioAcceptsPolicyFirstClarificationEvidence() throws {
         #if DEBUG
-        let scenario = E2ETestScenario(
-            id: "vague-email-clarifies",
-            title: "Vague email draft asks clarification",
-            kind: .routing,
-            prompt: "Draft a email",
-            expectedIntent: .emailDraft,
-            requiredAllowedToolIDs: ["mail.draft", "contacts.search"],
-            forbiddenToolIDs: [],
-            requiredTextHints: ["who should", "what should"],
-            forbiddenTextHints: [],
-            requiresAgentRun: true
-        )
+        let scenario = try #require(E2ETestScenario.regression.first { $0.id == "vague-email-clarifies" })
         let routing = IntentRoutingDecision(
             intent: .emailDraft,
             allowedToolIDs: ["contacts.search", "mail.draft"],
@@ -691,7 +680,72 @@ struct E2ETestRunnerHygieneTests {
             clarificationPrompt: "Who should I send it to, and what should it say?"
         )
 
+        #expect(scenario.evidenceMode == .policyFirstAllowed)
         #expect(E2ETestRunner.acceptsPolicyFirstExecutionEvidenceForTests(scenario, routing: routing))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func structuredKernelDiagnosticPreservesWatchdogCodeWithoutFreeFormMetadata() throws {
+        #if DEBUG
+        let diagnostic = AgentKernelDiagnosticEvent(
+            stage: "structured-agent-json-model-turn",
+            message: "Structured agent-json model turn completed.",
+            metadata: [
+                "emptyOutputReason": "cpu-watchdog-degraded",
+                "streamStarted": "false",
+                "textChunkCount": "0",
+                "prompt": "private user prompt",
+                "rawOutput": "private model output"
+            ]
+        )
+
+        let evidence = try #require(E2ETestRunner.structuredKernelDiagnosticEvidenceForTests(diagnostic))
+        #expect(evidence.contains("stage=structured-agent-json-model-turn"))
+        #expect(evidence.contains("emptyoutputreason=cpu-watchdog-degraded"))
+        #expect(evidence.contains("streamstarted=false"))
+        #expect(!evidence.contains("private user prompt"))
+        #expect(!evidence.contains("private model output"))
+        #expect(!evidence.contains("prompt="))
+        #expect(E2ETestRunner.structuredKernelDiagnosticEvidenceForTests(
+            AgentKernelDiagnosticEvent(stage: "unrelated", message: "cpu-watchdog-degraded")
+        ) == nil)
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func RAGModuleAssertionAppliesOnlyToArchitectureScenarios() {
+        #if DEBUG
+        let diagnostics = E2ETestScenario(
+            id: "live-rag-search-direct",
+            title: "Diagnostics report search",
+            kind: .toolGuard,
+            prompt: "Search my local files for the latest Lumen diagnostics report.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed
+        )
+        let architecture = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "Architecture search",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["module"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+
+        #expect(!E2ETestRunner.ragScenarioRequiresArchitectureGroundingForTests(diagnostics))
+        #expect(E2ETestRunner.ragScenarioRequiresArchitectureGroundingForTests(architecture))
         #else
         #expect(true)
         #endif
@@ -1664,6 +1718,17 @@ struct E2ETestRunnerHygieneTests {
         #expect(ragRetrievalMetadata["runtimeEvidence"] == "retrieval-unavailable")
         #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: ragRetrievalMetadata) == "Runtime infrastructure unavailable: RAG retrieval unavailable.")
 
+        let ragMaintenanceMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: ragScenario,
+            finalText: "RAG photo indexing skipped. Diagnostic: cleanup_deferred:disk_write_budget_denied.",
+            failures: [],
+            events: []
+        )
+        #expect(ragMaintenanceMetadata["failureKind"] == "ragMaintenanceDeferred")
+        #expect(ragMaintenanceMetadata["trainingSignal"] == "false")
+        #expect(ragMaintenanceMetadata["runtimeEvidence"] == "resource-budget-deferred")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: ragMaintenanceMetadata) == "Runtime preflight unavailable: RAG maintenance deferred by the disk-write budget.")
+
         let outlookScenario = E2ETestScenario(
             id: "live-outlook-message-read-direct",
             title: "Outlook",
@@ -1688,6 +1753,45 @@ struct E2ETestRunnerHygieneTests {
         #expect(outlookMetadata["actionable"] == "false")
         #expect(outlookMetadata["trainingSignal"] == "false")
         #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: outlookMetadata) == "Runtime infrastructure unavailable: Outlook configuration unavailable.")
+
+        let reauthenticationEvents = [
+            E2ETestEvent(
+                id: UUID(),
+                createdAt: Date(),
+                scenarioID: outlookScenario.id,
+                phase: "tool-result",
+                message: "status=unavailable, errorCode=outlook_reauthentication_required, availability=auth_unavailable"
+            )
+        ]
+        let reauthenticationMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: outlookScenario,
+            finalText: "Outlook authorization expired or was revoked. Reconnect Outlook and sign in again.",
+            failures: [],
+            events: reauthenticationEvents
+        )
+        #expect(reauthenticationMetadata["failureKind"] == "outlookAuthenticationUnavailable")
+        #expect(reauthenticationMetadata["runtimeEvidence"] == "tool-authentication-unavailable")
+        #expect(reauthenticationMetadata["toolFailureCode"] == "outlook_reauthentication_required")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: reauthenticationMetadata) == "Runtime infrastructure unavailable: Outlook authentication unavailable.")
+
+        let consentEvents = [
+            E2ETestEvent(
+                id: UUID(),
+                createdAt: Date(),
+                scenarioID: outlookScenario.id,
+                phase: "tool-result",
+                message: "status=denied, errorCode=outlook_consent_required, availability=permission_denied"
+            )
+        ]
+        let consentMetadata = E2ETestRunner.nonActionableInfrastructureMetadataForTests(
+            scenario: outlookScenario,
+            finalText: "Outlook needs consent for the requested Mail permissions.",
+            failures: [],
+            events: consentEvents
+        )
+        #expect(consentMetadata["failureKind"] == "outlookPermissionUnavailable")
+        #expect(consentMetadata["toolFailureCode"] == "outlook_consent_required")
+        #expect(E2ETestRunner.nonActionableQuarantineFailureForTests(metadata: consentMetadata) == "Runtime infrastructure unavailable: Outlook permission or consent unavailable.")
         #else
         #expect(true)
         #endif

@@ -50,11 +50,13 @@ IGNORED_DIRS = {
     "__pycache__",
     "build",
     "dist",
+    "generated",
     "models",
     "node_modules",
 }
 
 EXCLUDED_PREFIXES = (
+    "datasets/public_adapter_corpus/",
     "generated/agent_improvement_loop/",
     "generated/agent_manifest/",
     "generated/agent_manifest/cross_model_training/",

@@ -281,7 +281,17 @@ nonisolated enum IntentClarificationPolicy {
         if text.rangeOfCharacter(from: .decimalDigits) != nil, matchesAny(text, ["call", "phone", "dial"]) {
             return false
         }
-        let stripped = stripPhrases(phrases, from: text)
+        let withoutMetaInstruction: String
+        if text.hasPrefix("use ") {
+            withoutMetaInstruction = text.replacingOccurrences(
+                of: #"(?i)\s*,\s*but\s+ask\s+for\s+clarification\s+if\s+required\s+details\s+are\s+missing\b.*$"#,
+                with: "",
+                options: .regularExpression
+            )
+        } else {
+            withoutMetaInstruction = text
+        }
+        let stripped = stripPhrases(phrases, from: withoutMetaInstruction)
         return !hasMeaningfulTarget(stripped)
     }
 
@@ -326,7 +336,7 @@ nonisolated enum IntentClarificationPolicy {
     private static func hasMeaningfulTarget(_ text: String) -> Bool {
         let stopWords: Set<String> = [
             "a", "an", "the", "my", "me", "to", "for", "with", "about", "on", "at", "in",
-            "this", "that", "it", "them", "please", "can", "you", "i", "want", "need", "help"
+            "this", "that", "it", "them", "please", "can", "you", "i", "want", "need", "help", "use"
         ]
         let words = text
             .split { !$0.isLetter && !$0.isNumber && $0 != "@" && $0 != "." && $0 != "_" && $0 != "-" }

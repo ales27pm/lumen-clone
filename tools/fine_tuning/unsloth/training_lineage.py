@@ -1,0 +1,1377 @@
+from __future__ import annotations
+
+import base64
+import csv
+import hashlib
+import hmac
+import importlib.metadata as importlib_metadata
+import io
+import json
+import re
+import sys
+import time
+from collections.abc import Mapping
+from pathlib import Path, PurePosixPath
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+
+TRAINING_CODE_MANIFEST_SCHEMA_VERSION = "lumen.training-code-manifest/2.0.0"
+TRAINING_CODE_BUNDLE_SCHEMA_VERSION = "lumen.training-code-bundle/2.0.0"
+TRAINING_DEPENDENCY_LOCK_SCHEMA_VERSION = (
+    "lumen.adapter-training-dependency-lock/1.0.0"
+)
+RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION = (
+    "lumen.resolved-training-environment/1.0.0"
+)
+RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION = (
+    "lumen.resolved-training-environment-cache/1.0.0"
+)
+ZERO_GPU_ALLOWED_SIZES = frozenset({"large", "xlarge"})
+RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY = {
+    "hashAlgorithm": "sha256",
+    "verifyDeclaredFileHashes": True,
+    "excludeUnhashedSelfRecord": True,
+    "excludeUnhashedGeneratedBytecode": True,
+    "rejectOtherUnhashedFiles": True,
+}
+SPACE_CONFIGURATION_SCHEMA_VERSION = "lumen.zerogpu.space-configuration/1.0.0"
+
+DEFAULT_PYTHON_VERSION = "3.10"
+DEFAULT_CUDA_VERSION = "12.8"
+DEFAULT_UNSLOTH_REVISION = "935474c20aabc2aadb1da17338959c7c6f9bdafe"
+DEFAULT_LLAMA_CPP_REVISION = "34558825a27f4d74dcfd7a91bfde4464baa2a30a"
+DEFAULT_PACKAGE_VERSIONS: dict[str, str] = {
+    "accelerate": "1.14.0",
+    "bitsandbytes": "0.49.2",
+    "datasets": "4.3.0",
+    "gradio": "6.17.3",
+    "hf_transfer": "0.1.9",
+    "huggingface_hub": "0.36.2",
+    "peft": "0.19.1",
+    "protobuf": "7.35.1",
+    "sentencepiece": "0.2.2",
+    "spaces": "0.51.0",
+    "torch": "2.9.1",
+    "torchaudio": "2.9.1",
+    "torchvision": "0.24.1",
+    "trackio": "0.20.2",
+    "transformers": "4.57.6",
+    "trl": "0.24.0",
+    "unsloth_zoo": "2026.7.2",
+}
+
+_REQUIREMENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+RUNTIME_SOURCE_AUDIT_FIELDS = (
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
+)
+RUNTIME_SOURCE_BINDING_SPACE_UNVERIFIED = "operator_declared_unverified"
+RUNTIME_SOURCE_BINDING_SPACE_REPOSITORY_HEAD = (
+    "huggingface_repository_head_supplemental"
+)
+RUNTIME_SOURCE_BINDING_SPACE_DECLARATION = "operator_declared_only"
+RUNTIME_SOURCE_BINDING_LOCAL = "local_checkout_observed"
+RUNTIME_SOURCE_BINDING_LOCAL_METHOD = "git_head_plus_training_code_manifest"
+_PHASES = ("sft", "dpo", "orpo")
+_TRAINING_CODE_EXTENSIONS = (
+    ".cfg",
+    ".csv",
+    ".ini",
+    ".json",
+    ".jsonl",
+    ".py",
+    ".sh",
+    ".toml",
+    ".txt",
+    ".yaml",
+    ".yml",
+)
+_TRAINING_CODE_VOLATILE_DIRECTORIES = (
+    ".git",
+    "__pycache__",
+    "checkpoints",
+    "logs",
+    "outputs",
+    "uploads",
+)
+_DEPLOYED_TRAINING_CODE_PATHS = (
+    "app.py",
+    "lumen_manifest_crawler",
+    "lumen_training",
+    "requirements.txt",
+)
+_DEPLOYED_TRAINING_CODE_EXCLUSIONS = (
+    "lumen_zero_gpu_defaults.json",
+    "lumen_zero_gpu_run_manifest.json",
+)
+_SPACE_FRONT_MATTER_KEYS = {
+    "app_file",
+    "python_version",
+    "sdk",
+    "title",
+}
+
+
+def canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def requirements_sha256(path: Path) -> str:
+    return file_sha256(path)
+
+
+def _space_front_matter(path: Path) -> dict[str, str]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("Space README must begin with YAML front matter")
+    try:
+        closing = next(
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.strip() == "---"
+        )
+    except StopIteration as exc:
+        raise ValueError("Space README front matter is not terminated") from exc
+
+    values: dict[str, str] = {}
+    for raw_line in lines[1:closing]:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            raise ValueError("Space README front matter must use scalar key/value fields")
+        key, raw_value = (part.strip() for part in line.split(":", 1))
+        if key in values:
+            raise ValueError(f"Duplicate Space README front-matter field: {key}")
+        if key not in _SPACE_FRONT_MATTER_KEYS:
+            raise ValueError(f"Unsupported Space README front-matter field: {key}")
+        if not raw_value or raw_value[0] in "[{>|&*!":
+            raise ValueError(f"Space README front-matter field must be scalar: {key}")
+        if raw_value[0] in {'\"', "'"}:
+            if len(raw_value) < 2 or raw_value[-1] != raw_value[0]:
+                raise ValueError(f"Unterminated Space README front-matter scalar: {key}")
+            value = raw_value[1:-1]
+        else:
+            value = raw_value
+        values[key] = value
+    return values
+
+
+def build_space_configuration(readme_path: Path) -> dict[str, Any]:
+    front_matter = _space_front_matter(readme_path)
+    if set(front_matter) != _SPACE_FRONT_MATTER_KEYS:
+        missing = sorted(_SPACE_FRONT_MATTER_KEYS - set(front_matter))
+        raise ValueError(
+            "Space README front matter is missing required fields: "
+            + ", ".join(missing)
+        )
+    payload = {
+        "schemaVersion": SPACE_CONFIGURATION_SCHEMA_VERSION,
+        "sdk": front_matter["sdk"],
+        "appFile": front_matter["app_file"],
+        "pythonVersion": front_matter["python_version"],
+        # ZeroGPU hardware is requested through the Hub API; README metadata
+        # must not silently select a distinct runtime.
+        "suggestedHardware": None,
+    }
+    return {**payload, "spaceConfigurationSHA256": canonical_sha256(payload)}
+
+
+def verify_space_configuration(
+    configuration: Mapping[str, Any],
+    *,
+    readme_path: Path | None = None,
+) -> str:
+    payload = {
+        "schemaVersion": SPACE_CONFIGURATION_SCHEMA_VERSION,
+        "sdk": "gradio",
+        "appFile": "app.py",
+        "pythonVersion": DEFAULT_PYTHON_VERSION,
+        "suggestedHardware": None,
+    }
+    if set(configuration) != {*payload, "spaceConfigurationSHA256"}:
+        raise ValueError("Invalid Space configuration contract")
+    if any(configuration.get(key) != value for key, value in payload.items()):
+        raise ValueError("Space runtime configuration drifted from the supported contract")
+    digest = canonical_sha256(payload)
+    if configuration.get("spaceConfigurationSHA256") != digest:
+        raise ValueError("spaceConfigurationSHA256 does not match the Space configuration")
+    if readme_path is not None and build_space_configuration(readme_path) != dict(
+        configuration
+    ):
+        raise ValueError("Deployed Space README runtime configuration drifted")
+    return digest
+
+
+def _safe_logical_path(value: str) -> str:
+    logical = PurePosixPath(value)
+    if (
+        not value
+        or logical.is_absolute()
+        or value != logical.as_posix()
+        or any(part in {"", ".", ".."} for part in logical.parts)
+    ):
+        raise ValueError(f"Unsafe training-code logical path: {value!r}")
+    return value
+
+
+def _normalize_closure_policy(value: Mapping[str, Any]) -> dict[str, Any]:
+    expected_keys = {
+        "includedExtensions",
+        "coveredLogicalPaths",
+        "excludedLogicalPaths",
+        "excludedDirectoryNames",
+        "coverDeployedRoot",
+        "rejectUnlistedBehaviorFiles",
+    }
+    if set(value) != expected_keys:
+        raise ValueError("Training-code closure policy contains unsupported fields")
+    extensions = value.get("includedExtensions")
+    covered_paths = value.get("coveredLogicalPaths")
+    excluded_paths = value.get("excludedLogicalPaths")
+    excluded_directories = value.get("excludedDirectoryNames")
+    if (
+        not isinstance(extensions, list)
+        or not extensions
+        or not isinstance(covered_paths, list)
+        or not covered_paths
+        or not isinstance(excluded_paths, list)
+        or not isinstance(excluded_directories, list)
+        or type(value.get("coverDeployedRoot")) is not bool
+        or value.get("rejectUnlistedBehaviorFiles") is not True
+    ):
+        raise ValueError("Invalid training-code closure policy")
+
+    normalized_extensions: list[str] = []
+    for extension in extensions:
+        if (
+            not isinstance(extension, str)
+            or not extension.startswith(".")
+            or extension != extension.lower()
+            or any(character in extension for character in ("/", "\\"))
+        ):
+            raise ValueError("Invalid training-code included extension")
+        normalized_extensions.append(extension)
+    if len(normalized_extensions) != len(set(normalized_extensions)):
+        raise ValueError("Duplicate training-code included extension")
+
+    normalized_covered = [_safe_logical_path(str(path)) for path in covered_paths]
+    normalized_excluded = [_safe_logical_path(str(path)) for path in excluded_paths]
+    normalized_directories: list[str] = []
+    for name in excluded_directories:
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in {".", ".."}
+            or "/" in name
+            or "\\" in name
+        ):
+            raise ValueError("Invalid volatile training-code directory name")
+        normalized_directories.append(name)
+
+    for values, label in (
+        (normalized_covered, "covered path"),
+        (normalized_excluded, "excluded path"),
+        (normalized_directories, "excluded directory"),
+    ):
+        if len(values) != len(set(values)):
+            raise ValueError(f"Duplicate training-code {label}")
+        if values != sorted(values):
+            raise ValueError(f"Training-code {label}s must be sorted")
+    if normalized_extensions != sorted(normalized_extensions):
+        raise ValueError("Training-code included extensions must be sorted")
+
+    return {
+        "includedExtensions": normalized_extensions,
+        "coveredLogicalPaths": normalized_covered,
+        "excludedLogicalPaths": normalized_excluded,
+        "excludedDirectoryNames": normalized_directories,
+        "coverDeployedRoot": value["coverDeployedRoot"],
+        "rejectUnlistedBehaviorFiles": True,
+    }
+
+
+def _default_closure_policy(files: Mapping[str, Path]) -> dict[str, Any]:
+    return _normalize_closure_policy(
+        {
+            "includedExtensions": list(_TRAINING_CODE_EXTENSIONS),
+            # Generic callers cover exactly the files they supplied. The repository
+            # bundle below deliberately covers whole deployed trees instead.
+            "coveredLogicalPaths": sorted(files),
+            "excludedLogicalPaths": [],
+            "excludedDirectoryNames": list(_TRAINING_CODE_VOLATILE_DIRECTORIES),
+            "coverDeployedRoot": False,
+            "rejectUnlistedBehaviorFiles": True,
+        }
+    )
+
+
+def deployed_training_code_closure_policy() -> dict[str, Any]:
+    return _normalize_closure_policy(
+        {
+            "includedExtensions": list(_TRAINING_CODE_EXTENSIONS),
+            "coveredLogicalPaths": list(_DEPLOYED_TRAINING_CODE_PATHS),
+            "excludedLogicalPaths": list(_DEPLOYED_TRAINING_CODE_EXCLUSIONS),
+            "excludedDirectoryNames": list(_TRAINING_CODE_VOLATILE_DIRECTORIES),
+            "coverDeployedRoot": True,
+            "rejectUnlistedBehaviorFiles": True,
+        }
+    )
+
+
+def _is_logical_path_within(path: str, parent: str) -> bool:
+    logical = PurePosixPath(path)
+    ancestor = PurePosixPath(parent)
+    return logical == ancestor or ancestor in logical.parents
+
+
+def _is_excluded_logical_path(path: str, policy: Mapping[str, Any]) -> bool:
+    logical = PurePosixPath(path)
+    if any(part in policy["excludedDirectoryNames"] for part in logical.parts):
+        return True
+    return any(
+        _is_logical_path_within(path, excluded)
+        for excluded in policy["excludedLogicalPaths"]
+    )
+
+
+def _policy_covers_logical_path(path: str, policy: Mapping[str, Any]) -> bool:
+    return policy["coverDeployedRoot"] or any(
+        _is_logical_path_within(path, covered)
+        for covered in policy["coveredLogicalPaths"]
+    )
+
+
+def _discover_covered_training_code_files(
+    root: Path,
+    policy: Mapping[str, Any],
+) -> set[str]:
+    resolved_root = root.resolve()
+    discovered: set[str] = set()
+    extensions = set(policy["includedExtensions"])
+    covered_candidates = (
+        [("<deployed-root>", resolved_root)]
+        if policy["coverDeployedRoot"]
+        else [
+            (covered, (resolved_root / covered).resolve())
+            for covered in policy["coveredLogicalPaths"]
+        ]
+    )
+    for covered, candidate in covered_candidates:
+        if candidate != resolved_root and resolved_root not in candidate.parents:
+            raise ValueError("Training-code closure path escapes the deployed code root")
+        if not candidate.exists():
+            raise ValueError(f"Missing covered training-code path: {covered}")
+        paths = [candidate] if candidate.is_file() else candidate.rglob("*")
+        for path in paths:
+            if not path.is_file():
+                continue
+            resolved = path.resolve()
+            if resolved_root not in resolved.parents:
+                raise ValueError("Training-code closure contains an escaping symlink")
+            logical = resolved.relative_to(resolved_root).as_posix()
+            if _is_excluded_logical_path(logical, policy):
+                continue
+            if resolved.suffix.lower() in extensions:
+                discovered.add(logical)
+    return discovered
+
+
+def build_training_code_manifest(
+    *,
+    phase: str,
+    files: Mapping[str, Path],
+    closure_policy: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if phase not in _PHASES:
+        raise ValueError(f"Unsupported training phase: {phase}")
+    if not files:
+        raise ValueError("Training-code manifest must contain at least one file")
+
+    policy = _normalize_closure_policy(
+        closure_policy if closure_policy is not None else _default_closure_policy(files)
+    )
+    entries: list[dict[str, Any]] = []
+    for logical_path, source_path in sorted(files.items()):
+        logical = _safe_logical_path(logical_path)
+        if _is_excluded_logical_path(logical, policy) or not _policy_covers_logical_path(
+            logical, policy
+        ):
+            raise ValueError(f"Training-code file is outside the closure policy: {logical}")
+        source = Path(source_path)
+        if not source.is_file():
+            raise FileNotFoundError(f"Missing training-code file: {source}")
+        entries.append(
+            {
+                "path": logical,
+                "sizeBytes": source.stat().st_size,
+                "sha256": file_sha256(source),
+            }
+        )
+    payload = {
+        "schemaVersion": TRAINING_CODE_MANIFEST_SCHEMA_VERSION,
+        "phase": phase,
+        "closurePolicy": policy,
+        "files": entries,
+    }
+    return {**payload, "trainingCodeSHA256": canonical_sha256(payload)}
+
+
+def verify_training_code_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    root: Path | None = None,
+) -> str:
+    phase = manifest.get("phase")
+    files = manifest.get("files")
+    closure_policy = manifest.get("closurePolicy")
+    if (
+        manifest.get("schemaVersion") != TRAINING_CODE_MANIFEST_SCHEMA_VERSION
+        or phase not in _PHASES
+        or not isinstance(files, list)
+        or not files
+        or not isinstance(closure_policy, Mapping)
+    ):
+        raise ValueError("Invalid training-code manifest contract")
+    policy = _normalize_closure_policy(closure_policy)
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in files:
+        if not isinstance(entry, Mapping):
+            raise ValueError("Training-code file entries must be objects")
+        path = _safe_logical_path(str(entry.get("path") or ""))
+        size = entry.get("sizeBytes")
+        digest = entry.get("sha256")
+        if (
+            path in seen
+            or type(size) is not int
+            or size < 0
+            or not isinstance(digest, str)
+            or _SHA256_PATTERN.fullmatch(digest) is None
+        ):
+            raise ValueError("Invalid training-code file entry")
+        seen.add(path)
+        if _is_excluded_logical_path(path, policy) or not _policy_covers_logical_path(
+            path, policy
+        ):
+            raise ValueError("Training-code file is outside the closure policy")
+        normalized.append({"path": path, "sizeBytes": size, "sha256": digest})
+
+        if root is not None:
+            candidate = (root / path).resolve()
+            resolved_root = root.resolve()
+            if candidate.parent != resolved_root and resolved_root not in candidate.parents:
+                raise ValueError("Training-code path escapes the deployed code root")
+            if (
+                not candidate.is_file()
+                or candidate.stat().st_size != size
+                or file_sha256(candidate) != digest
+            ):
+                raise ValueError(f"Deployed training-code drift: {path}")
+
+    if root is not None:
+        discovered = _discover_covered_training_code_files(root, policy)
+        unexpected = sorted(discovered - seen)
+        missing = sorted(seen - discovered)
+        if missing:
+            raise ValueError(
+                "Declared training-code files are outside the deployed closure: "
+                + ", ".join(missing)
+            )
+        if unexpected:
+            raise ValueError(
+                "Unlisted behavior-affecting training-code files: "
+                + ", ".join(unexpected)
+            )
+
+    if normalized != sorted(normalized, key=lambda item: item["path"]):
+        raise ValueError("Training-code manifest files must be sorted")
+    payload = {
+        "schemaVersion": TRAINING_CODE_MANIFEST_SCHEMA_VERSION,
+        "phase": phase,
+        "closurePolicy": policy,
+        "files": normalized,
+    }
+    digest = canonical_sha256(payload)
+    if manifest.get("trainingCodeSHA256") != digest:
+        raise ValueError("trainingCodeSHA256 does not match the code manifest")
+    if set(manifest) != {*payload, "trainingCodeSHA256"}:
+        raise ValueError("Training-code manifest contains unsupported fields")
+    return digest
+
+
+def build_training_code_bundle(
+    phase_manifests: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    if set(phase_manifests) != set(_PHASES):
+        raise ValueError(f"Training-code bundle phases must be exactly {_PHASES}")
+    phases: dict[str, dict[str, Any]] = {}
+    for phase in _PHASES:
+        manifest = dict(phase_manifests[phase])
+        verify_training_code_manifest(manifest)
+        if manifest.get("phase") != phase:
+            raise ValueError("Training-code bundle phase key does not match manifest")
+        phases[phase] = manifest
+    payload = {
+        "schemaVersion": TRAINING_CODE_BUNDLE_SCHEMA_VERSION,
+        "phases": phases,
+    }
+    return {**payload, "trainingCodeSHA256": canonical_sha256(payload)}
+
+
+def verify_training_code_bundle(
+    bundle: Mapping[str, Any],
+    *,
+    deployed_root: Path | None = None,
+) -> str:
+    phases = bundle.get("phases")
+    if (
+        bundle.get("schemaVersion") != TRAINING_CODE_BUNDLE_SCHEMA_VERSION
+        or not isinstance(phases, Mapping)
+        or set(phases) != set(_PHASES)
+    ):
+        raise ValueError("Invalid training-code bundle contract")
+    normalized: dict[str, dict[str, Any]] = {}
+    for phase in _PHASES:
+        manifest = phases.get(phase)
+        if not isinstance(manifest, Mapping):
+            raise ValueError("Training-code phase manifest must be an object")
+        verify_training_code_manifest(manifest, root=deployed_root)
+        normalized[phase] = dict(manifest)
+    payload = {
+        "schemaVersion": TRAINING_CODE_BUNDLE_SCHEMA_VERSION,
+        "phases": normalized,
+    }
+    digest = canonical_sha256(payload)
+    if bundle.get("trainingCodeSHA256") != digest:
+        raise ValueError("trainingCodeSHA256 does not match the phase bundle")
+    if set(bundle) != {*payload, "trainingCodeSHA256"}:
+        raise ValueError("Training-code bundle contains unsupported fields")
+    return digest
+
+
+def repository_training_code_bundle(repo_root: Path) -> dict[str, Any]:
+    root = repo_root.resolve()
+    common: dict[str, Path] = {
+        "app.py": root / "tools/hf_zerogpu/space_template/app.py",
+        "requirements.txt": root / "tools/hf_zerogpu/space_template/requirements.txt",
+        "lumen_training/__init__.py": root
+        / "tools/fine_tuning/unsloth/lumen_training/__init__.py",
+        "lumen_training/adapter_artifact.py": root
+        / "tools/fine_tuning/unsloth/adapter_artifact.py",
+        "lumen_training/train_dpo.py": root
+        / "tools/fine_tuning/unsloth/train_dpo.py",
+        "lumen_training/train_sft.py": root
+        / "tools/fine_tuning/unsloth/train_sft.py",
+        "lumen_training/training_lineage.py": root
+        / "tools/fine_tuning/unsloth/training_lineage.py",
+    }
+    crawler_root = (
+        root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
+    )
+    for source in sorted(crawler_root.rglob("*")):
+        if (
+            source.is_file()
+            and source.suffix.lower() in _TRAINING_CODE_EXTENSIONS
+            and not any(
+                part in _TRAINING_CODE_VOLATILE_DIRECTORIES
+                for part in source.relative_to(crawler_root).parts
+            )
+        ):
+            logical = (
+                PurePosixPath("lumen_manifest_crawler")
+                / source.relative_to(crawler_root).as_posix()
+            ).as_posix()
+            common[logical] = source
+    policy = deployed_training_code_closure_policy()
+    return build_training_code_bundle(
+        {
+            phase: build_training_code_manifest(
+                phase=phase,
+                files=common,
+                closure_policy=policy,
+            )
+            for phase in _PHASES
+        }
+    )
+
+
+def deployed_training_code_bundle(deployed_root: Path) -> dict[str, Any]:
+    """Rebuild the phase manifests from an already assembled Space bundle."""
+
+    root = deployed_root.resolve()
+    policy = deployed_training_code_closure_policy()
+    logical_paths = _discover_covered_training_code_files(root, policy)
+    files = {logical: root / logical for logical in sorted(logical_paths)}
+    return build_training_code_bundle(
+        {
+            phase: build_training_code_manifest(
+                phase=phase,
+                files=files,
+                closure_policy=policy,
+            )
+            for phase in _PHASES
+        }
+    )
+
+
+def _requirement_name(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or stripped.startswith(("-r", "--")):
+        return None
+    match = _REQUIREMENT_NAME_PATTERN.match(stripped)
+    if match is None:
+        raise ValueError(f"Unsupported requirement line: {line!r}")
+    return match.group(0).replace("-", "_").casefold()
+
+
+def build_training_dependency_lock(
+    requirements_path: Path,
+    *,
+    python_version: str = DEFAULT_PYTHON_VERSION,
+    cuda_version: str = DEFAULT_CUDA_VERSION,
+    llama_cpp_revision: str = DEFAULT_LLAMA_CPP_REVISION,
+) -> dict[str, Any]:
+    requirement_lines = [
+        line.strip()
+        for line in requirements_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    requirement_names: list[str] = []
+    for line in requirement_lines:
+        name = _requirement_name(line)
+        if name is None:
+            raise ValueError("requirements.txt may not include nested or option directives")
+        requirement_names.append(name)
+    expected_names = {*DEFAULT_PACKAGE_VERSIONS, "unsloth"}
+    if len(requirement_names) != len(set(requirement_names)):
+        raise ValueError("requirements.txt contains duplicate controlled dependencies")
+    if set(requirement_names) != expected_names:
+        raise ValueError(
+            "requirements.txt direct dependency set drifted from the controlled lock: "
+            f"missing={sorted(expected_names - set(requirement_names))}, "
+            f"extra={sorted(set(requirement_names) - expected_names)}"
+        )
+    for line, name in zip(requirement_lines, requirement_names, strict=True):
+        if name == "unsloth":
+            expected = (
+                "unsloth[colab-new] @ "
+                "git+https://github.com/unslothai/unsloth.git@"
+                f"{DEFAULT_UNSLOTH_REVISION}"
+            )
+            if line != expected:
+                raise ValueError("requirements.txt Unsloth VCS revision drifted")
+            continue
+        version_match = re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]*==([^;\s]+)",
+            line,
+        )
+        if (
+            version_match is None
+            or version_match.group(1) != DEFAULT_PACKAGE_VERSIONS[name]
+        ):
+            raise ValueError(
+                f"requirements.txt version for {name} drifted from the controlled lock"
+            )
+    payload = {
+        "schemaVersion": TRAINING_DEPENDENCY_LOCK_SCHEMA_VERSION,
+        "pythonVersion": python_version,
+        "cudaVersion": cuda_version,
+        "packageVersions": dict(sorted(DEFAULT_PACKAGE_VERSIONS.items())),
+        "vcsPackages": {
+            "unsloth": {
+                "repository": "https://github.com/unslothai/unsloth.git",
+                "revision": DEFAULT_UNSLOTH_REVISION,
+            }
+        },
+        "llamaCppRevision": llama_cpp_revision,
+        "requirementsSHA256": requirements_sha256(requirements_path),
+    }
+    return {**payload, "trainingDependencyLockSHA256": canonical_sha256(payload)}
+
+
+def verify_training_dependency_lock(
+    lock: Mapping[str, Any],
+    *,
+    requirements_path: Path | None = None,
+    installed_versions: Mapping[str, str] | None = None,
+    installed_unsloth_revision: str | None = None,
+    runtime_python_version: str | None = None,
+    runtime_cuda_version: str | None = None,
+) -> str:
+    packages = lock.get("packageVersions")
+    vcs = lock.get("vcsPackages")
+    if (
+        set(lock)
+        != {
+            "schemaVersion",
+            "pythonVersion",
+            "cudaVersion",
+            "packageVersions",
+            "vcsPackages",
+            "llamaCppRevision",
+            "requirementsSHA256",
+            "trainingDependencyLockSHA256",
+        }
+        or lock.get("schemaVersion") != TRAINING_DEPENDENCY_LOCK_SCHEMA_VERSION
+        or lock.get("pythonVersion") != DEFAULT_PYTHON_VERSION
+        or lock.get("cudaVersion") != DEFAULT_CUDA_VERSION
+        or not isinstance(packages, Mapping)
+        or dict(packages) != DEFAULT_PACKAGE_VERSIONS
+        or not isinstance(vcs, Mapping)
+        or vcs.get("unsloth")
+        != {
+            "repository": "https://github.com/unslothai/unsloth.git",
+            "revision": DEFAULT_UNSLOTH_REVISION,
+        }
+        or lock.get("llamaCppRevision") != DEFAULT_LLAMA_CPP_REVISION
+        or not isinstance(lock.get("requirementsSHA256"), str)
+        or _SHA256_PATTERN.fullmatch(lock["requirementsSHA256"]) is None
+    ):
+        raise ValueError("Invalid training dependency lock")
+    payload = {key: value for key, value in lock.items() if key != "trainingDependencyLockSHA256"}
+    digest = canonical_sha256(payload)
+    if lock.get("trainingDependencyLockSHA256") != digest:
+        raise ValueError("trainingDependencyLockSHA256 does not match the dependency lock")
+    if requirements_path is not None:
+        rebuilt = build_training_dependency_lock(requirements_path)
+        if rebuilt != dict(lock):
+            raise ValueError("Deployed requirements.txt drifted from the dependency lock")
+    if installed_versions is not None and dict(installed_versions) != dict(packages):
+        raise ValueError("Installed controlled package versions drifted from the lock")
+    if (
+        installed_unsloth_revision is not None
+        and installed_unsloth_revision != DEFAULT_UNSLOTH_REVISION
+    ):
+        raise ValueError("Installed Unsloth revision drifted from the dependency lock")
+    if (
+        runtime_python_version is not None
+        and runtime_python_version != lock["pythonVersion"]
+    ):
+        raise ValueError("Runtime Python version drifted from the dependency lock")
+    if runtime_cuda_version is not None and runtime_cuda_version != lock["cudaVersion"]:
+        raise ValueError("Runtime CUDA version drifted from the dependency lock")
+    return digest
+
+
+def installed_controlled_package_versions(lock: Mapping[str, Any]) -> dict[str, str]:
+    packages = lock.get("packageVersions")
+    if not isinstance(packages, Mapping):
+        raise ValueError("trainingDependencyLock.packageVersions must be an object")
+    return {
+        name: importlib_metadata.version(name)
+        for name in sorted(packages)
+    }
+
+
+def _normalized_distribution_name(value: str) -> str:
+    normalized = re.sub(r"[-_.]+", "-", value).casefold()
+    if not normalized or re.fullmatch(r"[a-z0-9][a-z0-9-]*", normalized) is None:
+        raise ValueError(f"Invalid installed distribution name: {value!r}")
+    return normalized
+
+
+def _normalized_direct_url(
+    value: str | Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Installed distribution has malformed direct_url.json") from exc
+    else:
+        parsed = value
+    if not isinstance(parsed, Mapping) or set(parsed) - {
+        "url",
+        "vcs_info",
+        "archive_info",
+        "dir_info",
+        "subdirectory",
+    }:
+        raise ValueError("Installed distribution has unsupported direct-url provenance")
+    raw_url = parsed.get("url")
+    if not isinstance(raw_url, str) or not raw_url:
+        raise ValueError("Installed distribution direct URL is missing")
+    url = urlsplit(raw_url)
+    if (
+        url.scheme not in {"https", "git+https"}
+        or not url.hostname
+        or url.username is not None
+        or url.password is not None
+        or url.query
+    ):
+        raise ValueError("Installed distribution direct URL is not immutable and secret-safe")
+    if "dir_info" in parsed:
+        raise ValueError("Installed distribution directory provenance is mutable")
+    vcs_info = parsed.get("vcs_info")
+    archive_info = parsed.get("archive_info")
+    if (vcs_info is None) == (archive_info is None):
+        raise ValueError("Installed distribution direct URL lacks immutable provenance")
+    sanitized: dict[str, Any] = {
+        "url": urlunsplit((url.scheme, url.netloc, url.path, "", "")),
+    }
+    if vcs_info is not None:
+        if (
+            not isinstance(vcs_info, Mapping)
+            or set(vcs_info) - {"vcs", "commit_id", "requested_revision"}
+            or vcs_info.get("vcs") != "git"
+            or not isinstance(vcs_info.get("commit_id"), str)
+            or _REVISION_PATTERN.fullmatch(vcs_info["commit_id"]) is None
+        ):
+            raise ValueError("Installed distribution VCS provenance is not immutable")
+        requested_revision = vcs_info.get("requested_revision")
+        if requested_revision is not None and (
+            not isinstance(requested_revision, str)
+            or _REVISION_PATTERN.fullmatch(requested_revision) is None
+        ):
+            raise ValueError("Installed distribution VCS provenance is malformed")
+        sanitized_vcs = {
+            "vcs": "git",
+            "commit_id": vcs_info["commit_id"],
+        }
+        if requested_revision is not None:
+            sanitized_vcs["requested_revision"] = requested_revision
+        sanitized["vcs_info"] = sanitized_vcs
+    else:
+        if not isinstance(archive_info, Mapping) or set(archive_info) - {
+            "hash",
+            "hashes",
+        }:
+            raise ValueError("Installed distribution archive provenance is malformed")
+        hashes = archive_info.get("hashes")
+        legacy_hash = archive_info.get("hash")
+        archive_sha256 = (
+            hashes.get("sha256") if isinstance(hashes, Mapping) else None
+        )
+        if archive_sha256 is None and isinstance(legacy_hash, str):
+            match = re.fullmatch(r"sha256=([0-9a-f]{64})", legacy_hash)
+            archive_sha256 = match.group(1) if match is not None else None
+        if (
+            not isinstance(archive_sha256, str)
+            or _SHA256_PATTERN.fullmatch(archive_sha256) is None
+        ):
+            raise ValueError("Installed distribution archive lacks a SHA-256 digest")
+        sanitized["archive_info"] = {"hashes": {"sha256": archive_sha256}}
+    subdirectory = parsed.get("subdirectory")
+    if subdirectory is not None:
+        if not isinstance(subdirectory, str):
+            raise ValueError("Installed distribution subdirectory is malformed")
+        logical = PurePosixPath(subdirectory)
+        if (
+            not subdirectory
+            or logical.is_absolute()
+            or any(part in {"", ".", ".."} for part in logical.parts)
+            or subdirectory != logical.as_posix()
+        ):
+            raise ValueError("Installed distribution subdirectory is unsafe")
+        sanitized["subdirectory"] = subdirectory
+    return sanitized
+
+
+def _validated_installer(value: Any) -> str | None:
+    if value is not None and (
+        not isinstance(value, str)
+        or re.fullmatch(r"[A-Za-z0-9._-]{1,64}", value) is None
+    ):
+        raise ValueError("Installed distribution has invalid installer metadata")
+    return value
+
+
+def _installed_distribution_entry(
+    distribution: Any,
+    *,
+    statistics: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    raw_name = distribution.metadata.get("Name")
+    version = distribution.version
+    if not isinstance(raw_name, str) or not isinstance(version, str) or not version:
+        raise ValueError("Installed distribution lacks a name or version")
+    name = _normalized_distribution_name(raw_name)
+    record_text = distribution.read_text("RECORD")
+    if not isinstance(record_text, str) or not record_text:
+        raise ValueError(f"Installed distribution {name} lacks a RECORD manifest")
+    rows = list(csv.reader(io.StringIO(record_text)))
+    if not rows:
+        raise ValueError(f"Installed distribution {name} has an empty RECORD manifest")
+    files: list[dict[str, Any]] = []
+    seen_record_paths: set[str] = set()
+    seen_installed_paths: set[str] = set()
+    distribution_root = Path(distribution.locate_file("")).resolve()
+    environment_roots: list[Path] = []
+    cursor = distribution_root
+    while cursor != cursor.parent:
+        if cursor.name.casefold() in {"lib", "lib64"}:
+            environment_roots.append(cursor.parent)
+            break
+        cursor = cursor.parent
+    environment_roots.append(Path(sys.prefix).resolve())
+    environment_roots = list(dict.fromkeys(environment_roots))
+    for row in rows:
+        if len(row) != 3:
+            raise ValueError(f"Installed distribution {name} has malformed RECORD data")
+        logical_path = row[0].replace("\\", "/")
+        logical = PurePosixPath(logical_path)
+        if (
+            not logical_path
+            or logical.is_absolute()
+            or (logical.parts and ":" in logical.parts[0])
+            or logical_path in seen_record_paths
+            or "\x00" in logical_path
+        ):
+            raise ValueError(f"Installed distribution {name} has unsafe RECORD data")
+        seen_record_paths.add(logical_path)
+        declared_hash, declared_size = row[1], row[2]
+        if not declared_hash:
+            is_self_record = logical_path.endswith(".dist-info/RECORD")
+            is_generated_bytecode = (
+                "__pycache__" in logical.parts and logical_path.endswith(".pyc")
+            )
+            if (not is_self_record and not is_generated_bytecode) or declared_size:
+                raise ValueError(
+                    f"Installed distribution {name} has an unattested RECORD file"
+                )
+            continue
+        installed_path = Path(distribution.locate_file(row[0])).resolve()
+        try:
+            installed_relative = installed_path.relative_to(distribution_root)
+            installed_logical_path = (
+                PurePosixPath("distribution") / PurePosixPath(installed_relative.as_posix())
+            ).as_posix()
+        except ValueError:
+            installed_logical_path = ""
+            for environment_root in environment_roots:
+                try:
+                    installed_relative = installed_path.relative_to(environment_root)
+                except ValueError:
+                    continue
+                installed_logical_path = (
+                    PurePosixPath("environment")
+                    / PurePosixPath(installed_relative.as_posix())
+                ).as_posix()
+                break
+            if not installed_logical_path:
+                raise ValueError(
+                    f"Installed distribution {name} has unsafe RECORD data"
+                )
+        if not installed_path.is_file():
+            raise ValueError(
+                f"Installed distribution {name} is missing RECORD file {logical_path}"
+            )
+        if installed_logical_path in seen_installed_paths:
+            raise ValueError(
+                f"Installed distribution {name} has duplicate installed RECORD data"
+            )
+        seen_installed_paths.add(installed_logical_path)
+        try:
+            algorithm, encoded_digest = declared_hash.split("=", 1)
+            padding = "=" * (-len(encoded_digest) % 4)
+            declared_digest = base64.urlsafe_b64decode(
+                encoded_digest + padding
+            ).hex()
+            size = int(declared_size)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Installed distribution {name} has malformed RECORD hashes"
+            ) from exc
+        if algorithm != "sha256" or _SHA256_PATTERN.fullmatch(declared_digest) is None:
+            raise ValueError(
+                f"Installed distribution {name} does not use SHA-256 RECORD hashes"
+            )
+        if size < 0 or installed_path.stat().st_size != size:
+            raise ValueError(
+                f"Installed distribution {name} has a RECORD size mismatch"
+            )
+        if file_sha256(installed_path) != declared_digest:
+            raise ValueError(
+                f"Installed distribution {name} has a RECORD content mismatch"
+            )
+        files.append(
+            {
+                "path": installed_logical_path,
+                "size": size,
+                "sha256": declared_digest,
+            }
+        )
+    files.sort(key=lambda item: item["path"])
+    if statistics is not None:
+        statistics["installedFileCount"] = statistics.get(
+            "installedFileCount", 0
+        ) + len(files)
+        statistics["totalHashedBytes"] = statistics.get(
+            "totalHashedBytes", 0
+        ) + sum(item["size"] for item in files)
+    installer = _validated_installer(
+        (distribution.read_text("INSTALLER") or "").strip() or None
+    )
+    payload = {
+        "name": name,
+        "version": version,
+        "directURL": _normalized_direct_url(
+            distribution.read_text("direct_url.json")
+        ),
+        "installer": installer,
+        "recordSHA256": hashlib.sha256(record_text.encode("utf-8")).hexdigest(),
+        "installedFileCount": len(files),
+        "installedContentSHA256": canonical_sha256(files),
+    }
+    return {**payload, "distributionSHA256": canonical_sha256(payload)}
+
+
+def build_resolved_training_environment(
+    distributions: Any | None = None,
+) -> dict[str, Any]:
+    """Attest every installed distribution and all files declared by its RECORD.
+
+    This complements, rather than replaces, the direct requirements lock. The
+    owning runtime computes it before training so transitive wheels and
+    platform-provided distributions participate in resume and comparison
+    lineage; ZeroGPU reuses an authenticated startup scan outside the GPU lease.
+    """
+
+    environment, _ = build_resolved_training_environment_snapshot(distributions)
+    return environment
+
+
+def build_resolved_training_environment_snapshot(
+    distributions: Any | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build one complete environment attestation plus non-secret scan metrics."""
+
+    started = time.perf_counter()
+    installed = list(
+        importlib_metadata.distributions() if distributions is None else distributions
+    )
+    statistics = {"installedFileCount": 0, "totalHashedBytes": 0}
+    entries = [
+        _installed_distribution_entry(item, statistics=statistics)
+        for item in installed
+    ]
+    entries.sort(key=lambda item: item["name"])
+    names = [item["name"] for item in entries]
+    if not entries or len(names) != len(set(names)):
+        raise ValueError("Resolved training environment has missing or duplicate distributions")
+    payload = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION,
+        "recordPolicy": RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY,
+        "distributions": entries,
+    }
+    environment = {
+        **payload,
+        "resolvedTrainingEnvironmentSHA256": canonical_sha256(payload),
+    }
+    scan = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION,
+        "resolvedTrainingEnvironmentSHA256": environment[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "durationMilliseconds": max(
+            0,
+            int(round((time.perf_counter() - started) * 1000)),
+        ),
+        "distributionCount": len(entries),
+        "installedFileCount": statistics["installedFileCount"],
+        "totalHashedBytes": statistics["totalHashedBytes"],
+    }
+    return environment, scan
+
+
+def sign_resolved_training_environment_cache(
+    environment: Mapping[str, Any],
+    scan: Mapping[str, Any],
+    *,
+    key: bytes,
+    startup_id: str,
+) -> dict[str, Any]:
+    """Authenticate a Space-startup scan for child trainer processes.
+
+    The HMAC key is process-local and must be inherited only by trainer
+    subprocesses. It is never written into configs, reports, or summaries.
+    """
+
+    if len(key) < 32:
+        raise ValueError("Resolved-environment cache key must contain 32 bytes")
+    digest = verify_resolved_training_environment(environment)
+    if (
+        not isinstance(startup_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", startup_id) is None
+        or set(scan) != {
+            "schemaVersion",
+            "resolvedTrainingEnvironmentSHA256",
+            "durationMilliseconds",
+            "distributionCount",
+            "installedFileCount",
+            "totalHashedBytes",
+        }
+        or scan.get("schemaVersion")
+        != RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION
+        or scan.get("resolvedTrainingEnvironmentSHA256") != digest
+        or any(
+            type(scan.get(field)) is not int or scan[field] < 0
+            for field in (
+                "durationMilliseconds",
+                "distributionCount",
+                "installedFileCount",
+                "totalHashedBytes",
+            )
+        )
+        or scan.get("distributionCount") != len(environment["distributions"])
+    ):
+        raise ValueError("Invalid resolved-environment startup scan")
+    payload = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION,
+        "verificationMode": "space_startup_full_scan",
+        "startupID": startup_id,
+        "resolvedTrainingEnvironmentSHA256": digest,
+        "scan": dict(scan),
+    }
+    signature = hmac.new(
+        key,
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {**payload, "cacheHMACSHA256": signature}
+
+
+def verify_resolved_training_environment_cache(
+    environment: Mapping[str, Any],
+    attestation: Mapping[str, Any],
+    *,
+    key: bytes,
+) -> dict[str, Any]:
+    if set(attestation) != {
+        "schemaVersion",
+        "verificationMode",
+        "startupID",
+        "resolvedTrainingEnvironmentSHA256",
+        "scan",
+        "cacheHMACSHA256",
+    }:
+        raise ValueError("Invalid resolved-environment cache attestation")
+    expected = sign_resolved_training_environment_cache(
+        environment,
+        attestation.get("scan") if isinstance(attestation.get("scan"), Mapping) else {},
+        key=key,
+        startup_id=str(attestation.get("startupID") or ""),
+    )
+    if (
+        attestation.get("schemaVersion") != expected["schemaVersion"]
+        or attestation.get("verificationMode") != expected["verificationMode"]
+        or attestation.get("resolvedTrainingEnvironmentSHA256")
+        != expected["resolvedTrainingEnvironmentSHA256"]
+        or not isinstance(attestation.get("cacheHMACSHA256"), str)
+        or not hmac.compare_digest(
+            attestation["cacheHMACSHA256"],
+            expected["cacheHMACSHA256"],
+        )
+    ):
+        raise ValueError("Resolved-environment cache attestation is not authentic")
+    return dict(expected["scan"])
+
+
+def verify_resolved_training_environment(
+    environment: Mapping[str, Any],
+    *,
+    distributions: Any | None = None,
+    verify_installed: bool = False,
+) -> str:
+    if set(environment) != {
+        "schemaVersion",
+        "recordPolicy",
+        "distributions",
+        "resolvedTrainingEnvironmentSHA256",
+    } or environment.get("schemaVersion") != RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION:
+        raise ValueError("Invalid resolved training environment")
+    if environment.get("recordPolicy") != RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY:
+        raise ValueError("Invalid resolved training environment RECORD policy")
+    entries = environment.get("distributions")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("Resolved training environment must contain distributions")
+    names: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping) or set(entry) != {
+            "name",
+            "version",
+            "directURL",
+            "installer",
+            "recordSHA256",
+            "installedFileCount",
+            "installedContentSHA256",
+            "distributionSHA256",
+        }:
+            raise ValueError("Invalid resolved distribution entry")
+        unsigned = {
+            key: value for key, value in entry.items() if key != "distributionSHA256"
+        }
+        direct_url = entry.get("directURL")
+        normalized_direct_url = _normalized_direct_url(direct_url)
+        installer = _validated_installer(entry.get("installer"))
+        if (
+            not isinstance(entry.get("name"), str)
+            or entry["name"] != _normalized_distribution_name(entry["name"])
+            or not isinstance(entry.get("version"), str)
+            or not entry["version"]
+            or normalized_direct_url != direct_url
+            or installer != entry.get("installer")
+            or not isinstance(entry.get("recordSHA256"), str)
+            or _SHA256_PATTERN.fullmatch(entry["recordSHA256"]) is None
+            or type(entry.get("installedFileCount")) is not int
+            or entry["installedFileCount"] <= 0
+            or not isinstance(entry.get("installedContentSHA256"), str)
+            or _SHA256_PATTERN.fullmatch(entry["installedContentSHA256"]) is None
+            or entry.get("distributionSHA256") != canonical_sha256(unsigned)
+        ):
+            raise ValueError("Invalid resolved distribution identity")
+        names.append(entry["name"])
+    if names != sorted(names) or len(names) != len(set(names)):
+        raise ValueError("Resolved distributions must be uniquely name-sorted")
+    payload = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION,
+        "recordPolicy": RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY,
+        "distributions": entries,
+    }
+    digest = canonical_sha256(payload)
+    if environment.get("resolvedTrainingEnvironmentSHA256") != digest:
+        raise ValueError(
+            "resolvedTrainingEnvironmentSHA256 does not match the distribution manifest"
+        )
+    if verify_installed:
+        rebuilt = build_resolved_training_environment(distributions)
+        if rebuilt != dict(environment):
+            raise ValueError("Installed resolved training environment drifted")
+    return digest
+
+
+def validate_runtime_source(*, kind: Any, revision: Any) -> tuple[str, str]:
+    if kind not in {"git", "huggingface_space"}:
+        raise ValueError("runtimeSourceKind must be git or huggingface_space")
+    if not isinstance(revision, str) or _REVISION_PATTERN.fullmatch(revision) is None:
+        raise ValueError("runtimeSourceRevision must be a full lowercase commit SHA")
+    return kind, revision
+
+
+def validate_runtime_source_audit(
+    value: Mapping[str, Any],
+    *,
+    observed_local_revision: str | None = None,
+) -> dict[str, Any]:
+    """Validate runtime-source audit semantics without overstating trust.
+
+    A local Git source is accepted only when the caller independently observed
+    the checkout's current HEAD and it agrees with every recorded revision.
+    Hugging Face Space repository-head evidence remains supplemental: the Hub
+    does not attest that the matching repository revision is the executing
+    container revision, so that contract can never claim a verified binding.
+    """
+
+    if not isinstance(value, Mapping):
+        raise ValueError("Runtime source audit must be an object")
+    kind, expected_revision = validate_runtime_source(
+        kind=value.get("runtimeSourceKind"),
+        revision=value.get("expectedRuntimeSourceRevision"),
+    )
+    if value.get("runtimeSourceRevision") != expected_revision:
+        raise ValueError("runtimeSourceRevision must equal the expected revision")
+
+    observed_repository_revision = value.get("observedRepositoryRevision")
+    observed_runtime_revision = value.get("observedRuntimeRevision")
+    for label, revision in (
+        ("observedRepositoryRevision", observed_repository_revision),
+        ("observedRuntimeRevision", observed_runtime_revision),
+    ):
+        if revision is not None and (
+            not isinstance(revision, str)
+            or _REVISION_PATTERN.fullmatch(revision) is None
+        ):
+            raise ValueError(f"{label} must be null or a full lowercase commit SHA")
+
+    status = value.get("runtimeSourceBindingStatus")
+    method = value.get("runtimeSourceBindingMethod")
+    if kind == "huggingface_space":
+        if observed_runtime_revision is not None:
+            raise ValueError(
+                "Hugging Face Space runtime revision must remain unobserved without "
+                "platform attestation"
+            )
+        if status != RUNTIME_SOURCE_BINDING_SPACE_UNVERIFIED:
+            raise ValueError(
+                "Hugging Face Space runtime source binding must remain "
+                "operator_declared_unverified"
+            )
+        if method == RUNTIME_SOURCE_BINDING_SPACE_DECLARATION:
+            if observed_repository_revision is not None:
+                raise ValueError(
+                    "Operator-declared Space source cannot include repository-head "
+                    "evidence"
+                )
+        elif method == RUNTIME_SOURCE_BINDING_SPACE_REPOSITORY_HEAD:
+            if observed_repository_revision != expected_revision:
+                raise ValueError(
+                    "Supplemental Space repository head must equal the expected "
+                    "revision"
+                )
+        else:
+            raise ValueError("Unsupported Hugging Face Space source binding method")
+    else:
+        if (
+            not isinstance(observed_local_revision, str)
+            or _REVISION_PATTERN.fullmatch(observed_local_revision) is None
+        ):
+            raise ValueError(
+                "Local Git runtime source requires an independently observed HEAD"
+            )
+        if observed_local_revision != expected_revision:
+            raise ValueError(
+                "Observed local Git HEAD does not match the expected runtime source"
+            )
+        if (
+            observed_repository_revision != observed_local_revision
+            or observed_runtime_revision != observed_local_revision
+        ):
+            raise ValueError(
+                "Local runtime-source observations must equal the current Git HEAD"
+            )
+        if status != RUNTIME_SOURCE_BINDING_LOCAL:
+            raise ValueError(
+                "Local Git runtime source binding status must be "
+                "local_checkout_observed"
+            )
+        if method != RUNTIME_SOURCE_BINDING_LOCAL_METHOD:
+            raise ValueError(
+                "Local Git runtime source binding method must be "
+                "git_head_plus_training_code_manifest"
+            )
+
+    return {
+        field: value.get(field)
+        for field in RUNTIME_SOURCE_AUDIT_FIELDS
+    }
