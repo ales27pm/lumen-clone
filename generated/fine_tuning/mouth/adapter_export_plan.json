@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "aecfe2b6a290db3caa4293290568c76e222843cfd8a58d6cf9c89713797c573d"
+        "reportSHA256": "1474a1c15008168ed14d39994ffdd17bf4a3d2732b84b298f3c3202099b400ef"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,7 +41,7 @@
       "recordCount": 8,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "22600a30707c25bd0fcbc0480e868f6605dba13f",
+    "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 19,
@@ -120,7 +120,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "44a62ca73754e23159fde64f5b888bb023cb45442301a01e28b617d1756e5259",
+    "experimentManifestSHA256": "0c33e781924933d20ee33ee696f2edfdfd4c99bf6dd5f7852320be1667fa6524",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -179,12 +179,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
-  "trainingCodeBundleSHA256": "4b992dda0764b45091462f09a308205848eaa5eb6aef66d74ea2ae72908b825c",
-  "trainingCodeSHA256": "690f0f377d480dea9e53501ce3c7b4820c52e561385f2da67d9f43450f3c434b",
+  "trainingCodeBundleSHA256": "fce7f4974ed10d2d6ac489d1e5a0e03b5156ac0d221a6f138ac2608231e9f16b",
+  "trainingCodeSHA256": "9017d9dce749e9b2df85ede534bb74ccf5cd8ad964d5c04cda20fddce0a802bd",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "4101303eaef1d1e9ddf9d1bb7532514918dc21be22ac1ffb7761a64f794c75b2",
-    "orpo": "b7193323f361767591b5da39170426d9d2217bd92053b569521776412c614546",
-    "sft": "690f0f377d480dea9e53501ce3c7b4820c52e561385f2da67d9f43450f3c434b"
+    "dpo": "21d7fb7a7c9dc3f225f46136aeafa7501b414d3a05177f0bd301708c98660f75",
+    "orpo": "cce3f4782fb298f978e9f198118a7e97fddd28244538b62d0cecb90da9aabd6a",
+    "sft": "9017d9dce749e9b2df85ede534bb74ccf5cd8ad964d5c04cda20fddce0a802bd"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

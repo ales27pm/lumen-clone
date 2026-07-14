@@ -18,6 +18,42 @@ from tools.fine_tuning.unsloth.adapter_artifact import write_adapter_artifact_ma
 QWEN_MODEL_ID = "Qwen/Qwen3-1.7B"
 QWEN_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 RUNTIME_SOURCE_REVISION = "a" * 40
+SPACE_CONFIGURATION_SHA256 = "c" * 64
+
+
+def _resolved_environment() -> dict:
+    distribution_payload = {
+        "name": "synthetic-runtime",
+        "version": "1.0.0",
+        "directURL": None,
+        "installer": "test",
+        "recordSHA256": "1" * 64,
+        "installedFileCount": 1,
+        "installedContentSHA256": "2" * 64,
+    }
+    distribution = {
+        **distribution_payload,
+        "distributionSHA256": adapter_evaluation.canonical_sha256(
+            distribution_payload
+        ),
+    }
+    payload = {
+        "schemaVersion": "lumen.resolved-training-environment/1.0.0",
+        "recordPolicy": {
+            "hashAlgorithm": "sha256",
+            "verifyDeclaredFileHashes": True,
+            "excludeUnhashedSelfRecord": True,
+            "excludeUnhashedGeneratedBytecode": True,
+            "rejectOtherUnhashedFiles": True,
+        },
+        "distributions": [distribution],
+    }
+    return {
+        **payload,
+        "resolvedTrainingEnvironmentSHA256": adapter_evaluation.canonical_sha256(
+            payload
+        ),
+    }
 
 
 def _safetensors_bytes(data: bytes = b"\x00\x00\x00\x00") -> bytes:
@@ -79,6 +115,7 @@ def _sft_parent_fixture(
         adapter,
         base_model_name=adapter_base_model_name,
     )
+    resolved_environment = _resolved_environment()
     environment = {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": "sha256:" + "b" * 64,
@@ -92,6 +129,11 @@ def _sft_parent_fixture(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": pending["requirementsSHA256"],
+        "resolvedTrainingEnvironment": resolved_environment,
+        "resolvedTrainingEnvironmentSHA256": resolved_environment[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": SPACE_CONFIGURATION_SHA256,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,
         "expectedRuntimeSourceRevision": RUNTIME_SOURCE_REVISION,
@@ -135,6 +177,11 @@ def _sft_parent_fixture(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": pending["requirementsSHA256"],
+        "resolvedTrainingEnvironment": resolved_environment,
+        "resolvedTrainingEnvironmentSHA256": resolved_environment[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": SPACE_CONFIGURATION_SHA256,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,
         "expectedRuntimeSourceRevision": RUNTIME_SOURCE_REVISION,
@@ -182,6 +229,7 @@ def test_verified_sft_parent_returns_complete_audit_lineage(tmp_path: Path) -> N
         "trainingEnvironmentLockSHA256",
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
+        "spaceConfigurationSHA256",
         "runtimeSourceKind",
         "trainingCodeSHA256",
     ),

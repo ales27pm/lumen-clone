@@ -157,6 +157,7 @@ _NON_TRAINING_CONFIG_FIELDS = {
     "observedRuntimeRevision",
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
+    "spaceConfigurationSHA256",
 }
 
 RUNTIME_SOURCE_AUDIT_FIELDS = (
@@ -462,6 +463,16 @@ def _valid_runtime_source_audit(
     return False
 
 
+def _valid_space_configuration_lineage(value: Mapping[str, Any]) -> bool:
+    kind = value.get("runtimeSourceKind")
+    digest = value.get("spaceConfigurationSHA256")
+    if kind == "huggingface_space":
+        return _is_sha256(digest)
+    if kind in {"git", "unresolved"}:
+        return digest is None
+    return False
+
+
 def _valid_sft_parent_audit_lineage(
     lineage: Any,
     *,
@@ -491,6 +502,7 @@ def _valid_sft_parent_audit_lineage(
         or not _is_sha256(lineage.get("variantManifestSHA256"))
         or not _is_sha256(lineage.get("trainingEnvironmentSHA256"))
         or not _valid_runtime_source_audit(lineage, pending=False)
+        or not _valid_space_configuration_lineage(lineage)
     ):
         return False
     runtime_kind = manifest.get("runtimeSourceKind")
@@ -1111,6 +1123,16 @@ def score_evaluation_suite(
         ),
         "requirementsSHA256": (
             variant_manifest.get("requirementsSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "resolvedTrainingEnvironmentSHA256": (
+            variant_manifest.get("resolvedTrainingEnvironmentSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "spaceConfigurationSHA256": (
+            variant_manifest.get("spaceConfigurationSHA256")
             if isinstance(variant_manifest, Mapping)
             else None
         ),
@@ -2120,6 +2142,8 @@ def build_experiment_variant_manifest(
         "trainingDependencyLock": training_dependency_lock,
         "trainingDependencyLockSHA256": training_dependency_lock_sha256,
         "requirementsSHA256": requirements_digest,
+        "resolvedTrainingEnvironment": None,
+        "resolvedTrainingEnvironmentSHA256": None,
         **runtime_source,
         "seed": seed,
         "controlledTrainingConfig": controlled_config,
@@ -2329,9 +2353,48 @@ def finalize_experiment_variant_manifest(
         field: environment.pop(field, None)
         for field in RUNTIME_SOURCE_AUDIT_FIELDS
     }
+    space_configuration_sha256 = environment.pop(
+        "spaceConfigurationSHA256",
+        None,
+    )
+    resolved_environment = environment.get("resolvedTrainingEnvironment")
+    resolved_environment_sha256 = environment.get(
+        "resolvedTrainingEnvironmentSHA256"
+    )
+    try:
+        verified_resolved_environment_sha256 = (
+            _TRAINING_LINEAGE.verify_resolved_training_environment(
+                resolved_environment
+            )
+            if isinstance(resolved_environment, Mapping)
+            else None
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("training_environment has invalid resolved dependencies") from exc
+    if verified_resolved_environment_sha256 != resolved_environment_sha256:
+        raise ValueError(
+            "training_environment must bind the complete resolved dependency environment"
+        )
+    if training_phase == "sft_dpo" and (
+        not isinstance(parent_sft_lineage, Mapping)
+        or parent_sft_lineage.get("resolvedTrainingEnvironmentSHA256")
+        != resolved_environment_sha256
+    ):
+        raise ValueError(
+            "Preference training resolved dependencies must match the SFT parent"
+        )
+    runtime_lineage = {
+        **runtime_source,
+        "spaceConfigurationSHA256": space_configuration_sha256,
+        "resolvedTrainingEnvironmentSHA256": resolved_environment_sha256,
+    }
     if not _valid_runtime_source_audit(runtime_source, pending=False):
         raise ValueError(
             "training_environment must include honest expected/observed runtime-source evidence"
+        )
+    if not _valid_space_configuration_lineage(runtime_lineage):
+        raise ValueError(
+            "training_environment must bind the deployed Space configuration"
         )
     if training_phase == "sft_dpo" and (
         not isinstance(parent_sft_lineage, Mapping)
@@ -2362,6 +2425,9 @@ def finalize_experiment_variant_manifest(
     }
     finalized["trainingCodeManifest"] = selected_code_manifest
     finalized["trainingCodeSHA256"] = selected_code_sha256
+    finalized["spaceConfigurationSHA256"] = space_configuration_sha256
+    finalized["resolvedTrainingEnvironment"] = resolved_environment
+    finalized["resolvedTrainingEnvironmentSHA256"] = resolved_environment_sha256
     finalized.update(runtime_source)
     finalized["artifact"] = {
         "status": "trained",
@@ -2379,6 +2445,8 @@ def finalize_experiment_variant_manifest(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": manifest["requirementsSHA256"],
+        "resolvedTrainingEnvironmentSHA256": resolved_environment_sha256,
+        "spaceConfigurationSHA256": space_configuration_sha256,
         **runtime_source,
         "evaluationReportSHA256": None,
     }
@@ -2400,7 +2468,7 @@ def finalize_experiment_variant_manifest(
             else None
         ),
         "preferenceTrainingRuntime": (
-            dict(runtime_source) if training_phase == "sft_dpo" else None
+            dict(runtime_lineage) if training_phase == "sft_dpo" else None
         ),
     }
     finalized["parentSFTLineage"] = (
@@ -2412,7 +2480,7 @@ def finalize_experiment_variant_manifest(
         else None
     )
     finalized["preferenceTrainingRuntime"] = (
-        dict(runtime_source) if training_phase == "sft_dpo" else None
+        dict(runtime_lineage) if training_phase == "sft_dpo" else None
     )
     finalized["trainingEnvironment"] = environment
     finalized["trainingEnvironmentSHA256"] = training_environment_sha256
@@ -2621,6 +2689,9 @@ def decide_adapter_promotion(
             "trainingCodeBundleSHA256",
             "trainingDependencyLockSHA256",
             "requirementsSHA256",
+            "resolvedTrainingEnvironment",
+            "resolvedTrainingEnvironmentSHA256",
+            "spaceConfigurationSHA256",
             "seed",
             "trainingConfigSHA256",
             "frozenEvaluationSHA256",
@@ -2747,6 +2818,12 @@ def decide_adapter_promotion(
         "requirementsSHA256": optimized_variant_manifest.get(
             "requirementsSHA256"
         ),
+        "resolvedTrainingEnvironmentSHA256": optimized_variant_manifest.get(
+            "resolvedTrainingEnvironmentSHA256"
+        ),
+        "spaceConfigurationSHA256": optimized_variant_manifest.get(
+            "spaceConfigurationSHA256"
+        ),
         "baselineRuntimeSourceRevision": baseline_variant_manifest.get(
             "runtimeSourceRevision"
         ),
@@ -2792,6 +2869,8 @@ def _valid_evaluation_report(
         and _is_sha256(report.get("trainingCodeBundleSHA256"))
         and _is_sha256(report.get("trainingDependencyLockSHA256"))
         and _is_sha256(report.get("requirementsSHA256"))
+        and _is_sha256(report.get("resolvedTrainingEnvironmentSHA256"))
+        and _valid_space_configuration_lineage(report)
         and _valid_runtime_source_audit(report, pending=False)
         and _is_sha256(report.get("artifactSHA256"))
         and report.get("promotionEvidenceBound") is True
@@ -2910,9 +2989,21 @@ def _valid_dpo_training_lineage(
         adapter_sha256=parent_sha256,
     ):
         return False
-    if preference_runtime != runtime_source_audit(manifest):
+    expected_preference_runtime = {
+        **runtime_source_audit(manifest),
+        "spaceConfigurationSHA256": manifest.get(
+            "spaceConfigurationSHA256"
+        ),
+        "resolvedTrainingEnvironmentSHA256": manifest.get(
+            "resolvedTrainingEnvironmentSHA256"
+        ),
+    }
+    if preference_runtime != expected_preference_runtime:
         return False
-    if not _valid_runtime_source_audit(preference_runtime, pending=False):
+    if (
+        not _valid_runtime_source_audit(preference_runtime, pending=False)
+        or not _valid_space_configuration_lineage(preference_runtime)
+    ):
         return False
 
     trainer = artifact.get("preferenceTrainer")
@@ -3061,10 +3152,13 @@ def _valid_variant_manifest(
         and _valid_training_code_lineage(manifest)
         and _valid_training_dependency_lineage(manifest)
         and _valid_runtime_source_lineage(manifest)
+        and _valid_space_configuration_lineage(manifest)
         and (
             (
                 manifest.get("trainingEnvironment") is None
                 and manifest.get("trainingEnvironmentSHA256") is None
+                and manifest.get("resolvedTrainingEnvironment") is None
+                and manifest.get("resolvedTrainingEnvironmentSHA256") is None
             )
             or (
                 _valid_training_environment(
@@ -3083,6 +3177,14 @@ def _valid_variant_manifest(
                 )
                 and canonical_sha256(dict(manifest["trainingEnvironment"]))
                 == manifest.get("trainingEnvironmentSHA256")
+                and manifest.get("resolvedTrainingEnvironment")
+                == manifest["trainingEnvironment"].get(
+                    "resolvedTrainingEnvironment"
+                )
+                and manifest.get("resolvedTrainingEnvironmentSHA256")
+                == manifest["trainingEnvironment"].get(
+                    "resolvedTrainingEnvironmentSHA256"
+                )
             )
         )
         and _is_sha256(manifest.get("trainingConfigSHA256"))
@@ -3123,6 +3225,10 @@ def _valid_variant_manifest(
         == manifest.get("trainingDependencyLockSHA256")
         and artifact.get("requirementsSHA256")
         == manifest.get("requirementsSHA256")
+        and artifact.get("resolvedTrainingEnvironmentSHA256")
+        == manifest.get("resolvedTrainingEnvironmentSHA256")
+        and artifact.get("spaceConfigurationSHA256")
+        == manifest.get("spaceConfigurationSHA256")
         and all(
             artifact.get(field) == manifest.get(field)
             for field in RUNTIME_SOURCE_AUDIT_FIELDS
@@ -3182,6 +3288,8 @@ def _valid_training_environment(
             "trainingCodeSHA256",
             "trainingDependencyLockSHA256",
             "requirementsSHA256",
+            "resolvedTrainingEnvironment",
+            "resolvedTrainingEnvironmentSHA256",
         }
         and environment.get("schemaVersion")
         == "lumen.adapter-training-environment/1.0.0"
@@ -3209,8 +3317,24 @@ def _valid_training_environment(
             or environment.get("requirementsSHA256")
             == expected_requirements_sha256
         )
+        and isinstance(environment.get("resolvedTrainingEnvironment"), Mapping)
+        and _valid_resolved_training_environment_lineage(environment)
         and provenance == ("operator_declared", "manual_validation_required", False)
     )
+
+
+def _valid_resolved_training_environment_lineage(value: Mapping[str, Any]) -> bool:
+    resolved = value.get("resolvedTrainingEnvironment")
+    digest = value.get("resolvedTrainingEnvironmentSHA256")
+    if not isinstance(resolved, Mapping) or not _is_sha256(digest):
+        return False
+    try:
+        return (
+            _TRAINING_LINEAGE.verify_resolved_training_environment(resolved)
+            == digest
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
 
 
 def _report_matches_variant(
@@ -3233,6 +3357,10 @@ def _report_matches_variant(
         and report.get("trainingDependencyLockSHA256")
         == manifest.get("trainingDependencyLockSHA256")
         and report.get("requirementsSHA256") == manifest.get("requirementsSHA256")
+        and report.get("resolvedTrainingEnvironmentSHA256")
+        == manifest.get("resolvedTrainingEnvironmentSHA256")
+        and report.get("spaceConfigurationSHA256")
+        == manifest.get("spaceConfigurationSHA256")
         and all(
             report.get(field) == manifest.get(field)
             for field in RUNTIME_SOURCE_AUDIT_FIELDS
@@ -3262,6 +3390,8 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
             "trainingCodeBundleSHA256",
             "trainingDependencyLockSHA256",
             "requirementsSHA256",
+            "resolvedTrainingEnvironmentSHA256",
+            "spaceConfigurationSHA256",
             "seed",
             "trainingConfigSHA256",
             "frozenEvaluationSHA256",

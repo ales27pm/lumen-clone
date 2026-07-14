@@ -236,6 +236,20 @@ def write_space_bundle(
         requirements_path=space_dir / "requirements.txt",
     )
 
+    readme_path = space_dir / "README.md"
+    readme = readme_path.read_text(encoding="utf-8")
+    readme = readme.replace("{{SPACE_REPO}}", space_repo)
+    readme = readme.replace("{{DATASET_REPO}}", dataset_repo)
+    readme = readme.replace("{{ADAPTER_REPO}}", adapter_repo)
+    readme = readme.replace("{{GPU_SIZE}}", gpu_size)
+    readme = readme.replace("{{GPU_DURATION_SECONDS}}", str(gpu_duration_seconds))
+    readme_path.write_text(readme, encoding="utf-8")
+    space_configuration = lineage.build_space_configuration(readme_path)
+    space_configuration_sha256 = lineage.verify_space_configuration(
+        space_configuration,
+        readme_path=readme_path,
+    )
+
     dataset_path_in_repo = f"runs/{run_id}/fine_tuning"
     defaults = {
         "schema": "lumen.zerogpu.defaults/1.0.0",
@@ -264,6 +278,8 @@ def write_space_bundle(
         "trainingDependencyLock": dependency_lock,
         "trainingDependencyLockSHA256": dependency_lock_sha256,
         "requirementsSHA256": dependency_lock["requirementsSHA256"],
+        "spaceConfiguration": space_configuration,
+        "spaceConfigurationSHA256": space_configuration_sha256,
         "runtimeSourceKind": "huggingface_space",
         "fresh_run": True,
         "resume_default": False,
@@ -271,14 +287,6 @@ def write_space_bundle(
     }
     defaults_path = space_dir / "lumen_zero_gpu_defaults.json"
     _write_defaults(defaults_path, defaults)
-
-    readme = (space_dir / "README.md").read_text(encoding="utf-8")
-    readme = readme.replace("{{SPACE_REPO}}", space_repo)
-    readme = readme.replace("{{DATASET_REPO}}", dataset_repo)
-    readme = readme.replace("{{ADAPTER_REPO}}", adapter_repo)
-    readme = readme.replace("{{GPU_SIZE}}", gpu_size)
-    readme = readme.replace("{{GPU_DURATION_SECONDS}}", str(gpu_duration_seconds))
-    (space_dir / "README.md").write_text(readme, encoding="utf-8")
 
     return SpaceBuild(
         run_id=run_id,
@@ -390,6 +398,64 @@ def wait_for_space_revision(api: Any, *, repo_id: str, token: str | None, timeou
     raise RuntimeError(f"Timed out waiting for Space runtime revision: {last_status}")
 
 
+def ensure_repository_visibility(
+    api: Any,
+    *,
+    repo_id: str,
+    repo_type: str,
+    private: bool,
+    token: str,
+    space_sdk: str | None = None,
+) -> None:
+    create_kwargs: dict[str, Any] = {
+        "repo_id": repo_id,
+        "repo_type": repo_type,
+        "private": private,
+        "exist_ok": True,
+        "token": token,
+    }
+    if space_sdk is not None:
+        create_kwargs["space_sdk"] = space_sdk
+    try:
+        api.create_repo(**create_kwargs)
+    except TypeError:
+        if space_sdk is None:
+            raise
+        create_kwargs.pop("space_sdk")
+        api.create_repo(**create_kwargs)
+
+    api.update_repo_settings(
+        repo_id=repo_id,
+        repo_type=repo_type,
+        private=private,
+        token=token,
+    )
+    info_method = getattr(api, f"{repo_type}_info", None)
+    if info_method is None:
+        raise RuntimeError(
+            f"Installed huggingface_hub cannot verify {repo_type} repository visibility"
+        )
+    info = info_method(
+        repo_id=repo_id,
+        files_metadata=False,
+        token=token,
+    )
+    actual_private = getattr(info, "private", None)
+    if not isinstance(actual_private, bool) or actual_private is not private:
+        expected = "private" if private else "public"
+        actual = (
+            "private"
+            if actual_private is True
+            else "public"
+            if actual_private is False
+            else "unknown"
+        )
+        raise RuntimeError(
+            f"Repository visibility postcondition failed for {repo_type} "
+            f"repository {repo_id}: expected {expected}, observed {actual}"
+        )
+
+
 def upload_to_hub(
     *,
     build: SpaceBuild,
@@ -425,25 +491,28 @@ def upload_to_hub(
         f"({'private' if private_space else 'public'})"
     )
     if not dry_run:
-        api.create_repo(repo_id=dataset_repo, repo_type="dataset", private=private_dataset, exist_ok=True, token=token)
-        api.create_repo(repo_id=adapter_repo, repo_type="model", private=private_adapters, exist_ok=True, token=token)
-        try:
-            api.create_repo(
-                repo_id=space_repo,
-                repo_type="space",
-                space_sdk="gradio",
-                private=private_space,
-                exist_ok=True,
-                token=token,
-            )
-        except TypeError:
-            api.create_repo(
-                repo_id=space_repo,
-                repo_type="space",
-                private=private_space,
-                exist_ok=True,
-                token=token,
-            )
+        ensure_repository_visibility(
+            api,
+            repo_id=dataset_repo,
+            repo_type="dataset",
+            private=private_dataset,
+            token=token,
+        )
+        ensure_repository_visibility(
+            api,
+            repo_id=adapter_repo,
+            repo_type="model",
+            private=private_adapters,
+            token=token,
+        )
+        ensure_repository_visibility(
+            api,
+            repo_id=space_repo,
+            repo_type="space",
+            private=private_space,
+            token=token,
+            space_sdk="gradio",
+        )
 
     print(f"Upload dataset snapshot: {build.dataset_dir} -> {dataset_repo}/{build.dataset_path_in_repo}")
     dataset_revision = "dry_run_not_uploaded"

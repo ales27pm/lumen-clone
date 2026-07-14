@@ -63,13 +63,46 @@ def _tool_contracts() -> dict:
     }
 
 
+def _resolved_environment(marker: str = "1") -> dict:
+    distribution_payload = {
+        "name": "synthetic-runtime",
+        "version": f"1.0.{marker}",
+        "directURL": None,
+        "installer": "test",
+        "recordSHA256": marker * 64,
+        "installedFileCount": 1,
+        "installedContentSHA256": marker * 64,
+    }
+    distribution = {
+        **distribution_payload,
+        "distributionSHA256": canonical_sha256(distribution_payload),
+    }
+    payload = {
+        "schemaVersion": "lumen.resolved-training-environment/1.0.0",
+        "recordPolicy": {
+            "hashAlgorithm": "sha256",
+            "verifyDeclaredFileHashes": True,
+            "excludeUnhashedSelfRecord": True,
+            "excludeUnhashedGeneratedBytecode": True,
+            "rejectOtherUnhashedFiles": True,
+        },
+        "distributions": [distribution],
+    }
+    return {
+        **payload,
+        "resolvedTrainingEnvironmentSHA256": canonical_sha256(payload),
+    }
+
+
 def _training_environment(
     manifest: dict,
     digest_character: str = "c",
     *,
     code_phase: str = "sft",
     runtime_revision: str = "1" * 40,
+    resolved_marker: str = "1",
 ) -> dict:
+    resolved_environment = _resolved_environment(resolved_marker)
     return {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": "sha256:" + digest_character * 64,
@@ -83,6 +116,10 @@ def _training_environment(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": manifest["requirementsSHA256"],
+        "resolvedTrainingEnvironment": resolved_environment,
+        "resolvedTrainingEnvironmentSHA256": resolved_environment[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
         "runtimeSourceKind": "git",
         "runtimeSourceRevision": runtime_revision,
         "expectedRuntimeSourceRevision": runtime_revision,
@@ -143,6 +180,9 @@ def _sft_parent_lineage(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": manifest["requirementsSHA256"],
+        "resolvedTrainingEnvironmentSHA256": _resolved_environment()[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
         "trainingCodeSHA256": manifest["trainingCodeSHA256ByPhase"]["sft"],
         "adapterSHA256": adapter_sha256,
         "adapterManifestSHA256": adapter_sha256,
@@ -1299,9 +1339,17 @@ def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
     assert finalized["parentSFTLineage"] == parent_lineage
     assert finalized["referenceSFTLineage"] == parent_lineage
     assert finalized["preferenceTrainingRuntime"] == {
-        field: finalized[field]
-        for field in adapter_evaluation.RUNTIME_SOURCE_AUDIT_FIELDS
-    }
+        **{
+            field: finalized[field]
+            for field in adapter_evaluation.RUNTIME_SOURCE_AUDIT_FIELDS
+        },
+            "spaceConfigurationSHA256": finalized[
+                "spaceConfigurationSHA256"
+            ],
+            "resolvedTrainingEnvironmentSHA256": finalized[
+                "resolvedTrainingEnvironmentSHA256"
+            ],
+        }
     assert adapter_evaluation._valid_variant_manifest(
         finalized,
         agent="executor",
@@ -1733,6 +1781,63 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
     assert decision["promoted"] is False
     assert decision["runtimePointerAction"] == "leave_current_pointer_unchanged"
     assert "runtime_image_promotion_unsupported" in decision["failures"]
+
+    transitive_drift = json.loads(json.dumps(optimized_manifest))
+    transitive_drift.pop("variantManifestSHA256")
+    drifted_resolved = _resolved_environment("2")
+    transitive_drift["resolvedTrainingEnvironment"] = drifted_resolved
+    transitive_drift["resolvedTrainingEnvironmentSHA256"] = drifted_resolved[
+        "resolvedTrainingEnvironmentSHA256"
+    ]
+    transitive_drift["trainingEnvironment"][
+        "resolvedTrainingEnvironment"
+    ] = drifted_resolved
+    transitive_drift["trainingEnvironment"][
+        "resolvedTrainingEnvironmentSHA256"
+    ] = drifted_resolved["resolvedTrainingEnvironmentSHA256"]
+    transitive_drift["trainingEnvironmentSHA256"] = canonical_sha256(
+        transitive_drift["trainingEnvironment"]
+    )
+    transitive_drift["artifact"][
+        "resolvedTrainingEnvironmentSHA256"
+    ] = drifted_resolved["resolvedTrainingEnvironmentSHA256"]
+    transitive_drift["variantManifestSHA256"] = canonical_sha256(
+        transitive_drift
+    )
+    assert adapter_evaluation._valid_variant_manifest(
+        transitive_drift,
+        agent="executor",
+        expected_variant="internal_plus_public_optimized",
+        require_trained_artifact=True,
+    )
+    drifted_lineage = adapter_evaluation._variant_controlled_lineage(
+        transitive_drift
+    )
+    drifted_report = score_evaluation_suite(
+        evaluation,
+        optimized_outputs,
+        agent="executor",
+        variant="internal_plus_public_optimized",
+        controlled_lineage=drifted_lineage,
+        variant_manifest=transitive_drift,
+        artifact_sha256=digest_b,
+    )
+    drifted_decision = decide_adapter_promotion(
+        agent="executor",
+        baseline_report=baseline,
+        optimized_report=drifted_report,
+        baseline_variant_manifest=baseline_manifest,
+        optimized_variant_manifest=transitive_drift,
+        evaluation_records=evaluation,
+        baseline_candidate_outputs=baseline_outputs,
+        optimized_candidate_outputs=optimized_outputs,
+        baseline_contamination_report=baseline_clean,
+        optimized_contamination_report=clean,
+        baseline_artifact_sha256=digest_a,
+        optimized_artifact_sha256=digest_b,
+    )
+    assert "variant_controlled_lineage_mismatch" in drifted_decision["failures"]
+    assert drifted_decision["promoted"] is False
 
     parent_sft_digest = "c" * 64
     dpo_artifact = _adapter_artifact(

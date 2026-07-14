@@ -135,10 +135,23 @@ head equality is supplemental evidence, not proof of the executing container; ab
 platform metadata, the runtime-source binding remains explicitly unverified. Controlled
 comparisons use the verified code and dependency digests.
 
+At runtime, a second environment identity enumerates every installed distribution and binds its
+version, safe direct/VCS provenance, and behavior-bearing `RECORD` content. The resulting
+`resolvedTrainingEnvironmentSHA256` must agree across controlled comparisons. ZeroGPU also binds a
+canonical README front-matter contract through `spaceConfigurationSHA256`, preventing the SDK,
+entrypoint, or Python runtime from drifting independently of the training lineage.
+
 ZeroGPU creates the Space, immutable dataset repository, and adapter/model repository as private
 unless the operator explicitly selects the corresponding `--public-space`, `--public-dataset`, or
 `--public-adapters` override. Making the Space public never bypasses application-level admin-token
-authorization.
+authorization. The builder updates and reads back the actual visibility of all three repositories
+before uploading, including repositories that already existed. The browser page is status-only;
+training is invoked through the authenticated machine endpoint.
+
+The one-click launcher requires `LUMEN_ZERO_GPU_RESUME_BATCH` when a resumable run contains more
+than one agent batch. It invokes only that explicit batch and rejects an ambiguous general resume.
+Because ordinary Space-local disk is ephemeral across restart or redeployment, checkpoint resume is
+limited to an intact deployment until external checkpoint persistence is implemented.
 
 Rollback immediately if an adapter causes:
 

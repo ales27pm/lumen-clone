@@ -41,6 +41,7 @@ PUBLIC_DATASET="${LUMEN_ZERO_GPU_PUBLIC_DATASET:-0}"
 PUBLIC_ADAPTERS="${LUMEN_ZERO_GPU_PUBLIC_ADAPTERS:-0}"
 DESTRUCTIVE_RESET="${LUMEN_ZERO_GPU_DESTRUCTIVE_RESET:-0}"
 RESUME="${LUMEN_ZERO_GPU_RESUME:-0}"
+RESUME_BATCH="${LUMEN_ZERO_GPU_RESUME_BATCH:-}"
 
 log() {
   printf '[lumen-zerogpu] %s\n' "$*"
@@ -141,6 +142,17 @@ esac
 [[ "$TRIGGER_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || die "LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS must be a positive integer"
 (( TRIGGER_TIMEOUT_SECONDS > 0 )) || die "LUMEN_ZERO_GPU_TRIGGER_TIMEOUT_SECONDS must be greater than zero"
 
+IFS=',' read -r -a AGENT_ARRAY <<< "$AGENTS"
+TOTAL_AGENTS="${#AGENT_ARRAY[@]}"
+(( TOTAL_AGENTS > 0 )) || die "no agents selected"
+BATCH_COUNT=$(( (TOTAL_AGENTS + AGENT_BATCH_SIZE - 1) / AGENT_BATCH_SIZE ))
+if [[ "$RESUME" == "1" && "$BATCH_COUNT" -gt 1 ]]; then
+  [[ "$RESUME_BATCH" =~ ^[1-9][0-9]*$ ]] || die "LUMEN_ZERO_GPU_RESUME_BATCH must select the explicit batch to resume when more than one batch exists"
+  (( RESUME_BATCH >= 1 && RESUME_BATCH <= BATCH_COUNT )) || die "LUMEN_ZERO_GPU_RESUME_BATCH is outside the available batch range 1..$BATCH_COUNT"
+elif [[ -n "$RESUME_BATCH" ]]; then
+  die "LUMEN_ZERO_GPU_RESUME_BATCH is only valid for a multi-batch resume"
+fi
+
 if [[ "$USE_ACTIVE_PYTHON" == "1" ]]; then
   TRAIN_PY="$PYTHON_BIN"
 else
@@ -162,15 +174,16 @@ log "dataset repo: $DATASET_REPO"
 log "adapter repo: $ADAPTER_REPO"
 log "agents: $AGENTS"
 log "agent batch size: $AGENT_BATCH_SIZE"
+if [[ -n "$RESUME_BATCH" ]]; then
+  log "resume batch: $RESUME_BATCH/$BATCH_COUNT"
+fi
 log "experiment variant: $EXPERIMENT_VARIANT"
 log "trigger timeout seconds: $TRIGGER_TIMEOUT_SECONDS"
 
-IFS=',' read -r -a AGENT_ARRAY <<< "$AGENTS"
-TOTAL_AGENTS="${#AGENT_ARRAY[@]}"
-(( TOTAL_AGENTS > 0 )) || die "no agents selected"
-BATCH_COUNT=$(( (TOTAL_AGENTS + AGENT_BATCH_SIZE - 1) / AGENT_BATCH_SIZE ))
-
 for (( batch_index = 1, start = 0; start < TOTAL_AGENTS; batch_index++, start += AGENT_BATCH_SIZE )); do
+  if [[ "$RESUME" == "1" && -n "$RESUME_BATCH" && "$batch_index" -ne "$RESUME_BATCH" ]]; then
+    continue
+  fi
   batch_agents=()
   for (( offset = 0; offset < AGENT_BATCH_SIZE && start + offset < TOTAL_AGENTS; offset++ )); do
     agent="${AGENT_ARRAY[start + offset]}"

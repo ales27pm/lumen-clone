@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +15,51 @@ SPEC = importlib.util.spec_from_file_location("training_lineage_under_test", MOD
 assert SPEC is not None and SPEC.loader is not None
 training_lineage = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(training_lineage)
+
+
+class _InstalledDistribution:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        name: str,
+        version: str,
+        direct_url: dict[str, object] | None = None,
+    ) -> None:
+        self.root = root
+        self.metadata = {"Name": name}
+        self.version = version
+        self._direct_url = direct_url
+        package = root / name.replace("-", "_")
+        package.mkdir(parents=True)
+        init_path = package / "__init__.py"
+        init_path.write_text(
+            f"__version__ = {version!r}\n",
+            encoding="utf-8",
+        )
+        digest = base64.urlsafe_b64encode(
+            hashlib.sha256(init_path.read_bytes()).digest()
+        ).decode("ascii").rstrip("=")
+        dist_info = root / f"{name.replace('-', '_')}-{version}.dist-info"
+        dist_info.mkdir()
+        self.record_path = dist_info / "RECORD"
+        self.record_path.write_text(
+            f"{package.name}/__init__.py,sha256={digest},{init_path.stat().st_size}\n"
+            f"{dist_info.name}/RECORD,,\n",
+            encoding="utf-8",
+        )
+
+    def read_text(self, filename: str) -> str | None:
+        if filename == "RECORD":
+            return self.record_path.read_text(encoding="utf-8")
+        if filename == "INSTALLER":
+            return "uv\n"
+        if filename == "direct_url.json" and self._direct_url is not None:
+            return json.dumps(self._direct_url)
+        return None
+
+    def locate_file(self, filename: str) -> Path:
+        return self.root / filename
 
 
 def test_repository_code_bundle_is_phase_specific_and_self_verifying() -> None:
@@ -56,6 +104,86 @@ def test_deployed_code_mutation_fails_manifest_verification(tmp_path: Path) -> N
     (deployed / "trainer.py").write_text("print('two')\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Deployed training-code drift"):
         training_lineage.verify_training_code_manifest(manifest, root=deployed)
+
+
+def test_space_configuration_is_canonical_and_bound_to_runtime_front_matter(
+    tmp_path: Path,
+) -> None:
+    source = ROOT / "tools/hf_zerogpu/space_template/README.md"
+    readme = tmp_path / "README.md"
+    readme.write_bytes(source.read_bytes())
+
+    configuration = training_lineage.build_space_configuration(readme)
+
+    assert configuration == {
+        "schemaVersion": "lumen.zerogpu.space-configuration/1.0.0",
+        "sdk": "gradio",
+        "appFile": "app.py",
+        "pythonVersion": "3.10",
+        "suggestedHardware": None,
+        "spaceConfigurationSHA256": training_lineage.canonical_sha256(
+            {
+                "schemaVersion": "lumen.zerogpu.space-configuration/1.0.0",
+                "sdk": "gradio",
+                "appFile": "app.py",
+                "pythonVersion": "3.10",
+                "suggestedHardware": None,
+            }
+        ),
+    }
+    assert training_lineage.verify_space_configuration(
+        configuration,
+        readme_path=readme,
+    ) == configuration["spaceConfigurationSHA256"]
+
+
+@pytest.mark.parametrize(
+    ("source", "replacement"),
+    [
+        ("sdk: gradio", "sdk: static"),
+        ("app_file: app.py", "app_file: alternate.py"),
+        ('python_version: "3.10"', 'python_version: "3.11"'),
+    ],
+)
+def test_space_configuration_mutation_fails_runtime_verification(
+    tmp_path: Path,
+    source: str,
+    replacement: str,
+) -> None:
+    template = ROOT / "tools/hf_zerogpu/space_template/README.md"
+    readme = tmp_path / "README.md"
+    readme.write_bytes(template.read_bytes())
+    configuration = training_lineage.build_space_configuration(readme)
+    readme.write_text(
+        readme.read_text(encoding="utf-8").replace(source, replacement),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="runtime configuration drifted"):
+        training_lineage.verify_space_configuration(
+            configuration,
+            readme_path=readme,
+        )
+
+
+def test_space_configuration_rejects_uncontrolled_runtime_metadata(
+    tmp_path: Path,
+) -> None:
+    template = ROOT / "tools/hf_zerogpu/space_template/README.md"
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        template.read_text(encoding="utf-8").replace(
+            'python_version: "3.10"',
+            'python_version: "3.10"\nsuggested_hardware: zero-a10g',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Unsupported Space README front-matter field",
+    ):
+        training_lineage.build_space_configuration(readme)
 
 
 def test_unlisted_behavior_file_fails_bidirectional_closure_verification(
@@ -168,6 +296,167 @@ def test_dependency_lock_covers_every_direct_requirement() -> None:
             if key != "trainingDependencyLockSHA256"
         }
     )
+
+
+def test_resolved_environment_attests_transitive_distribution_content(
+    tmp_path: Path,
+) -> None:
+    direct = _InstalledDistribution(
+        tmp_path,
+        name="direct-package",
+        version="1.0.0",
+    )
+    transitive = _InstalledDistribution(
+        tmp_path,
+        name="transitive-package",
+        version="2.0.0",
+        direct_url={
+            "url": "https://github.com/example/transitive-package.git",
+            "vcs_info": {
+                "vcs": "git",
+                "commit_id": "a" * 40,
+                "requested_revision": "a" * 40,
+            },
+        },
+    )
+    resolved = training_lineage.build_resolved_training_environment(
+        [transitive, direct]
+    )
+
+    assert [item["name"] for item in resolved["distributions"]] == [
+        "direct-package",
+        "transitive-package",
+    ]
+    assert resolved["distributions"][1]["directURL"]["vcs_info"][
+        "commit_id"
+    ] == "a" * 40
+    assert training_lineage.verify_resolved_training_environment(
+        resolved,
+        distributions=[direct, transitive],
+        verify_installed=True,
+    ) == resolved["resolvedTrainingEnvironmentSHA256"]
+
+    transitive_package = tmp_path / "transitive_package" / "__init__.py"
+    transitive_package.write_text("__version__ = '2.0.1'\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="RECORD (?:size|content) mismatch"):
+        training_lineage.verify_resolved_training_environment(
+            resolved,
+            distributions=[direct, transitive],
+            verify_installed=True,
+        )
+
+
+def test_resolved_environment_rejects_duplicate_or_secret_bearing_provenance(
+    tmp_path: Path,
+) -> None:
+    first = _InstalledDistribution(tmp_path / "one", name="duplicate", version="1")
+    second = _InstalledDistribution(tmp_path / "two", name="duplicate", version="2")
+    with pytest.raises(ValueError, match="duplicate distributions"):
+        training_lineage.build_resolved_training_environment([first, second])
+
+    unsafe = _InstalledDistribution(
+        tmp_path / "unsafe",
+        name="unsafe",
+        version="1",
+        direct_url={"url": "https://token@example.com/private.git"},
+    )
+    with pytest.raises(ValueError, match="secret-safe"):
+        training_lineage.build_resolved_training_environment([unsafe])
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    [
+        {"url": "https://example.com/latest.whl"},
+        {
+            "url": "https://github.com/example/project.git",
+            "vcs_info": {"vcs": "git", "commit_id": "main"},
+        },
+        {
+            "url": "https://example.com/project.whl",
+            "archive_info": {},
+        },
+        {
+            "url": "https://example.com/source",
+            "dir_info": {"editable": False},
+        },
+        {
+            "url": "https://github.com/example/project.git",
+            "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+            "subdirectory": "../outside",
+        },
+    ],
+)
+def test_resolved_environment_rejects_mutable_direct_url_provenance(
+    tmp_path: Path,
+    direct_url: dict[str, object],
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="unsafe-provenance",
+        version="1",
+        direct_url=direct_url,
+    )
+
+    with pytest.raises(ValueError):
+        training_lineage.build_resolved_training_environment([distribution])
+
+
+def test_resolved_environment_rejects_unhashed_behavior_and_parent_record_paths(
+    tmp_path: Path,
+) -> None:
+    unhashed = _InstalledDistribution(
+        tmp_path / "unhashed",
+        name="unhashed",
+        version="1",
+    )
+    behavior = unhashed.root / "unhashed" / "behavior.py"
+    behavior.write_text("VALUE = 1\n", encoding="utf-8")
+    unhashed.record_path.write_text(
+        unhashed.record_path.read_text(encoding="utf-8")
+        + "unhashed/behavior.py,,\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unattested RECORD file"):
+        training_lineage.build_resolved_training_environment([unhashed])
+
+    escaping = _InstalledDistribution(
+        tmp_path / "escaping",
+        name="escaping",
+        version="1",
+    )
+    escaping.record_path.write_text("../outside.py,sha256=" + "a" * 43 + ",1\n")
+    with pytest.raises(ValueError, match="unsafe RECORD"):
+        training_lineage.build_resolved_training_environment([escaping])
+
+
+def test_resolved_environment_accepts_hashed_venv_entrypoint_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment_root = tmp_path / "venv"
+    site_packages = environment_root / "lib/python3.12/site-packages"
+    distribution = _InstalledDistribution(
+        site_packages,
+        name="entrypoint-package",
+        version="1",
+    )
+    entrypoint = environment_root / "bin/entrypoint-package"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("#!/usr/bin/env python\n", encoding="utf-8")
+    digest = base64.urlsafe_b64encode(
+        hashlib.sha256(entrypoint.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"../../../bin/entrypoint-package,sha256={digest},{entrypoint.stat().st_size}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(training_lineage.sys, "prefix", str(environment_root))
+
+    resolved = training_lineage.build_resolved_training_environment([distribution])
+
+    assert resolved["distributions"][0]["installedFileCount"] == 2
 
 
 @pytest.mark.parametrize(

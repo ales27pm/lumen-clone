@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "0b2d435d22be3c5333c13c3548cf99d2c1483a4a9a880855dc06e7c9968a3153"
+      "reportSHA256": "d8f134172dfed5a6e66450a223278721cfbd1ea966e65a427213057c779c4597"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "d67189e39b7e6f88e0dc7a3fa0e5c5b1b841eac997fe108bfc075f7e881f4b5d",
-      "optimizedTrainingCorpusSHA256": "9c0ef0207b905f3162e3b930171d48c7867120385f54d560d53e7301eb68d2ee",
+      "baselineTrainingCorpusSHA256": "27a9e6a92026616df05fb9a2fa0480a0c3809f158bfa768a555a8d8dcad79fd0",
+      "optimizedTrainingCorpusSHA256": "fc4c339c290c592a13b354ac7c687b30022039b80939a85770fafa85fffaa97d",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 600,
@@ -52,7 +52,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "4f3b27ea564c3d691036893a5ed6e39da490e6e43043aa997ae6bd196496aadf",
+    "experimentManifestSHA256": "eea16443b0e706bce38f4bd8e52b7e74e760f5e5041ddd72993a87144c4ce3bc",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -82,7 +82,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "22600a30707c25bd0fcbc0480e868f6605dba13f",
+  "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 2,
@@ -144,8 +144,8 @@
       "selected": {
         "count": 72,
         "maximum": 0.7565,
-        "mean": 0.739703,
-        "minimum": 0.721263
+        "mean": 0.739694,
+        "minimum": 0.720638
       }
     },
     "snapshotIntegrity": {
@@ -242,8 +242,8 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.191013,
-        "total": 0.349959
+        "target": 0.191009,
+        "total": 0.349921
       },
       "val_dpo": {
         "target": 0.0,

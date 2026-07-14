@@ -13,7 +13,7 @@ import pytest
 
 class _DummyComponent:
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-        pass
+        self.kwargs = dict(_kwargs)
 
     def __enter__(self) -> _DummyComponent:
         return self
@@ -22,6 +22,7 @@ class _DummyComponent:
         return None
 
     def click(self, **_kwargs: Any) -> None:
+        self.click_kwargs = dict(_kwargs)
         return None
 
     def queue(self) -> _DummyComponent:
@@ -36,12 +37,28 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     app_root = tmp_path / "space"
     app_root.mkdir()
     shutil.copy2(source, app_root / "app.py")
+    shutil.copy2(
+        Path(__file__).resolve().parents[2]
+        / "hf_zerogpu"
+        / "space_template"
+        / "README.md",
+        app_root / "README.md",
+    )
     unsloth_root = Path(__file__).resolve().parents[2] / "fine_tuning" / "unsloth"
     shutil.copy2(unsloth_root / "training_lineage.py", app_root / "training_lineage.py")
+    shutil.copy2(unsloth_root / "adapter_artifact.py", app_root / "adapter_artifact.py")
     shutil.copy2(
         Path(__file__).resolve().parents[2] / "hf_zerogpu" / "space_template" / "requirements.txt",
         app_root / "requirements.txt",
     )
+    spec = importlib.util.spec_from_file_location(
+        "lumen_training_lineage_fixture",
+        unsloth_root / "training_lineage.py",
+    )
+    assert spec is not None and spec.loader is not None
+    lineage = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lineage)
+    space_configuration = lineage.build_space_configuration(app_root / "README.md")
     (app_root / "lumen_zero_gpu_defaults.json").write_text(
         json.dumps(
             {
@@ -55,6 +72,10 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
                 "runtime_image_binding_status": "manual_validation_required",
                 "runtime_image_binding_verified": False,
                 "dataset_revision": "a" * 40,
+                "spaceConfiguration": space_configuration,
+                "spaceConfigurationSHA256": space_configuration[
+                    "spaceConfigurationSHA256"
+                ],
             }
         ),
         encoding="utf-8",
@@ -78,6 +99,45 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    resolved_payload = {
+        "schemaVersion": "lumen.resolved-training-environment/1.0.0",
+        "recordPolicy": {
+            "hashAlgorithm": "sha256",
+            "verifyDeclaredFileHashes": True,
+            "excludeUnhashedSelfRecord": True,
+            "excludeUnhashedGeneratedBytecode": True,
+            "rejectOtherUnhashedFiles": True,
+        },
+        "distributions": [
+            {
+                "name": "synthetic-runtime",
+                "version": "1.0.0",
+                "directURL": None,
+                "installer": "test",
+                "recordSHA256": "1" * 64,
+                "installedFileCount": 1,
+                "installedContentSHA256": "2" * 64,
+                "distributionSHA256": "3" * 64,
+            }
+        ],
+    }
+    resolved_environment = {
+        **resolved_payload,
+        "resolvedTrainingEnvironmentSHA256": module._canonical_sha256(
+            resolved_payload
+        ),
+    }
+    monkeypatch.setattr(
+        module,
+        "build_resolved_training_environment",
+        lambda: resolved_environment,
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_resolved_training_environment",
+        lambda value, **_kwargs: value["resolvedTrainingEnvironmentSHA256"],
+    )
+    module.TEST_RESOLVED_TRAINING_ENVIRONMENT = resolved_environment
     return module
 
 
@@ -169,6 +229,75 @@ def test_absent_runtime_source_observation_never_becomes_verified(
     assert lineage["observedRuntimeRevision"] is None
     assert lineage["runtimeSourceBindingStatus"] == "operator_declared_unverified"
     assert lineage["runtimeSourceBindingMethod"] == "operator_declared_only"
+
+
+def test_runtime_preflight_rejects_space_front_matter_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    code_digest = "1" * 64
+    dependency_digest = "2" * 64
+    requirements_digest = "3" * 64
+    module.DEFAULTS.update(
+        {
+            "trainingCodeManifest": {"phase": "sft"},
+            "trainingCodeSHA256": code_digest,
+            "trainingDependencyLock": {
+                "requirementsSHA256": requirements_digest,
+            },
+            "trainingDependencyLockSHA256": dependency_digest,
+            "requirementsSHA256": requirements_digest,
+        }
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_training_code_manifest",
+        lambda *_args, **_kwargs: code_digest,
+    )
+    monkeypatch.setattr(
+        module,
+        "installed_controlled_package_versions",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_training_dependency_lock",
+        lambda *_args, **_kwargs: dependency_digest,
+    )
+    monkeypatch.setattr(module, "_installed_unsloth_revision", lambda: "a" * 40)
+    monkeypatch.setattr(
+        module,
+        "_resolve_runtime_source_binding",
+        lambda **_kwargs: {
+            "runtimeSourceKind": "huggingface_space",
+            "runtimeSourceRevision": "4" * 40,
+            "expectedRuntimeSourceRevision": "4" * 40,
+            "observedRepositoryRevision": None,
+            "observedRuntimeRevision": None,
+            "runtimeSourceBindingStatus": "operator_declared_unverified",
+            "runtimeSourceBindingMethod": "operator_declared_only",
+        },
+    )
+    torch = ModuleType("torch")
+    torch.version = SimpleNamespace(cuda="12.8")
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setenv("LUMEN_ZERO_GPU_EXPECTED_RUNTIME_SOURCE_REVISION", "4" * 40)
+
+    assert module._verify_runtime_lineage()["spaceConfigurationSHA256"] == (
+        module.DEFAULTS["spaceConfigurationSHA256"]
+    )
+
+    readme = module.APP_ROOT / "README.md"
+    readme.write_text(
+        readme.read_text(encoding="utf-8").replace(
+            "app_file: app.py",
+            "app_file: alternate.py",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="runtime configuration drifted"):
+        module._verify_runtime_lineage()
 
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
@@ -427,6 +556,13 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
         "trainingDependencyLock": {"schema": "lock"},
         "trainingDependencyLockSHA256": "2" * 64,
         "requirementsSHA256": "3" * 64,
+        "resolvedTrainingEnvironment": module.TEST_RESOLVED_TRAINING_ENVIRONMENT,
+        "resolvedTrainingEnvironmentSHA256": module.TEST_RESOLVED_TRAINING_ENVIRONMENT[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": module.DEFAULTS[
+            "spaceConfigurationSHA256"
+        ],
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "4" * 40,
         "expectedRuntimeSourceRevision": "4" * 40,
@@ -472,6 +608,9 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
         == "huggingface_repository_head_supplemental"
     )
     assert resolved["trainingCodeSHA256"] == "1" * 64
+    assert resolved["spaceConfigurationSHA256"] == module.DEFAULTS[
+        "spaceConfigurationSHA256"
+    ]
 
 
 def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
@@ -617,6 +756,32 @@ def _authorized_request(token: str) -> SimpleNamespace:
     return SimpleNamespace(headers={"x-lumen-admin-token": token})
 
 
+def test_space_browser_surface_is_api_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+
+    assert module.run.kwargs["visible"] is False
+    assert module.run.click_kwargs["api_visibility"] == "undocumented"
+    assert module.output.kwargs["visible"] is False
+    for component in (
+        module.run_id,
+        module.agents,
+        module.base_model,
+        module.seed,
+        module.gpu_size,
+        module.experiment_variant,
+        module.assistant_loss,
+        module.resume,
+        module.convert,
+        module.upload,
+        module.confirm_variant,
+        module.destructive_reset,
+    ):
+        assert component.kwargs["visible"] is False
+
+
 def test_training_endpoint_authorizes_before_gpu_or_filesystem(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -753,6 +918,13 @@ def _write_resume_fixture(
         "trainingDependencyLock": {"schema": "lock"},
         "trainingDependencyLockSHA256": "2" * 64,
         "requirementsSHA256": "3" * 64,
+        "resolvedTrainingEnvironment": module.TEST_RESOLVED_TRAINING_ENVIRONMENT,
+        "resolvedTrainingEnvironmentSHA256": module.TEST_RESOLVED_TRAINING_ENVIRONMENT[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": module.DEFAULTS[
+            "spaceConfigurationSHA256"
+        ],
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "4" * 40,
         "expectedRuntimeSourceRevision": "4" * 40,
@@ -878,6 +1050,8 @@ def test_resume_contract_accepts_unchanged_lineage_without_snapshot_replacement(
         ("trainingCodeSHA256", "7" * 64),
         ("trainingDependencyLockSHA256", "8" * 64),
         ("requirementsSHA256", "9" * 64),
+        ("resolvedTrainingEnvironmentSHA256", "e" * 64),
+        ("spaceConfigurationSHA256", "f" * 64),
         ("runtimeSourceRevision", "a" * 40),
         ("expectedRuntimeSourceRevision", "a" * 40),
         ("observedRepositoryRevision", "a" * 40),
