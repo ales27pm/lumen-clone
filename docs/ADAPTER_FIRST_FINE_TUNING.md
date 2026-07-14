@@ -5,6 +5,8 @@ Lumen should keep one shared agent base model plus role-specific adapters during
 ## Default training artifact
 
 The default output of a role fine-tuning round is a LoRA/adapter artifact, not a merged full model.
+Its identity is the canonical digest of the sorted, allowlisted PEFT/LoRA file manifest; missing,
+extra, or modified files invalidate the artifact.
 
 ```text
 Qwen/Qwen3-1.7B base model
@@ -85,6 +87,78 @@ Adapter-first training gives Lumen:
 The promotion/rollback unit is the adapter, not the base model.
 
 Promote an adapter only if it passes the role-specific gates in `docs/APP_PLAN.md`.
+Promotion is currently fail-closed as unsupported because the available Ubuntu and ZeroGPU
+launchers can record only an operator-declared runtime-image digest. A signed or independently
+verifiable runtime-image attestation must exist before the promotion gate can be enabled.
+
+When preference training is enabled, DPO and ORPO must start from a verified finalized SFT adapter,
+write to a separate adapter directory, and identify the SFT parent digest. The parent verifier
+checks the finalized-manifest self-hash and status, canonical adapter directory, effective seed,
+experiment/source manifest, complete base-model index/shard/tokenizer contract, environment and
+dependency locks, requirements digest, runtime-source kind, and SFT code digest.
+`adapter_config.json` must name the configured base model. Preference training must never overwrite
+or replace the SFT artifact in place.
+
+DPO lineage records the immutable SFT input in `parentSFTLineage`, the frozen SFT policy used by the
+objective in `referenceSFTLineage`, and the new execution separately in
+`preferenceTrainingRuntime`. ORPO retains the same complete parent validation even though it has no
+separate frozen-reference policy. The parent's runtime revision remains parent audit evidence; it
+is never overwritten by the DPO/ORPO runtime revision.
+
+DPO and ORPO inputs stay conversational through TRL preprocessing: `prompt` is a validated
+system/user conversation ending at an assistant generation boundary, while `chosen` and
+`rejected` are assistant-message lists. Missing roles, empty completions, identical preference
+pairs, and generic synthesized fallbacks are rejected. The pinned Qwen tokenizer and TRL 0.24
+apply the chat template; the dataset compiler does not flatten preference turns into strings.
+
+## Reproducible run identity
+
+Every real ZeroGPU run binds the uploaded dataset repository to its full immutable commit SHA.
+The run/resume lineage also binds each agent's variant manifest, lane and corpus hashes,
+controlled training config, base-model shard contract, seed, environment lock, phase-specific
+training code, dependency lock, runtime source revision, and checkpoint/output paths. A resume
+must match the entire lineage and reuse the original local snapshot and recorded checkpoints.
+
+The canonical training-code bundle hashes the complete deployed executable/data closure, not a
+curated module list. It includes `app.py`, `requirements.txt`, the complete `lumen_training`
+package, and all covered Python and runtime-loaded JSON/text/config resources in the deployed
+`lumen_manifest_crawler` tree. The closure policy rejects missing or changed declared files and
+unexpected behavior-affecting files in either package. Only explicitly enumerated volatile run
+state is excluded. The bundle exposes one overall digest and SFT/DPO/ORPO phase digests.
+
+The built Space executes `python -m lumen_training.train_sft` and
+`python -m lumen_training.train_dpo`, so module imports do not depend on the source checkout. The
+dependency lock covers all direct runtime packages plus Python, CUDA, Unsloth, and llama.cpp
+revisions. Local Ubuntu runs record the source Git commit. ZeroGPU keeps the expected uploaded
+Space revision separate from observed repository head and observed runtime revision. Repository
+head equality is supplemental evidence, not proof of the executing container; absent trusted
+platform metadata, the runtime-source binding remains explicitly unverified. Controlled
+comparisons use the verified code and dependency digests.
+
+At runtime, a second environment identity enumerates every installed distribution and binds its
+version, safe direct/VCS provenance, and behavior-bearing `RECORD` content. The resulting
+`resolvedTrainingEnvironmentSHA256` must agree across controlled comparisons. ZeroGPU also binds a
+canonical README front-matter contract through `spaceConfigurationSHA256`, preventing the SDK,
+entrypoint, or Python runtime from drifting independently of the training lineage.
+
+ZeroGPU creates the Space, immutable dataset repository, and adapter/model repository as private
+unless the operator explicitly selects the corresponding `--public-space`, `--public-dataset`, or
+`--public-adapters` override. Making the Space public never bypasses application-level admin-token
+authorization. The builder reads back all three repositories before uploading. It creates new
+repositories at the requested visibility, reuses matching existing repositories, and refuses an
+existing visibility mismatch before mutation unless the matching
+`--confirm-*-visibility-change` migration flag is explicit. The browser page is status-only;
+training is invoked through the authenticated machine endpoint.
+
+ZeroGPU execution binds decorator-selected size and duration plus a runtime-observed CUDA inventory
+into trained lineage and controlled comparisons. The installed dependency tree is hashed once at
+Space startup, before a GPU lease, then reused by child trainers only through a process-local HMAC
+cache attestation. A standalone trainer without that authorization performs its own full scan.
+
+The one-click launcher requires `LUMEN_ZERO_GPU_RESUME_BATCH` when a resumable run contains more
+than one agent batch. It invokes only that explicit batch and rejects an ambiguous general resume.
+Because ordinary Space-local disk is ephemeral across restart or redeployment, checkpoint resume is
+limited to an intact deployment until external checkpoint persistence is implemented.
 
 Rollback immediately if an adapter causes:
 

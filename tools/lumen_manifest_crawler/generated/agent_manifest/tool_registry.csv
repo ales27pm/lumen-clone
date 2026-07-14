@@ -1,1 +1,54 @@
 id,displayName,requiresApproval,permissionKey,argumentCount,source
+calendar.create,Create Event,True,NSCalendarsFullAccessUsageDescription,2,ios/Lumen/Models/ToolDefinition.swift
+calendar.list,List Events,False,NSCalendarsFullAccessUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+reminders.create,Add Reminder,True,NSRemindersFullAccessUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+reminders.list,List Reminders,False,NSRemindersFullAccessUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+contacts.search,Search Contacts,False,NSContactsUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+messages.draft,Draft Message,True,,6,ios/Lumen/Models/ToolDefinition.swift
+mail.draft,Draft Email,True,,8,ios/Lumen/Models/ToolDefinition.swift
+outlook.status,Outlook Status,False,,0,ios/Lumen/Models/ToolDefinition.swift
+outlook.folders.list,List Outlook Folders,False,,1,ios/Lumen/Models/ToolDefinition.swift
+outlook.messages.list,List Outlook Messages,False,,4,ios/Lumen/Models/ToolDefinition.swift
+outlook.messages.search,Search Outlook Messages,False,,4,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.read,Read Outlook Message,False,,2,ios/Lumen/Models/ToolDefinition.swift
+outlook.attachments.list,List Outlook Attachments,False,,2,ios/Lumen/Models/ToolDefinition.swift
+outlook.draft.create,Create Outlook Draft,True,,3,ios/Lumen/Models/ToolDefinition.swift
+outlook.mail.send,Send Outlook Email,True,,3,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.mark_read,Mark Outlook Read,True,,2,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.mark_unread,Mark Outlook Unread,True,,2,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.move,Move Outlook Message,True,,4,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.archive,Archive Outlook Message,True,,2,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.delete,Delete Outlook Message,True,,2,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.reply,Reply Outlook Message,True,,4,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.reply_all,Reply All Outlook Message,True,,4,ios/Lumen/Models/ToolDefinition.swift
+outlook.message.forward,Forward Outlook Message,True,,5,ios/Lumen/Models/ToolDefinition.swift
+phone.call,Start Call,True,,1,ios/Lumen/Models/ToolDefinition.swift
+location.current,Current Location,False,NSLocationWhenInUseUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+weather,Current Weather,False,NSLocationWhenInUseUsageDescription,2,ios/Lumen/Models/ToolDefinition.swift
+maps.directions,Get Directions,False,,1,ios/Lumen/Models/ToolDefinition.swift
+maps.search,Search Nearby,False,NSLocationWhenInUseUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+photos.search,Search Photos,False,NSPhotoLibraryUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+camera.capture,Capture Image,True,NSCameraUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+health.summary,Health Summary,False,NSHealthShareUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+motion.activity,Motion Activity,False,NSMotionUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+web.search,Web Search,False,,1,ios/Lumen/Models/ToolDefinition.swift
+web.fetch,Fetch URL,False,,1,ios/Lumen/Models/ToolDefinition.swift
+files.read,Read File,False,,1,ios/Lumen/Models/ToolDefinition.swift
+memory.save,Save Memory,False,,2,ios/Lumen/Models/ToolDefinition.swift
+memory.recall,Recall Memory,False,,1,ios/Lumen/Models/ToolDefinition.swift
+rag.search,Search Personal Data,False,,3,ios/Lumen/Models/ToolDefinition.swift
+rag.index_files,Reindex Files,False,,0,ios/Lumen/Models/ToolDefinition.swift
+rag.index_photos,Reindex Photos,False,NSPhotoLibraryUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+trigger.create,Schedule Agent Run,True,,7,ios/Lumen/Models/ToolDefinition.swift
+trigger.list,List Triggers,False,,0,ios/Lumen/Models/ToolDefinition.swift
+trigger.cancel,Cancel Trigger,True,,2,ios/Lumen/Models/ToolDefinition.swift
+alarm.authorization_status,Alarm Auth Status,False,NSAlarmKitUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+alarm.request_authorization,Request Alarm Auth,True,NSAlarmKitUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+alarm.schedule,Schedule Alarm,True,NSAlarmKitUsageDescription,5,ios/Lumen/Models/ToolDefinition.swift
+alarm.countdown,Start Countdown,True,NSAlarmKitUsageDescription,2,ios/Lumen/Models/ToolDefinition.swift
+alarm.list,List Alarms,False,NSAlarmKitUsageDescription,0,ios/Lumen/Models/ToolDefinition.swift
+alarm.pause,Pause Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+alarm.resume,Resume Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+alarm.stop,Stop Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+alarm.snooze,Snooze Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+alarm.cancel,Cancel Alarm,True,NSAlarmKitUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift

@@ -1,11 +1,353 @@
 {
   "agent": "rem",
-  "manifestCommit": "f54d520d888452d24905536a75f5b1e216fc4c01",
+  "availableSFTRecords": 6187,
+  "constraints": {
+    "agentSpecific": true,
+    "manifestOnlyTools": true,
+    "maxPublicCorpusSFTTokenShare": 0.35,
+    "sentinelSafe": true,
+    "ultraSpecificAdapterCorpus": true
+  },
+  "deterministic": true,
+  "evaluation": {
+    "contamination": {
+      "contaminated": false,
+      "matchCount": 0,
+      "promotionRequiresZeroMatches": true,
+      "reportSHA256": "1044b0f32912f2c69ac213bd018bcae66ad9089bbe5c3ab366da50555b233358"
+    },
+    "executableDeclarativeMetrics": true,
+    "failClosedOnUnknownMetric": true,
+    "frozenEvaluationSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
+    "recordCount": 6,
+    "schemaVersion": "lumen.adapter-eval/1.0.0"
+  },
+  "experimentPolicy": {
+    "comparisonEligibility": {
+      "baselineTrainingCorpusSHA256": "8da4aac5fac62a4f9aa62b92eb0849eb74a799cc53ca118a223e048e2d8380ea",
+      "optimizedTrainingCorpusSHA256": "52f6204dd662277a756ef3f6c448a372700e394a1eed372029a1377980e0348e",
+      "promotionEligible": true,
+      "promotionProhibited": false,
+      "publicRecordCount": 505,
+      "reason": "distinct_public_selection_corpora",
+      "status": "eligible"
+    },
+    "controlledVariables": [
+      "baseModelID",
+      "baseModelRevision",
+      "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
+      "baseModelArtifactDigest",
+      "baseModelWeightShards",
+      "baseModelTokenizerDigest",
+      "trainingEnvironmentLockSHA256",
+      "trainingCodeSHA256",
+      "trainingCodeSHA256ByPhase",
+      "trainingCodeBundleSHA256",
+      "trainingDependencyLockSHA256",
+      "requirementsSHA256",
+      "seed",
+      "trainingConfigSHA256",
+      "frozenEvaluationSHA256",
+      "publicEvaluationBundleSHA256"
+    ],
+    "experimentManifestSHA256": "34fdcb618d0a9a30fe6109bf71abeacba8e0fb2af96feaa293823bbb5f952223",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "promotionSupported": false,
+      "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresHonestRuntimeSourceBindingAudit": true,
+      "requiresIdenticalTrainingCode": true,
+      "requiresIdenticalTrainingDependencyLock": true,
+      "requiresIdenticalTrainingEnvironment": true,
+      "requiresImmutableBaseModelRevisionAndDigest": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "requiresVerifiedRuntimeImageBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+      "runtimeSourceRevisionIsAuditOnly": true,
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ]
+  },
+  "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+  "preferenceTraining": {
+    "includedInCheckpoint": false,
+    "recordCount": 13,
+    "requiredPhase": "post_sft_preference_training",
+    "status": "generated_not_trained"
+  },
+  "publicCorpus": {
+    "availableRecordCounts": {
+      "train_dpo": 0,
+      "train_sft": 427,
+      "val_dpo": 0,
+      "val_sft": 78
+    },
+    "availableSourceCounts": {
+      "Team-ACE/ToolACE": 5,
+      "grammarly/coedit": 300,
+      "json-schema-org/JSON-Schema-Test-Suite": 200
+    },
+    "availableSourceLineage": {
+      "Team-ACE/ToolACE": {
+        "artifactSHA256": "ba12c083fca7e8da48c67ad5b895e495447da7c66e39a2e19742c082e6cb537e",
+        "license": "Apache-2.0",
+        "revision": "6bda777c88d21e5a204703c1ee45597a8fa4f734",
+        "transformations": [
+          "toolace_valid_call_to_missing_argument_repair"
+        ]
+      },
+      "grammarly/coedit": {
+        "artifactSHA256": "2913249158d6a178dc638e870212ff8a432d128eb6b4bdbe969ee805e6063ce3",
+        "license": "Apache-2.0",
+        "revision": "e9a255c33ef910bc33a9d2b522653fa87521583e",
+        "transformations": [
+          "coedit_grammatical_error_repair"
+        ]
+      },
+      "json-schema-org/JSON-Schema-Test-Suite": {
+        "artifactSHA256": "22e2ce9e8746a3725f6a6d7eaa6efab4b66365e2addee449a3d67771e51051a5",
+        "license": "MIT",
+        "revision": "92acb61eb772a932c077d5ffa634ded719d2d738",
+        "transformations": [
+          "json_schema_invalid_case_to_fail_closed_repair"
+        ]
+      }
+    },
+    "licenses": [
+      "Apache-2.0",
+      "MIT"
+    ],
+    "maxDPOTokenShare": 0.35,
+    "maxSFTTokenShare": 0.35,
+    "recordCounts": {
+      "train_dpo": 0,
+      "train_sft": 427,
+      "val_dpo": 0,
+      "val_sft": 78
+    },
+    "rejectedByTokenCap": {
+      "train_dpo": 0,
+      "train_sft": 0,
+      "val_dpo": 0,
+      "val_sft": 0
+    },
+    "selectionContract": {
+      "maxTokenShare": 0.35,
+      "policyVersions": [
+        "2026-07-12.3"
+      ],
+      "sha256": "96274a1447057e40d32f59cf3fed6daec721b2ee33b97daaf52eb83771d3591d",
+      "strategy": "group_atomic_quality_ranked_source_stratified_v2"
+    },
+    "selectionScoreSummary": {
+      "available": {
+        "count": 505,
+        "maximum": 0.95625,
+        "mean": 0.862474,
+        "minimum": 0.78375
+      },
+      "selected": {
+        "count": 505,
+        "maximum": 0.95625,
+        "mean": 0.862474,
+        "minimum": 0.78375
+      }
+    },
+    "snapshotIntegrity": {
+      "countsByAgent": {
+        "cortex": 662,
+        "executor": 462,
+        "fleet": 500,
+        "mimicry": 600,
+        "mouth": 551,
+        "rem": 505
+      },
+      "countsBySource": {
+        "coedit-train": 900,
+        "faithdial-train": 500,
+        "json-schema-test-suite-draft-2020-12": 200,
+        "massive-en-us-1.1": 1600,
+        "oasst2-train": 50,
+        "toolace-train": 30
+      },
+      "countsByTaskType": {
+        "public_capability_delegation": 500,
+        "public_grounded_response_finalization": 50,
+        "public_grounded_response_preference": 500,
+        "public_intent_routing": 650,
+        "public_manifest_tool_argument_extraction": 450,
+        "public_meaning_preserving_style_edit": 600,
+        "public_observation_grounded_final": 1,
+        "public_schema_failure_diagnosis": 200,
+        "public_text_repair": 300,
+        "public_tool_boundary_repair": 5,
+        "public_verified_tool_argument_extraction": 12,
+        "public_verified_tool_routing": 12
+      },
+      "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
+      "partitionPolicy": {
+        "allowedMLTrainingPartitions": [
+          "train"
+        ],
+        "heldoutMLPartitionsExcluded": true,
+        "referenceCorporaRequireExplicitPartitionKind": true
+      },
+      "qualityScoreSummaryByAgent": {
+        "cortex": {
+          "maximum": 0.847137,
+          "mean": 0.832951,
+          "minimum": 0.766562
+        },
+        "executor": {
+          "maximum": 0.831918,
+          "mean": 0.799451,
+          "minimum": 0.733437
+        },
+        "fleet": {
+          "maximum": 0.775887,
+          "mean": 0.76345,
+          "minimum": 0.760588
+        },
+        "mimicry": {
+          "maximum": 0.7565,
+          "mean": 0.72871,
+          "minimum": 0.720013
+        },
+        "mouth": {
+          "maximum": 0.897506,
+          "mean": 0.888918,
+          "minimum": 0.806221
+        },
+        "rem": {
+          "maximum": 0.95625,
+          "mean": 0.862474,
+          "minimum": 0.78375
+        }
+      },
+      "recordCount": 3280,
+      "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+      "schema": "lumen.public-adapter-corpus/1.1.0",
+      "selectionPolicyVersion": "2026-07-12.3",
+      "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
+    },
+    "sourceCounts": {
+      "Team-ACE/ToolACE": 5,
+      "grammarly/coedit": 300,
+      "json-schema-org/JSON-Schema-Test-Suite": 200
+    },
+    "sourceSplitCounts": {
+      "Team-ACE/ToolACE": {
+        "train_dpo": 0,
+        "train_sft": 3,
+        "val_dpo": 0,
+        "val_sft": 2
+      },
+      "grammarly/coedit": {
+        "train_dpo": 0,
+        "train_sft": 254,
+        "val_dpo": 0,
+        "val_sft": 46
+      },
+      "json-schema-org/JSON-Schema-Test-Suite": {
+        "train_dpo": 0,
+        "train_sft": 170,
+        "val_dpo": 0,
+        "val_sft": 30
+      }
+    },
+    "tokenShares": {
+      "train_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "train_sft": {
+        "target": 0.012995,
+        "total": 0.036439
+      },
+      "val_dpo": {
+        "target": 0.0,
+        "total": 0.0
+      },
+      "val_sft": {
+        "target": 0.01298,
+        "total": 0.036803
+      }
+    }
+  },
+  "quality": {
+    "cortexCodebaseChunkRecordCount": 0,
+    "cortexCodebaseFileRecordCount": 0,
+    "cortexCodebaseSelfAwarenessCoverage": null,
+    "cortexCodebaseSelfAwarenessRecordCount": 0,
+    "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
+    "ultraSpecificRecordCount": 10,
+    "ultraSpecificSourceFamily": "adapter_ultra_specific"
+  },
   "recordCounts": {
-    "eval": 546,
-    "train_dpo": 52,
-    "train_sft": 4,
-    "val_dpo": 1,
-    "val_sft": 1
-  }
+    "eval": 6,
+    "train_dpo": 11,
+    "train_sft": 5252,
+    "val_dpo": 2,
+    "val_sft": 930
+  },
+  "sourceFamilies": [
+    "adapter_ultra_specific",
+    "codebase_home_chunk_sft",
+    "codebase_home_sft",
+    "cross_model_training",
+    "manifest_grounding_cards",
+    "public_adapter_corpus_coedit_train",
+    "public_adapter_corpus_json_schema_test_suite_draft_2020_12",
+    "public_adapter_corpus_toolace_train",
+    "rem_reflection"
+  ],
+  "sourceIntegrity": {
+    "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "dirtyState": true,
+    "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+  },
+  "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
+  "taskTypes": [
+    "codebase_home_grounding",
+    "codebase_home_overview",
+    "codebase_source_chunk_grounding",
+    "fleet_delegation",
+    "fleet_delegation_preference",
+    "fleet_peer_knowledge",
+    "fleet_peer_source_knowledge",
+    "fleet_private_state_boundary",
+    "fleet_self_knowledge",
+    "fleet_whole_system_identity",
+    "manifest_grounding_cards",
+    "public_schema_failure_diagnosis",
+    "public_text_repair",
+    "public_tool_boundary_repair",
+    "reflection_and_memory_policy",
+    "rem_reflection",
+    "source_code_self_knowledge",
+    "source_routing_knowledge",
+    "source_tool_registry_knowledge",
+    "ultra_specific_argument_extraction_repair",
+    "ultra_specific_manifest_tool_repair",
+    "ultra_specific_memory_ttl_policy",
+    "ultra_specific_prompt_control_repair",
+    "ultra_specific_reference_resolution_repair",
+    "ultra_specific_runtime_repair",
+    "ultra_specific_training_evidence_repair"
+  ]
 }

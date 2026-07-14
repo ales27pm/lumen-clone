@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import AliasChoices, BaseModel, Field, ConfigDict
 
 DETERMINISTIC_GENERATED_AT = "1970-01-01T00:00:00+00:00"
 # The checked-in manifest is a deterministic source-derived artifact, not a
@@ -19,8 +19,31 @@ class SourceFileHash(BaseModel):
 
 
 class SourceIntegrity(BaseModel):
-    commit: str | None = None
+    # `commit` was historically emitted here even when generation ran from a
+    # dirty worktree. Accept that key while reading old manifests, but only
+    # serialize the honest base-commit name going forward.
+    baseCommit: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("baseCommit", "commit"),
+    )
+    workingTreeDigest: str | None = None
+    dirtyState: bool | None = None
     files: list[SourceFileHash] = Field(default_factory=list)
+
+    @property
+    def commit(self) -> str | None:
+        """Compatibility accessor for callers that consume older manifests."""
+
+        return self.baseCommit
+
+    def lineage_dict(self) -> dict[str, str | bool | None]:
+        """Return the compact source identity used by downstream artifacts."""
+
+        return {
+            "baseCommit": self.baseCommit,
+            "workingTreeDigest": self.workingTreeDigest,
+            "dirtyState": self.dirtyState,
+        }
 
 
 class ArtifactStatusManifest(BaseModel):

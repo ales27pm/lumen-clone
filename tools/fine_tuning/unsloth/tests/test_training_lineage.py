@@ -1,0 +1,752 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[4]
+MODULE_PATH = ROOT / "tools/fine_tuning/unsloth/training_lineage.py"
+SPEC = importlib.util.spec_from_file_location("training_lineage_under_test", MODULE_PATH)
+assert SPEC is not None and SPEC.loader is not None
+training_lineage = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(training_lineage)
+
+
+class _InstalledDistribution:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        name: str,
+        version: str,
+        direct_url: dict[str, object] | None = None,
+    ) -> None:
+        self.root = root
+        self.metadata = {"Name": name}
+        self.version = version
+        self._direct_url = direct_url
+        package = root / name.replace("-", "_")
+        package.mkdir(parents=True)
+        init_path = package / "__init__.py"
+        init_path.write_text(
+            f"__version__ = {version!r}\n",
+            encoding="utf-8",
+        )
+        digest = base64.urlsafe_b64encode(
+            hashlib.sha256(init_path.read_bytes()).digest()
+        ).decode("ascii").rstrip("=")
+        dist_info = root / f"{name.replace('-', '_')}-{version}.dist-info"
+        dist_info.mkdir()
+        self.record_path = dist_info / "RECORD"
+        self.record_path.write_text(
+            f"{package.name}/__init__.py,sha256={digest},{init_path.stat().st_size}\n"
+            f"{dist_info.name}/RECORD,,\n",
+            encoding="utf-8",
+        )
+
+    def read_text(self, filename: str) -> str | None:
+        if filename == "RECORD":
+            return self.record_path.read_text(encoding="utf-8")
+        if filename == "INSTALLER":
+            return "uv\n"
+        if filename == "direct_url.json" and self._direct_url is not None:
+            return json.dumps(self._direct_url)
+        return None
+
+    def locate_file(self, filename: str) -> Path:
+        return self.root / filename
+
+
+def _resign_resolved_environment(environment: dict[str, object]) -> None:
+    distributions = environment["distributions"]
+    assert isinstance(distributions, list)
+    for entry in distributions:
+        assert isinstance(entry, dict)
+        unsigned = {
+            key: value
+            for key, value in entry.items()
+            if key != "distributionSHA256"
+        }
+        entry["distributionSHA256"] = training_lineage.canonical_sha256(unsigned)
+    payload = {
+        key: value
+        for key, value in environment.items()
+        if key != "resolvedTrainingEnvironmentSHA256"
+    }
+    environment["resolvedTrainingEnvironmentSHA256"] = (
+        training_lineage.canonical_sha256(payload)
+    )
+
+
+def test_repository_code_bundle_is_phase_specific_and_self_verifying() -> None:
+    bundle = training_lineage.repository_training_code_bundle(ROOT)
+
+    assert set(bundle["phases"]) == {"sft", "dpo", "orpo"}
+    assert bundle["phases"]["sft"]["trainingCodeSHA256"] != bundle["phases"]["dpo"]["trainingCodeSHA256"]
+    assert any(
+        entry["path"] == "lumen_training/train_dpo.py"
+        for entry in bundle["phases"]["dpo"]["files"]
+    )
+    assert any(
+        entry["path"] == "lumen_training/train_sft.py"
+        for entry in bundle["phases"]["sft"]["files"]
+    )
+    assert any(
+        entry["path"]
+        == "lumen_manifest_crawler/dataset/public_adapter_eval_sources.json"
+        for entry in bundle["phases"]["sft"]["files"]
+    )
+    policy = bundle["phases"]["sft"]["closurePolicy"]
+    assert policy["coveredLogicalPaths"] == [
+        "app.py",
+        "lumen_manifest_crawler",
+        "lumen_training",
+        "requirements.txt",
+    ]
+    assert policy["rejectUnlistedBehaviorFiles"] is True
+    assert training_lineage.verify_training_code_bundle(bundle) == bundle["trainingCodeSHA256"]
+
+
+def test_deployed_code_mutation_fails_manifest_verification(tmp_path: Path) -> None:
+    deployed = tmp_path / "deployed"
+    deployed.mkdir()
+    (deployed / "trainer.py").write_text("print('one')\n", encoding="utf-8")
+    manifest = training_lineage.build_training_code_manifest(
+        phase="sft",
+        files={"trainer.py": deployed / "trainer.py"},
+    )
+    training_lineage.verify_training_code_manifest(manifest, root=deployed)
+
+    (deployed / "trainer.py").write_text("print('two')\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Deployed training-code drift"):
+        training_lineage.verify_training_code_manifest(manifest, root=deployed)
+
+
+def test_space_configuration_is_canonical_and_bound_to_runtime_front_matter(
+    tmp_path: Path,
+) -> None:
+    source = ROOT / "tools/hf_zerogpu/space_template/README.md"
+    readme = tmp_path / "README.md"
+    readme.write_bytes(source.read_bytes())
+
+    configuration = training_lineage.build_space_configuration(readme)
+
+    assert configuration == {
+        "schemaVersion": "lumen.zerogpu.space-configuration/1.0.0",
+        "sdk": "gradio",
+        "appFile": "app.py",
+        "pythonVersion": "3.10",
+        "suggestedHardware": None,
+        "spaceConfigurationSHA256": training_lineage.canonical_sha256(
+            {
+                "schemaVersion": "lumen.zerogpu.space-configuration/1.0.0",
+                "sdk": "gradio",
+                "appFile": "app.py",
+                "pythonVersion": "3.10",
+                "suggestedHardware": None,
+            }
+        ),
+    }
+    assert training_lineage.verify_space_configuration(
+        configuration,
+        readme_path=readme,
+    ) == configuration["spaceConfigurationSHA256"]
+
+
+@pytest.mark.parametrize(
+    ("source", "replacement"),
+    [
+        ("sdk: gradio", "sdk: static"),
+        ("app_file: app.py", "app_file: alternate.py"),
+        ('python_version: "3.10"', 'python_version: "3.11"'),
+    ],
+)
+def test_space_configuration_mutation_fails_runtime_verification(
+    tmp_path: Path,
+    source: str,
+    replacement: str,
+) -> None:
+    template = ROOT / "tools/hf_zerogpu/space_template/README.md"
+    readme = tmp_path / "README.md"
+    readme.write_bytes(template.read_bytes())
+    configuration = training_lineage.build_space_configuration(readme)
+    readme.write_text(
+        readme.read_text(encoding="utf-8").replace(source, replacement),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="runtime configuration drifted"):
+        training_lineage.verify_space_configuration(
+            configuration,
+            readme_path=readme,
+        )
+
+
+def test_space_configuration_rejects_uncontrolled_runtime_metadata(
+    tmp_path: Path,
+) -> None:
+    template = ROOT / "tools/hf_zerogpu/space_template/README.md"
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        template.read_text(encoding="utf-8").replace(
+            'python_version: "3.10"',
+            'python_version: "3.10"\nsuggested_hardware: zero-a10g',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Unsupported Space README front-matter field",
+    ):
+        training_lineage.build_space_configuration(readme)
+
+
+def test_unlisted_behavior_file_fails_bidirectional_closure_verification(
+    tmp_path: Path,
+) -> None:
+    deployed = tmp_path / "deployed"
+    package = deployed / "package"
+    package.mkdir(parents=True)
+    (package / "declared.py").write_text("VALUE = 1\n", encoding="utf-8")
+    manifest = training_lineage.build_training_code_manifest(
+        phase="sft",
+        files={"package/declared.py": package / "declared.py"},
+        closure_policy={
+            "includedExtensions": [".py"],
+            "coveredLogicalPaths": ["package"],
+            "excludedLogicalPaths": [],
+            "excludedDirectoryNames": ["__pycache__"],
+            "coverDeployedRoot": False,
+            "rejectUnlistedBehaviorFiles": True,
+        },
+    )
+    training_lineage.verify_training_code_manifest(manifest, root=deployed)
+
+    (package / "unlisted.py").write_text("VALUE = 2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Unlisted behavior-affecting"):
+        training_lineage.verify_training_code_manifest(manifest, root=deployed)
+
+
+def test_requirements_mutation_and_dependency_drift_fail_closed(tmp_path: Path) -> None:
+    source = ROOT / "tools/hf_zerogpu/space_template/requirements.txt"
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_bytes(source.read_bytes())
+    lock = training_lineage.build_training_dependency_lock(requirements)
+    training_lineage.verify_training_dependency_lock(
+        lock,
+        requirements_path=requirements,
+    )
+
+    requirements.write_text(
+        requirements.read_text(encoding="utf-8") + "unexpected-package==1.0.0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="dependency set drifted"):
+        training_lineage.verify_training_dependency_lock(
+            lock,
+            requirements_path=requirements,
+        )
+
+    requirements.write_text(
+        source.read_text(encoding="utf-8").replace(
+            "trl==0.24.0",
+            "trl==0.25.0",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="version for trl drifted"):
+        training_lineage.build_training_dependency_lock(requirements)
+
+    installed = dict(lock["packageVersions"])
+    installed["trl"] = "0.25.0"
+    with pytest.raises(ValueError, match="Installed controlled package versions drifted"):
+        training_lineage.verify_training_dependency_lock(
+            lock,
+            installed_versions=installed,
+        )
+    with pytest.raises(ValueError, match="Runtime Python version drifted"):
+        training_lineage.verify_training_dependency_lock(
+            lock,
+            runtime_python_version="3.11",
+        )
+    with pytest.raises(ValueError, match="Runtime CUDA version drifted"):
+        training_lineage.verify_training_dependency_lock(
+            lock,
+            runtime_cuda_version="12.9",
+        )
+
+
+def test_dependency_lock_covers_every_direct_requirement() -> None:
+    requirements = ROOT / "tools/hf_zerogpu/space_template/requirements.txt"
+    lock = training_lineage.build_training_dependency_lock(requirements)
+    names = {
+        training_lineage._requirement_name(line)
+        for line in requirements.read_text(encoding="utf-8").splitlines()
+        if training_lineage._requirement_name(line) is not None
+    }
+
+    assert names == {*lock["packageVersions"], "unsloth"}
+    assert {
+        name: lock["packageVersions"][name]
+        for name in ("torch", "torchvision", "torchaudio")
+    } == {
+        "torch": "2.9.1",
+        "torchvision": "0.24.1",
+        "torchaudio": "2.9.1",
+    }
+    assert {
+        name: lock["packageVersions"][name]
+        for name in ("transformers", "gradio", "trackio", "huggingface_hub")
+    } == {
+        "transformers": "4.57.6",
+        "gradio": "6.17.3",
+        "trackio": "0.20.2",
+        "huggingface_hub": "0.36.2",
+    }
+    assert lock["requirementsSHA256"] == training_lineage.file_sha256(requirements)
+    assert lock["trainingDependencyLockSHA256"] == training_lineage.canonical_sha256(
+        {
+            key: value
+            for key, value in lock.items()
+            if key != "trainingDependencyLockSHA256"
+        }
+    )
+
+
+def test_resolved_environment_attests_transitive_distribution_content(
+    tmp_path: Path,
+) -> None:
+    direct = _InstalledDistribution(
+        tmp_path,
+        name="direct-package",
+        version="1.0.0",
+    )
+    transitive = _InstalledDistribution(
+        tmp_path,
+        name="transitive-package",
+        version="2.0.0",
+        direct_url={
+            "url": "https://github.com/example/transitive-package.git",
+            "vcs_info": {
+                "vcs": "git",
+                "commit_id": "a" * 40,
+                "requested_revision": "a" * 40,
+            },
+        },
+    )
+    resolved = training_lineage.build_resolved_training_environment(
+        [transitive, direct]
+    )
+
+    assert [item["name"] for item in resolved["distributions"]] == [
+        "direct-package",
+        "transitive-package",
+    ]
+    assert resolved["distributions"][1]["directURL"]["vcs_info"][
+        "commit_id"
+    ] == "a" * 40
+    assert training_lineage.verify_resolved_training_environment(
+        resolved,
+        distributions=[direct, transitive],
+        verify_installed=True,
+    ) == resolved["resolvedTrainingEnvironmentSHA256"]
+
+    transitive_package = tmp_path / "transitive_package" / "__init__.py"
+    transitive_package.write_text("__version__ = '2.0.1'\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="RECORD (?:size|content) mismatch"):
+        training_lineage.verify_resolved_training_environment(
+            resolved,
+            distributions=[direct, transitive],
+            verify_installed=True,
+        )
+
+
+def test_resolved_environment_snapshot_records_scan_metrics_and_authenticates_cache(
+    tmp_path: Path,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="cached-package",
+        version="1.0.0",
+    )
+
+    resolved, scan = training_lineage.build_resolved_training_environment_snapshot(
+        [distribution]
+    )
+
+    assert scan["distributionCount"] == 1
+    assert scan["installedFileCount"] == 1
+    assert scan["totalHashedBytes"] > 0
+    assert scan["durationMilliseconds"] >= 0
+    key = b"k" * 32
+    attestation = training_lineage.sign_resolved_training_environment_cache(
+        resolved,
+        scan,
+        key=key,
+        startup_id="a" * 32,
+    )
+    assert training_lineage.verify_resolved_training_environment_cache(
+        resolved,
+        attestation,
+        key=key,
+    ) == scan
+
+    tampered = dict(attestation)
+    tampered_scan = dict(scan)
+    tampered_scan["totalHashedBytes"] += 1
+    tampered["scan"] = tampered_scan
+    with pytest.raises(ValueError, match="not authentic"):
+        training_lineage.verify_resolved_training_environment_cache(
+            resolved,
+            tampered,
+            key=key,
+        )
+
+
+def test_resolved_environment_rejects_duplicate_or_secret_bearing_provenance(
+    tmp_path: Path,
+) -> None:
+    first = _InstalledDistribution(tmp_path / "one", name="duplicate", version="1")
+    second = _InstalledDistribution(tmp_path / "two", name="duplicate", version="2")
+    with pytest.raises(ValueError, match="duplicate distributions"):
+        training_lineage.build_resolved_training_environment([first, second])
+
+    unsafe = _InstalledDistribution(
+        tmp_path / "unsafe",
+        name="unsafe",
+        version="1",
+        direct_url={"url": "https://token@example.com/private.git"},
+    )
+    with pytest.raises(ValueError, match="secret-safe"):
+        training_lineage.build_resolved_training_environment([unsafe])
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    [
+        {"url": "https://example.com/latest.whl"},
+        {
+            "url": "https://github.com/example/project.git",
+            "vcs_info": {"vcs": "git", "commit_id": "main"},
+        },
+        {
+            "url": "https://example.com/project.whl",
+            "archive_info": {},
+        },
+        {
+            "url": "https://example.com/source",
+            "dir_info": {"editable": False},
+        },
+        {
+            "url": "https://github.com/example/project.git",
+            "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+            "subdirectory": "../outside",
+        },
+    ],
+)
+def test_resolved_environment_rejects_mutable_direct_url_provenance(
+    tmp_path: Path,
+    direct_url: dict[str, object],
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="unsafe-provenance",
+        version="1",
+        direct_url=direct_url,
+    )
+
+    with pytest.raises(ValueError):
+        training_lineage.build_resolved_training_environment([distribution])
+
+
+@pytest.mark.parametrize(
+    ("replacement", "error_match"),
+    [
+        (
+            {
+                "directURL": {
+                    "url": "https://token@example.com/private.git",
+                    "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+                }
+            },
+            "secret-safe",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://github.com/example/project.git",
+                    "vcs_info": {
+                        "vcs": "git",
+                        "commit_id": "a" * 40,
+                        "requested_revision": "main",
+                    },
+                }
+            },
+            "VCS provenance",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://example.com/source",
+                    "dir_info": {"editable": True},
+                }
+            },
+            "directory provenance",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://example.com/project.whl",
+                    "archive_info": {},
+                }
+            },
+            "archive lacks",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://github.com/example/project.git",
+                    "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+                    "unexpected": "value",
+                }
+            },
+            "unsupported direct-url",
+        ),
+        ({"installer": "uv; injected"}, "invalid installer"),
+    ],
+    ids=[
+        "credentials",
+        "mutable-vcs-revision",
+        "editable-directory",
+        "missing-archive-hash",
+        "extra-direct-url-key",
+        "invalid-installer",
+    ],
+)
+def test_loaded_resolved_environment_rejects_resigned_unsafe_provenance(
+    tmp_path: Path,
+    replacement: dict[str, object],
+    error_match: str,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="loaded-provenance",
+        version="1",
+        direct_url={
+            "url": "https://github.com/example/project.git",
+            "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+        },
+    )
+    resolved = training_lineage.build_resolved_training_environment([distribution])
+    entry = resolved["distributions"][0]
+    assert isinstance(entry, dict)
+    entry.update(replacement)
+    _resign_resolved_environment(resolved)
+
+    with pytest.raises(ValueError, match=error_match):
+        training_lineage.verify_resolved_training_environment(resolved)
+
+
+def test_resolved_environment_rejects_unhashed_behavior_and_parent_record_paths(
+    tmp_path: Path,
+) -> None:
+    unhashed = _InstalledDistribution(
+        tmp_path / "unhashed",
+        name="unhashed",
+        version="1",
+    )
+    behavior = unhashed.root / "unhashed" / "behavior.py"
+    behavior.write_text("VALUE = 1\n", encoding="utf-8")
+    unhashed.record_path.write_text(
+        unhashed.record_path.read_text(encoding="utf-8")
+        + "unhashed/behavior.py,,\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unattested RECORD file"):
+        training_lineage.build_resolved_training_environment([unhashed])
+
+    escaping = _InstalledDistribution(
+        tmp_path / "escaping",
+        name="escaping",
+        version="1",
+    )
+    escaping.record_path.write_text("../outside.py,sha256=" + "a" * 43 + ",1\n")
+    with pytest.raises(ValueError, match="unsafe RECORD"):
+        training_lineage.build_resolved_training_environment([escaping])
+
+
+def test_resolved_environment_accepts_hashed_venv_entrypoint_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment_root = tmp_path / "venv"
+    site_packages = environment_root / "lib/python3.12/site-packages"
+    distribution = _InstalledDistribution(
+        site_packages,
+        name="entrypoint-package",
+        version="1",
+    )
+    entrypoint = environment_root / "bin/entrypoint-package"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("#!/usr/bin/env python\n", encoding="utf-8")
+    digest = base64.urlsafe_b64encode(
+        hashlib.sha256(entrypoint.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"../../../bin/entrypoint-package,sha256={digest},{entrypoint.stat().st_size}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(training_lineage.sys, "prefix", str(environment_root))
+
+    resolved = training_lineage.build_resolved_training_environment([distribution])
+
+    assert resolved["distributions"][0]["installedFileCount"] == 2
+
+
+@pytest.mark.parametrize(
+    ("kind", "revision"),
+    [
+        ("unresolved", None),
+        ("git", "main"),
+        ("huggingface_space", "a" * 39),
+    ],
+)
+def test_runtime_source_requires_immutable_revision(kind: object, revision: object) -> None:
+    with pytest.raises(ValueError):
+        training_lineage.validate_runtime_source(kind=kind, revision=revision)
+
+
+def test_runtime_source_accepts_git_and_space_commits() -> None:
+    assert training_lineage.validate_runtime_source(
+        kind="git",
+        revision="a" * 40,
+    ) == ("git", "a" * 40)
+    assert training_lineage.validate_runtime_source(
+        kind="huggingface_space",
+        revision="b" * 40,
+    ) == ("huggingface_space", "b" * 40)
+
+
+def test_space_runtime_source_repository_head_remains_unverified() -> None:
+    revision = "a" * 40
+    audit = {
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": revision,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
+    }
+
+    assert training_lineage.validate_runtime_source_audit(audit) == audit
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("runtimeSourceBindingStatus", "verified"),
+        ("runtimeSourceBindingMethod", "self_declared_verified"),
+        ("observedRuntimeRevision", "a" * 40),
+        ("observedRepositoryRevision", "b" * 40),
+    ],
+)
+def test_space_runtime_source_rejects_overstated_or_mismatched_evidence(
+    field: str,
+    value: object,
+) -> None:
+    revision = "a" * 40
+    audit = {
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": revision,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
+    }
+    audit[field] = value
+
+    with pytest.raises(ValueError):
+        training_lineage.validate_runtime_source_audit(audit)
+
+
+def test_local_runtime_source_requires_independently_observed_matching_head() -> None:
+    revision = "c" * 40
+    audit = {
+        "runtimeSourceKind": "git",
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": revision,
+        "observedRuntimeRevision": revision,
+        "runtimeSourceBindingStatus": "local_checkout_observed",
+        "runtimeSourceBindingMethod": "git_head_plus_training_code_manifest",
+    }
+
+    assert training_lineage.validate_runtime_source_audit(
+        audit,
+        observed_local_revision=revision,
+    ) == audit
+    with pytest.raises(ValueError, match="independently observed HEAD"):
+        training_lineage.validate_runtime_source_audit(audit)
+    with pytest.raises(ValueError, match="does not match"):
+        training_lineage.validate_runtime_source_audit(
+            audit,
+            observed_local_revision="d" * 40,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("observedRepositoryRevision", "d" * 40),
+        ("observedRuntimeRevision", None),
+        ("runtimeSourceBindingStatus", "operator_declared_unverified"),
+        ("runtimeSourceBindingMethod", "operator_declared_only"),
+    ],
+)
+def test_local_runtime_source_rejects_incomplete_or_self_declared_evidence(
+    field: str,
+    value: object,
+) -> None:
+    revision = "c" * 40
+    audit = {
+        "runtimeSourceKind": "git",
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": revision,
+        "observedRuntimeRevision": revision,
+        "runtimeSourceBindingStatus": "local_checkout_observed",
+        "runtimeSourceBindingMethod": "git_head_plus_training_code_manifest",
+    }
+    audit[field] = value
+
+    with pytest.raises(ValueError):
+        training_lineage.validate_runtime_source_audit(
+            audit,
+            observed_local_revision=revision,
+        )
+
+
+def test_ubuntu_launcher_records_complete_local_git_source_audit() -> None:
+    launcher = (ROOT / "scripts/ubuntu_train_lumen_adapters_aio.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"expectedRuntimeSourceRevision": runtime_source_revision' in launcher
+    assert '"observedRepositoryRevision": runtime_source_revision' in launcher
+    assert '"observedRuntimeRevision": runtime_source_revision' in launcher
+    assert '"runtimeSourceBindingStatus": "local_checkout_observed"' in launcher
+    assert (
+        '"runtimeSourceBindingMethod": "git_head_plus_training_code_manifest"'
+        in launcher
+    )
+    assert "cfg.update(local_runtime_source)" in launcher
+    assert "**local_runtime_source" in launcher

@@ -8,15 +8,131 @@
       "adapterID": "lumen-cortex-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "cortex",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelIndexReferencedShardNames": [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors"
+      ],
+      "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
+      "evaluation": {
+        "contamination": {
+          "contaminated": false,
+          "matchCount": 0,
+          "promotionRequiresZeroMatches": true,
+          "reportSHA256": "0be75222b3aa5cec45392be79baeb7ee0dc81569ce7922b2b139940d4f8b7688"
+        },
+        "executableDeclarativeMetrics": true,
+        "failClosedOnUnknownMetric": true,
+        "frozenEvaluationSHA256": "5cf2b250c836fae8728f4a771167804ebbca5fce4c7c51e371b400326c4266c8",
+        "recordCount": 558,
+        "schemaVersion": "lumen.adapter-eval/1.0.0"
+      },
+      "expectedRuntimeSourceRevision": null,
+      "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "257a303142f4f98dc19f71260cb83b182e79fc1a562e97bda80609751bcc447f",
+          "optimizedTrainingCorpusSHA256": "4f817dfeb0ea546be2d6429e48a340a83dd6d972f83f7c73a4d788d3ddfcff93",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 662,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
+        "controlledVariables": [
+          "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelIndexReferencedShardNames",
+          "baseModelIndexShardBindingSHA256",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
+          "trainingCodeSHA256",
+          "trainingCodeSHA256ByPhase",
+          "trainingCodeBundleSHA256",
+          "trainingDependencyLockSHA256",
+          "requirementsSHA256",
+          "seed",
+          "trainingConfigSHA256",
+          "frozenEvaluationSHA256",
+          "publicEvaluationBundleSHA256"
+        ],
+        "experimentManifestSHA256": "c25f55a0d4ca1c78ef98f42a87cb7bc32e9e8b6959c5e062bf7b57847e97d22a",
+        "promotionContract": {
+          "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+          "maximumContaminationMatches": 0,
+          "maximumCriticalBoundaryFailures": 0,
+          "maximumCriticalCategoryRegression": 0.02,
+          "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+          "requiresArtifactDigests": true,
+          "requiresBaselineAndOptimizedContaminationReports": true,
+          "requiresCompleteEvidence": true,
+          "requiresHonestRuntimeSourceBindingAudit": true,
+          "requiresIdenticalTrainingCode": true,
+          "requiresIdenticalTrainingDependencyLock": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
+          "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
+          "runtimePointerPolicy": "unchanged_until_promoted",
+          "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+          "runtimeSourceRevisionIsAuditOnly": true,
+          "schemaVersion": "lumen.adapter-promotion/1.0.0"
+        },
+        "requiredVariants": [
+          "internal_only",
+          "internal_plus_public_baseline",
+          "internal_plus_public_optimized"
+        ]
+      },
+      "observedRepositoryRevision": null,
+      "observedRuntimeRevision": null,
+      "preferenceTraining": {
+        "includedInCheckpoint": false,
+        "recordCount": 6,
+        "requiredPhase": "post_sft_preference_training",
+        "status": "generated_not_trained"
+      },
       "recordCounts": {
         "eval": 558,
-        "train_dpo": 15,
-        "train_sft": 9573,
-        "val_dpo": 3,
-        "val_sft": 1689
+        "train_dpo": 5,
+        "train_sft": 11618,
+        "val_dpo": 1,
+        "val_sft": 2049
       },
-      "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map."
+      "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimeSourceBindingMethod": "unresolved",
+      "runtimeSourceBindingStatus": "unresolved",
+      "runtimeSourceKind": "unresolved",
+      "runtimeSourceRevision": null,
+      "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
+      "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+      "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+      "trainingCodeSHA256ByPhase": {
+        "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+        "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+        "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+      },
+      "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
     {
       "adapterArtifact": "models/lora_qwen3_bootstrap/executor",
@@ -25,15 +141,131 @@
       "adapterID": "lumen-executor-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "executor",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelIndexReferencedShardNames": [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors"
+      ],
+      "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
+      "evaluation": {
+        "contamination": {
+          "contaminated": false,
+          "matchCount": 0,
+          "promotionRequiresZeroMatches": true,
+          "reportSHA256": "3fd2ddaba403ee39d41cdb68387adc0877b039eebcb58405b165c1dd12d39857"
+        },
+        "executableDeclarativeMetrics": true,
+        "failClosedOnUnknownMetric": true,
+        "frozenEvaluationSHA256": "b4e05ca27a99d487eec2b964c4294437cc555ea0cd4b31aaf3ee4e8cfa690e11",
+        "recordCount": 114,
+        "schemaVersion": "lumen.adapter-eval/1.0.0"
+      },
+      "expectedRuntimeSourceRevision": null,
+      "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "9b36f64c5790f355efb9cb8b872d9ece59f7410131b43ddff5a5f695a33c59c4",
+          "optimizedTrainingCorpusSHA256": "6d48ebe3d4fa8d720c8f491bd1b47292f26ef92d0fa0eba3f38d3d2adb95bf6d",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 462,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
+        "controlledVariables": [
+          "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelIndexReferencedShardNames",
+          "baseModelIndexShardBindingSHA256",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
+          "trainingCodeSHA256",
+          "trainingCodeSHA256ByPhase",
+          "trainingCodeBundleSHA256",
+          "trainingDependencyLockSHA256",
+          "requirementsSHA256",
+          "seed",
+          "trainingConfigSHA256",
+          "frozenEvaluationSHA256",
+          "publicEvaluationBundleSHA256"
+        ],
+        "experimentManifestSHA256": "b996099e6cff83937cfdd13292191fab3ee198f6472ace620f1c8b9c9e1ce280",
+        "promotionContract": {
+          "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+          "maximumContaminationMatches": 0,
+          "maximumCriticalBoundaryFailures": 0,
+          "maximumCriticalCategoryRegression": 0.02,
+          "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+          "requiresArtifactDigests": true,
+          "requiresBaselineAndOptimizedContaminationReports": true,
+          "requiresCompleteEvidence": true,
+          "requiresHonestRuntimeSourceBindingAudit": true,
+          "requiresIdenticalTrainingCode": true,
+          "requiresIdenticalTrainingDependencyLock": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
+          "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
+          "runtimePointerPolicy": "unchanged_until_promoted",
+          "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+          "runtimeSourceRevisionIsAuditOnly": true,
+          "schemaVersion": "lumen.adapter-promotion/1.0.0"
+        },
+        "requiredVariants": [
+          "internal_only",
+          "internal_plus_public_baseline",
+          "internal_plus_public_optimized"
+        ]
+      },
+      "observedRepositoryRevision": null,
+      "observedRuntimeRevision": null,
+      "preferenceTraining": {
+        "includedInCheckpoint": false,
+        "recordCount": 6,
+        "requiredPhase": "post_sft_preference_training",
+        "status": "generated_not_trained"
+      },
       "recordCounts": {
         "eval": 114,
-        "train_dpo": 14,
-        "train_sft": 591,
-        "val_dpo": 2,
-        "val_sft": 104
+        "train_dpo": 5,
+        "train_sft": 897,
+        "val_dpo": 1,
+        "val_sft": 167
       },
-      "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments."
+      "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimeSourceBindingMethod": "unresolved",
+      "runtimeSourceBindingStatus": "unresolved",
+      "runtimeSourceKind": "unresolved",
+      "runtimeSourceRevision": null,
+      "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
+      "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+      "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+      "trainingCodeSHA256ByPhase": {
+        "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+        "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+        "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+      },
+      "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
     {
       "adapterArtifact": "models/lora_qwen3_bootstrap/fleet",
@@ -42,15 +274,131 @@
       "adapterID": "lumen-fleet-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "fleet",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
-      "recordCounts": {
-        "eval": 86,
-        "train_dpo": 15,
-        "train_sft": 4770,
-        "val_dpo": 3,
-        "val_sft": 842
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelIndexReferencedShardNames": [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors"
+      ],
+      "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
+      "evaluation": {
+        "contamination": {
+          "contaminated": false,
+          "matchCount": 0,
+          "promotionRequiresZeroMatches": true,
+          "reportSHA256": "0bfb6852580eade5198486bb780beed91ca7d50b149497e0d843f90fa57794cd"
+        },
+        "executableDeclarativeMetrics": true,
+        "failClosedOnUnknownMetric": true,
+        "frozenEvaluationSHA256": "287bb796c1de81a917fd4149d1b8189b9609934dba34aaad7c1a95d981cc2f0b",
+        "recordCount": 6,
+        "schemaVersion": "lumen.adapter-eval/1.0.0"
       },
-      "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary."
+      "expectedRuntimeSourceRevision": null,
+      "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "d925cd76a65edee2b0e959e37d016cce92b6a3058c82fb4e7f58ff509abc9090",
+          "optimizedTrainingCorpusSHA256": "ba963b1779d0e10f84d2952dd3a163d22df6e5078ab99dd3aacb92a54bd4eeea",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 500,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
+        "controlledVariables": [
+          "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelIndexReferencedShardNames",
+          "baseModelIndexShardBindingSHA256",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
+          "trainingCodeSHA256",
+          "trainingCodeSHA256ByPhase",
+          "trainingCodeBundleSHA256",
+          "trainingDependencyLockSHA256",
+          "requirementsSHA256",
+          "seed",
+          "trainingConfigSHA256",
+          "frozenEvaluationSHA256",
+          "publicEvaluationBundleSHA256"
+        ],
+        "experimentManifestSHA256": "b454a37b12931313e89f8f4fff62d4b48372b68df6a0d48ab7aeb50d457ba10a",
+        "promotionContract": {
+          "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+          "maximumContaminationMatches": 0,
+          "maximumCriticalBoundaryFailures": 0,
+          "maximumCriticalCategoryRegression": 0.02,
+          "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+          "requiresArtifactDigests": true,
+          "requiresBaselineAndOptimizedContaminationReports": true,
+          "requiresCompleteEvidence": true,
+          "requiresHonestRuntimeSourceBindingAudit": true,
+          "requiresIdenticalTrainingCode": true,
+          "requiresIdenticalTrainingDependencyLock": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
+          "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
+          "runtimePointerPolicy": "unchanged_until_promoted",
+          "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+          "runtimeSourceRevisionIsAuditOnly": true,
+          "schemaVersion": "lumen.adapter-promotion/1.0.0"
+        },
+        "requiredVariants": [
+          "internal_only",
+          "internal_plus_public_baseline",
+          "internal_plus_public_optimized"
+        ]
+      },
+      "observedRepositoryRevision": null,
+      "observedRuntimeRevision": null,
+      "preferenceTraining": {
+        "includedInCheckpoint": false,
+        "recordCount": 4,
+        "requiredPhase": "post_sft_preference_training",
+        "status": "generated_not_trained"
+      },
+      "recordCounts": {
+        "eval": 6,
+        "train_dpo": 3,
+        "train_sft": 5241,
+        "val_dpo": 1,
+        "val_sft": 925
+      },
+      "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimeSourceBindingMethod": "unresolved",
+      "runtimeSourceBindingStatus": "unresolved",
+      "runtimeSourceKind": "unresolved",
+      "runtimeSourceRevision": null,
+      "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
+      "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+      "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+      "trainingCodeSHA256ByPhase": {
+        "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+        "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+        "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+      },
+      "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
     {
       "adapterArtifact": "models/lora_qwen3_bootstrap/mimicry",
@@ -59,15 +407,131 @@
       "adapterID": "lumen-mimicry-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mimicry",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelIndexReferencedShardNames": [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors"
+      ],
+      "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
+      "evaluation": {
+        "contamination": {
+          "contaminated": false,
+          "matchCount": 0,
+          "promotionRequiresZeroMatches": true,
+          "reportSHA256": "033f439102caebf12ad82b028aca58089f64af9fca90a0252efae8788d21e2aa"
+        },
+        "executableDeclarativeMetrics": true,
+        "failClosedOnUnknownMetric": true,
+        "frozenEvaluationSHA256": "e9a6957f9697c53a3d60b141250c8976739126a18831e68672ab4cf596515342",
+        "recordCount": 5,
+        "schemaVersion": "lumen.adapter-eval/1.0.0"
+      },
+      "expectedRuntimeSourceRevision": null,
+      "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "ddd5d3c342743573f54389a81a8ff98e35bbaf422533e5dd379d7a32e93ffd1a",
+          "optimizedTrainingCorpusSHA256": "748ad9e6f1aa262e5ad9ec786aef370855738149780b549aae06706aacdeaddf",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 600,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
+        "controlledVariables": [
+          "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelIndexReferencedShardNames",
+          "baseModelIndexShardBindingSHA256",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
+          "trainingCodeSHA256",
+          "trainingCodeSHA256ByPhase",
+          "trainingCodeBundleSHA256",
+          "trainingDependencyLockSHA256",
+          "requirementsSHA256",
+          "seed",
+          "trainingConfigSHA256",
+          "frozenEvaluationSHA256",
+          "publicEvaluationBundleSHA256"
+        ],
+        "experimentManifestSHA256": "f9eab2b448814a64ba673428a210a97e302d01fa6da1a936339c6e9317acf915",
+        "promotionContract": {
+          "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+          "maximumContaminationMatches": 0,
+          "maximumCriticalBoundaryFailures": 0,
+          "maximumCriticalCategoryRegression": 0.02,
+          "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+          "requiresArtifactDigests": true,
+          "requiresBaselineAndOptimizedContaminationReports": true,
+          "requiresCompleteEvidence": true,
+          "requiresHonestRuntimeSourceBindingAudit": true,
+          "requiresIdenticalTrainingCode": true,
+          "requiresIdenticalTrainingDependencyLock": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
+          "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
+          "runtimePointerPolicy": "unchanged_until_promoted",
+          "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+          "runtimeSourceRevisionIsAuditOnly": true,
+          "schemaVersion": "lumen.adapter-promotion/1.0.0"
+        },
+        "requiredVariants": [
+          "internal_only",
+          "internal_plus_public_baseline",
+          "internal_plus_public_optimized"
+        ]
+      },
+      "observedRepositoryRevision": null,
+      "observedRuntimeRevision": null,
+      "preferenceTraining": {
+        "includedInCheckpoint": false,
+        "recordCount": 2,
+        "requiredPhase": "post_sft_preference_training",
+        "status": "generated_not_trained"
+      },
       "recordCounts": {
         "eval": 5,
-        "train_dpo": 10,
-        "train_sft": 88,
-        "val_dpo": 2,
-        "val_sft": 16
+        "train_dpo": 1,
+        "train_sft": 117,
+        "val_dpo": 1,
+        "val_sft": 15
       },
-      "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries."
+      "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimeSourceBindingMethod": "unresolved",
+      "runtimeSourceBindingStatus": "unresolved",
+      "runtimeSourceKind": "unresolved",
+      "runtimeSourceRevision": null,
+      "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries.",
+      "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+      "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+      "trainingCodeSHA256ByPhase": {
+        "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+        "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+        "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+      },
+      "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
     {
       "adapterArtifact": "models/lora_qwen3_bootstrap/mouth",
@@ -76,15 +540,131 @@
       "adapterID": "lumen-mouth-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "mouth",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelIndexReferencedShardNames": [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors"
+      ],
+      "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
+      "evaluation": {
+        "contamination": {
+          "contaminated": false,
+          "matchCount": 0,
+          "promotionRequiresZeroMatches": true,
+          "reportSHA256": "66ad85e62cb2f4f9aab26ab726ff5be8fba1275068b1d5c3b6b5753fb8ba21c9"
+        },
+        "executableDeclarativeMetrics": true,
+        "failClosedOnUnknownMetric": true,
+        "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
+        "recordCount": 8,
+        "schemaVersion": "lumen.adapter-eval/1.0.0"
+      },
+      "expectedRuntimeSourceRevision": null,
+      "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "491f9578a39aa084d97ae3d6284b8a7a3bf85f9fd8be1c6e1a57e75063a37f9a",
+          "optimizedTrainingCorpusSHA256": "3203072832f40e00df2dcf51f4f0345fd21bc07c1b5818de5d18b6b39e2345c3",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 1051,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
+        "controlledVariables": [
+          "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelIndexReferencedShardNames",
+          "baseModelIndexShardBindingSHA256",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
+          "trainingCodeSHA256",
+          "trainingCodeSHA256ByPhase",
+          "trainingCodeBundleSHA256",
+          "trainingDependencyLockSHA256",
+          "requirementsSHA256",
+          "seed",
+          "trainingConfigSHA256",
+          "frozenEvaluationSHA256",
+          "publicEvaluationBundleSHA256"
+        ],
+        "experimentManifestSHA256": "c5a74a540a8fa33cbf7dbceae90b14755c8b441c20886bb03c80ba260b46e5bf",
+        "promotionContract": {
+          "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+          "maximumContaminationMatches": 0,
+          "maximumCriticalBoundaryFailures": 0,
+          "maximumCriticalCategoryRegression": 0.02,
+          "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+          "requiresArtifactDigests": true,
+          "requiresBaselineAndOptimizedContaminationReports": true,
+          "requiresCompleteEvidence": true,
+          "requiresHonestRuntimeSourceBindingAudit": true,
+          "requiresIdenticalTrainingCode": true,
+          "requiresIdenticalTrainingDependencyLock": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
+          "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
+          "runtimePointerPolicy": "unchanged_until_promoted",
+          "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+          "runtimeSourceRevisionIsAuditOnly": true,
+          "schemaVersion": "lumen.adapter-promotion/1.0.0"
+        },
+        "requiredVariants": [
+          "internal_only",
+          "internal_plus_public_baseline",
+          "internal_plus_public_optimized"
+        ]
+      },
+      "observedRepositoryRevision": null,
+      "observedRuntimeRevision": null,
+      "preferenceTraining": {
+        "includedInCheckpoint": false,
+        "recordCount": 19,
+        "requiredPhase": "post_sft_preference_training",
+        "status": "generated_not_trained"
+      },
       "recordCounts": {
         "eval": 8,
-        "train_dpo": 12,
-        "train_sft": 258,
+        "train_dpo": 17,
+        "train_sft": 188,
         "val_dpo": 2,
-        "val_sft": 45
+        "val_sft": 30
       },
-      "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels."
+      "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimeSourceBindingMethod": "unresolved",
+      "runtimeSourceBindingStatus": "unresolved",
+      "runtimeSourceKind": "unresolved",
+      "runtimeSourceRevision": null,
+      "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
+      "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+      "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+      "trainingCodeSHA256ByPhase": {
+        "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+        "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+        "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+      },
+      "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
     {
       "adapterArtifact": "models/lora_qwen3_bootstrap/rem",
@@ -93,15 +673,131 @@
       "adapterID": "lumen-rem-adapter",
       "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
       "agent": "rem",
+      "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
       "baseModelID": "Qwen/Qwen3-1.7B",
+      "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+      "baseModelIndexReferencedShardNames": [
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors"
+      ],
+      "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+      "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "baseModelWeightShards": [
+        {
+          "filename": "model-00001-of-00002.safetensors",
+          "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+          "size": 3441185608
+        },
+        {
+          "filename": "model-00002-of-00002.safetensors",
+          "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+          "size": 622329984
+        }
+      ],
+      "evaluation": {
+        "contamination": {
+          "contaminated": false,
+          "matchCount": 0,
+          "promotionRequiresZeroMatches": true,
+          "reportSHA256": "4954fc7f904f92a7589ec400ab14a86a7960c6ad157baf9e6e72f27e67a2b1b1"
+        },
+        "executableDeclarativeMetrics": true,
+        "failClosedOnUnknownMetric": true,
+        "frozenEvaluationSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
+        "recordCount": 6,
+        "schemaVersion": "lumen.adapter-eval/1.0.0"
+      },
+      "expectedRuntimeSourceRevision": null,
+      "experimentPolicy": {
+        "comparisonEligibility": {
+          "baselineTrainingCorpusSHA256": "0eaf2558458d93915796b5a4ddd18ab031a4e51ab9446dab0f3b587c901169e1",
+          "optimizedTrainingCorpusSHA256": "f2d8930819d5af9f0e20a037709442583401b15bdc23e07c51343ee7aca541c1",
+          "promotionEligible": true,
+          "promotionProhibited": false,
+          "publicRecordCount": 505,
+          "reason": "distinct_public_selection_corpora",
+          "status": "eligible"
+        },
+        "controlledVariables": [
+          "baseModelID",
+          "baseModelRevision",
+          "baseModelIndexDigest",
+          "baseModelIndexReferencedShardNames",
+          "baseModelIndexShardBindingSHA256",
+          "baseModelArtifactDigest",
+          "baseModelWeightShards",
+          "baseModelTokenizerDigest",
+          "trainingEnvironmentLockSHA256",
+          "trainingCodeSHA256",
+          "trainingCodeSHA256ByPhase",
+          "trainingCodeBundleSHA256",
+          "trainingDependencyLockSHA256",
+          "requirementsSHA256",
+          "seed",
+          "trainingConfigSHA256",
+          "frozenEvaluationSHA256",
+          "publicEvaluationBundleSHA256"
+        ],
+        "experimentManifestSHA256": "c0bb73c3c772c14fbf136a6699e29973e31c507a10be31ac6f2963019d14603e",
+        "promotionContract": {
+          "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+          "maximumContaminationMatches": 0,
+          "maximumCriticalBoundaryFailures": 0,
+          "maximumCriticalCategoryRegression": 0.02,
+          "minimumWeightedScoreImprovement": 0.01,
+          "promotionSupported": false,
+          "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+          "requiresArtifactDigests": true,
+          "requiresBaselineAndOptimizedContaminationReports": true,
+          "requiresCompleteEvidence": true,
+          "requiresHonestRuntimeSourceBindingAudit": true,
+          "requiresIdenticalTrainingCode": true,
+          "requiresIdenticalTrainingDependencyLock": true,
+          "requiresIdenticalTrainingEnvironment": true,
+          "requiresImmutableBaseModelRevisionAndDigest": true,
+          "requiresPublicEvaluationFingerprintBinding": true,
+          "requiresVerifiedRuntimeImageBinding": true,
+          "runtimePointerPolicy": "unchanged_until_promoted",
+          "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+          "runtimeSourceRevisionIsAuditOnly": true,
+          "schemaVersion": "lumen.adapter-promotion/1.0.0"
+        },
+        "requiredVariants": [
+          "internal_only",
+          "internal_plus_public_baseline",
+          "internal_plus_public_optimized"
+        ]
+      },
+      "observedRepositoryRevision": null,
+      "observedRuntimeRevision": null,
+      "preferenceTraining": {
+        "includedInCheckpoint": false,
+        "recordCount": 3,
+        "requiredPhase": "post_sft_preference_training",
+        "status": "generated_not_trained"
+      },
       "recordCounts": {
         "eval": 6,
-        "train_dpo": 8,
-        "train_sft": 4138,
-        "val_dpo": 2,
-        "val_sft": 730
+        "train_dpo": 2,
+        "train_sft": 5231,
+        "val_dpo": 1,
+        "val_sft": 926
       },
-      "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples."
+      "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimeSourceBindingMethod": "unresolved",
+      "runtimeSourceBindingStatus": "unresolved",
+      "runtimeSourceKind": "unresolved",
+      "runtimeSourceRevision": null,
+      "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
+      "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+      "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+      "trainingCodeSHA256ByPhase": {
+        "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+        "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+        "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+      },
+      "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     }
   ],
   "baseModelIDs": [
@@ -121,8 +817,38 @@
     "mergedExportPhase": "optional_release_bake",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.4.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
+  "sharedBaseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "sharedBaseModelID": "Qwen/Qwen3-1.7B",
-  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf"
+  "sharedBaseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+  "sharedBaseModelIndexReferencedShardNames": [
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors"
+  ],
+  "sharedBaseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+  "sharedBaseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "sharedBaseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+  "sharedBaseModelWeightShards": [
+    {
+      "filename": "model-00001-of-00002.safetensors",
+      "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+      "size": 3441185608
+    },
+    {
+      "filename": "model-00002-of-00002.safetensors",
+      "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+      "size": 622329984
+    }
+  ],
+  "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
+  "sharedRequirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+  "sharedTrainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+  "sharedTrainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+  "sharedTrainingCodeSHA256ByPhase": {
+    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+  },
+  "sharedTrainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

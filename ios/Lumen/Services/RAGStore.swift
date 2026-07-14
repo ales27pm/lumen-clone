@@ -585,18 +585,24 @@ enum RAGStore {
         return CountsResult(counts: out, mode: "loaded", diagnostic: nil)
     }
 
-    static func wipe(_ type: RAGSourceType?, context: ModelContext) throws {
+    private static func wipe(_ types: Set<RAGSourceType>?, context: ModelContext) throws {
         let all = try context.fetch(FetchDescriptor<RAGChunk>())
         try requirePersistenceBudget()
         for c in all {
-            if type == nil || c.kind == type { context.delete(c) }
+            if types == nil || types?.contains(c.kind) == true { context.delete(c) }
         }
         try persistAfterBudgetAuthorization(context, operation: "wipe", scope: "RAGChunk")
-        if let type {
-            RAGVectorIndex.shared.removeBucket(type.rawValue)
+        if let types {
+            for type in types {
+                RAGVectorIndex.shared.removeBucket(type.rawValue)
+            }
         } else {
             RAGVectorIndex.shared.removeAll()
         }
+    }
+
+    static func wipe(_ type: RAGSourceType?, context: ModelContext) throws {
+        try wipe(type.map { Set([$0]) }, context: context)
     }
 
     static func chunks(for type: RAGSourceType, context: ModelContext) -> [RAGChunk] {
@@ -625,20 +631,25 @@ enum RAGStore {
         await indexImportedFilesWithDiagnostics(context: context, progress: progress).indexedCount
     }
 
-    static func indexImportedFilesWithDiagnostics(context: ModelContext, progress: ((Double) -> Void)? = nil) async -> IndexResult {
+    static func indexImportedFilesWithDiagnostics(
+        context: ModelContext,
+        progress: ((Double) -> Void)? = nil,
+        importedFilesResult: FileStore.ImportedFilesResult? = nil
+    ) async -> IndexResult {
+        let imports = importedFilesResult ?? FileStore.importedFilesWithDiagnostics()
+        if imports.mode == "failed" {
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: imports.diagnostic ?? "imports_list_failed")
+        }
+        let files = imports.files
         do {
-            try wipe(.file, context: context)
-            try wipe(.pdf, context: context)
+            try wipe([.file, .pdf], context: context)
+        } catch PersistenceError.diskWriteBudgetDenied {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
         } catch {
             let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
             logger.error("persist_failed op=indexImportedFiles.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
-        let imports = FileStore.importedFilesWithDiagnostics()
-        if imports.mode == "failed" {
-            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: imports.diagnostic ?? "imports_list_failed")
-        }
-        let files = imports.files
         guard !files.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: imports.diagnostic ?? "no_imported_files")
         }
@@ -860,29 +871,51 @@ enum RAGStore {
         await indexPhotosWithDiagnostics(monthsBack: monthsBack, context: context).indexedCount
     }
 
-    static func indexPhotosWithDiagnostics(monthsBack: Int = 6, context: ModelContext) async -> IndexResult {
-        let status = await withCheckedContinuation { (cont: CheckedContinuation<PHAuthorizationStatus, Never>) in
-            PHPhotoLibrary.requestAuthorization(for: .readWrite) { cont.resume(returning: $0) }
+    struct PhotoLibrarySnapshot {
+        let authorizationStatus: PHAuthorizationStatus
+        let assets: [PHAsset]
+    }
+
+    static func indexPhotosWithDiagnostics(
+        monthsBack: Int = 6,
+        context: ModelContext,
+        photoLibrarySnapshot: PhotoLibrarySnapshot? = nil
+    ) async -> IndexResult {
+        let snapshot: PhotoLibrarySnapshot
+        if let photoLibrarySnapshot {
+            snapshot = photoLibrarySnapshot
+        } else {
+            let status = await withCheckedContinuation { (cont: CheckedContinuation<PHAuthorizationStatus, Never>) in
+                PHPhotoLibrary.requestAuthorization(for: .readWrite) { cont.resume(returning: $0) }
+            }
+            guard status == .authorized || status == .limited else {
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "photos_permission_denied:\(photoAuthorizationDiagnostic(status))")
+            }
+            let start = Calendar.current.date(byAdding: .month, value: -monthsBack, to: Date()) ?? Date()
+            let options = PHFetchOptions()
+            options.predicate = NSPredicate(format: "creationDate >= %@", start as NSDate)
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            options.fetchLimit = 2000
+            let fetch = PHAsset.fetchAssets(with: options)
+
+            var assets: [PHAsset] = []
+            fetch.enumerateObjects { asset, _, _ in assets.append(asset) }
+            snapshot = PhotoLibrarySnapshot(authorizationStatus: status, assets: assets)
         }
+        let status = snapshot.authorizationStatus
         guard status == .authorized || status == .limited else {
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "photos_permission_denied:\(photoAuthorizationDiagnostic(status))")
         }
+        let assets = snapshot.assets
         do {
             try wipe(.photo, context: context)
+        } catch PersistenceError.diskWriteBudgetDenied {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
         } catch {
             let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
             logger.error("persist_failed op=indexPhotos.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
-        let start = Calendar.current.date(byAdding: .month, value: -monthsBack, to: Date()) ?? Date()
-        let options = PHFetchOptions()
-        options.predicate = NSPredicate(format: "creationDate >= %@", start as NSDate)
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        options.fetchLimit = 2000
-        let fetch = PHAsset.fetchAssets(with: options)
-
-        var assets: [PHAsset] = []
-        fetch.enumerateObjects { a, _, _ in assets.append(a) }
         guard !assets.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_photo_library")
         }

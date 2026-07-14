@@ -14,6 +14,7 @@ from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
 from lumen_manifest_crawler.dataset.runtime_ingest import (
     _is_in_app_package,
     _package_trace_is_model_evidence,
+    _package_trace_is_policy_first_evidence,
     load_runtime_audit_reports,
 )
 
@@ -896,6 +897,55 @@ def test_ingestion_matches_sidecar_by_correlation_despite_prompt_mismatch(tmp_pa
     assert normalized["failures"] == []
     assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
     assert normalized["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+
+
+def test_ingestion_accepts_exact_privacy_summary_for_agent_model_runtime_path(tmp_path: Path):
+    report_path = tmp_path / "e2e-redacted-runtime-path.json"
+    e2e_run_id = "11111111-1111-4111-8111-111111111111"
+    report_path.write_text(json.dumps({
+        "kind": "lumen_e2e_test_report",
+        "passed": 1,
+        "failed": 0,
+        "results": [{
+            "scenarioID": "training-weather-grounded",
+            "kind": "training",
+            "title": "Training weather grounded",
+            "passed": True,
+            "requiresAgentRun": True,
+            "evidenceMode": "modelBackedRequired",
+            "prompt": "What is the weather here?",
+            "actualIntent": "weather",
+            "expectedIntent": "weather",
+            "e2eRunID": e2e_run_id,
+            "failures": [],
+            "finalText": "It is clear.",
+            "events": [{"phase": "model-evidence", "message": "missing fresh AgentBehaviorTrace modelTurn"}],
+        }],
+    }), encoding="utf-8")
+    (tmp_path / "agent-behavior-traces.jsonl").write_text(json.dumps({
+        "event": "modelTurn",
+        "stage": "agent-json-step-0",
+        "runtimePath": "runtimePath_chars=11;sha256=98cc4352bb4a4e60",
+        "parseError": None,
+        "rawOutputPrefix": "rawOutput_chars=80;sha256=c50c0f3cae0619c7",
+        "intent": "weather",
+        "streamStarted": True,
+        "modelLoaded": True,
+        "firstChunkReceived": True,
+        "textChunkCount": 19,
+        "finalChunkReceived": True,
+        "selectedToolID": "weather",
+        "allowedToolIDs": ["weather"],
+        "emittedFinalInActionTurn": False,
+        "scenarioID": "training-weather-grounded",
+        "e2eRunID": e2e_run_id,
+    }) + "\n", encoding="utf-8")
+
+    normalized = load_runtime_audit_reports([report_path])[0]
+
+    assert normalized["failures"] == []
+    assert normalized["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
+    assert normalized["scenarios"][0]["modelEvidenceTrace"]["runtimePath"] == "agent-model"
 
 
 def test_ingestion_accepts_correlated_chat_text_turn_for_plain_chat_scenario(tmp_path: Path):
@@ -2656,7 +2706,7 @@ def test_testflight_agent_grounding_package_preserves_export_metadata(tmp_path: 
     assert report["failures"][0]["scenario"] == "Agent Grounding > Run Agent Grounding Audit > Export TestFlight + Agent Grounding Package"
 
 
-def test_v2_package_accepts_correlated_policy_first_evidence(tmp_path: Path):
+def test_v2_package_accepts_correlated_policy_first_evidence_with_redacted_runtime_path(tmp_path: Path):
     token = "corr_v1_policy_package"
     package = {
         "schemaVersion": "2.0.0",
@@ -2679,7 +2729,7 @@ def test_v2_package_accepts_correlated_policy_first_evidence(tmp_path: Path):
             "correlationToken": token,
             "promptPrefix": "What is the weather?",
             "rawOutputPrefix": "",
-            "runtimePath": "deterministic-compatibility",
+            "runtimePath": "runtimePath_chars=27;sha256=f84f59df6f38ad41",
             "selectedToolID": "weather",
             "allowedToolIDs": ["weather"],
             "toolArguments": {},
@@ -2743,6 +2793,12 @@ def test_v2_package_accepts_correlated_policy_first_evidence(tmp_path: Path):
     assert live_report["failures"] == []
     assert live_report["scenarios"][0]["modelEvidenceStatus"] == "valid_policy_first_evidence"
     assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"
+    assert live_report["scenarios"][0]["modelEvidenceTrace"]["runtimePath"] == "deterministic-compatibility"
+    assert _package_trace_is_policy_first_evidence(package["recentTraces"][0])
+    assert not _package_trace_is_policy_first_evidence({
+        **package["recentTraces"][0],
+        "runtimePath": "runtimePath_chars=27;sha256=0000000000000000",
+    })
 
 
 def test_v2_package_rejects_structured_final_without_explicit_runtime_and_finalizer_proof(tmp_path: Path):
@@ -3100,6 +3156,12 @@ def test_runtime_audit_ingest_deduplicates_same_e2e_report_id(tmp_path: Path):
     envelope_report = {
         "schemaVersion": "1.0.0",
         "generatedAt": "2026-06-29T00:00:30Z",
+        "app": {
+            "name": "Lumen",
+            "bundleIdentifier": "com.27pm.lumenclone",
+            "shortVersion": "1.0.0",
+            "buildNumber": "20260711214250",
+        },
         "exportPolicy": {
             "format": "live-e2e-test-report-json",
             "sourceLayer": "e2eTestReport",
@@ -3118,6 +3180,8 @@ def test_runtime_audit_ingest_deduplicates_same_e2e_report_id(tmp_path: Path):
     e2e_reports = [report for report in reports if report.get("id") == report_id]
     assert len(e2e_reports) == 1
     assert e2e_reports[0]["failures"][0]["e2eScenario"]["name"] == "Executor runtime preflight"
+    assert e2e_reports[0]["_sourceLayer"] == "e2eTestReport.evidenceLayer"
+    assert e2e_reports[0]["appBuildNumber"] == "20260711214250"
 
 
 def test_in_app_package_ignores_plaintext_mouth_final_parse_errors(tmp_path: Path):

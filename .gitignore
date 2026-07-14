@@ -17,6 +17,7 @@ artifacts/
 checkpoints/
 unsloth_compiled_cache/
 generated/fine_tuning/checkpoints/
+.cache/lumen-public-adapter-corpus/
 **/__pycache__/
 models/
 .rork

@@ -17,22 +17,33 @@ python -m lumen_manifest_crawler generate \
 
 2. Inspect each `generated/fine_tuning/<agent>/dataset_card.json`.
 
-3. Train SFT per agent.
+3. Train SFT with a run-scoped config that binds the explicit experiment variant, base-model
+lineage, phase-specific training-code digest, dependency lock, source Git commit, and declared
+runtime-image audit value. The Ubuntu launcher prepares those configs and trains all selected
+agents. Local AIO resume remains disabled until it emits the same run/checkpoint contract as the
+ZeroGPU path; direct `--resume-from-checkpoint` calls without that contract fail closed.
 ```bash
-python tools/fine_tuning/unsloth/train_sft.py --config tools/fine_tuning/unsloth/configs/cortex.json
-python tools/fine_tuning/unsloth/train_sft.py --config tools/fine_tuning/unsloth/configs/executor.json
-python tools/fine_tuning/unsloth/train_sft.py --config tools/fine_tuning/unsloth/configs/mouth.json
-python tools/fine_tuning/unsloth/train_sft.py --config tools/fine_tuning/unsloth/configs/mimicry.json
-python tools/fine_tuning/unsloth/train_sft.py --config tools/fine_tuning/unsloth/configs/rem.json
-python tools/fine_tuning/unsloth/train_sft.py --config tools/fine_tuning/unsloth/configs/fleet.json
+export LUMEN_AIO_EXPERIMENT_VARIANT="internal_plus_public_baseline"
+export LUMEN_AIO_CONTAINER_IMAGE_DIGEST="sha256:<64-lowercase-hex-digest>"
+export LUMEN_AIO_RUN_ROOT="$PWD/.local/ubuntu_finetune_runs/baseline-run"
+bash scripts/ubuntu_train_lumen_adapters_aio.sh
 ```
 
-4. Optionally train DPO/ORPO per agent.
+4. Optionally train DPO/ORPO per agent from the verified finalized SFT artifact. DPO writes a
+separate `sft_dpo` adapter and records the parent SFT digest. The parent boundary verifies the
+self-hashed finalized SFT manifest, canonical adapter bytes and base-model declaration, effective
+seed, experiment/source manifest, full base-model index/shard/tokenizer contract, environment and
+dependency locks, requirements digest, runtime kind, and SFT phase code digest. Preference records
+remain structured message lists so pinned TRL 0.24 applies the Qwen chat template and assistant-turn
+boundaries.
 ```bash
-python tools/fine_tuning/unsloth/train_dpo.py --config tools/fine_tuning/unsloth/configs/cortex.json
+python tools/fine_tuning/unsloth/train_dpo.py \
+  --config "$LUMEN_AIO_RUN_ROOT/configs/cortex.json" \
+  --sft-adapter-dir "$LUMEN_AIO_RUN_ROOT/models/lora_qwen3_bootstrap/cortex" \
+  --sft-finalized-variant-manifest "$LUMEN_AIO_RUN_ROOT/training/cortex/finalized_variant_manifest.json"
 ```
 
-5. Merge adapters if needed.
+5. Use the legacy merge helper only when a non-GGUF merged artifact is specifically needed.
 ```bash
 python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unsloth/configs/cortex.json
 ```
@@ -40,7 +51,8 @@ python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unslot
 6. Export merged GGUF per agent.
 ```bash
 .venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
-  --config-dir tools/fine_tuning/unsloth/configs \
+  --release-bake \
+  --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
   --agents cortex,executor,mouth,mimicry,rem,fleet \
   --quantization q4_k_m \
   --output-root models/gguf_merged \
@@ -50,7 +62,8 @@ python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unslot
 7. Optional: upload merged GGUFs to Hugging Face in one pass.
 ```bash
 .venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
-  --config-dir tools/fine_tuning/unsloth/configs \
+  --release-bake \
+  --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
   --agents cortex,executor,mouth,mimicry,rem,fleet \
   --quantization q4_k_m \
   --output-root models/gguf_merged \
@@ -61,6 +74,75 @@ python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unslot
 8. Evaluate with `generated/fine_tuning/<agent>/eval.jsonl`.
 
 9. Never train on private app exports unless explicitly sanitized.
+
+## ZeroGPU authorization and resume
+
+Use `scripts/hf_zerogpu_train_lumen_adapters_aio.sh` with separate
+`LUMEN_ZERO_GPU_ADMIN_TOKEN` and fine-grained `LUMEN_ZERO_GPU_HUB_TOKEN` credentials. The Space,
+dataset repository, and adapter/model repository are private by default. Their only public
+overrides are `LUMEN_ZERO_GPU_PUBLIC_SPACE=1`, `LUMEN_ZERO_GPU_PUBLIC_DATASET=1`, and
+`LUMEN_ZERO_GPU_PUBLIC_ADAPTERS=1`, respectively. Each changes only its named repository, and a
+public Space still requires the admin header. Dataset uploads are pinned by their returned Hub
+commit SHA. Existing repositories with matching visibility are reused without a settings mutation;
+a mismatch stops deployment unless the operator sets that repository's explicit
+`LUMEN_ZERO_GPU_CONFIRM_*_VISIBILITY_CHANGE=1` migration confirmation. Confirmed changes and new
+repositories are read back before any upload. The browser page does not expose a training button
+because browser events cannot attach the required header. Use the authenticated launcher.
+The Space also rechecks adapter-repository visibility without mutating it immediately before
+uploading trained artifacts.
+
+At Space startup, Lumen hashes the complete installed distribution environment once and records its
+digest plus scan timing/count/byte metrics. Trainer subprocesses reuse only that exact manifest via
+a process-local HMAC; direct trainer use without the cache key rescans the environment. The
+configured ZeroGPU size must match the deployed decorator before allocation, duration must not be
+clamped, and the observed CUDA inventory remains unverified audit evidence compared across
+experimental variants. Startup scan timing and cache signatures remain audit evidence outside the
+immutable resume hash; a restarted process can authorize its new signature only against the same
+persisted resolved-environment digest.
+
+`LUMEN_ZERO_GPU_RESUME=1` is accepted only when the existing self-hashed run manifest, original
+local dataset snapshot, prepared configs, checkpoint-lineage records, and at least one checkpoint
+all match the requested lineage. Fresh runs reject existing workspaces unless
+`LUMEN_ZERO_GPU_DESTRUCTIVE_RESET=1` is explicit. Resume and destructive reset are mutually
+exclusive.
+
+When the launcher splits agents across multiple batches, resume additionally requires
+`LUMEN_ZERO_GPU_RESUME_BATCH=<1-based-batch-number>` and invokes only that batch. Ambiguous
+multi-batch resume is rejected. Space-local checkpoints survive only while that deployment's local
+disk remains intact; restart-safe resume requires external checkpoint persistence.
+
+The built Space deploys a stable package and invokes:
+
+```bash
+python -m lumen_training.train_sft --help
+python -m lumen_training.train_dpo --help
+```
+
+`lumen_training.train_dpo` selects DPO or ORPO from the config and imports shared SFT helpers through
+the same package. The deployed process does not rely on the repository source tree being on
+`PYTHONPATH`.
+
+Before model loading, the runtime verifies the full deployed code closure: `app.py`, requirements,
+the entire `lumen_training` package, and all covered Python and runtime-loaded JSON/text/config
+resources in `lumen_manifest_crawler`. The manifest's closure policy is checked bidirectionally,
+so both declared-file drift and unexpected behavior files fail. Explicit volatile run files do not
+change the controlled digest. Separate SFT, DPO, and ORPO digests are retained under one bundle
+digest, alongside the direct-dependency lock and requirements hash. A runtime-resolved distribution
+manifest additionally binds every installed package, safe direct/VCS provenance, and the
+behavior-bearing files declared by its `RECORD`; controlled comparisons require the same
+`resolvedTrainingEnvironmentSHA256`.
+
+The Space README front matter is separately canonicalized and verified as Gradio with `app.py` on
+Python 3.10. Unknown runtime fields, a changed entrypoint, or README-selected hardware fail before
+training. ZeroGPU hardware is requested through the Hub API rather than front matter.
+
+Runtime-source lineage keeps the expected uploaded Space revision, authenticated repository-head
+observation, platform runtime observation, binding status, and method as separate fields. A
+repository-head match does not prove what the container executes; when no trusted platform runtime
+metadata exists the source binding remains operator-declared and unverified. Parent SFT audit
+evidence, DPO frozen-reference evidence, and the new preference-training runtime are likewise kept
+separate. These fields propagate into reports and finalized manifests, but promotion is still
+unsupported until a trusted runtime-image attestation exists.
 
 ## Deployment Notes
 

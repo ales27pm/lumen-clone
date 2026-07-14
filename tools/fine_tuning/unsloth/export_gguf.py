@@ -4,10 +4,21 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
+
+try:
+    from .adapter_artifact import verify_adapter_artifact
+    from .train_sft import _verify_base_model_lineage
+except ImportError:
+    module_dir = str(Path(__file__).resolve().parent)
+    if module_dir not in sys.path:
+        sys.path.insert(0, module_dir)
+    from adapter_artifact import verify_adapter_artifact
+    from train_sft import _verify_base_model_lineage
 
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
@@ -39,8 +50,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--config-dir",
-        default="tools/fine_tuning/unsloth/configs",
-        help="Directory containing per-agent configs (used when --config is omitted).",
+        default="generated/fine_tuning",
+        help=(
+            "Directory containing generated per-agent configs (used when --config is omitted). "
+            "Each config is read from <agent>/unsloth_config.json."
+        ),
     )
     parser.add_argument(
         "--agents",
@@ -110,7 +124,19 @@ def _adapter_dir(cfg: dict[str, Any]) -> Path:
 
 def load_config(path: Path) -> dict[str, Any]:
     cfg = json.loads(path.read_text(encoding="utf-8"))
-    required = {"agent", "base_model_name", "max_seq_length", "output_dir"}
+    required = {
+        "agent",
+        "base_model_name",
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
+        "baseModelArtifactDigest",
+        "baseModelWeightShards",
+        "baseModelTokenizerDigest",
+        "max_seq_length",
+        "output_dir",
+    }
     missing = [key for key in sorted(required) if key not in cfg]
     if missing:
         raise ValueError(f"{path} missing required keys: {', '.join(missing)}")
@@ -138,7 +164,8 @@ def gather_configs(config_paths: list[str], config_dir: str, selected_agents: li
     else:
         root = Path(config_dir).resolve()
         for agent in selected_agents:
-            configs.append(load_config(root / f"{agent}.json"))
+            nested = root / agent / "unsloth_config.json"
+            configs.append(load_config(nested if nested.is_file() else root / f"{agent}.json"))
 
     filtered = [cfg for cfg in configs if str(cfg["agent"]).strip().lower() in set(selected_agents)]
     filtered.sort(key=lambda item: selected_agents.index(str(item["agent"]).strip().lower()))
@@ -177,6 +204,163 @@ def sha256sum(path: Path) -> str:
     return h.hexdigest()
 
 
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _expected_adapter_training_lineage(
+    cfg: dict[str, Any], artifact: dict[str, Any]
+) -> tuple[str, str | None]:
+    phase = str(cfg.get("adapter_training_phase") or "sft")
+    configured_parent = cfg.get("parent_sft_adapter_sha256")
+    artifact_parent = artifact.get("parentSFTAdapterSHA256")
+    if phase == "sft":
+        if configured_parent is not None or artifact_parent is not None:
+            raise ValueError("SFT GGUF export must not declare a parent SFT adapter")
+        return phase, None
+    if phase != "sft_dpo":
+        raise ValueError("adapter_training_phase must be either sft or sft_dpo")
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(configured_parent or "")) is None
+        or artifact_parent != configured_parent
+    ):
+        raise ValueError(
+            "SFT-to-DPO GGUF export must bind the finalized adapter to the configured parent SFT digest"
+        )
+    return phase, str(configured_parent)
+
+
+def _verified_release_bake_lineage(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Verify the adapter and finalized experiment lineage before any GGUF use."""
+
+    _verify_base_model_lineage(cfg)
+    agent = str(cfg["agent"]).strip().lower()
+    adapter_dir = _adapter_dir(cfg)
+    if not adapter_dir.is_dir():
+        raise FileNotFoundError(f"Adapter directory not found for {agent}: {adapter_dir}")
+
+    finalized_path = Path(
+        str(
+            cfg.get("finalized_variant_manifest")
+            or (Path(str(cfg["output_dir"])) / "finalized_variant_manifest.json")
+        )
+    ).resolve()
+    if not finalized_path.is_file():
+        raise FileNotFoundError(f"Finalized variant manifest not found for {agent}: {finalized_path}")
+    finalized = json.loads(finalized_path.read_text(encoding="utf-8"))
+    if not isinstance(finalized, dict):
+        raise ValueError(f"Finalized variant manifest must be a JSON object: {finalized_path}")
+    expected_manifest_sha = finalized.get("variantManifestSHA256")
+    unsigned = dict(finalized)
+    unsigned.pop("variantManifestSHA256", None)
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(expected_manifest_sha or "")) is None
+        or _canonical_sha256(unsigned) != expected_manifest_sha
+    ):
+        raise ValueError(f"Finalized variant manifest integrity check failed: {finalized_path}")
+
+    variant = cfg.get("variant")
+    source_manifest_sha = cfg.get("variantManifestSHA256")
+    if (
+        finalized.get("agent") != agent
+        or not isinstance(variant, str)
+        or finalized.get("variant") != variant
+        or re.fullmatch(r"[0-9a-f]{64}", str(source_manifest_sha or "")) is None
+        or finalized.get("sourceVariantManifestSHA256") != source_manifest_sha
+    ):
+        raise ValueError("Finalized variant manifest is not bound to the selected agent and source variant")
+
+    for field in (
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
+        "baseModelArtifactDigest",
+        "baseModelWeightShards",
+        "baseModelTokenizerDigest",
+    ):
+        if finalized.get(field) != cfg.get(field):
+            raise ValueError(f"Finalized variant manifest {field} does not match the GGUF config")
+    if finalized.get("baseModelID") != cfg.get("baseModelID", cfg["base_model_name"]):
+        raise ValueError("Finalized variant manifest baseModelID does not match the GGUF config")
+    training_environment_sha = cfg.get("trainingEnvironmentSHA256")
+    training_environment = finalized.get("trainingEnvironment")
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(training_environment_sha or "")) is None
+        or finalized.get("trainingEnvironmentSHA256") != training_environment_sha
+        or not isinstance(training_environment, dict)
+        or _canonical_sha256(training_environment) != training_environment_sha
+    ):
+        raise ValueError("Finalized variant manifest training environment does not match the GGUF config")
+    attestation = cfg.get("variantAttestation")
+    if (
+        not isinstance(attestation, dict)
+        or attestation.get("variant") != variant
+        or attestation.get("variantManifestSHA256") != source_manifest_sha
+        or attestation.get("trainingEnvironmentSHA256") != training_environment_sha
+        or finalized.get("trainingCorpusSHA256") != attestation.get("trainingCorpusSHA256")
+        or finalized.get("trainingConfigSHA256")
+        != attestation.get("effectiveTrainingConfigSHA256")
+        or {
+            name: contract.get("sha256")
+            for name, contract in sorted((finalized.get("datasets") or {}).items())
+            if isinstance(contract, dict)
+            and isinstance(contract.get("sha256"), str)
+        }
+        != attestation.get("laneHashes")
+    ):
+        raise ValueError("Finalized variant manifest does not match the prepared training attestation")
+
+    artifact = finalized.get("artifact")
+    if not isinstance(artifact, dict):
+        raise ValueError("Finalized variant manifest lacks adapter artifact lineage")
+    expected_adapter_sha = artifact.get("adapterSHA256")
+    expected_phase, expected_parent_sft_sha = _expected_adapter_training_lineage(
+        cfg, artifact
+    )
+    if (
+        artifact.get("status") != "trained"
+        or re.fullmatch(r"[0-9a-f]{64}", str(expected_adapter_sha or "")) is None
+        or artifact.get("adapterManifestSHA256") != expected_adapter_sha
+        or artifact.get("trainingPhase") != expected_phase
+    ):
+        raise ValueError("Finalized variant manifest has invalid adapter artifact lineage")
+    adapter_manifest = verify_adapter_artifact(
+        adapter_dir,
+        expected_adapter_sha256=expected_adapter_sha,
+        expected_training_phase=expected_phase,
+        expected_parent_sft_adapter_sha256=(
+            str(expected_parent_sft_sha) if expected_parent_sft_sha is not None else None
+        ),
+    )
+
+    adapter_config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
+    if (
+        not isinstance(adapter_config, dict)
+        or adapter_config.get("base_model_name_or_path") != cfg["base_model_name"]
+    ):
+        raise ValueError("Adapter base_model_name_or_path does not match the pinned GGUF base model")
+    return {
+        "adapterSHA256": adapter_manifest["adapterSHA256"],
+        "adapterTrainingPhase": expected_phase,
+        "finalizedVariantManifestSHA256": expected_manifest_sha,
+        "sourceVariantManifestSHA256": source_manifest_sha,
+        "baseModelRevision": cfg["baseModelRevision"],
+        "baseModelIndexDigest": cfg["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": cfg["baseModelIndexReferencedShardNames"],
+        "baseModelIndexShardBindingSHA256": cfg["baseModelIndexShardBindingSHA256"],
+        "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
+        "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+        "trainingEnvironmentSHA256": training_environment_sha,
+    }
+
+
 def _release_bake_skipped_manifest(configs: list[dict[str, Any]], args: argparse.Namespace) -> dict[str, Any]:
     return {
         "mode": "adapter_first",
@@ -207,15 +391,15 @@ def export_agent_gguf(
     try:
         from unsloth import FastLanguageModel  # type: ignore
         from unsloth.save import patch_saving_functions  # type: ignore
+        from peft import PeftModel  # type: ignore
     except ImportError as exc:
         raise RuntimeError(
-            "Missing Unsloth dependency. Run with .venv-unsloth/bin/python or install unsloth."
+            "Missing Unsloth/PEFT dependencies. Run with .venv-unsloth/bin/python or install unsloth and peft."
         ) from exc
 
     agent = str(cfg["agent"]).strip().lower()
     adapter_dir = _adapter_dir(cfg)
-    if not adapter_dir.exists():
-        raise FileNotFoundError(f"Adapter directory not found for {agent}: {adapter_dir}")
+    lineage = _verified_release_bake_lineage(cfg)
 
     quantization = str(
         quantization_override
@@ -242,10 +426,12 @@ def export_agent_gguf(
     )
 
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=str(adapter_dir),
+        model_name=cfg["base_model_name"],
+        revision=cfg["baseModelRevision"],
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=True,
     )
+    model = PeftModel.from_pretrained(model, str(adapter_dir), is_trainable=False)
     if not hasattr(model, "save_pretrained_gguf"):
         model = patch_saving_functions(model)
 
@@ -290,6 +476,7 @@ def export_agent_gguf(
         "size_bytes": target_path.stat().st_size,
         "sha256": sha256sum(target_path),
         "base_model_name": cfg["base_model_name"],
+        **lineage,
     }
     (agent_output_dir / "gguf_release_bake_report.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -324,7 +511,14 @@ def existing_summary_for_agent(
     target_path = agent_output_dir / target_name
     if not target_path.exists():
         return None
-    return {
+    lineage = _verified_release_bake_lineage(cfg)
+    report_path = agent_output_dir / "gguf_release_bake_report.json"
+    if not report_path.is_file():
+        raise ValueError(f"Cannot reuse GGUF without its lineage report: {report_path}")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(report, dict):
+        raise ValueError(f"GGUF lineage report must be a JSON object: {report_path}")
+    expected = {
         "agent": agent,
         "mode": "optional_release_bake",
         "quantization": quantization,
@@ -335,8 +529,12 @@ def existing_summary_for_agent(
         "size_bytes": target_path.stat().st_size,
         "sha256": sha256sum(target_path),
         "base_model_name": cfg["base_model_name"],
-        "reused_existing": True,
+        **lineage,
     }
+    for key, value in expected.items():
+        if report.get(key) != value:
+            raise ValueError(f"Existing GGUF lineage report does not match current {key}")
+    return {**expected, "reused_existing": True}
 
 
 def _write_manifest(path: str, manifest: dict[str, Any]) -> Path:

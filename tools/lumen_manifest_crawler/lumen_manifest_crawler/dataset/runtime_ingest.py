@@ -12,6 +12,7 @@ from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
     _is_architecture_or_finalizer_failure,
     _is_model_backed_trace,
     _is_runtime_environment_failure,
+    _normalized_runtime_path,
     _scenario_allows_plain_chat_model_turn,
     flatten_e2e_json_report,
 )
@@ -43,15 +44,31 @@ def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]
 
 def _dedupe_runtime_reports(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: list[dict[str, Any]] = []
-    seen_report_ids: set[str] = set()
+    report_indexes: dict[str, int] = {}
     for report in reports:
         report_id = _stable_report_id(report)
         if report_id:
-            if report_id in seen_report_ids:
+            existing_index = report_indexes.get(report_id)
+            if existing_index is not None:
+                if _runtime_report_richness(report) > _runtime_report_richness(deduped[existing_index]):
+                    deduped[existing_index] = report
                 continue
-            seen_report_ids.add(report_id)
+            report_indexes[report_id] = len(deduped)
         deduped.append(report)
     return deduped
+
+
+def _runtime_report_richness(report: dict[str, Any]) -> tuple[int, int, int]:
+    app_metadata_count = sum(
+        1
+        for key in ("appBuildNumber", "appShortVersion", "appBundleIdentifier", "appName")
+        if str(report.get(key) or "").strip()
+    )
+    return (
+        1 if report.get("_sourceLayer") == "e2eTestReport.evidenceLayer" else 0,
+        1 if isinstance(report.get("exportPolicy"), dict) else 0,
+        app_metadata_count,
+    )
 
 
 def _stable_report_id(report: dict[str, Any]) -> str | None:
@@ -815,7 +832,7 @@ def _package_trace_is_model_evidence(trace: dict[str, Any], *, result: dict[str,
 
 def _package_trace_is_policy_first_evidence(trace: dict[str, Any]) -> bool:
     return (
-        str(trace.get("runtimePath") or "") == "deterministic-compatibility"
+        _normalized_runtime_path(trace.get("runtimePath")) == "deterministic-compatibility"
         and str(trace.get("event") or "") in {"toolAction", "finalAnswer"}
     )
 

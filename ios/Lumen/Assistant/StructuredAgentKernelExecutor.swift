@@ -186,6 +186,15 @@ struct StructuredAgentKernelExecutor {
                     continuation.yield(.step(reflection))
                 }
                 actionToExecute = repair.action
+                if let ragRepair = Self.repairedRAGSearchActionIfNeeded(
+                    modelAction: actionToExecute,
+                    routing: routing,
+                    prompt: userMessage
+                ) {
+                    steps.append(ragRepair.reflection)
+                    continuation.yield(.step(ragRepair.reflection))
+                    actionToExecute = ragRepair.action
+                }
                 if let mapsRepair = Self.repairedMapsSearchActionIfNeeded(
                     modelAction: actionToExecute,
                     routing: routing,
@@ -205,12 +214,19 @@ struct StructuredAgentKernelExecutor {
                       ) {
                 emit(.reflection, "Memory save-then-recall invariant repaired a premature final before required memory actions completed.", steps: &steps, continuation: continuation)
                 actionToExecute = requiredMemoryAction
-            } else if turn.parseError != nil,
+            } else if let parseError = turn.parseError,
                       let requiredMemoryAction = Self.nextRequiredMemoryAction(
                         memoryPlan: memoryCommandPlan,
                         steps: steps,
                         availableToolIDs: availableToolIDs
                       ) {
+                recordParseFailure(
+                    parseError: parseError,
+                    raw: generation.raw,
+                    systemPrompt: systemPrompt,
+                    userTurn: userTurn,
+                    stepIndex: stepIndex
+                )
                 emit(.reflection, "Memory save-then-recall invariant repaired malformed structured output into the next required memory action.", steps: &steps, continuation: continuation)
                 actionToExecute = requiredMemoryAction
             } else if turn.final?.isEmpty == false || turn.parseError != nil,
@@ -1193,6 +1209,36 @@ private extension StructuredAgentKernelExecutor {
             toolArgs: repaired.args.stringCoerced
         )
         return (repaired, reflection)
+    }
+
+    static func repairedRAGSearchActionIfNeeded(
+        modelAction: AgentAction?,
+        routing: IntentRoutingDecision,
+        prompt: String
+    ) -> (action: AgentAction, reflection: AgentStep)? {
+        guard routing.intent == .rag,
+              let modelAction,
+              ToolRouteGuard.canonicalToolID(modelAction.tool) == "rag.search",
+              let requiredScope = RAGSourceScope.inferred(fromUserPrompt: prompt) else {
+            return nil
+        }
+        let currentScope = modelAction.args["sourceScope"]?.stringValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard currentScope != requiredScope.rawValue else { return nil }
+
+        var args = modelAction.args
+        args["sourceScope"] = .string(requiredScope.rawValue)
+        let repaired = AgentAction(tool: "rag.search", args: args)
+        return (
+            repaired,
+            AgentStep(
+                kind: .reflection,
+                content: "RAG source scope constrained from the user request before retrieval.",
+                toolID: "rag.search",
+                toolArgs: repaired.args.stringCoerced
+            )
+        )
     }
 
     static func triggerPromptHasRepairableScheduleSemantics(_ prompt: String) -> Bool {
@@ -2182,6 +2228,18 @@ extension StructuredAgentKernelExecutor {
             routing: routing,
             prompt: prompt,
             availableToolIDs: availableToolIDs
+        )
+    }
+
+    static func repairedRAGSearchActionIfNeededForTests(
+        modelAction: AgentAction?,
+        routing: IntentRoutingDecision,
+        prompt: String
+    ) -> (action: AgentAction, reflection: AgentStep)? {
+        repairedRAGSearchActionIfNeeded(
+            modelAction: modelAction,
+            routing: routing,
+            prompt: prompt
         )
     }
 }

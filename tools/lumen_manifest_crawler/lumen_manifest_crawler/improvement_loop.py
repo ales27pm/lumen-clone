@@ -216,7 +216,9 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         "output": str(output),
         "runtimeAuditInputs": [str(path) for path in config.runtime_audit_paths],
         "manifest": {
-            "commit": getattr(source_integrity, "commit", None),
+            "baseCommit": getattr(source_integrity, "baseCommit", None),
+            "workingTreeDigest": getattr(source_integrity, "workingTreeDigest", None),
+            "dirtyState": getattr(source_integrity, "dirtyState", None),
             "fingerprint": _manifest_fingerprint(manifest),
             "toolCount": len(manifest.tools),
             "intentCount": len(manifest.intents),

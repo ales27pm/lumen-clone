@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
+import stat
 import subprocess
 from pathlib import Path
 
@@ -40,11 +43,27 @@ FRESHNESS_DEFAULTS = {
     "timeless": {"ttlSeconds": None, "durable": True},
 }
 
+SOURCE_INTEGRITY_EXCLUDED_PREFIXES = (
+    "generated/",
+    "lumen_manifest_crawler/generated/",
+    "tools/lumen_manifest_crawler/generated/",
+)
+SOURCE_INTEGRITY_EXCLUDED_PATHS = {
+    "ios/Lumen/AgentBehaviorManifest.json",
+    # `uv run` can create this package-local lock as a validation byproduct.
+    # It is not the repository's controlled dependency lock.
+    "tools/lumen_manifest_crawler/uv.lock",
+}
+
 
 def generate_manifest(root: Path) -> AgentBehaviorManifest:
     root = _validated_scan_root(root)
     manifest = AgentBehaviorManifest(app=_read_app_info(root))
-    manifest.sourceIntegrity.commit = _git_commit(root)
+    manifest.sourceIntegrity.baseCommit = _git_commit(root)
+    (
+        manifest.sourceIntegrity.workingTreeDigest,
+        manifest.sourceIntegrity.dirtyState,
+    ) = _repository_working_tree_provenance(root)
 
     swift_files = list(_iter_swift_files(root))
     manifest.sourceIntegrity.files = [
@@ -126,6 +145,99 @@ def _git_commit(root: Path) -> str | None:
     except Exception as error:
         logger.debug("git rev-parse HEAD failed in _git_commit: %s", error, exc_info=True)
         return None
+
+
+def _repository_working_tree_provenance(root: Path) -> tuple[str | None, bool | None]:
+    """Return a non-self-referential digest and dirty state for repository inputs.
+
+    The digest covers the current bytes and executable bit of every tracked or
+    non-ignored untracked file except generated output trees and the synced app
+    manifest. Excluding outputs makes repeated generation stable while still
+    binding source, configuration, tests, and checked-in corpus inputs.
+    """
+
+    try:
+        tracked = _git_path_list(root, ["ls-files", "-z"])
+        untracked = _git_path_list(root, ["ls-files", "--others", "--exclude-standard", "-z"])
+        changed = _git_path_list(root, ["diff", "--name-only", "-z", "HEAD", "--"])
+    except (OSError, subprocess.CalledProcessError) as error:
+        logger.debug("git source provenance failed: %s", error, exc_info=True)
+        return None, None
+
+    candidates = sorted(
+        path
+        for path in set(tracked + untracked)
+        if not _source_integrity_path_is_excluded(path)
+    )
+    entries: list[dict[str, object]] = []
+    for relative_path in candidates:
+        path = root / relative_path
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            entries.append({"path": relative_path, "state": "deleted"})
+            continue
+
+        if stat.S_ISLNK(metadata.st_mode):
+            payload = os.readlink(path).encode("utf-8", errors="surrogateescape")
+            kind = "symlink"
+        elif stat.S_ISREG(metadata.st_mode):
+            payload = path.read_bytes()
+            kind = "file"
+        else:
+            # A gitlink or other non-regular entry remains visible in the
+            # canonical path set without following content outside this repo.
+            payload = b""
+            kind = "other"
+        entries.append(
+            {
+                "path": relative_path,
+                "kind": kind,
+                "executable": bool(metadata.st_mode & stat.S_IXUSR),
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+
+    encoded = json.dumps(
+        {
+            "schema": "lumen.source-working-tree/1.0.0",
+            "entries": entries,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    relevant_changes = {
+        path
+        for path in changed + untracked
+        if not _source_integrity_path_is_excluded(path)
+    }
+    return hashlib.sha256(encoded).hexdigest(), bool(relevant_changes)
+
+
+def _git_path_list(root: Path, arguments: list[str]) -> list[str]:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return [
+        value.decode("utf-8", errors="surrogateescape")
+        for value in completed.stdout.split(b"\0")
+        if value
+    ]
+
+
+def _source_integrity_path_is_excluded(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized in SOURCE_INTEGRITY_EXCLUDED_PATHS or normalized.startswith(
+        SOURCE_INTEGRITY_EXCLUDED_PREFIXES
+    )
 
 
 def _read_app_info(root: Path) -> AppManifestInfo:

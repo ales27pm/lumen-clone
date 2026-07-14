@@ -1,7 +1,7 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Commit: `7a411137cde14a39db03019a34e89dc51ff40cd4`
+- Commit: `f2acf093f88155576a993b2ad1a0cea172cde59f`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol
@@ -297,12 +297,13 @@
 - Permission key: none
 - Arguments:
   - `to`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `subject`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `subject`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `body`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `recipient`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `email`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `message`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `text`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `title`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `mail.draft` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `maps.directions`
@@ -625,7 +626,7 @@
 
 ### `rag.search`
 - Display name: Search Personal Data
-- Description: Semantic search across indexed local files, PDFs, notes, and photo metadata. Args: query, optional limit. Not for internet search.
+- Description: Semantic search across indexed local files, PDFs, notes, and photo metadata. Args: query, optional limit/sourceScope (all, documents, notes, photos). Not for internet search.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
 - Requires approval: False
@@ -633,6 +634,7 @@
 - Arguments:
   - `query`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `limit`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `sourceScope`: enum, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
 - Example: Use `rag.search` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `reminders.create`
@@ -678,7 +680,7 @@
 - Arguments:
   - `title`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `prompt`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
-  - `schedule`: string, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
+  - `schedule`: enum, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `inMinutes`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `atTime`: string, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
   - `intervalSeconds`: number, optional. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
@@ -830,6 +832,7 @@
 - `<private_reasoning>` must never appear in user-visible output.
 - `<scratchpad>` must never appear in user-visible output.
 - `<tool_json>` must never appear in user-visible output.
+- `<tool_output>` must never appear in user-visible output.
 - `<user_final_text>` must never appear in user-visible output.
 - `\nAction: \(action.displayContent)\nObservation: \(compactScratchpadObservation(obs.content))` must never appear in user-visible output.
 - `\nAction: \(action.displayContent)\nObservation: \(compactScratchpadObservation(result))` must never appear in user-visible output.

@@ -1,6 +1,7 @@
 import XCTest
 import SwiftData
 import SwiftUI
+import Photos
 @testable import Lumen
 
 final class PersistenceAuditTests: XCTestCase {
@@ -415,6 +416,165 @@ final class PersistenceAuditTests: XCTestCase {
         XCTAssertEqual(result.mode, .failed)
         XCTAssertTrue(result.diagnostic?.hasPrefix("file_read_failed:") == true)
         XCTAssertFalse(result.diagnostic?.contains(missingURL.path) == true)
+    }
+
+    @MainActor
+    func testEmptyImportedFileReindexRemovesStaleDocumentCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        context.insert(RAGChunk(
+            content: "existing architecture",
+            sourceType: .file,
+            sourceName: "architecture.txt",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        ))
+        context.insert(RAGChunk(
+            content: "existing design",
+            sourceType: .pdf,
+            sourceName: "design.pdf",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        ))
+        try context.save()
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 2)
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [],
+                mode: "loaded",
+                diagnostic: "empty_imports"
+            )
+        )
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.diagnostic, "empty_imports")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
+        XCTAssertTrue(RAGStore.lexicalSearch(
+            query: "architecture",
+            context: context,
+            sourceTypes: [.file, .pdf],
+            limit: 5
+        ).isEmpty)
+        XCTAssertTrue(RAGVectorIndex.shared.search(
+            query: [1, 0],
+            topK: 5,
+            allowedBuckets: [RAGSourceType.file.rawValue, RAGSourceType.pdf.rawValue]
+        ).isEmpty)
+    }
+
+    @MainActor
+    func testFailedImportedFileEnumerationPreservesExistingDocumentCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "architecture.txt"))
+        try context.save()
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [],
+                mode: "failed",
+                diagnostic: "imports_list_failed:test"
+            )
+        )
+
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertEqual(result.diagnostic, "imports_list_failed:test")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
+    }
+
+    @MainActor
+    func testEmptyPhotoReindexRemovesStalePhotoCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        context.insert(RAGChunk(
+            content: "Photos January: coffee shop",
+            sourceType: .photo,
+            sourceName: "Photos 2026-01",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        ))
+        try context.save()
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
+
+        let result = await RAGStore.indexPhotosWithDiagnostics(
+            context: context,
+            photoLibrarySnapshot: .init(authorizationStatus: .authorized, assets: [])
+        )
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.diagnostic, "empty_photo_library")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
+        XCTAssertTrue(RAGStore.lexicalSearch(
+            query: "coffee",
+            context: context,
+            sourceTypes: [.photo],
+            limit: 5
+        ).isEmpty)
+        XCTAssertTrue(RAGVectorIndex.shared.search(
+            query: [1, 0],
+            topK: 5,
+            allowedBuckets: [RAGSourceType.photo.rawValue]
+        ).isEmpty)
+    }
+
+    @MainActor
+    func testDeniedPhotoAuthorizationPreservesExistingPhotoCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing photos", sourceType: .photo, sourceName: "Photos 2026-01"))
+        try context.save()
+
+        let result = await RAGStore.indexPhotosWithDiagnostics(
+            context: context,
+            photoLibrarySnapshot: .init(authorizationStatus: .denied, assets: [])
+        )
+
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertEqual(result.diagnostic, "photos_permission_denied:denied")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["Photos 2026-01"])
+    }
+
+    @MainActor
+    func testImportedFileCleanupBudgetDenialIsDeferredAndPreservesCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "architecture.txt"))
+        try context.save()
+        DiskWriteBudget.shared.setGenerationActive(true)
+        defer { DiskWriteBudget.shared.setGenerationActive(false) }
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [URL(fileURLWithPath: "/tmp/imports/new.txt")],
+                mode: "loaded",
+                diagnostic: nil
+            )
+        )
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.diagnostic, "cleanup_deferred:disk_write_budget_denied")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
     }
 
     @MainActor

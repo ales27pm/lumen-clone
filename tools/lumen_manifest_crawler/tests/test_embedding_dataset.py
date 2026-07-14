@@ -151,6 +151,7 @@ def test_runtime_grounding_bundle_is_written_for_build_injection(tmp_path: Path)
 
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     assert bundle["artifactKind"] == "agent_grounding_runtime_bundle"
+    assert bundle["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
     assert bundle["injectionPolicy"]["target"] == "AgentGroundingPromptComposer"
     assert bundle["codebaseHome"]["recordCount"] == len(datasets["codebase_home_corpus"])
     assert bundle["codebaseHome"]["selectedFiles"]

@@ -49,6 +49,36 @@ def test_enum_argument_type_is_supported():
     assert not any(f.code == "unsupported_argument_type" for f in report.failures)
 
 
+def test_enum_argument_type_is_supported_when_executor_lists_only_json_primitives():
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="trigger.create",
+                arguments=[
+                    ToolArgumentManifest(
+                        name="schedule",
+                        type="enum",
+                        required=True,
+                        allowedValues=["absolute", "interval", "relative"],
+                    )
+                ],
+            )
+        ]
+    )
+    manifest.agentProtocols.executorOutput["supportedJSONTypes"] = [
+        "array",
+        "bool",
+        "null",
+        "number",
+        "object",
+        "string",
+    ]
+
+    report = validate_manifest(manifest)
+
+    assert not any(f.code == "unsupported_argument_type" for f in report.failures)
+
+
 def test_inferred_tool_argument_contract_is_hard_failure():
     manifest = AgentBehaviorManifest(
         tools=[
@@ -106,6 +136,7 @@ def test_codebase_home_rejects_generated_manifest_self_ingestion():
     dataset = {
         "codebase_home_corpus": [
             {"id": "generated-manifest", "path": "generated/agent_manifest/AgentBehaviorManifest.json"},
+            {"id": "nested-generated", "path": "tools/lumen_manifest_crawler/generated/example.json"},
             {"id": "ios-copy", "path": "ios/Lumen/AgentBehaviorManifest.json"},
         ],
         "codebase_home_sft": [
@@ -121,7 +152,7 @@ def test_codebase_home_rejects_generated_manifest_self_ingestion():
     }
     report = validate_manifest(manifest, dataset)
     failures = [f for f in report.failures if f.code == "generated_output_in_codebase_home"]
-    assert len(failures) == 3
+    assert len(failures) == 4
 
 
 def test_runtime_repair_record_requires_provenance_and_repair_action():

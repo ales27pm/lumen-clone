@@ -5,30 +5,73 @@
   "adapterID": "lumen-executor-adapter",
   "adapterRepoID": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
   "agent": "executor",
+  "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "baseModelID": "Qwen/Qwen3-1.7B",
+  "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+  "baseModelIndexReferencedShardNames": [
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors"
+  ],
+  "baseModelIndexShardBindingSHA256": "c7bc19b0bb18c6b3ac476c4d0c97b9eb3a430cdaf190376d6bb3c0b3369630af",
+  "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+  "baseModelWeightShards": [
+    {
+      "filename": "model-00001-of-00002.safetensors",
+      "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+      "size": 3441185608
+    },
+    {
+      "filename": "model-00002-of-00002.safetensors",
+      "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+      "size": 622329984
+    }
+  ],
   "datasetCard": {
-    "manifestCommit": "7a411137cde14a39db03019a34e89dc51ff40cd4",
+    "evaluation": {
+      "contamination": {
+        "contaminated": false,
+        "matchCount": 0,
+        "promotionRequiresZeroMatches": true,
+        "reportSHA256": "3fd2ddaba403ee39d41cdb68387adc0877b039eebcb58405b165c1dd12d39857"
+      },
+      "executableDeclarativeMetrics": true,
+      "failClosedOnUnknownMetric": true,
+      "frozenEvaluationSHA256": "b4e05ca27a99d487eec2b964c4294437cc555ea0cd4b31aaf3ee4e8cfa690e11",
+      "recordCount": 114,
+      "schemaVersion": "lumen.adapter-eval/1.0.0"
+    },
+    "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "preferenceTraining": {
+      "includedInCheckpoint": false,
+      "recordCount": 6,
+      "requiredPhase": "post_sft_preference_training",
+      "status": "generated_not_trained"
+    },
     "recordCounts": {
       "eval": 114,
-      "train_dpo": 14,
-      "train_sft": 591,
-      "val_dpo": 2,
-      "val_sft": 104
+      "train_dpo": 5,
+      "train_sft": 897,
+      "val_dpo": 1,
+      "val_sft": 167
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
       "approval_boundary_samples",
       "codebase_home_chunk_sft",
       "codebase_home_sft",
-      "cross_model_training",
       "executor_tool_calls",
-      "fleet_system_prompts",
       "manifest_grounding_cards",
-      "self_model_cards",
-      "tool_schema_cards",
-      "train_sft",
-      "validation_sft"
+      "negative_samples",
+      "public_adapter_corpus_massive_en_us_1_1",
+      "public_adapter_corpus_toolace_train",
+      "tool_schema_cards"
     ],
+    "sourceIntegrity": {
+      "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+      "dirtyState": true,
+      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+    },
     "taskTypes": [
       "ambiguous_request",
       "approval_boundary_samples",
@@ -38,20 +81,10 @@
       "codebase_home_grounding",
       "codebase_source_chunk_grounding",
       "executor_tool_calls",
-      "fleet_delegation",
-      "fleet_delegation_preference",
-      "fleet_peer_knowledge",
-      "fleet_peer_source_knowledge",
-      "fleet_private_state_boundary",
-      "fleet_self_knowledge",
-      "fleet_whole_system_identity",
       "manifest_grounding_cards",
       "permission_unavailable",
-      "role_directory",
-      "self_model_card_grounding",
-      "source_code_self_knowledge",
-      "source_routing_knowledge",
-      "source_tool_registry_knowledge",
+      "public_manifest_tool_argument_extraction",
+      "public_verified_tool_argument_extraction",
       "tool_call_generation",
       "tool_id_repair",
       "tool_schema_cards",
@@ -63,13 +96,72 @@
   "expectedArtifacts": {
     "adapterDirectory": "models/lora_qwen3_bootstrap/executor",
     "adapterGGUF": "models/lora_qwen3_gguf/lumen-executor-lora.gguf",
+    "contaminationReport": "contamination_report.json",
     "datasetCard": "dataset_card.json",
     "eval": "eval.jsonl",
+    "evaluationFingerprints": "evaluation_fingerprints.json",
+    "experimentManifest": "experiment_manifest.json",
+    "experimentRoot": "experiments",
     "trainDPO": "train_dpo.jsonl",
     "trainSFT": "train_sft.jsonl",
     "trainingConfig": "unsloth_config.json",
     "validationDPO": "val_dpo.jsonl",
-    "validationSFT": "val_sft.jsonl"
+    "validationSFT": "val_sft.jsonl",
+    "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
+    "variantPathTemplate": "experiments/{variant}"
+  },
+  "expectedRuntimeSourceRevision": null,
+  "experimentPolicy": {
+    "controlledVariables": [
+      "baseModelID",
+      "baseModelRevision",
+      "baseModelIndexDigest",
+      "baseModelIndexReferencedShardNames",
+      "baseModelIndexShardBindingSHA256",
+      "baseModelArtifactDigest",
+      "baseModelWeightShards",
+      "baseModelTokenizerDigest",
+      "trainingEnvironmentLockSHA256",
+      "trainingCodeSHA256",
+      "trainingCodeSHA256ByPhase",
+      "trainingCodeBundleSHA256",
+      "trainingDependencyLockSHA256",
+      "requirementsSHA256",
+      "seed",
+      "trainingConfigSHA256",
+      "frozenEvaluationSHA256",
+      "publicEvaluationBundleSHA256"
+    ],
+    "experimentManifestSHA256": "b996099e6cff83937cfdd13292191fab3ee198f6472ace620f1c8b9c9e1ce280",
+    "promotionContract": {
+      "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
+      "maximumContaminationMatches": 0,
+      "maximumCriticalBoundaryFailures": 0,
+      "maximumCriticalCategoryRegression": 0.02,
+      "minimumWeightedScoreImprovement": 0.01,
+      "promotionSupported": false,
+      "promotionUnsupportedReason": "verifiable_runtime_image_attestation_unavailable",
+      "requiresArtifactDigests": true,
+      "requiresBaselineAndOptimizedContaminationReports": true,
+      "requiresCompleteEvidence": true,
+      "requiresHonestRuntimeSourceBindingAudit": true,
+      "requiresIdenticalTrainingCode": true,
+      "requiresIdenticalTrainingDependencyLock": true,
+      "requiresIdenticalTrainingEnvironment": true,
+      "requiresImmutableBaseModelRevisionAndDigest": true,
+      "requiresPublicEvaluationFingerprintBinding": true,
+      "requiresVerifiedRuntimeImageBinding": true,
+      "runtimePointerPolicy": "unchanged_until_promoted",
+      "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
+      "runtimeSourceRevisionIsAuditOnly": true,
+      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+    },
+    "requiredVariants": [
+      "internal_only",
+      "internal_plus_public_baseline",
+      "internal_plus_public_optimized"
+    ],
+    "runtimePointerPolicy": "unchanged_until_promoted"
   },
   "exportPolicy": {
     "allowMergedExport": true,
@@ -81,6 +173,9 @@
     "rollbackUnit": "adapter"
   },
   "mode": "adapter_first",
+  "observedRepositoryRevision": null,
+  "observedRuntimeRevision": null,
+  "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
   "runtimeBinding": {
     "agentSlot": "executor",
     "fallbackToBaselineAdapter": true,
@@ -88,8 +183,20 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.1.0",
+  "runtimeSourceBindingMethod": "unresolved",
+  "runtimeSourceBindingStatus": "unresolved",
+  "runtimeSourceKind": "unresolved",
+  "runtimeSourceRevision": null,
+  "schemaVersion": "1.4.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
-  "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments."
+  "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
+  "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
+  "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+  "trainingCodeSHA256ByPhase": {
+    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
+    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
+    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+  },
+  "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

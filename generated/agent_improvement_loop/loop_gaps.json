@@ -1,3 +1,1748 @@
 {
-  "gaps": []
+  "gaps": [
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Summary\n[1] - [C0E44F7F] Photos 2026-07 | score=0.28 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.27 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.25 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.25 | Photos (2026-05): 185 items between May\n[2] - [C0E44F7F] Photos 2026-07 | score=0.24 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.23 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.22 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.22 | Photos (2026-05): 185 items between May\n\nKey modules\nNo explicit modules were present in the retrieved snippets unless named above.",
+        "agent": "mouth",
+        "e2eScenario": {
+          "expectedIntent": "rag",
+          "final": "Summary\n[1] - [C0E44F7F] Photos 2026-07 | score=0.28 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.27 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.25 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.25 | Photos (2026-05): 185 items between May\n[2] - [C0E44F7F] Photos 2026-07 | score=0.24 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.23 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.22 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.22 | Photos (2026-05): 185 items between May\n\nKey modules\nNo explicit modules were present in the retrieved snippets unless named above.",
+          "intent": "rag",
+          "metadata": {},
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_model_backed_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Training eval: local knowledge grounding",
+          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Final answer must satisfy the `rag` eval contract without violating tool boundaries."
+        ],
+        "problem": "RAG grounding assertion failed: architecture-notes answer used unrelated photo-library snippets",
+        "repairSample": {
+          "agent": "mouth",
+          "badOutput": "Summary\n[1] - [C0E44F7F] Photos 2026-07 | score=0.28 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.27 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.25 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.25 | Photos (2026-05): 185 items between May\n[2] - [C0E44F7F] Photos 2026-07 | score=0.24 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.23 | Photos (2026-04): 220 items between Ap",
+          "correctedOutput": "Summary\n[1] - [C0E44F7F] Photos 2026-07 | score=0.28 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.27 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.25 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.25 | Photos (2026-05): 185 items between May\n[2] - [C0E44F7F] Photos 2026-07 | score=0.24 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.23 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.22 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.22 | Photos (2026-05): 185 items between May\n\nKey modules\nNo explicit modules were present in the retrieved snippets unless named above.",
+          "curriculum": "grounded_response_quality",
+          "expected": "Final answer must satisfy the `rag` eval contract without violating tool boundaries.",
+          "lesson": "Use failed `rag` E2E prompts and final outputs as next-cycle fine-tuning repair examples.",
+          "promptPrefix": "Search my files for architecture notes and summarize key modules.",
+          "trainable": true,
+          "violationCode": "e2e_response_quality_rag"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Search my files for architecture notes and summarize key modules.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": true,
+        "type": "e2e_response_quality_rag"
+      },
+      "id": "02bf38bebc5af3301d6532ed",
+      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "severity": "error",
+      "title": "e2e_response_quality_rag"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.archive",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.archive approvalBoundary",
+          "prompt": "Archive my latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Archive my latest Outlook email.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Archive my latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "33590fc23b5ce0096bc342dd",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.archive",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.archive direct",
+          "prompt": "Archive my latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Archive my latest Outlook email.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Archive my latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "026894b931f43011d9e60461",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.delete",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.delete alternatePhrasing",
+          "prompt": "Trash the latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Trash the latest Outlook email.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Trash the latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "8d0166d73715d09445c44a3b",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.delete",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.delete approvalBoundary",
+          "prompt": "Delete my latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Delete my latest Outlook email.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Delete my latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "8c09ba11044d113b566a659b",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.delete",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.delete direct",
+          "prompt": "Delete my latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Delete my latest Outlook email.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Delete my latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "b12ba43dab26d00ec5a25ded",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.forward",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.forward alternatePhrasing",
+          "prompt": "Forward the last Outlook email to alex@example.com.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Forward the last Outlook email to alex@example.com.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Forward the last Outlook email to alex@example.com.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "45df025b31693d7c9fe5fcaf",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.forward",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.forward approvalBoundary",
+          "prompt": "Forward my latest Outlook email to alex@example.com.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Forward my latest Outlook email to alex@example.com.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Forward my latest Outlook email to alex@example.com.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "2cbbefdc83eafb40f03f8e6b",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.forward",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.forward direct",
+          "prompt": "Forward my latest Outlook email to alex@example.com.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Forward my latest Outlook email to alex@example.com.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Forward my latest Outlook email to alex@example.com.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "55d71e1476beb99b39380351",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.mark_read",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.mark_read alternatePhrasing",
+          "prompt": "Set the latest Outlook email read.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Set the latest Outlook email read.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Set the latest Outlook email read.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "3235e9dea5ff94780f929f7f",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.mark_read",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.mark_read approvalBoundary",
+          "prompt": "Mark my latest Outlook email as read.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Mark my latest Outlook email as read.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Mark my latest Outlook email as read.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "97d9201091ea22cf88ecca51",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.mark_read",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.mark_read direct",
+          "prompt": "Mark my latest Outlook email as read.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Mark my latest Outlook email as read.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Mark my latest Outlook email as read.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "f7e2bf84860696b36df4f11e",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.mark_unread",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.mark_unread alternatePhrasing",
+          "prompt": "Set the latest Outlook email unread.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Set the latest Outlook email unread.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Set the latest Outlook email unread.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "6688af74bde198b28538d572",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.mark_unread",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.mark_unread approvalBoundary",
+          "prompt": "Mark my latest Outlook email as unread.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Mark my latest Outlook email as unread.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Mark my latest Outlook email as unread.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "3e8608681b3ccfe2af420c79",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.mark_unread",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.mark_unread direct",
+          "prompt": "Mark my latest Outlook email as unread.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Mark my latest Outlook email as unread.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Mark my latest Outlook email as unread.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "11b00be16082df96beba6bba",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.move",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.move alternatePhrasing",
+          "prompt": "Move latest Outlook email to inbox.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Move latest Outlook email to inbox.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Move latest Outlook email to inbox.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "38eb769081ee7b12b6799b4a",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.move",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.move approvalBoundary",
+          "prompt": "Move my latest Outlook email to Inbox.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Move my latest Outlook email to Inbox.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Move my latest Outlook email to Inbox.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "23729b8ea632b2d3877cdd6a",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.move",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.move direct",
+          "prompt": "Move my latest Outlook email to Inbox.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Move my latest Outlook email to Inbox.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Move my latest Outlook email to Inbox.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "93e1b46c67c11454eead3e8b",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.read",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.read alternatePhrasing",
+          "prompt": "Read the last email in Outlook.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Read the last email in Outlook.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Read the last email in Outlook.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "c832236eaafc9c4a12f294bc",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.read",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.read direct",
+          "prompt": "Read my latest Outlook email.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Read my latest Outlook email.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Read my latest Outlook email.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "54061ab356f96b33bf34e8b0",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.read",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "missingArgument",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": "valid_policy_first_evidence",
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": {
+            "agentRunID": "9218973D-3C89-4FD5-80A6-864E71F85A7D",
+            "conversationID": "204E7BBA-6F7C-444C-98F7-7AB21EB15624",
+            "correlationToken": null,
+            "e2eRunID": "BCF95908-684E-4141-9C67-7258A482A0B2",
+            "matchedBy": "correlation",
+            "parseError": null,
+            "rawOutputEmpty": false,
+            "runtimePath": "deterministic-compatibility",
+            "scenarioID": "live-outlook-message-read-missingargument-use-read-outlook-message-but-ask-for-clarification-if-requi",
+            "stage": "compatibility-tool-action",
+            "turnID": "80456595-2FBD-475D-B8CE-AC5A95EAB949"
+          },
+          "name": "Live outlook.message.read missingArgument",
+          "prompt": "Use Read Outlook Message, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Use Read Outlook Message, but ask for clarification if required details are missing.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Use Read Outlook Message, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "6638b1805f3e8da4683c04ef",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.reply",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.reply alternatePhrasing",
+          "prompt": "Respond to my latest Outlook email saying thanks.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Respond to my latest Outlook email saying thanks.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Respond to my latest Outlook email saying thanks.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "56c9f79530a3e45a7de70a55",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.reply",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.reply approvalBoundary",
+          "prompt": "Reply to my latest Outlook email saying approved.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Reply to my latest Outlook email saying approved.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Reply to my latest Outlook email saying approved.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "1937e6bcb73c56af69ababe2",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.reply",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.reply direct",
+          "prompt": "Reply to my latest Outlook email saying thanks.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Reply to my latest Outlook email saying thanks.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Reply to my latest Outlook email saying thanks.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "f97571991363db768adebe22",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.reply_all",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.reply_all alternatePhrasing",
+          "prompt": "Respond to all on my latest Outlook email saying thanks.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Respond to all on my latest Outlook email saying thanks.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Respond to all on my latest Outlook email saying thanks.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "09c012390cab9fa0f5834ef9",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.reply_all",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "approvalBoundary",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.reply_all approvalBoundary",
+          "prompt": "Reply all to my latest Outlook email saying approved.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Reply all to my latest Outlook email saying approved.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Reply all to my latest Outlook email saying approved.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "db91906fe4915f89530032b9",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.message.reply_all",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mimicry,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.message.reply_all direct",
+          "prompt": "Reply all to my latest Outlook email saying thanks.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Reply all to my latest Outlook email saying thanks.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Reply all to my latest Outlook email saying thanks.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "f1e971896ae056a631f415f7",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.messages.list",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.messages.list alternatePhrasing",
+          "prompt": "Show recent Outlook mail.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Show recent Outlook mail.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Show recent Outlook mail.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "1cacf19e52ffe8c2d2e1922a",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.messages.list",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.messages.list direct",
+          "prompt": "List my latest Outlook emails.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "List my latest Outlook emails.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "List my latest Outlook emails.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "69dbac7baa85cbf522834224",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.messages.list",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "missingArgument",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": "valid_policy_first_evidence",
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": {
+            "agentRunID": "785FEDAC-E179-41B5-A5CE-CF80AEE02E73",
+            "conversationID": "7CE6FB5B-20F7-4DF5-867F-C986C5282C37",
+            "correlationToken": null,
+            "e2eRunID": "6724C255-281C-4F0C-8CEB-4779C0BAB7AD",
+            "matchedBy": "correlation",
+            "parseError": null,
+            "rawOutputEmpty": false,
+            "runtimePath": "deterministic-compatibility",
+            "scenarioID": "live-outlook-messages-list-missingargument-use-list-outlook-messages-but-ask-for-clarification-if-req",
+            "stage": "compatibility-tool-action",
+            "turnID": "AB11A3A0-9820-4BEA-B8D4-9CB86DE4DF58"
+          },
+          "name": "Live outlook.messages.list missingArgument",
+          "prompt": "Use List Outlook Messages, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Use List Outlook Messages, but ask for clarification if required details are missing.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Use List Outlook Messages, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "eccac97682f1aa5fca959f46",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.messages.search",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "alternatePhrasing",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.messages.search alternatePhrasing",
+          "prompt": "Find invoice emails in Outlook.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Find invoice emails in Outlook.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Find invoice emails in Outlook.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "34e2ed46f6f8be6415afe2a0",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.messages.search",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "direct",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": null,
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": null,
+          "name": "Live outlook.messages.search direct",
+          "prompt": "Search Outlook for messages about invoices.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Search Outlook for messages about invoices.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Search Outlook for messages about invoices.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "0c9d67e19fb0e2ecba02b41a",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    },
+    {
+      "category": "runtime_drift",
+      "evidence": {
+        "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+        "agent": "rem",
+        "e2eScenario": {
+          "expectedIntent": "outlook",
+          "final": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "intent": "outlook",
+          "metadata": {
+            "actionable": "false",
+            "expectedToolID": "outlook.messages.search",
+            "failureKind": "outlookRuntimeUnavailable",
+            "requiredSlots": "cortex,executor,mouth",
+            "runtimeEvidence": "tool-configuration-unavailable",
+            "scenarioBankKind": "missingArgument",
+            "trainingSignal": "false"
+          },
+          "modelEvidenceRootCause": "valid_policy_first_evidence",
+          "modelEvidenceStatus": "valid_policy_first_evidence",
+          "modelEvidenceTrace": {
+            "agentRunID": "5983237B-E2F3-452C-83B7-D07FE9059CE9",
+            "conversationID": "8E8ADF6D-4DA2-4B30-9650-DC21C4A74F32",
+            "correlationToken": null,
+            "e2eRunID": "EE1DA0E1-7373-458B-988C-A8DAC75028AC",
+            "matchedBy": "correlation",
+            "parseError": null,
+            "rawOutputEmpty": false,
+            "runtimePath": "deterministic-compatibility",
+            "scenarioID": "live-outlook-messages-search-missingargument-use-search-outlook-messages-but-ask-for-clarification-if",
+            "stage": "compatibility-tool-action",
+            "turnID": "ECDFFDEF-4254-42A4-A323-9FEE3130D41B"
+          },
+          "name": "Live outlook.messages.search missingArgument",
+          "prompt": "Use Search Outlook Messages, but ask for clarification if required details are missing.",
+          "requiredHint": null,
+          "skippedLiveModelRun": false
+        },
+        "expected": [
+          "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures."
+        ],
+        "problem": "Runtime infrastructure unavailable: Outlook configuration unavailable.",
+        "repairSample": {
+          "agent": "rem",
+          "badOutput": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
+          "correctedOutput": "Defer the live training run until the executor runtime, adapter, and resource budget are ready, keep the exact preflight reason in diagnostics, and do not add this prompt/final pair to response-quality training data.",
+          "curriculum": "runtime_environment_diagnostics",
+          "expected": "Runtime-budget, adapter-availability, or device-environment preflight failures must be exported as diagnostics, not as model-quality or fine-tuning failures.",
+          "lesson": "Resource-budget, adapter-availability, and thermal preflight failures are device/runtime scheduling diagnostics; keep them out of response-quality fine-tuning samples.",
+          "promptPrefix": "Use Search Outlook Messages, but ask for clarification if required details are missing.",
+          "trainable": false,
+          "violationCode": "e2e_runtime_environment_deferred"
+        },
+        "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
+        "scenario": "Use Search Outlook Messages, but ask for clarification if required details are missing.",
+        "sourceLayer": "e2eTestReport.evidenceLayer",
+        "trainable": false,
+        "type": "e2e_runtime_environment_deferred"
+      },
+      "id": "9cc19bc5f3a4c2408213d961",
+      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
+      "severity": "error",
+      "title": "e2e_runtime_environment_deferred"
+    }
+  ]
 }

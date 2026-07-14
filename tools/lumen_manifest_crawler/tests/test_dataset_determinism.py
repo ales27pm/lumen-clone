@@ -16,8 +16,15 @@ def test_deterministic_datasets_omit_commit_lineage_fields():
     first_train_record = _first_compiled_record(datasets)
 
     assert dataset_manifest["manifest"]["commit"] is None
+    assert dataset_manifest["manifest"]["sourceIntegrity"] == {
+        "baseCommit": None,
+        "workingTreeDigest": manifest.sourceIntegrity.workingTreeDigest,
+        "dirtyState": None,
+    }
     assert first_train_record["metadata"]["manifestCommit"] is None
+    assert first_train_record["metadata"]["sourceIntegrity"] == dataset_manifest["manifest"]["sourceIntegrity"]
     assert first_train_record["grounding"]["sourceIntegrityCommit"] is None
+    assert first_train_record["grounding"]["sourceIntegrity"] == dataset_manifest["manifest"]["sourceIntegrity"]
 
 
 def test_non_deterministic_datasets_include_commit_lineage_fields():
@@ -28,5 +35,8 @@ def test_non_deterministic_datasets_include_commit_lineage_fields():
     first_train_record = _first_compiled_record(datasets)
 
     assert dataset_manifest["manifest"]["commit"] == manifest.sourceIntegrity.commit
+    assert dataset_manifest["manifest"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
     assert first_train_record["metadata"]["manifestCommit"] == manifest.sourceIntegrity.commit
+    assert first_train_record["metadata"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
     assert first_train_record["grounding"]["sourceIntegrityCommit"] == manifest.sourceIntegrity.commit
+    assert first_train_record["grounding"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()

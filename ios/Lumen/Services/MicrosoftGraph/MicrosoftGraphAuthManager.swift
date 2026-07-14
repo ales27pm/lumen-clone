@@ -51,10 +51,13 @@ final class MicrosoftGraphAuthManager {
     }
 
     func bootstrap() async {
+        lastError = nil
         await reloadCachedAccounts()
+        guard lastError == nil else { return }
         guard let first = accounts.first else { return }
         do {
             _ = try await acquireToken(scopes: MicrosoftGraphScope.inboxRead, preferredAccountID: first.id, forceRefresh: false)
+            lastError = nil
         } catch {
             lastError = error
             logger.info("Silent Microsoft token bootstrap failed: \(String(describing: error), privacy: .private)")
@@ -125,6 +128,7 @@ final class MicrosoftGraphAuthManager {
                 token = mapped
                 tokensByScopeSet[Self.scopeCacheKey(for: scopes)] = mapped
                 account = Self.snapshot(from: result.account)
+                lastError = nil
                 return mapped.accessToken
             } catch let error as NSError where Self.isInteractionRequired(error) {
                 token = nil
@@ -147,6 +151,7 @@ final class MicrosoftGraphAuthManager {
                 account = session.account
                 accounts = [session.account]
             }
+            lastError = nil
             return mapped.accessToken
         } catch {
             lastError = error
