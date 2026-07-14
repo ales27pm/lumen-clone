@@ -147,7 +147,9 @@ def _validate_lora_config(
 
     raw_targets = config.get("target_modules")
     target_modules: list[str] | None
-    if raw_targets is None or isinstance(raw_targets, str) and raw_targets.strip():
+    if raw_targets is None or (
+        isinstance(raw_targets, str) and raw_targets.strip()
+    ):
         target_modules = None
     elif isinstance(raw_targets, list) and raw_targets and all(
         isinstance(target, str) and target.strip() for target in raw_targets

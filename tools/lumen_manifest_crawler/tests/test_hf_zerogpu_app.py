@@ -316,7 +316,7 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
         "pythonVersion": "3.10",
         "cudaVersion": "12.8",
-        "packageVersions": {"torch": "2.8.0"},
+        "packageVersions": {"torch": "2.9.1"},
         "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
         "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",

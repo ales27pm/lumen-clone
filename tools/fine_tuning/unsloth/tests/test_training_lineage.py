@@ -143,6 +143,23 @@ def test_dependency_lock_covers_every_direct_requirement() -> None:
     }
 
     assert names == {*lock["packageVersions"], "unsloth"}
+    assert {
+        name: lock["packageVersions"][name]
+        for name in ("torch", "torchvision", "torchaudio")
+    } == {
+        "torch": "2.9.1",
+        "torchvision": "0.24.1",
+        "torchaudio": "2.9.1",
+    }
+    assert {
+        name: lock["packageVersions"][name]
+        for name in ("transformers", "gradio", "trackio", "huggingface_hub")
+    } == {
+        "transformers": "4.57.6",
+        "gradio": "6.17.3",
+        "trackio": "0.20.2",
+        "huggingface_hub": "0.36.2",
+    }
     assert lock["requirementsSHA256"] == training_lineage.file_sha256(requirements)
     assert lock["trainingDependencyLockSHA256"] == training_lineage.canonical_sha256(
         {

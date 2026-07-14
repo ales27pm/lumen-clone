@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "632b426772b868d15df3b401a2c603e759cad78efb1548328a1bb2ece6b3c532"
+      "reportSHA256": "aecfe2b6a290db3caa4293290568c76e222843cfd8a58d6cf9c89713797c573d"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "5ff54e7a766efecec05a8c83b3658bd5c64e3d83b7cf91029c4d33e648c497e2",
-      "optimizedTrainingCorpusSHA256": "0d5b36070da471b40f38de311052c9abb1a6b2670fbdb03ac69121fffcf6de5e",
+      "baselineTrainingCorpusSHA256": "577103e38fb8a9da5b1cf8c069b78229ff8a08718c49fe958a3d1c825edc2fdf",
+      "optimizedTrainingCorpusSHA256": "50c25bb228c332303664fb53031215ddc3d29e2e921bf390f66766f2fc7a162f",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 1051,
@@ -52,7 +52,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "e545992a1450f446d3ccc197f731a8fac569f01027ced6cc5a3c2063eb4581d8",
+    "experimentManifestSHA256": "44a62ca73754e23159fde64f5b888bb023cb45442301a01e28b617d1756e5259",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -82,7 +82,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "c9d7b8770cb2eb057f287ee0e968cc3a722a1f76",
+  "manifestCommit": "22600a30707c25bd0fcbc0480e868f6605dba13f",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 19,
