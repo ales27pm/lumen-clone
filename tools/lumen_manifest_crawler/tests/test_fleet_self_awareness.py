@@ -19,6 +19,9 @@ def test_fleet_artifacts_include_source_code_map_and_whole_system_records():
     first_prompt = next(iter(artifacts.system_prompts.values()))
     payload = first_prompt["contextPayload"]
     assert "sourceCodeMap" in payload
+    assert payload["sourceCodeMap"]["baseCommit"] == manifest.sourceIntegrity.baseCommit
+    assert payload["sourceCodeMap"]["workingTreeDigest"] == manifest.sourceIntegrity.workingTreeDigest
+    assert payload["sourceCodeMap"]["dirtyState"] == manifest.sourceIntegrity.dirtyState
     assert payload["sourceCodeMap"]["fileCount"] == len(manifest.sourceIntegrity.files)
     assert payload["sourceCodeMap"]["boundary"]
     assert "source_code_map" in first_prompt
@@ -88,6 +91,7 @@ def test_native_fleet_orchestration_is_fleet_owned_and_manifest_grounded():
         assert record["sourceFamily"] == "fleet_orchestration_native"
         assert record["metadata"]["sourceClass"] == "lumen_native_manifest_derived"
         assert record["metadata"]["derivedFrom"] == "AgentBehaviorManifest"
+        assert record["metadata"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
         assert "publicCorpus" not in record
         assert "publicCorpus" not in record["metadata"]
 

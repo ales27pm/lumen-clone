@@ -20,8 +20,60 @@ public struct ManifestAppInfo: Codable, Hashable, Sendable {
 }
 
 public struct ManifestSourceIntegrity: Codable, Hashable, Sendable {
-    public let commit: String?
+    public let baseCommit: String?
+    public let workingTreeDigest: String?
+    public let dirtyState: Bool?
     public let files: [ManifestSourceFileHash]
+
+    /// Compatibility accessor for code that predates the explicit base-commit
+    /// provenance contract.
+    public var commit: String? { baseCommit }
+
+    private enum CodingKeys: String, CodingKey {
+        case baseCommit
+        case legacyCommit = "commit"
+        case workingTreeDigest
+        case dirtyState
+        case files
+    }
+
+    public init(
+        baseCommit: String?,
+        workingTreeDigest: String?,
+        dirtyState: Bool?,
+        files: [ManifestSourceFileHash]
+    ) {
+        self.baseCommit = baseCommit
+        self.workingTreeDigest = workingTreeDigest
+        self.dirtyState = dirtyState
+        self.files = files
+    }
+
+    public init(commit: String?, files: [ManifestSourceFileHash]) {
+        self.init(
+            baseCommit: commit,
+            workingTreeDigest: nil,
+            dirtyState: nil,
+            files: files
+        )
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        baseCommit = try container.decodeIfPresent(String.self, forKey: .baseCommit)
+            ?? container.decodeIfPresent(String.self, forKey: .legacyCommit)
+        workingTreeDigest = try container.decodeIfPresent(String.self, forKey: .workingTreeDigest)
+        dirtyState = try container.decodeIfPresent(Bool.self, forKey: .dirtyState)
+        files = try container.decodeIfPresent([ManifestSourceFileHash].self, forKey: .files) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(baseCommit, forKey: .baseCommit)
+        try container.encodeIfPresent(workingTreeDigest, forKey: .workingTreeDigest)
+        try container.encodeIfPresent(dirtyState, forKey: .dirtyState)
+        try container.encode(files, forKey: .files)
+    }
 }
 
 public struct ManifestSourceFileHash: Codable, Hashable, Sendable {

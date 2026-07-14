@@ -144,9 +144,16 @@ entrypoint, or Python runtime from drifting independently of the training lineag
 ZeroGPU creates the Space, immutable dataset repository, and adapter/model repository as private
 unless the operator explicitly selects the corresponding `--public-space`, `--public-dataset`, or
 `--public-adapters` override. Making the Space public never bypasses application-level admin-token
-authorization. The builder updates and reads back the actual visibility of all three repositories
-before uploading, including repositories that already existed. The browser page is status-only;
+authorization. The builder reads back all three repositories before uploading. It creates new
+repositories at the requested visibility, reuses matching existing repositories, and refuses an
+existing visibility mismatch before mutation unless the matching
+`--confirm-*-visibility-change` migration flag is explicit. The browser page is status-only;
 training is invoked through the authenticated machine endpoint.
+
+ZeroGPU execution binds decorator-selected size and duration plus a runtime-observed CUDA inventory
+into trained lineage and controlled comparisons. The installed dependency tree is hashed once at
+Space startup, before a GPU lease, then reused by child trainers only through a process-local HMAC
+cache attestation. A standalone trainer without that authorization performs its own full scan.
 
 The one-click launcher requires `LUMEN_ZERO_GPU_RESUME_BATCH` when a resumable run contains more
 than one agent batch. It invokes only that explicit batch and rejects an ambiguous general resume.

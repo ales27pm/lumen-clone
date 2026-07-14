@@ -41,14 +41,19 @@
     "self_model_eval": "499bf7a5f7fc33c617d4029c087f9f32e9865ec48d0dffc571bcfac5f06355aa",
     "self_model_sft": "09b7b0f9d07b0103055b38c8636090f469ddf8ddcd37e162b3e47d5891c0850d",
     "tool_schema_cards": "8c92f99091fe0ff2af83ee0041976671287aaa115404742010de29dd0367b60c",
-    "train_sft": "f7696f1455c9f67da3ebb6d6dadf53cfa8e8b203fce56b4774ff1c64ec28af5d",
-    "validation_sft": "f823100a5c83edd193af6431cdc3fde0185cf187fafb785f85b05e50550b25d2"
+    "train_sft": "a78cd696292d3673a884572cc91baad201b49e223cf76719656dfd102077c1a1",
+    "validation_sft": "501023f89bf7b2415d87cface980a2d2ae79d9f465465dd0242fc87d2334a88a"
   },
   "manifest": {
     "commit": null,
     "intentCount": 22,
     "modelSlotCount": 6,
     "schemaVersion": "1.0.0",
+    "sourceIntegrity": {
+      "baseCommit": null,
+      "dirtyState": null,
+      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+    },
     "toolCount": 53
   },
   "schemaVersion": "2.0.0",

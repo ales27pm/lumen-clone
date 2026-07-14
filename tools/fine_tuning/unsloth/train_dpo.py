@@ -56,6 +56,9 @@ REQUIRED_CONFIG_KEYS = {
     "trainingDependencyLock",
     "trainingDependencyLockSHA256",
     "requirementsSHA256",
+    "zeroGPUSize",
+    "zeroGPUDurationSeconds",
+    "observedAccelerator",
     "runtimeSourceKind",
     "runtimeSourceRevision",
     "expectedRuntimeSourceRevision",
@@ -665,6 +668,9 @@ def _verified_sft_parent(
         "resolvedTrainingEnvironmentSHA256": finalized[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": finalized.get("zeroGPUSize"),
+        "zeroGPUDurationSeconds": finalized.get("zeroGPUDurationSeconds"),
+        "observedAccelerator": finalized.get("observedAccelerator"),
     }
     return finalized, adapter_manifest, parent_audit_lineage
 

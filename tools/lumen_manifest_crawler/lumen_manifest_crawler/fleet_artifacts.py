@@ -160,7 +160,11 @@ def generate_manifest_markdown(manifest: AgentBehaviorManifest) -> str:
     lines.append(f"# {manifest.app.name} Agent Behavior Manifest")
     lines.append("")
     lines.append("## Source Integrity")
-    lines.append(f"- Commit: `{manifest.sourceIntegrity.commit or 'unknown'}`")
+    lines.append(f"- Base commit: `{manifest.sourceIntegrity.baseCommit or 'unknown'}`")
+    lines.append(
+        f"- Working-tree digest: `{manifest.sourceIntegrity.workingTreeDigest or 'unknown'}`"
+    )
+    lines.append(f"- Dirty source state: `{manifest.sourceIntegrity.dirtyState}`")
     lines.append(f"- Source files: {len(manifest.sourceIntegrity.files)}")
     if source_map["files"]:
         lines.append("- Source map:")
@@ -785,6 +789,8 @@ def _native_orchestration_metadata(manifest: AgentBehaviorManifest, scenario_id:
     return {
         "sourceClass": "lumen_native_manifest_derived",
         "derivedFrom": "AgentBehaviorManifest",
+        "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+        # Compatibility for consumers of the pre-source-snapshot schema.
         "manifestCommit": manifest.sourceIntegrity.commit,
         "scenarioID": scenario_id,
         "eventGraphSchemaVersion": "1.0.0",
@@ -821,6 +827,8 @@ def _source_code_self_knowledge_records(manifest: AgentBehaviorManifest, slot: M
     payload = {
         "slotID": slot.id,
         "slotSource": _slot_source_payload(slot),
+        "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
+        # Compatibility for existing training-record consumers.
         "sourceIntegrityCommit": manifest.sourceIntegrity.commit,
         "sourceFiles": source_map["files"],
         "domains": source_map["domains"],
@@ -1091,7 +1099,7 @@ def _source_code_map(manifest: AgentBehaviorManifest) -> dict[str, Any]:
         source = slot.source or "unknown"
         source_to_slots.setdefault(source, []).append(slot.id)
     return {
-        "commit": manifest.sourceIntegrity.commit,
+        **manifest.sourceIntegrity.lineage_dict(),
         "fileCount": len(files),
         "files": files,
         "domains": dict(sorted(domains.items())),

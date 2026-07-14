@@ -158,6 +158,9 @@ _NON_TRAINING_CONFIG_FIELDS = {
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
     "spaceConfigurationSHA256",
+    "zeroGPUSize",
+    "zeroGPUDurationSeconds",
+    "observedAccelerator",
 }
 
 RUNTIME_SOURCE_AUDIT_FIELDS = (
@@ -168,6 +171,11 @@ RUNTIME_SOURCE_AUDIT_FIELDS = (
     "observedRuntimeRevision",
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
+)
+ZERO_GPU_LINEAGE_FIELDS = (
+    "zeroGPUSize",
+    "zeroGPUDurationSeconds",
+    "observedAccelerator",
 )
 RUNTIME_SOURCE_BINDING_UNRESOLVED = "unresolved"
 RUNTIME_SOURCE_BINDING_SPACE_UNVERIFIED = "operator_declared_unverified"
@@ -473,6 +481,58 @@ def _valid_space_configuration_lineage(value: Mapping[str, Any]) -> bool:
     return False
 
 
+def _valid_hardware_lineage(value: Mapping[str, Any], *, pending: bool) -> bool:
+    size = value.get("zeroGPUSize")
+    duration = value.get("zeroGPUDurationSeconds")
+    accelerator = value.get("observedAccelerator")
+    if pending:
+        return size is None and duration is None and accelerator is None
+    if value.get("runtimeSourceKind") == "huggingface_space":
+        if (
+            size not in _TRAINING_LINEAGE.ZERO_GPU_ALLOWED_SIZES
+            or type(duration) is not int
+            or duration <= 0
+        ):
+            return False
+    elif value.get("runtimeSourceKind") == "git":
+        if size is not None or duration is not None:
+            return False
+    else:
+        return False
+    if (
+        not isinstance(accelerator, Mapping)
+        or set(accelerator) != {
+            "bindingStatus",
+            "backend",
+            "deviceCount",
+            "devices",
+        }
+        or accelerator.get("bindingStatus") != "runtime_observed_unverified"
+        or accelerator.get("backend") != "cuda"
+        or type(accelerator.get("deviceCount")) is not int
+        or accelerator["deviceCount"] <= 0
+        or not isinstance(accelerator.get("devices"), list)
+        or len(accelerator["devices"]) != accelerator["deviceCount"]
+    ):
+        return False
+    for index, device in enumerate(accelerator["devices"]):
+        if (
+            not isinstance(device, Mapping)
+            or set(device)
+            != {"index", "name", "totalMemoryBytes", "computeCapability"}
+            or device.get("index") != index
+            or not isinstance(device.get("name"), str)
+            or not device["name"].strip()
+            or type(device.get("totalMemoryBytes")) is not int
+            or device["totalMemoryBytes"] <= 0
+            or not isinstance(device.get("computeCapability"), list)
+            or len(device["computeCapability"]) != 2
+            or any(type(item) is not int or item < 0 for item in device["computeCapability"])
+        ):
+            return False
+    return True
+
+
 def _valid_sft_parent_audit_lineage(
     lineage: Any,
     *,
@@ -503,6 +563,7 @@ def _valid_sft_parent_audit_lineage(
         or not _is_sha256(lineage.get("trainingEnvironmentSHA256"))
         or not _valid_runtime_source_audit(lineage, pending=False)
         or not _valid_space_configuration_lineage(lineage)
+        or not _valid_hardware_lineage(lineage, pending=False)
     ):
         return False
     runtime_kind = manifest.get("runtimeSourceKind")
@@ -554,6 +615,9 @@ def default_training_lineage_contract() -> dict[str, Any]:
         "observedRuntimeRevision": None,
         "runtimeSourceBindingStatus": RUNTIME_SOURCE_BINDING_UNRESOLVED,
         "runtimeSourceBindingMethod": RUNTIME_SOURCE_BINDING_UNRESOLVED,
+        "zeroGPUSize": None,
+        "zeroGPUDurationSeconds": None,
+        "observedAccelerator": None,
     }
 
 
@@ -1128,6 +1192,21 @@ def score_evaluation_suite(
         ),
         "resolvedTrainingEnvironmentSHA256": (
             variant_manifest.get("resolvedTrainingEnvironmentSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "zeroGPUSize": (
+            variant_manifest.get("zeroGPUSize")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "zeroGPUDurationSeconds": (
+            variant_manifest.get("zeroGPUDurationSeconds")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "observedAccelerator": (
+            variant_manifest.get("observedAccelerator")
             if isinstance(variant_manifest, Mapping)
             else None
         ),
@@ -2098,6 +2177,17 @@ def build_experiment_variant_manifest(
         raise ValueError(
             "Pending variant manifests require unresolved runtime-source audit fields"
         )
+    hardware_lineage = {
+        field: training_config.get(field, default_lineage.get(field))
+        for field in ZERO_GPU_LINEAGE_FIELDS
+    }
+    if not _valid_hardware_lineage(
+        {**runtime_source, **hardware_lineage},
+        pending=True,
+    ):
+        raise ValueError(
+            "Pending variant manifests must not claim observed training hardware"
+        )
     environment_lock_sha256 = canonical_sha256(environment_lock)
     upgraded_eval = [upgrade_evaluation_record(record) for record in evaluation_records]
     contamination = dict(contamination_report or build_contamination_report(
@@ -2144,6 +2234,7 @@ def build_experiment_variant_manifest(
         "requirementsSHA256": requirements_digest,
         "resolvedTrainingEnvironment": None,
         "resolvedTrainingEnvironmentSHA256": None,
+        **hardware_lineage,
         **runtime_source,
         "seed": seed,
         "controlledTrainingConfig": controlled_config,
@@ -2357,6 +2448,10 @@ def finalize_experiment_variant_manifest(
         "spaceConfigurationSHA256",
         None,
     )
+    hardware_lineage = {
+        field: environment.get(field)
+        for field in ZERO_GPU_LINEAGE_FIELDS
+    }
     resolved_environment = environment.get("resolvedTrainingEnvironment")
     resolved_environment_sha256 = environment.get(
         "resolvedTrainingEnvironmentSHA256"
@@ -2387,6 +2482,7 @@ def finalize_experiment_variant_manifest(
         **runtime_source,
         "spaceConfigurationSHA256": space_configuration_sha256,
         "resolvedTrainingEnvironmentSHA256": resolved_environment_sha256,
+        **hardware_lineage,
     }
     if not _valid_runtime_source_audit(runtime_source, pending=False):
         raise ValueError(
@@ -2395,6 +2491,10 @@ def finalize_experiment_variant_manifest(
     if not _valid_space_configuration_lineage(runtime_lineage):
         raise ValueError(
             "training_environment must bind the deployed Space configuration"
+        )
+    if not _valid_hardware_lineage(runtime_lineage, pending=False):
+        raise ValueError(
+            "training_environment must bind the observed training accelerator"
         )
     if training_phase == "sft_dpo" and (
         not isinstance(parent_sft_lineage, Mapping)
@@ -2413,6 +2513,7 @@ def finalize_experiment_variant_manifest(
             "trainingDependencyLockSHA256"
         ),
         expected_requirements_sha256=manifest.get("requirementsSHA256"),
+        expected_runtime_source_kind=runtime_source.get("runtimeSourceKind"),
     ):
         raise ValueError(
             "training_environment must match the manifest lock and declare an unverified immutable container digest"
@@ -2428,6 +2529,7 @@ def finalize_experiment_variant_manifest(
     finalized["spaceConfigurationSHA256"] = space_configuration_sha256
     finalized["resolvedTrainingEnvironment"] = resolved_environment
     finalized["resolvedTrainingEnvironmentSHA256"] = resolved_environment_sha256
+    finalized.update(hardware_lineage)
     finalized.update(runtime_source)
     finalized["artifact"] = {
         "status": "trained",
@@ -2447,6 +2549,7 @@ def finalize_experiment_variant_manifest(
         "requirementsSHA256": manifest["requirementsSHA256"],
         "resolvedTrainingEnvironmentSHA256": resolved_environment_sha256,
         "spaceConfigurationSHA256": space_configuration_sha256,
+        **hardware_lineage,
         **runtime_source,
         "evaluationReportSHA256": None,
     }
@@ -2691,6 +2794,7 @@ def decide_adapter_promotion(
             "requirementsSHA256",
             "resolvedTrainingEnvironment",
             "resolvedTrainingEnvironmentSHA256",
+            *ZERO_GPU_LINEAGE_FIELDS,
             "spaceConfigurationSHA256",
             "seed",
             "trainingConfigSHA256",
@@ -2821,6 +2925,13 @@ def decide_adapter_promotion(
         "resolvedTrainingEnvironmentSHA256": optimized_variant_manifest.get(
             "resolvedTrainingEnvironmentSHA256"
         ),
+        "zeroGPUSize": optimized_variant_manifest.get("zeroGPUSize"),
+        "zeroGPUDurationSeconds": optimized_variant_manifest.get(
+            "zeroGPUDurationSeconds"
+        ),
+        "observedAccelerator": optimized_variant_manifest.get(
+            "observedAccelerator"
+        ),
         "spaceConfigurationSHA256": optimized_variant_manifest.get(
             "spaceConfigurationSHA256"
         ),
@@ -2871,6 +2982,7 @@ def _valid_evaluation_report(
         and _is_sha256(report.get("requirementsSHA256"))
         and _is_sha256(report.get("resolvedTrainingEnvironmentSHA256"))
         and _valid_space_configuration_lineage(report)
+        and _valid_hardware_lineage(report, pending=False)
         and _valid_runtime_source_audit(report, pending=False)
         and _is_sha256(report.get("artifactSHA256"))
         and report.get("promotionEvidenceBound") is True
@@ -2997,12 +3109,17 @@ def _valid_dpo_training_lineage(
         "resolvedTrainingEnvironmentSHA256": manifest.get(
             "resolvedTrainingEnvironmentSHA256"
         ),
+        **{
+            field: manifest.get(field)
+            for field in ZERO_GPU_LINEAGE_FIELDS
+        },
     }
     if preference_runtime != expected_preference_runtime:
         return False
     if (
         not _valid_runtime_source_audit(preference_runtime, pending=False)
         or not _valid_space_configuration_lineage(preference_runtime)
+        or not _valid_hardware_lineage(preference_runtime, pending=False)
     ):
         return False
 
@@ -3153,6 +3270,13 @@ def _valid_variant_manifest(
         and _valid_training_dependency_lineage(manifest)
         and _valid_runtime_source_lineage(manifest)
         and _valid_space_configuration_lineage(manifest)
+        and _valid_hardware_lineage(
+            manifest,
+            pending=(
+                isinstance(artifact, Mapping)
+                and artifact.get("status") == "pending_training"
+            ),
+        )
         and (
             (
                 manifest.get("trainingEnvironment") is None
@@ -3174,6 +3298,9 @@ def _valid_variant_manifest(
                     expected_requirements_sha256=manifest.get(
                         "requirementsSHA256"
                     ),
+                    expected_runtime_source_kind=manifest.get(
+                        "runtimeSourceKind"
+                    ),
                 )
                 and canonical_sha256(dict(manifest["trainingEnvironment"]))
                 == manifest.get("trainingEnvironmentSHA256")
@@ -3184,6 +3311,11 @@ def _valid_variant_manifest(
                 and manifest.get("resolvedTrainingEnvironmentSHA256")
                 == manifest["trainingEnvironment"].get(
                     "resolvedTrainingEnvironmentSHA256"
+                )
+                and all(
+                    manifest["trainingEnvironment"].get(field)
+                    == manifest.get(field)
+                    for field in ZERO_GPU_LINEAGE_FIELDS
                 )
             )
         )
@@ -3231,6 +3363,10 @@ def _valid_variant_manifest(
         == manifest.get("spaceConfigurationSHA256")
         and all(
             artifact.get(field) == manifest.get(field)
+            for field in ZERO_GPU_LINEAGE_FIELDS
+        )
+        and all(
+            artifact.get(field) == manifest.get(field)
             for field in RUNTIME_SOURCE_AUDIT_FIELDS
         )
         and (
@@ -3268,6 +3404,7 @@ def _valid_training_environment(
     expected_training_code_sha256: Any | None = None,
     expected_dependency_lock_sha256: Any | None = None,
     expected_requirements_sha256: Any | None = None,
+    expected_runtime_source_kind: Any | None = None,
 ) -> bool:
     provenance = (
         environment.get("containerImageDigestSource"),
@@ -3290,6 +3427,9 @@ def _valid_training_environment(
             "requirementsSHA256",
             "resolvedTrainingEnvironment",
             "resolvedTrainingEnvironmentSHA256",
+            "zeroGPUSize",
+            "zeroGPUDurationSeconds",
+            "observedAccelerator",
         }
         and environment.get("schemaVersion")
         == "lumen.adapter-training-environment/1.0.0"
@@ -3319,6 +3459,19 @@ def _valid_training_environment(
         )
         and isinstance(environment.get("resolvedTrainingEnvironment"), Mapping)
         and _valid_resolved_training_environment_lineage(environment)
+        and (
+            expected_runtime_source_kind is None
+            or _valid_hardware_lineage(
+                {
+                    "runtimeSourceKind": expected_runtime_source_kind,
+                    **{
+                        field: environment.get(field)
+                        for field in ZERO_GPU_LINEAGE_FIELDS
+                    },
+                },
+                pending=False,
+            )
+        )
         and provenance == ("operator_declared", "manual_validation_required", False)
     )
 
@@ -3363,6 +3516,10 @@ def _report_matches_variant(
         == manifest.get("spaceConfigurationSHA256")
         and all(
             report.get(field) == manifest.get(field)
+            for field in ZERO_GPU_LINEAGE_FIELDS
+        )
+        and all(
+            report.get(field) == manifest.get(field)
             for field in RUNTIME_SOURCE_AUDIT_FIELDS
         )
         and report.get("promotionEvidenceBound") is True
@@ -3391,6 +3548,7 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
             "trainingDependencyLockSHA256",
             "requirementsSHA256",
             "resolvedTrainingEnvironmentSHA256",
+            *ZERO_GPU_LINEAGE_FIELDS,
             "spaceConfigurationSHA256",
             "seed",
             "trainingConfigSHA256",
@@ -3403,6 +3561,20 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
     )
     lineage["preferenceTrainer"] = (
         artifact.get("preferenceTrainer") if isinstance(artifact, Mapping) else None
+    )
+    dpo_training = manifest.get("dpoTraining")
+    parent_lineage = (
+        dpo_training.get("parentSFTLineage")
+        if isinstance(dpo_training, Mapping)
+        else None
+    )
+    lineage["parentSFTHardwareLineage"] = (
+        {
+            field: parent_lineage.get(field)
+            for field in ZERO_GPU_LINEAGE_FIELDS
+        }
+        if isinstance(parent_lineage, Mapping)
+        else None
     )
     return lineage
 

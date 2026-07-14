@@ -2,9 +2,8 @@
   "artifactKind": "agent_grounding_runtime_bundle",
   "codebaseHome": {
     "languageCounts": {
-      "csv": 5,
-      "json": 59,
-      "markdown": 74,
+      "json": 42,
+      "markdown": 73,
       "mixed": 1,
       "plist": 3,
       "python": 133,
@@ -82,7 +81,6 @@
       "tools/hf_zerogpu/space_template": 3,
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 4,
-      "tools/lumen_manifest_crawler/generated": 23,
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 44,
       "tools/lumen_manifest_crawler/scripts": 1,
       "tools/lumen_manifest_crawler/tests": 31,
@@ -90,7 +88,7 @@
       "tools/pipeline/tests": 7,
       "tools/security": 1
     },
-    "recordCount": 810,
+    "recordCount": 787,
     "selectedFiles": [
       {
         "imports": [
@@ -99,12 +97,13 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` owns AgentBehaviorManifest behavior and defines: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent, ManifestRoutingEntry, ManifestMemory, ManifestFreshnessClass.",
-        "sha256": "c4605af5a2a8e51aee4cdad33a59cdbabd11af2ca96d72bc84f4ea95e0d72aac",
+        "responsibility": "Compatibility accessor for code that predates the explicit base-commit provenance contract.",
+        "sha256": "3fc3e07c1f2c50dea6ca3abdbf10fd7ec6cbb277292ee5c00d769211c6390331",
         "symbols": [
           "AgentBehaviorManifest",
           "ManifestAppInfo",
           "ManifestSourceIntegrity",
+          "CodingKeys",
           "ManifestSourceFileHash",
           "ManifestFleet",
           "ManifestModelSlot",
@@ -112,12 +111,11 @@
           "ManifestRoutingEntry",
           "ManifestMemory",
           "ManifestFreshnessClass",
-          "CodingKeys",
           "ManifestSentinels",
           "RuntimeToolDefinition",
           "RuntimeToolArgument",
-          "defaultConfirmationMode",
-          "inferredPermissionKind"
+          "encode",
+          "defaultConfirmationMode"
         ]
       },
       {
@@ -206,8 +204,8 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentManifestStore.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentManifestStore.swift` owns AgentManifestStore behavior and defines: AgentManifestStore, manifestDirectory, manifestURL, manifestHashURL, bundledManifestURL, bundledHashURL, load, persist, synchronizeWithBundle, copyBundledManifestAndHash.",
-        "sha256": "cf59fe6817472a432f4c77609f2ef000ea798ccab853eb4cdee5f98305eeed2a",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentManifestStore.swift` owns AgentManifestStore behavior and defines: AgentManifestStore, manifestDirectory, manifestURL, manifestHashURL, bundledManifestURL, bundledHashURL, load, persist, synchronizeWithBundle, sourceIntegrityDiffers.",
+        "sha256": "9821c7314a7c1fcffbc119ba83305e920520070dc664256a2c5d04e285fc2d0e",
         "symbols": [
           "AgentManifestStore",
           "manifestDirectory",
@@ -218,13 +216,13 @@
           "load",
           "persist",
           "synchronizeWithBundle",
+          "sourceIntegrityDiffers",
           "copyBundledManifestAndHash",
           "readHash",
           "directoryName",
           "fileName",
           "hashFileName",
-          "bundledRelativeDirectory",
-          "base"
+          "bundledRelativeDirectory"
         ]
       },
       {
@@ -2206,7 +2204,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
+  "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",
@@ -2215,5 +2213,10 @@
     "codebase_home_sft",
     "codebase_home_chunks",
     "codebase_home_chunk_sft"
-  ]
+  ],
+  "sourceIntegrity": {
+    "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "dirtyState": true,
+    "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+  }
 }

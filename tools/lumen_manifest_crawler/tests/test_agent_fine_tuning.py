@@ -57,6 +57,7 @@ def _write_fine_tuning_fixture(tmp_path: Path, compiled_fine_tuning: tuple) -> P
 
 
 def test_per_agent_directories_are_produced(tmp_path: Path, compiled_fine_tuning: tuple) -> None:
+    manifest, _, _ = compiled_fine_tuning
     fine_tuning_output = _write_fine_tuning_fixture(tmp_path, compiled_fine_tuning)
 
     assert (fine_tuning_output / "adapter_runtime_manifest.json").exists()
@@ -74,6 +75,10 @@ def test_per_agent_directories_are_produced(tmp_path: Path, compiled_fine_tuning
             "adapter_export_plan.json",
         ):
             assert (agent_dir / filename).exists(), f"missing {agent}/{filename}"
+        dataset_card = json.loads((agent_dir / "dataset_card.json").read_text(encoding="utf-8"))
+        assert dataset_card["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
+        adapter_plan = json.loads((agent_dir / "adapter_export_plan.json").read_text(encoding="utf-8"))
+        assert adapter_plan["datasetCard"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
         for variant in ("internal_only", "internal_plus_public_baseline", "internal_plus_public_optimized"):
             variant_dir = agent_dir / "experiments" / variant
             assert (variant_dir / "variant_manifest.json").exists()
@@ -491,6 +496,7 @@ def test_codebase_home_excludes_generated_manifest_outputs() -> None:
     assert "ios/Lumen/AgentBehaviorManifest.json" not in paths
     assert not any(path.startswith("datasets/public_adapter_corpus/") for path in paths)
     assert not any(path.startswith("generated/agent_manifest/") for path in paths)
+    assert not any("generated" in Path(path).parts for path in paths)
     assert overview["metadata"]["coverage"] == "git_tracked_text_files_excluding_generated_outputs"
     assert overview["metadata"]["selectedGeneratedFiles"] == []
     assert "ios/Lumen/AgentBehaviorManifest.json" in overview["metadata"]["excludedRelpaths"]

@@ -1,6 +1,6 @@
 {
   "agent": "mimicry",
-  "availableSFTRecords": 664,
+  "availableSFTRecords": 662,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "d8f134172dfed5a6e66450a223278721cfbd1ea966e65a427213057c779c4597"
+      "reportSHA256": "033f439102caebf12ad82b028aca58089f64af9fca90a0252efae8788d21e2aa"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "27a9e6a92026616df05fb9a2fa0480a0c3809f158bfa768a555a8d8dcad79fd0",
-      "optimizedTrainingCorpusSHA256": "fc4c339c290c592a13b354ac7c687b30022039b80939a85770fafa85fffaa97d",
+      "baselineTrainingCorpusSHA256": "ddd5d3c342743573f54389a81a8ff98e35bbaf422533e5dd379d7a32e93ffd1a",
+      "optimizedTrainingCorpusSHA256": "748ad9e6f1aa262e5ad9ec786aef370855738149780b549aae06706aacdeaddf",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 600,
@@ -52,7 +52,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "eea16443b0e706bce38f4bd8e52b7e74e760f5e5041ddd72993a87144c4ce3bc",
+    "experimentManifestSHA256": "f9eab2b448814a64ba673428a210a97e302d01fa6da1a936339c6e9317acf915",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -82,7 +82,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
+  "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 2,
@@ -116,15 +116,15 @@
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 63,
+      "train_sft": 64,
       "val_dpo": 0,
-      "val_sft": 9
+      "val_sft": 6
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 448,
+      "train_sft": 447,
       "val_dpo": 0,
-      "val_sft": 80
+      "val_sft": 83
     },
     "selectionContract": {
       "maxTokenShare": 0.35,
@@ -142,10 +142,10 @@
         "minimum": 0.720013
       },
       "selected": {
-        "count": 72,
+        "count": 70,
         "maximum": 0.7565,
-        "mean": 0.739694,
-        "minimum": 0.720638
+        "mean": 0.740051,
+        "minimum": 0.723138
       }
     },
     "snapshotIntegrity": {
@@ -226,14 +226,14 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "grammarly/coedit": 72
+      "grammarly/coedit": 70
     },
     "sourceSplitCounts": {
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 63,
+        "train_sft": 64,
         "val_dpo": 0,
-        "val_sft": 9
+        "val_sft": 6
       }
     },
     "tokenShares": {
@@ -242,16 +242,16 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.191009,
-        "total": 0.349921
+        "target": 0.189205,
+        "total": 0.348539
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.195442,
-        "total": 0.346263
+        "target": 0.196864,
+        "total": 0.333929
       }
     }
   },
@@ -270,7 +270,7 @@
     "train_dpo": 1,
     "train_sft": 117,
     "val_dpo": 1,
-    "val_sft": 19
+    "val_sft": 15
   },
   "sourceFamilies": [
     "adapter_ultra_specific",
@@ -280,6 +280,11 @@
     "mimicry_style",
     "public_adapter_corpus_coedit_train"
   ],
+  "sourceIntegrity": {
+    "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "dirtyState": true,
+    "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+  },
   "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries.",
   "taskTypes": [
     "codebase_home_grounding",

@@ -19,6 +19,19 @@ QWEN_MODEL_ID = "Qwen/Qwen3-1.7B"
 QWEN_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 RUNTIME_SOURCE_REVISION = "a" * 40
 SPACE_CONFIGURATION_SHA256 = "c" * 64
+OBSERVED_ACCELERATOR = {
+    "bindingStatus": "runtime_observed_unverified",
+    "backend": "cuda",
+    "deviceCount": 1,
+    "devices": [
+        {
+            "index": 0,
+            "name": "Synthetic CUDA",
+            "totalMemoryBytes": 24 * 1024 * 1024 * 1024,
+            "computeCapability": [8, 0],
+        }
+    ],
+}
 
 
 def _resolved_environment() -> dict:
@@ -133,6 +146,9 @@ def _sft_parent_fixture(
         "resolvedTrainingEnvironmentSHA256": resolved_environment[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": "large",
+        "zeroGPUDurationSeconds": 1200,
+        "observedAccelerator": OBSERVED_ACCELERATOR,
         "spaceConfigurationSHA256": SPACE_CONFIGURATION_SHA256,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,
@@ -181,6 +197,9 @@ def _sft_parent_fixture(
         "resolvedTrainingEnvironmentSHA256": resolved_environment[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": "large",
+        "zeroGPUDurationSeconds": 1200,
+        "observedAccelerator": OBSERVED_ACCELERATOR,
         "spaceConfigurationSHA256": SPACE_CONFIGURATION_SHA256,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": RUNTIME_SOURCE_REVISION,

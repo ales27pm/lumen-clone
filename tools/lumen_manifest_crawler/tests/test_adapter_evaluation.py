@@ -94,6 +94,22 @@ def _resolved_environment(marker: str = "1") -> dict:
     }
 
 
+def _observed_accelerator() -> dict:
+    return {
+        "bindingStatus": "runtime_observed_unverified",
+        "backend": "cuda",
+        "deviceCount": 1,
+        "devices": [
+            {
+                "index": 0,
+                "name": "Synthetic CUDA",
+                "totalMemoryBytes": 24 * 1024 * 1024 * 1024,
+                "computeCapability": [8, 0],
+            }
+        ],
+    }
+
+
 def _training_environment(
     manifest: dict,
     digest_character: str = "c",
@@ -120,6 +136,9 @@ def _training_environment(
         "resolvedTrainingEnvironmentSHA256": resolved_environment[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": None,
+        "zeroGPUDurationSeconds": None,
+        "observedAccelerator": _observed_accelerator(),
         "runtimeSourceKind": "git",
         "runtimeSourceRevision": runtime_revision,
         "expectedRuntimeSourceRevision": runtime_revision,
@@ -186,6 +205,9 @@ def _sft_parent_lineage(
         "trainingCodeSHA256": manifest["trainingCodeSHA256ByPhase"]["sft"],
         "adapterSHA256": adapter_sha256,
         "adapterManifestSHA256": adapter_sha256,
+        "zeroGPUSize": None,
+        "zeroGPUDurationSeconds": None,
+        "observedAccelerator": _observed_accelerator(),
         "runtimeSourceKind": "git",
         "runtimeSourceRevision": runtime_revision,
         "expectedRuntimeSourceRevision": runtime_revision,
@@ -1207,6 +1229,55 @@ def test_variant_manifest_validation_rejects_semantically_invalid_training_envir
     ) is False
 
 
+def test_variant_manifest_rejects_nested_hardware_drift_after_resigning() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    artifact = _adapter_artifact("a")
+    finalized = finalize_experiment_variant_manifest(
+        pending,
+        adapter_sha256=artifact["adapterSHA256"],
+        adapter_artifact_manifest=artifact,
+        training_environment=_training_environment(pending),
+    )
+    invalid = json.loads(json.dumps(finalized))
+    invalid.pop("variantManifestSHA256")
+    invalid["trainingEnvironment"]["observedAccelerator"]["devices"][0][
+        "name"
+    ] = "Substituted CUDA"
+    invalid["trainingEnvironmentSHA256"] = canonical_sha256(
+        invalid["trainingEnvironment"]
+    )
+    invalid["variantManifestSHA256"] = canonical_sha256(invalid)
+
+    assert not adapter_evaluation._valid_variant_manifest(
+        invalid,
+        agent="executor",
+        expected_variant="internal_only",
+        require_trained_artifact=True,
+    )
+
+
+def test_loaded_space_hardware_rejects_nonpositive_duration() -> None:
+    assert not adapter_evaluation._valid_hardware_lineage(
+        {
+            "runtimeSourceKind": "huggingface_space",
+            "zeroGPUSize": "large",
+            "zeroGPUDurationSeconds": 0,
+            "observedAccelerator": _observed_accelerator(),
+        },
+        pending=False,
+    )
+
+
 def test_finalizer_rejects_self_declared_trusted_runtime_image_binding() -> None:
     pending = build_experiment_variant_manifest(
         agent="executor",
@@ -1349,6 +1420,10 @@ def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
             "resolvedTrainingEnvironmentSHA256": finalized[
                 "resolvedTrainingEnvironmentSHA256"
             ],
+            **{
+                field: finalized[field]
+                for field in adapter_evaluation.ZERO_GPU_LINEAGE_FIELDS
+            },
         }
     assert adapter_evaluation._valid_variant_manifest(
         finalized,
@@ -1367,6 +1442,27 @@ def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
         expected_variant="internal_only",
         require_trained_artifact=True,
     )
+
+
+def test_controlled_lineage_binds_parent_sft_hardware() -> None:
+    first = {
+        "artifact": {"trainingPhase": "sft_dpo", "preferenceTrainer": "dpo"},
+        "dpoTraining": {
+            "parentSFTLineage": {
+                "zeroGPUSize": "large",
+                "zeroGPUDurationSeconds": 1200,
+                "observedAccelerator": _observed_accelerator(),
+            }
+        },
+    }
+    second = json.loads(json.dumps(first))
+    second["dpoTraining"]["parentSFTLineage"]["observedAccelerator"][
+        "devices"
+    ][0]["name"] = "Different CUDA"
+
+    assert canonical_sha256(
+        adapter_evaluation._variant_controlled_lineage(first)
+    ) != canonical_sha256(adapter_evaluation._variant_controlled_lineage(second))
 
 
 def test_finalizer_rejects_incomplete_or_substituted_sft_parent_lineage() -> None:

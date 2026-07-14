@@ -538,16 +538,18 @@ def test_delete_space_secret_if_present_propagates_other_failures() -> None:
         )
 
 
+@pytest.mark.parametrize("private_adapters", [True, False])
 def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    private_adapters: bool,
 ) -> None:
     calls: list[tuple[str, dict[str, Any]]] = []
 
     class FakeHfApi:
         visibility = {
             ("dataset", "user/dataset"): False,
-            ("model", "user/adapters"): False,
+            ("model", "user/adapters"): not private_adapters,
             ("space", "user/space"): False,
         }
 
@@ -619,7 +621,10 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
         adapter_repo="user/adapters",
         private_space=True,
         private_dataset=True,
-        private_adapters=True,
+        private_adapters=private_adapters,
+        confirm_space_visibility_change=True,
+        confirm_dataset_visibility_change=True,
+        confirm_adapter_visibility_change=True,
         zero_gpu_hardware="zero-a10g",
         token="token",
         admin_token="Lumen-Admin-Token-0123456789-ABCDEF",
@@ -649,6 +654,9 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
         == "e" * 40
     )
     assert variable_calls["LUMEN_ZERO_GPU_RUNTIME_SOURCE_REVISION"] == "e" * 40
+    assert variable_calls["LUMEN_ZERO_GPU_PRIVATE_ADAPTERS"] == (
+        "1" if private_adapters else "0"
+    )
     defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
     assert defaults["dataset_revision"] == "d" * 40
     uploads = [details for name, details in calls if name == "upload_folder"]
@@ -667,11 +675,105 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
     }
 
 
+def test_ensure_repository_visibility_keeps_matching_existing_repository() -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeApi:
+        private = True
+
+        def update_repo_settings(self, **kwargs: Any) -> None:
+            calls.append(("update_repo_settings", kwargs))
+            self.private = kwargs["private"]
+
+        def model_info(self, **kwargs: Any) -> Any:
+            calls.append(("model_info", kwargs))
+            return SimpleNamespace(private=self.private)
+
+    builder.ensure_repository_visibility(
+        FakeApi(),
+        repo_id="user/adapters",
+        repo_type="model",
+        private=True,
+        token="token",
+    )
+
+    assert [name for name, _ in calls] == ["model_info", "model_info"]
+    assert calls[-1][1]["token"] == "token"
+
+
+def test_ensure_repository_visibility_creates_new_repository_at_requested_visibility() -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    class NotFoundError(Exception):
+        response = SimpleNamespace(status_code=404)
+
+    class FakeApi:
+        exists = False
+        private = False
+
+        def create_repo(self, **kwargs: Any) -> None:
+            calls.append(("create_repo", kwargs))
+            self.exists = True
+            self.private = kwargs["private"]
+
+        def model_info(self, **kwargs: Any) -> Any:
+            calls.append(("model_info", kwargs))
+            if not self.exists:
+                raise NotFoundError
+            return SimpleNamespace(private=self.private)
+
+    builder.ensure_repository_visibility(
+        FakeApi(),
+        repo_id="user/adapters",
+        repo_type="model",
+        private=True,
+        token="token",
+    )
+
+    assert [name for name, _ in calls] == [
+        "model_info",
+        "create_repo",
+        "model_info",
+    ]
+    assert calls[1][1]["private"] is True
+    assert calls[1][1]["exist_ok"] is False
+
+
 @pytest.mark.parametrize(
     ("initial_private", "requested_private"),
     [(False, True), (True, False)],
 )
-def test_ensure_repository_visibility_updates_existing_repository_and_verifies_readback(
+def test_ensure_repository_visibility_requires_confirmation_before_existing_migration(
+    initial_private: bool,
+    requested_private: bool,
+) -> None:
+    calls: list[str] = []
+
+    class FakeApi:
+        def model_info(self, **_kwargs: Any) -> Any:
+            calls.append("model_info")
+            return SimpleNamespace(private=initial_private)
+
+        def update_repo_settings(self, **_kwargs: Any) -> None:
+            calls.append("update_repo_settings")
+
+    with pytest.raises(RuntimeError, match="explicitly confirm"):
+        builder.ensure_repository_visibility(
+            FakeApi(),
+            repo_id="user/adapters",
+            repo_type="model",
+            private=requested_private,
+            token="token",
+        )
+
+    assert calls == ["model_info"]
+
+
+@pytest.mark.parametrize(
+    ("initial_private", "requested_private"),
+    [(False, True), (True, False)],
+)
+def test_ensure_repository_visibility_updates_confirmed_existing_migration(
     initial_private: bool,
     requested_private: bool,
 ) -> None:
@@ -679,10 +781,6 @@ def test_ensure_repository_visibility_updates_existing_repository_and_verifies_r
 
     class FakeApi:
         private = initial_private
-
-        def create_repo(self, **kwargs: Any) -> None:
-            calls.append(("create_repo", kwargs))
-            # Existing-repository behavior: create_repo does not change visibility.
 
         def update_repo_settings(self, **kwargs: Any) -> None:
             calls.append(("update_repo_settings", kwargs))
@@ -698,18 +796,18 @@ def test_ensure_repository_visibility_updates_existing_repository_and_verifies_r
         repo_type="model",
         private=requested_private,
         token="token",
+        confirm_visibility_change=True,
     )
 
     assert [name for name, _ in calls] == [
-        "create_repo",
+        "model_info",
         "update_repo_settings",
         "model_info",
     ]
     assert calls[1][1]["private"] is requested_private
-    assert calls[2][1]["token"] == "token"
 
 
-@pytest.mark.parametrize("failure", ["update", "readback_mismatch"])
+@pytest.mark.parametrize("failure", ["unconfirmed", "update", "readback_mismatch"])
 def test_upload_to_hub_does_not_upload_before_visibility_postcondition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -746,7 +844,9 @@ def test_upload_to_hub_does_not_upload_before_visibility_postcondition(
     monkeypatch.setattr(builder, "import_hf_api", lambda: FakeHfApi)
 
     expected = (
-        "settings update failed"
+        "explicitly confirm"
+        if failure == "unconfirmed"
+        else "settings update failed"
         if failure == "update"
         else "Repository visibility postcondition failed"
     )
@@ -766,6 +866,7 @@ def test_upload_to_hub_does_not_upload_before_visibility_postcondition(
             private_space=True,
             private_dataset=True,
             private_adapters=True,
+            confirm_dataset_visibility_change=failure != "unconfirmed",
             zero_gpu_hardware="zero-a10g",
             token="token",
             admin_token="Lumen-Admin-Token-0123456789-ABCDEF",
@@ -888,6 +989,31 @@ def test_public_repository_overrides_are_explicit_and_isolated(
 
 
 @pytest.mark.parametrize(
+    ("flag", "attribute"),
+    [
+        ("--confirm-space-visibility-change", "confirm_space_visibility_change"),
+        ("--confirm-dataset-visibility-change", "confirm_dataset_visibility_change"),
+        ("--confirm-adapter-visibility-change", "confirm_adapter_visibility_change"),
+    ],
+)
+def test_visibility_migration_confirmations_are_explicit_and_isolated(
+    flag: str,
+    attribute: str,
+) -> None:
+    parsed = builder.parse_args([*_required_builder_args(), flag])
+    confirmations = {
+        name: getattr(parsed, name)
+        for name in (
+            "confirm_space_visibility_change",
+            "confirm_dataset_visibility_change",
+            "confirm_adapter_visibility_change",
+        )
+    }
+    assert confirmations[attribute] is True
+    assert sum(confirmations.values()) == 1
+
+
+@pytest.mark.parametrize(
     ("flags", "expected_private"),
     [
         ([], (True, True, True)),
@@ -954,9 +1080,15 @@ def test_one_click_launcher_is_private_unless_public_overrides_are_set() -> None
     assert 'PUBLIC_SPACE="${LUMEN_ZERO_GPU_PUBLIC_SPACE:-0}"' in script
     assert 'PUBLIC_DATASET="${LUMEN_ZERO_GPU_PUBLIC_DATASET:-0}"' in script
     assert 'PUBLIC_ADAPTERS="${LUMEN_ZERO_GPU_PUBLIC_ADAPTERS:-0}"' in script
+    assert 'CONFIRM_SPACE_VISIBILITY_CHANGE="${LUMEN_ZERO_GPU_CONFIRM_SPACE_VISIBILITY_CHANGE:-0}"' in script
+    assert 'CONFIRM_DATASET_VISIBILITY_CHANGE="${LUMEN_ZERO_GPU_CONFIRM_DATASET_VISIBILITY_CHANGE:-0}"' in script
+    assert 'CONFIRM_ADAPTER_VISIBILITY_CHANGE="${LUMEN_ZERO_GPU_CONFIRM_ADAPTER_VISIBILITY_CHANGE:-0}"' in script
     assert "args+=(--public-space)" in script
     assert "args+=(--public-dataset)" in script
     assert "args+=(--public-adapters)" in script
+    assert "args+=(--confirm-space-visibility-change)" in script
+    assert "args+=(--confirm-dataset-visibility-change)" in script
+    assert "args+=(--confirm-adapter-visibility-change)" in script
     assert "args+=(--private-dataset)" not in script
     assert "args+=(--private-adapters)" not in script
 

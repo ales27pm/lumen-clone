@@ -136,6 +136,7 @@ def test_codebase_home_rejects_generated_manifest_self_ingestion():
     dataset = {
         "codebase_home_corpus": [
             {"id": "generated-manifest", "path": "generated/agent_manifest/AgentBehaviorManifest.json"},
+            {"id": "nested-generated", "path": "tools/lumen_manifest_crawler/generated/example.json"},
             {"id": "ios-copy", "path": "ios/Lumen/AgentBehaviorManifest.json"},
         ],
         "codebase_home_sft": [
@@ -151,7 +152,7 @@ def test_codebase_home_rejects_generated_manifest_self_ingestion():
     }
     report = validate_manifest(manifest, dataset)
     failures = [f for f in report.failures if f.code == "generated_output_in_codebase_home"]
-    assert len(failures) == 3
+    assert len(failures) == 4
 
 
 def test_runtime_repair_record_requires_provenance_and_repair_action():

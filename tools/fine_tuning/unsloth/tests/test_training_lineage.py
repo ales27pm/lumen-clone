@@ -62,6 +62,27 @@ class _InstalledDistribution:
         return self.root / filename
 
 
+def _resign_resolved_environment(environment: dict[str, object]) -> None:
+    distributions = environment["distributions"]
+    assert isinstance(distributions, list)
+    for entry in distributions:
+        assert isinstance(entry, dict)
+        unsigned = {
+            key: value
+            for key, value in entry.items()
+            if key != "distributionSHA256"
+        }
+        entry["distributionSHA256"] = training_lineage.canonical_sha256(unsigned)
+    payload = {
+        key: value
+        for key, value in environment.items()
+        if key != "resolvedTrainingEnvironmentSHA256"
+    }
+    environment["resolvedTrainingEnvironmentSHA256"] = (
+        training_lineage.canonical_sha256(payload)
+    )
+
+
 def test_repository_code_bundle_is_phase_specific_and_self_verifying() -> None:
     bundle = training_lineage.repository_training_code_bundle(ROOT)
 
@@ -346,6 +367,48 @@ def test_resolved_environment_attests_transitive_distribution_content(
         )
 
 
+def test_resolved_environment_snapshot_records_scan_metrics_and_authenticates_cache(
+    tmp_path: Path,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="cached-package",
+        version="1.0.0",
+    )
+
+    resolved, scan = training_lineage.build_resolved_training_environment_snapshot(
+        [distribution]
+    )
+
+    assert scan["distributionCount"] == 1
+    assert scan["installedFileCount"] == 1
+    assert scan["totalHashedBytes"] > 0
+    assert scan["durationMilliseconds"] >= 0
+    key = b"k" * 32
+    attestation = training_lineage.sign_resolved_training_environment_cache(
+        resolved,
+        scan,
+        key=key,
+        startup_id="a" * 32,
+    )
+    assert training_lineage.verify_resolved_training_environment_cache(
+        resolved,
+        attestation,
+        key=key,
+    ) == scan
+
+    tampered = dict(attestation)
+    tampered_scan = dict(scan)
+    tampered_scan["totalHashedBytes"] += 1
+    tampered["scan"] = tampered_scan
+    with pytest.raises(ValueError, match="not authentic"):
+        training_lineage.verify_resolved_training_environment_cache(
+            resolved,
+            tampered,
+            key=key,
+        )
+
+
 def test_resolved_environment_rejects_duplicate_or_secret_bearing_provenance(
     tmp_path: Path,
 ) -> None:
@@ -400,6 +463,94 @@ def test_resolved_environment_rejects_mutable_direct_url_provenance(
 
     with pytest.raises(ValueError):
         training_lineage.build_resolved_training_environment([distribution])
+
+
+@pytest.mark.parametrize(
+    ("replacement", "error_match"),
+    [
+        (
+            {
+                "directURL": {
+                    "url": "https://token@example.com/private.git",
+                    "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+                }
+            },
+            "secret-safe",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://github.com/example/project.git",
+                    "vcs_info": {
+                        "vcs": "git",
+                        "commit_id": "a" * 40,
+                        "requested_revision": "main",
+                    },
+                }
+            },
+            "VCS provenance",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://example.com/source",
+                    "dir_info": {"editable": True},
+                }
+            },
+            "directory provenance",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://example.com/project.whl",
+                    "archive_info": {},
+                }
+            },
+            "archive lacks",
+        ),
+        (
+            {
+                "directURL": {
+                    "url": "https://github.com/example/project.git",
+                    "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+                    "unexpected": "value",
+                }
+            },
+            "unsupported direct-url",
+        ),
+        ({"installer": "uv; injected"}, "invalid installer"),
+    ],
+    ids=[
+        "credentials",
+        "mutable-vcs-revision",
+        "editable-directory",
+        "missing-archive-hash",
+        "extra-direct-url-key",
+        "invalid-installer",
+    ],
+)
+def test_loaded_resolved_environment_rejects_resigned_unsafe_provenance(
+    tmp_path: Path,
+    replacement: dict[str, object],
+    error_match: str,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="loaded-provenance",
+        version="1",
+        direct_url={
+            "url": "https://github.com/example/project.git",
+            "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+        },
+    )
+    resolved = training_lineage.build_resolved_training_environment([distribution])
+    entry = resolved["distributions"][0]
+    assert isinstance(entry, dict)
+    entry.update(replacement)
+    _resign_resolved_environment(resolved)
+
+    with pytest.raises(ValueError, match=error_match):
+        training_lineage.verify_resolved_training_environment(resolved)
 
 
 def test_resolved_environment_rejects_unhashed_behavior_and_parent_record_paths(

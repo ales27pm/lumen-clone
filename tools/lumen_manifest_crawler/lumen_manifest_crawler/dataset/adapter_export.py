@@ -194,6 +194,8 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "adapterGGUFArtifact": adapter_gguf_output_path(agent),
         "systemPrompt": dataset_card.get("systemPrompt"),
         "datasetCard": {
+            "sourceIntegrity": dataset_card.get("sourceIntegrity"),
+            # Compatibility for existing adapter-plan consumers.
             "manifestCommit": dataset_card.get("manifestCommit"),
             "recordCounts": dataset_card.get("recordCounts", {}),
             "sourceFamilies": dataset_card.get("sourceFamilies", []),

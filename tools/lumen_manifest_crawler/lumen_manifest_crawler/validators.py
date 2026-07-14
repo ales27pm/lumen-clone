@@ -279,7 +279,13 @@ def _has_explicit_tool_id_reference(prompt_text: str, tool_id: str) -> bool:
 
 def _validate_codebase_home_record(name: str, index: int, record: dict[str, Any], failures: list[ValidationFailure]) -> None:
     for path in _record_path_values(record):
-        if path in FORBIDDEN_CODEBASE_HOME_PATHS or any(path.startswith(prefix) for prefix in FORBIDDEN_CODEBASE_HOME_PREFIXES):
+        normalized_path = path.replace("\\", "/").strip("/")
+        contains_generated_directory = "generated" in normalized_path.split("/")
+        if (
+            path in FORBIDDEN_CODEBASE_HOME_PATHS
+            or contains_generated_directory
+            or any(path.startswith(prefix) for prefix in FORBIDDEN_CODEBASE_HOME_PREFIXES)
+        ):
             failures.append(
                 ValidationFailure(
                     code="generated_output_in_codebase_home",
