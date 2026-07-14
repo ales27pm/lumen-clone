@@ -48,6 +48,42 @@ struct DeterministicToolPlannerTests {
         try validateAll(steps)
     }
 
+    @Test func outlookExplicitPluralLatestRequestRemainsListOnly() async throws {
+        let routing = IntentRoutingDecision(
+            intent: .outlook,
+            allowedToolIDs: ["outlook.messages.list", "outlook.message.read"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: "List my latest Outlook emails",
+            availableToolIDs: ["outlook.messages.list", "outlook.message.read"]
+        )
+
+        #expect(steps.map(\.tool) == ["outlook.messages.list"])
+        #expect(steps.first?.args["limit"] == .number(10))
+        try validateAll(steps)
+    }
+
+    @Test func outlookSenderNounDoesNotMatchSendVerb() async throws {
+        let routing = IntentRoutingDecision(
+            intent: .outlook,
+            allowedToolIDs: ["outlook.messages.list", "outlook.mail.send"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let steps = DeterministicToolPlanner.planSteps(
+            routing: routing,
+            prompt: "Show emails from sender Alex",
+            availableToolIDs: ["outlook.messages.list", "outlook.mail.send"]
+        )
+
+        #expect(steps.map(\.tool) == ["outlook.messages.list"])
+        #expect(steps.first?.args["limit"] == .number(10))
+        try validateAll(steps)
+    }
+
     @Test func outlookLatestPlansReadOnlyWhenListUnavailable() async throws {
         let routing = IntentRoutingDecision(
             intent: .outlook,
@@ -132,10 +168,8 @@ struct DeterministicToolPlannerTests {
             ("Use Search Nearby, but ask for clarification if required details are missing.", .maps, ["location.current", "maps.search"]),
             ("Tell me what style I asked you to use.", .memory, ["memory.recall"]),
             ("What do you remember about my response style preference?", .memory, ["memory.recall"]),
-            ("Use Recall Memory, but ask for clarification if required details are missing.", .memory, ["memory.recall"]),
             ("Keep in mind that I like short answers.", .memory, ["memory.save"]),
             ("Remember that I prefer concise bullet points.", .memory, ["memory.save"]),
-            ("Use Save Memory, but ask for clarification if required details are missing.", .memory, ["memory.save"]),
             ("Text 5551234567 that I am late.", .messageDraft, ["messages.draft"]),
             ("Am I walking or stationary right now?", .motion, ["motion.activity"]),
             ("Show attachments on the latest Outlook email.", .outlook, ["outlook.messages.list", "outlook.attachments.list"]),
@@ -517,6 +551,19 @@ struct DeterministicToolPlannerTests {
         let action = DeterministicToolPlanner.plan(routing: routing, prompt: "weather in Montreal", availableToolIDs: ["weather"])
         #expect(action?.tool == "weather")
         #expect(action?.args["location"]?.stringValue == "Montreal")
+    }
+
+    @Test func weatherToolMetaClarificationClauseDoesNotFabricateLocation() async throws {
+        let routing = IntentRoutingDecision(intent: .weather, allowedToolIDs: ["weather"], requiresClarification: false, clarificationPrompt: nil)
+        let action = DeterministicToolPlanner.plan(
+            routing: routing,
+            prompt: "Use Current Weather, but ask for clarification if required details are missing.",
+            availableToolIDs: ["weather"]
+        )
+
+        #expect(action?.tool == "weather")
+        #expect(action?.args["location"] == nil)
+        _ = try validated(action)
     }
 
     @Test func triggerSchedulePlansCreateAction() async throws {

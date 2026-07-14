@@ -433,10 +433,11 @@ nonisolated enum ImproveLoopSampleGate {
     }
 
     private static func isRAGEmptyRetrieval(_ lower: String) -> Bool {
-        lower.contains("no matching files found")
+        lower.contains("no matching documents found")
+            || lower.contains("no matching files found")
+            || lower.contains("local document index appears empty")
             || lower.contains("local index appears empty")
             || lower.contains("no matching local snippets")
-            || lower.contains("import or create local files")
     }
 
     private static func containsInternalRoutingJSON(_ lower: String) -> Bool {

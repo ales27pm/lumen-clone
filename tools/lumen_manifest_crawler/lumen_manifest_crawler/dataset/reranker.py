@@ -41,11 +41,30 @@ def compile_reranker_datasets(datasets: dict[str, list[dict[str, Any]]]) -> Rera
         if isinstance(record, dict)
     ]
     hard_negative_index = _index_hard_negatives(hard_negatives)
+    known_positive_ids = _known_positive_documents(datasets)
 
-    train_pairs = _compile_pair_split(datasets.get("embedding_train_pairs", []), docs, hard_negative_index)
-    val_pairs = _compile_pair_split(datasets.get("embedding_val_pairs", []), docs, hard_negative_index)
-    hard_negative_pairs = _compile_hard_negative_pairs(hard_negatives, docs)
-    eval_reranking = _compile_eval_records(datasets.get("embedding_eval_retrieval", []), docs)
+    train_pairs = _compile_pair_split(
+        datasets.get("embedding_train_pairs", []),
+        docs,
+        hard_negative_index,
+        known_positive_ids,
+    )
+    val_pairs = _compile_pair_split(
+        datasets.get("embedding_val_pairs", []),
+        docs,
+        hard_negative_index,
+        known_positive_ids,
+    )
+    hard_negative_pairs = _compile_hard_negative_pairs(
+        hard_negatives,
+        docs,
+        known_positive_ids,
+    )
+    eval_reranking = _compile_eval_records(
+        datasets.get("embedding_eval_retrieval", []),
+        docs,
+        known_positive_ids,
+    )
 
     dataset_card = {
         "schemaVersion": RERANKER_DATASET_SCHEMA_VERSION,
@@ -100,6 +119,7 @@ def _compile_pair_split(
     pairs: list[dict[str, Any]],
     docs: dict[str, dict[str, Any]],
     hard_negative_index: dict[tuple[str, str], list[dict[str, Any]]],
+    known_positive_ids: dict[str, set[str]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for pair in pairs:
@@ -112,7 +132,12 @@ def _compile_pair_split(
         query = _clean(str(pair.get("query") or ""))
         if not query:
             continue
-        negative_id = _negative_for_pair(pair, docs, hard_negative_index)
+        negative_id = _negative_for_pair(
+            pair,
+            docs,
+            hard_negative_index,
+            known_positive_ids,
+        )
         negative = docs.get(negative_id) if negative_id else None
         if negative is None:
             continue
@@ -123,13 +148,17 @@ def _compile_pair_split(
 def _compile_hard_negative_pairs(
     hard_negatives: list[dict[str, Any]],
     docs: dict[str, dict[str, Any]],
+    known_positive_ids: dict[str, set[str]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for negative in hard_negatives:
         query = _clean(str(negative.get("query") or ""))
         positive = docs.get(str(negative.get("positiveDocumentID") or ""))
-        negative_doc = docs.get(str(negative.get("negativeDocumentID") or ""))
+        negative_id = str(negative.get("negativeDocumentID") or "")
+        negative_doc = docs.get(negative_id)
         if not query or positive is None or negative_doc is None:
+            continue
+        if negative_id in known_positive_ids.get(_normalize_query(query), set()):
             continue
         records.append(_pair_record(
             query,
@@ -145,6 +174,7 @@ def _compile_hard_negative_pairs(
 def _compile_eval_records(
     evals: list[dict[str, Any]],
     docs: dict[str, dict[str, Any]],
+    known_positive_ids: dict[str, set[str]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for item in evals:
@@ -152,7 +182,12 @@ def _compile_eval_records(
             continue
         query = _clean(str(item.get("query") or ""))
         positive_ids = [str(value) for value in item.get("positiveDocumentIDs", []) if str(value) in docs]
-        negative_ids = [str(value) for value in item.get("hardNegativeDocumentIDs", []) if str(value) in docs]
+        query_positives = known_positive_ids.get(_normalize_query(query), set())
+        negative_ids = [
+            str(value)
+            for value in item.get("hardNegativeDocumentIDs", [])
+            if str(value) in docs and str(value) not in query_positives
+        ]
         if not query or not positive_ids or not negative_ids:
             continue
         candidates = [
@@ -170,6 +205,8 @@ def _compile_eval_records(
             "positiveDocumentIDs": positive_ids,
             "candidateDocuments": candidates,
             "family": item.get("family"),
+            "split": "evaluation",
+            "groupID": item.get("groupID"),
             "metrics": ["reranked_recall@1", "reranked_ndcg@5", "hard_negative_pair_accuracy"],
             "targets": {
                 "rerankedRecallAt1": 0.78,
@@ -239,22 +276,50 @@ def _document_text(document: dict[str, Any]) -> str:
 def _index_hard_negatives(records: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
     index: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for record in sorted(records, key=lambda item: str(item.get("id") or "")):
-        key = (_clean(str(record.get("query") or "")), str(record.get("positiveDocumentID") or ""))
+        key = (_normalize_query(str(record.get("query") or "")), str(record.get("positiveDocumentID") or ""))
         index.setdefault(key, []).append(record)
     return index
+
+
+def _known_positive_documents(datasets: dict[str, list[dict[str, Any]]]) -> dict[str, set[str]]:
+    known: dict[str, set[str]] = {}
+    for family in ("embedding_train_pairs", "embedding_val_pairs"):
+        for record in datasets.get(family, []):
+            if not isinstance(record, dict):
+                continue
+            query = _normalize_query(str(record.get("query") or ""))
+            document_id = str(record.get("documentID") or "")
+            if query and document_id:
+                known.setdefault(query, set()).add(document_id)
+    for record in datasets.get("embedding_eval_retrieval", []):
+        if not isinstance(record, dict):
+            continue
+        query = _normalize_query(str(record.get("query") or ""))
+        if not query:
+            continue
+        positive_ids = {
+            str(document_id)
+            for document_id in record.get("positiveDocumentIDs", [])
+            if str(document_id)
+        }
+        known.setdefault(query, set()).update(positive_ids)
+    return known
 
 
 def _negative_for_pair(
     pair: dict[str, Any],
     docs: dict[str, dict[str, Any]],
     hard_negative_index: dict[tuple[str, str], list[dict[str, Any]]],
+    known_positive_ids: dict[str, set[str]],
 ) -> str | None:
     query = _clean(str(pair.get("query") or ""))
+    normalized_query = _normalize_query(query)
     positive_id = str(pair.get("documentID") or "")
-    hard_candidates = hard_negative_index.get((query, positive_id), [])
+    query_positives = known_positive_ids.get(normalized_query, set())
+    hard_candidates = hard_negative_index.get((normalized_query, positive_id), [])
     for candidate in hard_candidates:
         negative_id = str(candidate.get("negativeDocumentID") or "")
-        if negative_id in docs and negative_id != positive_id:
+        if negative_id in docs and negative_id != positive_id and negative_id not in query_positives:
             return negative_id
 
     positive = docs.get(positive_id)
@@ -263,10 +328,12 @@ def _negative_for_pair(
     positive_type = str(positive.get("objectType") or "")
     candidates = [
         doc for doc in docs.values()
-        if doc.get("id") != positive_id and doc.get("objectType") == positive_type
+        if doc.get("id") != positive_id
+        and str(doc.get("id") or "") not in query_positives
+        and doc.get("objectType") == positive_type
     ] or [
         doc for doc in docs.values()
-        if doc.get("id") != positive_id
+        if doc.get("id") != positive_id and str(doc.get("id") or "") not in query_positives
     ]
     if not candidates:
         return None
@@ -275,6 +342,10 @@ def _negative_for_pair(
 
 def _clean(value: str) -> str:
     return " ".join(str(value or "").strip().split())
+
+
+def _normalize_query(value: str) -> str:
+    return _clean(value).casefold()
 
 
 def _stable_id(*parts: Any) -> str:

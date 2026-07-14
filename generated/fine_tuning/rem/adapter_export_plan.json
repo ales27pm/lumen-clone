@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "4954fc7f904f92a7589ec400ab14a86a7960c6ad157baf9e6e72f27e67a2b1b1"
+        "reportSHA256": "7911abe39bd613cc08de97551dac56c3efc7e7b26db010103cd9e9262381a914"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,7 +41,7 @@
       "recordCount": 6,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 3,
@@ -51,34 +51,26 @@
     "recordCounts": {
       "eval": 6,
       "train_dpo": 2,
-      "train_sft": 5231,
+      "train_sft": 17,
       "val_dpo": 1,
-      "val_sft": 926
+      "val_sft": 4
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
-      "codebase_home_chunk_sft",
-      "codebase_home_sft",
-      "manifest_grounding_cards",
       "public_adapter_corpus_coedit_train",
       "public_adapter_corpus_json_schema_test_suite_draft_2020_12",
       "public_adapter_corpus_toolace_train",
       "rem_reflection"
     ],
     "sourceIntegrity": {
-      "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+      "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
       "dirtyState": true,
-      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+      "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
     },
     "taskTypes": [
-      "codebase_home_grounding",
-      "codebase_home_overview",
-      "codebase_source_chunk_grounding",
-      "manifest_grounding_cards",
       "public_schema_failure_diagnosis",
       "public_text_repair",
       "public_tool_boundary_repair",
-      "reflection_and_memory_policy",
       "rem_reflection",
       "ultra_specific_argument_extraction_repair",
       "ultra_specific_manifest_tool_repair",
@@ -128,7 +120,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "c0bb73c3c772c14fbf136a6699e29973e31c507a10be31ac6f2963019d14603e",
+    "experimentManifestSHA256": "28e05c936730bdf3bd615f34d0eebd60691cd1efde770c69848111df723a451c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -187,12 +179,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
-  "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
-  "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+  "trainingCodeBundleSHA256": "4ec4be858ebc74e4e77a825a9df129ad9a3dba51483e42d9317680705ff642be",
+  "trainingCodeSHA256": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
-    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
-    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+    "dpo": "96dac6ffc8342745c274aef0db0b484620b237e0e843fa8ff82348ae7683a6ee",
+    "orpo": "a3707ab0c5fe811b6cc1445193d2e8dd8dc4ab6c94bbe2021c0a3c6b99594017",
+    "sft": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

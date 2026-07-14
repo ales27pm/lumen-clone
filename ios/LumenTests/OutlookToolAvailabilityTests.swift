@@ -155,4 +155,96 @@ struct OutlookToolAvailabilityTests {
         #expect(!diagnosticText.contains("secret-token"))
         #expect(!diagnosticText.contains("private message body"))
     }
+
+    @Test func outlookHTMLReadFinalizationProducesBoundedPlainTextWithoutProviderIdentifiersOrTrackers() throws {
+        let graphMessageID = "AQMkSYNTHETIC-MESSAGE-ID-0001=="
+        let observation = """
+        Subject: Synthetic device launch bulletin
+        ID: \(graphMessageID)
+        From: Example Devices
+        Received: 2030-01-02T03:04:05Z
+        Unread: true
+        Has attachments: false
+        Preview: This is synthetic test content.
+        Body:
+        <html><head>
+        <meta name="unsubscribe_url" content="https://tracking.example.invalid/optout?message=fixture-0001&amp;token=synthetic-tracker-token">
+        <style>body { margin: 0 } .preheader { display: none }</style>
+        </head><body>
+        <img src="https://tracking.example.invalid/pixel/synthetic-tracker-token" width="1" height="1">
+        <h1>Synthetic device launch bulletin</h1>
+        <p>The synthetic demo starts on January 15, 2030.</p>
+        <p>ID: CASE-42</p>
+        <p>Join at https://meet.example.invalid/synthetic-demo</p>
+        <a href="https://tracking.example.invalid/click/synthetic-tracker-token">Read the synthetic announcement</a>
+        </body></html>
+        """
+
+        let final = try #require(ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.message.read",
+            observation: observation,
+            originalPrompt: "Read my latest Outlook email."
+        ))
+
+        #expect(final.contains("Subject: Synthetic device launch bulletin"))
+        #expect(final.contains("From: Example Devices"))
+        #expect(final.contains("Received: 2030-01-02T03:04:05Z"))
+        #expect(final.contains("Unread: true"))
+        #expect(final.contains("Has attachments: false"))
+        #expect(final.contains("Preview: This is synthetic test content."))
+        #expect(final.contains("The synthetic demo starts on January 15, 2030."))
+        #expect(final.contains("ID: CASE-42"))
+        #expect(final.contains("https://meet.example.invalid/synthetic-demo"))
+        #expect(final.contains("Read the synthetic announcement"))
+        #expect(!final.contains(graphMessageID))
+        #expect(!final.localizedCaseInsensitiveContains("<html"))
+        #expect(!final.localizedCaseInsensitiveContains("<meta"))
+        #expect(!final.contains("synthetic-tracker-token"))
+        #expect(final.count <= OutlookToolUserVisibleOutput.maxFinalCharacters + 32)
+    }
+
+    @Test func outlookListFolderAndAttachmentFinalsHideRawGraphIdentifiers() throws {
+        let graphID = "AQMkSYNTHETIC-MESSAGE-ID-0002=="
+        let listFinal = try #require(ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.messages.list",
+            observation: """
+            Cached references: use ordinal args like {"message":"first"}, or the raw Message ID for follow-up tools.
+
+            ---
+
+            Index: 1
+            Subject: Synthetic status
+            ID: \(graphID)
+            From: Example Sender
+            Received: 2030-01-02T03:04:05Z
+            Unread: false
+            Has attachments: false
+            Preview: All good.
+            """,
+            originalPrompt: "List my latest Outlook emails."
+        ))
+        let folderFinal = try #require(ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.folders.list",
+            observation: "- Inbox — id: \(graphID), unread: 2, total: 8",
+            originalPrompt: "List my Outlook folders."
+        ))
+        let attachmentFinal = try #require(ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .outlook,
+            toolID: "outlook.attachments.list",
+            observation: "No attachments found for message \(graphID).",
+            originalPrompt: "Show attachments on the latest Outlook email."
+        ))
+
+        #expect(listFinal.contains("Subject: Synthetic status"))
+        #expect(!listFinal.contains(graphID))
+        #expect(!listFinal.localizedCaseInsensitiveContains("raw Message ID"))
+        #expect(folderFinal.contains("Inbox"))
+        #expect(folderFinal.contains("unread: 2"))
+        #expect(!folderFinal.contains(graphID))
+        #expect(attachmentFinal.contains("selected Outlook message"))
+        #expect(!attachmentFinal.contains(graphID))
+    }
 }

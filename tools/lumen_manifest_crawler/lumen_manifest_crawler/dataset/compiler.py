@@ -432,6 +432,8 @@ def _normalize_record(
             "sourceIntegrity": source_integrity,
             # Compatibility for consumers of the legacy record field.
             "manifestCommit": lineage_commit,
+            "manifestDirty": None if config.deterministic else manifest.sourceIntegrity.dirty,
+            "worktreeFingerprint": manifest.sourceIntegrity.worktreeFingerprint,
             "sourceIndex": index,
             "invalidContrastToolIDs": [tool_id for tool_id in all_tool_ids if tool_id not in known_tool_ids],
         },
@@ -573,6 +575,8 @@ def _normalized_grounding(record: dict[str, Any], manifest: AgentBehaviorManifes
         "sourceIntegrity": _dataset_source_integrity_lineage(manifest, config),
         # Compatibility for consumers of the legacy grounding field.
         "sourceIntegrityCommit": lineage_commit,
+        "sourceIntegrityDirty": None if config.deterministic else manifest.sourceIntegrity.dirty,
+        "worktreeFingerprint": manifest.sourceIntegrity.worktreeFingerprint,
     }
 
 
@@ -596,10 +600,22 @@ def _dataset_source_integrity_lineage(
 def _stable_split(records: list[dict[str, Any]], config: DatasetCompilerConfig) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if not records:
         return [], []
-    validation_cutoff = max(config.min_validation_records, int(round(len(records) * config.validation_ratio)))
-    validation_cutoff = min(validation_cutoff, max(0, len(records) - 1)) if len(records) > 1 else 0
-    ranked = sorted(records, key=lambda record: record["id"])
-    validation_ids = {record["id"] for record in ranked[:validation_cutoff]}
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        group = str(record.get("sourceFamily") or record.get("taskType") or "unknown")
+        grouped.setdefault(group, []).append(record)
+
+    validation_ids: set[str] = set()
+    for group_records in grouped.values():
+        if len(group_records) <= 1:
+            continue
+        validation_cutoff = max(
+            config.min_validation_records,
+            int(round(len(group_records) * config.validation_ratio)),
+        )
+        validation_cutoff = min(validation_cutoff, len(group_records) - 1)
+        ranked = sorted(group_records, key=lambda record: record["id"])
+        validation_ids.update(record["id"] for record in ranked[:validation_cutoff])
     train: list[dict[str, Any]] = []
     validation: list[dict[str, Any]] = []
     for record in records:
@@ -831,10 +847,14 @@ def _build_dpo_records(role_records: dict[str, list[dict[str, Any]]], config: Da
 
 
 def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetCompilerConfig) -> list[dict[str, Any]]:
-    def _sample_argument_value(arg_type: str, arg_name: str) -> Any:
-        normalized = arg_type.strip().lower()
+    def _sample_argument_value(argument: Any) -> Any:
+        allowed_values = [value for value in (argument.allowedValues or []) if isinstance(value, str) and value]
+        if allowed_values:
+            return allowed_values[0]
+        arg_name = argument.name
+        normalized = argument.type.strip().lower()
         if normalized in {"string", "str"}:
-            return f"sample_{arg_name}"
+            return f"example {arg_name.replace('_', ' ')}"
         if normalized in {"number", "float", "double"}:
             return 1.0
         if normalized in {"integer", "int"}:
@@ -847,7 +867,7 @@ def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetC
             return {}
         if normalized in {"null", "none"}:
             return None
-        return f"sample_{arg_name}"
+        return f"example {arg_name.replace('_', ' ')}"
 
     records: list[dict[str, Any]] = []
     for tool in manifest.tools:
@@ -885,7 +905,7 @@ def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetC
             required_payload = {
                 "tool": tool.id,
                 "arguments": {
-                    arg.name: _sample_argument_value(arg.type, arg.name)
+                    arg.name: _sample_argument_value(arg)
                     for arg in tool.arguments
                     if arg.required
                 },
@@ -1622,6 +1642,8 @@ def _build_dataset_manifest(
             "sourceIntegrity": source_integrity,
             # Compatibility for consumers of the legacy dataset-manifest field.
             "commit": lineage_commit,
+            "dirty": None if config.deterministic else manifest.sourceIntegrity.dirty,
+            "worktreeFingerprint": manifest.sourceIntegrity.worktreeFingerprint,
             "toolCount": len(manifest.tools),
             "intentCount": len(manifest.intents),
             "modelSlotCount": len(manifest.fleet.slots),
@@ -1636,10 +1658,31 @@ def _build_dataset_manifest(
         "hashes": compiled_hashes,
         "trainingPolicy": {
             "format": "chat_messages_jsonl",
-            "splitStrategy": "stable_hash_by_record_id",
+            "splitStrategy": "deterministic_family_aware_group_split",
             "validationRatio": config.validation_ratio,
             "privateDataPolicy": "static Swift source manifest, role datasets, explicit runtime audit JSON, explicit in-app dataset packages, behavior repair samples, deterministic scenario results, and bounded diagnostic trace prefixes only; no unrestricted logs, full conversations, contacts, calendar bodies, files, photos, or tool payload bodies are ingested",
             "sentinelLeakPolicy": "fail validation on model-visible leaks",
+        },
+    }
+
+
+def finalize_dataset_manifest(
+    base_manifest: dict[str, Any],
+    datasets: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Attach complete count/hash coverage after derived dataset families exist."""
+    families = {
+        name: records
+        for name, records in datasets.items()
+        if name != "dataset_manifest"
+    }
+    return {
+        **base_manifest,
+        "counts": {name: len(records) for name, records in sorted(families.items())},
+        "hashes": {name: _records_hash(records) for name, records in sorted(families.items())},
+        "sources": {
+            **(base_manifest.get("sources") or {}),
+            "datasetFamilies": sorted(families),
         },
     }
 

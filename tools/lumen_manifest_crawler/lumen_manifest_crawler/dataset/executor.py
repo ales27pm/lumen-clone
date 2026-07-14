@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
+import json
+
+from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolArgumentManifest, ToolManifest
 
 
 def generate_executor_records(manifest: AgentBehaviorManifest) -> list[dict]:
@@ -52,6 +54,7 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
         args = _sample_arguments(tool)
         records.append({
             "scenario": "approval_required_tool",
+            "input": _approval_boundary_prompt(tool, "approval_required_tool", args),
             "tool": tool.id,
             "requiresApproval": True,
             "permissionKey": tool.permissionKey,
@@ -71,6 +74,7 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
         })
         records.append({
             "scenario": "approval_granted",
+            "input": _approval_boundary_prompt(tool, "approval_granted", args),
             "tool": tool.id,
             "requiresApproval": True,
             "permissionKey": tool.permissionKey,
@@ -89,6 +93,7 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
         })
         records.append({
             "scenario": "approval_rejected",
+            "input": _approval_boundary_prompt(tool, "approval_rejected", args),
             "tool": tool.id,
             "requiresApproval": True,
             "permissionKey": tool.permissionKey,
@@ -105,27 +110,31 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
                 "confirmationMode": tool.confirmationMode,
             }
         })
-        records.append({
-            "scenario": "ambiguous_request",
-            "tool": tool.id,
-            "requiresApproval": True,
-            "permissionKey": tool.permissionKey,
-            "permissionKind": tool.permissionKind,
-            "confirmationMode": tool.confirmationMode,
-            "phase": "clarification_required",
-            "expectedExecutorOutput": {
-                "status": "needs_clarification",
+        required_arguments = [arg.name for arg in tool.arguments if arg.required]
+        if required_arguments:
+            records.append({
+                "scenario": "ambiguous_request",
+                "input": _approval_boundary_prompt(tool, "ambiguous_request", args),
                 "tool": tool.id,
                 "requiresApproval": True,
                 "permissionKey": tool.permissionKey,
                 "permissionKind": tool.permissionKind,
                 "confirmationMode": tool.confirmationMode,
-                "missingArguments": [arg.name for arg in tool.arguments if arg.required],
-            }
-        })
+                "phase": "clarification_required",
+                "expectedExecutorOutput": {
+                    "status": "needs_clarification",
+                    "tool": tool.id,
+                    "requiresApproval": True,
+                    "permissionKey": tool.permissionKey,
+                    "permissionKind": tool.permissionKind,
+                    "confirmationMode": tool.confirmationMode,
+                    "missingArguments": required_arguments,
+                }
+            })
         if tool.permissionKey:
             records.append({
                 "scenario": "permission_unavailable",
+                "input": _approval_boundary_prompt(tool, "permission_unavailable", args),
                 "tool": tool.id,
                 "requiresApproval": True,
                 "permissionKey": tool.permissionKey,
@@ -146,7 +155,7 @@ def generate_approval_boundary_records(manifest: AgentBehaviorManifest) -> list[
 
 
 def _sample_arguments(tool: ToolManifest) -> dict:
-    return {arg.name: _sample_value(arg.type, arg.name) for arg in tool.arguments if arg.required}
+    return {arg.name: _sample_value(arg) for arg in tool.arguments if arg.required}
 
 
 def _tool_contract(tool: ToolManifest) -> dict:
@@ -159,8 +168,13 @@ def _tool_contract(tool: ToolManifest) -> dict:
     }
 
 
-def _sample_value(arg_type: str, name: str):
-    normalized = arg_type.lower()
+def _sample_value(argument: ToolArgumentManifest):
+    allowed_values = [value for value in (argument.allowedValues or []) if isinstance(value, str) and value]
+    if allowed_values:
+        return allowed_values[0]
+
+    name = argument.name
+    normalized = argument.type.lower()
     if normalized in {"null", "none", "nil"}:
         return None
     if normalized in {"double", "float", "number"}:
@@ -170,7 +184,7 @@ def _sample_value(arg_type: str, name: str):
     if normalized in {"bool", "boolean"}:
         return True
     if normalized == "array":
-        return []
+        return ["example"]
     if normalized == "object":
         return {}
     if "title" in name.lower():
@@ -179,7 +193,50 @@ def _sample_value(arg_type: str, name: str):
         return "SwiftData migration"
     if "email" in name.lower() or "to" == name.lower():
         return "example@example.com"
-    return f"sample_{name}"
+    examples = {
+        "atTime": "2026-08-01T14:00:00Z",
+        "body": "Here is the requested project update.",
+        "content": "Prefers concise project updates.",
+        "destination": "Central Library",
+        "filename": "README.md",
+        "folder": "Inbox",
+        "folderId": "folder-example-123",
+        "id": "item-example-123",
+        "kind": "preference",
+        "location": "Montreal",
+        "message": "first",
+        "messageId": "message-example-123",
+        "number": "+15550101234",
+        "path": "README.md",
+        "prompt": "Summarize the current project status.",
+        "schedule": "relative",
+        "subject": "Project update",
+        "url": "https://example.com/docs",
+    }
+    return examples.get(name, f"example {name.replace('_', ' ')}")
+
+
+def _approval_boundary_prompt(tool: ToolManifest, scenario: str, arguments: dict) -> str:
+    encoded_arguments = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    required_arguments = [argument.name for argument in tool.arguments if argument.required]
+    if scenario == "approval_required_tool":
+        return (
+            f"Prepare `{tool.id}` with arguments {encoded_arguments}. "
+            "Stop before execution and request the required user approval."
+        )
+    if scenario == "approval_granted":
+        return f"The user approved `{tool.id}` with arguments {encoded_arguments}. Return the ready-to-execute call."
+    if scenario == "approval_rejected":
+        return f"The user rejected the pending `{tool.id}` action. Return a typed cancellation for that tool."
+    if scenario == "ambiguous_request":
+        missing = ", ".join(required_arguments) or "the required details"
+        return f"The user requested `{tool.id}` but omitted {missing}. Return a clarification request for that tool."
+    if scenario == "permission_unavailable":
+        return (
+            f"Permission `{tool.permissionKey}` is unavailable for `{tool.id}` with arguments {encoded_arguments}. "
+            "Return the permission-unavailable tool result without claiming execution."
+        )
+    raise ValueError(f"Unsupported approval-boundary scenario: {scenario}")
 
 
 def _invalid_variant(tool_id: str) -> str:

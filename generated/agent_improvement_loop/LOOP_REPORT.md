@@ -1,18 +1,18 @@
 # Lumen Agent Improvement Loop Report
 
-- Passed: `False`
+- Passed: `True`
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `58491`
+- Dataset records: `43249`
 - Runtime audit reports: `2`
-- Runtime failures: `41`
-- Raw runtime failures: `42`
-- Skipped live model generation: `1`
+- Runtime failures: `6`
+- Raw runtime failures: `6`
+- Skipped live model generation: `0`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
-- Gaps: `33`
-- Next action prompts: `33`
+- Gaps: `1`
+- Next action prompts: `1`
 
 ## TestFlight handoff
 
@@ -20,152 +20,7 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the TestFlight + 
 
 ## Top gaps
 
-### ERROR — e2e_response_quality_rag
+### WARNING — Empty dataset family: runtime_audit_repairs
 
-- Category: `runtime_drift`
-- Recommendation: Convert this failure into a REM repair sample and add a regression eval.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
-
-### ERROR — e2e_runtime_environment_deferred
-
-- Category: `runtime_drift`
-- Recommendation: Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.
+- Category: `dataset_coverage`
+- Recommendation: Add current-build runtime inputs that produce runtime_audit_repairs records.

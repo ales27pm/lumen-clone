@@ -3,92 +3,28 @@
   "groups": [
     {
       "categories": {
-        "runtime_drift": 32
-      },
-      "count": 32,
-      "examples": [
-        {
-          "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
-          "category": "runtime_drift",
-          "prompt": "Archive my latest Outlook email.",
-          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-          "severity": "error",
-          "skippedLiveModelRun": false,
-          "title": "e2e_runtime_environment_deferred"
-        },
-        {
-          "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
-          "category": "runtime_drift",
-          "prompt": "Archive my latest Outlook email.",
-          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-          "severity": "error",
-          "skippedLiveModelRun": false,
-          "title": "e2e_runtime_environment_deferred"
-        },
-        {
-          "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
-          "category": "runtime_drift",
-          "prompt": "Trash the latest Outlook email.",
-          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-          "severity": "error",
-          "skippedLiveModelRun": false,
-          "title": "e2e_runtime_environment_deferred"
-        },
-        {
-          "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
-          "category": "runtime_drift",
-          "prompt": "Delete my latest Outlook email.",
-          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-          "severity": "error",
-          "skippedLiveModelRun": false,
-          "title": "e2e_runtime_environment_deferred"
-        },
-        {
-          "actual": "Outlook is not configured correctly for this build. Verify Microsoft Graph MSAL client ID, redirect URI, and bundle identifier.",
-          "category": "runtime_drift",
-          "prompt": "Delete my latest Outlook email.",
-          "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-          "severity": "error",
-          "skippedLiveModelRun": false,
-          "title": "e2e_runtime_environment_deferred"
-        }
-      ],
-      "freshRuntimeFailureCount": 32,
-      "group": "outlook",
-      "recommendedAction": "Quarantine this architecture/runtime/finalizer failure from SFT; add a deterministic regression test or runtime diagnostic instead.",
-      "rootCauseCategories": {
-        "stale_or_unclassified_runtime_evidence": 32
-      },
-      "severities": {
-        "error": 32
-      },
-      "skippedLiveModelGenerationCount": 0,
-      "status": "deferred"
-    },
-    {
-      "categories": {
-        "runtime_drift": 1
+        "dataset_coverage": 1
       },
       "count": 1,
       "examples": [
         {
-          "actual": "Summary\n[1] - [C0E44F7F] Photos 2026-07 | score=0.28 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.27 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.25 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.25 | Photos (2026-05): 185 items between May\n[2] - [C0E44F7F] Photos 2026-07 | score=0.24 | Photos (2026-07): 96 items between Jul 1, 2026 and Jul 11, 2026. 0 favorites, 2 videos, 72 screenshots, 0 selfies, 0 live photos, 0 portraits, 0 with location. - [ECE05887] Photos 2026-04 | score=0.23 | Photos (2026-04): 220 items between Apr 14, 2026 and Apr 30, 2026. 0 favorites, 14 videos, 154 screenshots, 0 selfies, 0 live photos, 0 portraits, 16 with location. - [68BCCAE1] Photos 2026-06 | score=0.22 | Photos (2026-06): 172 items between Jun 3, 2026 and Jun 30, 2026. 0 favorites, 1 videos, 146 screenshots, 0 selfies, 4 live photos, 6 portraits, 11 with location. - [74910E8D] Photos 2026-05 | score=0.22 | Photos (2026-05): 185 items between May\n\nKey modules\nNo explicit modules were present in the retrieved snippets unless named above.",
-          "category": "runtime_drift",
-          "prompt": "Search my files for architecture notes and summarize key modules.",
+          "actual": null,
+          "category": "dataset_coverage",
+          "prompt": null,
           "rootCauseCategory": "stale_or_unclassified_runtime_evidence",
-          "severity": "error",
-          "skippedLiveModelRun": false,
-          "title": "e2e_response_quality_rag"
+          "severity": "warning",
+          "skippedLiveModelRun": null,
+          "title": "Empty dataset family: runtime_audit_repairs"
         }
       ],
       "freshRuntimeFailureCount": 1,
-      "group": "rag",
-      "recommendedAction": "Convert this failure into a REM repair sample and add a regression eval.",
+      "group": "Empty dataset family: runtime_audit_repairs",
+      "recommendedAction": "Add current-build runtime inputs that produce runtime_audit_repairs records.",
       "rootCauseCategories": {
         "stale_or_unclassified_runtime_evidence": 1
       },
       "severities": {
-        "error": 1
+        "warning": 1
       },
       "skippedLiveModelGenerationCount": 0,
       "status": "deferred"
@@ -97,23 +33,22 @@
   "schemaVersion": "1.0.0",
   "summary": {
     "categoryCounts": {
-      "runtime_drift": 33
+      "dataset_coverage": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
-    "freshRuntimeFailureCount": 41,
+    "freshRuntimeFailureCount": 6,
     "groupCounts": {
-      "outlook": 32,
-      "rag": 1
+      "Empty dataset family: runtime_audit_repairs": 1
     },
-    "rawRuntimeFailureCount": 42,
+    "rawRuntimeFailureCount": 6,
     "rootCauseCounts": {
-      "stale_or_unclassified_runtime_evidence": 33
+      "stale_or_unclassified_runtime_evidence": 1
     },
     "runtimeAuditReports": 2,
     "severityCounts": {
-      "error": 33
+      "warning": 1
     },
-    "skippedLiveModelGenerationCount": 1,
-    "totalGaps": 33
+    "skippedLiveModelGenerationCount": 0,
+    "totalGaps": 1
   }
 }

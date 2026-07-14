@@ -58,7 +58,10 @@ nonisolated enum ToolObservationFinalizer {
 
     static func immediateFinalOutcome(intent: UserIntent, toolID: String, observation: String, originalPrompt: String) -> ToolObservationFinalizationOutcome {
         let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
-        let cleanObservation = ModelOutputSanitizer.stripHiddenBlocksPreservingPayloadMarkers(observation)
+        let strippedObservation = ModelOutputSanitizer.stripHiddenBlocksPreservingPayloadMarkers(observation)
+        let cleanObservation = canonicalTool.hasPrefix("outlook.")
+            ? OutlookToolUserVisibleOutput.sanitizedFinalObservation(strippedObservation, toolID: canonicalTool)
+            : strippedObservation
         guard !cleanObservation.isEmpty else { return rejected("empty-observation") }
         guard !looksUnsafe(WebRichContentPayload.removingMarkers(from: cleanObservation)) else { return rejected("unsafe-observation") }
 

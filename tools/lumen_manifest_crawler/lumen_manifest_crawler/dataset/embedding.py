@@ -50,7 +50,6 @@ def compile_embedding_datasets(
     corpus: list[dict[str, Any]] = []
     pairs: list[dict[str, Any]] = []
     hard_negatives: list[dict[str, Any]] = []
-    evals: list[dict[str, Any]] = []
 
     def add_doc(object_type: str, object_id: str, title: str, text: str, metadata: dict[str, Any] | None = None) -> str:
         doc_id = _stable_id("doc", object_type, object_id)
@@ -184,13 +183,27 @@ def compile_embedding_datasets(
             if query:
                 add_pair(query, doc_id, f"{family}_retrieval", {"sourceFamily": family})
 
+    train_pairs, val_pairs, eval_pairs = _split_pair_groups(pairs)
+    known_positive_ids = _known_positive_documents(pairs)
+    split_document_ids = {
+        "train": {str(pair["documentID"]) for pair in train_pairs},
+        "validation": {str(pair["documentID"]) for pair in val_pairs},
+        "evaluation": {str(pair["documentID"]) for pair in eval_pairs},
+    }
+
     doc_by_id = {doc["id"]: doc for doc in corpus}
     doc_tokens_by_id = {
         doc_id: _tokens(str(doc.get("text") or "") + " " + str(doc.get("title") or ""))
         for doc_id, doc in doc_by_id.items()
     }
-    for pair in pairs:
-        negative_id = _select_hard_negative(pair, doc_by_id, doc_tokens_by_id)
+    for pair in train_pairs + val_pairs:
+        negative_id = _select_hard_negative(
+            pair,
+            doc_by_id,
+            doc_tokens_by_id,
+            known_positive_ids,
+            split_document_ids[pair["split"]],
+        )
         if not negative_id:
             continue
         hard_negatives.append({
@@ -199,18 +212,19 @@ def compile_embedding_datasets(
             "positiveDocumentID": pair["documentID"],
             "negativeDocumentID": negative_id,
             "family": pair["family"],
+            "split": pair["split"],
+            "groupID": pair["groupID"],
             "reason": _negative_reason(doc_by_id[pair["documentID"]], doc_by_id[negative_id]),
             "metadata": pair.get("metadata", {}),
         })
-        evals.append({
-            "id": _stable_id("eval_retrieval", pair["id"]),
-            "query": pair["query"],
-            "positiveDocumentIDs": [pair["documentID"]],
-            "hardNegativeDocumentIDs": [negative_id],
-            "family": pair["family"],
-            "metrics": ["recall@1", "recall@5", "mrr", "ndcg@5", "hard_negative_accuracy"],
-            "metadata": pair.get("metadata", {}),
-        })
+
+    evals = _build_eval_records(
+        eval_pairs,
+        doc_by_id,
+        doc_tokens_by_id,
+        known_positive_ids,
+        split_document_ids["evaluation"],
+    )
 
     triplets = [
         {
@@ -219,13 +233,15 @@ def compile_embedding_datasets(
             "positiveDocumentID": item["positiveDocumentID"],
             "negativeDocumentID": item["negativeDocumentID"],
             "family": item["family"],
+            "split": item["split"],
+            "groupID": item["groupID"],
             "metadata": item.get("metadata", {}),
         }
         for item in hard_negatives
     ]
 
-    train_pairs, val_pairs = _split(pairs)
-    train_triplets, val_triplets = _split(triplets)
+    train_triplets = [item for item in triplets if item.get("split") == "train"]
+    val_triplets = [item for item in triplets if item.get("split") == "validation"]
     dataset_card = {
         "schemaVersion": EMBEDDING_DATASET_SCHEMA_VERSION,
         "model": EMBEDDING_MODEL_ID,
@@ -345,13 +361,22 @@ def _select_hard_negative(
     pair: dict[str, Any],
     docs: dict[str, dict[str, Any]],
     doc_tokens_by_id: dict[str, set[str]],
+    known_positive_ids: dict[str, set[str]],
+    allowed_document_ids: set[str],
 ) -> str | None:
     positive = docs.get(str(pair.get("documentID")))
     if not positive:
         return None
     query_tokens = _tokens(str(pair.get("query") or ""))
+    excluded_ids = known_positive_ids.get(_normalize_query(str(pair.get("query") or "")), set())
     positive_type = str(positive.get("objectType") or "")
-    candidates = [doc for doc in docs.values() if doc["id"] != positive["id"]]
+    candidates = [
+        doc
+        for doc in docs.values()
+        if doc["id"] != positive["id"]
+        and str(doc["id"]) not in excluded_ids
+        and str(doc["id"]) in allowed_document_ids
+    ]
     same_type = [doc for doc in candidates if doc.get("objectType") == positive_type]
     pool = same_type or candidates
     if not pool:
@@ -372,16 +397,156 @@ def _negative_reason(positive: dict[str, Any], negative: dict[str, Any]) -> str:
     return f"similar retrieval surface but wrong object type `{negative.get('objectType')}`"
 
 
-def _split(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    train: list[dict[str, Any]] = []
-    val: list[dict[str, Any]] = []
-    for record in sorted(records, key=lambda item: str(item.get("id") or "")):
-        target = val if int(_stable_id("split", record.get("id"))[:8], 16) % 10 == 0 else train
-        cloned = {**record, "split": "validation" if target is val else "train"}
-        target.append(cloned)
-    if records and not val and len(train) > 1:
-        val.append({**train.pop(0), "split": "validation"})
-    return train, val
+def _known_positive_documents(records: list[dict[str, Any]]) -> dict[str, set[str]]:
+    known: dict[str, set[str]] = {}
+    for record in records:
+        query = _normalize_query(str(record.get("query") or ""))
+        document_id = str(record.get("documentID") or "")
+        if query and document_id:
+            known.setdefault(query, set()).add(document_id)
+    return known
+
+
+def _split_pair_groups(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split connected query/document groups into train, validation, and eval.
+
+    A connected component keeps every normalized query and every positive
+    document in exactly one split, including cases where query variants point
+    at the same document or one query has multiple valid positive documents.
+    """
+    if not records:
+        return [], [], []
+
+    parent: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        parent.setdefault(node, node)
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    def union(left: str, right: str) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root == right_root:
+            return
+        if left_root < right_root:
+            parent[right_root] = left_root
+        else:
+            parent[left_root] = right_root
+
+    normalized_records: list[tuple[dict[str, Any], str, str]] = []
+    for record in records:
+        query = _normalize_query(str(record.get("query") or ""))
+        document_id = str(record.get("documentID") or "")
+        if not query or not document_id:
+            continue
+        query_node = f"query:{query}"
+        document_node = f"document:{document_id}"
+        union(query_node, document_node)
+        normalized_records.append((record, query_node, document_node))
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record, query_node, _ in normalized_records:
+        grouped.setdefault(find(query_node), []).append(record)
+
+    ordered_groups: list[tuple[str, list[dict[str, Any]]]] = []
+    for records_in_group in grouped.values():
+        record_ids = sorted(str(record.get("id") or "") for record in records_in_group)
+        group_id = _stable_id("pair_group", record_ids)
+        ordered_groups.append((group_id, records_in_group))
+    ordered_groups.sort(key=lambda item: _stable_id("pair_group_order", item[0]))
+
+    assignments: dict[str, list[tuple[str, list[dict[str, Any]]]]] = {
+        "train": [],
+        "validation": [],
+        "evaluation": [],
+    }
+    for group_id, records_in_group in ordered_groups:
+        bucket = int(_stable_id("pair_group_split", group_id)[:8], 16) % 10
+        split = "evaluation" if bucket == 0 else "validation" if bucket == 1 else "train"
+        assignments[split].append((group_id, records_in_group))
+
+    if len(ordered_groups) >= 3:
+        _ensure_nonempty_group_splits(assignments)
+
+    def records_for(split: str) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for group_id, records_in_group in assignments[split]:
+            output.extend(
+                {**record, "split": split, "groupID": group_id}
+                for record in sorted(records_in_group, key=lambda item: str(item.get("id") or ""))
+            )
+        return sorted(output, key=lambda item: str(item.get("id") or ""))
+
+    return records_for("train"), records_for("validation"), records_for("evaluation")
+
+
+def _ensure_nonempty_group_splits(
+    assignments: dict[str, list[tuple[str, list[dict[str, Any]]]]],
+) -> None:
+    for missing_split in ("train", "validation", "evaluation"):
+        if assignments[missing_split]:
+            continue
+        donors = [split for split, groups in assignments.items() if len(groups) > 1]
+        if not donors:
+            return
+        donor = sorted(donors, key=lambda split: (-len(assignments[split]), split))[0]
+        moved = sorted(assignments[donor], key=lambda item: item[0])[0]
+        assignments[donor].remove(moved)
+        assignments[missing_split].append(moved)
+
+
+def _build_eval_records(
+    pairs: list[dict[str, Any]],
+    docs: dict[str, dict[str, Any]],
+    doc_tokens_by_id: dict[str, set[str]],
+    known_positive_ids: dict[str, set[str]],
+    allowed_document_ids: set[str],
+) -> list[dict[str, Any]]:
+    by_query: dict[str, list[dict[str, Any]]] = {}
+    for pair in pairs:
+        query = _normalize_query(str(pair.get("query") or ""))
+        if query:
+            by_query.setdefault(query, []).append(pair)
+
+    evals: list[dict[str, Any]] = []
+    for normalized_query, query_pairs in sorted(by_query.items()):
+        ordered_pairs = sorted(query_pairs, key=lambda item: str(item.get("id") or ""))
+        representative = ordered_pairs[0]
+        positive_ids = sorted(
+            {
+                str(pair.get("documentID") or "")
+                for pair in ordered_pairs
+                if str(pair.get("documentID") or "") in docs
+            }
+        )
+        if not positive_ids:
+            continue
+        negative_id = _select_hard_negative(
+            representative,
+            docs,
+            doc_tokens_by_id,
+            known_positive_ids,
+            allowed_document_ids,
+        )
+        if not negative_id:
+            continue
+        evals.append({
+            "id": _stable_id("eval_retrieval", normalized_query, positive_ids),
+            "query": representative["query"],
+            "positiveDocumentIDs": positive_ids,
+            "hardNegativeDocumentIDs": [negative_id],
+            "family": representative["family"],
+            "split": "evaluation",
+            "groupID": representative["groupID"],
+            "metrics": ["recall@1", "recall@5", "mrr", "ndcg@5", "hard_negative_accuracy"],
+            "metadata": representative.get("metadata", {}),
+        })
+    return evals
 
 
 def _tokens(value: str) -> set[str]:
@@ -390,6 +555,10 @@ def _tokens(value: str) -> set[str]:
 
 def _clean(value: str) -> str:
     return " ".join(str(value or "").strip().split())
+
+
+def _normalize_query(value: str) -> str:
+    return _clean(value).casefold()
 
 
 def _stable_id(*parts: Any) -> str:

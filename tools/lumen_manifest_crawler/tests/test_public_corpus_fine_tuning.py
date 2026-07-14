@@ -284,7 +284,7 @@ def test_explicit_adapter_role_suppresses_incidental_text_heuristics() -> None:
     assert not custom_by_agent["rem"]
 
 
-def test_fleet_routing_uses_structured_ownership_without_absorbing_peer_samples() -> None:
+def test_fleet_routing_uses_structured_ownership_without_bypassing_role_locks() -> None:
     manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
     role_targets = {
         "orchestrator": "cortex",
@@ -339,7 +339,7 @@ def test_fleet_routing_uses_structured_ownership_without_absorbing_peer_samples(
             for record in _all_sft(compiled[target])
             if record["metadata"].get("taskType") == "peer_role_contract"
         ]
-        assert len(peer_samples) == (1 if target in role_targets.values() else 0)
+        assert len(peer_samples) == (1 if target == "cortex" else 0)
     assert not [
         record
         for agent in AGENTS

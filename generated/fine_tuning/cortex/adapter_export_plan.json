@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "0be75222b3aa5cec45392be79baeb7ee0dc81569ce7922b2b139940d4f8b7688"
+        "reportSHA256": "124272e423c484721add9f98789567b9375d42db1ea7769f1fc526a1576176da"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,19 +41,19 @@
       "recordCount": 558,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "preferenceTraining": {
       "includedInCheckpoint": false,
-      "recordCount": 6,
+      "recordCount": 16,
       "requiredPhase": "post_sft_preference_training",
       "status": "generated_not_trained"
     },
     "recordCounts": {
       "eval": 558,
-      "train_dpo": 5,
-      "train_sft": 11618,
-      "val_dpo": 1,
-      "val_sft": 2049
+      "train_dpo": 14,
+      "train_sft": 849,
+      "val_dpo": 2,
+      "val_sft": 123
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -61,14 +61,15 @@
       "codebase_home_sft",
       "cortex_codebase_self_awareness",
       "cortex_routing",
+      "cross_model_training",
       "manifest_grounding_cards",
       "public_adapter_corpus_massive_en_us_1_1",
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+      "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
       "dirtyState": true,
-      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+      "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
     },
     "taskTypes": [
       "codebase_home_grounding",
@@ -76,11 +77,16 @@
       "codebase_self_awareness",
       "codebase_source_chunk_grounding",
       "cortex_routing",
-      "intent_routing",
+      "fleet_delegation",
+      "fleet_peer_knowledge",
+      "fleet_peer_source_knowledge",
+      "fleet_self_knowledge",
+      "fleet_whole_system_identity",
       "manifest_grounding_cards",
       "module_ownership_grounding",
       "public_intent_routing",
       "public_verified_tool_routing",
+      "source_code_self_knowledge",
       "source_symbol_grounding",
       "total_codebase_self_awareness",
       "total_codebase_source_chunk",
@@ -127,7 +133,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "c25f55a0d4ca1c78ef98f42a87cb7bc32e9e8b6959c5e062bf7b57847e97d22a",
+    "experimentManifestSHA256": "d207f4527fb63f1c86be14dee6adddbf90b72af2ddb1f36d196db80823659d00",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,12 +192,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
-  "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
-  "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+  "trainingCodeBundleSHA256": "4ec4be858ebc74e4e77a825a9df129ad9a3dba51483e42d9317680705ff642be",
+  "trainingCodeSHA256": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
-    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
-    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+    "dpo": "96dac6ffc8342745c274aef0db0b484620b237e0e843fa8ff82348ae7683a6ee",
+    "orpo": "a3707ab0c5fe811b6cc1445193d2e8dd8dc4ab6c94bbe2021c0a3c6b99594017",
+    "sft": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

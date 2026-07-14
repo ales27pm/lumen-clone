@@ -143,6 +143,18 @@ extension IntentRouterTests {
         #expect(required.isSubset(of: decision.allowedToolIDs))
     }
 
+    @Test func bareMemoryCoverageCommandsClarifyInsteadOfPersistingTestInstructions() async throws {
+        for prompt in [
+            "Use Save Memory, but ask for clarification if required details are missing.",
+            "Use Recall Memory, but ask for clarification if required details are missing."
+        ] {
+            let decision = IntentRouter.classify(prompt)
+            #expect(decision.intent == .memory)
+            #expect(decision.requiresClarification)
+            #expect(decision.clarificationPrompt == "What should I save or recall?")
+        }
+    }
+
     @Test func concreteFileReadBeatsRAGArchitectureKeyword() async throws {
         let decision = IntentRouter.classify("Open and read architecture-notes.md.")
         #expect(decision.intent == .files)

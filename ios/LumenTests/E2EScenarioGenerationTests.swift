@@ -47,6 +47,39 @@ struct E2EScenarioGenerationTests {
         #expect(summary.isProductionReady)
     }
 
+    @Test func missingArgumentPromptsDoNotEmbedHarnessInstructions() throws {
+        let entries = ToolScenarioBank.entries().filter { $0.kind == .missingArgument }
+        #expect(!entries.isEmpty)
+
+        for entry in entries {
+            let lower = entry.prompt.lowercased()
+            #expect(!lower.contains("ask for clarification"), "Prompt for \(entry.toolID) leaked test instructions: \(entry.prompt)")
+            #expect(!lower.hasPrefix("use "), "Prompt for \(entry.toolID) used a tool-name instruction: \(entry.prompt)")
+        }
+
+        let memorySave = try #require(entries.first { $0.toolID == "memory.save" })
+        let memoryRecall = try #require(entries.first { $0.toolID == "memory.recall" })
+        #expect(memorySave.prompt == "Remember this")
+        #expect(memoryRecall.prompt == "Recall memory")
+    }
+
+    @Test func missingArgumentPromptsMatchRequiredArgumentClarificationPolicy() async throws {
+        let entries = ToolScenarioBank.entries().filter { $0.kind == .missingArgument }
+
+        for entry in entries {
+            let tool = try #require(ToolRegistry.find(id: entry.toolID))
+            let requiredArguments = tool.capabilityContract.arguments.filter(\.required)
+            let routing = await IntentClassifierService.shared.route(entry.prompt)
+
+            if requiredArguments.isEmpty {
+                #expect(!routing.requiresClarification, "No-arg tool \(entry.toolID) unexpectedly clarified for: \(entry.prompt)")
+            } else {
+                #expect(routing.requiresClarification, "Required-arg tool \(entry.toolID) did not clarify for: \(entry.prompt)")
+                #expect(!(routing.clarificationPrompt ?? "").isEmpty, "Required-arg tool \(entry.toolID) had no clarification prompt")
+            }
+        }
+    }
+
     @Test func liveToolCoveragePromptsRouteToExpectedIntentAndToolScope() async {
         for scenario in E2ETestScenario.allToolCoverage {
             let routing = await IntentClassifierService.shared.route(scenario.prompt)

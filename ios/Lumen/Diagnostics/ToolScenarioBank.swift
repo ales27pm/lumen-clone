@@ -237,7 +237,7 @@ nonisolated enum ToolScenarioBank {
         case "memory.recall": return "Tell me what style I asked you to use."
         case "rag.search": return "Find Lumen architecture notes in my local files."
         case "rag.index_files": return "Refresh the file retrieval index."
-        case "rag.index_photos": return "Refresh the photo retrieval index."
+        case "rag.index_photos": return "Refresh the photo retrieval index for the last 3 months."
         case "files.read": return "Open local document diagnostics.txt."
         case "mail.draft": return "Write a quick email to alex@example.com saying I will send it tonight."
         case "messages.draft": return "Text 5551234567 that I am late."
@@ -289,14 +289,47 @@ nonisolated enum ToolScenarioBank {
 
     private static func missingArgumentPrompt(for toolID: String, name: String) -> String {
         switch toolID {
-        case "mail.draft": return "Draft an email."
-        case "messages.draft": return "Send a text."
-        case "web.fetch": return "Fetch the page at https://example.com."
-        case "maps.directions": return "Give me directions to the nearest hardware store."
-        case "alarm.cancel": return "Cancel my alarm."
-        case "trigger.cancel": return "Cancel that scheduled run."
-        case "outlook.message.move": return "Move my latest email."
-        default: return "Use \(name), but ask for clarification if required details are missing."
+        // Required-argument tools intentionally omit their required value. These
+        // must produce a clarification, never execute the prompt text as data.
+        case "contacts.search": return "Find contact"
+        case "outlook.messages.search": return "Search my Outlook email"
+        case "outlook.message.read": return "Read an Outlook email"
+        case "outlook.attachments.list": return "Show attachments from an Outlook email"
+        case "maps.directions": return "Directions"
+        case "maps.search": return "Find nearby"
+        case "photos.search": return "Search photos"
+        case "web.search": return "Search the web"
+        case "web.fetch": return "Fetch URL"
+        case "files.read": return "Read file"
+        case "memory.save": return "Remember this"
+        case "memory.recall": return "Recall memory"
+        case "rag.search": return "Search my files"
+        case "rag.index_photos": return "Reindex my photos"
+
+        // No-required-argument tools still need a third natural-language
+        // coverage variation. They should execute rather than clarify.
+        case "calendar.list": return "Show me my calendar"
+        case "reminders.list": return "Show me my reminders"
+        case "outlook.status": return "Check whether Outlook is connected"
+        case "outlook.folders.list": return "Show my Outlook folders"
+        case "outlook.messages.list": return "Show my Outlook inbox"
+        case "location.current": return "Where am I"
+        case "weather": return "What's the weather here"
+        case "health.summary": return "Show my health summary"
+        case "motion.activity": return "Am I walking or running right now"
+        case "rag.index_files": return "Reindex local files"
+        case "trigger.list": return "Show scheduled agent runs"
+        case "alarm.authorization_status": return "Check alarm authorization"
+        case "alarm.list": return "Show active alarms"
+
+        // Approval tools do not currently use this path, but retain safe,
+        // underspecified prompts if their policy changes in the future.
+        case "mail.draft": return "Draft an email"
+        case "messages.draft": return "Send a text"
+        case "alarm.cancel": return "Cancel my alarm"
+        case "trigger.cancel": return "Cancel that scheduled run"
+        case "outlook.message.move": return "Move my latest email"
+        default: return "Help me with \(name.lowercased())"
         }
     }
 

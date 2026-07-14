@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,11 @@ import pytest
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.compiler import _records_hash
+from lumen_manifest_crawler.dataset.codebase_home import (
+    MAX_CHUNK_CHARS,
+    _split_source_chunks,
+    generate_codebase_home_records,
+)
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
     CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
@@ -131,6 +138,7 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert config["adapterExport"]["adapterDirectory"] == expected_adapter_dir
         assert config["adapterExport"]["adapterGGUFArtifact"] == expected_adapter_gguf
         assert config["adapterExport"]["adapterRepoID"] == EXPECTED_ADAPTER_REPO
+        assert config["gguf_repo_id"] == EXPECTED_ADAPTER_REPO
         assert config["adapterExport"]["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
         assert config["preference_trainer"] == "dpo"
         assert config["trainingCodeManifest"]["phase"] == "sft"
@@ -221,6 +229,105 @@ def test_sft_records_do_not_train_null_assistant_outputs(compiled_fine_tuning: t
         for record in fine_tuning[agent].train_sft + fine_tuning[agent].val_sft:
             content = record["messages"][2]["content"].strip().lower()
             assert content not in {"", "null", "none"}, record["metadata"]
+
+
+def test_sft_messages_are_unique_and_source_stratified(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    for agent in AGENTS:
+        train = fine_tuning[agent].train_sft
+        val = fine_tuning[agent].val_sft
+        train_keys = {json.dumps(record["messages"], ensure_ascii=False, sort_keys=True) for record in train}
+        val_keys = {json.dumps(record["messages"], ensure_ascii=False, sort_keys=True) for record in val}
+        assert len(train_keys) == len(train)
+        assert len(val_keys) == len(val)
+        assert train_keys.isdisjoint(val_keys)
+
+        all_sources = {
+            record["metadata"]["sourceFamily"]
+            for record in train + val
+        }
+        for source in all_sources:
+            source_records = [record for record in train + val if record["metadata"]["sourceFamily"] == source]
+            if len(source_records) >= 2 and not source.startswith("public_adapter_corpus_"):
+                assert any(record["metadata"]["sourceFamily"] == source for record in train)
+                assert any(record["metadata"]["sourceFamily"] == source for record in val)
+
+
+def test_sft_prompts_have_one_semantic_assistant_label(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+
+    def canonical_output(content: str) -> str:
+        try:
+            return json.dumps(json.loads(content), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        except json.JSONDecodeError:
+            return " ".join(content.split())
+
+    for agent in AGENTS:
+        outputs_by_prompt: dict[str, set[str]] = {}
+        records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+        for record in records:
+            prompt = json.dumps(record["messages"][:-1], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            outputs_by_prompt.setdefault(prompt, set()).add(canonical_output(record["messages"][-1]["content"]))
+        conflicts = {prompt: outputs for prompt, outputs in outputs_by_prompt.items() if len(outputs) > 1}
+        assert conflicts == {}, f"{agent} has {len(conflicts)} prompt conflicts"
+
+
+def test_role_locked_adapters_only_contain_native_sources(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    allowed = {
+        "executor": {"executor_tool_calls", "tool_schema_cards", "approval_boundary_samples", "negative_samples"},
+        "mouth": {"mouth_responses"},
+        "mimicry": {"mimicry_style"},
+        "rem": {"rem_reflection", "runtime_audit_repairs"},
+    }
+    for agent, sources in allowed.items():
+        actual = {
+            record["metadata"]["sourceFamily"]
+            for record in fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+        }
+        assert all(
+            source in sources
+            or source == ULTRA_SPECIFIC_SOURCE_FAMILY
+            or source.startswith("public_adapter_corpus_")
+            for source in actual
+        )
+        assert all(
+            (record.get("metadata") or {}).get("publicCorpus", {}).get("targetAdapter") == agent
+            for record in fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
+            if record["metadata"]["sourceFamily"].startswith("public_adapter_corpus_")
+        )
+
+
+def test_dataset_cards_account_for_materialized_sft(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    for agent in AGENTS:
+        dataset = fine_tuning[agent]
+        records = dataset.train_sft + dataset.val_sft
+        source_counts: dict[str, int] = {}
+        task_counts: dict[str, int] = {}
+        for record in records:
+            source = record["metadata"]["sourceFamily"]
+            task = record["metadata"]["taskType"]
+            source_counts[source] = source_counts.get(source, 0) + 1
+            task_counts[task] = task_counts.get(task, 0) + 1
+            assert "sourceDirty" in record["metadata"]
+            assert "worktreeFingerprint" in record["metadata"]
+        assert dataset.dataset_card["sourceFamilyCounts"] == dict(sorted(source_counts.items()))
+        assert dataset.dataset_card["taskTypeCounts"] == dict(sorted(task_counts.items()))
+        assert dataset.dataset_card["availableSFTRecords"] == len(records)
+        assert "sourceDirty" in dataset.dataset_card
+        assert "worktreeFingerprint" in dataset.dataset_card
+
+
+def test_sft_records_fit_conservative_sequence_budget(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    for agent in AGENTS:
+        dataset = fine_tuning[agent]
+        max_chars = dataset.unsloth_config["sequence_char_budget"]
+        assert dataset.unsloth_config["sequence_budget_policy"] == "conservative_utf8_byte_proxy"
+        for record in dataset.train_sft + dataset.val_sft:
+            serialized = json.dumps(record["messages"], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            assert len(serialized.encode("utf-8")) <= max_chars
 
 
 def test_each_adapter_has_ultra_specific_dataset_records(compiled_fine_tuning: tuple) -> None:
@@ -353,7 +460,7 @@ def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
         assert all(record["metadata"]["agent"] == agent for record in public_records)
 
 
-def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: tuple) -> None:
+def test_cortex_keeps_codebase_self_awareness_supplemental(compiled_fine_tuning: tuple) -> None:
     _, datasets, fine_tuning = compiled_fine_tuning
     records = fine_tuning["cortex"].train_sft + fine_tuning["cortex"].val_sft
     cortex_codebase = [
@@ -369,13 +476,15 @@ def test_cortex_has_large_codebase_self_awareness_corpus(compiled_fine_tuning: t
 
     assert len(datasets.get("codebase_home_corpus", [])) >= 700
     assert source_chunk_count >= len(datasets.get("codebase_home_corpus", []))
-    assert len(cortex_codebase) >= 2000
-    assert len(cortex_chunks) == source_chunk_count
+    assert cortex_codebase
+    assert len(cortex_codebase) / len(records) <= 0.25
+    assert len(cortex_chunks) < source_chunk_count
     assert CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY in fine_tuning["cortex"].dataset_card["sourceFamilies"]
     assert card_quality["cortexCodebaseSelfAwarenessSourceFamily"] == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
     assert card_quality["cortexCodebaseSelfAwarenessRecordCount"] == len(cortex_codebase)
-    assert card_quality["cortexCodebaseSelfAwarenessCoverage"] == "git_tracked_text_files_excluding_generated_outputs"
-    assert card_quality["cortexCodebaseChunkRecordCount"] == source_chunk_count
+    assert card_quality["cortexCodebaseSelfAwarenessCoverage"] == "deterministic_supplemental_sample_of_git_tracked_text_files"
+    assert card_quality["cortexCodebaseChunkRecordCount"] == len(cortex_chunks)
+    assert card_quality["cortexCodebaseSelfAwarenessCandidateRecordCount"] >= source_chunk_count
     assert any("sourceHash" in (record.get("metadata") or {}) for record in cortex_codebase)
     assert any((record.get("metadata") or {}).get("taskType") == "module_ownership_grounding" for record in cortex_codebase)
     assert any((record.get("metadata") or {}).get("taskType") == "source_symbol_grounding" for record in cortex_codebase)
@@ -449,6 +558,22 @@ def test_no_unknown_agent_roles_unknown_tools_or_sentinel_leaks(compiled_fine_tu
         "dpo_chosen_equals_rejected",
         "eval_missing_expected",
         "missing_required_args_executor_examples",
+        "duplicate_sft_messages",
+        "sft_split_overlap",
+        "conflicting_sft_prompt_labels",
+        "dataset_card_source_counts_mismatch",
+        "dataset_card_task_counts_mismatch",
+        "off_role_sft_source",
+        "supplemental_sft_ratio_exceeded",
+        "sft_sequence_budget_exceeded",
+        "sft_source_split_missing",
+        "executor_non_json_output",
+        "executor_invalid_payload_tool",
+        "executor_invalid_arguments",
+        "executor_extra_arguments",
+        "executor_invalid_enum_argument",
+        "executor_invalid_argument_type",
+        "executor_dpo_missing_chosen_output",
     }
     failing_codes = {failure.code for failure in failures}
     assert blocked.isdisjoint(failing_codes), failures
@@ -463,6 +588,71 @@ def test_executor_has_tool_coverage(compiled_fine_tuning: tuple) -> None:
     assert expected_tools.issubset(covered_tools)
 
 
+def test_executor_outputs_are_manifest_valid_json(compiled_fine_tuning: tuple) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    tools = {tool.id: tool for tool in manifest.tools}
+    for record in fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft:
+        payload = json.loads(record["messages"][2]["content"])
+        assert isinstance(payload, dict)
+        tool_id = payload.get("tool")
+        assert tool_id in tools
+        arguments = payload.get("arguments")
+        assert isinstance(arguments, dict)
+        contract = {argument.name: argument for argument in tools[tool_id].arguments}
+        assert set(arguments).issubset(contract)
+        for name, value in arguments.items():
+            allowed_values = contract[name].allowedValues
+            if allowed_values:
+                assert value in allowed_values
+        if tool_id == "trigger.create" and "schedule" in arguments:
+            assert arguments["schedule"] in {"absolute", "interval", "relative"}
+
+
+def test_executor_chosen_dpo_outputs_are_manifest_valid_json(compiled_fine_tuning: tuple) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    tools = {tool.id: tool for tool in manifest.tools}
+    for record in fine_tuning["executor"].train_dpo + fine_tuning["executor"].val_dpo:
+        payload = json.loads(record["chosen"]["content"])
+        tool = tools[payload["tool"]]
+        arguments = payload.get("arguments")
+        assert isinstance(arguments, dict)
+        required = {argument.name for argument in tool.arguments if argument.required}
+        assert required.issubset(arguments)
+        for argument in tool.arguments:
+            if argument.name in arguments and argument.allowedValues:
+                assert arguments[argument.name] in argument.allowedValues
+
+
+def test_validator_rejects_invalid_executor_enum(compiled_fine_tuning: tuple) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    executor = fine_tuning["executor"]
+    records = copy.deepcopy(executor.train_sft)
+    index = next(
+        index
+        for index, record in enumerate(records)
+        if "trigger.create" in record["metadata"]["toolIDs"]
+        and "schedule" in json.loads(record["messages"][2]["content"]).get("arguments", {})
+    )
+    payload = json.loads(records[index]["messages"][2]["content"])
+    payload["arguments"]["schedule"] = "sample_schedule"
+    records[index]["messages"][2]["content"] = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    mutated = dict(fine_tuning)
+    mutated["executor"] = replace(executor, train_sft=records)
+
+    failures = validate_agent_fine_tuning_datasets(manifest, mutated)
+
+    assert "executor_invalid_enum_argument" in {failure.code for failure in failures}
+
+
+def test_rem_does_not_fabricate_runtime_repair_when_none_are_trainable(compiled_fine_tuning: tuple) -> None:
+    _, datasets, fine_tuning = compiled_fine_tuning
+    if datasets.get("runtime_audit_repairs"):
+        pytest.skip("fixture contains trainable runtime repair records")
+    records = fine_tuning["rem"].train_sft + fine_tuning["rem"].val_sft
+    assert not any(record["metadata"]["sourceFamily"] == "runtime_audit_repairs" for record in records)
+    assert "runtime_failure_detected" not in json.dumps(records, ensure_ascii=False, sort_keys=True)
+
+
 def test_fleet_has_model_slot_coverage(compiled_fine_tuning: tuple) -> None:
     manifest, _, fine_tuning = compiled_fine_tuning
     blob = "\n".join(json.dumps(record, ensure_ascii=False, sort_keys=True) for record in (fine_tuning["fleet"].train_sft + fine_tuning["fleet"].val_sft))
@@ -470,7 +660,7 @@ def test_fleet_has_model_slot_coverage(compiled_fine_tuning: tuple) -> None:
         assert slot.id in blob
 
 
-def test_codebase_home_records_route_to_fleet_and_rem() -> None:
+def test_codebase_home_records_are_supplemental_for_fleet_and_excluded_from_rem() -> None:
     repo_root = _repo_root()
     manifest = generate_manifest(repo_root)
     datasets = generate_all_datasets(manifest, root=repo_root)
@@ -480,10 +670,17 @@ def test_codebase_home_records_route_to_fleet_and_rem() -> None:
     assert datasets["codebase_home_sft"]
     assert datasets["codebase_home_chunks"]
     assert datasets["codebase_home_chunk_sft"]
-    for agent in ("fleet", "rem"):
-        records = fine_tuning[agent].train_sft + fine_tuning[agent].val_sft
-        assert any(record["metadata"]["sourceFamily"] == "codebase_home_sft" for record in records)
-        assert any(record["metadata"]["sourceFamily"] == "codebase_home_chunk_sft" for record in records)
+    fleet_records = fine_tuning["fleet"].train_sft + fine_tuning["fleet"].val_sft
+    fleet_codebase = [
+        record
+        for record in fleet_records
+        if record["metadata"]["sourceFamily"] in {"codebase_home_sft", "codebase_home_chunk_sft"}
+    ]
+    assert fleet_codebase
+    assert len(fleet_codebase) / len(fleet_records) <= 0.25
+
+    rem_records = fine_tuning["rem"].train_sft + fine_tuning["rem"].val_sft
+    assert not any(record["metadata"]["sourceFamily"].startswith("codebase_home") for record in rem_records)
 
 
 def test_codebase_home_excludes_generated_manifest_outputs() -> None:
@@ -500,6 +697,39 @@ def test_codebase_home_excludes_generated_manifest_outputs() -> None:
     assert overview["metadata"]["coverage"] == "git_tracked_text_files_excluding_generated_outputs"
     assert overview["metadata"]["selectedGeneratedFiles"] == []
     assert "ios/Lumen/AgentBehaviorManifest.json" in overview["metadata"]["excludedRelpaths"]
+
+
+def test_codebase_home_excludes_private_runtime_evidence_and_snapshot_exports(tmp_path: Path) -> None:
+    safe_source = tmp_path / "ios" / "Lumen" / "SafeSource.swift"
+    runtime_audit = tmp_path / "runtime-audits" / "latest-e2e-report.json"
+    snapshot = tmp_path / "codebase_txt_chunks" / "codebase_snapshot_part_001.txt"
+    nested_fixture = tmp_path / "tests" / "fixtures" / "lumen-live-e2e-report-private.json"
+    source_with_evidence_name = tmp_path / "tests" / "test_e2e_results.py"
+    export = tmp_path / "exports" / "testflight-session.txt"
+    for path in (safe_source, runtime_audit, snapshot, nested_fixture, source_with_evidence_name, export):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("synthetic fixture text", encoding="utf-8")
+
+    datasets = generate_codebase_home_records(tmp_path)
+    paths = {str(record.get("path") or "") for record in datasets["codebase_home_corpus"]}
+
+    assert "ios/Lumen/SafeSource.swift" in paths
+    assert "tests/test_e2e_results.py" in paths
+    assert "runtime-audits/latest-e2e-report.json" not in paths
+    assert "codebase_txt_chunks/codebase_snapshot_part_001.txt" not in paths
+    assert "tests/fixtures/lumen-live-e2e-report-private.json" not in paths
+    assert "exports/testflight-session.txt" not in paths
+
+
+def test_codebase_home_chunks_enforce_character_limit_for_single_long_line() -> None:
+    text = "x" * (MAX_CHUNK_CHARS * 2 + 17)
+
+    chunks = list(_split_source_chunks(text))
+
+    assert len(chunks) == 3
+    assert all((line_start, line_end) == (1, 1) for line_start, line_end, _ in chunks)
+    assert all(len(chunk_text) <= MAX_CHUNK_CHARS for _, _, chunk_text in chunks)
+    assert "".join(chunk_text for _, _, chunk_text in chunks) == text
 
 
 def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> None:

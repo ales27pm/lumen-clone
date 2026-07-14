@@ -183,7 +183,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--release-bake", action="store_true", help="Explicitly run optional GGUF release bake.")
     parser.add_argument("--skip-release-bake-existing", action="store_true", help="Reuse existing release-baked GGUF files.")
     parser.add_argument("--release-bake-python", default=sys.executable, help="Python interpreter for export_gguf.py.")
-    parser.add_argument("--config-dir", type=Path, default=Path("tools/fine_tuning/unsloth/configs"), help="Unsloth config directory.")
+    parser.add_argument("--config-dir", type=Path, default=None, help="Optional Unsloth config directory override. Defaults to the freshly generated fine-tuning output.")
     parser.add_argument("--agents", default=DEFAULT_AGENTS, help="Comma-separated agents.")
     parser.add_argument("--quantization", default="q4_k_m", help="GGUF quantization.")
     parser.add_argument("--release-bake-output-root", type=Path, default=Path("models/gguf_release_bake"), help="Release-bake GGUF output root.")
@@ -292,14 +292,17 @@ def _build_improve_command(
 
 
 def _build_release_export_command(
-    args: argparse.Namespace, root: Path, release_manifest: Path
+    args: argparse.Namespace,
+    root: Path,
+    release_manifest: Path,
+    fine_tuning_output: Path,
 ) -> tuple[str, list[str]]:
     """Build the release-bake/export command and step name."""
     export = [
         args.release_bake_python,
         str(root / "tools" / "fine_tuning" / "unsloth" / "export_gguf.py"),
         "--config-dir",
-        str(rooted_path(root, args.config_dir)),
+        str(rooted_path(root, args.config_dir) if args.config_dir is not None else fine_tuning_output),
         "--agents",
         args.agents,
         "--quantization",
@@ -350,7 +353,12 @@ def build_command_queue(
     commands.append({"name": "improve-loop generation", "command": improve})
 
     release_manifest = rooted_path(root, args.release_bake_manifest_output)
-    name, export = _build_release_export_command(args, root, release_manifest)
+    name, export = _build_release_export_command(
+        args,
+        root,
+        release_manifest,
+        fine_tuning_output,
+    )
     commands.append({"name": name, "command": export})
     return commands
 
@@ -375,6 +383,8 @@ def is_runtime_audit_candidate(path: Path) -> bool:
         source_format = str(export_policy.get("format") or "").casefold()
         if "e2e" in source_layer or "e2e" in source_format:
             return True
+    if {"passed", "failed", "results"}.issubset(keys) and isinstance(payload.get("results"), list):
+        return True
     if {"failures", "traces", "runtime", "events", "toolcalls", "tool_calls"}.intersection(keys):
         return True
     sample = json.dumps(payload, ensure_ascii=False)[:20000].lower()
@@ -668,7 +678,11 @@ def build_html(summary: dict[str, Any], steps: list[StepResult], artifacts: Loop
         f"<tr><td>{escape(prompt.get('taskType', ''))}</td><td>{escape(prompt.get('priority', ''))}</td><td><code>{escape(prompt.get('id', ''))}</code></td></tr>"
         for prompt in artifacts.next_prompts[:120]
     ) or "<tr><td colspan='3'>No next prompts.</td></tr>"
-    tails = "".join(f"<details><summary>{escape(step.name)} · {escape(step.status)}</summary><pre>{escape(step.stdout_tail or step.stderr_tail)}</pre></details>" for step in steps if step.stdout_tail or step.stderr_tail)
+    tails = "".join(
+        f"<details><summary>{escape(step.name)} · {escape(step.status)}</summary><pre>{escape(strip_trailing_whitespace(step.stdout_tail or step.stderr_tail))}</pre></details>"
+        for step in steps
+        if step.stdout_tail or step.stderr_tail
+    )
     html_doc = f"""<!doctype html>
 <html lang='en'>
 <head>
@@ -710,7 +724,12 @@ pre {{ white-space:pre-wrap; max-height:24rem; overflow:auto; background:#070b12
 </body>
 </html>
 """
-    return normalize_html_attribute_quotes(html_doc)
+    return strip_trailing_whitespace(normalize_html_attribute_quotes(html_doc)) + "\n"
+
+
+def strip_trailing_whitespace(value: str) -> str:
+    """Keep diagnostic line structure without emitting whitespace-only HTML lines."""
+    return "\n".join(line.rstrip() for line in value.splitlines())
 
 
 def write_visual_outputs(

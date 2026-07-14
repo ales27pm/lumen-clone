@@ -379,6 +379,24 @@ struct AgentGroundingRegressionTests {
     }
 
     @MainActor
+    @Test func runtimeAuditorAcceptsStringBackedEnumArguments() async throws {
+        let schedule = RuntimeToolArgument(
+            name: "schedule",
+            type: "enum",
+            required: true,
+            allowedValues: ["once", "daily"]
+        )
+        let tools = [RuntimeToolDefinition(id: "trigger.create", arguments: [schedule])]
+        let manifest = makeManifest(tools: tools, intent: "trigger", allowed: ["trigger.create"])
+        let auditor = RuntimeManifestAuditor(registryProvider: StaticRuntimeToolRegistryProvider(tools: tools))
+
+        let report = auditor.audit(manifest: manifest)
+
+        #expect(report.passed)
+        #expect(!report.failures.contains(where: { $0.type == "unsupported_runtime_argument_type" }))
+    }
+
+    @MainActor
     @Test func liveRuntimeSchemaAlignsAliasAndPlusArgumentsWithManifest() async throws {
         let tools = LiveRuntimeToolRegistryProvider().currentToolDefinitions()
 

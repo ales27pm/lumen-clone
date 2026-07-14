@@ -579,10 +579,11 @@ nonisolated struct E2ETestReport: Codable, Sendable, Identifiable {
             "please ask again or tell me what you'd like to do next",
             "tool output could not be validated",
             "could not be validated",
+            "no matching documents found",
             "no matching files found",
+            "local document index appears empty",
             "local index appears empty",
             "no matching local snippets",
-            "import or create local files",
             "internal routing json"
         ]
         if nonTrainableSignals.contains(where: { evidence.contains($0) }) { return false }
@@ -2294,13 +2295,28 @@ nonisolated enum E2ETestRunner {
         let requiresApproval = ToolRouteGuard.requiresUserApproval(expectedTool)
 
         if bankKind == ToolScenarioBankEntry.ScenarioKind.missingArgument.rawValue {
-            if routing.requiresClarification {
-                return requiredArgs.isEmpty
-                    ? ["Tool coverage missing-argument scenario cannot pass by clarification for no-arg tool \(expectedTool)"]
-                    : []
+            if requiredArgs.isEmpty {
+                if routing.requiresClarification {
+                    return ["Tool coverage missing-argument scenario cannot pass by clarification for no-arg tool \(expectedTool)"]
+                }
+                if expectedSteps.isEmpty {
+                    return ["Tool coverage no-arg variation did not select expected tool \(expectedTool)"]
+                }
+                return []
             }
-            if expectedSteps.isEmpty {
-                return ["Tool coverage missing-argument scenario neither clarified nor selected expected tool \(expectedTool)"]
+
+            guard routing.requiresClarification else {
+                return ["Tool coverage missing-argument scenario must clarify before executing \(expectedTool); missing required arguments: \(requiredArgs.sorted().joined(separator: ", "))"]
+            }
+            guard expectedSteps.isEmpty else {
+                return ["Tool coverage missing-argument scenario executed expected tool \(expectedTool) instead of clarifying"]
+            }
+            guard let clarificationPrompt = routing.clarificationPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !clarificationPrompt.isEmpty else {
+                return ["Tool coverage missing-argument scenario did not provide an explicit clarification prompt for \(expectedTool)"]
+            }
+            guard finalText.trimmingCharacters(in: .whitespacesAndNewlines) == clarificationPrompt else {
+                return ["Tool coverage missing-argument scenario did not present its clarification prompt for \(expectedTool)"]
             }
             return []
         }
@@ -3249,10 +3265,11 @@ nonisolated enum E2ETestRunner {
                 "rag storage unavailable",
                 "swiftdata unavailable",
                 "persistent store unavailable",
+                "local document index appears empty",
                 "local index appears empty",
+                "no matching documents found",
                 "no matching local snippets",
-                "no matching files found",
-                "import or create local files"
+                "no matching files found"
             ]
             if evidence.contains("cleanup_deferred:disk_write_budget_denied") {
                 quarantine("ragMaintenanceDeferred", evidenceKind: "resource-budget-deferred")
@@ -3533,7 +3550,7 @@ nonisolated enum E2ETestRunner {
             return EvalRewriteOutcome(finalText: originalFinal, missingHints: firstMissing, rewriteAttempted: false, rewriteSuccess: false)
         }
         guard !firstMissing.isEmpty else {
-            return EvalRewriteOutcome(finalText: originalFinal, missingHints: [], rewriteAttempted: false, rewriteSuccess: true)
+            return EvalRewriteOutcome(finalText: originalFinal, missingHints: [], rewriteAttempted: false, rewriteSuccess: false)
         }
 
         let rewritten = await rewriteFinalTextForEvalHints(
@@ -3699,12 +3716,13 @@ nonisolated enum E2ETestRunner {
     }
 
     nonisolated private static func isRAGEmptyRetrievalEvidence(_ lowerText: String) -> Bool {
-        lowerText.contains("no matching files found")
+        lowerText.contains("no matching documents found")
+            || lowerText.contains("no matching files found")
+            || lowerText.contains("local document index appears empty")
             || lowerText.contains("local index appears empty")
             || lowerText.contains("no matching local snippets")
             || lowerText.contains("no matching snippets")
             || lowerText.contains("no matching results")
-            || lowerText.contains("import or create local files")
             || lowerText.contains("found no matching architecture notes")
             || lowerText.contains("no matching architecture notes")
             || lowerText.contains("no matching rag chunks")

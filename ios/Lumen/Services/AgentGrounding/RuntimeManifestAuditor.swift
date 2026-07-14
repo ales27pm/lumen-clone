@@ -26,7 +26,7 @@ public struct RuntimeManifestLoadResult: Hashable, Sendable {
 
 public final class RuntimeManifestAuditor {
     private let registryProvider: RuntimeToolRegistryProviding
-    private let supportedTypes: Set<String> = ["string", "number", "bool", "array", "object", "null"]
+    private let supportedTypes: Set<String> = ["string", "number", "bool", "array", "object", "null", "enum"]
 
     public init(registryProvider: RuntimeToolRegistryProviding) {
         self.registryProvider = registryProvider

@@ -33,50 +33,61 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "0bfb6852580eade5198486bb780beed91ca7d50b149497e0d843f90fa57794cd"
+        "reportSHA256": "a8def16061818cbca7b3bbdb5253c16358a44fe0d1a0500a07cee44a20220fa8"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "287bb796c1de81a917fd4149d1b8189b9609934dba34aaad7c1a95d981cc2f0b",
-      "recordCount": 6,
+      "frozenEvaluationSHA256": "f48ed86d1d76312ebc8423eedabfeee9c81da2e8cb8f766fd983ace5fdf14c1c",
+      "recordCount": 15,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "preferenceTraining": {
       "includedInCheckpoint": false,
-      "recordCount": 4,
+      "recordCount": 18,
       "requiredPhase": "post_sft_preference_training",
       "status": "generated_not_trained"
     },
     "recordCounts": {
-      "eval": 6,
-      "train_dpo": 3,
-      "train_sft": 5241,
-      "val_dpo": 1,
-      "val_sft": 925
+      "eval": 15,
+      "train_dpo": 15,
+      "train_sft": 640,
+      "val_dpo": 3,
+      "val_sft": 114
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
       "codebase_home_chunk_sft",
       "codebase_home_sft",
+      "cross_model_training",
+      "fleet_orchestration_native",
+      "fleet_system_prompts",
       "manifest_grounding_cards",
       "public_adapter_corpus_massive_en_us_1_1",
       "self_model_cards",
       "self_model_sft"
     ],
     "sourceIntegrity": {
-      "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+      "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
       "dirtyState": true,
-      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+      "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
     },
     "taskTypes": [
       "codebase_home_grounding",
       "codebase_home_overview",
       "codebase_source_chunk_grounding",
+      "fleet_delegation",
+      "fleet_orchestration_event_graph",
+      "fleet_peer_knowledge",
+      "fleet_peer_source_knowledge",
+      "fleet_self_knowledge",
+      "fleet_whole_system_identity",
       "manifest_grounding_cards",
       "public_capability_delegation",
+      "role_directory",
       "self_model_card_grounding",
       "self_model_grounded_answer",
+      "source_code_self_knowledge",
       "ultra_specific_fleet_delegation",
       "ultra_specific_fleet_slot_directory",
       "ultra_specific_tool_boundary_awareness"
@@ -121,7 +132,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "b454a37b12931313e89f8f4fff62d4b48372b68df6a0d48ab7aeb50d457ba10a",
+    "experimentManifestSHA256": "10d7a33adfc43ce4038534664e39c07b576806eb61db2d2df0e8cd77c33f966d",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -180,12 +191,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
-  "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
-  "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+  "trainingCodeBundleSHA256": "4ec4be858ebc74e4e77a825a9df129ad9a3dba51483e42d9317680705ff642be",
+  "trainingCodeSHA256": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
-    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
-    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+    "dpo": "96dac6ffc8342745c274aef0db0b484620b237e0e843fa8ff82348ae7683a6ee",
+    "orpo": "a3707ab0c5fe811b6cc1445193d2e8dd8dc4ab6c94bbe2021c0a3c6b99594017",
+    "sft": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

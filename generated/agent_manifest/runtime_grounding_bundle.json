@@ -2,14 +2,14 @@
   "artifactKind": "agent_grounding_runtime_bundle",
   "codebaseHome": {
     "languageCounts": {
-      "json": 42,
+      "json": 24,
       "markdown": 73,
       "mixed": 1,
       "plist": 3,
-      "python": 133,
+      "python": 136,
       "shell": 16,
       "swift": 505,
-      "text": 8,
+      "text": 4,
       "toml": 1,
       "xcode_project": 1,
       "xml": 1,
@@ -56,7 +56,6 @@
       "Views": 32,
       "Voice": 7,
       "app": 5,
-      "codebase_txt_chunks": 2,
       "docs": 58,
       "docs/stabilization": 1,
       "evals": 1,
@@ -67,15 +66,9 @@
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 10,
-      "runtime-audits": 1,
-      "runtime-audits/2026-06-08-first-improve-loop": 5,
-      "runtime-audits/2026-06-08-second-improve-loop": 5,
-      "runtime-audits/2026-06-09-third-improve-loop": 5,
-      "runtime-audits/2026-06-25-device-e2e": 3,
-      "runtime-audits/2026-07-02-latest-e2e": 1,
       "scripts": 22,
       "tools": 13,
-      "tools/fine_tuning/unsloth": 27,
+      "tools/fine_tuning/unsloth": 28,
       "tools/hf_artifacts": 2,
       "tools/hf_zerogpu": 1,
       "tools/hf_zerogpu/space_template": 3,
@@ -83,12 +76,12 @@
       "tools/lumen_manifest_crawler": 4,
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 44,
       "tools/lumen_manifest_crawler/scripts": 1,
-      "tools/lumen_manifest_crawler/tests": 31,
+      "tools/lumen_manifest_crawler/tests": 33,
       "tools/pipeline": 7,
       "tools/pipeline/tests": 7,
       "tools/security": 1
     },
-    "recordCount": 787,
+    "recordCount": 768,
     "selectedFiles": [
       {
         "imports": [
@@ -289,7 +282,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/ImproveLoopSampleGate.swift` owns ImproveLoopSampleGate behavior and defines: ImproveLoopSampleDisposition, ImproveLoopSampleType, ImproveLoopSampleSource, ImproveLoopSampleAuthority, ImproveLoopTrainingSample, ImproveLoopDatasetCounters, ImproveLoopDataset, ImproveLoopSampleGate, buildDataset, append.",
-        "sha256": "3f9881892d3589ef4c571bb3677e47ba5756cd35fe23b97517f1b2507265fb25",
+        "sha256": "28712403ea8ed149acb6c5eb50e30430ba78b3c4c2cdcb9f175070865d7de75b",
         "symbols": [
           "ImproveLoopSampleDisposition",
           "ImproveLoopSampleType",
@@ -361,7 +354,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` owns RuntimeManifestAuditor behavior and defines: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAuditor, RuntimeManifestAuditError, loadBundledManifest, loadManifestFromStoreBundleOrRuntimeFallback, loadBundledManifestOrRuntimeFallback, syntheticManifestFromRuntimeRegistry, audit.",
-        "sha256": "aa65ef0d34388a1e1f4f5cbeb100e822dae1f3ba07f2d8c2f30e2cedf284f7a4",
+        "sha256": "34a079f94eace7093d3a2aa93412b94830eac77c9f9243d972171e33198824bc",
         "symbols": [
           "RuntimeAgentManifestAuditReport",
           "RuntimeManifestFailure",
@@ -1179,7 +1172,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, AgentKernelSource, run, runLoop.",
-        "sha256": "a6f33c23cef74c6598f2f11bf78a4ed5a297d7d195864748e83ab41cba6e1cd4",
+        "sha256": "fcba866eb06e3fbce470b2036699df5c77db392bbfcd62af6287856d8dfb910a",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -1817,7 +1810,7 @@
         "module": "Services/IntentClassification",
         "path": "ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift",
         "responsibility": "`ios/Lumen/Services/IntentClassification/IntentClassifierPolicy.swift` owns IntentClassifierPolicy behavior and defines: IntentClassifierPolicy, IntentClarificationPolicy, resolve, resolveMediumConfidence, clarificationForAmbiguousModelResult, rankedAlternatives, shouldClarifyBetween, clarificationPrompt, clarificationLabel, sanitized.",
-        "sha256": "d21206b1fc5cc723ae56c931704d7bdd49cbc85355f493c566b5ee3a7473946c",
+        "sha256": "f7212520cfc1cfa606ea5458da29a5a352a246cbdd3f2ccd4c825b4db2c0cf1d",
         "symbols": [
           "IntentClassifierPolicy",
           "IntentClarificationPolicy",
@@ -1868,7 +1861,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/IntentRouter.swift",
         "responsibility": "`ios/Lumen/Services/IntentRouter.swift` owns IntentRouter behavior and defines: UserIntent, IntentRoutingDecision, IntentRouter, isMapFollowUpPrompt, classify, priorityOverride, allowedToolIDs, isToolAllowed, intentRequiresTool, isLikelyPhotosIntent.",
-        "sha256": "428671e9ff67d81aae27b9e99f41fdbe5d93e8817ba10dbe220c97830f7d2367",
+        "sha256": "f5c72271123875d2ae3b293a77c3fe7c4cd1c05e1ab8b9b7352666588020a4d5",
         "symbols": [
           "UserIntent",
           "IntentRoutingDecision",
@@ -2204,7 +2197,7 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+  "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "schemaVersion": "1.0.0",
@@ -2215,8 +2208,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "dirtyState": true,
-    "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+    "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
   }
 }

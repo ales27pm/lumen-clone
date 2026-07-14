@@ -36,6 +36,18 @@ class SourceIntegrity(BaseModel):
 
         return self.baseCommit
 
+    @property
+    def dirty(self) -> bool:
+        """Compatibility accessor for the superseded boolean lineage field."""
+
+        return bool(self.dirtyState)
+
+    @property
+    def worktreeFingerprint(self) -> str | None:
+        """Compatibility accessor for the canonical working-tree digest."""
+
+        return self.workingTreeDigest
+
     def lineage_dict(self) -> dict[str, str | bool | None]:
         """Return the compact source identity used by downstream artifacts."""
 

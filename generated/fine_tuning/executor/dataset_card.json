@@ -1,6 +1,7 @@
 {
   "agent": "executor",
-  "availableSFTRecords": 1109,
+  "availableSFTRecords": 561,
+  "candidateSFTRecords": 951,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,18 +15,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "3fd2ddaba403ee39d41cdb68387adc0877b039eebcb58405b165c1dd12d39857"
+      "reportSHA256": "6ad2285a0e0f445b36e7b91f41db0c8992e286fe35728be6cb7113419de72dc3"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "b4e05ca27a99d487eec2b964c4294437cc555ea0cd4b31aaf3ee4e8cfa690e11",
-    "recordCount": 114,
+    "frozenEvaluationSHA256": "028b2e3f6138f6e02da35d047fd92ce6d90354a12d10c38756459b79f97d6235",
+    "recordCount": 8,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "9b36f64c5790f355efb9cb8b872d9ece59f7410131b43ddff5a5f695a33c59c4",
-      "optimizedTrainingCorpusSHA256": "6d48ebe3d4fa8d720c8f491bd1b47292f26ef92d0fa0eba3f38d3d2adb95bf6d",
+      "baselineTrainingCorpusSHA256": "ca39af5d31a359ebc8ded659134db5f2c9601bf8c46b8bec4fe3abed4cb64acd",
+      "optimizedTrainingCorpusSHA256": "27c6bcdcf621236a319d860169e1d6537f35996047ae65ff13ea955dd32bcadf",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 462,
@@ -52,7 +53,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "b996099e6cff83937cfdd13292191fab3ee198f6472ace620f1c8b9c9e1ce280",
+    "experimentManifestSHA256": "c785349b5de2fb4bf16a7033c4be5c28d8326221eb96085532b1edb92a3b9522",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -82,7 +83,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+  "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 6,
@@ -126,15 +127,15 @@
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 347,
+      "train_sft": 183,
       "val_dpo": 0,
-      "val_sft": 70
+      "val_sft": 31
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 45,
+      "train_sft": 209,
       "val_dpo": 0,
-      "val_sft": 0
+      "val_sft": 39
     },
     "selectionContract": {
       "maxTokenShare": 0.35,
@@ -152,9 +153,9 @@
         "minimum": 0.733437
       },
       "selected": {
-        "count": 417,
+        "count": 214,
         "maximum": 0.831918,
-        "mean": 0.799589,
+        "mean": 0.799681,
         "minimum": 0.733437
       }
     },
@@ -236,15 +237,15 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "AmazonScience/massive": 405,
+      "AmazonScience/massive": 202,
       "Team-ACE/ToolACE": 12
     },
     "sourceSplitCounts": {
       "AmazonScience/massive": {
         "train_dpo": 0,
-        "train_sft": 337,
+        "train_sft": 173,
         "val_dpo": 0,
-        "val_sft": 68
+        "val_sft": 29
       },
       "Team-ACE/ToolACE": {
         "train_dpo": 0,
@@ -259,72 +260,86 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.228945,
-        "total": 0.349528
+        "target": 0.296522,
+        "total": 0.349945
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.110285,
-        "total": 0.233533
+        "target": 0.323,
+        "total": 0.346663
       }
     }
   },
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
     "cortexCodebaseSelfAwarenessCoverage": null,
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "sequenceBudgetDroppedRecordCount": 0,
+    "supplementalBalanceDroppedRecordCount": 0,
+    "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 114,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
-    "eval": 114,
+    "eval": 8,
     "train_dpo": 5,
-    "train_sft": 897,
+    "train_sft": 478,
     "val_dpo": 1,
-    "val_sft": 167
+    "val_sft": 83
   },
+  "sourceDirty": true,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "approval_boundary_samples",
-    "codebase_home_chunk_sft",
-    "codebase_home_sft",
     "executor_tool_calls",
-    "manifest_grounding_cards",
     "negative_samples",
     "public_adapter_corpus_massive_en_us_1_1",
     "public_adapter_corpus_toolace_train",
     "tool_schema_cards"
   ],
+  "sourceFamilyCounts": {
+    "adapter_ultra_specific": 114,
+    "approval_boundary_samples": 89,
+    "executor_tool_calls": 53,
+    "negative_samples": 53,
+    "public_adapter_corpus_massive_en_us_1_1": 202,
+    "public_adapter_corpus_toolace_train": 12,
+    "tool_schema_cards": 38
+  },
   "sourceIntegrity": {
-    "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "dirtyState": true,
-    "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+    "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
   },
   "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
+  "taskTypeCounts": {
+    "approval_boundary_samples": 89,
+    "executor_tool_calls": 53,
+    "public_manifest_tool_argument_extraction": 202,
+    "public_verified_tool_argument_extraction": 12,
+    "tool_id_repair": 53,
+    "tool_schema_cards": 38,
+    "ultra_specific_missing_argument_boundary": 38,
+    "ultra_specific_permission_boundary": 23,
+    "ultra_specific_tool_call_generation": 53
+  },
   "taskTypes": [
-    "ambiguous_request",
     "approval_boundary_samples",
-    "approval_granted",
-    "approval_rejected",
-    "approval_required_tool",
-    "codebase_home_grounding",
-    "codebase_source_chunk_grounding",
     "executor_tool_calls",
-    "manifest_grounding_cards",
-    "permission_unavailable",
     "public_manifest_tool_argument_extraction",
     "public_verified_tool_argument_extraction",
-    "tool_call_generation",
     "tool_id_repair",
     "tool_schema_cards",
     "ultra_specific_missing_argument_boundary",
     "ultra_specific_permission_boundary",
     "ultra_specific_tool_call_generation"
-  ]
+  ],
+  "worktreeFingerprint": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
 }

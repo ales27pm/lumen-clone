@@ -1074,10 +1074,11 @@ def _is_runtime_environment_failure(text: str, sidecar_diagnosis: dict[str, Any]
 
 def _is_rag_empty_retrieval(lowered: str) -> bool:
     return (
-        "no matching files found" in lowered
+        "no matching documents found" in lowered
+        or "no matching files found" in lowered
+        or "local document index appears empty" in lowered
         or "local index appears empty" in lowered
         or "no matching local snippets" in lowered
-        or "import or create local files" in lowered
         or "found no matching architecture notes" in lowered
     )
 

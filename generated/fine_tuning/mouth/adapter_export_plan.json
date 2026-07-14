@@ -33,15 +33,15 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "66ad85e62cb2f4f9aab26ab726ff5be8fba1275068b1d5c3b6b5753fb8ba21c9"
+        "reportSHA256": "f1d1f7abdb67950fbb7cf0f26baf22cee73240b8142d1d8ecd5a299ee4ef3853"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
-      "recordCount": 8,
+      "frozenEvaluationSHA256": "f54c9097c4f1dd9122b7042d5dd3e75a29e1eeaa9fe081d74e222e28ae3447f1",
+      "recordCount": 7,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 19,
@@ -49,31 +49,25 @@
       "status": "generated_not_trained"
     },
     "recordCounts": {
-      "eval": 8,
+      "eval": 7,
       "train_dpo": 17,
-      "train_sft": 188,
+      "train_sft": 131,
       "val_dpo": 2,
-      "val_sft": 30
+      "val_sft": 24
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
-      "codebase_home_chunk_sft",
-      "codebase_home_sft",
-      "manifest_grounding_cards",
       "mouth_responses",
       "public_adapter_corpus_faithdial_train",
       "public_adapter_corpus_oasst2_train",
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+      "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
       "dirtyState": true,
-      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+      "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
     },
     "taskTypes": [
-      "codebase_home_grounding",
-      "codebase_source_chunk_grounding",
-      "manifest_grounding_cards",
       "mouth_responses",
       "public_grounded_response_finalization",
       "public_grounded_response_preference",
@@ -82,8 +76,7 @@
       "ultra_specific_empty_after_sanitization_recovery",
       "ultra_specific_permission_failure_response",
       "ultra_specific_post_tool_summary",
-      "ultra_specific_reference_resolution_failure",
-      "user_response_generation"
+      "ultra_specific_reference_resolution_failure"
     ]
   },
   "expectedArtifacts": {
@@ -125,7 +118,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "c5a74a540a8fa33cbf7dbceae90b14755c8b441c20886bb03c80ba260b46e5bf",
+    "experimentManifestSHA256": "99767fa504af3f27bce748467d916c4f913999108df3405a20fb6772f78edbfb",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -184,12 +177,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
-  "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
-  "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+  "trainingCodeBundleSHA256": "4ec4be858ebc74e4e77a825a9df129ad9a3dba51483e42d9317680705ff642be",
+  "trainingCodeSHA256": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
-    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
-    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+    "dpo": "96dac6ffc8342745c274aef0db0b484620b237e0e843fa8ff82348ae7683a6ee",
+    "orpo": "a3707ab0c5fe811b6cc1445193d2e8dd8dc4ab6c94bbe2021c0a3c6b99594017",
+    "sft": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

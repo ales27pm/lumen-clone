@@ -13,6 +13,7 @@ from lumen_manifest_crawler.dataset.compiler import (
     DatasetCompilerConfig,
     _records_hash,
     compile_state_of_art_datasets,
+    finalize_dataset_manifest,
 )
 from lumen_manifest_crawler.dataset.embedding import compile_embedding_datasets
 from lumen_manifest_crawler.dataset.executor import (
@@ -84,12 +85,13 @@ def generate_all_datasets(
         **datasets,
         **embedding_families,
     })
-    return {
+    complete_datasets = {
         **datasets,
         **embedding_families,
         **reranker.as_dataset_families(),
-        "dataset_manifest": [compiled.manifest],
     }
+    complete_manifest = finalize_dataset_manifest(compiled.manifest, complete_datasets)
+    return {**complete_datasets, "dataset_manifest": [complete_manifest]}
 
 
 def _load_public_adapter_corpus_families(
