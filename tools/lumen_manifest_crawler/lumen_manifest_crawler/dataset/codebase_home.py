@@ -57,6 +57,7 @@ IGNORED_DIRS = {
 
 EXCLUDED_PREFIXES = (
     "datasets/public_adapter_corpus/",
+    "codebase_txt_chunks/",
     "generated/agent_improvement_loop/",
     "generated/agent_manifest/",
     "generated/agent_manifest/cross_model_training/",
@@ -65,7 +66,40 @@ EXCLUDED_PREFIXES = (
     "generated/agent_manifest/fine_tuning/",
     "generated/fine_tuning/",
     "generated/visual_improve_loop/",
+    "runtime-audits/",
 )
+
+PRIVATE_RUNTIME_EVIDENCE_DIRS = {
+    "artifacts",
+    "audit-artifacts",
+    "audit_artifacts",
+    "audit-exports",
+    "audit_exports",
+    "codebase_txt_chunks",
+    "diagnostic-exports",
+    "diagnostic_exports",
+    "exports",
+    "runtime-artifacts",
+    "runtime-audits",
+    "runtime_artifacts",
+    "runtime_audits",
+    "testflight-exports",
+    "testflight_exports",
+}
+
+PRIVATE_RUNTIME_EVIDENCE_FILENAMES = (
+    "agent-behavior-traces",
+    "agent-grounding-audit",
+    "agent-parse-failures",
+    "agent-parse-noise",
+    "e2e-results",
+    "latest-e2e-report",
+    "lumen-live-e2e-report",
+    "persistent-runtime-diagnostics-export",
+    "testflight-export",
+)
+
+PRIVATE_RUNTIME_EVIDENCE_SUFFIXES = {".json", ".jsonl", ".log", ".txt"}
 
 EXCLUDED_RELPATHS = {
     "ios/Lumen/AgentBehaviorManifest.json",
@@ -180,6 +214,14 @@ def _include_relpath(relpath: str) -> bool:
         return True
     parts = Path(relpath).parts
     if any(part in IGNORED_DIRS or part.endswith(".xcuserdata") for part in parts):
+        return False
+    lowered_parts = tuple(part.casefold() for part in parts)
+    if any(part in PRIVATE_RUNTIME_EVIDENCE_DIRS for part in lowered_parts):
+        return False
+    filename = Path(relpath).name.casefold()
+    if Path(filename).suffix in PRIVATE_RUNTIME_EVIDENCE_SUFFIXES and any(
+        marker in filename for marker in PRIVATE_RUNTIME_EVIDENCE_FILENAMES
+    ):
         return False
     if any(relpath.startswith(prefix) for prefix in EXCLUDED_PREFIXES):
         return False
@@ -322,21 +364,30 @@ def _split_source_chunks(text: str):
         yield 1, 1, ""
         return
 
-    current: list[str] = []
+    current: list[tuple[int, str]] = []
     current_chars = 0
-    start_line = 1
     for line_number, line in enumerate(lines, start=1):
-        projected_chars = current_chars + len(line) + 1
+        if len(line) > MAX_CHUNK_CHARS:
+            if current:
+                yield current[0][0], current[-1][0], "\n".join(item[1] for item in current)
+                current = []
+                current_chars = 0
+            for offset in range(0, len(line), MAX_CHUNK_CHARS):
+                yield line_number, line_number, line[offset : offset + MAX_CHUNK_CHARS]
+            continue
+
+        separator_chars = 1 if current else 0
+        projected_chars = current_chars + separator_chars + len(line)
         if current and (len(current) >= MAX_CHUNK_LINES or projected_chars > MAX_CHUNK_CHARS):
-            yield start_line, line_number - 1, "\n".join(current)
+            yield current[0][0], current[-1][0], "\n".join(item[1] for item in current)
             current = []
             current_chars = 0
-            start_line = line_number
-        current.append(line)
-        current_chars += len(line) + 1
+            separator_chars = 0
+        current.append((line_number, line))
+        current_chars += separator_chars + len(line)
 
     if current:
-        yield start_line, start_line + len(current) - 1, "\n".join(current)
+        yield current[0][0], current[-1][0], "\n".join(item[1] for item in current)
 
 
 def _sft_record(record: dict[str, Any]) -> dict[str, Any]:

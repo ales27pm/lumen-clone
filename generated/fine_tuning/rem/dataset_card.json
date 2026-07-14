@@ -1,6 +1,7 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 6157,
+  "availableSFTRecords": 21,
+  "candidateSFTRecords": 525,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +15,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "4954fc7f904f92a7589ec400ab14a86a7960c6ad157baf9e6e72f27e67a2b1b1"
+      "reportSHA256": "7911abe39bd613cc08de97551dac56c3efc7e7b26db010103cd9e9262381a914"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +25,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "0eaf2558458d93915796b5a4ddd18ab031a4e51ab9446dab0f3b587c901169e1",
-      "optimizedTrainingCorpusSHA256": "f2d8930819d5af9f0e20a037709442583401b15bdc23e07c51343ee7aca541c1",
+      "baselineTrainingCorpusSHA256": "1491ce9900a6ce690fa658d9721ebb7265b2b319b4f371ace5969c5a9aaf6a1c",
+      "optimizedTrainingCorpusSHA256": "b0eb4e132637970d045c044ad8eb14ce6733d04272662fef32b21e601541f002",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -52,7 +53,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "c0bb73c3c772c14fbf136a6699e29973e31c507a10be31ac6f2963019d14603e",
+    "experimentManifestSHA256": "28e05c936730bdf3bd615f34d0eebd60691cd1efde770c69848111df723a451c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -82,7 +83,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+  "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 3,
@@ -135,15 +136,15 @@
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 427,
+      "train_sft": 5,
       "val_dpo": 0,
-      "val_sft": 78
+      "val_sft": 1
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 0,
+      "train_sft": 422,
       "val_dpo": 0,
-      "val_sft": 0
+      "val_sft": 77
     },
     "selectionContract": {
       "maxTokenShare": 0.35,
@@ -161,9 +162,9 @@
         "minimum": 0.78375
       },
       "selected": {
-        "count": 505,
-        "maximum": 0.95625,
-        "mean": 0.862474,
+        "count": 6,
+        "maximum": 0.942625,
+        "mean": 0.848077,
         "minimum": 0.78375
       }
     },
@@ -245,28 +246,28 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "Team-ACE/ToolACE": 5,
-      "grammarly/coedit": 300,
-      "json-schema-org/JSON-Schema-Test-Suite": 200
+      "Team-ACE/ToolACE": 3,
+      "grammarly/coedit": 1,
+      "json-schema-org/JSON-Schema-Test-Suite": 2
     },
     "sourceSplitCounts": {
       "Team-ACE/ToolACE": {
         "train_dpo": 0,
-        "train_sft": 3,
+        "train_sft": 2,
         "val_dpo": 0,
-        "val_sft": 2
+        "val_sft": 1
       },
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 254,
+        "train_sft": 1,
         "val_dpo": 0,
-        "val_sft": 46
+        "val_sft": 0
       },
       "json-schema-org/JSON-Schema-Test-Suite": {
         "train_dpo": 0,
-        "train_sft": 170,
+        "train_sft": 2,
         "val_dpo": 0,
-        "val_sft": 30
+        "val_sft": 0
       }
     },
     "tokenShares": {
@@ -275,25 +276,29 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.013069,
-        "total": 0.036639
+        "target": 0.215159,
+        "total": 0.327468
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.013026,
-        "total": 0.03694
+        "target": 0.148148,
+        "total": 0.266667
       }
     }
   },
   "quality": {
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
     "cortexCodebaseSelfAwarenessCoverage": null,
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "sequenceBudgetDroppedRecordCount": 0,
+    "supplementalBalanceDroppedRecordCount": 0,
+    "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 10,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
@@ -301,35 +306,48 @@
   "recordCounts": {
     "eval": 6,
     "train_dpo": 2,
-    "train_sft": 5231,
+    "train_sft": 17,
     "val_dpo": 1,
-    "val_sft": 926
+    "val_sft": 4
   },
+  "sourceDirty": true,
   "sourceFamilies": [
     "adapter_ultra_specific",
-    "codebase_home_chunk_sft",
-    "codebase_home_sft",
-    "manifest_grounding_cards",
     "public_adapter_corpus_coedit_train",
     "public_adapter_corpus_json_schema_test_suite_draft_2020_12",
     "public_adapter_corpus_toolace_train",
     "rem_reflection"
   ],
+  "sourceFamilyCounts": {
+    "adapter_ultra_specific": 10,
+    "public_adapter_corpus_coedit_train": 1,
+    "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 2,
+    "public_adapter_corpus_toolace_train": 3,
+    "rem_reflection": 5
+  },
   "sourceIntegrity": {
-    "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "dirtyState": true,
-    "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+    "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
   },
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
+  "taskTypeCounts": {
+    "public_schema_failure_diagnosis": 2,
+    "public_text_repair": 1,
+    "public_tool_boundary_repair": 3,
+    "rem_reflection": 5,
+    "ultra_specific_argument_extraction_repair": 1,
+    "ultra_specific_manifest_tool_repair": 1,
+    "ultra_specific_memory_ttl_policy": 4,
+    "ultra_specific_prompt_control_repair": 1,
+    "ultra_specific_reference_resolution_repair": 1,
+    "ultra_specific_runtime_repair": 1,
+    "ultra_specific_training_evidence_repair": 1
+  },
   "taskTypes": [
-    "codebase_home_grounding",
-    "codebase_home_overview",
-    "codebase_source_chunk_grounding",
-    "manifest_grounding_cards",
     "public_schema_failure_diagnosis",
     "public_text_repair",
     "public_tool_boundary_repair",
-    "reflection_and_memory_policy",
     "rem_reflection",
     "ultra_specific_argument_extraction_repair",
     "ultra_specific_manifest_tool_repair",
@@ -338,5 +356,6 @@
     "ultra_specific_reference_resolution_repair",
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
-  ]
+  ],
+  "worktreeFingerprint": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
 }

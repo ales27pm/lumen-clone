@@ -534,12 +534,15 @@ def _runtime_root_cause_category(failure: dict[str, Any]) -> str:
         return explicit
     scenario = failure.get("e2eScenario")
     if isinstance(scenario, dict):
-        scenario_root = str(scenario.get("modelEvidenceRootCause") or "")
-        if scenario_root in RUNTIME_ENVIRONMENT_ROOT_CAUSES:
-            return scenario_root
-        if scenario_root in EXPLICIT_MODEL_EVIDENCE_CATEGORIES or scenario_root in AGENT_JSON_MODEL_ROOT_CAUSES:
-            return scenario_root
+        for key in ("modelEvidenceRootCause", "modelEvidenceStatus"):
+            scenario_root = str(scenario.get(key) or "")
+            if scenario_root in RUNTIME_ENVIRONMENT_ROOT_CAUSES:
+                return scenario_root
+            if scenario_root in EXPLICIT_MODEL_EVIDENCE_CATEGORIES or scenario_root in AGENT_JSON_MODEL_ROOT_CAUSES:
+                return scenario_root
     failure_type = str(failure.get("type") or "").lower()
+    if failure_type == "e2e_runtime_environment_deferred":
+        return "runtime_environment_deferred"
     actual = str(failure.get("actual") or failure.get("final") or "").lower()
     problem = str(failure.get("problem") or "").lower()
     combined = f"{failure_type}\n{actual}\n{problem}"
@@ -1397,6 +1400,8 @@ def _write_gap_triage_markdown(path: Path, triage: dict[str, Any]) -> None:
 
 
 def _write_testflight_runbook(path: Path, state: dict[str, Any], scenarios: list[dict[str, Any]]) -> None:
+    manifest_state = state["manifest"]
+    manifest_commit = manifest_state.get("baseCommit", manifest_state.get("commit"))
     lines = [
         "# TestFlight In-App Runtime Runbook",
         "",
@@ -1404,8 +1409,8 @@ def _write_testflight_runbook(path: Path, state: dict[str, Any], scenarios: list
         "",
         "## Build identity",
         "",
-        f"- Manifest fingerprint: `{state['manifest']['fingerprint']}`",
-        f"- Manifest commit: `{state['manifest']['commit']}`",
+        f"- Manifest fingerprint: `{manifest_state['fingerprint']}`",
+        f"- Manifest base commit: `{manifest_commit}`",
         f"- Build label: `{state['testFlight'].get('buildLabel')}`",
         f"- Expected export: `{state['testFlight']['expectedExport']}`",
         "",

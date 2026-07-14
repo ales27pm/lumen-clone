@@ -63,6 +63,13 @@ nonisolated enum FinalIntentValidator {
         guard !text.isEmpty else { return false }
         guard passesLeakFilters(text: text, lower: lower, routing: routing) else { return false }
 
+        if routing.requiresClarification,
+           let clarification = routing.clarificationPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !clarification.isEmpty,
+           text == clarification {
+            return true
+        }
+
         switch routing.intent {
         case .weather:
             return containsAny(lower, ["weather", "temperature", "humidity", "wind", "feels like", "°c", "rain", "snow", "cloud", "gps", "location access", "network", "timeout", "unreachable", "open-meteo", "service unavailable"])
@@ -151,7 +158,7 @@ nonisolated enum FinalIntentValidator {
         case .memory:
             return routing.clarificationPrompt ?? "Memory tool output could not be validated."
         case .rag:
-            return "I couldn’t safely complete the local search/indexing request."
+            return routing.clarificationPrompt ?? "I couldn’t safely complete the local search/indexing request."
         case .trigger:
             return "I couldn’t safely complete the scheduled-agent request."
         case .alarm:

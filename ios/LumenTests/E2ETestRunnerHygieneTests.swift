@@ -592,6 +592,68 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func missingMemorySaveCoverageNeverAcceptsStateMutation() throws {
+        #if DEBUG
+        let bankEntry = try #require(ToolScenarioBank.entries().first {
+            $0.toolID == "memory.save" && $0.kind == .missingArgument
+        })
+        let scenario = E2ETestScenario(
+            id: bankEntry.id,
+            title: bankEntry.title,
+            kind: .toolGuard,
+            prompt: bankEntry.prompt,
+            expectedIntent: .memory,
+            requiredAllowedToolIDs: ["memory.save"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed,
+            expectedToolID: "memory.save",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.missingArgument.rawValue
+        )
+        let clarificationRouting = IntentRouter.classify(bankEntry.prompt)
+        #expect(clarificationRouting.intent == .memory)
+        #expect(clarificationRouting.requiresClarification)
+        #expect(clarificationRouting.clarificationPrompt == "What should I save or recall?")
+
+        let clarificationFailures = E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: scenario,
+            routing: clarificationRouting,
+            agentSteps: [],
+            finalText: "What should I save or recall?"
+        )
+        #expect(clarificationFailures.isEmpty)
+
+        let mutationSteps = [
+            AgentStep(kind: .action, content: "memory.save", toolID: "memory.save"),
+            AgentStep(kind: .observation, content: "Memory already saved.", toolID: "memory.save")
+        ]
+        let mutationDespiteClarification = E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: scenario,
+            routing: clarificationRouting,
+            agentSteps: mutationSteps,
+            finalText: "Saved to memory: Memory already saved."
+        )
+        #expect(mutationDespiteClarification.contains(where: { $0.contains("executed expected tool memory.save instead of clarifying") }))
+
+        let mutationWithoutClarification = E2ETestRunner.toolCoverageEvidenceFailuresForTests(
+            scenario: scenario,
+            routing: IntentRoutingDecision(
+                intent: .memory,
+                allowedToolIDs: ["memory.save", "memory.recall"],
+                requiresClarification: false,
+                clarificationPrompt: nil
+            ),
+            agentSteps: mutationSteps,
+            finalText: "Saved to memory: Memory already saved."
+        )
+        #expect(mutationWithoutClarification.contains(where: { $0.contains("must clarify before executing memory.save") }))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func genericAlarmFallbackIsNotToolObservationEvidence() {
         #if DEBUG
         #expect(!E2ETestRunner.isSafeToolObservationFinalForTests("I couldn’t safely complete the alarm/timer request.", expectedToolID: "alarm.authorization_status"))
@@ -1180,6 +1242,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(outcome.finalText == original)
         #expect(outcome.missingHints.isEmpty)
         #expect(!outcome.rewriteAttempted)
+        #expect(!outcome.rewriteSuccess)
         #expect(!outcome.finalText.contains("Key modules"))
         #expect(!outcome.finalText.contains("[1]"))
         #expect(E2ETestRunner.liveAgentQualityFailures(rawFinalText: original, finalText: original, scenario: scenario).isEmpty)
@@ -1194,6 +1257,7 @@ struct E2ETestRunnerHygieneTests {
         #expect(E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("no matching module snippets were retrieved. source: local rag index."))
         #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching snippets were found in the local index."))
         #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("no matching results in the local rag index."))
+        #expect(E2ETestRunner.isRAGEmptyRetrievalEvidenceForTests("No matching documents found. The local document index appears empty. Import local files and try again."))
         #expect(!E2ETestRunner.ragFinalIndicatesNoRetrievedSnippetsForTests("[1] retrieved module snippet from diagnostics.md"))
         #else
         #expect(true)

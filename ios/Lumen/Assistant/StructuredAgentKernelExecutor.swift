@@ -1353,6 +1353,15 @@ private extension StructuredAgentKernelExecutor {
         ) {
             return "I could not complete the memory request because the required \(requiredMemoryAction.tool) action did not run."
         }
+        if routing.intent == .outlook {
+            let sanitized = OutlookToolUserVisibleOutput.sanitizedFinalObservation(
+                finalAnswer,
+                toolID: observations.last?.tool ?? "outlook.status"
+            )
+            return sanitized.isEmpty
+                ? "I couldn't produce a safe Outlook response from the available result."
+                : sanitized
+        }
         return finalAnswer
     }
 
@@ -1372,6 +1381,13 @@ private extension StructuredAgentKernelExecutor {
             return "Summary\n\(sourced.joined(separator: "\n"))\n\nKey modules\nNo explicit modules were present in the retrieved snippets unless named above."
         }
         guard let last = observations.last else { return nil }
+        if intent == .outlook {
+            let sanitized = OutlookToolUserVisibleOutput.sanitizedFinalObservation(
+                last.result,
+                toolID: last.tool
+            )
+            return sanitized.isEmpty ? nil : sanitized
+        }
         let compact = compactObservationResult(last.result, limit: 1_200)
         return compact.isEmpty ? nil : compact
     }
@@ -1543,18 +1559,20 @@ private extension StructuredAgentKernelExecutor {
                 || lower.contains("index unavailable") {
                 return "RAG retrieval is unavailable right now. \(compactObservationResult(result, limit: 220))"
             }
-            if lower.contains("no matching snippets")
+            if lower.contains("local document index appears empty")
+                || lower.contains("index is empty")
+                || lower.contains("local index appears empty")
+                || lower.contains("no imported files")
+                || lower.contains("nothing has been indexed") {
+                return "The local retrieval index is empty. Import or reindex files before searching."
+            }
+            if lower.contains("no matching documents")
+                || lower.contains("no matching snippets")
                 || lower.contains("no matching results")
                 || lower.contains("no snippets found")
                 || lower.contains("no matches found")
                 || lower.contains("no results found") {
                 return "No matching snippets were found in the local index."
-            }
-            if lower.contains("index is empty")
-                || lower.contains("local index appears empty")
-                || lower.contains("no imported files")
-                || lower.contains("nothing has been indexed") {
-                return "The local retrieval index is empty. Import or reindex files before searching."
             }
         }
         return nil

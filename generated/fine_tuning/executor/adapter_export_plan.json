@@ -33,15 +33,15 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "3fd2ddaba403ee39d41cdb68387adc0877b039eebcb58405b165c1dd12d39857"
+        "reportSHA256": "6ad2285a0e0f445b36e7b91f41db0c8992e286fe35728be6cb7113419de72dc3"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "b4e05ca27a99d487eec2b964c4294437cc555ea0cd4b31aaf3ee4e8cfa690e11",
-      "recordCount": 114,
+      "frozenEvaluationSHA256": "028b2e3f6138f6e02da35d047fd92ce6d90354a12d10c38756459b79f97d6235",
+      "recordCount": 8,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+    "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 6,
@@ -49,43 +49,31 @@
       "status": "generated_not_trained"
     },
     "recordCounts": {
-      "eval": 114,
+      "eval": 8,
       "train_dpo": 5,
-      "train_sft": 897,
+      "train_sft": 478,
       "val_dpo": 1,
-      "val_sft": 167
+      "val_sft": 83
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
       "approval_boundary_samples",
-      "codebase_home_chunk_sft",
-      "codebase_home_sft",
       "executor_tool_calls",
-      "manifest_grounding_cards",
       "negative_samples",
       "public_adapter_corpus_massive_en_us_1_1",
       "public_adapter_corpus_toolace_train",
       "tool_schema_cards"
     ],
     "sourceIntegrity": {
-      "baseCommit": "ff65aa9b8f3c82484edc17d230f6d4a6999f1932",
+      "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
       "dirtyState": true,
-      "workingTreeDigest": "105839ba3363652f8a3599927ae016d84a905f8f5508de907fc668d5d3dca6be"
+      "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
     },
     "taskTypes": [
-      "ambiguous_request",
       "approval_boundary_samples",
-      "approval_granted",
-      "approval_rejected",
-      "approval_required_tool",
-      "codebase_home_grounding",
-      "codebase_source_chunk_grounding",
       "executor_tool_calls",
-      "manifest_grounding_cards",
-      "permission_unavailable",
       "public_manifest_tool_argument_extraction",
       "public_verified_tool_argument_extraction",
-      "tool_call_generation",
       "tool_id_repair",
       "tool_schema_cards",
       "ultra_specific_missing_argument_boundary",
@@ -132,7 +120,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "b996099e6cff83937cfdd13292191fab3ee198f6472ace620f1c8b9c9e1ce280",
+    "experimentManifestSHA256": "c785349b5de2fb4bf16a7033c4be5c28d8326221eb96085532b1edb92a3b9522",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -191,12 +179,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
-  "trainingCodeBundleSHA256": "ca10328b0588f5ed01bd317016d2854a6be010962e212c6b9228154e2548f2cb",
-  "trainingCodeSHA256": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a",
+  "trainingCodeBundleSHA256": "4ec4be858ebc74e4e77a825a9df129ad9a3dba51483e42d9317680705ff642be",
+  "trainingCodeSHA256": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "21252480fbcfc4e781244e68b14c7683a56c90ff2c1f02c5972a8e00b1642b99",
-    "orpo": "4d9724bd5e42e5320818addfc7ef8f006e4f7909c20274b5c6a28c223e65fc40",
-    "sft": "9c97be1f9a77453753ec44c379f39fbd0ca0db055675aa010ba50bd67c5f485a"
+    "dpo": "96dac6ffc8342745c274aef0db0b484620b237e0e843fa8ff82348ae7683a6ee",
+    "orpo": "a3707ab0c5fe811b6cc1445193d2e8dd8dc4ab6c94bbe2021c0a3c6b99594017",
+    "sft": "f4bd05aa5ba98bb5b560f9f7250e90d4cfac0a2bd63a1e2a29b7ab91a979eda4"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

@@ -74,6 +74,8 @@ def test_command_queue_uses_repo_rooted_outputs(tmp_path: Path) -> None:
     assert str(loop_output) in improve
     assert str(fine_tuning_output) in improve
     assert str(root / "generated" / "fine_tuning" / "release_bake_gguf_manifest.json") in release_manifest
+    config_dir_index = release_manifest.index("--config-dir") + 1
+    assert release_manifest[config_dir_index] == str(fine_tuning_output)
 
 
 def test_release_bake_command_requires_explicit_flag(tmp_path: Path) -> None:
@@ -146,13 +148,24 @@ def test_runtime_audit_discovery_accepts_live_e2e_report_names(tmp_path: Path) -
     assert report in found
 
 
+def test_runtime_audit_discovery_accepts_plain_latest_e2e_report(tmp_path: Path) -> None:
+    runner = _load_runner()
+    report = tmp_path / "latest-e2e-report.json"
+    report.write_text(
+        json.dumps({"id": "report-1", "passed": 1, "failed": 0, "results": []}),
+        encoding="utf-8",
+    )
+
+    assert runner.find_runtime_audit_json(tmp_path) == [report]
+
+
 def test_dashboard_outputs_escape_dynamic_content(tmp_path: Path) -> None:
     runner = _load_runner()
     root = tmp_path / "repo"
     dashboard = tmp_path / "dashboard"
     artifacts = runner.LoopArtifacts(
         state={"manifest": {"toolCount": 1}, "dataset": {"families": {"x<script>": 2}}, "runtime": {}},
-        gaps=[{"severity": "error", "category": "x", "title": "<script>alert(1)</script>", "recommendedAction": "escape it"}],
+        gaps=[{"severity": "error", "category": "x", "title": "<script>alert(1)</script>   \nnext line", "recommendedAction": "escape it"}],
         next_prompts=[{"taskType": "x", "priority": "high", "id": "prompt<script>"}],
         testflight_scenarios=[],
         release_bake_manifest={"mode": "adapter_first"},
@@ -160,6 +173,16 @@ def test_dashboard_outputs_escape_dynamic_content(tmp_path: Path) -> None:
     )
     args = runner.parse_args(["--root", str(root), "--skip-tests"])
 
+    step = runner.StepResult(
+        name="test output",
+        command=["pytest"],
+        cwd=str(root),
+        started_at="2026-05-03T00:00:00+00:00",
+        ended_at="2026-05-03T00:00:01+00:00",
+        duration_seconds=1.0,
+        returncode=1,
+        stdout_tail="source line    \n    \nnext line\t \n",
+    )
     outputs = runner.write_visual_outputs(
         root=root,
         dashboard_dir=dashboard,
@@ -169,10 +192,11 @@ def test_dashboard_outputs_escape_dynamic_content(tmp_path: Path) -> None:
         args=args,
         started_at="2026-05-03T00:00:00+00:00",
         ended_at="2026-05-03T00:00:01+00:00",
-        steps=[],
+        steps=[step],
         artifacts=artifacts,
     )
 
     html = outputs["html"].read_text(encoding="utf-8")
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert all(line == line.rstrip() for line in html.splitlines())

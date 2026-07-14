@@ -371,6 +371,11 @@ nonisolated enum DeterministicToolPlanner {
             if text.contains("unread") { args["unreadOnly"] = .bool(true) }
             return action("outlook.messages.list", args)
         }
+        if isExplicitOutlookMessageListIntent(text) {
+            var args: AgentJSONArguments = ["limit": intArgument(10)]
+            if text.contains("unread") { args["unreadOnly"] = .bool(true) }
+            return action("outlook.messages.list", args)
+        }
         if containsAny(text, ["mark", "set"]) && text.contains("unread") { return action("outlook.message.mark_unread", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if containsAny(text, ["mark", "set"]) && text.contains("read") { return action("outlook.message.mark_read", outlookMessageReadArgs(extractOutlookMessageReference(from: text) ?? "latest")) }
         if !containsAny(text, ["move", "archive", "delete", "trash", "mark", "set", "reply", "respond", "forward"]) && isLatestOutlookReadIntent(text) {
@@ -546,6 +551,16 @@ nonisolated enum DeterministicToolPlanner {
 
     private static func isPersonalProfileRecallIntent(_ text: String) -> Bool { IntentRouter.isPersonalProfileRecallIntent(text) }
     private static func isLatestOutlookReadIntent(_ text: String) -> Bool { containsAny(text, ["latest email", "last email", "read latest", "open latest", "open email", "latest outlook email", "last outlook email", "read my latest email", "read outlook message"]) }
+    private static func isExplicitOutlookMessageListIntent(_ text: String) -> Bool {
+        guard containsAny(text, ["emails", "messages"]) else { return false }
+        guard !containsAnyWholeWord(text, ["move", "archive", "delete", "trash", "mark", "set", "reply", "respond", "forward", "send", "draft", "compose"]) else { return false }
+        return containsAny(text, ["list", "show", "check", "view", "display", "latest", "recent", "newest", "unread", "read emails", "read messages"])
+    }
+
+    private static func containsAnyWholeWord(_ value: String, _ words: [String]) -> Bool {
+        let tokens = Set(value.split { !$0.isLetter && !$0.isNumber }.map { $0.lowercased() })
+        return words.contains { tokens.contains($0.lowercased()) }
+    }
     /// Determines whether text contains phrases indicating a save-then-recall memory pattern.
 /// - Parameters:
 ///   - text: The text to evaluate.
@@ -788,9 +803,15 @@ private static func isNearbyMapSearchIntent(_ text: String) -> Bool { containsAn
     }
 
     static func extractDestination(from text: String) -> String? {
-        let lower = normalized(text)
+        let cleanedText = text.replacingOccurrences(
+            of: #"(?i)\s*,?\s*(?:but\s+|and\s+)?ask\s+for\s+clarification\s+if\s+required\s+details?\s+(?:are|is)\s+missing\s*[.!?]*\s*$"#,
+            with: "",
+            options: .regularExpression
+        )
         for marker in [" to ", " near ", " for ", " in ", " at "] {
-            if let r = lower.range(of: marker) { return String(text[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines) }
+            if let r = cleanedText.range(of: marker, options: .caseInsensitive) {
+                return String(cleanedText[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
         }
         return nil
     }

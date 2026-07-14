@@ -35,6 +35,16 @@ CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY = "cortex_codebase_self_awareness"
 PUBLIC_ADAPTER_CORPUS_PREFIX = "public_adapter_corpus_"
 EXPERIMENT_PUBLIC_SELECTION_NUMERATOR = 4
 EXPERIMENT_PUBLIC_SELECTION_DENOMINATOR = 5
+ROLE_LOCKED_AGENTS = frozenset({"executor", "mouth", "mimicry", "rem"})
+CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES = frozenset(
+    {
+        "codebase_home_corpus",
+        "codebase_home_sft",
+        "codebase_home_chunks",
+        "codebase_home_chunk_sft",
+        CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
+    }
+)
 SYSTEM_PROMPTS = {
     "cortex": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
     "executor": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
@@ -75,8 +85,6 @@ AGENT_SOURCE_FAMILIES: dict[str, set[str]] = {
     "rem": {
         "rem_reflection",
         "runtime_audit_repairs",
-        "codebase_home_sft",
-        "codebase_home_chunk_sft",
     },
     "fleet": {
         "manifest_grounding_cards",
@@ -174,6 +182,8 @@ class FineTuningDatasetConfig:
     include_unsloth_config: bool = True
     max_sequence_length: int = 4096
     max_public_corpus_token_share: float | None = 0.35
+    max_chars_per_token: int = 2
+    max_supplemental_sft_ratio: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -212,11 +222,14 @@ def compile_agent_fine_tuning_datasets(
 
     for source_family, records in sorted(augmented_records.items()):
         for record in records:
+            if str(record.get("recordType") or "").strip().lower() == "dpo":
+                continue
             normalized = _normalize_candidate_record(record, source_family)
             if normalized is None:
                 continue
+            record_source_family = normalized["sourceFamily"]
             routed_agents = _route_record_agents(
-                source_family=source_family,
+                source_family=record_source_family,
                 record=record,
                 task_type=normalized["taskType"],
                 tool_ids=normalized["toolIDs"],
@@ -228,22 +241,12 @@ def compile_agent_fine_tuning_datasets(
                 if sft_record is None:
                     continue
                 routed_sft[agent].append(sft_record)
-                routing_stats[agent]["sourceFamilies"].add(normalized["sourceFamily"])
+                routing_stats[agent]["sourceFamilies"].add(record_source_family)
                 routing_stats[agent]["taskTypes"].add(normalized["taskType"])
                 routing_stats[agent]["availableSFTRecords"] += 1
 
     ultra_specific_sft = _build_ultra_specific_adapter_sft_records(manifest, known_tools)
     cortex_codebase_sft = _build_cortex_codebase_self_awareness_records(manifest, augmented_records)
-    cortex_codebase_file_record_count = sum(
-        1
-        for record in cortex_codebase_sft
-        if (record.get("metadata") or {}).get("recordKind") == "file_summary"
-    )
-    cortex_codebase_chunk_record_count = sum(
-        1
-        for record in cortex_codebase_sft
-        if (record.get("metadata") or {}).get("recordKind") == "source_chunk"
-    )
     ultra_specific_sft["cortex"].extend(cortex_codebase_sft)
     for agent, records in ultra_specific_sft.items():
         routed_sft[agent].extend(records)
@@ -275,11 +278,17 @@ def compile_agent_fine_tuning_datasets(
             else []
         )
         deduped_sft = _exclude_evaluation_segment_matches(
-            _unique_sft_records_by_messages(routed_sft[agent]),
+            _unique_sorted_sft_records(routed_sft[agent]),
             eval_records,
         )
-        train_sft, val_sft = _stable_split(
-            deduped_sft,
+        budget_eligible_sft = [
+            record
+            for record in deduped_sft
+            if _fits_sequence_budget(record, config)
+        ]
+        role_balanced_sft = _limit_supplemental_sft_records(agent, budget_eligible_sft, config)
+        train_sft, val_sft = _stable_source_stratified_split(
+            role_balanced_sft,
             config,
             public_validation_group_keys=public_validation_group_keys,
         )
@@ -292,6 +301,16 @@ def compile_agent_fine_tuning_datasets(
         val_sft = _cap_public_corpus_token_share(
             val_sft,
             config.max_public_corpus_token_share,
+        )
+        materialized_role_balanced_sft = _limit_supplemental_sft_records(
+            agent,
+            train_sft + val_sft,
+            config,
+        )
+        train_sft, val_sft = _stable_source_stratified_split(
+            materialized_role_balanced_sft,
+            config,
+            public_validation_group_keys=public_validation_group_keys,
         )
 
         dpo_records = (
@@ -333,12 +352,33 @@ def compile_agent_fine_tuning_datasets(
             max_public_share=config.max_public_corpus_token_share,
         )
 
+        materialized_sft = train_sft + val_sft
+        source_family_counts = _metadata_value_counts(materialized_sft, "sourceFamily")
+        task_type_counts = _metadata_value_counts(materialized_sft, "taskType")
+        materialized_cortex_codebase = [
+            record
+            for record in materialized_sft
+            if (record.get("metadata") or {}).get("sourceFamily") == CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY
+        ] if agent == "cortex" else []
+        cortex_codebase_file_record_count = sum(
+            1
+            for record in materialized_cortex_codebase
+            if (record.get("metadata") or {}).get("recordKind") == "file_summary"
+        )
+        cortex_codebase_chunk_record_count = sum(
+            1
+            for record in materialized_cortex_codebase
+            if (record.get("metadata") or {}).get("recordKind") == "source_chunk"
+        )
+        source_integrity = _source_integrity_metadata(manifest)
         dataset_card = {
             "agent": agent,
             "systemPrompt": SYSTEM_PROMPTS[agent],
             "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
             # Compatibility for consumers of the legacy dataset-card field.
             "manifestCommit": manifest.sourceIntegrity.commit,
+            "sourceDirty": source_integrity["sourceDirty"],
+            "worktreeFingerprint": source_integrity["worktreeFingerprint"],
             "deterministic": config.deterministic,
             "recordCounts": {
                 "train_sft": len(train_sft),
@@ -347,9 +387,12 @@ def compile_agent_fine_tuning_datasets(
                 "val_dpo": len(val_dpo),
                 "eval": len(eval_records),
             },
-            "sourceFamilies": sorted(routing_stats[agent]["sourceFamilies"]),
-            "taskTypes": sorted(routing_stats[agent]["taskTypes"]),
-            "availableSFTRecords": int(routing_stats[agent]["availableSFTRecords"]),
+            "sourceFamilies": sorted(source_family_counts),
+            "sourceFamilyCounts": source_family_counts,
+            "taskTypes": sorted(task_type_counts),
+            "taskTypeCounts": task_type_counts,
+            "availableSFTRecords": len(materialized_sft),
+            "candidateSFTRecords": int(routing_stats[agent]["availableSFTRecords"]),
             "publicCorpus": _public_corpus_card(
                 train_sft=train_sft,
                 val_sft=val_sft,
@@ -399,15 +442,23 @@ def compile_agent_fine_tuning_datasets(
                 "ultraSpecificSourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
                 "ultraSpecificRecordCount": sum(
                     1
-                    for record in ultra_specific_sft.get(agent, [])
+                    for record in materialized_sft
                     if (record.get("metadata") or {}).get("sourceFamily") == ULTRA_SPECIFIC_SOURCE_FAMILY
                 ),
                 "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
                 "cortexCodebaseSelfAwarenessSourceFamily": CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY if agent == "cortex" else None,
-                "cortexCodebaseSelfAwarenessRecordCount": len(cortex_codebase_sft) if agent == "cortex" else 0,
-                "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_excluding_generated_outputs" if agent == "cortex" else None,
+                "cortexCodebaseSelfAwarenessRecordCount": len(materialized_cortex_codebase),
+                "cortexCodebaseSelfAwarenessCandidateRecordCount": len(cortex_codebase_sft) if agent == "cortex" else 0,
+                "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files" if agent == "cortex" else None,
                 "cortexCodebaseFileRecordCount": cortex_codebase_file_record_count if agent == "cortex" else 0,
                 "cortexCodebaseChunkRecordCount": cortex_codebase_chunk_record_count if agent == "cortex" else 0,
+                "supplementalSFTRecordCount": sum(
+                    count
+                    for family, count in source_family_counts.items()
+                    if family in CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES
+                ),
+                "sequenceBudgetDroppedRecordCount": len(deduped_sft) - len(budget_eligible_sft),
+                "supplementalBalanceDroppedRecordCount": len(budget_eligible_sft) - len(role_balanced_sft),
             },
         }
 
@@ -425,7 +476,6 @@ def compile_agent_fine_tuning_datasets(
             experiment_manifest=experiment_manifest,
         )
 
-    _backfill_rem_runtime_repairs(output, manifest, runtime_audit_reports)
     return output
 
 
@@ -487,7 +537,23 @@ def _fleet_artifact_prompts(fleet_artifacts: Any) -> list[dict]:
 def _fleet_artifact_training_records(fleet_artifacts: Any) -> list[dict]:
     records = _read_artifact_field(fleet_artifacts, "cross_model_training")
     if isinstance(records, list):
-        return [record for record in records if isinstance(record, dict)]
+        qualified: list[dict[str, Any]] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            source_agent = _cross_model_source_agent(record)
+            raw_messages = record.get("messages")
+            if not source_agent or not isinstance(raw_messages, list):
+                qualified.append(record)
+                continue
+            messages: list[dict[str, Any]] = []
+            for message in raw_messages:
+                cloned = dict(message) if isinstance(message, dict) else {"role": "user", "content": str(message)}
+                if cloned.get("role") == "user":
+                    cloned["content"] = f"For the `{source_agent}` source slot: {cloned.get('content') or ''}"
+                messages.append(cloned)
+            qualified.append({**record, "messages": messages})
+        return qualified
     return []
 
 
@@ -599,6 +665,15 @@ def _to_sft_record(
     if not assistant:
         return None
     tool_ids = [tool_id for tool_id in normalized["toolIDs"] if tool_id in known_tools]
+    if agent == "mouth" and assistant.strip().lower() in {"done", "done.", "completed", "completed."}:
+        return None
+    if agent == "executor":
+        payload = _manifest_valid_executor_payload(manifest, assistant)
+        if payload is None:
+            return None
+        payload_tool = payload["tool"]
+        tool_ids = sorted(set(tool_ids).union({payload_tool}))
+    source_integrity = _source_integrity_metadata(manifest)
     metadata = {
         "agent": agent,
         "taskType": normalized["taskType"],
@@ -608,6 +683,8 @@ def _to_sft_record(
         "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
         # Compatibility for existing training-record consumers.
         "manifestCommit": manifest.sourceIntegrity.commit,
+        "sourceDirty": source_integrity["sourceDirty"],
+        "worktreeFingerprint": source_integrity["worktreeFingerprint"],
         "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
     }
     public_corpus = normalized.get("publicCorpus")
@@ -666,7 +743,17 @@ def _route_record_agents(
             slot_roles,
         )
         if has_structured_target:
-            return [structured_target] if structured_target in AGENTS else ["fleet"]
+            if (
+                structured_target in ROLE_LOCKED_AGENTS
+                and source_family not in AGENT_SOURCE_FAMILIES[structured_target]
+            ):
+                # Cross-model metadata describes the source slot, not an
+                # authorization to train a role-locked adapter on fleet-wide
+                # prose. Drop it instead of fanning the peer sample into other
+                # adapters through generic family heuristics.
+                return []
+            else:
+                return [structured_target] if structured_target in AGENTS else ["fleet"]
 
     for agent, families in AGENT_SOURCE_FAMILIES.items():
         if source_family in families:
@@ -692,7 +779,25 @@ def _route_record_agents(
         family_root = source_family.split("_", 1)[0]
         if family_root in AGENTS:
             routed.add(family_root)
+    for agent in ROLE_LOCKED_AGENTS:
+        if agent in routed and source_family not in AGENT_SOURCE_FAMILIES[agent]:
+            routed.remove(agent)
     return sorted(routed.intersection(AGENTS))
+
+
+def _cross_model_source_agent(record: dict[str, Any]) -> str:
+    messages = record.get("messages")
+    if not isinstance(messages, list):
+        return ""
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "system":
+            continue
+        content = str(message.get("content") or "").strip().casefold()
+        if not content.startswith("you are "):
+            continue
+        candidate = content.removeprefix("you are ").split(maxsplit=1)[0].strip(".,:;`'")
+        return _normalize_agent_role(candidate)
+    return ""
 
 
 def _normalize_agent_role(raw: Any) -> str:
@@ -1574,6 +1679,7 @@ def _adapter_sft_record(
         _to_string(assistant),
         manifest.sentinels.forbiddenInUserOutput,
     )
+    source_integrity = _source_integrity_metadata(manifest)
     return {
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPTS[agent]},
@@ -1589,6 +1695,8 @@ def _adapter_sft_record(
             "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
             # Compatibility for existing training-record consumers.
             "manifestCommit": manifest.sourceIntegrity.commit,
+            "sourceDirty": source_integrity["sourceDirty"],
+            "worktreeFingerprint": source_integrity["worktreeFingerprint"],
             "specificity": "ultra_specific",
             "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
             **extra_metadata,
@@ -1710,7 +1818,10 @@ def _cortex_prompt_for_intent(intent: str, tool_id: str, tool: ToolManifest) -> 
         "motion.activity": "Check whether I am walking or driving right now.",
         "weather": "Will it rain in Montreal today?",
     }
-    return examples.get(tool_id) or f"Route intent `{intent}` to `{tool.id}` ({tool.displayName or tool.id}) with manifest-only tool selection and an explicit action step."
+    example = examples.get(tool_id)
+    if example:
+        return f"{example} Treat this specifically as the `{intent}` intent."
+    return f"Route intent `{intent}` to `{tool.id}` ({tool.displayName or tool.id}) with manifest-only tool selection and an explicit action step."
 
 
 def _executor_prompt_for_tool(tool: ToolManifest, args: dict[str, Any]) -> str:
@@ -1723,10 +1834,21 @@ def _executor_prompt_for_tool(tool: ToolManifest, args: dict[str, Any]) -> str:
 
 
 def _adapter_sample_arguments(tool: ToolManifest) -> dict[str, Any]:
-    return {arg.name: _adapter_sample_value(tool.id, arg.name, arg.type) for arg in tool.arguments if arg.required}
+    return {
+        arg.name: _adapter_sample_value(tool.id, arg.name, arg.type, arg.allowedValues)
+        for arg in tool.arguments
+        if arg.required
+    }
 
 
-def _adapter_sample_value(tool_id: str, name: str, arg_type: str) -> Any:  # NOSONAR
+def _adapter_sample_value(
+    tool_id: str,
+    name: str,
+    arg_type: str,
+    allowed_values: list[str] | None = None,
+) -> Any:  # NOSONAR
+    if allowed_values:
+        return sorted(allowed_values)[0]
     lowered = name.lower()
     type_l = arg_type.lower()
     if type_l in {"null", "none", "nil"}:
@@ -1926,6 +2048,95 @@ def _structured_slot_or_role_target(
     return False, None
 
 
+def _source_integrity_metadata(manifest: AgentBehaviorManifest) -> dict[str, Any]:
+    source_integrity = manifest.sourceIntegrity
+    return {
+        "manifestCommit": source_integrity.commit,
+        "sourceDirty": bool(getattr(source_integrity, "dirty", False)),
+        "worktreeFingerprint": getattr(source_integrity, "worktreeFingerprint", None),
+    }
+
+
+def _manifest_valid_executor_payload(
+    manifest: AgentBehaviorManifest,
+    assistant: str,
+) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(assistant)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    tool_id = payload.get("tool")
+    if not isinstance(tool_id, str):
+        return None
+    tool = next((candidate for candidate in manifest.tools if candidate.id == tool_id), None)
+    if tool is None:
+        return None
+
+    arguments = payload.get("arguments")
+    if not isinstance(arguments, dict):
+        return None
+    arguments_by_name = {argument.name: argument for argument in tool.arguments}
+    if not set(arguments).issubset(arguments_by_name):
+        return None
+    for name, value in arguments.items():
+        argument = arguments_by_name[name]
+        if not _manifest_argument_value_is_valid(value, argument.type, argument.allowedValues):
+            return None
+
+    missing_required = {
+        argument.name
+        for argument in tool.arguments
+        if argument.required and argument.name not in arguments
+    }
+    status = payload.get("status")
+    if missing_required:
+        declared_missing = payload.get("missingArguments")
+        if status != "needs_clarification" or not isinstance(declared_missing, list):
+            return None
+        if not missing_required.issubset({item for item in declared_missing if isinstance(item, str)}):
+            return None
+    return payload
+
+
+def _manifest_argument_value_is_valid(
+    value: Any,
+    declared_type: str,
+    allowed_values: list[str] | None,
+) -> bool:
+    if allowed_values and value not in allowed_values:
+        return False
+    type_name = declared_type.strip().lower()
+    if type_name in {"string", "enum"}:
+        return isinstance(value, str)
+    if type_name in {"bool", "boolean"}:
+        return isinstance(value, bool)
+    if type_name in {"int", "integer"}:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_name in {"number", "float", "double"}:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if type_name in {"object", "dictionary"}:
+        return isinstance(value, dict)
+    if type_name in {"array", "list"}:
+        return isinstance(value, list)
+    if type_name in {"null", "none", "nil"}:
+        return value is None
+    return False
+
+
+def _has_explicit_fleet_slot_metadata(record: dict[str, Any], slot_ids: set[str], slot_roles: set[str]) -> bool:
+    serialized = json.dumps(record, ensure_ascii=False, sort_keys=True).lower()
+    for slot_id in slot_ids:
+        if slot_id.lower() in serialized:
+            return True
+    for role in slot_roles:
+        if role.lower() in serialized:
+            return True
+    return False
+
+
 def _looks_like_cortex_record(record: dict[str, Any]) -> bool:
     text = json.dumps(record, ensure_ascii=False, sort_keys=True).lower()
     return any(token in text for token in ("selectedtoolid", "routing", "intent", "action step"))
@@ -2041,6 +2252,15 @@ def _build_agent_dpo_records(
     ultra_specific = _ultra_specific_dpo_pairs(manifest, known_tools)
     for agent, pairs in ultra_specific.items():
         routed[agent].extend(pairs)
+    routed["executor"] = [
+        record
+        for record in routed["executor"]
+        if _manifest_valid_executor_payload(
+            manifest,
+            _to_string((record.get("chosen") or {}).get("content")),
+        )
+        is not None
+    ]
     return routed
 
 
@@ -2052,6 +2272,9 @@ def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str])
     fleet_slot_ids = [slot.id for slot in manifest.fleet.slots] or ["cortex", "executor"]
     known_slot = fleet_slot_ids[0]
     unknown_slot = "invented_shadow_slot"
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    first_tool_arguments = _adapter_sample_arguments(tools_by_id[first_tool]) if first_tool in tools_by_id else {}
+    approval_arguments = _adapter_sample_arguments(tools_by_id[approval_tool]) if approval_tool in tools_by_id else {}
 
     return {
         "cortex": [
@@ -2084,7 +2307,7 @@ def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str])
             _dpo(
                 "executor",
                 f"Produce strict executor JSON for tool {first_tool}.",
-                json.dumps({"tool": first_tool, "arguments": {}}, ensure_ascii=False, sort_keys=True),
+                json.dumps({"tool": first_tool, "arguments": first_tool_arguments}, ensure_ascii=False, sort_keys=True),
                 json.dumps({"tool": first_tool, "arguments": {"wrongArg": "x"}}, ensure_ascii=False, sort_keys=True),
                 "argument_completion",
                 "rejected uses wrong argument",
@@ -2092,7 +2315,7 @@ def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str])
             _dpo(
                 "executor",
                 "Call a valid manifest tool.",
-                json.dumps({"tool": first_tool, "arguments": {}}, ensure_ascii=False, sort_keys=True),
+                json.dumps({"tool": first_tool, "arguments": first_tool_arguments}, ensure_ascii=False, sort_keys=True),
                 json.dumps({"tool": "invalid.tool", "arguments": {}}, ensure_ascii=False, sort_keys=True),
                 "unknown_tool_rejection",
                 "rejected uses invalid tool",
@@ -2100,8 +2323,8 @@ def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str])
             _dpo(
                 "executor",
                 f"Tool {approval_tool} requires approval before execution.",
-                json.dumps({"status": "requires_user_approval", "tool": approval_tool, "arguments": {}}, ensure_ascii=False, sort_keys=True),
-                json.dumps({"status": "ready_to_execute", "tool": approval_tool, "arguments": {}}, ensure_ascii=False, sort_keys=True),
+                json.dumps({"status": "requires_user_approval", "tool": approval_tool, "arguments": approval_arguments}, ensure_ascii=False, sort_keys=True),
+                json.dumps({"status": "ready_to_execute", "tool": approval_tool, "arguments": approval_arguments}, ensure_ascii=False, sort_keys=True),
                 "approval_boundary",
                 "rejected skips approval boundary",
             ),
@@ -2219,7 +2442,10 @@ def _ultra_specific_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[
     outlook_attachments = _known_tool_or_default(known_tools, "outlook.attachments.list")
     motion_activity = _known_tool_or_default(known_tools, "motion.activity")
     approval_tool = _first_tool_with(manifest.tools, lambda tool: tool.requiresApproval) or _known_tool_or_default(known_tools, "")
-    slots = [slot.id for slot in manifest.fleet.slots] or list(AGENTS)
+    permission_tool = _first_tool_with(manifest.tools, lambda tool: bool(tool.permissionKey)) or _known_tool_or_default(known_tools, "")
+    slots = [slot.role for slot in manifest.fleet.slots] or list(AGENTS)
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    approval_arguments = _adapter_sample_arguments(tools_by_id[approval_tool]) if approval_tool in tools_by_id else {}
 
     return {
         "cortex": [
@@ -2268,8 +2494,8 @@ def _ultra_specific_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[
             _dpo(
                 "executor",
                 f"Handle approval-required tool {approval_tool}.",
-                json.dumps({"status": "requires_user_approval", "tool": approval_tool, "arguments": {}}, ensure_ascii=False, sort_keys=True),
-                json.dumps({"status": "ready_to_execute", "tool": approval_tool, "arguments": {}}, ensure_ascii=False, sort_keys=True),
+                json.dumps({"status": "requires_user_approval", "tool": approval_tool, "arguments": approval_arguments}, ensure_ascii=False, sort_keys=True),
+                json.dumps({"status": "ready_to_execute", "tool": approval_tool, "arguments": approval_arguments}, ensure_ascii=False, sort_keys=True),
                 "ultra_specific_approval_gate",
                 "chosen stops before execution when approval is missing",
             ),
@@ -2597,151 +2823,6 @@ def _eval(agent: str, eval_type: str, user: str, expected: dict[str, Any]) -> di
     }
 
 
-def _backfill_rem_runtime_repairs(
-    datasets: dict[str, AgentFineTuningDataset],
-    manifest: AgentBehaviorManifest,
-    runtime_audit_reports: list[dict[str, Any]],
-) -> None:
-    if not runtime_audit_reports:
-        return
-    rem = datasets.get("rem")
-    if rem is None:
-        return
-
-    has_runtime = any(
-        record.get("metadata", {}).get("taskType") == "runtime_manifest_drift_repair"
-        for record in (rem.train_sft + rem.val_sft)
-    )
-    if has_runtime:
-        return
-
-    sample = {
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPTS["rem"]},
-            {"role": "user", "content": "Runtime audit reported failures. Diagnose and produce a repair sample."},
-            {"role": "assistant", "content": json.dumps({"diagnosis": "runtime_failure_detected", "repair": "add_runtime_repair_samples"}, ensure_ascii=False, sort_keys=True)},
-        ],
-        "metadata": {
-            "agent": "rem",
-            "taskType": "runtime_manifest_drift_repair",
-            "toolIDs": [],
-            "risk": "boundary",
-            "sourceFamily": "runtime_audit_repairs",
-            "sourceIntegrity": manifest.sourceIntegrity.lineage_dict(),
-            # Compatibility for existing training-record consumers.
-            "manifestCommit": manifest.sourceIntegrity.commit,
-        },
-    }
-    # dataclass is frozen, so rebuild replacement dataset.
-    patched_train = _unique_sorted_records([*rem.train_sft, sample])
-    experiment_variants: dict[str, dict[str, Any]] = {}
-    experiment_variant_manifests: dict[str, dict[str, Any]] = {}
-    selection_policies: dict[str, dict[str, Any]] = {}
-    for variant in EXPERIMENT_VARIANTS:
-        prior = rem.experiment_variants[variant]
-        train_sft = _unique_sorted_records([*prior["train_sft"], sample])
-        val_sft = list(prior["val_sft"])
-        train_dpo = list(prior["train_dpo"])
-        val_dpo = list(prior["val_dpo"])
-        contamination = build_contamination_report(
-            [*train_sft, *val_sft, *train_dpo, *val_dpo],
-            rem.eval,
-        )
-        variant_manifest = build_experiment_variant_manifest(
-            agent="rem",
-            variant=variant,
-            base_model_id=str(rem.unsloth_config.get("base_model_name") or "Qwen/Qwen3-1.7B"),
-            seed=int(rem.unsloth_config.get("seed") or 42),
-            training_config=rem.unsloth_config,
-            train_sft=train_sft,
-            validation_sft=val_sft,
-            dpo_records=train_dpo,
-            validation_dpo_records=val_dpo,
-            evaluation_records=rem.eval,
-            contamination_report=contamination,
-        )
-        experiment_variants[variant] = {
-            "train_sft": train_sft,
-            "val_sft": val_sft,
-            "train_dpo": train_dpo,
-            "val_dpo": val_dpo,
-            "contamination_report": contamination,
-            "variant_manifest": variant_manifest,
-        }
-        experiment_variant_manifests[variant] = variant_manifest
-        prior_selection_policy = prior["variant_manifest"].get("publicSelectionPolicy")
-        selection_policies[variant] = (
-            dict(prior_selection_policy)
-            if isinstance(prior_selection_policy, dict)
-            else {"strategy": "unspecified"}
-        )
-    prior_comparison = rem.experiment_manifest.get("comparisonEligibility")
-    prior_public_record_count = (
-        prior_comparison.get("publicRecordCount")
-        if isinstance(prior_comparison, dict)
-        else None
-    )
-    if type(prior_public_record_count) is not int:
-        prior_public_record_count = sum(
-            1
-            for lane in ("train_sft", "val_sft", "train_dpo", "val_dpo")
-            for record in rem.experiment_variants["internal_plus_public_optimized"][lane]
-            if _public_corpus_metadata(record) is not None
-        )
-    experiment_manifest = _finalize_experiment_comparison(
-        agent="rem",
-        variants=experiment_variants,
-        manifests=experiment_variant_manifests,
-        public_record_count=prior_public_record_count,
-        selection_policies=selection_policies,
-    )
-    contamination_report = experiment_variants["internal_plus_public_optimized"]["contamination_report"]
-    evaluation_card = {
-        **(rem.dataset_card.get("evaluation") or {}),
-        "contamination": {
-            "contaminated": contamination_report["contaminated"],
-            "matchCount": contamination_report["matchCount"],
-            "reportSHA256": contamination_report["reportSHA256"],
-            "promotionRequiresZeroMatches": True,
-        },
-    }
-    public_card = dict(rem.dataset_card.get("publicCorpus") or {})
-    public_card["tokenShares"] = _public_token_shares(
-        {
-            "train_sft": patched_train,
-            "val_sft": rem.val_sft,
-            "train_dpo": rem.train_dpo,
-            "val_dpo": rem.val_dpo,
-        }
-    )
-    datasets["rem"] = AgentFineTuningDataset(
-        agent=rem.agent,
-        train_sft=patched_train,
-        val_sft=list(rem.val_sft),
-        train_dpo=list(rem.train_dpo),
-        val_dpo=list(rem.val_dpo),
-        eval=list(rem.eval),
-        dataset_card={
-            **rem.dataset_card,
-            "recordCounts": {
-                **(rem.dataset_card.get("recordCounts") or {}),
-                "train_sft": len(patched_train),
-            },
-            "evaluation": evaluation_card,
-            "publicCorpus": public_card,
-            "experimentPolicy": {
-                **(rem.dataset_card.get("experimentPolicy") or {}),
-                "comparisonEligibility": experiment_manifest["comparisonEligibility"],
-                "experimentManifestSHA256": experiment_manifest["experimentManifestSHA256"],
-            },
-        },
-        unsloth_config=dict(rem.unsloth_config),
-        contamination_report=contamination_report,
-        experiment_variants=experiment_variants,
-        experiment_manifest=experiment_manifest,
-    )
-
-
 def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[str, Any]:
     high_reasoning = agent in {"cortex", "executor", "rem"}
     fleet_strategy = "train_first" if agent == "fleet" else "per_slot_adapter"
@@ -2764,6 +2845,8 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         "trainingEnvironmentLock": default_training_environment_lock(),
         **training_lineage,
         "max_seq_length": config.max_sequence_length,
+        "sequence_char_budget": config.max_sequence_length * config.max_chars_per_token,
+        "sequence_budget_policy": "conservative_utf8_byte_proxy",
         "load_in_4bit": True,
         "lora_r": 24 if high_reasoning else 16,
         "lora_alpha": 48 if high_reasoning else 32,
@@ -2781,7 +2864,7 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         "dpo_output_dir": f"models/lora_dpo/{agent}",
         "gguf_output_dir": f"models/gguf_release_bake/{agent}_merged_gguf",
         "gguf_quantization": "q4_k_m",
-        "gguf_repo_id": "ales27pm/lumen-fleet-gguf",
+        "gguf_repo_id": "ales27pm/lumen-qwen3-bootstrap-adapters-gguf",
         "fleet_strategy": fleet_strategy,
         "merge_target": "cortex" if agent == "fleet" else None,
     }
@@ -3060,6 +3143,104 @@ def _stable_split(
         validation_group_keys=public_validation_group_keys,
     )
     return _unique_sorted_records(internal_train + public_train), _unique_sorted_records(internal_val + public_val)
+
+
+def _unique_sorted_sft_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for record in sorted(
+        records,
+        key=lambda record: (
+            1 if _public_corpus_metadata(record) is not None else 0,
+            _canonical_record_key(record),
+        ),
+    ):
+        key = _canonical_messages_key(record)
+        deduped.setdefault(key, record)
+    return [deduped[key] for key in sorted(deduped)]
+
+
+def _canonical_record_key(record: dict[str, Any]) -> str:
+    return json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_messages_key(record: dict[str, Any]) -> str:
+    messages = record.get("messages")
+    if not isinstance(messages, list):
+        return json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical: list[dict[str, Any]] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            canonical.append({"role": "unknown", "content": str(message)})
+            continue
+        role = str(message.get("role") or "")
+        content = str(message.get("content") or "")
+        if role == "assistant":
+            try:
+                content = json.dumps(json.loads(content), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            except json.JSONDecodeError:
+                content = " ".join(content.split())
+        canonical.append({"role": role, "content": content})
+    return json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _metadata_value_counts(records: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        value = str(metadata.get(key) or "unknown")
+        counts[value] = counts.get(value, 0) + 1
+    return {value: counts[value] for value in sorted(counts)}
+
+
+def _fits_sequence_budget(record: dict[str, Any], config: FineTuningDatasetConfig) -> bool:
+    messages = record.get("messages")
+    serialized = json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return len(serialized.encode("utf-8")) <= config.max_sequence_length * config.max_chars_per_token
+
+
+def _limit_supplemental_sft_records(
+    agent: str,
+    records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+) -> list[dict[str, Any]]:
+    if agent not in {"cortex", "fleet"}:
+        return records
+    primary: list[dict[str, Any]] = []
+    supplemental: list[dict[str, Any]] = []
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        target = supplemental if metadata.get("sourceFamily") in CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES else primary
+        target.append(record)
+    if not supplemental or not primary:
+        return records
+    ratio = min(max(config.max_supplemental_sft_ratio, 0.0), 0.95)
+    limit = int(len(primary) * ratio / (1.0 - ratio)) if ratio > 0 else 0
+    return _unique_sorted_sft_records(primary + _stable_stratified_sample(supplemental, limit))
+
+
+def _stable_stratified_sample(records: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        key = (str(metadata.get("sourceFamily") or "unknown"), str(metadata.get("taskType") or "unknown"))
+        groups.setdefault(key, []).append(record)
+    for group in groups.values():
+        group.sort(key=_canonical_record_key)
+    sampled: list[dict[str, Any]] = []
+    while len(sampled) < limit:
+        added = False
+        for key in sorted(groups):
+            group = groups[key]
+            if group:
+                sampled.append(group.pop(0))
+                added = True
+                if len(sampled) == limit:
+                    break
+        if not added:
+            break
+    return sampled
 
 
 def _legacy_stable_split(records: list[dict[str, Any]], config: FineTuningDatasetConfig) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -3521,6 +3702,32 @@ def _public_token_shares(
             "target": round(public_target / lane_target, 6) if lane_target else 0.0,
         }
     return shares
+
+
+def _stable_source_stratified_split(
+    records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+    *,
+    public_validation_group_keys: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        source_family = str(metadata.get("sourceFamily") or "unknown")
+        groups.setdefault(source_family, []).append(record)
+
+    train: list[dict[str, Any]] = []
+    val: list[dict[str, Any]] = []
+    for source_family in sorted(groups):
+        group = sorted(groups[source_family], key=_canonical_record_key)
+        group_train, group_val = _stable_split(
+            group,
+            config,
+            public_validation_group_keys=public_validation_group_keys,
+        )
+        train.extend(group_train)
+        val.extend(group_val)
+    return sorted(train, key=_canonical_record_key), sorted(val, key=_canonical_record_key)
 
 
 def _extract_tool_ids(value: Any) -> set[str]:

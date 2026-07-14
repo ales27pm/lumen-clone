@@ -83,6 +83,33 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .chat, allowedToolIDs: [], requiresClarification: false, clarificationPrompt: nil)
         }
 
+        if isBareMemoryRequest(text) {
+            return IntentRoutingDecision(
+                intent: .memory,
+                allowedToolIDs: memoryToolIDs,
+                requiresClarification: true,
+                clarificationPrompt: "What should I save or recall?"
+            )
+        }
+
+        if let clarification = bareOutlookRequestClarification(text) {
+            return IntentRoutingDecision(
+                intent: .outlook,
+                allowedToolIDs: outlookToolIDs,
+                requiresClarification: true,
+                clarificationPrompt: clarification
+            )
+        }
+
+        if isBarePhotoReindexRequest(text) {
+            return IntentRoutingDecision(
+                intent: .rag,
+                allowedToolIDs: ragToolIDs,
+                requiresClarification: true,
+                clarificationPrompt: "How many months of photos should I index?"
+            )
+        }
+
         if let override = priorityOverride(forNormalizedText: text) {
             return override
         }
@@ -508,6 +535,38 @@ nonisolated enum IntentRouter {
             "save this note:", "save this fact:", "remember this:", "remember that:",
             "keep this in mind:", "save this note", "save this fact"
         ])
+    }
+
+    private static func isBareMemoryRequest(_ text: String) -> Bool {
+        let withoutCoverageInstruction = text.replacingOccurrences(
+            of: #"(?i)[,.]?\s*but ask for clarification if required details are missing\.?$"#,
+            with: "",
+            options: .regularExpression
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return [
+            "remember", "remember this", "remember that", "save this", "save memory", "recall memory", "note",
+            "use save memory", "use recall memory"
+        ].contains(withoutCoverageInstruction)
+    }
+
+    private static func bareOutlookRequestClarification(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        if ["search my outlook email", "search outlook email", "search outlook messages"].contains(value) {
+            return "What should I search for in Outlook?"
+        }
+        if ["read an outlook email", "read outlook email", "read outlook message"].contains(value) {
+            return "Which Outlook message should I read?"
+        }
+        if ["show attachments from an outlook email", "show outlook attachments", "list outlook attachments"].contains(value) {
+            return "Which Outlook message should I inspect for attachments?"
+        }
+        return nil
+    }
+
+    private static func isBarePhotoReindexRequest(_ text: String) -> Bool {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return ["reindex my photos", "reindex photos"].contains(value)
     }
 
     private static func isExplicitReminderIntent(_ text: String) -> Bool {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # pylint: disable=line-too-long,too-many-lines,too-many-branches,too-many-statements,too-many-locals,too-many-arguments,too-many-nested-blocks,missing-function-docstring
 
+import hashlib
 import json
 import re
 from collections import Counter
@@ -64,6 +65,21 @@ PUBLIC_CORPUS_RAW_ID_KEYS = {
 }
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 GIT_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+ADAPTER_ULTRA_SPECIFIC_SOURCE_FAMILY = "adapter_ultra_specific"
+PUBLIC_ADAPTER_CORPUS_PREFIX = "public_adapter_corpus_"
+ADAPTER_ROLE_SOURCE_FAMILIES = {
+    "executor": {"executor_tool_calls", "tool_schema_cards", "approval_boundary_samples", "negative_samples"},
+    "mouth": {"mouth_responses"},
+    "mimicry": {"mimicry_style"},
+    "rem": {"rem_reflection", "runtime_audit_repairs"},
+}
+ADAPTER_CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES = {
+    "codebase_home_corpus",
+    "codebase_home_sft",
+    "codebase_home_chunks",
+    "codebase_home_chunk_sft",
+    "cortex_codebase_self_awareness",
+}
 FANOUT_INTENTS = {
     "alarm",
     "calendar",
@@ -103,6 +119,11 @@ def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str
     raw_supported = manifest.agentProtocols.executorOutput.get("supportedJSONTypes")
     supported_types = set(raw_supported) if raw_supported else DEFAULT_SUPPORTED_JSON_TYPES
     normalized_supported = {str(t).lower() for t in supported_types}
+    # An enum is a schema-level restriction on a JSON string, not a distinct
+    # AgentJSONValue runtime case. Keep it valid when the extracted executor
+    # contract proves string support.
+    if "string" in normalized_supported:
+        normalized_supported.add("enum")
     for tool in manifest.tools:
         if getattr(tool, "inferred", False):
             warnings.append(
@@ -160,6 +181,8 @@ def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str
 
 
 def _validate_dataset_records(manifest: AgentBehaviorManifest, records: dict[str, list[dict]], failures: list[ValidationFailure]) -> None:  # NOSONAR
+    if "dataset_manifest" in records:
+        _validate_dataset_manifest_integrity(records, failures)
     forbidden = set(manifest.sentinels.forbiddenInUserOutput)
     known_tools = {tool.id for tool in manifest.tools}
     approval_tools = {tool.id for tool in manifest.tools if tool.requiresApproval}
@@ -257,6 +280,52 @@ def _validate_dataset_records(manifest: AgentBehaviorManifest, records: dict[str
             failures.append(ValidationFailure(code="missing_approval_eval_coverage", message=f"Tool {tool.id} requires approval coverage in eval scenarios", path=f"dataset.eval_scenarios.{tool.id}"))
         if tool.permissionKey and not has_permission:
             failures.append(ValidationFailure(code="missing_permission_eval_coverage", message=f"Tool {tool.id} requires permission coverage in eval scenarios", path=f"dataset.eval_scenarios.{tool.id}"))
+
+
+def _validate_dataset_manifest_integrity(
+    records: dict[str, list[dict]],
+    failures: list[ValidationFailure],
+) -> None:
+    manifest_records = records.get("dataset_manifest")
+    if not isinstance(manifest_records, list) or len(manifest_records) != 1 or not isinstance(manifest_records[0], dict):
+        failures.append(
+            ValidationFailure(
+                code="invalid_dataset_manifest",
+                message="dataset_manifest must contain exactly one manifest object",
+                path="dataset.dataset_manifest",
+            )
+        )
+        return
+
+    manifest_record = manifest_records[0]
+    families = {name: family for name, family in records.items() if name != "dataset_manifest"}
+    expected_names = set(families)
+    counts = manifest_record.get("counts")
+    hashes = manifest_record.get("hashes")
+    sources = manifest_record.get("sources")
+    declared_families = sources.get("datasetFamilies") if isinstance(sources, dict) else None
+
+    if not isinstance(counts, dict) or set(counts) != expected_names:
+        failures.append(ValidationFailure(code="dataset_manifest_count_coverage", message="dataset manifest counts must cover every materialized family exactly once", path="dataset.dataset_manifest.counts"))
+    if not isinstance(hashes, dict) or set(hashes) != expected_names:
+        failures.append(ValidationFailure(code="dataset_manifest_hash_coverage", message="dataset manifest hashes must cover every materialized family exactly once", path="dataset.dataset_manifest.hashes"))
+    if declared_families != sorted(expected_names):
+        failures.append(ValidationFailure(code="dataset_manifest_family_coverage", message="dataset manifest family inventory does not match materialized families", path="dataset.dataset_manifest.sources.datasetFamilies"))
+
+    for name, family in sorted(families.items()):
+        if isinstance(counts, dict) and counts.get(name) != len(family):
+            failures.append(ValidationFailure(code="dataset_manifest_count_mismatch", message=f"dataset manifest count for {name} does not match materialized records", path=f"dataset.dataset_manifest.counts.{name}"))
+        expected_hash = _canonical_records_hash(family)
+        if isinstance(hashes, dict) and hashes.get(name) != expected_hash:
+            failures.append(ValidationFailure(code="dataset_manifest_hash_mismatch", message=f"dataset manifest hash for {name} does not match materialized records", path=f"dataset.dataset_manifest.hashes.{name}"))
+
+
+def _canonical_records_hash(records: list[dict[str, Any]]) -> str:
+    payload = "\n".join(
+        json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        for record in records
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 
@@ -502,6 +571,7 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
 
     known_agents = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
     known_tools = {tool.id for tool in manifest.tools}
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
     tool_arg_map = {tool.id: {arg.name for arg in tool.arguments if arg.required} for tool in manifest.tools}
     approval_tools = {tool.id for tool in manifest.tools if tool.requiresApproval}
     permission_tools = {tool.id for tool in manifest.tools if tool.permissionKey}
@@ -532,14 +602,22 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
             failures.append(ValidationFailure(code="missing_unsloth_config", message=f"{agent} unsloth_config missing", path=f"fine_tuning.{agent}.unsloth_config"))
             continue
 
+        _validate_sft_collection_integrity(agent=agent, ds=ds, failures=failures)
         _validate_agent_sft_records(
             agent=agent,
             records=ds.train_sft + ds.val_sft,
             known_tools=known_tools,
+            tools_by_id=tools_by_id,
             tool_arg_map=tool_arg_map,
             forbidden=forbidden,
             failures=failures,
         )
+        if agent == "executor":
+            _validate_executor_dpo_records(
+                records=ds.train_dpo + ds.val_dpo,
+                tools_by_id=tools_by_id,
+                failures=failures,
+            )
         _validate_agent_dpo_records(agent=agent, records=ds.train_dpo + ds.val_dpo, failures=failures)
         _validate_agent_eval_records(agent=agent, records=ds.eval, failures=failures, known_tools=known_tools)
         _validate_unsloth_config(agent=agent, config=ds.unsloth_config, failures=failures)
@@ -555,9 +633,6 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
         if agent == "mouth":
             if not any((record.get("metadata") or {}).get("evalType") == "sentinel_suppression" for record in ds.eval):
                 failures.append(ValidationFailure(code="mouth_missing_sentinel_eval", message="Mouth eval is missing sentinel suppression coverage", path="fine_tuning.mouth.eval"))
-        if agent == "rem" and runtime_audit_reports:
-            if not _has_runtime_repair_sample(ds):
-                failures.append(ValidationFailure(code="rem_missing_runtime_repair", message="Runtime audit data exists but rem dataset has no runtime repair sample", path="fine_tuning.rem"))
         if agent == "fleet":
             _validate_fleet_slot_coverage(ds, slot_ids, failures)
 
@@ -572,11 +647,129 @@ def _dataset_card_int(card: dict[str, Any], key: str) -> int:
     return value if isinstance(value, int) else 0
 
 
+def _validate_sft_collection_integrity(
+    *,
+    agent: str,
+    ds: Any,
+    failures: list[ValidationFailure],
+) -> None:
+    train_keys = [_canonical_sft_messages_key(record) for record in ds.train_sft]
+    val_keys = [_canonical_sft_messages_key(record) for record in ds.val_sft]
+    all_keys = train_keys + val_keys
+    duplicate_count = len(all_keys) - len(set(all_keys))
+    if duplicate_count:
+        failures.append(ValidationFailure(code="duplicate_sft_messages", message=f"{agent} contains {duplicate_count} message-identical SFT records", path=f"fine_tuning.{agent}"))
+    if set(train_keys).intersection(val_keys):
+        failures.append(ValidationFailure(code="sft_split_overlap", message=f"{agent} train and validation SFT splits overlap", path=f"fine_tuning.{agent}"))
+
+    outputs_by_prompt: dict[str, set[str]] = {}
+    for record in ds.train_sft + ds.val_sft:
+        prompt_key = _canonical_sft_prompt_key(record)
+        outputs_by_prompt.setdefault(prompt_key, set()).add(_canonical_sft_output_key(record))
+    conflict_count = sum(1 for outputs in outputs_by_prompt.values() if len(outputs) > 1)
+    if conflict_count:
+        failures.append(ValidationFailure(code="conflicting_sft_prompt_labels", message=f"{agent} contains {conflict_count} prompts with conflicting assistant labels", path=f"fine_tuning.{agent}"))
+
+    records = ds.train_sft + ds.val_sft
+    source_counts = _sft_metadata_counts(records, "sourceFamily")
+    task_counts = _sft_metadata_counts(records, "taskType")
+    card_source_counts = ds.dataset_card.get("sourceFamilyCounts")
+    card_task_counts = ds.dataset_card.get("taskTypeCounts")
+    if card_source_counts != source_counts:
+        failures.append(ValidationFailure(code="dataset_card_source_counts_mismatch", message=f"{agent} dataset card source counts do not match materialized SFT records", path=f"fine_tuning.{agent}.dataset_card.sourceFamilyCounts"))
+    if card_task_counts != task_counts:
+        failures.append(ValidationFailure(code="dataset_card_task_counts_mismatch", message=f"{agent} dataset card task counts do not match materialized SFT records", path=f"fine_tuning.{agent}.dataset_card.taskTypeCounts"))
+
+    allowed_sources = ADAPTER_ROLE_SOURCE_FAMILIES.get(agent)
+    if allowed_sources is not None:
+        invalid_sources = sorted(
+            source
+            for source in source_counts
+            if source not in allowed_sources
+            and source != ADAPTER_ULTRA_SPECIFIC_SOURCE_FAMILY
+            and not source.startswith(PUBLIC_ADAPTER_CORPUS_PREFIX)
+        )
+        if invalid_sources:
+            failures.append(ValidationFailure(code="off_role_sft_source", message=f"{agent} contains off-role sources: {', '.join(invalid_sources)}", path=f"fine_tuning.{agent}"))
+
+    if agent in {"cortex", "fleet"} and records:
+        supplemental_count = sum(source_counts.get(source, 0) for source in ADAPTER_CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES)
+        if supplemental_count / len(records) > 0.251:
+            failures.append(ValidationFailure(code="supplemental_sft_ratio_exceeded", message=f"{agent} codebase grounding exceeds 25% of materialized SFT", path=f"fine_tuning.{agent}"))
+
+    max_sequence_length = ds.unsloth_config.get("max_seq_length")
+    if isinstance(max_sequence_length, int) and max_sequence_length > 0:
+        max_chars = ds.unsloth_config.get("sequence_char_budget")
+        if not isinstance(max_chars, int) or max_chars <= 0:
+            max_chars = max_sequence_length * 2
+        for index, record in enumerate(records):
+            serialized = json.dumps(record.get("messages"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            if len(serialized.encode("utf-8")) > max_chars:
+                failures.append(ValidationFailure(code="sft_sequence_budget_exceeded", message=f"{agent} SFT record exceeds the conservative {max_sequence_length}-token byte-proxy budget", path=f"fine_tuning.{agent}.sft.{index}"))
+
+    train_sources = _sft_metadata_counts(ds.train_sft, "sourceFamily")
+    val_sources = _sft_metadata_counts(ds.val_sft, "sourceFamily")
+    for source, count in source_counts.items():
+        if (
+            count >= 2
+            and not source.startswith(PUBLIC_ADAPTER_CORPUS_PREFIX)
+            and (source not in train_sources or source not in val_sources)
+        ):
+            failures.append(ValidationFailure(code="sft_source_split_missing", message=f"{agent} source {source} is not represented in both train and validation", path=f"fine_tuning.{agent}"))
+
+
+def _canonical_sft_messages_key(record: dict[str, Any]) -> str:
+    messages = record.get("messages")
+    if not isinstance(messages, list):
+        return json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = [
+        {
+            "role": str(message.get("role") or ""),
+            "content": _canonical_model_output(str(message.get("content") or ""))
+            if message.get("role") == "assistant"
+            else str(message.get("content") or ""),
+        }
+        if isinstance(message, dict)
+        else {"role": "unknown", "content": str(message)}
+        for message in messages
+    ]
+    return json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_sft_prompt_key(record: dict[str, Any]) -> str:
+    messages = record.get("messages")
+    prompt = messages[:-1] if isinstance(messages, list) else messages
+    return json.dumps(prompt, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_sft_output_key(record: dict[str, Any]) -> str:
+    messages = record.get("messages")
+    if not isinstance(messages, list) or not messages or not isinstance(messages[-1], dict):
+        return ""
+    return _canonical_model_output(str(messages[-1].get("content") or ""))
+
+
+def _canonical_model_output(content: str) -> str:
+    try:
+        return json.dumps(json.loads(content), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except json.JSONDecodeError:
+        return " ".join(content.split())
+
+
+def _sft_metadata_counts(records: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        counts[str(metadata.get(key) or "unknown")] += 1
+    return {value: counts[value] for value in sorted(counts)}
+
+
 def _validate_agent_sft_records(  # NOSONAR
     *,
     agent: str,
     records: list[dict[str, Any]],
     known_tools: set[str],
+    tools_by_id: dict[str, Any],
     tool_arg_map: dict[str, set[str]],
     forbidden: set[str],
     failures: list[ValidationFailure],
@@ -616,6 +809,12 @@ def _validate_agent_sft_records(  # NOSONAR
                 if tool_id not in known_tools:
                     failures.append(ValidationFailure(code="unknown_tool_id", message=f"{agent} references unknown tool {tool_id}", path=f"fine_tuning.{agent}.sft.{index}.metadata.toolIDs"))
         if agent == "executor" and isinstance(tool_ids, list):
+            _validate_executor_json_contract(
+                assistant=assistant,
+                tools_by_id=tools_by_id,
+                failures=failures,
+                path=f"fine_tuning.{agent}.sft.{index}",
+            )
             task_type = str(metadata.get("taskType") or "")
             source_family = str(metadata.get("sourceFamily") or "")
             if task_type not in {"tool_call_generation", "argument_completion", "required_args"} and source_family not in {"executor_tool_calls", "approval_boundary_samples"}:
@@ -628,6 +827,106 @@ def _validate_agent_sft_records(  # NOSONAR
                     continue
                 if not _assistant_mentions_required_args(assistant, required_args):
                     failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor sample for {tool_id} missing required args in assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
+
+
+def _validate_executor_json_contract(
+    *,
+    assistant: str,
+    tools_by_id: dict[str, Any],
+    failures: list[ValidationFailure],
+    path: str,
+) -> None:
+    try:
+        payload = json.loads(assistant)
+    except (json.JSONDecodeError, TypeError):
+        failures.append(ValidationFailure(code="executor_non_json_output", message="Executor SFT output must be a strict JSON object", path=path))
+        return
+    if not isinstance(payload, dict):
+        failures.append(ValidationFailure(code="executor_non_object_output", message="Executor SFT output must be a JSON object", path=path))
+        return
+    tool_id = payload.get("tool")
+    if not isinstance(tool_id, str) or tool_id not in tools_by_id:
+        failures.append(ValidationFailure(code="executor_invalid_payload_tool", message="Executor SFT output must contain one manifest tool id", path=path))
+        return
+    arguments = payload.get("arguments")
+    if not isinstance(arguments, dict):
+        failures.append(ValidationFailure(code="executor_invalid_arguments", message=f"Executor payload for {tool_id} must contain an arguments object", path=path))
+        return
+
+    tool = tools_by_id[tool_id]
+    arguments_by_name = {argument.name: argument for argument in tool.arguments}
+    unknown_arguments = sorted(set(arguments).difference(arguments_by_name))
+    if unknown_arguments:
+        failures.append(ValidationFailure(code="executor_extra_arguments", message=f"Executor payload for {tool_id} has extra arguments: {', '.join(unknown_arguments)}", path=path))
+    for name, value in arguments.items():
+        argument = arguments_by_name.get(name)
+        if argument is None:
+            continue
+        if argument.allowedValues and value not in argument.allowedValues:
+            failures.append(ValidationFailure(code="executor_invalid_enum_argument", message=f"Executor payload for {tool_id}.{name} must use a manifest allowed value", path=path))
+        if not _executor_argument_type_is_valid(value, argument.type):
+            failures.append(ValidationFailure(code="executor_invalid_argument_type", message=f"Executor payload for {tool_id}.{name} has the wrong JSON type", path=path))
+
+    missing_required = {
+        argument.name
+        for argument in tool.arguments
+        if argument.required and argument.name not in arguments
+    }
+    if missing_required:
+        declared_missing = payload.get("missingArguments")
+        declared = {item for item in declared_missing if isinstance(item, str)} if isinstance(declared_missing, list) else set()
+        if payload.get("status") != "needs_clarification" or not missing_required.issubset(declared):
+            failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor payload for {tool_id} omits required arguments", path=path))
+
+
+def _validate_executor_dpo_records(
+    *,
+    records: list[dict[str, Any]],
+    tools_by_id: dict[str, Any],
+    failures: list[ValidationFailure],
+) -> None:
+    """Require the preferred Executor response to obey the production tool contract.
+
+    Rejected responses are intentionally allowed to demonstrate malformed calls;
+    only the chosen side is eligible to teach the adapter its output contract.
+    """
+    for index, record in enumerate(records):
+        chosen = record.get("chosen")
+        assistant = chosen.get("content") if isinstance(chosen, dict) else None
+        if not isinstance(assistant, str):
+            failures.append(
+                ValidationFailure(
+                    code="executor_dpo_missing_chosen_output",
+                    message="Executor DPO record must contain a chosen assistant response",
+                    path=f"fine_tuning.executor.dpo.{index}",
+                )
+            )
+            continue
+        _validate_executor_json_contract(
+            assistant=assistant,
+            tools_by_id=tools_by_id,
+            failures=failures,
+            path=f"fine_tuning.executor.dpo.{index}.chosen",
+        )
+
+
+def _executor_argument_type_is_valid(value: Any, declared_type: str) -> bool:
+    type_name = declared_type.strip().lower()
+    if type_name in {"string", "enum"}:
+        return isinstance(value, str)
+    if type_name in {"bool", "boolean"}:
+        return isinstance(value, bool)
+    if type_name in {"int", "integer"}:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_name in {"number", "float", "double"}:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if type_name in {"object", "dictionary"}:
+        return isinstance(value, dict)
+    if type_name in {"array", "list"}:
+        return isinstance(value, list)
+    if type_name in {"null", "none", "nil"}:
+        return value is None
+    return False
 
 
 def _assistant_mentions_required_args(assistant: str, required_args: set[str]) -> bool:

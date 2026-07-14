@@ -48,6 +48,27 @@ struct FinalIntentValidatorTests {
         #expect(text == candidate)
     }
 
+    @Test func preservesTrustedRAGClarificationPrompt() async throws {
+        let clarification = "What should I search for?"
+        let routing = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.search"],
+            requiresClarification: true,
+            clarificationPrompt: clarification
+        )
+
+        let accepted = FinalIntentValidator.validateWithOutcome(
+            clarification,
+            routing: routing,
+            fallback: nil
+        )
+        #expect(accepted.text == clarification)
+        #expect(accepted.acceptedCandidate)
+
+        let recovered = FinalIntentValidator.validate("", routing: routing, fallback: nil)
+        #expect(recovered == clarification)
+    }
+
     @Test func alarmSafeFallbackRemainsUserSafeButNotExecutionEvidence() async throws {
         let routing = IntentRoutingDecision(intent: .alarm, allowedToolIDs: ["alarm.authorization_status", "alarm.list"], requiresClarification: false, clarificationPrompt: nil)
         let text = FinalIntentValidator.validate("Created a calendar event instead.", routing: routing, fallback: nil)

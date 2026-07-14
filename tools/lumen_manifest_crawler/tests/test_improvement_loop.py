@@ -150,6 +150,9 @@ def test_improvement_loop_flags_stale_testflight_runtime_audit_build(tmp_path: P
         }),
         encoding="utf-8",
     )
+    repairs = tmp_path / "agent_manifest" / "dataset" / "runtime_audit_repairs.jsonl"
+    repairs.parent.mkdir(parents=True)
+    repairs.write_text('{"stale":true}\n', encoding="utf-8")
 
     result = run_agent_improvement_loop(
         AgentImprovementLoopConfig(
@@ -189,9 +192,7 @@ def test_improvement_loop_flags_stale_testflight_runtime_audit_build(tmp_path: P
     assert result.state["triage"]["rootCauseCounts"]["stale_audit_evidence"] == 1
     assert result.state["triage"]["groupCounts"]["Runtime audit export does not prove the current TestFlight build"] == 1
     assert result.state["triage"]["totalGaps"] == 1
-    repairs = tmp_path / "agent_manifest" / "dataset" / "runtime_audit_repairs.jsonl"
-    assert repairs.exists()
-    assert repairs.read_text(encoding="utf-8") == ""
+    assert not repairs.exists()
     assert result.passed is False
 
 

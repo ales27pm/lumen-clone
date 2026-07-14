@@ -425,6 +425,169 @@ actor OutlookGraphToolClient {
     }
 }
 
+nonisolated enum OutlookToolUserVisibleOutput {
+    static let maxPreviewCharacters = 600
+    static let maxBodyCharacters = 3_500
+    static let maxFinalCharacters = 8_000
+
+    static func plainText(_ raw: String, maxCharacters: Int) -> String {
+        guard maxCharacters > 0 else { return "" }
+        var text = raw
+            .replacingOccurrences(of: "\u{0000}", with: "")
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        for tag in ["head", "style", "script", "noscript", "svg"] {
+            text = text.replacingOccurrences(
+                of: "(?is)<\(tag)\\b[^>]*>.*?</\(tag)\\s*>",
+                with: " ",
+                options: .regularExpression
+            )
+        }
+        text = text.replacingOccurrences(of: "(?is)<!--.*?-->", with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "(?i)<br\\s*/?>", with: "\n", options: .regularExpression)
+        text = text.replacingOccurrences(of: "(?i)<li\\b[^>]*>", with: "\n• ", options: .regularExpression)
+        text = text.replacingOccurrences(
+            of: "(?i)</(?:p|div|li|tr|td|table|h[1-6]|section|article|header|footer)\\s*>",
+            with: "\n",
+            options: .regularExpression
+        )
+        text = text.replacingOccurrences(of: "(?is)<[^>]+>", with: " ", options: .regularExpression)
+        text = decodeHTMLEntities(text)
+        text = text
+            .replacingOccurrences(of: "\u{200B}", with: "")
+            .replacingOccurrences(of: "\u{200C}", with: "")
+            .replacingOccurrences(of: "\u{200D}", with: "")
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
+
+        var lines: [String] = []
+        var previousWasEmpty = true
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine
+                .replacingOccurrences(of: #"[\t ]+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty {
+                if !previousWasEmpty { lines.append("") }
+                previousWasEmpty = true
+            } else {
+                lines.append(line)
+                previousWasEmpty = false
+            }
+        }
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        return bounded(lines.joined(separator: "\n"), maxCharacters: maxCharacters)
+    }
+
+    /// Removes provider-only identifiers and tracking content after internal
+    /// multi-step routing has consumed the raw observation.
+    static func sanitizedFinalObservation(_ observation: String, toolID _: String) -> String {
+        let bodyMarker = observation.range(of: #"(?im)^Body:\s*"#, options: .regularExpression)
+        let rawMetadata = bodyMarker.map { String(observation[..<$0.lowerBound]) } ?? observation
+        let metadata = sanitizedProviderMetadata(rawMetadata)
+
+        guard let bodyMarker else { return metadata }
+        let body = plainText(String(observation[bodyMarker.upperBound...]), maxCharacters: maxBodyCharacters)
+        let sections = [
+            metadata,
+            body.isEmpty ? "" : "Body:\n\(body)"
+        ].filter { !$0.isEmpty }
+        return bounded(sections.joined(separator: "\n"), maxCharacters: maxFinalCharacters)
+    }
+
+    private static func sanitizedProviderMetadata(_ rawMetadata: String) -> String {
+        var text = rawMetadata.replacingOccurrences(
+            of: #"(?im)^\s*Cached references:.*(?:\r?\n\s*)?(?:---\s*)?"#,
+            with: "",
+            options: .regularExpression
+        )
+        text = text.replacingOccurrences(
+            of: #"(?im)^\s*(?:message\s+)?id:\s*[^\r\n]*(?:\r?\n)?"#,
+            with: "",
+            options: .regularExpression
+        )
+        text = text.replacingOccurrences(
+            of: #"(?i)\s+[—-]\s+id:\s*[^,\r\n]+,\s*"#,
+            with: " — ",
+            options: .regularExpression
+        )
+        text = text.replacingOccurrences(
+            of: #"(?i)No attachments found for message\s+[^.\s]+\."#,
+            with: "No attachments found for the selected Outlook message.",
+            options: .regularExpression
+        )
+        text = text.replacingOccurrences(
+            of: #"(?i)\b(?:AAMk|AQMk)[A-Za-z0-9_+=-]{20,}"#,
+            with: "[internal reference omitted]",
+            options: .regularExpression
+        )
+        text = text.replacingOccurrences(
+            of: #"(?i)https?://[^\s<>\"']+"#,
+            with: "[link omitted]",
+            options: .regularExpression
+        )
+
+        return plainText(text, maxCharacters: maxFinalCharacters)
+    }
+
+    private static func bounded(_ text: String, maxCharacters: Int) -> String {
+        guard text.count > maxCharacters else { return text }
+        let prefix = text.prefix(maxCharacters)
+        if let newline = prefix.lastIndex(of: "\n"), prefix.distance(from: newline, to: prefix.endIndex) < 240 {
+            return String(prefix[..<newline]).trimmingCharacters(in: .whitespacesAndNewlines) + "\n…"
+        }
+        return String(prefix).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
+    private static func decodeHTMLEntities(_ value: String) -> String {
+        var text = decodeNumericHTMLEntities(value)
+        let named: [(String, String)] = [
+            ("&nbsp;", " "), ("&ensp;", " "), ("&emsp;", " "),
+            ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""),
+            ("&#39;", "'"), ("&apos;", "'"), ("&amp;", "&"),
+            ("&lsquo;", "‘"), ("&rsquo;", "’"), ("&ldquo;", "“"), ("&rdquo;", "”"),
+            ("&ndash;", "–"), ("&mdash;", "—"), ("&hellip;", "…"), ("&bull;", "•"),
+            ("&agrave;", "à"), ("&Agrave;", "À"), ("&acirc;", "â"), ("&ccedil;", "ç"),
+            ("&eacute;", "é"), ("&Eacute;", "É"), ("&egrave;", "è"), ("&ecirc;", "ê"),
+            ("&icirc;", "î"), ("&ocirc;", "ô"), ("&ugrave;", "ù"), ("&ucirc;", "û")
+        ]
+        for (entity, replacement) in named {
+            text = text.replacingOccurrences(of: entity, with: replacement)
+        }
+        return text.replacingOccurrences(
+            of: #"&[A-Za-z][A-Za-z0-9]+;"#,
+            with: " ",
+            options: .regularExpression
+        )
+    }
+
+    private static func decodeNumericHTMLEntities(_ value: String) -> String {
+        let pattern = #"&#(?:x([0-9A-Fa-f]+)|([0-9]+));"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return value }
+        let matches = regex.matches(in: value, range: NSRange(value.startIndex..., in: value))
+        guard !matches.isEmpty else { return value }
+
+        let source = value as NSString
+        var result = value
+        for match in matches.reversed() {
+            let hexRange = match.range(at: 1)
+            let decimalRange = match.range(at: 2)
+            let scalarValue: UInt32?
+            if hexRange.location != NSNotFound {
+                scalarValue = UInt32(source.substring(with: hexRange), radix: 16)
+            } else if decimalRange.location != NSNotFound {
+                scalarValue = UInt32(source.substring(with: decimalRange), radix: 10)
+            } else {
+                scalarValue = nil
+            }
+            guard let scalarValue,
+                  let scalar = UnicodeScalar(scalarValue),
+                  let range = Range(match.range, in: result) else { continue }
+            result.replaceSubrange(range, with: String(scalar))
+        }
+        return result
+    }
+}
+
 @MainActor
 enum OutlookTools {
     private static let client = OutlookGraphToolClient()
@@ -655,6 +818,10 @@ enum OutlookTools {
     }
 
     private static func formatMessage(_ message: GraphMailMessage, includeBody: Bool, ordinal: Int? = nil) -> String {
+        let preview = OutlookToolUserVisibleOutput.plainText(
+            message.previewLine,
+            maxCharacters: OutlookToolUserVisibleOutput.maxPreviewCharacters
+        )
         var lines: [String] = []
         if let ordinal { lines.append("Index: \(ordinal)") }
         lines.append(contentsOf: [
@@ -664,10 +831,16 @@ enum OutlookTools {
             "Received: \(message.receivedDateTime ?? "unknown")",
             "Unread: \((message.isRead ?? true) ? "false" : "true")",
             "Has attachments: \(message.hasAttachments ?? false)",
-            "Preview: \(message.previewLine)"
+            "Preview: \(preview)"
         ])
         if includeBody, let body = message.body?.content, !body.isEmpty {
-            lines.append("Body:\n\(body)")
+            let bodyText = OutlookToolUserVisibleOutput.plainText(
+                body,
+                maxCharacters: OutlookToolUserVisibleOutput.maxBodyCharacters
+            )
+            if !bodyText.isEmpty {
+                lines.append("Body:\n\(bodyText)")
+            }
         }
         return lines.joined(separator: "\n")
     }

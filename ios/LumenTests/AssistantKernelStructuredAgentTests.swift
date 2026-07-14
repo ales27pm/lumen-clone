@@ -588,6 +588,12 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         XCTAssertEqual(noMatches, "No matching snippets were found in the local index.")
         XCTAssertFalse(noMatches.contains("Summary\n"))
 
+        let attachedArtifactWording = try XCTUnwrap(StructuredAgentKernelExecutor.ragOrFilesEmptyObservationFinalForTests(
+            observations: [("rag.search", "No matching documents found. The local document index appears empty. Import local files and try again.")]
+        ))
+        XCTAssertEqual(attachedArtifactWording, "The local retrieval index is empty. Import or reindex files before searching.")
+        XCTAssertFalse(attachedArtifactWording.contains("Key modules"))
+
         let emptyIndex = try XCTUnwrap(StructuredAgentKernelExecutor.ragOrFilesEmptyObservationFinalForTests(
             observations: [("rag.search", "RAG storage unavailable: local index appears empty.")]
         ))
@@ -621,6 +627,37 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         XCTAssertEqual(repair.action.tool, "rag.search")
         XCTAssertEqual(repair.action.args["sourceScope"], .string("documents"))
         XCTAssertEqual(repair.reflection.toolArgs?["sourceScope"], "documents")
+        #endif
+    }
+
+    func testOutlookStructuredFinalsRemoveProviderOnlyReferences() throws {
+        #if DEBUG
+        let rawObservation = """
+        Cached references: use ordinal args like {"message":"first"}, or the raw Message ID for follow-up tools.
+        Index: 1
+        Subject: Quarterly update
+        ID: AAMkAGI2T3V0bG9va1Byb3ZpZGVySWRlbnRpZmllcg==
+        From: Alex <alex@example.com>
+        Preview: Review the update at https://tracker.example/open?id=123
+        """
+        let fallback = try XCTUnwrap(StructuredAgentKernelExecutor.deterministicObservationFallbackForTests(
+            observations: [("outlook.messages.list", rawObservation)],
+            intent: .outlook
+        ))
+        XCTAssertTrue(fallback.contains("Subject: Quarterly update"))
+        XCTAssertFalse(fallback.contains("Cached references"))
+        XCTAssertFalse(fallback.contains("AAMk"))
+        XCTAssertFalse(fallback.contains("https://"))
+
+        let postprocessed = StructuredAgentKernelExecutor.postprocessStructuredFinalAnswerForTests(
+            "Latest message ID: AAMkAGI2T3V0bG9va1Byb3ZpZGVySWRlbnRpZmllcg== from Alex. https://tracker.example/open",
+            request: structuredRequest("List my latest Outlook emails.", allowedToolIDs: ["outlook.messages.list"]),
+            availableTools: [try tool("outlook.messages.list")],
+            observations: [("outlook.messages.list", rawObservation)],
+            steps: []
+        )
+        XCTAssertFalse(postprocessed.contains("AAMk"))
+        XCTAssertFalse(postprocessed.contains("https://"))
         #endif
     }
 

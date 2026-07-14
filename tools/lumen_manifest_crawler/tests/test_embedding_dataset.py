@@ -16,6 +16,20 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _normalized_query(value: object) -> str:
+    return " ".join(str(value or "").strip().split()).casefold()
+
+
+def _known_positive_documents(datasets: dict[str, list[dict]]) -> dict[str, set[str]]:
+    known: dict[str, set[str]] = {}
+    for family in ("embedding_train_pairs", "embedding_val_pairs"):
+        for record in datasets[family]:
+            known.setdefault(_normalized_query(record["query"]), set()).add(record["documentID"])
+    for record in datasets["embedding_eval_retrieval"]:
+        known.setdefault(_normalized_query(record["query"]), set()).update(record["positiveDocumentIDs"])
+    return known
+
+
 def test_embedding_dataset_families_are_generated() -> None:
     manifest = generate_manifest(_repo_root())
     datasets = generate_all_datasets(manifest)
@@ -170,3 +184,81 @@ def test_embedding_compile_is_deterministic() -> None:
     assert first.corpus == second.corpus
     assert first.train_pairs == second.train_pairs
     assert first.train_triplets == second.train_triplets
+
+
+def test_embedding_train_validation_and_eval_are_held_out_by_query_and_document() -> None:
+    manifest = generate_manifest(_repo_root())
+    datasets = generate_all_datasets(manifest)
+
+    train_pairs = datasets["embedding_train_pairs"]
+    val_pairs = datasets["embedding_val_pairs"]
+    eval_records = datasets["embedding_eval_retrieval"]
+    assert train_pairs and val_pairs and eval_records
+
+    train_queries = {_normalized_query(record["query"]) for record in train_pairs}
+    val_queries = {_normalized_query(record["query"]) for record in val_pairs}
+    eval_queries = {_normalized_query(record["query"]) for record in eval_records}
+    assert train_queries.isdisjoint(val_queries)
+    assert train_queries.isdisjoint(eval_queries)
+    assert val_queries.isdisjoint(eval_queries)
+
+    train_documents = {record["documentID"] for record in train_pairs}
+    train_documents.update(
+        record["negativeDocumentID"]
+        for record in datasets["embedding_hard_negatives"]
+        if record["split"] == "train"
+    )
+    val_documents = {record["documentID"] for record in val_pairs}
+    val_documents.update(
+        record["negativeDocumentID"]
+        for record in datasets["embedding_hard_negatives"]
+        if record["split"] == "validation"
+    )
+    eval_documents = {
+        document_id
+        for record in eval_records
+        for document_id in record["positiveDocumentIDs"]
+    }
+    eval_documents.update(
+        document_id
+        for record in eval_records
+        for document_id in record["hardNegativeDocumentIDs"]
+    )
+    assert train_documents.isdisjoint(val_documents)
+    assert train_documents.isdisjoint(eval_documents)
+    assert val_documents.isdisjoint(eval_documents)
+
+    train_val_pairs = {
+        (_normalized_query(record["query"]), record["documentID"])
+        for record in train_pairs + val_pairs
+    }
+    eval_pairs = {
+        (_normalized_query(record["query"]), document_id)
+        for record in eval_records
+        for document_id in record["positiveDocumentIDs"]
+    }
+    assert train_val_pairs.isdisjoint(eval_pairs)
+
+
+def test_embedding_never_labels_a_known_query_positive_as_a_hard_negative() -> None:
+    manifest = generate_manifest(_repo_root())
+    compiled = compile_embedding_datasets(
+        manifest,
+        {
+            "tool_schema_cards": [
+                {"id": "positive-a", "query": "Find this shared contract", "summary": "First valid answer"},
+                {"id": "positive-b", "query": "  FIND this shared contract  ", "summary": "Second valid answer"},
+            ]
+        },
+    )
+    datasets = compiled.as_dataset_families()
+    known_positives = _known_positive_documents(datasets)
+    shared_query = _normalized_query("Find this shared contract")
+    assert len(known_positives[shared_query]) == 2
+
+    for record in datasets["embedding_hard_negatives"]:
+        query = _normalized_query(record["query"])
+        assert record["negativeDocumentID"] not in known_positives[query]
+    for record in datasets["embedding_eval_retrieval"]:
+        query = _normalized_query(record["query"])
+        assert set(record["hardNegativeDocumentIDs"]).isdisjoint(known_positives[query])

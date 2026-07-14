@@ -223,6 +223,9 @@ nonisolated enum IntentClarificationPolicy {
                 return "What should I save or recall?"
             }
         case .rag:
+            if isBarePhotoReindexRequest(value) {
+                return "How many months of photos should I index?"
+            }
             if lacksTarget(after: ["search personal data", "search my files", "search local files", "search my documents", "search my notes", "rag search"], in: value) {
                 return "What should I search for?"
             }
@@ -234,7 +237,17 @@ nonisolated enum IntentClarificationPolicy {
             guard matchesAny(value, ["alarm", "timer", "countdown", "snooze", "pause", "resume", "stop", "cancel", "authorization", "permission", "auth status", "list alarms", "active alarms", "wake me", "wake us"]) else { return nil }
             let kind = AlarmCommandClassifier.classifyAlarmCommandKind(value)
             return AlarmCommandClassifier.clarificationPrompt(for: kind, text: value)
-        case .weather, .camera, .health, .motion, .outlook, .chat, .unknown:
+        case .outlook:
+            if ["search my outlook email", "search outlook email", "search outlook messages"].contains(value) {
+                return "What should I search for in Outlook?"
+            }
+            if ["read an outlook email", "read outlook email", "read outlook message"].contains(value) {
+                return "Which Outlook message should I read?"
+            }
+            if ["show attachments from an outlook email", "show outlook attachments", "list outlook attachments"].contains(value) {
+                return "Which Outlook message should I inspect for attachments?"
+            }
+        case .weather, .camera, .health, .motion, .chat, .unknown:
             return nil
         }
 
@@ -273,8 +286,22 @@ nonisolated enum IntentClarificationPolicy {
     }
 
     private static func isBareMemoryRequest(_ text: String) -> Bool {
-        let bare = ["remember", "remember this", "remember that", "save this", "save memory", "recall memory", "note"]
-        return bare.contains(text)
+        let withoutCoverageInstruction = text.replacingOccurrences(
+            of: #"(?i)[,.]?\s*but ask for clarification if required details are missing\.?$"#,
+            with: "",
+            options: .regularExpression
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        let bare = [
+            "remember", "remember this", "remember that", "save this", "save memory", "recall memory", "note",
+            "use save memory", "use recall memory"
+        ]
+        return bare.contains(withoutCoverageInstruction)
+    }
+
+    private static func isBarePhotoReindexRequest(_ text: String) -> Bool {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return ["reindex my photos", "reindex photos"].contains(value)
     }
 
     private static func lacksTarget(after phrases: [String], in text: String) -> Bool {

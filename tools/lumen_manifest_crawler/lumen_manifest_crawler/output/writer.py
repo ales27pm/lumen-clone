@@ -103,9 +103,7 @@ def write_outputs(
         if not records:
             path.unlink(missing_ok=True)
             continue
-        with path.open("w", encoding="utf-8") as handle:
-            for record in records:
-                handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        _write_jsonl(path, records)
     self_model_cards = datasets.get("self_model_cards", [])
     if self_model_cards:
         _write_jsonl(output_dir / "self_model_cards.jsonl", self_model_cards)
@@ -169,6 +167,7 @@ def _stable_split_records(records: list[dict[str, Any]]) -> tuple[list[dict[str,
 
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")

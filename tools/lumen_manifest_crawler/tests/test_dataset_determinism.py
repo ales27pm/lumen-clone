@@ -21,9 +21,13 @@ def test_deterministic_datasets_omit_commit_lineage_fields():
         "workingTreeDigest": manifest.sourceIntegrity.workingTreeDigest,
         "dirtyState": None,
     }
+    assert dataset_manifest["manifest"]["dirty"] is None
+    assert dataset_manifest["manifest"]["worktreeFingerprint"] == manifest.sourceIntegrity.worktreeFingerprint
     assert first_train_record["metadata"]["manifestCommit"] is None
+    assert first_train_record["metadata"]["manifestDirty"] is None
     assert first_train_record["metadata"]["sourceIntegrity"] == dataset_manifest["manifest"]["sourceIntegrity"]
     assert first_train_record["grounding"]["sourceIntegrityCommit"] is None
+    assert first_train_record["grounding"]["sourceIntegrityDirty"] is None
     assert first_train_record["grounding"]["sourceIntegrity"] == dataset_manifest["manifest"]["sourceIntegrity"]
 
 
@@ -36,7 +40,10 @@ def test_non_deterministic_datasets_include_commit_lineage_fields():
 
     assert dataset_manifest["manifest"]["commit"] == manifest.sourceIntegrity.commit
     assert dataset_manifest["manifest"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
+    assert dataset_manifest["manifest"]["dirty"] == manifest.sourceIntegrity.dirty
+    assert dataset_manifest["manifest"]["worktreeFingerprint"] == manifest.sourceIntegrity.worktreeFingerprint
     assert first_train_record["metadata"]["manifestCommit"] == manifest.sourceIntegrity.commit
+    assert first_train_record["metadata"]["manifestDirty"] == manifest.sourceIntegrity.dirty
     assert first_train_record["metadata"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
     assert first_train_record["grounding"]["sourceIntegrityCommit"] == manifest.sourceIntegrity.commit
     assert first_train_record["grounding"]["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()

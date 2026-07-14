@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
+    _is_rag_empty_retrieval,
     _is_sidecar_evidence_candidate,
     _trace_positive_int,
 )
@@ -62,6 +63,11 @@ Final: emailDraft
 )
 def test_trace_positive_int_requires_an_integer_value(value, expected):
     assert _trace_positive_int(value) == expected
+
+
+def test_rag_empty_retrieval_does_not_treat_import_failures_as_empty_index():
+    assert not _is_rag_empty_retrieval("Could not import local files because permission was denied.")
+    assert _is_rag_empty_retrieval("No matching documents found. The local document index appears empty.")
 
 
 GENERIC_E2E_REPORT = """E2E Test Report
@@ -581,8 +587,8 @@ def test_ingestion_keeps_rag_empty_index_out_of_training_repairs(tmp_path: Path)
                 "actualIntent": "rag",
                 "expectedIntent": "rag",
                 "failures": ["RAG empty local index."],
-                "finalText": "No matching files found for 'architecture notes'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
-                "events": [{"phase": "step", "message": "rag.search: No matching files found for 'architecture notes'. Your local index appears empty."}],
+                "finalText": "No matching documents found. The local document index appears empty. Import local files and try again.",
+                "events": [{"phase": "step", "message": "rag.search: No matching documents found. The local document index appears empty."}],
                 "metadata": {},
             }
         ],

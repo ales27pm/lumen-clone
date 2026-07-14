@@ -71,7 +71,6 @@ def generate_manifest(root: Path) -> AgentBehaviorManifest:
         for path in swift_files
         if _is_source_of_truth_file(path)
     ]
-
     for path in swift_files:
         rel = normalized_repo_path(root, path)
         swift_file = SwiftFile(path=path, relpath=rel, text=path.read_text(encoding="utf-8", errors="replace"))

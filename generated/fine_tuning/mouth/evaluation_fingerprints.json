@@ -1,5 +1,5 @@
 {
-  "bundleSHA256": "e59d7bbb4822b576775a77d65fb8e835ae2cfc8596aeee443c302afe08e4cbe7",
+  "bundleSHA256": "4851281afa06d520fefa241383664d4bf63f05ae3cc927c3c6c82e1b6c68ffeb",
   "hashOnly": true,
   "purpose": "evaluation_only_contamination_fingerprints",
   "records": [
@@ -53,16 +53,6 @@
             "0511cd7962d98828b7e848bc05341fc2ecb4d406ade7262d4a24f09ebf4edf55",
             "ae84851c733b255b949fb3f28a5d4275dedfdb05116d81335a7b32adeea2c5d3"
           ]
-        }
-      ]
-    },
-    {
-      "normalizedTextSHA256": "67a0db8166afdfa7936620896c24f31433fb18005a7dbe4c21ce09bc3ce70095",
-      "recordID": "record-992de55409c4465f487a1fd3",
-      "segments": [
-        {
-          "sha256": "67a0db8166afdfa7936620896c24f31433fb18005a7dbe4c21ce09bc3ce70095",
-          "shingles": []
         }
       ]
     },

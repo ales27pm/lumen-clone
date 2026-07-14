@@ -122,6 +122,14 @@ def _adapter_dir(cfg: dict[str, Any]) -> Path:
     return Path(str(cfg.get("adapter_output_dir") or cfg["output_dir"])).resolve()
 
 
+def _portable_manifest_path(value: str | Path) -> str:
+    path = Path(value)
+    try:
+        return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def load_config(path: Path) -> dict[str, Any]:
     cfg = json.loads(path.read_text(encoding="utf-8"))
     required = {
@@ -367,11 +375,11 @@ def _release_bake_skipped_manifest(configs: list[dict[str, Any]], args: argparse
         "release_bake_requested": False,
         "skipped": True,
         "reason": "Adapter-first training keeps LoRA adapters separate by default. Pass --release-bake to explicitly merge/export GGUF artifacts.",
-        "manifest_output": args.manifest_output,
+        "manifest_output": _portable_manifest_path(args.manifest_output),
         "agents": {
             str(cfg["agent"]).strip().lower(): {
                 "agent": str(cfg["agent"]).strip().lower(),
-                "adapter_dir": str(_adapter_dir(cfg)),
+                "adapter_dir": _portable_manifest_path(str(cfg.get("adapter_output_dir") or cfg["output_dir"])),
                 "base_model_name": cfg["base_model_name"],
                 "merge_adapters_by_default": False,
                 "release_bake_enabled_by_default": False,

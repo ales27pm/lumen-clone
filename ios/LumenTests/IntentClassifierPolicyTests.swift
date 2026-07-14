@@ -203,6 +203,33 @@ struct IntentClassifierPolicyTests {
         #expect(rag.intent == .rag)
         #expect(rag.requiresClarification)
         #expect(rag.clarificationPrompt == "What should I search for?")
+
+        for prompt in [
+            "Use Save Memory, but ask for clarification if required details are missing.",
+            "Use Recall Memory, but ask for clarification if required details are missing."
+        ] {
+            let memory = await IntentClassifierService.shared.route(prompt)
+            #expect(memory.intent == .memory)
+            #expect(memory.requiresClarification)
+            #expect(memory.clarificationPrompt == "What should I save or recall?")
+        }
+
+        let outlookCases = [
+            ("Search my Outlook email", "What should I search for in Outlook?"),
+            ("Read an Outlook email", "Which Outlook message should I read?"),
+            ("Show attachments from an Outlook email", "Which Outlook message should I inspect for attachments?")
+        ]
+        for (prompt, expectedClarification) in outlookCases {
+            let outlook = await IntentClassifierService.shared.route(prompt)
+            #expect(outlook.intent == .outlook)
+            #expect(outlook.requiresClarification)
+            #expect(outlook.clarificationPrompt == expectedClarification)
+        }
+
+        let photoIndex = await IntentClassifierService.shared.route("Reindex my photos")
+        #expect(photoIndex.intent == .rag)
+        #expect(photoIndex.requiresClarification)
+        #expect(photoIndex.clarificationPrompt == "How many months of photos should I index?")
     }
 
     @Test func clearDirectCommandsDoNotOverAskClarification() async {

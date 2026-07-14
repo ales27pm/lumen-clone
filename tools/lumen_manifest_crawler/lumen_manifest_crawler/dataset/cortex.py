@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lumen_manifest_crawler.manifest import AgentBehaviorManifest
+from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 
 
 def generate_cortex_records(manifest: AgentBehaviorManifest) -> list[dict]:
@@ -14,7 +14,7 @@ def generate_cortex_records(manifest: AgentBehaviorManifest) -> list[dict]:
             records.append({
                 "messages": [
                     {"role": "system", "content": "You are Cortex, the Lumen routing engine. Use only manifest tools and never invent tool IDs."},
-                    {"role": "user", "content": _prompt_for_intent(intent.id, tool_id)},
+                    {"role": "user", "content": _prompt_for_intent(intent.id, tool)},
                     {"role": "assistant", "content": {
                         "intent": intent.id,
                         "selectedToolID": tool_id,
@@ -72,13 +72,22 @@ def generate_cortex_records(manifest: AgentBehaviorManifest) -> list[dict]:
     return records
 
 
-def _prompt_for_intent(intent_id: str, tool_id: str) -> str:
-    if "map" in tool_id or "local" in intent_id.lower():
-        return "Find a hardware store nearby."
-    if "calendar" in tool_id:
-        return "Create a calendar event for a meeting in 10 minutes."
-    if "mail" in tool_id or "email" in tool_id:
-        return "Draft an email update."
-    if "web" in tool_id:
-        return "Search for current SwiftData migration details."
-    return f"Handle user intent {intent_id}."
+def _prompt_for_intent(intent_id: str, tool: ToolManifest) -> str:
+    natural_prompts = {
+        "calendar.create": "Create a calendar event for a meeting in 10 minutes.",
+        "calendar.list": "What calendar events are coming up next?",
+        "location.current": "What is my current location?",
+        "mail.draft": "Draft an email update without sending it.",
+        "maps.directions": "Open directions to the nearest hardware store.",
+        "maps.search": "Find a hardware store nearby.",
+        "outlook.draft.create": "Create and save an Outlook draft update.",
+        "outlook.mail.send": "Send the approved Outlook email update.",
+        "web.fetch": "Read the documentation page at the URL I supplied.",
+        "web.search": "Search for current SwiftData migration details.",
+    }
+    if tool.id in natural_prompts:
+        return f"{natural_prompts[tool.id]} Route it specifically as the `{intent_id}` intent."
+
+    display_name = (tool.displayName or tool.id).strip()
+    description = (tool.description or f"Use {display_name}").strip().rstrip(".")
+    return f"{description}. Handle this `{intent_id}` request with the {display_name} capability."

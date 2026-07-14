@@ -151,7 +151,7 @@ final class ImproveLoopSampleGateTests: XCTestCase {
             violationCode: "rag_grounding",
             promptPrefix: "Search my files for architecture notes and summarize key modules.",
             expected: "honest empty retrieval final",
-            badOutput: "No matching files found for 'architecture notes'. Your local index appears empty. Import or create local files/notes, then run reindex files.",
+            badOutput: "No matching documents found. The local document index appears empty. Import local files and try again.",
             correctedOutput: "Key modules: core module details were retrieved from local file snippets [1].",
             lesson: "Do not hallucinate RAG sources.",
             curriculum: "rag"
