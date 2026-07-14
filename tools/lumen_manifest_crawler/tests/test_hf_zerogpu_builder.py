@@ -1160,6 +1160,78 @@ def test_one_click_multi_batch_resume_runs_only_selected_batch(
     assert arguments[arguments.index("--run-id") + 1].endswith("-b02-executor")
 
 
+def test_one_click_launcher_selects_supported_python_by_default(
+    tmp_path: Path,
+) -> None:
+    script = (
+        Path(__file__).resolve().parents[3]
+        / "scripts/hf_zerogpu_train_lumen_adapters_aio.sh"
+    )
+    capture = tmp_path / "python312-arguments.txt"
+    python312 = tmp_path / "python3.12"
+    python312.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1:-}\" == \"-c\" ]]; then exit 0; fi\n"
+        "printf '%s\\n' \"$@\" >> \"$LUMEN_TEST_CAPTURE\"\n",
+        encoding="utf-8",
+    )
+    python312.chmod(0o755)
+    env = _resume_launcher_environment(python=Path("/usr/bin/false"))
+    env.pop("LUMEN_ZERO_GPU_PYTHON")
+    env["LUMEN_ZERO_GPU_AGENTS"] = "cortex"
+    env["PATH"] = f"{tmp_path}:{env['PATH']}"
+    env["LUMEN_TEST_CAPTURE"] = str(capture)
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=script.parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"bootstrap python: {python312}" in result.stdout
+    arguments = capture.read_text(encoding="utf-8").splitlines()
+    assert arguments.count("--agents") == 1
+    assert arguments[arguments.index("--agents") + 1] == "cortex"
+
+
+def test_one_click_launcher_rejects_unsupported_explicit_python(
+    tmp_path: Path,
+) -> None:
+    script = (
+        Path(__file__).resolve().parents[3]
+        / "scripts/hf_zerogpu_train_lumen_adapters_aio.sh"
+    )
+    old_python = tmp_path / "python3.9"
+    old_python.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1:-}\" == \"-c\" ]]; then exit 1; fi\n"
+        "exit 92\n",
+        encoding="utf-8",
+    )
+    old_python.chmod(0o755)
+    env = _resume_launcher_environment(python=old_python)
+    env["LUMEN_ZERO_GPU_AGENTS"] = "cortex"
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=script.parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "LUMEN_ZERO_GPU_PYTHON must point to Python 3.10 or newer"
+        in result.stderr
+    )
+
+
 def test_resume_trigger_does_not_rebuild_or_upload_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
