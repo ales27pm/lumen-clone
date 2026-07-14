@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "ca6848ac320cc75727bb2e502df8134006f75ee58c479bb273e2ea4296a5c9b5"
+        "reportSHA256": "7231ff1ad88427158bfd1979b5bea130f30df4936af598febaa10b86e465d12c"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,25 +41,24 @@
       "recordCount": 6,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "f2acf093f88155576a993b2ad1a0cea172cde59f",
+    "manifestCommit": "c9d7b8770cb2eb057f287ee0e968cc3a722a1f76",
     "preferenceTraining": {
       "includedInCheckpoint": false,
-      "recordCount": 13,
+      "recordCount": 3,
       "requiredPhase": "post_sft_preference_training",
       "status": "generated_not_trained"
     },
     "recordCounts": {
       "eval": 6,
-      "train_dpo": 11,
-      "train_sft": 5188,
-      "val_dpo": 2,
-      "val_sft": 918
+      "train_dpo": 2,
+      "train_sft": 5216,
+      "val_dpo": 1,
+      "val_sft": 923
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
       "codebase_home_chunk_sft",
       "codebase_home_sft",
-      "cross_model_training",
       "manifest_grounding_cards",
       "public_adapter_corpus_coedit_train",
       "public_adapter_corpus_json_schema_test_suite_draft_2020_12",
@@ -70,22 +69,12 @@
       "codebase_home_grounding",
       "codebase_home_overview",
       "codebase_source_chunk_grounding",
-      "fleet_delegation",
-      "fleet_delegation_preference",
-      "fleet_peer_knowledge",
-      "fleet_peer_source_knowledge",
-      "fleet_private_state_boundary",
-      "fleet_self_knowledge",
-      "fleet_whole_system_identity",
       "manifest_grounding_cards",
       "public_schema_failure_diagnosis",
       "public_text_repair",
       "public_tool_boundary_repair",
       "reflection_and_memory_policy",
       "rem_reflection",
-      "source_code_self_knowledge",
-      "source_routing_knowledge",
-      "source_tool_registry_knowledge",
       "ultra_specific_argument_extraction_repair",
       "ultra_specific_manifest_tool_repair",
       "ultra_specific_memory_ttl_policy",
@@ -112,6 +101,7 @@
     "variantManifestPathTemplate": "experiments/{variant}/variant_manifest.json",
     "variantPathTemplate": "experiments/{variant}"
   },
+  "expectedRuntimeSourceRevision": null,
   "experimentPolicy": {
     "controlledVariables": [
       "baseModelID",
@@ -124,6 +114,7 @@
       "baseModelTokenizerDigest",
       "trainingEnvironmentLockSHA256",
       "trainingCodeSHA256",
+      "trainingCodeSHA256ByPhase",
       "trainingCodeBundleSHA256",
       "trainingDependencyLockSHA256",
       "requirementsSHA256",
@@ -132,7 +123,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "7690597100c9e56d946c02c77f1354d039160197f1b1d836e5301b187c68d002",
+    "experimentManifestSHA256": "d39678bf0d341e949768e55cbdb3824d9659beb0882714ddb0538675783d2adc",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -144,6 +135,7 @@
       "requiresArtifactDigests": true,
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,
+      "requiresHonestRuntimeSourceBindingAudit": true,
       "requiresIdenticalTrainingCode": true,
       "requiresIdenticalTrainingDependencyLock": true,
       "requiresIdenticalTrainingEnvironment": true,
@@ -151,6 +143,7 @@
       "requiresPublicEvaluationFingerprintBinding": true,
       "requiresVerifiedRuntimeImageBinding": true,
       "runtimePointerPolicy": "unchanged_until_promoted",
+      "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
       "runtimeSourceRevisionIsAuditOnly": true,
       "schemaVersion": "lumen.adapter-promotion/1.0.0"
     },
@@ -171,6 +164,8 @@
     "rollbackUnit": "adapter"
   },
   "mode": "adapter_first",
+  "observedRepositoryRevision": null,
+  "observedRuntimeRevision": null,
   "requirementsSHA256": "58c26b026548b2c793b449c499360ae22ccaaecfe4294f7627b01d96cffb2009",
   "runtimeBinding": {
     "agentSlot": "rem",
@@ -179,13 +174,20 @@
     "promptBinding": "systemPrompt",
     "selectAdapterByAgentSlot": true
   },
+  "runtimeSourceBindingMethod": "unresolved",
+  "runtimeSourceBindingStatus": "unresolved",
   "runtimeSourceKind": "unresolved",
   "runtimeSourceRevision": null,
-  "schemaVersion": "1.3.0",
+  "schemaVersion": "1.4.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
-  "trainingCodeBundleSHA256": "d75486a3dde61a606d519cd85672a2aa972f2dc855fd9488d786443a1d1c1d6f",
-  "trainingCodeSHA256": "c92f49c7303e40c74c572ba962e41aa44c62452362786dec1a6578bc05cba110",
+  "trainingCodeBundleSHA256": "0f2b36011e955fec9344bfb4899f8b9829aff8b8ab9952c575e36f017f2f8baa",
+  "trainingCodeSHA256": "c14cd2a9462c0e0c7b3eef8e48bfaf4e667f3522202487b5f87ec9a681bcbf80",
+  "trainingCodeSHA256ByPhase": {
+    "dpo": "0e7ba5091066d39fd4ebc1ceaa4a6aad4c42e7ae2a673324693222a33460722d",
+    "orpo": "c98a922e2ae916160763bdc39b4fa2fca33f236f880ab19f1cc1c17bf9fa8f38",
+    "sft": "c14cd2a9462c0e0c7b3eef8e48bfaf4e667f3522202487b5f87ec9a681bcbf80"
+  },
   "trainingDependencyLockSHA256": "dbb69f7fb98196b8f141874f25921f63363d020f24be5688d7771175a1407198"
 }

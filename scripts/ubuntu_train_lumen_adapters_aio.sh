@@ -146,7 +146,21 @@ runtime_lineage_config_fields.update({
     "trainingEnvironmentSHA256",
     "runtimeSourceKind",
     "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
 })
+runtime_source_audit_fields = (
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
+)
 def canonical_sha256(value):
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -237,6 +251,7 @@ def training_attestation(cfg, manifest):
         "trainingEnvironmentSHA256": cfg["trainingEnvironmentSHA256"],
         "runtimeImageBindingStatus": cfg["trainingRuntimeImageBindingStatus"],
         "runtimeImageBindingVerified": cfg["trainingRuntimeImageBindingVerified"],
+        **{field: cfg[field] for field in runtime_source_audit_fields},
     }
 
 runtime_manifest = json.loads((src_root / "adapter_runtime_manifest.json").read_text(encoding="utf-8"))
@@ -253,6 +268,15 @@ if len(runtime_source_revision) != 40 or any(
     character not in "0123456789abcdef" for character in runtime_source_revision
 ):
     raise SystemExit("Local training requires an immutable source Git commit SHA")
+local_runtime_source = {
+    "runtimeSourceKind": "git",
+    "runtimeSourceRevision": runtime_source_revision,
+    "expectedRuntimeSourceRevision": runtime_source_revision,
+    "observedRepositoryRevision": runtime_source_revision,
+    "observedRuntimeRevision": runtime_source_revision,
+    "runtimeSourceBindingStatus": "local_checkout_observed",
+    "runtimeSourceBindingMethod": "git_head_plus_training_code_manifest",
+}
 
 prepared = []
 for agent in agents:
@@ -333,8 +357,7 @@ for agent in agents:
     cfg["trainingRuntimeImageBindingStatus"] = environment["runtimeImageBindingStatus"]
     cfg["trainingRuntimeImageBindingVerified"] = environment["runtimeImageBindingVerified"]
     cfg["trainingEnvironmentSHA256"] = canonical_sha256(environment)
-    cfg["runtimeSourceKind"] = "git"
-    cfg["runtimeSourceRevision"] = runtime_source_revision
+    cfg.update(local_runtime_source)
     cfg["dataset_dir"] = str(variant_dir)
     cfg["variant"] = variant
     cfg["variantManifestSHA256"] = variant_manifest["variantManifestSHA256"]
@@ -380,8 +403,7 @@ run_manifest = {
     "adapter_repo": adapter_repo,
     "source_dataset_root": str(src_root),
     "variant": variant,
-    "runtimeSourceKind": "git",
-    "runtimeSourceRevision": runtime_source_revision,
+    **local_runtime_source,
     "agents": prepared,
 }
 (run_root / "aio_run_manifest.json").write_text(
@@ -436,11 +458,13 @@ fi
 while IFS= read -r agent; do
   [[ -n "$agent" ]] || continue
   log "training adapter: $agent"
-  "$TRAIN_PY" "$ROOT/tools/fine_tuning/unsloth/train_sft.py" \
-    --config "$RUN_ROOT/configs/$agent.json" \
-    --seed "$SEED" \
-    "${TRAIN_ARGS[@]}" \
-    2>&1 | tee "$RUN_ROOT/logs/train_$agent.log"
+  (
+    cd "$ROOT"
+    "$TRAIN_PY" -m tools.fine_tuning.unsloth.train_sft \
+      --config "$RUN_ROOT/configs/$agent.json" \
+      --seed "$SEED" \
+      "${TRAIN_ARGS[@]}"
+  ) 2>&1 | tee "$RUN_ROOT/logs/train_$agent.log"
 done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
 
 "$TRAIN_PY" - "$ROOT" "$RUN_ROOT" "$AGENTS_CSV" <<'PY'
@@ -510,6 +534,11 @@ for agent in agents:
         "requirementsSHA256",
         "runtimeSourceKind",
         "runtimeSourceRevision",
+        "expectedRuntimeSourceRevision",
+        "observedRepositoryRevision",
+        "observedRuntimeRevision",
+        "runtimeSourceBindingStatus",
+        "runtimeSourceBindingMethod",
     ):
         expected = attestation.get(field) if field in attestation else config.get(field)
         if finalized.get(field) != expected:

@@ -19,7 +19,7 @@ try:
     from .training_lineage import (
         installed_controlled_package_versions,
         repository_training_code_bundle,
-        validate_runtime_source,
+        validate_runtime_source_audit,
         verify_training_code_manifest,
         verify_training_dependency_lock,
     )
@@ -28,7 +28,7 @@ except ImportError:
     from training_lineage import (
         installed_controlled_package_versions,
         repository_training_code_bundle,
-        validate_runtime_source,
+        validate_runtime_source_audit,
         verify_training_code_manifest,
         verify_training_dependency_lock,
     )
@@ -57,6 +57,11 @@ REQUIRED_CONFIG_KEYS = {
     "requirementsSHA256",
     "runtimeSourceKind",
     "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
     "max_seq_length",
     "load_in_4bit",
     "lora_r",
@@ -577,6 +582,13 @@ def _validate_run_resume_config(
         "requirementsSHA256": cfg.get("requirementsSHA256"),
         "runtimeSourceKind": cfg.get("runtimeSourceKind"),
         "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
+        "expectedRuntimeSourceRevision": cfg.get(
+            "expectedRuntimeSourceRevision"
+        ),
+        "observedRepositoryRevision": cfg.get("observedRepositoryRevision"),
+        "observedRuntimeRevision": cfg.get("observedRuntimeRevision"),
+        "runtimeSourceBindingStatus": cfg.get("runtimeSourceBindingStatus"),
+        "runtimeSourceBindingMethod": cfg.get("runtimeSourceBindingMethod"),
         "assistantOnlyLoss": bool(assistant_only_loss),
     }
     if any(run_lineage.get(key) != value for key, value in expected_static.items()):
@@ -663,6 +675,18 @@ def _validate_checkpoint_lineage(
         "configSHA256": _hash_file(cfg_path),
         "datasetFileSHA256": dataset_files,
         "laneHashes": agent_lineage["laneHashes"],
+        "runtimeSourceBinding": {
+            field: run_lineage[field]
+            for field in (
+                "runtimeSourceKind",
+                "runtimeSourceRevision",
+                "expectedRuntimeSourceRevision",
+                "observedRepositoryRevision",
+                "observedRuntimeRevision",
+                "runtimeSourceBindingStatus",
+                "runtimeSourceBindingMethod",
+            )
+        },
         "checkpointRoot": agent_lineage["checkpointRoot"],
         "outputDirectory": agent_lineage["outputDirectory"],
     }
@@ -875,21 +899,29 @@ def _training_runtime_lineage(
         name="trainingCodeSHA256",
     )
     source_path = Path(__file__).resolve()
-    deployed_requirements = source_path.parent / "requirements.txt"
-    if source_path.name == "lumen_train_sft.py" and deployed_requirements.is_file():
+    deployed_root = source_path.parents[1]
+    deployed_requirements = deployed_root / "requirements.txt"
+    local_repository_root: Path | None = None
+    if (
+        source_path.parent.name == "lumen_training"
+        and deployed_requirements.is_file()
+    ):
         actual_code_digest = verify_training_code_manifest(
             code_manifest,
-            root=source_path.parent,
+            root=deployed_root,
         )
         requirements_path = deployed_requirements
     else:
-        repo_root = source_path.parents[3]
-        current_manifest = repository_training_code_bundle(repo_root)["phases"][phase]
+        local_repository_root = source_path.parents[3]
+        current_manifest = repository_training_code_bundle(local_repository_root)[
+            "phases"
+        ][phase]
         if current_manifest != code_manifest:
             raise RuntimeError("Repository training-code files drifted from the config")
         actual_code_digest = verify_training_code_manifest(code_manifest)
         requirements_path = (
-            repo_root / "tools/hf_zerogpu/space_template/requirements.txt"
+            local_repository_root
+            / "tools/hf_zerogpu/space_template/requirements.txt"
         )
     if actual_code_digest != expected_code_digest:
         raise RuntimeError(
@@ -919,10 +951,25 @@ def _training_runtime_lineage(
         != _require_sha256(cfg.get("requirementsSHA256"), name="requirementsSHA256")
     ):
         raise RuntimeError("Training dependency or requirements digest mismatch")
+    observed_local_revision: str | None = None
+    if cfg.get("runtimeSourceKind") == "git":
+        if local_repository_root is None:
+            raise RuntimeError(
+                "Local Git runtime source requires execution from the repository checkout"
+            )
+        try:
+            observed_local_revision = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=local_repository_root,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            raise RuntimeError("Unable to observe the local Git runtime source") from exc
     try:
-        runtime_source_kind, runtime_source_revision = validate_runtime_source(
-            kind=cfg.get("runtimeSourceKind"),
-            revision=cfg.get("runtimeSourceRevision"),
+        runtime_source = validate_runtime_source_audit(
+            cfg,
+            observed_local_revision=observed_local_revision,
         )
     except ValueError as exc:
         raise RuntimeError("Training runtime source lineage is invalid") from exc
@@ -932,8 +979,7 @@ def _training_runtime_lineage(
         "trainingDependencyLock": dependency_lock,
         "trainingDependencyLockSHA256": dependency_digest,
         "requirementsSHA256": dependency_lock["requirementsSHA256"],
-        "runtimeSourceKind": runtime_source_kind,
-        "runtimeSourceRevision": runtime_source_revision,
+        **runtime_source,
     }
 
 
@@ -1138,6 +1184,21 @@ def _finalize_variant_manifest(
             "runtimeSourceKind": training_runtime_lineage["runtimeSourceKind"],
             "runtimeSourceRevision": training_runtime_lineage[
                 "runtimeSourceRevision"
+            ],
+            "expectedRuntimeSourceRevision": training_runtime_lineage[
+                "expectedRuntimeSourceRevision"
+            ],
+            "observedRepositoryRevision": training_runtime_lineage[
+                "observedRepositoryRevision"
+            ],
+            "observedRuntimeRevision": training_runtime_lineage[
+                "observedRuntimeRevision"
+            ],
+            "runtimeSourceBindingStatus": training_runtime_lineage[
+                "runtimeSourceBindingStatus"
+            ],
+            "runtimeSourceBindingMethod": training_runtime_lineage[
+                "runtimeSourceBindingMethod"
             ],
         },
         training_phase="sft",

@@ -9,8 +9,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-TRAINING_CODE_MANIFEST_SCHEMA_VERSION = "lumen.training-code-manifest/1.0.0"
-TRAINING_CODE_BUNDLE_SCHEMA_VERSION = "lumen.training-code-bundle/1.0.0"
+TRAINING_CODE_MANIFEST_SCHEMA_VERSION = "lumen.training-code-manifest/2.0.0"
+TRAINING_CODE_BUNDLE_SCHEMA_VERSION = "lumen.training-code-bundle/2.0.0"
 TRAINING_DEPENDENCY_LOCK_SCHEMA_VERSION = (
     "lumen.adapter-training-dependency-lock/1.0.0"
 )
@@ -42,7 +42,54 @@ DEFAULT_PACKAGE_VERSIONS: dict[str, str] = {
 _REQUIREMENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+RUNTIME_SOURCE_AUDIT_FIELDS = (
+    "runtimeSourceKind",
+    "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
+)
+RUNTIME_SOURCE_BINDING_SPACE_UNVERIFIED = "operator_declared_unverified"
+RUNTIME_SOURCE_BINDING_SPACE_REPOSITORY_HEAD = (
+    "huggingface_repository_head_supplemental"
+)
+RUNTIME_SOURCE_BINDING_SPACE_DECLARATION = "operator_declared_only"
+RUNTIME_SOURCE_BINDING_LOCAL = "local_checkout_observed"
+RUNTIME_SOURCE_BINDING_LOCAL_METHOD = "git_head_plus_training_code_manifest"
 _PHASES = ("sft", "dpo", "orpo")
+_TRAINING_CODE_EXTENSIONS = (
+    ".cfg",
+    ".csv",
+    ".ini",
+    ".json",
+    ".jsonl",
+    ".py",
+    ".sh",
+    ".toml",
+    ".txt",
+    ".yaml",
+    ".yml",
+)
+_TRAINING_CODE_VOLATILE_DIRECTORIES = (
+    ".git",
+    "__pycache__",
+    "checkpoints",
+    "logs",
+    "outputs",
+    "uploads",
+)
+_DEPLOYED_TRAINING_CODE_PATHS = (
+    "app.py",
+    "lumen_manifest_crawler",
+    "lumen_training",
+    "requirements.txt",
+)
+_DEPLOYED_TRAINING_CODE_EXCLUSIONS = (
+    "lumen_zero_gpu_defaults.json",
+    "lumen_zero_gpu_run_manifest.json",
+)
 
 
 def canonical_sha256(value: Any) -> str:
@@ -79,19 +126,189 @@ def _safe_logical_path(value: str) -> str:
     return value
 
 
+def _normalize_closure_policy(value: Mapping[str, Any]) -> dict[str, Any]:
+    expected_keys = {
+        "includedExtensions",
+        "coveredLogicalPaths",
+        "excludedLogicalPaths",
+        "excludedDirectoryNames",
+        "coverDeployedRoot",
+        "rejectUnlistedBehaviorFiles",
+    }
+    if set(value) != expected_keys:
+        raise ValueError("Training-code closure policy contains unsupported fields")
+    extensions = value.get("includedExtensions")
+    covered_paths = value.get("coveredLogicalPaths")
+    excluded_paths = value.get("excludedLogicalPaths")
+    excluded_directories = value.get("excludedDirectoryNames")
+    if (
+        not isinstance(extensions, list)
+        or not extensions
+        or not isinstance(covered_paths, list)
+        or not covered_paths
+        or not isinstance(excluded_paths, list)
+        or not isinstance(excluded_directories, list)
+        or type(value.get("coverDeployedRoot")) is not bool
+        or value.get("rejectUnlistedBehaviorFiles") is not True
+    ):
+        raise ValueError("Invalid training-code closure policy")
+
+    normalized_extensions: list[str] = []
+    for extension in extensions:
+        if (
+            not isinstance(extension, str)
+            or not extension.startswith(".")
+            or extension != extension.lower()
+            or any(character in extension for character in ("/", "\\"))
+        ):
+            raise ValueError("Invalid training-code included extension")
+        normalized_extensions.append(extension)
+    if len(normalized_extensions) != len(set(normalized_extensions)):
+        raise ValueError("Duplicate training-code included extension")
+
+    normalized_covered = [_safe_logical_path(str(path)) for path in covered_paths]
+    normalized_excluded = [_safe_logical_path(str(path)) for path in excluded_paths]
+    normalized_directories: list[str] = []
+    for name in excluded_directories:
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in {".", ".."}
+            or "/" in name
+            or "\\" in name
+        ):
+            raise ValueError("Invalid volatile training-code directory name")
+        normalized_directories.append(name)
+
+    for values, label in (
+        (normalized_covered, "covered path"),
+        (normalized_excluded, "excluded path"),
+        (normalized_directories, "excluded directory"),
+    ):
+        if len(values) != len(set(values)):
+            raise ValueError(f"Duplicate training-code {label}")
+        if values != sorted(values):
+            raise ValueError(f"Training-code {label}s must be sorted")
+    if normalized_extensions != sorted(normalized_extensions):
+        raise ValueError("Training-code included extensions must be sorted")
+
+    return {
+        "includedExtensions": normalized_extensions,
+        "coveredLogicalPaths": normalized_covered,
+        "excludedLogicalPaths": normalized_excluded,
+        "excludedDirectoryNames": normalized_directories,
+        "coverDeployedRoot": value["coverDeployedRoot"],
+        "rejectUnlistedBehaviorFiles": True,
+    }
+
+
+def _default_closure_policy(files: Mapping[str, Path]) -> dict[str, Any]:
+    return _normalize_closure_policy(
+        {
+            "includedExtensions": list(_TRAINING_CODE_EXTENSIONS),
+            # Generic callers cover exactly the files they supplied. The repository
+            # bundle below deliberately covers whole deployed trees instead.
+            "coveredLogicalPaths": sorted(files),
+            "excludedLogicalPaths": [],
+            "excludedDirectoryNames": list(_TRAINING_CODE_VOLATILE_DIRECTORIES),
+            "coverDeployedRoot": False,
+            "rejectUnlistedBehaviorFiles": True,
+        }
+    )
+
+
+def deployed_training_code_closure_policy() -> dict[str, Any]:
+    return _normalize_closure_policy(
+        {
+            "includedExtensions": list(_TRAINING_CODE_EXTENSIONS),
+            "coveredLogicalPaths": list(_DEPLOYED_TRAINING_CODE_PATHS),
+            "excludedLogicalPaths": list(_DEPLOYED_TRAINING_CODE_EXCLUSIONS),
+            "excludedDirectoryNames": list(_TRAINING_CODE_VOLATILE_DIRECTORIES),
+            "coverDeployedRoot": True,
+            "rejectUnlistedBehaviorFiles": True,
+        }
+    )
+
+
+def _is_logical_path_within(path: str, parent: str) -> bool:
+    logical = PurePosixPath(path)
+    ancestor = PurePosixPath(parent)
+    return logical == ancestor or ancestor in logical.parents
+
+
+def _is_excluded_logical_path(path: str, policy: Mapping[str, Any]) -> bool:
+    logical = PurePosixPath(path)
+    if any(part in policy["excludedDirectoryNames"] for part in logical.parts):
+        return True
+    return any(
+        _is_logical_path_within(path, excluded)
+        for excluded in policy["excludedLogicalPaths"]
+    )
+
+
+def _policy_covers_logical_path(path: str, policy: Mapping[str, Any]) -> bool:
+    return policy["coverDeployedRoot"] or any(
+        _is_logical_path_within(path, covered)
+        for covered in policy["coveredLogicalPaths"]
+    )
+
+
+def _discover_covered_training_code_files(
+    root: Path,
+    policy: Mapping[str, Any],
+) -> set[str]:
+    resolved_root = root.resolve()
+    discovered: set[str] = set()
+    extensions = set(policy["includedExtensions"])
+    covered_candidates = (
+        [("<deployed-root>", resolved_root)]
+        if policy["coverDeployedRoot"]
+        else [
+            (covered, (resolved_root / covered).resolve())
+            for covered in policy["coveredLogicalPaths"]
+        ]
+    )
+    for covered, candidate in covered_candidates:
+        if candidate != resolved_root and resolved_root not in candidate.parents:
+            raise ValueError("Training-code closure path escapes the deployed code root")
+        if not candidate.exists():
+            raise ValueError(f"Missing covered training-code path: {covered}")
+        paths = [candidate] if candidate.is_file() else candidate.rglob("*")
+        for path in paths:
+            if not path.is_file():
+                continue
+            resolved = path.resolve()
+            if resolved_root not in resolved.parents:
+                raise ValueError("Training-code closure contains an escaping symlink")
+            logical = resolved.relative_to(resolved_root).as_posix()
+            if _is_excluded_logical_path(logical, policy):
+                continue
+            if resolved.suffix.lower() in extensions:
+                discovered.add(logical)
+    return discovered
+
+
 def build_training_code_manifest(
     *,
     phase: str,
     files: Mapping[str, Path],
+    closure_policy: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if phase not in _PHASES:
         raise ValueError(f"Unsupported training phase: {phase}")
     if not files:
         raise ValueError("Training-code manifest must contain at least one file")
 
+    policy = _normalize_closure_policy(
+        closure_policy if closure_policy is not None else _default_closure_policy(files)
+    )
     entries: list[dict[str, Any]] = []
     for logical_path, source_path in sorted(files.items()):
         logical = _safe_logical_path(logical_path)
+        if _is_excluded_logical_path(logical, policy) or not _policy_covers_logical_path(
+            logical, policy
+        ):
+            raise ValueError(f"Training-code file is outside the closure policy: {logical}")
         source = Path(source_path)
         if not source.is_file():
             raise FileNotFoundError(f"Missing training-code file: {source}")
@@ -105,6 +322,7 @@ def build_training_code_manifest(
     payload = {
         "schemaVersion": TRAINING_CODE_MANIFEST_SCHEMA_VERSION,
         "phase": phase,
+        "closurePolicy": policy,
         "files": entries,
     }
     return {**payload, "trainingCodeSHA256": canonical_sha256(payload)}
@@ -117,13 +335,16 @@ def verify_training_code_manifest(
 ) -> str:
     phase = manifest.get("phase")
     files = manifest.get("files")
+    closure_policy = manifest.get("closurePolicy")
     if (
         manifest.get("schemaVersion") != TRAINING_CODE_MANIFEST_SCHEMA_VERSION
         or phase not in _PHASES
         or not isinstance(files, list)
         or not files
+        or not isinstance(closure_policy, Mapping)
     ):
         raise ValueError("Invalid training-code manifest contract")
+    policy = _normalize_closure_policy(closure_policy)
 
     normalized: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -142,6 +363,10 @@ def verify_training_code_manifest(
         ):
             raise ValueError("Invalid training-code file entry")
         seen.add(path)
+        if _is_excluded_logical_path(path, policy) or not _policy_covers_logical_path(
+            path, policy
+        ):
+            raise ValueError("Training-code file is outside the closure policy")
         normalized.append({"path": path, "sizeBytes": size, "sha256": digest})
 
         if root is not None:
@@ -156,11 +381,27 @@ def verify_training_code_manifest(
             ):
                 raise ValueError(f"Deployed training-code drift: {path}")
 
+    if root is not None:
+        discovered = _discover_covered_training_code_files(root, policy)
+        unexpected = sorted(discovered - seen)
+        missing = sorted(seen - discovered)
+        if missing:
+            raise ValueError(
+                "Declared training-code files are outside the deployed closure: "
+                + ", ".join(missing)
+            )
+        if unexpected:
+            raise ValueError(
+                "Unlisted behavior-affecting training-code files: "
+                + ", ".join(unexpected)
+            )
+
     if normalized != sorted(normalized, key=lambda item: item["path"]):
         raise ValueError("Training-code manifest files must be sorted")
     payload = {
         "schemaVersion": TRAINING_CODE_MANIFEST_SCHEMA_VERSION,
         "phase": phase,
+        "closurePolicy": policy,
         "files": normalized,
     }
     digest = canonical_sha256(payload)
@@ -223,35 +464,65 @@ def verify_training_code_bundle(
 
 def repository_training_code_bundle(repo_root: Path) -> dict[str, Any]:
     root = repo_root.resolve()
-    common = {
-        "adapter_artifact.py": root / "tools/fine_tuning/unsloth/adapter_artifact.py",
+    common: dict[str, Path] = {
         "app.py": root / "tools/hf_zerogpu/space_template/app.py",
-        "lumen_manifest_crawler/dataset/adapter_evaluation.py": root
-        / "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/adapter_evaluation.py",
-        "lumen_manifest_crawler/dataset/adapter_export.py": root
-        / "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/adapter_export.py",
-        "lumen_manifest_crawler/dataset/fine_tuning.py": root
-        / "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/fine_tuning.py",
-        "lumen_manifest_crawler/dataset/public_adapter_eval_registry.py": root
-        / "tools/lumen_manifest_crawler/lumen_manifest_crawler/dataset/public_adapter_eval_registry.py",
         "requirements.txt": root / "tools/hf_zerogpu/space_template/requirements.txt",
-        "training_lineage.py": root / "tools/fine_tuning/unsloth/training_lineage.py",
+        "lumen_training/__init__.py": root
+        / "tools/fine_tuning/unsloth/lumen_training/__init__.py",
+        "lumen_training/adapter_artifact.py": root
+        / "tools/fine_tuning/unsloth/adapter_artifact.py",
+        "lumen_training/train_dpo.py": root
+        / "tools/fine_tuning/unsloth/train_dpo.py",
+        "lumen_training/train_sft.py": root
+        / "tools/fine_tuning/unsloth/train_sft.py",
+        "lumen_training/training_lineage.py": root
+        / "tools/fine_tuning/unsloth/training_lineage.py",
     }
-    sft = {
-        **common,
-        "lumen_train_sft.py": root / "tools/fine_tuning/unsloth/train_sft.py",
-    }
-    preference = {
-        **common,
-        "lumen_train_dpo.py": root / "tools/fine_tuning/unsloth/train_dpo.py",
-        # train_dpo imports controlled environment and seed helpers from train_sft.
-        "lumen_train_sft.py": root / "tools/fine_tuning/unsloth/train_sft.py",
-    }
+    crawler_root = (
+        root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
+    )
+    for source in sorted(crawler_root.rglob("*")):
+        if (
+            source.is_file()
+            and source.suffix.lower() in _TRAINING_CODE_EXTENSIONS
+            and not any(
+                part in _TRAINING_CODE_VOLATILE_DIRECTORIES
+                for part in source.relative_to(crawler_root).parts
+            )
+        ):
+            logical = (
+                PurePosixPath("lumen_manifest_crawler")
+                / source.relative_to(crawler_root).as_posix()
+            ).as_posix()
+            common[logical] = source
+    policy = deployed_training_code_closure_policy()
     return build_training_code_bundle(
         {
-            "sft": build_training_code_manifest(phase="sft", files=sft),
-            "dpo": build_training_code_manifest(phase="dpo", files=preference),
-            "orpo": build_training_code_manifest(phase="orpo", files=preference),
+            phase: build_training_code_manifest(
+                phase=phase,
+                files=common,
+                closure_policy=policy,
+            )
+            for phase in _PHASES
+        }
+    )
+
+
+def deployed_training_code_bundle(deployed_root: Path) -> dict[str, Any]:
+    """Rebuild the phase manifests from an already assembled Space bundle."""
+
+    root = deployed_root.resolve()
+    policy = deployed_training_code_closure_policy()
+    logical_paths = _discover_covered_training_code_files(root, policy)
+    files = {logical: root / logical for logical in sorted(logical_paths)}
+    return build_training_code_bundle(
+        {
+            phase: build_training_code_manifest(
+                phase=phase,
+                files=files,
+                closure_policy=policy,
+            )
+            for phase in _PHASES
         }
     )
 
@@ -411,3 +682,101 @@ def validate_runtime_source(*, kind: Any, revision: Any) -> tuple[str, str]:
     if not isinstance(revision, str) or _REVISION_PATTERN.fullmatch(revision) is None:
         raise ValueError("runtimeSourceRevision must be a full lowercase commit SHA")
     return kind, revision
+
+
+def validate_runtime_source_audit(
+    value: Mapping[str, Any],
+    *,
+    observed_local_revision: str | None = None,
+) -> dict[str, Any]:
+    """Validate runtime-source audit semantics without overstating trust.
+
+    A local Git source is accepted only when the caller independently observed
+    the checkout's current HEAD and it agrees with every recorded revision.
+    Hugging Face Space repository-head evidence remains supplemental: the Hub
+    does not attest that the matching repository revision is the executing
+    container revision, so that contract can never claim a verified binding.
+    """
+
+    if not isinstance(value, Mapping):
+        raise ValueError("Runtime source audit must be an object")
+    kind, expected_revision = validate_runtime_source(
+        kind=value.get("runtimeSourceKind"),
+        revision=value.get("expectedRuntimeSourceRevision"),
+    )
+    if value.get("runtimeSourceRevision") != expected_revision:
+        raise ValueError("runtimeSourceRevision must equal the expected revision")
+
+    observed_repository_revision = value.get("observedRepositoryRevision")
+    observed_runtime_revision = value.get("observedRuntimeRevision")
+    for label, revision in (
+        ("observedRepositoryRevision", observed_repository_revision),
+        ("observedRuntimeRevision", observed_runtime_revision),
+    ):
+        if revision is not None and (
+            not isinstance(revision, str)
+            or _REVISION_PATTERN.fullmatch(revision) is None
+        ):
+            raise ValueError(f"{label} must be null or a full lowercase commit SHA")
+
+    status = value.get("runtimeSourceBindingStatus")
+    method = value.get("runtimeSourceBindingMethod")
+    if kind == "huggingface_space":
+        if observed_runtime_revision is not None:
+            raise ValueError(
+                "Hugging Face Space runtime revision must remain unobserved without "
+                "platform attestation"
+            )
+        if status != RUNTIME_SOURCE_BINDING_SPACE_UNVERIFIED:
+            raise ValueError(
+                "Hugging Face Space runtime source binding must remain "
+                "operator_declared_unverified"
+            )
+        if method == RUNTIME_SOURCE_BINDING_SPACE_DECLARATION:
+            if observed_repository_revision is not None:
+                raise ValueError(
+                    "Operator-declared Space source cannot include repository-head "
+                    "evidence"
+                )
+        elif method == RUNTIME_SOURCE_BINDING_SPACE_REPOSITORY_HEAD:
+            if observed_repository_revision != expected_revision:
+                raise ValueError(
+                    "Supplemental Space repository head must equal the expected "
+                    "revision"
+                )
+        else:
+            raise ValueError("Unsupported Hugging Face Space source binding method")
+    else:
+        if (
+            not isinstance(observed_local_revision, str)
+            or _REVISION_PATTERN.fullmatch(observed_local_revision) is None
+        ):
+            raise ValueError(
+                "Local Git runtime source requires an independently observed HEAD"
+            )
+        if observed_local_revision != expected_revision:
+            raise ValueError(
+                "Observed local Git HEAD does not match the expected runtime source"
+            )
+        if (
+            observed_repository_revision != observed_local_revision
+            or observed_runtime_revision != observed_local_revision
+        ):
+            raise ValueError(
+                "Local runtime-source observations must equal the current Git HEAD"
+            )
+        if status != RUNTIME_SOURCE_BINDING_LOCAL:
+            raise ValueError(
+                "Local Git runtime source binding status must be "
+                "local_checkout_observed"
+            )
+        if method != RUNTIME_SOURCE_BINDING_LOCAL_METHOD:
+            raise ValueError(
+                "Local Git runtime source binding method must be "
+                "git_head_plus_training_code_manifest"
+            )
+
+    return {
+        field: value.get(field)
+        for field in RUNTIME_SOURCE_AUDIT_FIELDS
+    }

@@ -69,6 +69,11 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "requirementsSHA256": "0" * 64,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "b" * 40,
+        "expectedRuntimeSourceRevision": "b" * 40,
+        "observedRepositoryRevision": "b" * 40,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
         "dataset_dir": str(dataset_dir),
         "output_dir": str(output_dir),
         "adapter_output_dir": str(adapter_dir),
@@ -121,6 +126,19 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "requirementsSHA256": config["requirementsSHA256"],
         "runtimeSourceKind": config["runtimeSourceKind"],
         "runtimeSourceRevision": config["runtimeSourceRevision"],
+        "expectedRuntimeSourceRevision": config[
+            "expectedRuntimeSourceRevision"
+        ],
+        "observedRepositoryRevision": config[
+            "observedRepositoryRevision"
+        ],
+        "observedRuntimeRevision": config["observedRuntimeRevision"],
+        "runtimeSourceBindingStatus": config[
+            "runtimeSourceBindingStatus"
+        ],
+        "runtimeSourceBindingMethod": config[
+            "runtimeSourceBindingMethod"
+        ],
         "assistantOnlyLoss": False,
         "agents": [agent_lineage],
     }
@@ -139,6 +157,18 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "configSHA256": train_sft._hash_file(config_path),
         "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
         "laneHashes": lane_hashes,
+        "runtimeSourceBinding": {
+            field: run_lineage[field]
+            for field in (
+                "runtimeSourceKind",
+                "runtimeSourceRevision",
+                "expectedRuntimeSourceRevision",
+                "observedRepositoryRevision",
+                "observedRuntimeRevision",
+                "runtimeSourceBindingStatus",
+                "runtimeSourceBindingMethod",
+            )
+        },
         "checkpointRoot": str(output_dir),
         "outputDirectory": str(output_dir),
         "checkpoints": [],
@@ -218,6 +248,10 @@ def test_resume_rejects_missing_checkpoint_lineage(tmp_path: Path) -> None:
         ("seed", 7),
         ("trainingCodeSHA256", "1" * 64),
         ("trainingDependencyLockSHA256", "2" * 64),
+        ("expectedRuntimeSourceRevision", "d" * 40),
+        ("observedRepositoryRevision", "e" * 40),
+        ("runtimeSourceBindingStatus", "verified"),
+        ("runtimeSourceBindingMethod", "self_declared"),
         ("baseModelRevision", "d" * 40),
         ("variantManifestSHA256", "3" * 64),
     ],

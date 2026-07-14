@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import re
+import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 try:
     from .adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
@@ -48,6 +50,11 @@ REQUIRED_CONFIG_KEYS = {
     "requirementsSHA256",
     "runtimeSourceKind",
     "runtimeSourceRevision",
+    "expectedRuntimeSourceRevision",
+    "observedRepositoryRevision",
+    "observedRuntimeRevision",
+    "runtimeSourceBindingStatus",
+    "runtimeSourceBindingMethod",
     "max_seq_length",
     "load_in_4bit",
     "lora_r",
@@ -462,12 +469,90 @@ def _save_policy_adapter(model: Any, output_dir: Path) -> None:
     )
 
 
+def _shared_finalized_variant_validator() -> Any:
+    """Load the crawler's canonical variant validator in repo and deployed layouts."""
+
+    try:
+        module = importlib.import_module(
+            "lumen_manifest_crawler.dataset.adapter_evaluation"
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name not in {
+            "lumen_manifest_crawler",
+            "lumen_manifest_crawler.dataset",
+            "lumen_manifest_crawler.dataset.adapter_evaluation",
+        }:
+            raise
+        repo_root = Path(__file__).resolve().parents[3]
+        crawler_root = repo_root / "tools" / "lumen_manifest_crawler"
+        if not crawler_root.is_dir():
+            raise RuntimeError(
+                "The shared finalized-variant verifier is not bundled with preference training"
+            ) from exc
+        if str(crawler_root) not in sys.path:
+            sys.path.insert(0, str(crawler_root))
+        module = importlib.import_module(
+            "lumen_manifest_crawler.dataset.adapter_evaluation"
+        )
+    validator = getattr(module, "_valid_variant_manifest", None)
+    if not callable(validator):
+        raise RuntimeError("The shared finalized-variant verifier is unavailable")
+    return validator
+
+
+def _expected_sft_parent_lineage(cfg: Mapping[str, Any]) -> dict[str, Any]:
+    base_model_id = cfg.get("baseModelID", cfg.get("base_model_name"))
+    if base_model_id != cfg.get("base_model_name"):
+        raise RuntimeError("Preference config base-model identities do not agree")
+    environment_lock = cfg.get("trainingEnvironmentLock")
+    if not isinstance(environment_lock, Mapping):
+        raise RuntimeError("Preference config is missing its training-environment lock")
+    environment_lock_sha256 = _canonical_sha256(dict(environment_lock))
+    configured_lock_sha256 = cfg.get("trainingEnvironmentLockSHA256")
+    if configured_lock_sha256 is not None and configured_lock_sha256 != environment_lock_sha256:
+        raise RuntimeError("Preference config training-environment lock digest is invalid")
+    attestation = cfg.get("variantAttestation")
+    if isinstance(attestation, Mapping) and (
+        attestation.get("trainingEnvironmentLockSHA256")
+        != environment_lock_sha256
+    ):
+        raise RuntimeError("Preference config variant attestation has environment-lock drift")
+    phase_digests = cfg.get("trainingCodeSHA256ByPhase")
+    if not isinstance(phase_digests, Mapping):
+        raise RuntimeError("Preference config is missing phase-specific code lineage")
+    return {
+        "agent": cfg.get("agent"),
+        "variant": cfg.get("variant"),
+        "sourceVariantManifestSHA256": cfg.get("variantManifestSHA256"),
+        "seed": cfg.get("seed"),
+        "baseModelID": base_model_id,
+        "baseModelRevision": cfg.get("baseModelRevision"),
+        "baseModelIndexDigest": cfg.get("baseModelIndexDigest"),
+        "baseModelIndexReferencedShardNames": cfg.get(
+            "baseModelIndexReferencedShardNames"
+        ),
+        "baseModelIndexShardBindingSHA256": cfg.get(
+            "baseModelIndexShardBindingSHA256"
+        ),
+        "baseModelArtifactDigest": cfg.get("baseModelArtifactDigest"),
+        "baseModelWeightShards": cfg.get("baseModelWeightShards"),
+        "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "trainingEnvironmentLockSHA256": environment_lock_sha256,
+        "trainingDependencyLockSHA256": cfg.get(
+            "trainingDependencyLockSHA256"
+        ),
+        "requirementsSHA256": cfg.get("requirementsSHA256"),
+        "runtimeSourceKind": cfg.get("runtimeSourceKind"),
+        "trainingCodeSHA256": phase_digests.get("sft"),
+    }
+
+
 def _verified_sft_parent(
     cfg: dict[str, Any],
     *,
     adapter_dir: Path,
     finalized_manifest_path: Path,
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     finalized = json.loads(finalized_manifest_path.read_text(encoding="utf-8"))
     if not isinstance(finalized, dict):
         raise RuntimeError("Finalized SFT variant manifest must be a JSON object")
@@ -478,31 +563,32 @@ def _verified_sft_parent(
     }
     if _canonical_sha256(unsigned) != finalized.get("variantManifestSHA256"):
         raise RuntimeError("Finalized SFT variant manifest integrity check failed")
-    artifact = finalized.get("artifact")
-    training_environment = finalized.get("trainingEnvironment")
-    if (
-        finalized.get("agent") != cfg["agent"]
-        or finalized.get("variant") != cfg["variant"]
-        or finalized.get("seed") != cfg["seed"]
-        or finalized.get("sourceVariantManifestSHA256")
-        != cfg["variantManifestSHA256"]
-        or not isinstance(artifact, dict)
-        or artifact.get("status") != "trained"
-        or artifact.get("trainingPhase") != "sft"
-        or artifact.get("effectiveSeed") != cfg["seed"]
-        or not isinstance(training_environment, dict)
-        or training_environment.get("effectiveSeed") != cfg["seed"]
-        or finalized.get("trainingCodeSHA256")
-        != (cfg.get("trainingCodeSHA256ByPhase") or {}).get("sft")
-        or finalized.get("trainingDependencyLockSHA256")
-        != cfg.get("trainingDependencyLockSHA256")
-        or finalized.get("requirementsSHA256") != cfg.get("requirementsSHA256")
-        or re.fullmatch(
-            r"[0-9a-f]{40}", str(finalized.get("runtimeSourceRevision") or "")
-        )
-        is None
+    validator = _shared_finalized_variant_validator()
+    if not validator(
+        finalized,
+        agent=str(cfg.get("agent") or ""),
+        expected_variant=str(cfg.get("variant") or ""),
+        require_trained_artifact=True,
     ):
-        raise RuntimeError("DPO input must be a finalized SFT artifact for the selected variant")
+        raise RuntimeError(
+            "DPO/ORPO input must be a structurally valid finalized SFT variant"
+        )
+
+    artifact = finalized.get("artifact")
+    if not isinstance(artifact, Mapping):
+        raise RuntimeError("Finalized SFT variant is missing its trained artifact")
+    expected_lineage = _expected_sft_parent_lineage(cfg)
+    for field, expected in expected_lineage.items():
+        if finalized.get(field) != expected:
+            raise RuntimeError(
+                f"Finalized SFT parent {field} does not match preference-training lineage"
+            )
+    if (
+        artifact.get("status") != "trained"
+        or artifact.get("trainingPhase") != "sft"
+        or artifact.get("effectiveSeed") != cfg.get("seed")
+    ):
+        raise RuntimeError("DPO/ORPO input must be a finalized SFT artifact")
     parent_sha256 = _require_sha256(
         artifact.get("adapterSHA256"),
         name="finalized SFT adapterSHA256",
@@ -514,7 +600,37 @@ def _verified_sft_parent(
     )
     if artifact.get("adapterManifestSHA256") != adapter_manifest["adapterSHA256"]:
         raise RuntimeError("Finalized SFT manifest does not bind the canonical adapter file manifest")
-    return finalized, adapter_manifest
+    adapter_config_path = adapter_dir / "adapter_config.json"
+    adapter_config = json.loads(adapter_config_path.read_text(encoding="utf-8"))
+    if not isinstance(adapter_config, Mapping) or (
+        adapter_config.get("base_model_name_or_path") != cfg.get("base_model_name")
+    ):
+        raise RuntimeError(
+            "Finalized SFT adapter base model does not match preference-training configuration"
+        )
+    parent_audit_lineage = {
+        **expected_lineage,
+        "variantManifestSHA256": finalized["variantManifestSHA256"],
+        "adapterSHA256": adapter_manifest["adapterSHA256"],
+        "adapterManifestSHA256": artifact["adapterManifestSHA256"],
+        "effectiveSeed": artifact["effectiveSeed"],
+        "runtimeSourceRevision": finalized["runtimeSourceRevision"],
+        "expectedRuntimeSourceRevision": finalized[
+            "expectedRuntimeSourceRevision"
+        ],
+        "observedRepositoryRevision": finalized[
+            "observedRepositoryRevision"
+        ],
+        "observedRuntimeRevision": finalized["observedRuntimeRevision"],
+        "runtimeSourceBindingStatus": finalized[
+            "runtimeSourceBindingStatus"
+        ],
+        "runtimeSourceBindingMethod": finalized[
+            "runtimeSourceBindingMethod"
+        ],
+        "trainingEnvironmentSHA256": finalized["trainingEnvironmentSHA256"],
+    }
+    return finalized, adapter_manifest, parent_audit_lineage
 
 
 def _finalize_dpo_variant(
@@ -523,6 +639,8 @@ def _finalize_dpo_variant(
     adapter_artifact_manifest: dict[str, Any],
     parent_sft_adapter_sha256: str,
     reference_sft_adapter_sha256: str | None,
+    parent_sft_lineage: Mapping[str, Any],
+    reference_sft_lineage: Mapping[str, Any] | None,
     preference_trainer: str,
     training_environment: dict[str, Any],
     output_path: Path,
@@ -555,6 +673,8 @@ def _finalize_dpo_variant(
         training_phase="sft_dpo",
         parent_sft_adapter_sha256=parent_sft_adapter_sha256,
         reference_sft_adapter_sha256=reference_sft_adapter_sha256,
+        parent_sft_lineage=parent_sft_lineage,
+        reference_sft_lineage=reference_sft_lineage,
         preference_trainer=preference_trainer,
     )
     output_path.write_text(
@@ -617,8 +737,11 @@ def main() -> None:
         cfg,
         sft_adapter_dir=sft_adapter_dir,
     )
+    preference_trainer = str(cfg.get("preference_trainer", "dpo")).lower()
+    if preference_trainer not in {"dpo", "orpo"}:
+        raise ValueError("preference_trainer must be either 'dpo' or 'orpo'")
     sft_finalized_variant_manifest = Path(args.sft_finalized_variant_manifest).resolve()
-    _, sft_artifact_manifest = _verified_sft_parent(
+    _, sft_artifact_manifest, parent_sft_lineage = _verified_sft_parent(
         cfg,
         adapter_dir=sft_adapter_dir,
         finalized_manifest_path=sft_finalized_variant_manifest,
@@ -630,9 +753,6 @@ def main() -> None:
     if not train_path.exists() or not val_path.exists():
         raise FileNotFoundError(f"Missing DPO dataset split files under {dataset_dir}")
 
-    preference_trainer = str(cfg.get("preference_trainer", "dpo")).lower()
-    if preference_trainer not in {"dpo", "orpo"}:
-        raise ValueError("preference_trainer must be either 'dpo' or 'orpo'")
     training_runtime_lineage = _select_preference_runtime_lineage(
         cfg,
         preference_trainer=preference_trainer,
@@ -706,15 +826,25 @@ def main() -> None:
             if preference_trainer == "dpo"
             else None
         ),
+        parent_sft_lineage=parent_sft_lineage,
+        reference_sft_lineage=(
+            parent_sft_lineage if preference_trainer == "dpo" else None
+        ),
         preference_trainer=preference_trainer,
         training_environment={
             **training_environment,
-            "runtimeSourceKind": training_runtime_lineage[
-                "runtimeSourceKind"
-            ],
-            "runtimeSourceRevision": training_runtime_lineage[
-                "runtimeSourceRevision"
-            ],
+            **{
+                field: training_runtime_lineage[field]
+                for field in (
+                    "runtimeSourceKind",
+                    "runtimeSourceRevision",
+                    "expectedRuntimeSourceRevision",
+                    "observedRepositoryRevision",
+                    "observedRuntimeRevision",
+                    "runtimeSourceBindingStatus",
+                    "runtimeSourceBindingMethod",
+                )
+            },
         },
         output_path=finalized_manifest_path,
     )
@@ -738,6 +868,11 @@ def main() -> None:
             if preference_trainer == "dpo"
             else None
         ),
+        "parentSFTLineage": parent_sft_lineage,
+        "referenceSFTLineage": (
+            parent_sft_lineage if preference_trainer == "dpo" else None
+        ),
+        "preferenceTrainingRuntime": training_runtime_lineage,
         "seed": seed,
         "seed_source": seed_source,
         "trainingEnvironment": training_environment,

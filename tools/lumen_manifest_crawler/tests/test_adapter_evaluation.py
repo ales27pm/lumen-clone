@@ -85,6 +85,11 @@ def _training_environment(
         "requirementsSHA256": manifest["requirementsSHA256"],
         "runtimeSourceKind": "git",
         "runtimeSourceRevision": runtime_revision,
+        "expectedRuntimeSourceRevision": runtime_revision,
+        "observedRepositoryRevision": runtime_revision,
+        "observedRuntimeRevision": runtime_revision,
+        "runtimeSourceBindingStatus": "local_checkout_observed",
+        "runtimeSourceBindingMethod": "git_head_plus_training_code_manifest",
     }
 
 
@@ -103,6 +108,52 @@ def _adapter_artifact(marker: str, *, phase: str = "sft", parent: str | None = N
     }
     payload["adapterSHA256"] = canonical_sha256(payload)
     return payload
+
+
+def _sft_parent_lineage(
+    manifest: dict,
+    adapter_sha256: str,
+    *,
+    runtime_revision: str = "3" * 40,
+) -> dict:
+    return {
+        "agent": manifest["agent"],
+        "variant": manifest["variant"],
+        "sourceVariantManifestSHA256": manifest["variantManifestSHA256"],
+        "variantManifestSHA256": "e" * 64,
+        "seed": manifest["seed"],
+        "effectiveSeed": manifest["seed"],
+        "baseModelID": manifest["baseModelID"],
+        "baseModelRevision": manifest["baseModelRevision"],
+        "baseModelIndexDigest": manifest["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": manifest[
+            "baseModelIndexReferencedShardNames"
+        ],
+        "baseModelIndexShardBindingSHA256": manifest[
+            "baseModelIndexShardBindingSHA256"
+        ],
+        "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
+        "baseModelWeightShards": manifest["baseModelWeightShards"],
+        "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
+        "trainingEnvironmentLockSHA256": manifest[
+            "trainingEnvironmentLockSHA256"
+        ],
+        "trainingEnvironmentSHA256": "f" * 64,
+        "trainingDependencyLockSHA256": manifest[
+            "trainingDependencyLockSHA256"
+        ],
+        "requirementsSHA256": manifest["requirementsSHA256"],
+        "trainingCodeSHA256": manifest["trainingCodeSHA256ByPhase"]["sft"],
+        "adapterSHA256": adapter_sha256,
+        "adapterManifestSHA256": adapter_sha256,
+        "runtimeSourceKind": "git",
+        "runtimeSourceRevision": runtime_revision,
+        "expectedRuntimeSourceRevision": runtime_revision,
+        "observedRepositoryRevision": runtime_revision,
+        "observedRuntimeRevision": runtime_revision,
+        "runtimeSourceBindingStatus": "local_checkout_observed",
+        "runtimeSourceBindingMethod": "git_head_plus_training_code_manifest",
+    }
 
 
 def test_legacy_expectations_upgrade_to_versioned_executable_metrics() -> None:
@@ -721,6 +772,7 @@ def test_experiment_manifest_requires_all_controlled_variants_and_marks_dpo_untr
     assert experiment["controlledVariables"]["baseModelTokenizerDigest"] == "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
     for field in (
         "trainingCodeSHA256",
+        "trainingCodeSHA256ByPhase",
         "trainingCodeBundleSHA256",
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
@@ -731,6 +783,11 @@ def test_experiment_manifest_requires_all_controlled_variants_and_marks_dpo_untr
     assert all(
         variant["runtimeSourceKind"] == "unresolved"
         and variant["runtimeSourceRevision"] is None
+        and variant["expectedRuntimeSourceRevision"] is None
+        and variant["observedRepositoryRevision"] is None
+        and variant["observedRuntimeRevision"] is None
+        and variant["runtimeSourceBindingStatus"] == "unresolved"
+        and variant["runtimeSourceBindingMethod"] == "unresolved"
         for variant in experiment["variants"]
     )
     assert all(variant["trainingEnvironmentSHA256"] is None for variant in experiment["variants"])
@@ -781,7 +838,7 @@ def test_training_lineage_mutation_and_missing_runtime_revision_fail_closed() ->
 
     environment = _training_environment(pending)
     environment.pop("runtimeSourceRevision")
-    with pytest.raises(ValueError, match="immutable runtime source revision"):
+    with pytest.raises(ValueError, match="honest expected/observed runtime-source"):
         finalize_experiment_variant_manifest(
             pending,
             adapter_sha256=_adapter_artifact("a")["adapterSHA256"],
@@ -1221,6 +1278,7 @@ def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
     )
     parent = "a" * 64
     artifact = _adapter_artifact("b", phase="sft_dpo", parent=parent)
+    parent_lineage = _sft_parent_lineage(pending, parent)
 
     finalized = finalize_experiment_variant_manifest(
         pending,
@@ -1231,11 +1289,19 @@ def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
         parent_sft_adapter_sha256=parent,
         reference_sft_adapter_sha256=parent,
         preference_trainer="dpo",
+        parent_sft_lineage=parent_lineage,
+        reference_sft_lineage=parent_lineage,
     )
 
     assert finalized["artifact"]["effectiveSeed"] == 42
     assert finalized["artifact"]["referenceSFTAdapterSHA256"] == parent
     assert finalized["dpoTraining"]["referenceSFTAdapterSHA256"] == parent
+    assert finalized["parentSFTLineage"] == parent_lineage
+    assert finalized["referenceSFTLineage"] == parent_lineage
+    assert finalized["preferenceTrainingRuntime"] == {
+        field: finalized[field]
+        for field in adapter_evaluation.RUNTIME_SOURCE_AUDIT_FIELDS
+    }
     assert adapter_evaluation._valid_variant_manifest(
         finalized,
         agent="executor",
@@ -1255,6 +1321,151 @@ def test_finalizer_binds_effective_seed_and_frozen_dpo_reference() -> None:
     )
 
 
+def test_finalizer_rejects_incomplete_or_substituted_sft_parent_lineage() -> None:
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    parent = "a" * 64
+    artifact = _adapter_artifact("b", phase="sft_dpo", parent=parent)
+    parent_lineage = _sft_parent_lineage(pending, parent)
+    invalid_values = {
+        **{field: None for field in adapter_evaluation.SFT_PARENT_CONTROLLED_FIELDS},
+        "variantManifestSHA256": None,
+        "trainingEnvironmentSHA256": None,
+        "trainingCodeSHA256": "0" * 64,
+        "adapterSHA256": "0" * 64,
+        "adapterManifestSHA256": "0" * 64,
+        "effectiveSeed": 7,
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceBindingStatus": "verified",
+    }
+
+    for field, invalid_value in invalid_values.items():
+        invalid_parent = {**parent_lineage, field: invalid_value}
+        with pytest.raises(ValueError, match="complete finalized SFT parent lineage|runtime kind"):
+            finalize_experiment_variant_manifest(
+                pending,
+                adapter_sha256=artifact["adapterSHA256"],
+                adapter_artifact_manifest=artifact,
+                training_environment=_training_environment(pending, code_phase="dpo"),
+                training_phase="sft_dpo",
+                parent_sft_adapter_sha256=parent,
+                reference_sft_adapter_sha256=parent,
+                preference_trainer="dpo",
+                parent_sft_lineage=invalid_parent,
+                reference_sft_lineage=invalid_parent,
+            )
+
+    different_reference = {**parent_lineage, "variantManifestSHA256": "d" * 64}
+    with pytest.raises(ValueError, match="reference lineage must equal"):
+        finalize_experiment_variant_manifest(
+            pending,
+            adapter_sha256=artifact["adapterSHA256"],
+            adapter_artifact_manifest=artifact,
+            training_environment=_training_environment(pending, code_phase="dpo"),
+            training_phase="sft_dpo",
+            parent_sft_adapter_sha256=parent,
+            reference_sft_adapter_sha256=parent,
+            preference_trainer="dpo",
+            parent_sft_lineage=parent_lineage,
+            reference_sft_lineage=different_reference,
+        )
+
+
+def test_runtime_source_audit_is_bound_to_variant_artifact_and_evaluation() -> None:
+    evaluation = [
+        upgrade_evaluation_record(
+            _eval("executor", "json", [{"type": "json_valid"}])
+        )
+    ]
+    pending = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=evaluation,
+    )
+    artifact = _adapter_artifact("a")
+    finalized = finalize_experiment_variant_manifest(
+        pending,
+        adapter_sha256=artifact["adapterSHA256"],
+        adapter_artifact_manifest=artifact,
+        training_environment=_training_environment(pending),
+    )
+    output = {evaluation[0]["evalID"]: {"status": "ok"}}
+    report = score_evaluation_suite(
+        evaluation,
+        output,
+        agent="executor",
+        variant="internal_only",
+        variant_manifest=finalized,
+        artifact_sha256=artifact["adapterSHA256"],
+    )
+
+    assert adapter_evaluation._valid_evaluation_report(
+        report,
+        agent="executor",
+        expected_variant="internal_only",
+    )
+    assert adapter_evaluation._report_matches_variant(
+        report,
+        finalized,
+        artifact["adapterSHA256"],
+    )
+    assert all(
+        report[field] == finalized[field]
+        for field in adapter_evaluation.RUNTIME_SOURCE_AUDIT_FIELDS
+    )
+
+    tampered_report = dict(report)
+    tampered_report.pop("reportSHA256")
+    tampered_report["runtimeSourceBindingStatus"] = "verified"
+    tampered_report["reportSHA256"] = canonical_sha256(tampered_report)
+    assert not adapter_evaluation._valid_evaluation_report(
+        tampered_report,
+        agent="executor",
+        expected_variant="internal_only",
+    )
+    assert not adapter_evaluation._report_matches_variant(
+        tampered_report,
+        finalized,
+        artifact["adapterSHA256"],
+    )
+
+
+def test_repository_head_equality_is_supplemental_not_verified_runtime_evidence() -> None:
+    revision = "4" * 40
+    supplemental = {
+        "runtimeSourceKind": "huggingface_space",
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": revision,
+        "observedRuntimeRevision": None,
+        "runtimeSourceBindingStatus": "operator_declared_unverified",
+        "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
+    }
+    assert adapter_evaluation._valid_runtime_source_audit(
+        supplemental,
+        pending=False,
+    )
+    assert not adapter_evaluation._valid_runtime_source_audit(
+        {**supplemental, "runtimeSourceBindingStatus": "verified"},
+        pending=False,
+    )
+
+
 def test_finalizer_rejects_runtime_seed_drift_and_missing_dpo_reference() -> None:
     pending = build_experiment_variant_manifest(
         agent="executor",
@@ -1268,6 +1479,7 @@ def test_finalizer_rejects_runtime_seed_drift_and_missing_dpo_reference() -> Non
         evaluation_records=[],
     )
     artifact = _adapter_artifact("b", phase="sft_dpo", parent="a" * 64)
+    parent_lineage = _sft_parent_lineage(pending, "a" * 64)
     drifted_environment = _training_environment(pending, code_phase="dpo")
     drifted_environment["effectiveSeed"] = 7
 
@@ -1281,6 +1493,8 @@ def test_finalizer_rejects_runtime_seed_drift_and_missing_dpo_reference() -> Non
             parent_sft_adapter_sha256="a" * 64,
             reference_sft_adapter_sha256="a" * 64,
             preference_trainer="dpo",
+            parent_sft_lineage=parent_lineage,
+            reference_sft_lineage=parent_lineage,
         )
     with pytest.raises(ValueError, match="exact frozen parent SFT"):
         finalize_experiment_variant_manifest(
@@ -1545,6 +1759,14 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
         parent_sft_adapter_sha256=parent_sft_digest,
         reference_sft_adapter_sha256=parent_sft_digest,
         preference_trainer="dpo",
+        parent_sft_lineage=_sft_parent_lineage(
+            dpo_manifest,
+            parent_sft_digest,
+        ),
+        reference_sft_lineage=_sft_parent_lineage(
+            dpo_manifest,
+            parent_sft_digest,
+        ),
     )
     dpo_report = score_evaluation_suite(
         evaluation,
@@ -1619,9 +1841,8 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
 
     drifted_manifest = dict(optimized_manifest)
     drifted_manifest.pop("variantManifestSHA256")
-    drifted_environment = _training_environment(drifted_manifest, "d")
-    drifted_environment.pop("runtimeSourceKind")
-    drifted_environment.pop("runtimeSourceRevision")
+    drifted_environment = dict(drifted_manifest["trainingEnvironment"])
+    drifted_environment["containerImageDigest"] = "sha256:" + "d" * 64
     drifted_manifest["trainingEnvironment"] = drifted_environment
     drifted_manifest["trainingEnvironmentSHA256"] = canonical_sha256(drifted_environment)
     drifted_manifest["variantManifestSHA256"] = canonical_sha256(drifted_manifest)

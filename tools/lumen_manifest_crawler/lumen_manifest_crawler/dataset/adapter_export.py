@@ -12,11 +12,12 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
     EXPERIMENT_VARIANTS,
+    RUNTIME_SOURCE_AUDIT_FIELDS,
     default_training_lineage_contract,
     promotion_contract,
 )
 
-ADAPTER_EXPORT_SCHEMA_VERSION = "1.3.0"
+ADAPTER_EXPORT_SCHEMA_VERSION = "1.4.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
 DEFAULT_TRAINING_OUTPUT_ROOT = "models/training_runs_qwen3_bootstrap"
@@ -129,11 +130,11 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "baseModelWeightShards": out["baseModelWeightShards"],
         "baseModelTokenizerDigest": out["baseModelTokenizerDigest"],
         "trainingCodeSHA256": out["trainingCodeSHA256"],
+        "trainingCodeSHA256ByPhase": dict(out["trainingCodeSHA256ByPhase"]),
         "trainingCodeBundleSHA256": out["trainingCodeBundleSHA256"],
         "trainingDependencyLockSHA256": out["trainingDependencyLockSHA256"],
         "requirementsSHA256": out["requirementsSHA256"],
-        "runtimeSourceKind": out["runtimeSourceKind"],
-        "runtimeSourceRevision": out["runtimeSourceRevision"],
+        **{field: out[field] for field in RUNTIME_SOURCE_AUDIT_FIELDS},
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "trainBaseModelWeights": False,
@@ -177,11 +178,13 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "baseModelWeightShards": config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
         "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
         "trainingCodeSHA256": config.get("trainingCodeSHA256"),
+        "trainingCodeSHA256ByPhase": dict(
+            config.get("trainingCodeSHA256ByPhase") or {}
+        ),
         "trainingCodeBundleSHA256": config.get("trainingCodeBundleSHA256"),
         "trainingDependencyLockSHA256": config.get("trainingDependencyLockSHA256"),
         "requirementsSHA256": config.get("requirementsSHA256"),
-        "runtimeSourceKind": config.get("runtimeSourceKind"),
-        "runtimeSourceRevision": config.get("runtimeSourceRevision"),
+        **{field: config.get(field) for field in RUNTIME_SOURCE_AUDIT_FIELDS},
         "sharedBaseRepoID": DEFAULT_SHARED_BASE_REPO_ID,
         "sharedBaseFileName": DEFAULT_SHARED_BASE_FILE_NAME,
         "adapterRepoID": DEFAULT_ADAPTER_REPO_ID,
@@ -249,6 +252,7 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
     adapters: list[dict[str, Any]] = []
     base_model_ids: set[str] = set()
     training_code_digests: set[str] = set()
+    training_code_phase_digests: list[dict[str, str] | None] = []
     training_code_bundle_digests: set[str] = set()
     dependency_lock_digests: set[str] = set()
     requirements_digests: set[str] = set()
@@ -266,6 +270,10 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
             value = unsloth_config.get(key)
             if isinstance(value, str) and value:
                 values.add(value)
+        phase_digests = unsloth_config.get("trainingCodeSHA256ByPhase")
+        training_code_phase_digests.append(
+            dict(phase_digests) if isinstance(phase_digests, dict) else None
+        )
         adapters.append(
             {
                 "agent": agent,
@@ -289,11 +297,16 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "baseModelWeightShards": unsloth_config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
                 "baseModelTokenizerDigest": unsloth_config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
                 "trainingCodeSHA256": unsloth_config.get("trainingCodeSHA256"),
+                "trainingCodeSHA256ByPhase": dict(
+                    unsloth_config.get("trainingCodeSHA256ByPhase") or {}
+                ),
                 "trainingCodeBundleSHA256": unsloth_config.get("trainingCodeBundleSHA256"),
                 "trainingDependencyLockSHA256": unsloth_config.get("trainingDependencyLockSHA256"),
                 "requirementsSHA256": unsloth_config.get("requirementsSHA256"),
-                "runtimeSourceKind": unsloth_config.get("runtimeSourceKind"),
-                "runtimeSourceRevision": unsloth_config.get("runtimeSourceRevision"),
+                **{
+                    field: unsloth_config.get(field)
+                    for field in RUNTIME_SOURCE_AUDIT_FIELDS
+                },
                 "systemPrompt": dataset_card.get("systemPrompt"),
                 "recordCounts": dataset_card.get("recordCounts", {}),
                 "evaluation": dataset_card.get("evaluation", {}),
@@ -321,6 +334,16 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "sharedTrainingCodeSHA256": (
             next(iter(training_code_digests))
             if len(training_code_digests) == 1
+            else None
+        ),
+        "sharedTrainingCodeSHA256ByPhase": (
+            training_code_phase_digests[0]
+            if training_code_phase_digests
+            and training_code_phase_digests[0] is not None
+            and all(
+                value == training_code_phase_digests[0]
+                for value in training_code_phase_digests[1:]
+            )
             else None
         ),
         "sharedTrainingCodeBundleSHA256": (
