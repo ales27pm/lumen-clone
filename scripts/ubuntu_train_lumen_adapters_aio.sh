@@ -86,7 +86,7 @@ fi
 if [[ "$SKIP_INSTALL" != "1" ]]; then
   log "installing/updating Python training dependencies"
   "$TRAIN_PY" -m pip install pip==26.1.1 setuptools==80.9.0 wheel==0.46.3
-  "$TRAIN_PY" -m pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url "$TORCH_INDEX_URL"
+  "$TRAIN_PY" -m pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url "$TORCH_INDEX_URL"
   "$TRAIN_PY" -m pip install -r "$ROOT/tools/hf_zerogpu/space_template/requirements.txt"
 else
   log "LUMEN_AIO_SKIP_INSTALL=1; using existing Python environment: $TRAIN_PY"

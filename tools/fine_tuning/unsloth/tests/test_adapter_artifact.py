@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -70,7 +71,10 @@ def test_adapter_artifact_manifest_rejects_missing_extra_and_modified_files(
         verify_adapter_artifact(adapter)
 
     (adapter / "adapter_model.safetensors").unlink()
-    with pytest.raises(ValueError, match="require adapter_model.safetensors"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape("require adapter_model.safetensors"),
+    ):
         verify_adapter_artifact(adapter)
 
 
@@ -135,7 +139,10 @@ def test_adapter_artifact_rejects_weights_outside_declared_lora_targets(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="do not match.*target_modules"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape("do not match adapter_config.json target_modules"),
+    ):
         write_adapter_artifact_manifest(adapter, training_phase="sft")
 
 
@@ -168,5 +175,5 @@ def test_adapter_artifact_rejects_pytorch_bin_for_finalized_artifacts(
     (adapter / "adapter_model.safetensors").unlink()
     (adapter / "adapter_model.bin").write_bytes(b"PK\x03\x04" + b"x" * 32)
 
-    with pytest.raises(ValueError, match="adapter_model.bin"):
+    with pytest.raises(ValueError, match=re.escape("adapter_model.bin")):
         write_adapter_artifact_manifest(adapter, training_phase="sft")
