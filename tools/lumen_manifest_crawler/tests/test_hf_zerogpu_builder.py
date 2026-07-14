@@ -204,6 +204,18 @@ def test_write_space_bundle_copies_dataset_and_writes_defaults(tmp_path: Path) -
     assert len(defaults["trainingCodeSHA256"]) == 64
     assert len(defaults["trainingDependencyLockSHA256"]) == 64
     assert len(defaults["requirementsSHA256"]) == 64
+    assert defaults["spaceConfiguration"] == {
+        "schemaVersion": "lumen.zerogpu.space-configuration/1.0.0",
+        "sdk": "gradio",
+        "appFile": "app.py",
+        "pythonVersion": "3.10",
+        "suggestedHardware": None,
+        "spaceConfigurationSHA256": defaults["spaceConfigurationSHA256"],
+    }
+    assert len(defaults["spaceConfigurationSHA256"]) == 64
+    assert "suggested_hardware" not in (
+        build.space_dir / "README.md"
+    ).read_text(encoding="utf-8")
     assert (build.space_dir / "app.py").exists()
     assert (build.space_dir / "lumen_training" / "__init__.py").exists()
     assert (build.space_dir / "lumen_training" / "train_sft.py").exists()
@@ -259,6 +271,168 @@ def test_built_space_training_package_imports_and_exposes_entrypoints(
     )
     assert import_result.returncode == 0, import_result.stderr
     assert repository_root not in json.loads(import_result.stdout)
+
+
+def test_built_space_post_training_adapter_verification_succeeds(
+    tmp_path: Path,
+) -> None:
+    build = _build_space_fixture(tmp_path)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(build.space_dir)
+    repository_root = str(Path(__file__).resolve().parents[3])
+    script = f"""
+import json
+import sys
+from pathlib import Path
+from types import ModuleType
+
+class DummyComponent:
+    def __init__(self, *_args, **_kwargs):
+        pass
+    def __enter__(self):
+        return self
+    def __exit__(self, *_args):
+        return None
+    def click(self, **_kwargs):
+        return None
+    def queue(self):
+        return self
+    def launch(self):
+        return None
+
+gradio = ModuleType("gradio")
+for name in ("Blocks", "Row", "Textbox", "Number", "Dropdown", "Checkbox", "JSON", "Button"):
+    setattr(gradio, name, DummyComponent)
+gradio.Markdown = lambda *_args, **_kwargs: None
+spaces = ModuleType("spaces")
+spaces.GPU = lambda **_kwargs: (lambda function: function)
+hub = ModuleType("huggingface_hub")
+hub.HfApi = object
+hub.snapshot_download = lambda **_kwargs: ""
+sys.modules.update({{"gradio": gradio, "spaces": spaces, "huggingface_hub": hub}})
+
+assert Path("adapter_artifact.py").exists() is False
+assert Path({repository_root!r}) not in [Path(value or ".").resolve() for value in sys.path]
+import app
+from lumen_training.adapter_artifact import write_adapter_artifact_manifest
+
+adapter_dir = Path("synthetic_adapter")
+adapter_dir.mkdir()
+(adapter_dir / "adapter_config.json").write_text(json.dumps({{
+    "peft_type": "LORA",
+    "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+    "target_modules": ["q_proj"],
+}}), encoding="utf-8")
+header = json.dumps({{
+    "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": {{
+        "dtype": "F32",
+        "shape": [1],
+        "data_offsets": [0, 4],
+    }}
+}}, separators=(",", ":")).encode("utf-8")
+header += b" " * (-len(header) % 8)
+(adapter_dir / "adapter_model.safetensors").write_bytes(
+    len(header).to_bytes(8, "little") + header + b"\\x00\\x00\\x00\\x00"
+)
+(adapter_dir / "tokenizer.json").write_text("{{}}", encoding="utf-8")
+(adapter_dir / "tokenizer_config.json").write_text("{{}}", encoding="utf-8")
+artifact = write_adapter_artifact_manifest(adapter_dir, training_phase="sft")
+
+runtime = {{
+    "runtimeSourceKind": "huggingface_space",
+    "runtimeSourceRevision": "4" * 40,
+    "expectedRuntimeSourceRevision": "4" * 40,
+    "observedRepositoryRevision": "4" * 40,
+    "observedRuntimeRevision": None,
+    "runtimeSourceBindingStatus": "operator_declared_unverified",
+    "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
+}}
+training_environment = {{
+    "schemaVersion": "lumen.adapter-training-environment/1.0.0",
+    "runtimeImageBindingStatus": "manual_validation_required",
+    "runtimeImageBindingVerified": False,
+}}
+training_environment_sha = app._canonical_sha256(training_environment)
+lane_hashes = {{"trainSFT": "a" * 64, "validationSFT": "b" * 64}}
+item = {{
+    "agent": "executor",
+    "variant": "internal_plus_public_optimized",
+    "variantManifestSHA256": "1" * 64,
+    "base_model_name": "Qwen/Qwen3-1.7B",
+    "baseModelRevision": "2" * 40,
+    "baseModelIndexDigest": "3" * 64,
+    "baseModelIndexReferencedShardNames": ["model-00001-of-00001.safetensors"],
+    "baseModelIndexShardBindingSHA256": "4" * 64,
+    "baseModelArtifactDigest": "5" * 64,
+    "baseModelWeightShards": [{{"filename": "model-00001-of-00001.safetensors", "sha256": "6" * 64}}],
+    "baseModelTokenizerDigest": "7" * 64,
+    "trainingEnvironmentSHA256": training_environment_sha,
+    "trainingCodeSHA256": "8" * 64,
+    "trainingDependencyLockSHA256": "9" * 64,
+    "requirementsSHA256": "a" * 64,
+    "spaceConfigurationSHA256": app.DEFAULTS["spaceConfigurationSHA256"],
+    "runtimeImageBindingStatus": "manual_validation_required",
+    "runtimeImageBindingVerified": False,
+    "variantAttestation": {{
+        "variant": "internal_plus_public_optimized",
+        "variantManifestSHA256": "1" * 64,
+        "trainingEnvironmentSHA256": training_environment_sha,
+        "trainingCorpusSHA256": "b" * 64,
+        "effectiveTrainingConfigSHA256": "c" * 64,
+        "laneHashes": lane_hashes,
+    }},
+    "adapter_dir": str(adapter_dir),
+    "finalized_variant_manifest": "finalized_variant_manifest.json",
+    **runtime,
+}}
+finalized = {{
+    "agent": item["agent"],
+    "variant": item["variant"],
+    "sourceVariantManifestSHA256": item["variantManifestSHA256"],
+    "baseModelID": item["base_model_name"],
+    "baseModelRevision": item["baseModelRevision"],
+    "baseModelIndexDigest": item["baseModelIndexDigest"],
+    "baseModelIndexReferencedShardNames": item["baseModelIndexReferencedShardNames"],
+    "baseModelIndexShardBindingSHA256": item["baseModelIndexShardBindingSHA256"],
+    "baseModelArtifactDigest": item["baseModelArtifactDigest"],
+    "baseModelWeightShards": item["baseModelWeightShards"],
+    "baseModelTokenizerDigest": item["baseModelTokenizerDigest"],
+    "trainingEnvironmentSHA256": training_environment_sha,
+    "trainingEnvironment": training_environment,
+    "trainingCodeSHA256": item["trainingCodeSHA256"],
+    "trainingDependencyLockSHA256": item["trainingDependencyLockSHA256"],
+    "requirementsSHA256": item["requirementsSHA256"],
+    "spaceConfigurationSHA256": item["spaceConfigurationSHA256"],
+    "trainingCorpusSHA256": item["variantAttestation"]["trainingCorpusSHA256"],
+    "trainingConfigSHA256": item["variantAttestation"]["effectiveTrainingConfigSHA256"],
+    "datasets": {{name: {{"sha256": digest}} for name, digest in lane_hashes.items()}},
+    "artifact": {{
+        "status": "trained",
+        "trainingPhase": "sft",
+        "parentSFTAdapterSHA256": None,
+        "adapterSHA256": artifact["adapterSHA256"],
+        "adapterManifestSHA256": artifact["adapterSHA256"],
+    }},
+    **runtime,
+}}
+finalized["variantManifestSHA256"] = app._canonical_sha256(finalized)
+Path(item["finalized_variant_manifest"]).write_text(
+    json.dumps(finalized), encoding="utf-8"
+)
+
+verified_dir, verified_manifest = app._verify_trained_adapter(item)
+assert verified_dir == adapter_dir
+assert verified_manifest["artifact"]["adapterSHA256"] == artifact["adapterSHA256"]
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=build.space_dir,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize(
@@ -371,11 +545,33 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
     calls: list[tuple[str, dict[str, Any]]] = []
 
     class FakeHfApi:
+        visibility = {
+            ("dataset", "user/dataset"): False,
+            ("model", "user/adapters"): False,
+            ("space", "user/space"): False,
+        }
+
         def __init__(self, *, token: str | None) -> None:
             calls.append(("init", {"token": token}))
 
         def create_repo(self, **kwargs: Any) -> None:
             calls.append(("create_repo", kwargs))
+
+        def update_repo_settings(self, **kwargs: Any) -> None:
+            calls.append(("update_repo_settings", kwargs))
+            self.visibility[(kwargs["repo_type"], kwargs["repo_id"])] = kwargs["private"]
+
+        def dataset_info(self, **kwargs: Any) -> Any:
+            calls.append(("dataset_info", kwargs))
+            return SimpleNamespace(private=self.visibility[("dataset", kwargs["repo_id"])])
+
+        def model_info(self, **kwargs: Any) -> Any:
+            calls.append(("model_info", kwargs))
+            return SimpleNamespace(private=self.visibility[("model", kwargs["repo_id"])])
+
+        def space_info(self, **kwargs: Any) -> Any:
+            calls.append(("space_info", kwargs))
+            return SimpleNamespace(private=self.visibility[("space", kwargs["repo_id"])])
 
         def upload_folder(self, **kwargs: Any) -> Any:
             calls.append(("upload_folder", kwargs))
@@ -457,6 +653,11 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
     assert defaults["dataset_revision"] == "d" * 40
     uploads = [details for name, details in calls if name == "upload_folder"]
     assert [details["repo_type"] for details in uploads] == ["dataset", "space"]
+    first_upload = call_names.index("upload_folder")
+    assert call_names[:first_upload].count("update_repo_settings") == 3
+    assert {"dataset_info", "model_info", "space_info"}.issubset(
+        set(call_names[:first_upload])
+    )
     secret_keys = {
         details["key"] for name, details in calls if name == "add_space_secret"
     }
@@ -464,6 +665,114 @@ def test_upload_to_hub_removes_legacy_duration_secrets_and_restarts_last(
         "LUMEN_ZERO_GPU_HUB_TOKEN",
         "LUMEN_ZERO_GPU_ADMIN_TOKEN",
     }
+
+
+@pytest.mark.parametrize(
+    ("initial_private", "requested_private"),
+    [(False, True), (True, False)],
+)
+def test_ensure_repository_visibility_updates_existing_repository_and_verifies_readback(
+    initial_private: bool,
+    requested_private: bool,
+) -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeApi:
+        private = initial_private
+
+        def create_repo(self, **kwargs: Any) -> None:
+            calls.append(("create_repo", kwargs))
+            # Existing-repository behavior: create_repo does not change visibility.
+
+        def update_repo_settings(self, **kwargs: Any) -> None:
+            calls.append(("update_repo_settings", kwargs))
+            self.private = kwargs["private"]
+
+        def model_info(self, **kwargs: Any) -> Any:
+            calls.append(("model_info", kwargs))
+            return SimpleNamespace(private=self.private)
+
+    builder.ensure_repository_visibility(
+        FakeApi(),
+        repo_id="user/adapters",
+        repo_type="model",
+        private=requested_private,
+        token="token",
+    )
+
+    assert [name for name, _ in calls] == [
+        "create_repo",
+        "update_repo_settings",
+        "model_info",
+    ]
+    assert calls[1][1]["private"] is requested_private
+    assert calls[2][1]["token"] == "token"
+
+
+@pytest.mark.parametrize("failure", ["update", "readback_mismatch"])
+def test_upload_to_hub_does_not_upload_before_visibility_postcondition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    calls: list[str] = []
+
+    class FakeHfApi:
+        def __init__(self, *, token: str | None) -> None:
+            calls.append("init")
+
+        def create_repo(self, **_kwargs: Any) -> None:
+            calls.append("create_repo")
+
+        def update_repo_settings(self, **kwargs: Any) -> None:
+            calls.append("update_repo_settings")
+            if failure == "update":
+                raise RuntimeError("settings update failed")
+
+        def dataset_info(self, **_kwargs: Any) -> Any:
+            calls.append("dataset_info")
+            return SimpleNamespace(private=False)
+
+        def upload_folder(self, **_kwargs: Any) -> None:
+            calls.append("upload_folder")
+            pytest.fail("upload must not run before visibility is verified")
+
+    dataset_dir = tmp_path / "dataset"
+    space_dir = tmp_path / "space"
+    dataset_dir.mkdir()
+    space_dir.mkdir()
+    defaults_path = space_dir / "lumen_zero_gpu_defaults.json"
+    defaults_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(builder, "import_hf_api", lambda: FakeHfApi)
+
+    expected = (
+        "settings update failed"
+        if failure == "update"
+        else "Repository visibility postcondition failed"
+    )
+    with pytest.raises(RuntimeError, match=expected):
+        builder.upload_to_hub(
+            build=SpaceBuild(
+                run_id="test-run",
+                run_root=tmp_path,
+                space_dir=space_dir,
+                dataset_dir=dataset_dir,
+                dataset_path_in_repo="runs/test-run/fine_tuning",
+                defaults_path=defaults_path,
+            ),
+            space_repo="user/space",
+            dataset_repo="user/dataset",
+            adapter_repo="user/adapters",
+            private_space=True,
+            private_dataset=True,
+            private_adapters=True,
+            zero_gpu_hardware="zero-a10g",
+            token="token",
+            admin_token="Lumen-Admin-Token-0123456789-ABCDEF",
+            dry_run=False,
+        )
+
+    assert "upload_folder" not in calls
 
 
 def test_upload_to_hub_requires_dedicated_repository_token_before_hf_api(
@@ -650,6 +959,73 @@ def test_one_click_launcher_is_private_unless_public_overrides_are_set() -> None
     assert "args+=(--public-adapters)" in script
     assert "args+=(--private-dataset)" not in script
     assert "args+=(--private-adapters)" not in script
+
+
+def _resume_launcher_environment(*, python: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "LUMEN_ZERO_GPU_EXPERIMENT_VARIANT": "internal_only",
+            "LUMEN_ZERO_GPU_CONTAINER_IMAGE_DIGEST": "sha256:" + "a" * 64,
+            "LUMEN_ZERO_GPU_ADMIN_TOKEN": "Lumen-Admin-Token-0123456789-ABCDEF",
+            "LUMEN_ZERO_GPU_HUB_TOKEN": "hf_fine_grained_repository_token",
+            "LUMEN_ZERO_GPU_AGENTS": "cortex,executor,mouth",
+            "LUMEN_ZERO_GPU_AGENT_BATCH_SIZE": "1",
+            "LUMEN_ZERO_GPU_RESUME": "1",
+            "LUMEN_ZERO_GPU_SKIP_INSTALL": "1",
+            "LUMEN_ZERO_GPU_USE_ACTIVE_PYTHON": "1",
+            "LUMEN_ZERO_GPU_PYTHON": str(python),
+            "LUMEN_ZERO_GPU_TRIGGER": "0",
+        }
+    )
+    return env
+
+
+def test_one_click_multi_batch_resume_requires_explicit_batch() -> None:
+    script = Path(__file__).resolve().parents[3] / "scripts/hf_zerogpu_train_lumen_adapters_aio.sh"
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=script.parents[1],
+        env=_resume_launcher_environment(python=Path("/usr/bin/false")),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "LUMEN_ZERO_GPU_RESUME_BATCH must select the explicit batch" in result.stderr
+
+
+def test_one_click_multi_batch_resume_runs_only_selected_batch(
+    tmp_path: Path,
+) -> None:
+    script = Path(__file__).resolve().parents[3] / "scripts/hf_zerogpu_train_lumen_adapters_aio.sh"
+    capture = tmp_path / "builder-arguments.txt"
+    fake_python = tmp_path / "python"
+    fake_python.write_text(
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" >> \"$LUMEN_TEST_CAPTURE\"\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    env = _resume_launcher_environment(python=fake_python)
+    env["LUMEN_ZERO_GPU_RESUME_BATCH"] = "2"
+    env["LUMEN_TEST_CAPTURE"] = str(capture)
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=script.parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    arguments = capture.read_text(encoding="utf-8").splitlines()
+    assert arguments.count("--agents") == 1
+    assert arguments[arguments.index("--agents") + 1] == "executor"
+    assert arguments[arguments.index("--run-id") + 1].endswith("-b02-executor")
 
 
 def test_resume_trigger_does_not_rebuild_or_upload_snapshot(

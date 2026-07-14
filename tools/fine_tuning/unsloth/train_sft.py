@@ -17,18 +17,22 @@ from typing import Any, Mapping
 try:
     from .adapter_artifact import write_adapter_artifact_manifest
     from .training_lineage import (
+        build_resolved_training_environment,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
+        verify_resolved_training_environment,
         verify_training_code_manifest,
         verify_training_dependency_lock,
     )
 except ImportError:
     from adapter_artifact import write_adapter_artifact_manifest
     from training_lineage import (
+        build_resolved_training_environment,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
+        verify_resolved_training_environment,
         verify_training_code_manifest,
         verify_training_dependency_lock,
     )
@@ -580,6 +584,11 @@ def _validate_run_resume_config(
         "trainingCodeSHA256": cfg.get("trainingCodeSHA256"),
         "trainingDependencyLockSHA256": cfg.get("trainingDependencyLockSHA256"),
         "requirementsSHA256": cfg.get("requirementsSHA256"),
+        "resolvedTrainingEnvironment": cfg.get("resolvedTrainingEnvironment"),
+        "resolvedTrainingEnvironmentSHA256": cfg.get(
+            "resolvedTrainingEnvironmentSHA256"
+        ),
+        "spaceConfigurationSHA256": cfg.get("spaceConfigurationSHA256"),
         "runtimeSourceKind": cfg.get("runtimeSourceKind"),
         "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
         "expectedRuntimeSourceRevision": cfg.get(
@@ -675,6 +684,12 @@ def _validate_checkpoint_lineage(
         "configSHA256": _hash_file(cfg_path),
         "datasetFileSHA256": dataset_files,
         "laneHashes": agent_lineage["laneHashes"],
+        "resolvedTrainingEnvironmentSHA256": run_lineage.get(
+            "resolvedTrainingEnvironmentSHA256"
+        ),
+        "spaceConfigurationSHA256": run_lineage.get(
+            "spaceConfigurationSHA256"
+        ),
         "runtimeSourceBinding": {
             field: run_lineage[field]
             for field in (
@@ -790,7 +805,11 @@ def _require_sha256(value: Any, *, name: str, prefix: bool = False) -> str:
     return text
 
 
-def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
+def _training_environment(
+    cfg: dict[str, Any],
+    *,
+    runtime_lineage: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     lock = cfg.get("trainingEnvironmentLock")
     if not isinstance(lock, dict):
         raise RuntimeError("trainingEnvironmentLock must be an object")
@@ -845,6 +864,29 @@ def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
     actual_cuda = str(torch.version.cuda or "")
     if actual_cuda != expected_cuda:
         raise RuntimeError(f"Training CUDA drifted from lock: expected {expected_cuda}, got {actual_cuda or '<none>'}")
+    resolved_environment = (
+        runtime_lineage.get("resolvedTrainingEnvironment")
+        if runtime_lineage is not None
+        else cfg.get("resolvedTrainingEnvironment")
+    )
+    if not isinstance(resolved_environment, Mapping):
+        resolved_environment = build_resolved_training_environment()
+    try:
+        resolved_environment_digest = verify_resolved_training_environment(
+            resolved_environment,
+        )
+    except ValueError as exc:
+        raise RuntimeError("Resolved training environment verification failed") from exc
+    configured_resolved_digest = (
+        runtime_lineage.get("resolvedTrainingEnvironmentSHA256")
+        if runtime_lineage is not None
+        else cfg.get("resolvedTrainingEnvironmentSHA256")
+    )
+    if (
+        configured_resolved_digest is not None
+        and configured_resolved_digest != resolved_environment_digest
+    ):
+        raise RuntimeError("resolvedTrainingEnvironmentSHA256 drifted")
     payload = {
         "schemaVersion": "lumen.adapter-training-environment/1.0.0",
         "containerImageDigest": container_digest,
@@ -863,9 +905,15 @@ def _training_environment(cfg: dict[str, Any]) -> dict[str, Any]:
         "requirementsSHA256": _require_sha256(
             cfg.get("requirementsSHA256"), name="requirementsSHA256"
         ),
+        "resolvedTrainingEnvironment": dict(resolved_environment),
+        "resolvedTrainingEnvironmentSHA256": resolved_environment_digest,
     }
     digest = _canonical_sha256(payload)
-    if digest != cfg.get("trainingEnvironmentSHA256"):
+    if (
+        cfg.get("resolvedTrainingEnvironmentSHA256") is not None
+        and cfg.get("trainingEnvironmentSHA256") is not None
+        and digest != cfg.get("trainingEnvironmentSHA256")
+    ):
         raise RuntimeError("trainingEnvironmentSHA256 is not bound to the recorded environment payload")
     return {**payload, "trainingEnvironmentSHA256": digest}
 
@@ -951,6 +999,34 @@ def _training_runtime_lineage(
         != _require_sha256(cfg.get("requirementsSHA256"), name="requirementsSHA256")
     ):
         raise RuntimeError("Training dependency or requirements digest mismatch")
+    configured_resolved_environment = cfg.get("resolvedTrainingEnvironment")
+    if configured_resolved_environment is not None and not isinstance(
+        configured_resolved_environment,
+        Mapping,
+    ):
+        raise RuntimeError("resolvedTrainingEnvironment must be an object")
+    resolved_environment = build_resolved_training_environment()
+    try:
+        resolved_environment_digest = verify_resolved_training_environment(
+            resolved_environment,
+        )
+        if configured_resolved_environment is not None:
+            configured_digest = verify_resolved_training_environment(
+                configured_resolved_environment,
+            )
+            if (
+                configured_digest != resolved_environment_digest
+                or dict(configured_resolved_environment) != resolved_environment
+            ):
+                raise ValueError("Installed resolved training environment drifted")
+    except ValueError as exc:
+        raise RuntimeError("Resolved training environment verification failed") from exc
+    configured_resolved_digest = cfg.get("resolvedTrainingEnvironmentSHA256")
+    if (
+        configured_resolved_digest is not None
+        and configured_resolved_digest != resolved_environment_digest
+    ):
+        raise RuntimeError("resolvedTrainingEnvironmentSHA256 drifted")
     observed_local_revision: str | None = None
     if cfg.get("runtimeSourceKind") == "git":
         if local_repository_root is None:
@@ -973,12 +1049,25 @@ def _training_runtime_lineage(
         )
     except ValueError as exc:
         raise RuntimeError("Training runtime source lineage is invalid") from exc
+    space_configuration_sha256 = cfg.get("spaceConfigurationSHA256")
+    if runtime_source["runtimeSourceKind"] == "huggingface_space":
+        space_configuration_sha256 = _require_sha256(
+            space_configuration_sha256,
+            name="spaceConfigurationSHA256",
+        )
+    elif space_configuration_sha256 is not None:
+        raise RuntimeError(
+            "Local training must not claim a Hugging Face Space configuration"
+        )
     return {
         "trainingCodeManifest": code_manifest,
         "trainingCodeSHA256": actual_code_digest,
         "trainingDependencyLock": dependency_lock,
         "trainingDependencyLockSHA256": dependency_digest,
         "requirementsSHA256": dependency_lock["requirementsSHA256"],
+        "resolvedTrainingEnvironment": resolved_environment,
+        "resolvedTrainingEnvironmentSHA256": resolved_environment_digest,
+        "spaceConfigurationSHA256": space_configuration_sha256,
         **runtime_source,
     }
 
@@ -1181,6 +1270,15 @@ def _finalize_variant_manifest(
             "requirementsSHA256": training_runtime_lineage[
                 "requirementsSHA256"
             ],
+            "resolvedTrainingEnvironment": training_runtime_lineage[
+                "resolvedTrainingEnvironment"
+            ],
+            "resolvedTrainingEnvironmentSHA256": training_runtime_lineage[
+                "resolvedTrainingEnvironmentSHA256"
+            ],
+            "spaceConfigurationSHA256": training_runtime_lineage[
+                "spaceConfigurationSHA256"
+            ],
             "runtimeSourceKind": training_runtime_lineage["runtimeSourceKind"],
             "runtimeSourceRevision": training_runtime_lineage[
                 "runtimeSourceRevision"
@@ -1234,7 +1332,10 @@ def main() -> None:
     )
 
     training_runtime_lineage = _training_runtime_lineage(cfg)
-    training_environment = _training_environment(cfg)
+    training_environment = _training_environment(
+        cfg,
+        runtime_lineage=training_runtime_lineage,
+    )
     _verify_base_model_lineage(cfg)
 
     try:

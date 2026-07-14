@@ -24,18 +24,26 @@ import gradio as gr
 import spaces
 from huggingface_hub import HfApi, snapshot_download
 try:
+    from lumen_training.adapter_artifact import verify_adapter_artifact
     from lumen_training.training_lineage import (
+        build_resolved_training_environment,
         installed_controlled_package_versions,
         validate_runtime_source,
+        verify_resolved_training_environment,
+        verify_space_configuration,
         verify_training_code_manifest,
         verify_training_dependency_lock,
     )
 except ImportError:
     # Allows the template to be loaded directly by repository tests. Built
     # Spaces always use the package import above.
+    from adapter_artifact import verify_adapter_artifact
     from training_lineage import (
+        build_resolved_training_environment,
         installed_controlled_package_versions,
         validate_runtime_source,
+        verify_resolved_training_environment,
+        verify_space_configuration,
         verify_training_code_manifest,
         verify_training_dependency_lock,
     )
@@ -103,6 +111,8 @@ RUNTIME_LINEAGE_CONFIG_FIELDS = {
     "datasetRepository",
     "datasetRevision",
     "requirementsSHA256",
+    "resolvedTrainingEnvironment",
+    "resolvedTrainingEnvironmentSHA256",
     "runResumeLineage",
     "runResumeLineageSHA256",
     "runtimeSourceKind",
@@ -112,6 +122,7 @@ RUNTIME_LINEAGE_CONFIG_FIELDS = {
     "observedRuntimeRevision",
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
+    "spaceConfigurationSHA256",
     "trainingCodeSHA256",
     "trainingCodeManifest",
     "trainingDependencyLock",
@@ -408,6 +419,21 @@ def _verify_runtime_lineage() -> dict[str, Any]:
     if verify_training_code_manifest(code_manifest, root=APP_ROOT) != code_digest:
         raise ValueError("Deployed training-code digest mismatch")
 
+    space_configuration = DEFAULTS.get("spaceConfiguration")
+    space_configuration_digest = _require_sha256(
+        DEFAULTS.get("spaceConfigurationSHA256"),
+        label="spaceConfigurationSHA256",
+    )
+    if (
+        not isinstance(space_configuration, dict)
+        or verify_space_configuration(
+            space_configuration,
+            readme_path=APP_ROOT / "README.md",
+        )
+        != space_configuration_digest
+    ):
+        raise ValueError("Deployed Space runtime configuration mismatch")
+
     dependency_lock = DEFAULTS.get("trainingDependencyLock")
     dependency_digest = _require_sha256(
         DEFAULTS.get("trainingDependencyLockSHA256"),
@@ -437,6 +463,10 @@ def _verify_runtime_lineage() -> dict[str, Any]:
         or dependency_lock.get("requirementsSHA256") != requirements_digest
     ):
         raise ValueError("Training dependency lineage mismatch")
+    resolved_environment = build_resolved_training_environment()
+    resolved_environment_digest = verify_resolved_training_environment(
+        resolved_environment,
+    )
 
     configured_revision = os.environ.get(
         "LUMEN_ZERO_GPU_EXPECTED_RUNTIME_SOURCE_REVISION"
@@ -461,6 +491,9 @@ def _verify_runtime_lineage() -> dict[str, Any]:
         "trainingDependencyLock": dependency_lock,
         "trainingDependencyLockSHA256": dependency_digest,
         "requirementsSHA256": requirements_digest,
+        "resolvedTrainingEnvironment": resolved_environment,
+        "resolvedTrainingEnvironmentSHA256": resolved_environment_digest,
+        "spaceConfigurationSHA256": space_configuration_digest,
         **runtime_source,
     }
 
@@ -600,6 +633,10 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
             "trainingDependencyLockSHA256"
         ),
         "requirementsSHA256": cfg.get("requirementsSHA256"),
+        "resolvedTrainingEnvironmentSHA256": cfg.get(
+            "resolvedTrainingEnvironmentSHA256"
+        ),
+        "spaceConfigurationSHA256": cfg.get("spaceConfigurationSHA256"),
         "runtimeSourceKind": cfg.get("runtimeSourceKind"),
         "runtimeSourceRevision": cfg.get("runtimeSourceRevision"),
         "expectedRuntimeSourceRevision": cfg.get(
@@ -651,6 +688,12 @@ def _training_environment(
                     "trainingDependencyLockSHA256"
                 ],
                 "requirementsSHA256": runtime_lineage["requirementsSHA256"],
+                "resolvedTrainingEnvironment": runtime_lineage[
+                    "resolvedTrainingEnvironment"
+                ],
+                "resolvedTrainingEnvironmentSHA256": runtime_lineage[
+                    "resolvedTrainingEnvironmentSHA256"
+                ],
             }
         )
     return {**payload, "trainingEnvironmentSHA256": _canonical_sha256(payload)}
@@ -800,6 +843,15 @@ def _build_run_resume_lineage(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": runtime_lineage["requirementsSHA256"],
+        "resolvedTrainingEnvironment": runtime_lineage[
+            "resolvedTrainingEnvironment"
+        ],
+        "resolvedTrainingEnvironmentSHA256": runtime_lineage[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": runtime_lineage[
+            "spaceConfigurationSHA256"
+        ],
         "runtimeSourceKind": runtime_lineage["runtimeSourceKind"],
         "runtimeSourceRevision": runtime_lineage["runtimeSourceRevision"],
         "expectedRuntimeSourceRevision": runtime_lineage[
@@ -835,6 +887,12 @@ def _initial_checkpoint_lineage(
         "configSHA256": _sha256(config_path),
         "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
         "laneHashes": agent_lineage["laneHashes"],
+        "resolvedTrainingEnvironmentSHA256": run_lineage[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": run_lineage[
+            "spaceConfigurationSHA256"
+        ],
         "runtimeSourceBinding": {
             field: run_lineage[field]
             for field in RUNTIME_SOURCE_LINEAGE_FIELDS
@@ -863,6 +921,12 @@ def _validate_checkpoint_lineage(
         "configSHA256": _sha256(Path(agent_lineage["configPath"])),
         "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
         "laneHashes": agent_lineage["laneHashes"],
+        "resolvedTrainingEnvironmentSHA256": run_lineage[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": run_lineage[
+            "spaceConfigurationSHA256"
+        ],
         "runtimeSourceBinding": {
             field: run_lineage[field]
             for field in RUNTIME_SOURCE_LINEAGE_FIELDS
@@ -975,6 +1039,10 @@ def _load_resume_contract(
             != expected_lineage["trainingDependencyLockSHA256"]
             or item.get("requirementsSHA256")
             != expected_lineage["requirementsSHA256"]
+            or item.get("resolvedTrainingEnvironmentSHA256")
+            != expected_lineage["resolvedTrainingEnvironmentSHA256"]
+            or item.get("spaceConfigurationSHA256")
+            != expected_lineage["spaceConfigurationSHA256"]
             or item.get("runtimeSourceKind")
             != expected_lineage["runtimeSourceKind"]
             or item.get("runtimeSourceRevision")
@@ -1114,6 +1182,9 @@ def _prepare_configs(
                 "trainingDependencyLock",
                 "trainingDependencyLockSHA256",
                 "requirementsSHA256",
+                "resolvedTrainingEnvironment",
+                "resolvedTrainingEnvironmentSHA256",
+                "spaceConfigurationSHA256",
             ):
                 cfg[field] = runtime_lineage[field]
         for env_name, key in (
@@ -1182,6 +1253,12 @@ def _prepare_configs(
                         ],
                         "requirementsSHA256": run_lineage[
                             "requirementsSHA256"
+                        ],
+                        "resolvedTrainingEnvironmentSHA256": run_lineage[
+                            "resolvedTrainingEnvironmentSHA256"
+                        ],
+                        "spaceConfigurationSHA256": run_lineage[
+                            "spaceConfigurationSHA256"
                         ],
                         "runtimeSourceKind": run_lineage["runtimeSourceKind"],
                         "runtimeSourceRevision": run_lineage[
@@ -1392,8 +1469,6 @@ def _upload_outputs(run_root: Path, prepared: list[dict[str, Any]], adapter_repo
 
 
 def _verify_trained_adapter(item: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
-    from adapter_artifact import verify_adapter_artifact
-
     adapter_dir = Path(item["adapter_dir"])
     finalized_manifest = Path(item["finalized_variant_manifest"])
     if not finalized_manifest.is_file():
@@ -1470,6 +1545,8 @@ def _verify_finalized_variant_lineage(
         "trainingCodeSHA256",
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
+        "resolvedTrainingEnvironmentSHA256",
+        "spaceConfigurationSHA256",
         *RUNTIME_SOURCE_LINEAGE_FIELDS,
     ):
         if finalized.get(field) != item.get(field):
@@ -1703,6 +1780,12 @@ def _train_lumen_adapters_gpu(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": expected_lineage["requirementsSHA256"],
+        "resolvedTrainingEnvironmentSHA256": expected_lineage[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": expected_lineage[
+            "spaceConfigurationSHA256"
+        ],
         "runtimeSourceKind": expected_lineage["runtimeSourceKind"],
         "runtimeSourceRevision": expected_lineage["runtimeSourceRevision"],
         "expectedRuntimeSourceRevision": expected_lineage[
@@ -1807,35 +1890,71 @@ def train_lumen_adapters(
 
 with gr.Blocks() as demo:
     gr.Markdown("# Lumen ZeroGPU Adapter Trainer")
+    gr.Markdown(
+        "Training is API-only. Use the authenticated Lumen ZeroGPU launcher; "
+        "browser requests cannot provide the required administrative header."
+    )
     with gr.Row():
-        run_id = gr.Textbox(value=str(DEFAULTS.get("run_id", "")), label="Run ID")
-        agents = gr.Textbox(value=",".join(DEFAULTS.get("agents", AGENTS)), label="Agents")
+        run_id = gr.Textbox(
+            value=str(DEFAULTS.get("run_id", "")),
+            label="Run ID",
+            visible=False,
+        )
+        agents = gr.Textbox(
+            value=",".join(DEFAULTS.get("agents", AGENTS)),
+            label="Agents",
+            visible=False,
+        )
     with gr.Row():
-        base_model = gr.Textbox(value=str(DEFAULTS.get("base_model_override", "")), label="Base model override")
-        seed = gr.Number(value=42, precision=0, label="Seed")
-        gpu_size = gr.Dropdown(choices=["large", "xlarge"], value=DEFAULT_GPU_SIZE, label="ZeroGPU size")
+        base_model = gr.Textbox(
+            value=str(DEFAULTS.get("base_model_override", "")),
+            label="Base model override",
+            visible=False,
+        )
+        seed = gr.Number(value=42, precision=0, label="Seed", visible=False)
+        gpu_size = gr.Dropdown(
+            choices=["large", "xlarge"],
+            value=DEFAULT_GPU_SIZE,
+            label="ZeroGPU size",
+            visible=False,
+        )
         experiment_variant = gr.Dropdown(
             choices=[("Select a variant", ""), *[(value, value) for value in EXPERIMENT_VARIANTS]],
             value="",
             label="Experiment variant",
+            visible=False,
         )
     with gr.Row():
-        assistant_loss = gr.Checkbox(value=True, label="Assistant-only loss")
-        resume = gr.Checkbox(value=False, label="Resume")
-        convert = gr.Checkbox(value=True, label="Convert LoRA to GGUF")
-        upload = gr.Checkbox(value=True, label="Upload outputs")
-        confirm_variant = gr.Checkbox(value=False, label="I confirm this experiment variant")
+        assistant_loss = gr.Checkbox(
+            value=True,
+            label="Assistant-only loss",
+            visible=False,
+        )
+        resume = gr.Checkbox(value=False, label="Resume", visible=False)
+        convert = gr.Checkbox(
+            value=True,
+            label="Convert LoRA to GGUF",
+            visible=False,
+        )
+        upload = gr.Checkbox(value=True, label="Upload outputs", visible=False)
+        confirm_variant = gr.Checkbox(
+            value=False,
+            label="I confirm this experiment variant",
+            visible=False,
+        )
         destructive_reset = gr.Checkbox(
             value=False,
             label="Explicitly replace an existing fresh-run workspace",
+            visible=False,
         )
-    output = gr.JSON(label="Training summary")
-    run = gr.Button("Train adapters", variant="primary")
+    output = gr.JSON(label="Training summary", visible=False)
+    run = gr.Button("Authenticated API endpoint", visible=False)
     run.click(
         fn=train_lumen_adapters,
         inputs=[run_id, agents, base_model, seed, assistant_loss, resume, convert, upload, gpu_size, experiment_variant, confirm_variant, destructive_reset],
         outputs=output,
         api_name="train_lumen_adapters",
+        api_visibility="undocumented",
     )
 
 

@@ -1,6 +1,6 @@
 {
   "agent": "fleet",
-  "availableSFTRecords": 6148,
+  "availableSFTRecords": 6182,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "ca6942fc4f31d3ce4ae5cf84aae46f26648a2116750f734d555c91f6d56ffae5"
+      "reportSHA256": "eab254440c4ad3d3db5e71bc31d9f1e6e8e9d870316f08b550d56586b325894b"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "8b4cda506a0e179c7897a9716cab2ebcdd4edacfdc4f18293cee25c6d100366f",
-      "optimizedTrainingCorpusSHA256": "c878564522c7c32d693171b54d02b843e5a597f5b7967bbeffdaf166f33d9c06",
+      "baselineTrainingCorpusSHA256": "c2d400e776f6f8ab5215a8a576a04adc0d1f438c531a2dfffad2a65372270707",
+      "optimizedTrainingCorpusSHA256": "919f66cc9d5957d3c29acc8ddebab15f99ff4648453f5c103394de7fbf95c9e4",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -52,7 +52,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "b1d0d6fae0428fc7b99a908904bc28e2f674ba9091259aa5bec7d5988308ca45",
+    "experimentManifestSHA256": "bcb2c3af5d90261f1d60441072f26480284e62351cf9e52836b99fb64769f6a0",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -82,7 +82,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "22600a30707c25bd0fcbc0480e868f6605dba13f",
+  "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 4,
@@ -242,16 +242,16 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.000506,
-        "total": 0.017118
+        "target": 0.000503,
+        "total": 0.017016
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.000484,
-        "total": 0.016488
+        "target": 0.00048,
+        "total": 0.016382
       }
     }
   },
@@ -268,9 +268,9 @@
   "recordCounts": {
     "eval": 6,
     "train_dpo": 3,
-    "train_sft": 5226,
+    "train_sft": 5255,
     "val_dpo": 1,
-    "val_sft": 922
+    "val_sft": 927
   },
   "sourceFamilies": [
     "adapter_ultra_specific",

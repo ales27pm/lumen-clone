@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "981cb128f7372c744f429a28767e26962df41ca0e2b7a0e2fd58318a96a58a49"
+        "reportSHA256": "cf78d728254edea011b9572e68f1dc8f97fd3fc7e6f2173d049ced450c58c31e"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,7 +41,7 @@
       "recordCount": 558,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "22600a30707c25bd0fcbc0480e868f6605dba13f",
+    "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 6,
@@ -51,9 +51,9 @@
     "recordCounts": {
       "eval": 558,
       "train_dpo": 5,
-      "train_sft": 11609,
+      "train_sft": 11667,
       "val_dpo": 1,
-      "val_sft": 2047
+      "val_sft": 2057
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -122,7 +122,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "18415d80430b63656c1aa230901688afe77f4ec4213b3f3e42b7de9423ba1cfb",
+    "experimentManifestSHA256": "76d8b201a13ec3cf072812bc0ffa262b1c4c239fe0ffa861115c4c79831c8cab",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -181,12 +181,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
-  "trainingCodeBundleSHA256": "4b992dda0764b45091462f09a308205848eaa5eb6aef66d74ea2ae72908b825c",
-  "trainingCodeSHA256": "690f0f377d480dea9e53501ce3c7b4820c52e561385f2da67d9f43450f3c434b",
+  "trainingCodeBundleSHA256": "fce7f4974ed10d2d6ac489d1e5a0e03b5156ac0d221a6f138ac2608231e9f16b",
+  "trainingCodeSHA256": "9017d9dce749e9b2df85ede534bb74ccf5cd8ad964d5c04cda20fddce0a802bd",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "4101303eaef1d1e9ddf9d1bb7532514918dc21be22ac1ffb7761a64f794c75b2",
-    "orpo": "b7193323f361767591b5da39170426d9d2217bd92053b569521776412c614546",
-    "sft": "690f0f377d480dea9e53501ce3c7b4820c52e561385f2da67d9f43450f3c434b"
+    "dpo": "21d7fb7a7c9dc3f225f46136aeafa7501b414d3a05177f0bd301708c98660f75",
+    "orpo": "cce3f4782fb298f978e9f198118a7e97fddd28244538b62d0cecb90da9aabd6a",
+    "sft": "9017d9dce749e9b2df85ede534bb74ccf5cd8ad964d5c04cda20fddce0a802bd"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

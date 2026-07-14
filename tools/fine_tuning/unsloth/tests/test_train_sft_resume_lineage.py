@@ -67,6 +67,9 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "trainingCodeSHA256": "e" * 64,
         "trainingDependencyLockSHA256": "f" * 64,
         "requirementsSHA256": "0" * 64,
+        "resolvedTrainingEnvironment": {"schema": "synthetic"},
+        "resolvedTrainingEnvironmentSHA256": "2" * 64,
+        "spaceConfigurationSHA256": "1" * 64,
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "b" * 40,
         "expectedRuntimeSourceRevision": "b" * 40,
@@ -124,6 +127,13 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": config["requirementsSHA256"],
+        "resolvedTrainingEnvironment": config[
+            "resolvedTrainingEnvironment"
+        ],
+        "resolvedTrainingEnvironmentSHA256": config[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": config["spaceConfigurationSHA256"],
         "runtimeSourceKind": config["runtimeSourceKind"],
         "runtimeSourceRevision": config["runtimeSourceRevision"],
         "expectedRuntimeSourceRevision": config[
@@ -157,6 +167,12 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "configSHA256": train_sft._hash_file(config_path),
         "datasetFileSHA256": agent_lineage["datasetFileSHA256"],
         "laneHashes": lane_hashes,
+        "resolvedTrainingEnvironmentSHA256": run_lineage[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "spaceConfigurationSHA256": run_lineage[
+            "spaceConfigurationSHA256"
+        ],
         "runtimeSourceBinding": {
             field: run_lineage[field]
             for field in (
@@ -248,6 +264,8 @@ def test_resume_rejects_missing_checkpoint_lineage(tmp_path: Path) -> None:
         ("seed", 7),
         ("trainingCodeSHA256", "1" * 64),
         ("trainingDependencyLockSHA256", "2" * 64),
+        ("resolvedTrainingEnvironmentSHA256", "4" * 64),
+        ("spaceConfigurationSHA256", "3" * 64),
         ("expectedRuntimeSourceRevision", "d" * 40),
         ("observedRepositoryRevision", "e" * 40),
         ("runtimeSourceBindingStatus", "verified"),

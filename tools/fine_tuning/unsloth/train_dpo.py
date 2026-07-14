@@ -11,6 +11,10 @@ from typing import Any, Mapping
 
 try:
     from .adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
+    from .training_lineage import (
+        build_resolved_training_environment,
+        verify_resolved_training_environment,
+    )
     from .train_sft import (
         _resolve_controlled_seed,
         _seed_everything,
@@ -19,6 +23,10 @@ try:
     )
 except ImportError:
     from adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
+    from training_lineage import (
+        build_resolved_training_environment,
+        verify_resolved_training_environment,
+    )
     from train_sft import (
         _resolve_controlled_seed,
         _seed_everything,
@@ -542,6 +550,10 @@ def _expected_sft_parent_lineage(cfg: Mapping[str, Any]) -> dict[str, Any]:
             "trainingDependencyLockSHA256"
         ),
         "requirementsSHA256": cfg.get("requirementsSHA256"),
+        "resolvedTrainingEnvironmentSHA256": cfg.get(
+            "resolvedTrainingEnvironmentSHA256"
+        ),
+        "spaceConfigurationSHA256": cfg.get("spaceConfigurationSHA256"),
         "runtimeSourceKind": cfg.get("runtimeSourceKind"),
         "trainingCodeSHA256": phase_digests.get("sft"),
     }
@@ -553,6 +565,27 @@ def _verified_sft_parent(
     adapter_dir: Path,
     finalized_manifest_path: Path,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    resolved_environment = cfg.get("resolvedTrainingEnvironment")
+    if resolved_environment is None:
+        resolved_environment = build_resolved_training_environment()
+        cfg["resolvedTrainingEnvironment"] = resolved_environment
+    if not isinstance(resolved_environment, Mapping):
+        raise RuntimeError("Preference config resolved training environment is invalid")
+    try:
+        resolved_environment_sha256 = verify_resolved_training_environment(
+            resolved_environment
+        )
+    except ValueError as exc:
+        raise RuntimeError(
+            "Preference config resolved training environment is invalid"
+        ) from exc
+    configured_resolved_sha256 = cfg.get("resolvedTrainingEnvironmentSHA256")
+    if (
+        configured_resolved_sha256 is not None
+        and configured_resolved_sha256 != resolved_environment_sha256
+    ):
+        raise RuntimeError("Preference config resolved dependency digest drifted")
+    cfg["resolvedTrainingEnvironmentSHA256"] = resolved_environment_sha256
     finalized = json.loads(finalized_manifest_path.read_text(encoding="utf-8"))
     if not isinstance(finalized, dict):
         raise RuntimeError("Finalized SFT variant manifest must be a JSON object")
@@ -629,6 +662,9 @@ def _verified_sft_parent(
             "runtimeSourceBindingMethod"
         ],
         "trainingEnvironmentSHA256": finalized["trainingEnvironmentSHA256"],
+        "resolvedTrainingEnvironmentSHA256": finalized[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
     }
     return finalized, adapter_manifest, parent_audit_lineage
 
@@ -757,7 +793,20 @@ def main() -> None:
         cfg,
         preference_trainer=preference_trainer,
     )
-    training_environment = _training_environment(cfg)
+    cfg["resolvedTrainingEnvironment"] = training_runtime_lineage[
+        "resolvedTrainingEnvironment"
+    ]
+    cfg["resolvedTrainingEnvironmentSHA256"] = training_runtime_lineage[
+        "resolvedTrainingEnvironmentSHA256"
+    ]
+    cfg["trainingEnvironmentSHA256"] = None
+    training_environment = _training_environment(
+        cfg,
+        runtime_lineage=training_runtime_lineage,
+    )
+    cfg["trainingEnvironmentSHA256"] = training_environment[
+        "trainingEnvironmentSHA256"
+    ]
     _verify_base_model_lineage(cfg)
 
     try:
@@ -836,6 +885,7 @@ def main() -> None:
             **{
                 field: training_runtime_lineage[field]
                 for field in (
+                    "spaceConfigurationSHA256",
                     "runtimeSourceKind",
                     "runtimeSourceRevision",
                     "expectedRuntimeSourceRevision",

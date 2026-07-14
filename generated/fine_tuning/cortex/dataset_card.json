@@ -1,6 +1,6 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 13664,
+  "availableSFTRecords": 13732,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -14,7 +14,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "981cb128f7372c744f429a28767e26962df41ca0e2b7a0e2fd58318a96a58a49"
+      "reportSHA256": "cf78d728254edea011b9572e68f1dc8f97fd3fc7e6f2173d049ced450c58c31e"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -24,8 +24,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "949096ff6756f4c350260ca71ca753da98cc5ba033f02b5e29714c212ecc4c13",
-      "optimizedTrainingCorpusSHA256": "86e3210cebc72f37c6ef101e46c600649bd07864c12bfaab8c27b142424bc02f",
+      "baselineTrainingCorpusSHA256": "1c95cae0df78709834665018dd43456e6826bd50de4296aa90c42bd9e850ee23",
+      "optimizedTrainingCorpusSHA256": "5550361db18d3d83a9d5a405fc6d84cb0e3bc67f1e9a8298d38495b4e6b724b1",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 662,
@@ -52,7 +52,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "18415d80430b63656c1aa230901688afe77f4ec4213b3f3e42b7de9423ba1cfb",
+    "experimentManifestSHA256": "76d8b201a13ec3cf072812bc0ffa262b1c4c239fe0ffa861115c4c79831c8cab",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -82,7 +82,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "22600a30707c25bd0fcbc0480e868f6605dba13f",
+  "manifestCommit": "c0ed6b251aca550856127f6aef6c795407430e64",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 6,
@@ -259,24 +259,24 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.003241,
-        "total": 0.012115
+        "target": 0.003222,
+        "total": 0.012048
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.004573,
-        "total": 0.015775
+        "target": 0.00454,
+        "total": 0.015672
       }
     }
   },
   "quality": {
-    "cortexCodebaseChunkRecordCount": 4803,
+    "cortexCodebaseChunkRecordCount": 4837,
     "cortexCodebaseFileRecordCount": 2319,
     "cortexCodebaseSelfAwarenessCoverage": "git_tracked_text_files_excluding_generated_outputs",
-    "cortexCodebaseSelfAwarenessRecordCount": 7196,
+    "cortexCodebaseSelfAwarenessRecordCount": 7230,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 25,
@@ -285,9 +285,9 @@
   "recordCounts": {
     "eval": 558,
     "train_dpo": 5,
-    "train_sft": 11609,
+    "train_sft": 11667,
     "val_dpo": 1,
-    "val_sft": 2047
+    "val_sft": 2057
   },
   "sourceFamilies": [
     "adapter_ultra_specific",

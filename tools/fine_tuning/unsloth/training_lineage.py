@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import base64
+import csv
 import hashlib
 import importlib.metadata as importlib_metadata
+import io
 import json
 import re
+import sys
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 
 TRAINING_CODE_MANIFEST_SCHEMA_VERSION = "lumen.training-code-manifest/2.0.0"
@@ -14,6 +19,17 @@ TRAINING_CODE_BUNDLE_SCHEMA_VERSION = "lumen.training-code-bundle/2.0.0"
 TRAINING_DEPENDENCY_LOCK_SCHEMA_VERSION = (
     "lumen.adapter-training-dependency-lock/1.0.0"
 )
+RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION = (
+    "lumen.resolved-training-environment/1.0.0"
+)
+RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY = {
+    "hashAlgorithm": "sha256",
+    "verifyDeclaredFileHashes": True,
+    "excludeUnhashedSelfRecord": True,
+    "excludeUnhashedGeneratedBytecode": True,
+    "rejectOtherUnhashedFiles": True,
+}
+SPACE_CONFIGURATION_SCHEMA_VERSION = "lumen.zerogpu.space-configuration/1.0.0"
 
 DEFAULT_PYTHON_VERSION = "3.10"
 DEFAULT_CUDA_VERSION = "12.8"
@@ -90,6 +106,12 @@ _DEPLOYED_TRAINING_CODE_EXCLUSIONS = (
     "lumen_zero_gpu_defaults.json",
     "lumen_zero_gpu_run_manifest.json",
 )
+_SPACE_FRONT_MATTER_KEYS = {
+    "app_file",
+    "python_version",
+    "sdk",
+    "title",
+}
 
 
 def canonical_sha256(value: Any) -> str:
@@ -112,6 +134,89 @@ def file_sha256(path: Path) -> str:
 
 def requirements_sha256(path: Path) -> str:
     return file_sha256(path)
+
+
+def _space_front_matter(path: Path) -> dict[str, str]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("Space README must begin with YAML front matter")
+    try:
+        closing = next(
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.strip() == "---"
+        )
+    except StopIteration as exc:
+        raise ValueError("Space README front matter is not terminated") from exc
+
+    values: dict[str, str] = {}
+    for raw_line in lines[1:closing]:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            raise ValueError("Space README front matter must use scalar key/value fields")
+        key, raw_value = (part.strip() for part in line.split(":", 1))
+        if key in values:
+            raise ValueError(f"Duplicate Space README front-matter field: {key}")
+        if key not in _SPACE_FRONT_MATTER_KEYS:
+            raise ValueError(f"Unsupported Space README front-matter field: {key}")
+        if not raw_value or raw_value[0] in "[{>|&*!":
+            raise ValueError(f"Space README front-matter field must be scalar: {key}")
+        if raw_value[0] in {'\"', "'"}:
+            if len(raw_value) < 2 or raw_value[-1] != raw_value[0]:
+                raise ValueError(f"Unterminated Space README front-matter scalar: {key}")
+            value = raw_value[1:-1]
+        else:
+            value = raw_value
+        values[key] = value
+    return values
+
+
+def build_space_configuration(readme_path: Path) -> dict[str, Any]:
+    front_matter = _space_front_matter(readme_path)
+    if set(front_matter) != _SPACE_FRONT_MATTER_KEYS:
+        missing = sorted(_SPACE_FRONT_MATTER_KEYS - set(front_matter))
+        raise ValueError(
+            "Space README front matter is missing required fields: "
+            + ", ".join(missing)
+        )
+    payload = {
+        "schemaVersion": SPACE_CONFIGURATION_SCHEMA_VERSION,
+        "sdk": front_matter["sdk"],
+        "appFile": front_matter["app_file"],
+        "pythonVersion": front_matter["python_version"],
+        # ZeroGPU hardware is requested through the Hub API; README metadata
+        # must not silently select a distinct runtime.
+        "suggestedHardware": None,
+    }
+    return {**payload, "spaceConfigurationSHA256": canonical_sha256(payload)}
+
+
+def verify_space_configuration(
+    configuration: Mapping[str, Any],
+    *,
+    readme_path: Path | None = None,
+) -> str:
+    payload = {
+        "schemaVersion": SPACE_CONFIGURATION_SCHEMA_VERSION,
+        "sdk": "gradio",
+        "appFile": "app.py",
+        "pythonVersion": DEFAULT_PYTHON_VERSION,
+        "suggestedHardware": None,
+    }
+    if set(configuration) != {*payload, "spaceConfigurationSHA256"}:
+        raise ValueError("Invalid Space configuration contract")
+    if any(configuration.get(key) != value for key, value in payload.items()):
+        raise ValueError("Space runtime configuration drifted from the supported contract")
+    digest = canonical_sha256(payload)
+    if configuration.get("spaceConfigurationSHA256") != digest:
+        raise ValueError("spaceConfigurationSHA256 does not match the Space configuration")
+    if readme_path is not None and build_space_configuration(readme_path) != dict(
+        configuration
+    ):
+        raise ValueError("Deployed Space README runtime configuration drifted")
+    return digest
 
 
 def _safe_logical_path(value: str) -> str:
@@ -674,6 +779,336 @@ def installed_controlled_package_versions(lock: Mapping[str, Any]) -> dict[str, 
         name: importlib_metadata.version(name)
         for name in sorted(packages)
     }
+
+
+def _normalized_distribution_name(value: str) -> str:
+    normalized = re.sub(r"[-_.]+", "-", value).casefold()
+    if not normalized or re.fullmatch(r"[a-z0-9][a-z0-9-]*", normalized) is None:
+        raise ValueError(f"Invalid installed distribution name: {value!r}")
+    return normalized
+
+
+def _safe_direct_url(value: str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Installed distribution has malformed direct_url.json") from exc
+    if not isinstance(parsed, Mapping) or set(parsed) - {
+        "url",
+        "vcs_info",
+        "archive_info",
+        "dir_info",
+        "subdirectory",
+    }:
+        raise ValueError("Installed distribution has unsupported direct-url provenance")
+    raw_url = parsed.get("url")
+    if not isinstance(raw_url, str) or not raw_url:
+        raise ValueError("Installed distribution direct URL is missing")
+    url = urlsplit(raw_url)
+    if (
+        url.scheme not in {"https", "git+https"}
+        or not url.hostname
+        or url.username is not None
+        or url.password is not None
+        or url.query
+    ):
+        raise ValueError("Installed distribution direct URL is not immutable and secret-safe")
+    if "dir_info" in parsed:
+        raise ValueError("Installed distribution directory provenance is mutable")
+    vcs_info = parsed.get("vcs_info")
+    archive_info = parsed.get("archive_info")
+    if (vcs_info is None) == (archive_info is None):
+        raise ValueError("Installed distribution direct URL lacks immutable provenance")
+    sanitized: dict[str, Any] = {
+        "url": urlunsplit((url.scheme, url.netloc, url.path, "", "")),
+    }
+    if vcs_info is not None:
+        if (
+            not isinstance(vcs_info, Mapping)
+            or set(vcs_info) - {"vcs", "commit_id", "requested_revision"}
+            or vcs_info.get("vcs") != "git"
+            or not isinstance(vcs_info.get("commit_id"), str)
+            or _REVISION_PATTERN.fullmatch(vcs_info["commit_id"]) is None
+        ):
+            raise ValueError("Installed distribution VCS provenance is not immutable")
+        requested_revision = vcs_info.get("requested_revision")
+        if requested_revision is not None and (
+            not isinstance(requested_revision, str)
+            or _REVISION_PATTERN.fullmatch(requested_revision) is None
+        ):
+            raise ValueError("Installed distribution VCS provenance is malformed")
+        sanitized_vcs = {
+            "vcs": "git",
+            "commit_id": vcs_info["commit_id"],
+        }
+        if requested_revision is not None:
+            sanitized_vcs["requested_revision"] = requested_revision
+        sanitized["vcs_info"] = sanitized_vcs
+    else:
+        if not isinstance(archive_info, Mapping) or set(archive_info) - {
+            "hash",
+            "hashes",
+        }:
+            raise ValueError("Installed distribution archive provenance is malformed")
+        hashes = archive_info.get("hashes")
+        legacy_hash = archive_info.get("hash")
+        archive_sha256 = (
+            hashes.get("sha256") if isinstance(hashes, Mapping) else None
+        )
+        if archive_sha256 is None and isinstance(legacy_hash, str):
+            match = re.fullmatch(r"sha256=([0-9a-f]{64})", legacy_hash)
+            archive_sha256 = match.group(1) if match is not None else None
+        if (
+            not isinstance(archive_sha256, str)
+            or _SHA256_PATTERN.fullmatch(archive_sha256) is None
+        ):
+            raise ValueError("Installed distribution archive lacks a SHA-256 digest")
+        sanitized["archive_info"] = {"hashes": {"sha256": archive_sha256}}
+    subdirectory = parsed.get("subdirectory")
+    if subdirectory is not None:
+        if not isinstance(subdirectory, str):
+            raise ValueError("Installed distribution subdirectory is malformed")
+        logical = PurePosixPath(subdirectory)
+        if (
+            not subdirectory
+            or logical.is_absolute()
+            or any(part in {"", ".", ".."} for part in logical.parts)
+            or subdirectory != logical.as_posix()
+        ):
+            raise ValueError("Installed distribution subdirectory is unsafe")
+        sanitized["subdirectory"] = subdirectory
+    return sanitized
+
+
+def _installed_distribution_entry(distribution: Any) -> dict[str, Any]:
+    raw_name = distribution.metadata.get("Name")
+    version = distribution.version
+    if not isinstance(raw_name, str) or not isinstance(version, str) or not version:
+        raise ValueError("Installed distribution lacks a name or version")
+    name = _normalized_distribution_name(raw_name)
+    record_text = distribution.read_text("RECORD")
+    if not isinstance(record_text, str) or not record_text:
+        raise ValueError(f"Installed distribution {name} lacks a RECORD manifest")
+    rows = list(csv.reader(io.StringIO(record_text)))
+    if not rows:
+        raise ValueError(f"Installed distribution {name} has an empty RECORD manifest")
+    files: list[dict[str, Any]] = []
+    seen_record_paths: set[str] = set()
+    seen_installed_paths: set[str] = set()
+    distribution_root = Path(distribution.locate_file("")).resolve()
+    environment_roots: list[Path] = []
+    cursor = distribution_root
+    while cursor != cursor.parent:
+        if cursor.name.casefold() in {"lib", "lib64"}:
+            environment_roots.append(cursor.parent)
+            break
+        cursor = cursor.parent
+    environment_roots.append(Path(sys.prefix).resolve())
+    environment_roots = list(dict.fromkeys(environment_roots))
+    for row in rows:
+        if len(row) != 3:
+            raise ValueError(f"Installed distribution {name} has malformed RECORD data")
+        logical_path = row[0].replace("\\", "/")
+        logical = PurePosixPath(logical_path)
+        if (
+            not logical_path
+            or logical.is_absolute()
+            or (logical.parts and ":" in logical.parts[0])
+            or logical_path in seen_record_paths
+            or "\x00" in logical_path
+        ):
+            raise ValueError(f"Installed distribution {name} has unsafe RECORD data")
+        seen_record_paths.add(logical_path)
+        declared_hash, declared_size = row[1], row[2]
+        if not declared_hash:
+            is_self_record = logical_path.endswith(".dist-info/RECORD")
+            is_generated_bytecode = (
+                "__pycache__" in logical.parts and logical_path.endswith(".pyc")
+            )
+            if (not is_self_record and not is_generated_bytecode) or declared_size:
+                raise ValueError(
+                    f"Installed distribution {name} has an unattested RECORD file"
+                )
+            continue
+        installed_path = Path(distribution.locate_file(row[0])).resolve()
+        try:
+            installed_relative = installed_path.relative_to(distribution_root)
+            installed_logical_path = (
+                PurePosixPath("distribution") / PurePosixPath(installed_relative.as_posix())
+            ).as_posix()
+        except ValueError:
+            installed_logical_path = ""
+            for environment_root in environment_roots:
+                try:
+                    installed_relative = installed_path.relative_to(environment_root)
+                except ValueError:
+                    continue
+                installed_logical_path = (
+                    PurePosixPath("environment")
+                    / PurePosixPath(installed_relative.as_posix())
+                ).as_posix()
+                break
+            if not installed_logical_path:
+                raise ValueError(
+                    f"Installed distribution {name} has unsafe RECORD data"
+                )
+        if not installed_path.is_file():
+            raise ValueError(
+                f"Installed distribution {name} is missing RECORD file {logical_path}"
+            )
+        if installed_logical_path in seen_installed_paths:
+            raise ValueError(
+                f"Installed distribution {name} has duplicate installed RECORD data"
+            )
+        seen_installed_paths.add(installed_logical_path)
+        try:
+            algorithm, encoded_digest = declared_hash.split("=", 1)
+            padding = "=" * (-len(encoded_digest) % 4)
+            declared_digest = base64.urlsafe_b64decode(
+                encoded_digest + padding
+            ).hex()
+            size = int(declared_size)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Installed distribution {name} has malformed RECORD hashes"
+            ) from exc
+        if algorithm != "sha256" or _SHA256_PATTERN.fullmatch(declared_digest) is None:
+            raise ValueError(
+                f"Installed distribution {name} does not use SHA-256 RECORD hashes"
+            )
+        if size < 0 or installed_path.stat().st_size != size:
+            raise ValueError(
+                f"Installed distribution {name} has a RECORD size mismatch"
+            )
+        if file_sha256(installed_path) != declared_digest:
+            raise ValueError(
+                f"Installed distribution {name} has a RECORD content mismatch"
+            )
+        files.append(
+            {
+                "path": installed_logical_path,
+                "size": size,
+                "sha256": declared_digest,
+            }
+        )
+    files.sort(key=lambda item: item["path"])
+    installer = (distribution.read_text("INSTALLER") or "").strip() or None
+    if installer is not None and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", installer) is None:
+        raise ValueError(f"Installed distribution {name} has invalid installer metadata")
+    payload = {
+        "name": name,
+        "version": version,
+        "directURL": _safe_direct_url(distribution.read_text("direct_url.json")),
+        "installer": installer,
+        "recordSHA256": hashlib.sha256(record_text.encode("utf-8")).hexdigest(),
+        "installedFileCount": len(files),
+        "installedContentSHA256": canonical_sha256(files),
+    }
+    return {**payload, "distributionSHA256": canonical_sha256(payload)}
+
+
+def build_resolved_training_environment(
+    distributions: Any | None = None,
+) -> dict[str, Any]:
+    """Attest every installed distribution and all files declared by its RECORD.
+
+    This complements, rather than replaces, the direct requirements lock. It is
+    intentionally computed inside the training runtime so transitive wheels and
+    platform-provided distributions participate in resume and comparison lineage.
+    """
+
+    installed = list(
+        importlib_metadata.distributions() if distributions is None else distributions
+    )
+    entries = [_installed_distribution_entry(item) for item in installed]
+    entries.sort(key=lambda item: item["name"])
+    names = [item["name"] for item in entries]
+    if not entries or len(names) != len(set(names)):
+        raise ValueError("Resolved training environment has missing or duplicate distributions")
+    payload = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION,
+        "recordPolicy": RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY,
+        "distributions": entries,
+    }
+    return {**payload, "resolvedTrainingEnvironmentSHA256": canonical_sha256(payload)}
+
+
+def verify_resolved_training_environment(
+    environment: Mapping[str, Any],
+    *,
+    distributions: Any | None = None,
+    verify_installed: bool = False,
+) -> str:
+    if set(environment) != {
+        "schemaVersion",
+        "recordPolicy",
+        "distributions",
+        "resolvedTrainingEnvironmentSHA256",
+    } or environment.get("schemaVersion") != RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION:
+        raise ValueError("Invalid resolved training environment")
+    if environment.get("recordPolicy") != RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY:
+        raise ValueError("Invalid resolved training environment RECORD policy")
+    entries = environment.get("distributions")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("Resolved training environment must contain distributions")
+    names: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping) or set(entry) != {
+            "name",
+            "version",
+            "directURL",
+            "installer",
+            "recordSHA256",
+            "installedFileCount",
+            "installedContentSHA256",
+            "distributionSHA256",
+        }:
+            raise ValueError("Invalid resolved distribution entry")
+        unsigned = {
+            key: value for key, value in entry.items() if key != "distributionSHA256"
+        }
+        if (
+            not isinstance(entry.get("name"), str)
+            or entry["name"] != _normalized_distribution_name(entry["name"])
+            or not isinstance(entry.get("version"), str)
+            or not entry["version"]
+            or (
+                entry.get("directURL") is not None
+                and not isinstance(entry.get("directURL"), Mapping)
+            )
+            or (
+                entry.get("installer") is not None
+                and not isinstance(entry.get("installer"), str)
+            )
+            or not isinstance(entry.get("recordSHA256"), str)
+            or _SHA256_PATTERN.fullmatch(entry["recordSHA256"]) is None
+            or type(entry.get("installedFileCount")) is not int
+            or entry["installedFileCount"] <= 0
+            or not isinstance(entry.get("installedContentSHA256"), str)
+            or _SHA256_PATTERN.fullmatch(entry["installedContentSHA256"]) is None
+            or entry.get("distributionSHA256") != canonical_sha256(unsigned)
+        ):
+            raise ValueError("Invalid resolved distribution identity")
+        names.append(entry["name"])
+    if names != sorted(names) or len(names) != len(set(names)):
+        raise ValueError("Resolved distributions must be uniquely name-sorted")
+    payload = {
+        "schemaVersion": RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION,
+        "recordPolicy": RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY,
+        "distributions": entries,
+    }
+    digest = canonical_sha256(payload)
+    if environment.get("resolvedTrainingEnvironmentSHA256") != digest:
+        raise ValueError(
+            "resolvedTrainingEnvironmentSHA256 does not match the distribution manifest"
+        )
+    if verify_installed:
+        rebuilt = build_resolved_training_environment(distributions)
+        if rebuilt != dict(environment):
+            raise ValueError("Installed resolved training environment drifted")
+    return digest
 
 
 def validate_runtime_source(*, kind: Any, revision: Any) -> tuple[str, str]:

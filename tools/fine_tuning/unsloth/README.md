@@ -83,13 +83,20 @@ dataset repository, and adapter/model repository are private by default. Their o
 overrides are `LUMEN_ZERO_GPU_PUBLIC_SPACE=1`, `LUMEN_ZERO_GPU_PUBLIC_DATASET=1`, and
 `LUMEN_ZERO_GPU_PUBLIC_ADAPTERS=1`, respectively. Each changes only its named repository, and a
 public Space still requires the admin header. Dataset uploads are pinned by their returned Hub
-commit SHA.
+commit SHA. Existing repositories have their requested visibility updated and read back before any
+upload; an update error or mismatch stops deployment. The browser page does not expose a training
+button because browser events cannot attach the required header. Use the authenticated launcher.
 
 `LUMEN_ZERO_GPU_RESUME=1` is accepted only when the existing self-hashed run manifest, original
 local dataset snapshot, prepared configs, checkpoint-lineage records, and at least one checkpoint
 all match the requested lineage. Fresh runs reject existing workspaces unless
 `LUMEN_ZERO_GPU_DESTRUCTIVE_RESET=1` is explicit. Resume and destructive reset are mutually
 exclusive.
+
+When the launcher splits agents across multiple batches, resume additionally requires
+`LUMEN_ZERO_GPU_RESUME_BATCH=<1-based-batch-number>` and invokes only that batch. Ambiguous
+multi-batch resume is rejected. Space-local checkpoints survive only while that deployment's local
+disk remains intact; restart-safe resume requires external checkpoint persistence.
 
 The built Space deploys a stable package and invokes:
 
@@ -107,7 +114,14 @@ the entire `lumen_training` package, and all covered Python and runtime-loaded J
 resources in `lumen_manifest_crawler`. The manifest's closure policy is checked bidirectionally,
 so both declared-file drift and unexpected behavior files fail. Explicit volatile run files do not
 change the controlled digest. Separate SFT, DPO, and ORPO digests are retained under one bundle
-digest, alongside the direct-dependency lock and requirements hash.
+digest, alongside the direct-dependency lock and requirements hash. A runtime-resolved distribution
+manifest additionally binds every installed package, safe direct/VCS provenance, and the
+behavior-bearing files declared by its `RECORD`; controlled comparisons require the same
+`resolvedTrainingEnvironmentSHA256`.
+
+The Space README front matter is separately canonicalized and verified as Gradio with `app.py` on
+Python 3.10. Unknown runtime fields, a changed entrypoint, or README-selected hardware fail before
+training. ZeroGPU hardware is requested through the Hub API rather than front matter.
 
 Runtime-source lineage keeps the expected uploaded Space revision, authenticated repository-head
 observation, platform runtime observation, binding status, and method as separate fields. A
