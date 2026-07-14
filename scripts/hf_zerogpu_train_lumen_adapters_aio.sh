@@ -4,7 +4,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${LUMEN_ZERO_GPU_PYTHON:-python3}"
+PYTHON_BIN="${LUMEN_ZERO_GPU_PYTHON:-}"
 VENV="${LUMEN_ZERO_GPU_VENV:-$ROOT/.venv-hf-zerogpu}"
 USE_ACTIVE_PYTHON="${LUMEN_ZERO_GPU_USE_ACTIVE_PYTHON:-0}"
 SKIP_INSTALL="${LUMEN_ZERO_GPU_SKIP_INSTALL:-0}"
@@ -53,6 +53,40 @@ log() {
 die() {
   printf '[lumen-zerogpu] ERROR: %s\n' "$*" >&2
   exit 1
+}
+
+python_is_supported() {
+  "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+    >/dev/null 2>&1
+}
+
+select_supported_python() {
+  local candidate
+  local resolved
+
+  for candidate in python3.12 python3.11 python3.10; do
+    resolved="$(command -v "$candidate" 2>/dev/null || true)"
+    if [[ -n "$resolved" ]] && python_is_supported "$resolved"; then
+      printf '%s' "$resolved"
+      return 0
+    fi
+  done
+
+  if command -v uv >/dev/null 2>&1; then
+    resolved="$(uv python find --no-project --no-python-downloads 3.12 2>/dev/null || true)"
+    if [[ -n "$resolved" && -x "$resolved" ]] && python_is_supported "$resolved"; then
+      printf '%s' "$resolved"
+      return 0
+    fi
+  fi
+
+  resolved="$(command -v python3 2>/dev/null || true)"
+  if [[ -n "$resolved" ]] && python_is_supported "$resolved"; then
+    printf '%s' "$resolved"
+    return 0
+  fi
+
+  return 1
 }
 
 join_by_comma() {
@@ -165,11 +199,29 @@ elif [[ -n "$RESUME_BATCH" ]]; then
   die "LUMEN_ZERO_GPU_RESUME_BATCH is only valid for a multi-batch resume"
 fi
 
+if [[ -n "$PYTHON_BIN" ]]; then
+  REQUESTED_PYTHON="$PYTHON_BIN"
+  PYTHON_BIN="$(command -v "$REQUESTED_PYTHON" 2>/dev/null || true)"
+  [[ -n "$PYTHON_BIN" ]] || die "LUMEN_ZERO_GPU_PYTHON does not resolve to an executable: $REQUESTED_PYTHON"
+  python_is_supported "$PYTHON_BIN" || die "LUMEN_ZERO_GPU_PYTHON must point to Python 3.10 or newer: $REQUESTED_PYTHON"
+else
+  PYTHON_BIN="$(select_supported_python)" || die "no supported Python interpreter found; install Python 3.12 or set LUMEN_ZERO_GPU_PYTHON to Python 3.10 or newer"
+fi
+log "bootstrap python: $PYTHON_BIN"
+
 if [[ "$USE_ACTIVE_PYTHON" == "1" ]]; then
   TRAIN_PY="$PYTHON_BIN"
 else
   "$PYTHON_BIN" -m venv "$VENV"
   TRAIN_PY="$VENV/bin/python"
+  if ! python_is_supported "$TRAIN_PY"; then
+    if [[ -n "${LUMEN_ZERO_GPU_VENV:-}" ]]; then
+      die "configured LUMEN_ZERO_GPU_VENV is not using Python 3.10 or newer: $VENV"
+    fi
+    log "rebuilding stale default virtual environment with $PYTHON_BIN"
+    "$PYTHON_BIN" -m venv --clear "$VENV"
+  fi
+  python_is_supported "$TRAIN_PY" || die "ZeroGPU virtual environment is not using Python 3.10 or newer: $VENV"
 fi
 
 if [[ "$SKIP_INSTALL" != "1" ]]; then
