@@ -15,7 +15,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "884c59d2235d309136efef6d678027a7d8de9b088f83e0c654b2d942eb6dfd12"
+      "reportSHA256": "8415d8b46736850c3fadfbfadcf0ae08e0768eece02587a62c85104d20278a67"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -25,8 +25,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "fb8ec4485ee6a0b20468bd9f18f5ae112692fc50d22da616ade3e5bad7952c98",
-      "optimizedTrainingCorpusSHA256": "8c88070ab4bc48ef53d9fb3c8962a40777149aaddf67e603b9084bfd2fad9eaa",
+      "baselineTrainingCorpusSHA256": "4dd22fd923d9b86980cb9f8da789a1d830d550c868b0eb09c6dc5e270b414094",
+      "optimizedTrainingCorpusSHA256": "5cb8ca79452f06036807d0f6346956ca2604edcbaefad0688291d07981e13f6c",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 462,
@@ -53,7 +53,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "b86bd168c7b49d940911789a06677eef4ed1332affcd4471e78cb0200b10293b",
+    "experimentManifestSHA256": "1a0e9ef394eddf1e88addfd71b0cf2d84e1e9163138315ffe78df59867707c6c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -83,7 +83,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "23f270120023867a8cadb9ee3aea59a50d7bf684",
+  "manifestCommit": "04fc7ede31a84c1a834cd561defb5e00a565144d",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 6,
@@ -314,9 +314,9 @@
     "tool_schema_cards": 38
   },
   "sourceIntegrity": {
-    "baseCommit": "23f270120023867a8cadb9ee3aea59a50d7bf684",
+    "baseCommit": "04fc7ede31a84c1a834cd561defb5e00a565144d",
     "dirtyState": true,
-    "workingTreeDigest": "9b1f44732f58b704090e0e340d53b8b3cbc0ab3c4a9b3d9edbd2c30032c20061"
+    "workingTreeDigest": "44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44"
   },
   "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
   "taskTypeCounts": {
@@ -341,5 +341,5 @@
     "ultra_specific_permission_boundary",
     "ultra_specific_tool_call_generation"
   ],
-  "worktreeFingerprint": "9b1f44732f58b704090e0e340d53b8b3cbc0ab3c4a9b3d9edbd2c30032c20061"
+  "worktreeFingerprint": "44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44"
 }
