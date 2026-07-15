@@ -12,7 +12,7 @@ import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -32,7 +32,9 @@ RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY = {
     "hashAlgorithm": "sha256",
     "verifyDeclaredFileHashes": True,
     "excludeUnhashedSelfRecord": True,
-    "excludeUnhashedGeneratedBytecode": True,
+    "hashUnattestedGeneratedBytecode": True,
+    "hashRegeneratedBytecodePairs": True,
+    "requireAttestedSourceForGeneratedBytecode": True,
     "rejectOtherUnhashedFiles": True,
 }
 SPACE_CONFIGURATION_SCHEMA_VERSION = "lumen.zerogpu.space-configuration/1.0.0"
@@ -950,6 +952,39 @@ def _validated_installer(value: Any) -> str | None:
     return value
 
 
+def _record_sha256_and_size(
+    name: str,
+    declared_hash: str,
+    declared_size: str,
+) -> tuple[str, int]:
+    try:
+        algorithm, encoded_digest = declared_hash.split("=", 1)
+        padding = "=" * (-len(encoded_digest) % 4)
+        declared_digest = base64.urlsafe_b64decode(encoded_digest + padding).hex()
+        size = int(declared_size)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"Installed distribution {name} has malformed RECORD hashes"
+        ) from exc
+    if algorithm != "sha256" or _SHA256_PATTERN.fullmatch(declared_digest) is None:
+        raise ValueError(
+            f"Installed distribution {name} does not use SHA-256 RECORD hashes"
+        )
+    if size < 0:
+        raise ValueError(f"Installed distribution {name} has a RECORD size mismatch")
+    return declared_digest, size
+
+
+class _InstalledRecordRow(NamedTuple):
+    logical_path: str
+    logical: PurePosixPath
+    declared_hash: str
+    declared_size: str
+    installed_path: Path
+    installed_logical_path: str
+    installed_within_distribution: bool
+
+
 def _installed_distribution_entry(
     distribution: Any,
     *,
@@ -966,9 +1001,6 @@ def _installed_distribution_entry(
     rows = list(csv.reader(io.StringIO(record_text)))
     if not rows:
         raise ValueError(f"Installed distribution {name} has an empty RECORD manifest")
-    files: list[dict[str, Any]] = []
-    seen_record_paths: set[str] = set()
-    seen_installed_paths: set[str] = set()
     distribution_root = Path(distribution.locate_file("")).resolve()
     environment_roots: list[Path] = []
     cursor = distribution_root
@@ -979,6 +1011,7 @@ def _installed_distribution_entry(
         cursor = cursor.parent
     environment_roots.append(Path(sys.prefix).resolve())
     environment_roots = list(dict.fromkeys(environment_roots))
+    rows_by_installed_path: dict[Path, list[_InstalledRecordRow]] = {}
     for row in rows:
         if len(row) != 3:
             raise ValueError(f"Installed distribution {name} has malformed RECORD data")
@@ -986,31 +1019,20 @@ def _installed_distribution_entry(
         logical = PurePosixPath(logical_path)
         if (
             not logical_path
-            or logical.is_absolute()
             or (logical.parts and ":" in logical.parts[0])
-            or logical_path in seen_record_paths
             or "\x00" in logical_path
         ):
             raise ValueError(f"Installed distribution {name} has unsafe RECORD data")
-        seen_record_paths.add(logical_path)
         declared_hash, declared_size = row[1], row[2]
-        if not declared_hash:
-            is_self_record = logical_path.endswith(".dist-info/RECORD")
-            is_generated_bytecode = (
-                "__pycache__" in logical.parts and logical_path.endswith(".pyc")
-            )
-            if (not is_self_record and not is_generated_bytecode) or declared_size:
-                raise ValueError(
-                    f"Installed distribution {name} has an unattested RECORD file"
-                )
-            continue
-        installed_path = Path(distribution.locate_file(row[0])).resolve()
+        installed_path = Path(distribution.locate_file(logical_path)).resolve()
+        installed_within_distribution = True
         try:
             installed_relative = installed_path.relative_to(distribution_root)
             installed_logical_path = (
                 PurePosixPath("distribution") / PurePosixPath(installed_relative.as_posix())
             ).as_posix()
         except ValueError:
+            installed_within_distribution = False
             installed_logical_path = ""
             for environment_root in environment_roots:
                 try:
@@ -1026,41 +1048,151 @@ def _installed_distribution_entry(
                 raise ValueError(
                     f"Installed distribution {name} has unsafe RECORD data"
                 )
-        if not installed_path.is_file():
+        resolved_row = _InstalledRecordRow(
+            logical_path=logical_path,
+            logical=logical,
+            declared_hash=declared_hash,
+            declared_size=declared_size,
+            installed_path=installed_path,
+            installed_logical_path=installed_logical_path,
+            installed_within_distribution=installed_within_distribution,
+        )
+        rows_by_installed_path.setdefault(installed_path, []).append(resolved_row)
+
+    def is_generated_bytecode(row: _InstalledRecordRow) -> bool:
+        return (
+            row.installed_path.parent.name == "__pycache__"
+            and row.installed_path.suffix == ".pyc"
+            and "__pycache__" in row.logical.parts
+        )
+
+    # pip can recompile a wheel-supplied .pyc and add an unhashed generated-file
+    # row without removing the wheel's now-stale hashed row. Recognize exactly
+    # that canonical two-row shape, then hash the actual installed bytecode.
+    # Every other duplicate target remains invalid, including path aliases.
+    regenerated_bytecode_paths: set[Path] = set()
+    for installed_path, matching_rows in rows_by_installed_path.items():
+        if len(matching_rows) == 1:
+            continue
+        unattested_rows = [
+            row
+            for row in matching_rows
+            if not row.declared_hash and not row.declared_size
+        ]
+        attested_rows = [
+            row
+            for row in matching_rows
+            if row.declared_hash and row.declared_size
+        ]
+        if (
+            len(matching_rows) != 2
+            or len(unattested_rows) != 1
+            or len(attested_rows) != 1
+            or not all(is_generated_bytecode(row) for row in matching_rows)
+            or not all(row.installed_within_distribution for row in matching_rows)
+        ):
+            raise ValueError(f"Installed distribution {name} has unsafe RECORD data")
+        _record_sha256_and_size(
+            name,
+            attested_rows[0].declared_hash,
+            attested_rows[0].declared_size,
+        )
+        regenerated_bytecode_paths.add(installed_path)
+
+    def require_attested_bytecode_source(row: _InstalledRecordRow) -> None:
+        match = re.fullmatch(
+            r"(?P<source>.+?)\.[^.]+(?:\.opt-[0-9]+)?\.pyc",
+            row.installed_path.name,
+        )
+        if match is None or not is_generated_bytecode(row):
             raise ValueError(
-                f"Installed distribution {name} is missing RECORD file {logical_path}"
+                f"Installed distribution {name} has unsafe generated bytecode data"
             )
-        if installed_logical_path in seen_installed_paths:
-            raise ValueError(
-                f"Installed distribution {name} has duplicate installed RECORD data"
-            )
-        seen_installed_paths.add(installed_logical_path)
+        source_path = (
+            row.installed_path.parent.parent / f"{match.group('source')}.py"
+        ).resolve()
         try:
-            algorithm, encoded_digest = declared_hash.split("=", 1)
-            padding = "=" * (-len(encoded_digest) % 4)
-            declared_digest = base64.urlsafe_b64decode(
-                encoded_digest + padding
-            ).hex()
-            size = int(declared_size)
-        except (ValueError, TypeError) as exc:
+            source_path.relative_to(distribution_root)
+        except ValueError as exc:
             raise ValueError(
-                f"Installed distribution {name} has malformed RECORD hashes"
+                f"Installed distribution {name} has unsafe generated bytecode source"
             ) from exc
-        if algorithm != "sha256" or _SHA256_PATTERN.fullmatch(declared_digest) is None:
+        source_rows = rows_by_installed_path.get(source_path, [])
+        if (
+            len(source_rows) != 1
+            or not source_rows[0].installed_within_distribution
+            or not source_rows[0].declared_hash
+            or not source_rows[0].declared_size
+        ):
             raise ValueError(
-                f"Installed distribution {name} does not use SHA-256 RECORD hashes"
+                f"Installed distribution {name} has generated bytecode without "
+                "an attested source"
             )
-        if size < 0 or installed_path.stat().st_size != size:
-            raise ValueError(
-                f"Installed distribution {name} has a RECORD size mismatch"
+        _record_sha256_and_size(
+            name,
+            source_rows[0].declared_hash,
+            source_rows[0].declared_size,
+        )
+
+    files: list[dict[str, Any]] = []
+    for installed_path, matching_rows in rows_by_installed_path.items():
+        row = matching_rows[0]
+        is_regenerated_bytecode = installed_path in regenerated_bytecode_paths
+        is_unattested_bytecode = (
+            len(matching_rows) == 1
+            and not row.declared_hash
+            and not row.declared_size
+            and is_generated_bytecode(row)
+        )
+        if is_regenerated_bytecode or is_unattested_bytecode:
+            if not row.installed_within_distribution:
+                raise ValueError(
+                    f"Installed distribution {name} has unsafe generated bytecode data"
+                )
+            require_attested_bytecode_source(row)
+            if not installed_path.is_file():
+                raise ValueError(
+                    f"Installed distribution {name} is missing generated bytecode"
+                )
+            size = installed_path.stat().st_size
+            declared_digest = file_sha256(installed_path)
+        elif len(matching_rows) == 1 and not row.declared_hash:
+            is_self_record = row.logical_path.endswith(".dist-info/RECORD")
+            if not is_self_record or row.declared_size:
+                raise ValueError(
+                    f"Installed distribution {name} has an unattested RECORD file"
+                )
+            if not row.installed_within_distribution or not installed_path.is_file():
+                raise ValueError(
+                    f"Installed distribution {name} has unsafe excluded RECORD data"
+                )
+            continue
+        else:
+            if len(matching_rows) != 1:
+                raise ValueError(
+                    f"Installed distribution {name} has duplicate installed RECORD data"
+                )
+            if not installed_path.is_file():
+                raise ValueError(
+                    f"Installed distribution {name} is missing RECORD file "
+                    f"{row.logical_path}"
+                )
+            declared_digest, size = _record_sha256_and_size(
+                name,
+                row.declared_hash,
+                row.declared_size,
             )
-        if file_sha256(installed_path) != declared_digest:
-            raise ValueError(
-                f"Installed distribution {name} has a RECORD content mismatch"
-            )
+            if installed_path.stat().st_size != size:
+                raise ValueError(
+                    f"Installed distribution {name} has a RECORD size mismatch"
+                )
+            if file_sha256(installed_path) != declared_digest:
+                raise ValueError(
+                    f"Installed distribution {name} has a RECORD content mismatch"
+                )
         files.append(
             {
-                "path": installed_logical_path,
+                "path": row.installed_logical_path,
                 "size": size,
                 "sha256": declared_digest,
             }
