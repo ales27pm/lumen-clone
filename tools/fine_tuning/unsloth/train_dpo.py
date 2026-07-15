@@ -17,6 +17,7 @@ try:
     )
     from .train_sft import (
         _resolve_controlled_seed,
+        _require_unsloth_before_transformers,
         _seed_everything,
         _training_environment,
         _training_runtime_lineage,
@@ -30,6 +31,7 @@ except ImportError:
     )
     from train_sft import (
         _resolve_controlled_seed,
+        _require_unsloth_before_transformers,
         _seed_everything,
         _training_environment,
         _training_runtime_lineage,
@@ -771,7 +773,6 @@ def main() -> None:
     args = parse_args()
     cfg = load_config(Path(args.config).resolve())
     seed, seed_source = _resolve_controlled_seed(cfg)
-    _seed_everything(seed)
     sft_adapter_dir = Path(args.sft_adapter_dir).resolve()
     output_dir, dpo_adapter_dir = validate_dpo_artifact_paths(
         cfg,
@@ -813,15 +814,19 @@ def main() -> None:
     ]
     _verify_base_model_lineage(cfg)
 
+    _require_unsloth_before_transformers()
     try:
-        from datasets import Dataset
         from unsloth import FastLanguageModel
+        from datasets import Dataset
         from peft import PeftModel
         from trl import DPOConfig, DPOTrainer, ORPOConfig, ORPOTrainer
     except ImportError as exc:
         raise RuntimeError(
             "Missing dependencies for Unsloth DPO training. Install: unsloth, trl, datasets, transformers, peft, accelerate, bitsandbytes."
         ) from exc
+
+    # Unsloth must patch Transformers before the shared seed helper imports it.
+    _seed_everything(seed)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],

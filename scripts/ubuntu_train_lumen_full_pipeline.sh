@@ -26,6 +26,7 @@ PREPARE_ONLY="${LUMEN_UBUNTU_PREPARE_ONLY:-0}"
 CONVERT_GGUF="${LUMEN_UBUNTU_CONVERT_GGUF:-1}"
 EVALUATE="${LUMEN_UBUNTU_EVALUATE:-1}"
 EVAL_MAX_EXAMPLES="${LUMEN_UBUNTU_EVAL_MAX_EXAMPLES:-}"
+RUNTIME_HOME="/home/lumen-runtime"
 
 log() {
   printf '[lumen-ubuntu] %s\n' "$*"
@@ -198,6 +199,12 @@ done
 
 [[ "$(uname -s)" == "Linux" ]] || die "this launcher must run on Linux; copy the repository to the Ubuntu GPU host first"
 [[ -f "$DOCKERFILE" ]] || die "missing training Dockerfile: $DOCKERFILE"
+RUNTIME_UID="$(id -u)"
+RUNTIME_GID="$(id -g)"
+[[ "$RUNTIME_UID" =~ ^[1-9][0-9]*$ ]] \
+  || die "run this launcher as a regular non-root user (do not use sudo)"
+[[ "$RUNTIME_GID" =~ ^[1-9][0-9]*$ ]] \
+  || die "the invoking user's primary group must be non-root"
 [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die "run ID must contain only letters, digits, dot, underscore, and hyphen"
 [[ "$AGENTS_CSV" =~ ^[a-z]+(,[a-z]+)*$ ]] || die "agents must be a comma-separated lowercase list without spaces"
 [[ "$OVERWRITE" == "0" || "$RESUME" == "0" ]] || die "--overwrite and --resume are mutually exclusive"
@@ -328,7 +335,13 @@ for variant in "${variants[@]}"; do
 done
 
 if [[ "$BUILD_IMAGE" == "1" ]]; then
-  build_args=(docker build --file "$DOCKERFILE" --tag "$IMAGE_TAG")
+  build_args=(
+    docker build
+    --file "$DOCKERFILE"
+    --tag "$IMAGE_TAG"
+    --build-arg "LUMEN_RUNTIME_UID=$RUNTIME_UID"
+    --build-arg "LUMEN_RUNTIME_GID=$RUNTIME_GID"
+  )
   if [[ "$PULL_BASE" == "1" ]]; then
     build_args+=(--pull)
   fi
@@ -342,12 +355,22 @@ fi
 IMAGE_DIGEST="$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG" 2>/dev/null)" || die "local image not found: $IMAGE_TAG"
 [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Docker returned an invalid local image ID for $IMAGE_TAG: $IMAGE_DIGEST"
 
+log "checking container runtime identity"
+docker run --rm \
+  --user "$RUNTIME_UID:$RUNTIME_GID" \
+  -e "HOME=$RUNTIME_HOME" \
+  --entrypoint /opt/lumen-venv/bin/python \
+  "$IMAGE_DIGEST" \
+  -c 'import getpass, grp, os, pwd, tempfile; from pathlib import Path; uid = os.getuid(); gid = os.getgid(); assert pwd.getpwuid(uid).pw_uid == uid; assert grp.getgrgid(gid).gr_gid == gid; assert getpass.getuser(); home = Path.home(); assert home == Path(os.environ["HOME"]) and home.is_dir(); tempfile.TemporaryFile(dir=home).close()' \
+  || die "training image lacks the invoking user's passwd/group mapping or writable home; rebuild without --no-build"
+
 log "checking NVIDIA Container Toolkit access"
-docker run --rm --gpus all --user "$(id -u):$(id -g)" \
+docker run --rm --gpus all --user "$RUNTIME_UID:$RUNTIME_GID" \
   --entrypoint /bin/bash "$IMAGE_DIGEST" -c 'exec nvidia-smi' >/dev/null \
   || die "Docker cannot access the NVIDIA GPU; install/configure NVIDIA Container Toolkit"
 
 log "image ID: $IMAGE_DIGEST"
+log "runtime identity: $RUNTIME_UID:$RUNTIME_GID ($RUNTIME_HOME)"
 log "output root: $OUTPUT_ROOT"
 log "HF cache: $HF_CACHE"
 log "agents: $AGENTS_CSV"
@@ -369,11 +392,11 @@ for variant in "${variants[@]}"; do
   docker_args=(
     docker run --rm --init --gpus all --shm-size "$SHM_SIZE"
     --entrypoint /bin/bash
-    --user "$(id -u):$(id -g)"
+    --user "$RUNTIME_UID:$RUNTIME_GID"
     -v "$ROOT:/workspace:ro"
     -v "$OUTPUT_ROOT:/outputs:rw"
     "${cache_mounts[@]}"
-    -e HOME=/tmp
+    -e "HOME=$RUNTIME_HOME"
     -e HF_HOME=/cache/huggingface
     -e HUGGINGFACE_HUB_CACHE=/cache/huggingface/hub
     -e HF_HUB_ENABLE_HF_TRANSFER=1
@@ -381,7 +404,7 @@ for variant in "${variants[@]}"; do
     -e PYTHONDONTWRITEBYTECODE=1
     -e PYTHONPATH=/workspace
     -e TOKENIZERS_PARALLELISM=false
-    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    -e PYTORCH_ALLOC_CONF=expandable_segments:True
     -e "LUMEN_AIO_EXPERIMENT_VARIANT=$variant"
     -e "LUMEN_AIO_CONTAINER_IMAGE_DIGEST=$IMAGE_DIGEST"
     -e "LUMEN_AIO_RUN_ID=$RUN_ID"
@@ -418,11 +441,11 @@ for variant in "${variants[@]}"; do
     log "uploading verified outputs in an isolated credential-scoped container"
     docker run --rm --init \
       --entrypoint /bin/bash \
-      --user "$(id -u):$(id -g)" \
+      --user "$RUNTIME_UID:$RUNTIME_GID" \
       -v "$ROOT:/workspace:ro" \
       -v "$host_run_root:$container_run_root:rw" \
       "${upload_token_mount[@]}" \
-      -e HOME=/tmp \
+      -e "HOME=$RUNTIME_HOME" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -e PYTHONPATH=/workspace \
       "$IMAGE_DIGEST" \

@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -40,6 +41,153 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
         "!tools/fine_tuning/unsloth/",
         "!tools/fine_tuning/unsloth/training_lineage.py",
     } <= dockerignore
+
+
+def test_ubuntu_image_maps_the_invoking_non_root_identity() -> None:
+    dockerfile = (
+        REPO_ROOT / "tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "ARG LUMEN_RUNTIME_UID=1000" in dockerfile
+    assert "ARG LUMEN_RUNTIME_GID=1000" in dockerfile
+    assert 'getent passwd "${LUMEN_RUNTIME_UID}"' in dockerfile
+    assert 'getent group "${LUMEN_RUNTIME_GID}"' in dockerfile
+    assert "pwd.getpwuid(uid).pw_uid == uid" in dockerfile
+    assert "grp.getgrgid(gid).gr_gid == gid" in dockerfile
+    assert "USER ${LUMEN_RUNTIME_UID}:${LUMEN_RUNTIME_GID}" in dockerfile
+    assert '--build-arg "LUMEN_RUNTIME_UID=$RUNTIME_UID"' in launcher
+    assert '--build-arg "LUMEN_RUNTIME_GID=$RUNTIME_GID"' in launcher
+    assert "pwd.getpwuid(uid).pw_uid == uid" in launcher
+    assert 'HOME=$RUNTIME_HOME' in launcher
+
+
+def test_ubuntu_launcher_rejects_an_image_without_the_runtime_identity(
+    tmp_path: Path,
+) -> None:
+    if sys.platform != "linux":
+        pytest.skip("launcher harness requires the Ubuntu/GNU host utilities")
+    bash_major = int(
+        subprocess.check_output(
+            ["bash", "-c", 'printf "%s" "${BASH_VERSINFO[0]}"'],
+            text=True,
+        )
+    )
+    if bash_major < 4:
+        pytest.skip("Ubuntu launcher requires Bash 4 associative arrays")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker_log = tmp_path / "docker.log"
+    fake_commands = {
+        "uname": """#!/bin/sh
+printf 'Linux\\n'
+""",
+        "id": """#!/bin/sh
+case "${1:-}" in
+  -u) printf '12345\\n' ;;
+  -g) printf '23456\\n' ;;
+  *) exit 2 ;;
+esac
+""",
+        "nvidia-smi": """#!/bin/sh
+exit 0
+""",
+        "docker": f"""#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+if [ "${{1:-}}" = image ] && [ "${{2:-}}" = inspect ]; then
+  printf '{FAKE_IMAGE_DIGEST}\\n'
+  exit 0
+fi
+case "$*" in
+  *'/opt/lumen-venv/bin/python'*) exit 23 ;;
+esac
+exit 0
+""",
+    }
+    for name, source in fake_commands.items():
+        path = fake_bin / name
+        path.write_text(source, encoding="utf-8")
+        path.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/ubuntu_train_lumen_full_pipeline.sh",
+            "--prepare-only",
+            "--no-pull",
+            "--run-id",
+            "identity-probe",
+            "--output-dir",
+            str(tmp_path / "outputs"),
+            "--hf-cache",
+            str(tmp_path / "hf-cache"),
+        ],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_DOCKER_LOG": str(docker_log),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "training image lacks the invoking user's passwd/group mapping" in (
+        result.stderr
+    )
+    logged = docker_log.read_text(encoding="utf-8")
+    assert "--build-arg LUMEN_RUNTIME_UID=12345" in logged
+    assert "--build-arg LUMEN_RUNTIME_GID=23456" in logged
+    assert "--user 12345:23456" in logged
+    assert "/opt/lumen-venv/bin/python" in logged
+    assert "--gpus all" not in logged
+
+
+def test_unsloth_import_guard_fails_closed_if_transformers_loaded_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tools.fine_tuning.unsloth.train_sft import (
+        _require_unsloth_before_transformers,
+    )
+
+    monkeypatch.delitem(sys.modules, "unsloth", raising=False)
+    monkeypatch.setitem(sys.modules, "transformers", ModuleType("transformers"))
+    with pytest.raises(RuntimeError, match="before Transformers"):
+        _require_unsloth_before_transformers()
+
+    monkeypatch.setitem(sys.modules, "unsloth", ModuleType("unsloth"))
+    _require_unsloth_before_transformers()
+
+
+def test_ubuntu_trainers_import_unsloth_before_transformers_seeding() -> None:
+    for filename in ("train_sft.py", "train_dpo.py"):
+        source = (
+            REPO_ROOT / "tools/fine_tuning/unsloth" / filename
+        ).read_text(encoding="utf-8")
+        main_source = source[source.index("def main() -> None:") :]
+        assert main_source.index("from unsloth import FastLanguageModel") < (
+            main_source.index("_seed_everything(seed)")
+        )
+
+    evaluator = (
+        REPO_ROOT / "tools/fine_tuning/unsloth/evaluate_adapter.py"
+    ).read_text(encoding="utf-8")
+    loader = evaluator[evaluator.index("def load_inference_model(") :]
+    assert loader.index("from unsloth import FastLanguageModel") < loader.index(
+        "_seed_everything(int(cfg[\"seed\"]))"
+    )
+
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    assert "PYTORCH_ALLOC_CONF=expandable_segments:True" in launcher
+    assert "PYTORCH_CUDA_ALLOC_CONF" not in launcher
 
 
 def test_agent_and_run_root_validation_fails_closed(tmp_path: Path) -> None:

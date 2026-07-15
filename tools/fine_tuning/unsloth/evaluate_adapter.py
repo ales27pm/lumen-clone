@@ -17,7 +17,7 @@ try:
         _verified_release_bake_lineage,
         load_config as load_export_config,
     )
-    from .train_sft import _seed_everything
+    from .train_sft import _require_unsloth_before_transformers, _seed_everything
 except ImportError:
     module_dir = str(Path(__file__).resolve().parent)
     if module_dir not in sys.path:
@@ -26,7 +26,10 @@ except ImportError:
         _verified_release_bake_lineage,
         load_config as load_export_config,
     )
-    from train_sft import _seed_everything  # type: ignore
+    from train_sft import (  # type: ignore
+        _require_unsloth_before_transformers,
+        _seed_everything,
+    )
 
 
 EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.0.0"
@@ -524,13 +527,16 @@ def load_inference_model(
 ) -> tuple[Any, Any]:
     if cfg.get("load_in_4bit") is not True:
         raise ValueError("Evaluation requires the controlled load_in_4bit=true config")
+    _require_unsloth_before_transformers()
     try:
-        from peft import PeftModel  # type: ignore
         from unsloth import FastLanguageModel  # type: ignore
+        from peft import PeftModel  # type: ignore
     except ImportError as exc:
         raise RuntimeError(
             "Evaluation requires the pinned Unsloth, PEFT, and PyTorch environment"
         ) from exc
+    # Seed only after Unsloth has patched Transformers, but before model loading.
+    _seed_everything(int(cfg["seed"]))
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],
         revision=cfg["baseModelRevision"],
@@ -724,7 +730,6 @@ def run(args: argparse.Namespace) -> int:
         else all_records
     )
     complete_evaluation = len(selected_records) == len(all_records)
-    _seed_everything(int(cfg["seed"]))
     model, tokenizer = load_inference_model(cfg, adapter_dir=adapter_dir)
     outputs, output_rows, format_failure_count = evaluate_records(
         selected_records,

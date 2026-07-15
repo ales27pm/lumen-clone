@@ -42,8 +42,13 @@ docker info
 docker run --rm --gpus all nvidia/cuda:12.8.1-devel-ubuntu22.04 nvidia-smi
 ```
 
-Run Docker as a user permitted to access the Docker daemon. The controlled base
-model is public, so training disables implicit Hub tokens and mounts only
+Run Docker as a regular non-root user permitted to access the Docker daemon; do
+not invoke the launcher with `sudo`. The image build creates a passwd/group
+entry and writable home for that user's numeric UID/GID, and the launcher
+verifies the mapping before checking GPU access. This is required by Torch and
+other Python packages that resolve the current account through the system user
+database. The controlled base model is public, so training disables implicit
+Hub tokens and mounts only
 credential-free cache subdirectories. A token is needed only for `--upload`;
 supply it with `--token-file`, or keep an owner-only token at `$HF_HOME/token`.
 The token is mounted only into the short-lived upload container and is never
@@ -81,6 +86,11 @@ llama.cpp revision `34558825a27f4d74dcfd7a91bfde4464baa2a30a`.
 The launcher records the locally built image ID and the resolved training
 environment in the run lineage. That record is audit evidence; it is not a
 trusted production runtime-image attestation.
+
+The image is specific to the invoking host UID/GID. Reusing it with
+`--no-build` under another account fails the runtime-identity preflight instead
+of allowing a later `getpwuid` crash. Runtime compiler caches live below the
+owned container home and remain isolated from the repository and output tree.
 
 The CUDA base is version-tagged rather than OCI-digest-pinned, and Python wheel
 artifacts are version-pinned but not installed from a hash-locked wheelhouse.
@@ -226,9 +236,9 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh \
 ```
 
 `--no-build` is an optimization for an image already built from the same
-checkout. A matching tag alone is not proof that its contents match the
-current source; the pipeline's environment and source-lineage checks remain
-authoritative.
+checkout and the same host UID/GID. A matching tag alone is not proof that its
+contents match the current source; the pipeline's identity, environment, and
+source-lineage checks remain authoritative.
 
 ## Outputs And Retention
 
@@ -343,6 +353,12 @@ evidence owned by the release workflow even when the frozen evaluation passes.
   command above.
 - **Python or CUDA lock mismatch:** rebuild without `--no-build`; do not bypass
   the environment gate.
+- **`KeyError: 'getpwuid(): uid not found'`:** pull the current launcher and
+  rebuild without `--no-build`. Do not use `sudo`, bind-mount the host
+  `/etc/passwd`, or set a fake `USER` value. Because the repaired image and
+  training source have new lineage, start a new run ID (or deliberately use
+  `--overwrite` after preserving the failed run) rather than resuming the old
+  prepared run.
 - **A run directory already exists:** use a new `--run-id` or `--output-dir`,
   use `--resume` when its environment and phase lineage still match, or choose
   `--overwrite` deliberately after reviewing the existing artifacts.
