@@ -1045,16 +1045,11 @@ def full(term: Terminal, root: Path, args: argparse.Namespace, state: PipelineSt
 
 
 def menu(term: Terminal) -> str:
-    term.title("Lumen terminal AIO improve-loop")
-    print("1) Preflight: drift guard + tests + Qwen3 config check")
+    term.title("Lumen dataset/developer improve-loop")
+    print("1) Preflight: drift guard + tests")
     print("2) Crawl code + ingest in-app JSONs + generate datasets")
-    print("3) Train Qwen3 role adapters")
-    print("4) Convert trained LoRA adapters to GGUF (with explicit base)")
-    print("5) Upload adapter GGUFs to Hugging Face (hf repos create)")
-    print("6) Upload shared Qwen3 base GGUF to Hugging Face")
-    print("7) Full local cycle: preflight → crawl/ingest/datasets → train → convert → status")
-    print("8) Full local cycle + upload adapters")
-    print("9) Show latest report/gaps/dataset summaries + pipeline state")
+    print("3) Show latest report/gaps/dataset summaries + pipeline state")
+    print("Ubuntu training: bash scripts/ubuntu_train_lumen_full_pipeline.sh")
     print("0) Exit")
     return input("\nSelect: ").strip().lower()
 
@@ -1064,13 +1059,7 @@ def interactive(term: Terminal, root: Path, args: argparse.Namespace, state: Pip
     actions: dict[str, Callable[[], object]] = {
         "1": lambda: preflight(term, root, args, state),
         "2": lambda: crawl_ingest_generate(term, root, args, state),
-        "3": lambda: train(term, root, args, state),
-        "4": lambda: convert(term, root, args, state),
-        "5": lambda: upload_adapters(term, root, args, state),
-        "6": lambda: upload_base(term, root, args, state),
-        "7": lambda: full(term, root, args, state),
-        "8": lambda: full(term, root, argparse.Namespace(**{**vars(args), "upload_after_full": True}), state),
-        "9": lambda: status(term, root, args),
+        "3": lambda: status(term, root, args),
     }
     while True:
         choice = menu(term)
@@ -1142,6 +1131,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    retired_modes = {
+        "train",
+        "convert",
+        "upload-adapters",
+        "upload-base",
+        "full",
+    }
+    if args.mode in retired_modes or args.upload_after_full:
+        raise SystemExit(
+            "Terminal training/conversion/upload modes are retired; use "
+            "bash scripts/ubuntu_train_lumen_full_pipeline.sh"
+        )
     root = resolve(Path.cwd(), args.root).resolve()
     os.chdir(root)
     term = Terminal(quiet=args.quiet)

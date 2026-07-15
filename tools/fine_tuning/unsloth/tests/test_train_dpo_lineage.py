@@ -587,6 +587,8 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     assert dpo_args.kwargs["model_adapter_name"] == train_dpo.POLICY_ADAPTER_NAME
     assert dpo_args.kwargs["ref_adapter_name"] == train_dpo.REFERENCE_ADAPTER_NAME
     assert dpo_args.kwargs["seed"] == dpo_args.kwargs["data_seed"] == 42
+    assert dpo_args.kwargs["eval_strategy"] == "no"
+    assert dpo_args.kwargs["save_strategy"] == "epoch"
 
     orpo_trainer, orpo_args = train_dpo._build_preference_trainer(
         cfg, preference_trainer="orpo", **common

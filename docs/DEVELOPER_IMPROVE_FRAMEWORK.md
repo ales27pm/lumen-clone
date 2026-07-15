@@ -271,8 +271,8 @@ Adapter-specific validation must include:
 
 ```bash
 python tools/check_adapter_runtime_invariants.py
-python tools/lumen_terminal_improve_loop.py --mode preflight --dry-run --skip-pytest
-python tools/lumen_dev.py plan --root . --environment ubuntu
+bash -n scripts/ubuntu_train_lumen_full_pipeline.sh
+bash scripts/ubuntu_train_lumen_full_pipeline.sh --help
 ```
 
 On macOS with Xcode, use the simulator as a preflight:
@@ -313,9 +313,10 @@ Adapter failures should become one or more of:
 
 ## Canonical Commands
 
-Use the repo's Python 3.11 environment for crawler and training commands. The
-commands below use `python` to mean the active virtualenv interpreter, not
-Xcode's system `python3`.
+Use the repo's Python 3.11 environment for crawler and local developer commands.
+The commands below use `python` to mean the active virtualenv interpreter, not
+Xcode's system `python3`. Ubuntu GPU training is the exception: its canonical
+launcher supplies the controlled Python 3.10/CUDA 12.8 container.
 
 Generate manifest, datasets, gaps, runbook, and TestFlight queue:
 
@@ -347,23 +348,21 @@ python -m lumen_manifest_crawler improve-loop \
   --runtime-audit exports/lumen-live-e2e-report-testflight.json
 ```
 
-Run the full adapter-first terminal workflow when the training environment is
-ready:
+Run the full adapter-first workflow on an Ubuntu NVIDIA host when the controlled
+training environment is ready:
 
 ```bash
-python tools/lumen_terminal_improve_loop.py \
-  --mode full \
-  --resume \
-  --state-file generated/agent_improvement_loop/pipeline_state.json \
-  --config-dir tools/fine_tuning/unsloth/configs_qwen3_bootstrap \
-  --agents cortex,executor,mouth,mimicry,rem,fleet \
-  --base-model-id Qwen/Qwen3-1.7B \
-  --seed 42 \
-  --assistant-only-loss \
-  --hf-private \
-  --fail-if-missing-qwen3-config \
-  --stop-on-error
+bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
+
+This builds the pinned CUDA/Python image, trains the optimized variant through
+SFT then DPO for all six roles, verifies phase and artifact lineage, and emits
+adapter-first outputs without uploading or promoting them. Use
+`--variant baseline-and-optimized` for a fail-fast 24-job two-variant batch, or
+`--variant all` for the 36-job run that also includes the internal-only
+ablation. Batch execution does not itself emit a comparison or promotion
+decision. See `docs/UBUNTU_TRAINING.md` for prerequisites, capacity estimates,
+controls, output layout, and evidence limitations.
 
 Use the visual loop for inspection and orchestration, not as a separate source
 of truth:
@@ -385,9 +384,15 @@ python tools/lumen_dev.py status --root .
 On Ubuntu training hosts:
 
 ```bash
-python tools/lumen_dev.py plan --root . --environment ubuntu
-python tools/lumen_dev.py train --root . --dry-run
+bash scripts/ubuntu_train_lumen_full_pipeline.sh --help
+bash scripts/ubuntu_train_lumen_full_pipeline.sh \
+  --output-dir /absolute/path/to/lumen-training
 ```
+
+The consolidated framework plan remains useful for observing developer jobs,
+but `framework train` and `tools/lumen_dev.py train` are not the canonical
+Ubuntu GPU-training entry points. Do not use the legacy terminal improve-loop
+command as a substitute for the pinned container and lineage gates.
 
 ## On-Device Developer Console
 
@@ -478,6 +483,8 @@ This document owns the workflow model. Supporting docs own narrower contracts:
 - `docs/VISUAL_IMPROVE_LOOP.md`: visual dashboard and UI orchestration.
 - `docs/DIAGNOSTICS_UI.md`: privacy-safe diagnostics surfaces.
 - `docs/HF_ARTIFACT_WORKFLOW.md`: Hugging Face artifact publication.
+- `docs/UBUNTU_TRAINING.md`: containerized NVIDIA training prerequisites,
+  controls, artifacts, and evidence boundaries.
 
 ## CLI Consolidation
 
@@ -491,7 +498,8 @@ python -m lumen_manifest_crawler framework run <job-id>
 python -m lumen_manifest_crawler framework serve
 python -m lumen_manifest_crawler framework diagnose
 python -m lumen_manifest_crawler framework ingest
-python -m lumen_manifest_crawler framework train
+python -m lumen_manifest_crawler framework train  # legacy orchestration view; not the Ubuntu GPU entry point
 ```
 
-`tools/lumen_dev.py` is a thin entry point to the same framework commands.
+`tools/lumen_dev.py` is a thin entry point to the same framework commands. The
+canonical Ubuntu GPU entry point is `scripts/ubuntu_train_lumen_full_pipeline.sh`.

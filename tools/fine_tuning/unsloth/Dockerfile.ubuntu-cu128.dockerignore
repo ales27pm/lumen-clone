@@ -1,0 +1,5 @@
+**
+!tools/
+!tools/hf_zerogpu/
+!tools/hf_zerogpu/space_template/
+!tools/hf_zerogpu/space_template/requirements.txt

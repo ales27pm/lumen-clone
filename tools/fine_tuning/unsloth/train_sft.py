@@ -877,6 +877,30 @@ def _require_sha256(value: Any, *, name: str, prefix: bool = False) -> str:
     return text
 
 
+def _write_json_atomic(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _training_environment(
     cfg: dict[str, Any],
     *,
@@ -1450,10 +1474,7 @@ def _finalize_variant_manifest(
         training_phase="sft",
     )
     destination = output_dir / "finalized_variant_manifest.json"
-    destination.write_text(
-        json.dumps(finalized, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _write_json_atomic(destination, finalized)
     return finalized
 
 
@@ -1559,9 +1580,8 @@ def main() -> None:
         num_train_epochs=float(cfg["num_train_epochs"]),
         warmup_steps=int(cfg["warmup_steps"]),
         logging_steps=int(cfg.get("logging_steps", 10)),
-        eval_strategy="steps" if eval_dataset is not None else "no",
-        eval_steps=int(cfg.get("eval_steps", 50)),
-        save_steps=int(cfg.get("save_steps", 100)),
+        eval_strategy="epoch" if eval_dataset is not None else "no",
+        save_strategy="epoch",
         save_total_limit=int(cfg.get("save_total_limit", 2)),
         bf16=bf16,
         fp16=fp16,
@@ -1598,8 +1618,9 @@ def main() -> None:
             str(resume_checkpoint) if resume_checkpoint is not None else None
         )
     )
+    evaluation_metrics = trainer.evaluate() if eval_dataset is not None else {}
     trainer.model.save_pretrained(str(adapter_output_dir), safe_serialization=True)
-    tokenizer.save_pretrained(str(adapter_output_dir))
+    tokenizer.save_pretrained(str(adapter_output_dir), legacy_format=False)
     adapter_artifact_manifest = write_adapter_artifact_manifest(
         adapter_output_dir,
         training_phase="sft",
@@ -1682,15 +1703,10 @@ def main() -> None:
     report = {
         **manifest,
         "metrics": train_result.metrics,
+        "evaluation_metrics": evaluation_metrics,
     }
-    (output_dir / "training_report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (output_dir / "train_manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _write_json_atomic(output_dir / "training_report.json", report)
+    _write_json_atomic(output_dir / "train_manifest.json", manifest)
 
 
 if __name__ == "__main__":
