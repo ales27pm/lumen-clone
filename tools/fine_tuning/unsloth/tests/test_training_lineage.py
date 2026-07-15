@@ -655,6 +655,240 @@ def test_resolved_environment_accepts_hashed_venv_entrypoint_paths(
     assert resolved["distributions"][0]["installedFileCount"] == 2
 
 
+@pytest.mark.parametrize("attested_first", [False, True])
+def test_resolved_environment_hashes_pip_duplicate_generated_bytecode(
+    tmp_path: Path,
+    attested_first: bool,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="numpy",
+        version="2.2.6",
+    )
+    source_path = "numpy/generated.py"
+    source = distribution.root / source_path
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    source_digest = base64.urlsafe_b64encode(
+        hashlib.sha256(source.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    logical_path = "numpy/__pycache__/generated.cpython-310.pyc"
+    installed_bytecode = distribution.root / logical_path
+    installed_bytecode.parent.mkdir(parents=True, exist_ok=True)
+    installed_bytecode.write_bytes(b"pip-generated-bytecode")
+    wheel_bytecode = b"wheel-supplied-bytecode"
+    wheel_digest = base64.urlsafe_b64encode(
+        hashlib.sha256(wheel_bytecode).digest()
+    ).decode("ascii").rstrip("=")
+    attested_row = (
+        f"{logical_path},sha256={wheel_digest},{len(wheel_bytecode)}\n"
+    )
+    generated_row = f"{logical_path},,\n"
+    duplicate_rows = (
+        attested_row + generated_row
+        if attested_first
+        else generated_row + attested_row
+    )
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"{source_path},sha256={source_digest},{source.stat().st_size}\n"
+        + duplicate_rows,
+        encoding="utf-8",
+    )
+
+    resolved = training_lineage.build_resolved_training_environment([distribution])
+    original_digest = resolved["resolvedTrainingEnvironmentSHA256"]
+
+    assert resolved["distributions"][0]["installedFileCount"] == 3
+
+    installed_bytecode.write_bytes(b"different-generated-bytecode")
+    mutated = training_lineage.build_resolved_training_environment([distribution])
+    assert mutated["resolvedTrainingEnvironmentSHA256"] != original_digest
+
+
+@pytest.mark.parametrize("duplicate_kind", ["unattested", "attested"])
+def test_resolved_environment_rejects_other_duplicate_bytecode_rows(
+    tmp_path: Path,
+    duplicate_kind: str,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="duplicate-bytecode",
+        version="1",
+    )
+    logical_path = (
+        "duplicate_bytecode/__pycache__/generated.cpython-310.pyc"
+    )
+    bytecode = distribution.root / logical_path
+    bytecode.parent.mkdir(parents=True, exist_ok=True)
+    bytecode.write_bytes(b"bytecode")
+    digest = base64.urlsafe_b64encode(
+        hashlib.sha256(bytecode.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    if duplicate_kind == "attested":
+        row = f"{logical_path},sha256={digest},{bytecode.stat().st_size}\n"
+    else:
+        row = f"{logical_path},,\n"
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8") + row + row,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsafe RECORD"):
+        training_lineage.build_resolved_training_environment([distribution])
+
+
+def test_resolved_environment_rejects_canonical_bytecode_path_aliases(
+    tmp_path: Path,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="aliased-bytecode",
+        version="1",
+    )
+    package = distribution.root / "aliased_bytecode"
+    source = package / "generated.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    source_digest = base64.urlsafe_b64encode(
+        hashlib.sha256(source.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    bytecode = package / "__pycache__/generated.cpython-310.pyc"
+    bytecode.parent.mkdir(parents=True)
+    bytecode.write_bytes(b"bytecode")
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"aliased_bytecode/generated.py,sha256={source_digest},{source.stat().st_size}\n"
+        + "aliased_bytecode/__pycache__/generated.cpython-310.pyc,,\n"
+        + "aliased_bytecode/__pycache__/./generated.cpython-310.pyc,,\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsafe RECORD"):
+        training_lineage.build_resolved_training_environment([distribution])
+
+
+def test_resolved_environment_rejects_excluded_bytecode_outside_distribution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment_root = tmp_path / "venv"
+    site_packages = environment_root / "lib/python3.10/site-packages"
+    distribution = _InstalledDistribution(
+        site_packages,
+        name="escaping-bytecode",
+        version="1",
+    )
+    escaping_path = "../../../outside/__pycache__/evil.cpython-310.pyc"
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"{escaping_path},,\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(training_lineage.sys, "prefix", str(environment_root))
+
+    with pytest.raises(ValueError, match="unsafe generated bytecode"):
+        training_lineage.build_resolved_training_environment([distribution])
+
+
+def test_resolved_environment_rejects_sourceless_excluded_bytecode(
+    tmp_path: Path,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="sourceless-bytecode",
+        version="1",
+    )
+    logical_path = (
+        "sourceless_bytecode/__pycache__/hidden.cpython-310.pyc"
+    )
+    bytecode = distribution.root / logical_path
+    bytecode.parent.mkdir(parents=True, exist_ok=True)
+    bytecode.write_bytes(b"hidden-bytecode")
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"{logical_path},,\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="without an attested source"):
+        training_lineage.build_resolved_training_environment([distribution])
+
+
+@pytest.mark.parametrize("optimization", ["opt-1", "opt-2"])
+def test_resolved_environment_hashes_optimized_generated_bytecode(
+    tmp_path: Path,
+    optimization: str,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="optimized-bytecode",
+        version="1",
+    )
+    source = distribution.root / "optimized_bytecode/generated.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    source_digest = base64.urlsafe_b64encode(
+        hashlib.sha256(source.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    logical_path = (
+        "optimized_bytecode/__pycache__/"
+        f"generated.cpython-310.{optimization}.pyc"
+    )
+    bytecode = distribution.root / logical_path
+    bytecode.parent.mkdir(parents=True, exist_ok=True)
+    bytecode.write_bytes(b"optimized-bytecode")
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + "optimized_bytecode/generated.py,"
+        + f"sha256={source_digest},{source.stat().st_size}\n"
+        + f"{logical_path},,\n",
+        encoding="utf-8",
+    )
+
+    resolved = training_lineage.build_resolved_training_environment([distribution])
+    assert resolved["distributions"][0]["installedFileCount"] == 3
+
+
+def test_resolved_environment_accepts_only_contained_absolute_record_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment_root = tmp_path / "venv"
+    site_packages = environment_root / "lib/python3.10/site-packages"
+    distribution = _InstalledDistribution(
+        site_packages,
+        name="absolute-entrypoint",
+        version="1",
+    )
+    entrypoint = environment_root / "bin/absolute-entrypoint"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("#!/usr/bin/env python\n", encoding="utf-8")
+    digest = base64.urlsafe_b64encode(
+        hashlib.sha256(entrypoint.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"{entrypoint},sha256={digest},{entrypoint.stat().st_size}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(training_lineage.sys, "prefix", str(environment_root))
+
+    resolved = training_lineage.build_resolved_training_environment([distribution])
+    assert resolved["distributions"][0]["installedFileCount"] == 2
+
+    outside = tmp_path / "outside-entrypoint"
+    outside.write_text("outside\n", encoding="utf-8")
+    outside_digest = base64.urlsafe_b64encode(
+        hashlib.sha256(outside.read_bytes()).digest()
+    ).decode("ascii").rstrip("=")
+    distribution.record_path.write_text(
+        distribution.record_path.read_text(encoding="utf-8")
+        + f"{outside},sha256={outside_digest},{outside.stat().st_size}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsafe RECORD"):
+        training_lineage.build_resolved_training_environment([distribution])
+
+
 @pytest.mark.parametrize(
     ("kind", "revision"),
     [
