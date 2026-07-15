@@ -79,6 +79,31 @@ lineage.verify_training_dependency_lock(
 )
 PY
 
+# Hash every installed RECORD under an unprivileged identity while the image
+# layer is still being built. This makes permission, containment, duplicate,
+# and content drift fail before the GPU runtime is launched.
+RUN setpriv --reuid=nobody --regid=nogroup --init-groups python - <<'PY'
+import importlib.util
+import json
+
+spec = importlib.util.spec_from_file_location(
+    "lumen_training_lineage", "/tmp/lumen-training-lineage.py"
+)
+assert spec is not None and spec.loader is not None
+lineage = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lineage)
+environment, scan = lineage.build_resolved_training_environment_snapshot()
+digest = lineage.verify_resolved_training_environment(environment)
+if (
+    scan["resolvedTrainingEnvironmentSHA256"] != digest
+    or scan["distributionCount"] <= 0
+    or scan["installedFileCount"] <= 0
+    or scan["totalHashedBytes"] <= 0
+):
+    raise RuntimeError("Resolved training environment build scan is empty or inconsistent")
+print(json.dumps(scan, sort_keys=True))
+PY
+
 WORKDIR /workspace
 
 CMD ["/bin/bash"]

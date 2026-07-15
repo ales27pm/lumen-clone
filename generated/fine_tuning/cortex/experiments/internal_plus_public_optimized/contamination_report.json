@@ -7,10 +7,10 @@
   "matches": [],
   "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
   "publicEvaluationRowCount": 1040,
-  "reportSHA256": "06a3aa218f168aba45ba3482c88db65dd8b7c2ee8353a9eae2322da14b3fbaa8",
+  "reportSHA256": "46b0f3f3856db9e26a7b0f5db35ee41401a8f93b307d647c37ee3649378fdf4a",
   "schemaVersion": "lumen.adapter-contamination/1.0.0",
   "shingleSize": 13,
   "threshold": 0.8,
   "trainingRecordCount": 926,
-  "trainingRecordsSHA256": "d9431e1d6166819345bac2a068cba2dc20a106981ae88f000ba2b75b06bcc33e"
+  "trainingRecordsSHA256": "e43a857c9f0cb302143c2e1190e23e6046ba9eba4567daaa6a05934d37e1ff74"
 }
