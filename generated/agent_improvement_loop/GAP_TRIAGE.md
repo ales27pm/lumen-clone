@@ -1,8 +1,8 @@
 # Agent Improvement Gap Triage
 
 - Total gaps: `1`
-- Raw runtime failures: `6`
-- Fresh runtime failures: `6`
+- Raw runtime failures: `7`
+- Fresh runtime failures: `7`
 - Skipped live model generation: `0`
 - Classification rule: skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.
 

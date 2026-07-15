@@ -4,6 +4,24 @@ This directory contains per-agent training scripts and configs for **Unsloth**.
 
 ## Workflow
 
+For a full Ubuntu NVIDIA run, use the pinned container launcher. It prepares an
+isolated variant snapshot, trains SFT then DPO for every selected role, verifies
+both phase boundaries, runs frozen deterministic evaluation, and creates
+adapter-only GGUFs by default:
+
+```bash
+bash scripts/ubuntu_train_lumen_full_pipeline.sh
+```
+
+See [`docs/UBUNTU_TRAINING.md`](../../../docs/UBUNTU_TRAINING.md) for host
+prerequisites, variants, capacity estimates, resume/overwrite behavior, output
+layout, and upload safety. The default is the optimized variant, all six roles,
+full frozen evaluation, no upload, private visibility, and no runtime promotion.
+
+The commands below describe the individual components. Use them for inspection
+and targeted development; the full Ubuntu launcher is the canonical operator
+entry point because it supplies the pinned environment and run lineage.
+
 1. Generate datasets.
 ```bash
 python -m lumen_manifest_crawler generate \
@@ -18,18 +36,20 @@ python -m lumen_manifest_crawler generate \
 2. Inspect each `generated/fine_tuning/<agent>/dataset_card.json`.
 
 3. Train SFT with a run-scoped config that binds the explicit experiment variant, base-model
-lineage, phase-specific training-code digest, dependency lock, source Git commit, and declared
-runtime-image audit value. The Ubuntu launcher prepares those configs and trains all selected
-agents. Local AIO resume remains disabled until it emits the same run/checkpoint contract as the
-ZeroGPU path; direct `--resume-from-checkpoint` calls without that contract fail closed.
+lineage, phase-specific training-code digest, dependency lock, source Git commit, and observed
+container environment. The full Ubuntu host launcher builds the controlled image, derives its
+local image ID, and prepares those configs. The inner launcher handles one experiment variant at a
+time; `baseline-and-optimized` and `all` are expanded into isolated fail-fast variant batches by
+the host wrapper and do not themselves make a comparison/promotion decision. Direct
+`--resume-from-checkpoint` calls without the repository's run/checkpoint contract fail closed.
 ```bash
-export LUMEN_AIO_EXPERIMENT_VARIANT="internal_plus_public_baseline"
-export LUMEN_AIO_CONTAINER_IMAGE_DIGEST="sha256:<64-lowercase-hex-digest>"
-export LUMEN_AIO_RUN_ROOT="$PWD/.local/ubuntu_finetune_runs/baseline-run"
-bash scripts/ubuntu_train_lumen_adapters_aio.sh
+bash scripts/ubuntu_train_lumen_full_pipeline.sh \
+  --variant internal_plus_public_baseline \
+  --output-dir "$PWD/.local/ubuntu_finetune_runs/baseline"
 ```
 
-4. Optionally train DPO/ORPO per agent from the verified finalized SFT artifact. DPO writes a
+4. Train DPO/ORPO per agent from the verified finalized SFT artifact. This phase is part of the
+full Ubuntu pipeline. DPO writes a
 separate `sft_dpo` adapter and records the parent SFT digest. The parent boundary verifies the
 self-hashed finalized SFT manifest, canonical adapter bytes and base-model declaration, effective
 seed, experiment/source manifest, full base-model index/shard/tokenizer contract, environment and
@@ -43,37 +63,32 @@ python tools/fine_tuning/unsloth/train_dpo.py \
   --sft-finalized-variant-manifest "$LUMEN_AIO_RUN_ROOT/training/cortex/finalized_variant_manifest.json"
 ```
 
-5. Use the legacy merge helper only when a non-GGUF merged artifact is specifically needed.
+5. Merged-model release bake is intentionally outside the one-click Ubuntu contract. The
+run-scoped `<agent>.final.json` files bind the evaluated preference adapters but contain container
+paths. The older exporter selects `<agent>.json` from a directory and would therefore select the
+superseded SFT parents. Do not point it at the run config directory. A future merged-artifact
+workflow must consume explicit final configs inside the pinned image and rerun evaluation and
+release approval for the newly created artifact.
+
+6. Optional Hub upload is owned by the full Ubuntu launcher. Use `--upload`; it keeps the
+destination private by default, scopes credentials to a separate upload container, re-verifies
+the allowlisted evidence, and requires `--public` for public visibility.
+
+7. Evaluate the final preference adapter. The Ubuntu launcher creates the
+final lineage config and runs this for every selected role automatically:
 ```bash
-python tools/fine_tuning/unsloth/merge_lora.py --config tools/fine_tuning/unsloth/configs/cortex.json
+python -m tools.fine_tuning.unsloth.evaluate_adapter \
+  --config "$LUMEN_AIO_RUN_ROOT/configs/cortex.final.json" \
+  --eval-jsonl "$LUMEN_AIO_RUN_ROOT/generated/fine_tuning/cortex/eval.jsonl" \
+  --behavior-manifest "$LUMEN_AIO_RUN_ROOT/generated/agent_manifest/AgentBehaviorManifest.json" \
+  --output-dir "$LUMEN_AIO_RUN_ROOT/evaluation/cortex"
 ```
+The evaluator writes candidate outputs, a scored report, and a self-hashed run
+manifest. Malformed output and full-suite quality failures return nonzero.
+Training completion alone is not a model-quality pass, and no local result is
+a TestFlight/device pass. `--eval-smoke N` is bounded smoke evidence only.
 
-6. Export merged GGUF per agent.
-```bash
-.venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
-  --release-bake \
-  --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
-  --agents cortex,executor,mouth,mimicry,rem,fleet \
-  --quantization q4_k_m \
-  --output-root models/gguf_merged \
-  --manifest-output generated/fine_tuning/merged_gguf_manifest.json
-```
-
-7. Optional: upload merged GGUFs to Hugging Face in one pass.
-```bash
-.venv-unsloth/bin/python tools/fine_tuning/unsloth/export_gguf.py \
-  --release-bake \
-  --config-dir "$LUMEN_AIO_RUN_ROOT/configs" \
-  --agents cortex,executor,mouth,mimicry,rem,fleet \
-  --quantization q4_k_m \
-  --output-root models/gguf_merged \
-  --hf-repo-id ales27pm/lumen-fleet-gguf \
-  --manifest-output generated/fine_tuning/merged_gguf_manifest.json
-```
-
-8. Evaluate with `generated/fine_tuning/<agent>/eval.jsonl`.
-
-9. Never train on private app exports unless explicitly sanitized.
+8. Never train on private app exports unless explicitly sanitized.
 
 ## ZeroGPU authorization and resume
 
@@ -149,3 +164,6 @@ unsupported until a trusted runtime-image attestation exists.
 - The app can use LoRA adapters differently per slot if the runtime supports it.
 - If using one small base model on-device, train separate LoRA adapters per slot.
 - If runtime cannot hot-swap LoRA, merge strongest common adapters or train a unified fleet adapter.
+- Local training and adapter conversion do not authorize changing the shipped runtime artifact
+  pointer. Runtime-image promotion remains unsupported without the separate attestation,
+  compatibility, evaluation, and live-device gates.

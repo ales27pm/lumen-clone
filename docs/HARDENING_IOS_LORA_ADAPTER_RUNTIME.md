@@ -130,12 +130,16 @@ If the UI response looks correct but telemetry shows `adapterApplied=false` for 
 Do not rely on remote automation for physical runtime validation. Run these commands locally on a Mac with Xcode. A real iOS device is required for the smoke test portion.
 
 ```bash
-python tools/check_adapter_runtime_invariants.py
-python -m pytest tools/lumen_manifest_crawler/tests
-python tools/lumen_terminal_improve_loop.py --mode preflight --dry-run --skip-pytest
+python3 tools/check_adapter_runtime_invariants.py
+uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler \
+  --with pytest --with pydantic --with typer --with rich \
+  pytest -m "not slow and not e2e"
+bash scripts/check-lumen-integration-gate.sh
 ```
 
-These commands are static and preflight guards. They do not replace physical-device smoke testing.
+These commands are static and integration guards. Full Ubuntu adapter training
+must use `bash scripts/ubuntu_train_lumen_full_pipeline.sh`; neither path
+replaces physical-device smoke testing.
 
 ---
 

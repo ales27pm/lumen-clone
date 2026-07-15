@@ -36,15 +36,15 @@
       "dataset_coverage": 1
     },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
-    "freshRuntimeFailureCount": 6,
+    "freshRuntimeFailureCount": 7,
     "groupCounts": {
       "Empty dataset family: runtime_audit_repairs": 1
     },
-    "rawRuntimeFailureCount": 6,
+    "rawRuntimeFailureCount": 7,
     "rootCauseCounts": {
       "stale_or_unclassified_runtime_evidence": 1
     },
-    "runtimeAuditReports": 2,
+    "runtimeAuditReports": 3,
     "severityCounts": {
       "warning": 1
     },

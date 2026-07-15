@@ -1,7 +1,7 @@
 {
   "agent": "cortex",
   "availableSFTRecords": 972,
-  "candidateSFTRecords": 11404,
+  "candidateSFTRecords": 11394,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -15,7 +15,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "124272e423c484721add9f98789567b9375d42db1ea7769f1fc526a1576176da"
+      "reportSHA256": "165744a29333f65d9bb56812767385e50195f106c79fcc7c7260b3301e6f88a7"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -25,8 +25,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "ebd36f1aed8fe453a935c44f6655f87207a3f1245c090349bd519404a05aba38",
-      "optimizedTrainingCorpusSHA256": "ef1e24dd6f3fd82671cb7d5c6ceb993ca41190d44901693618cb037862835702",
+      "baselineTrainingCorpusSHA256": "3edbc28a231db90019bbf82a1eb29c860de9513c791d33688654f563800a3721",
+      "optimizedTrainingCorpusSHA256": "9327ad9f1c91c8dfde0613888c71e5403c68416ecc1e458ebf37978b7e8a4963",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 662,
@@ -53,7 +53,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "d207f4527fb63f1c86be14dee6adddbf90b72af2ddb1f36d196db80823659d00",
+    "experimentManifestSHA256": "6fd5bb8c5654a5c4dc59792d23392598d0e32ebacc4be2c0e487133284657243",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -83,7 +83,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
+  "manifestCommit": "560341273831b8d1c8e4c57e5499030e5f5a0549",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 16,
@@ -260,8 +260,8 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.146923,
-        "total": 0.36572
+        "target": 0.146926,
+        "total": 0.365725
       },
       "val_dpo": {
         "target": 0.0,
@@ -276,12 +276,12 @@
   "quality": {
     "cortexCodebaseChunkRecordCount": 40,
     "cortexCodebaseFileRecordCount": 119,
-    "cortexCodebaseSelfAwarenessCandidateRecordCount": 6032,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 6027,
     "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files",
     "cortexCodebaseSelfAwarenessRecordCount": 161,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "sequenceBudgetDroppedRecordCount": 12,
-    "supplementalBalanceDroppedRecordCount": 10256,
+    "supplementalBalanceDroppedRecordCount": 10246,
     "supplementalSFTRecordCount": 243,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 25,
@@ -318,9 +318,9 @@
     "public_adapter_corpus_toolace_train": 12
   },
   "sourceIntegrity": {
-    "baseCommit": "66fe4c34f2945fbff18dcb023f7d950e4ea87ac6",
+    "baseCommit": "560341273831b8d1c8e4c57e5499030e5f5a0549",
     "dirtyState": true,
-    "workingTreeDigest": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
+    "workingTreeDigest": "1297414a35bc8335c6adfb6a48550b79f08c6319f6151b7711f044d8f44ac210"
   },
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
   "taskTypeCounts": {
@@ -367,5 +367,5 @@
     "ultra_specific_intent_routing",
     "ultra_specific_regression_routing"
   ],
-  "worktreeFingerprint": "707d4724b65b6f67f1ef5ef3938402150945aa19231c9a7f5ed1c5ab1aaa2673"
+  "worktreeFingerprint": "1297414a35bc8335c6adfb6a48550b79f08c6319f6151b7711f044d8f44ac210"
 }

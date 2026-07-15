@@ -4,10 +4,10 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `43249`
-- Runtime audit reports: `2`
-- Runtime failures: `6`
-- Raw runtime failures: `6`
+- Dataset records: `43218`
+- Runtime audit reports: `3`
+- Runtime failures: `7`
+- Raw runtime failures: `7`
 - Skipped live model generation: `0`
 - TestFlight status: `runtime-audit-ingested`
 - TestFlight scenarios: `120`
