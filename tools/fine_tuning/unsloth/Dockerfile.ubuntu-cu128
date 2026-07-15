@@ -26,6 +26,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tools/hf_zerogpu/space_template/requirements.txt /tmp/lumen-requirements.txt
+COPY tools/fine_tuning/unsloth/training_lineage.py /tmp/lumen-training-lineage.py
 
 RUN python3.10 -m venv "${VIRTUAL_ENV}" \
     && python -m pip install \
@@ -40,13 +41,42 @@ RUN python3.10 -m venv "${VIRTUAL_ENV}" \
     && python -m pip install -r /tmp/lumen-requirements.txt \
     && python -m pip check \
     && python - <<'PY'
+import importlib.metadata as metadata
+import importlib.util
+import json
 import platform
+from pathlib import Path
 
 import torch
 
 assert platform.python_version_tuple()[:2] == ("3", "10"), platform.python_version()
 assert torch.__version__.split("+", 1)[0] == "2.9.1", torch.__version__
 assert torch.version.cuda == "12.8", torch.version.cuda
+
+spec = importlib.util.spec_from_file_location(
+    "lumen_training_lineage", "/tmp/lumen-training-lineage.py"
+)
+assert spec is not None and spec.loader is not None
+lineage = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lineage)
+dependency_lock = lineage.build_training_dependency_lock(
+    Path("/tmp/lumen-requirements.txt")
+)
+unsloth_direct_url = json.loads(
+    metadata.distribution("unsloth").read_text("direct_url.json") or "{}"
+)
+lineage.verify_training_dependency_lock(
+    dependency_lock,
+    requirements_path=Path("/tmp/lumen-requirements.txt"),
+    installed_versions=lineage.installed_controlled_package_versions(
+        dependency_lock
+    ),
+    installed_unsloth_revision=(
+        unsloth_direct_url.get("vcs_info", {}).get("commit_id")
+    ),
+    runtime_python_version=".".join(platform.python_version_tuple()[:2]),
+    runtime_cuda_version=str(torch.version.cuda or ""),
+)
 PY
 
 WORKDIR /workspace

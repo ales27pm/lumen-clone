@@ -19,6 +19,7 @@ try:
     from .training_lineage import (
         build_resolved_training_environment,
         build_resolved_training_environment_snapshot,
+        canonical_controlled_package_version,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
@@ -33,6 +34,7 @@ except ImportError:
     from training_lineage import (
         build_resolved_training_environment,
         build_resolved_training_environment_snapshot,
+        canonical_controlled_package_version,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
@@ -933,11 +935,25 @@ def _training_environment(
     expected_packages = lock.get("packageVersions")
     if not isinstance(expected_packages, dict) or not expected_packages:
         raise RuntimeError("trainingEnvironmentLock.packageVersions must be non-empty")
-    actual_packages = {name: _package_version(name) for name in sorted(expected_packages)}
+    observed_packages = {
+        name: _package_version(name) for name in sorted(expected_packages)
+    }
+    actual_packages = {
+        name: canonical_controlled_package_version(
+            name,
+            version,
+            expected_version=str(expected_packages[name]),
+            cuda_version=str(lock.get("cudaVersion") or ""),
+        )
+        for name, version in observed_packages.items()
+    }
     if actual_packages != expected_packages:
         raise RuntimeError(
             "Training package versions drifted from lock: "
-            + json.dumps({"expected": expected_packages, "actual": actual_packages}, sort_keys=True)
+            + json.dumps(
+                {"expected": expected_packages, "actual": observed_packages},
+                sort_keys=True,
+            )
         )
 
     import importlib.metadata as metadata
@@ -1181,7 +1197,9 @@ def _training_runtime_lineage(
             installed_unsloth_revision=_installed_unsloth_revision(),
         )
     except (FileNotFoundError, KeyError, ValueError) as exc:
-        raise RuntimeError("Training dependency lineage verification failed") from exc
+        raise RuntimeError(
+            f"Training dependency lineage verification failed: {exc}"
+        ) from exc
     if (
         dependency_digest != expected_dependency_digest
         or dependency_lock.get("requirementsSHA256")

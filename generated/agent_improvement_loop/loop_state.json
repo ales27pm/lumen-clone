@@ -48,7 +48,7 @@
       }
     },
     "embedding": {
-      "corpusCount": 5019,
+      "corpusCount": 5102,
       "datasetCard": {
         "families": [
           "agent_role_question_to_fleet_slot",
@@ -84,10 +84,10 @@
         "schemaVersion": "1.0.0",
         "task": "retrieval_similarity_ranking"
       },
-      "evalCount": 485,
+      "evalCount": 496,
       "fallbackModel": "current-baseline-embedding-model",
       "generated": true,
-      "hardNegativeCount": 4701,
+      "hardNegativeCount": 4769,
       "metrics": {
         "hardNegativeAccuracy": 0.0,
         "mrr": 0.0,
@@ -99,31 +99,31 @@
         "toolRetrievalAccuracy": 0.0
       },
       "model": "Qwen/Qwen3-Embedding-0.6B",
-      "pairCount": 4701,
+      "pairCount": 4769,
       "teacherModel": "Qwen/Qwen3-Embedding-4B",
-      "trainPairCount": 4221,
-      "trainTripletCount": 4221,
-      "tripletCount": 4701,
+      "trainPairCount": 4280,
+      "trainTripletCount": 4280,
+      "tripletCount": 4769,
       "usedFallback": false,
-      "valPairCount": 480,
-      "valTripletCount": 480
+      "valPairCount": 489,
+      "valTripletCount": 489
     },
     "families": {
       "approval_boundary_samples": 113,
-      "codebase_home_chunk_sft": 3724,
-      "codebase_home_chunks": 3724,
-      "codebase_home_corpus": 768,
-      "codebase_home_sft": 768,
+      "codebase_home_chunk_sft": 3801,
+      "codebase_home_chunks": 3801,
+      "codebase_home_corpus": 774,
+      "codebase_home_sft": 774,
       "cortex_routing": 82,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 5019,
+      "embedding_corpus": 5102,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 485,
-      "embedding_hard_negatives": 4701,
-      "embedding_train_pairs": 4221,
-      "embedding_train_triplets": 4221,
-      "embedding_val_pairs": 480,
-      "embedding_val_triplets": 480,
+      "embedding_eval_retrieval": 496,
+      "embedding_hard_negatives": 4769,
+      "embedding_train_pairs": 4280,
+      "embedding_train_triplets": 4280,
+      "embedding_val_pairs": 489,
+      "embedding_val_triplets": 489,
       "eval_scenarios": 550,
       "executor_tool_calls": 53,
       "manifest_grounding_cards": 4,
@@ -138,10 +138,10 @@
       "public_adapter_corpus_rem": 505,
       "rem_reflection": 5,
       "reranker_dataset_card": 1,
-      "reranker_eval_reranking": 485,
-      "reranker_hard_negative_pairs": 4701,
-      "reranker_train_pairs": 4221,
-      "reranker_val_pairs": 480,
+      "reranker_eval_reranking": 496,
+      "reranker_hard_negative_pairs": 4769,
+      "reranker_train_pairs": 4280,
+      "reranker_val_pairs": 489,
       "runtime_audit_repairs": 0,
       "self_model_cards": 8,
       "self_model_eval": 24,
@@ -151,7 +151,7 @@
       "validation_sft": 55
     },
     "familyCount": 40,
-    "recordCount": 43218,
+    "recordCount": 43829,
     "reranker": {
       "datasetCard": {
         "families": [
@@ -186,10 +186,10 @@
         "task": "candidate_reranking"
       },
       "enabledByDefault": false,
-      "evalCount": 485,
+      "evalCount": 496,
       "fallbackMode": "embedding-only",
       "generated": true,
-      "hardNegativePairCount": 4701,
+      "hardNegativePairCount": 4769,
       "metrics": {
         "hardNegativePairAccuracy": 0.0,
         "p95RerankLatencyRegression": 0.0,
@@ -198,23 +198,23 @@
         "top5ReorderWinRate": 0.0
       },
       "model": "Qwen/Qwen3-Reranker-0.6B",
-      "pairCount": 4701,
+      "pairCount": 4769,
       "teacherModel": "Qwen/Qwen3-Reranker-4B",
-      "trainPairCount": 4221,
-      "valPairCount": 480
+      "trainPairCount": 4280,
+      "valPairCount": 489
     }
   },
   "errorGapCount": 0,
   "gapCount": 1,
   "manifest": {
-    "baseCommit": "560341273831b8d1c8e4c57e5499030e5f5a0549",
+    "baseCommit": "23f270120023867a8cadb9ee3aea59a50d7bf684",
     "dirtyState": true,
-    "fingerprint": "e2d8c5508824b90cffbe449503d487529228d6aa6f620ef30f6948d0de962d73",
+    "fingerprint": "3dff6249c39b65aee97ebb31180110949be8146d62f9cf63857f5e3556f9748d",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
     "toolCount": 53,
-    "workingTreeDigest": "1297414a35bc8335c6adfb6a48550b79f08c6319f6151b7711f044d8f44ac210"
+    "workingTreeDigest": "9b1f44732f58b704090e0e340d53b8b3cbc0ab3c4a9b3d9edbd2c30032c20061"
   },
   "nextActionPromptCount": 1,
   "output": "/Users/ales27pm/lumen-clone/generated/agent_manifest",
@@ -250,7 +250,7 @@
     "currentRuntimeAuditProvided": true,
     "currentRuntimeAuditReportCount": 3,
     "expectedExport": "lumen-testflight-agent-grounding-*.json from Agent Grounding > Export TestFlight + Agent Grounding Package",
-    "manifestFingerprint": "e2d8c5508824b90cffbe449503d487529228d6aa6f620ef30f6948d0de962d73",
+    "manifestFingerprint": "3dff6249c39b65aee97ebb31180110949be8146d62f9cf63857f5e3556f9748d",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "requireRuntimeAuditForPass": false,
