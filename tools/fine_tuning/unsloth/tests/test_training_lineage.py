@@ -736,17 +736,17 @@ def test_local_runtime_source_rejects_incomplete_or_self_declared_evidence(
 
 
 def test_ubuntu_launcher_records_complete_local_git_source_audit() -> None:
-    launcher = (ROOT / "scripts/ubuntu_train_lumen_adapters_aio.sh").read_text(
+    launcher = (ROOT / "tools/fine_tuning/unsloth/ubuntu_pipeline.py").read_text(
         encoding="utf-8"
     )
 
-    assert '"expectedRuntimeSourceRevision": runtime_source_revision' in launcher
-    assert '"observedRepositoryRevision": runtime_source_revision' in launcher
-    assert '"observedRuntimeRevision": runtime_source_revision' in launcher
+    assert '"expectedRuntimeSourceRevision": revision' in launcher
+    assert '"observedRepositoryRevision": revision' in launcher
+    assert '"observedRuntimeRevision": revision' in launcher
     assert '"runtimeSourceBindingStatus": "local_checkout_observed"' in launcher
     assert (
         '"runtimeSourceBindingMethod": "git_head_plus_training_code_manifest"'
         in launcher
     )
-    assert "cfg.update(local_runtime_source)" in launcher
-    assert "**local_runtime_source" in launcher
+    assert "config.update(runtime_source)" in launcher
+    assert "**runtime_source" in launcher

@@ -63,13 +63,13 @@ run explicit release bake
 export merged GGUF
 ```
 
-The release bake is manual and explicit:
-
-```bash
-python tools/fine_tuning/unsloth/export_gguf.py --release-bake --agents cortex,executor
-```
-
-Running the exporter without `--release-bake` must not merge anything. It writes a skipped adapter-first manifest and exits.
+The current one-click Ubuntu workflow does not implement a merged release
+bake. Its run directory contains final preference configs, while the legacy
+directory exporter selects pending/SFT config names and must not be pointed at
+that run. Any future release bake must accept explicit `<agent>.final.json`
+inputs inside the pinned container, produce new lineage, and rerun evaluation
+and release approval. Running the legacy exporter without `--release-bake`
+continues to write only a skipped adapter-first manifest.
 
 ## Why this matters
 

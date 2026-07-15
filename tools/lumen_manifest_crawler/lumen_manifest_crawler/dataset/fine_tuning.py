@@ -2856,7 +2856,9 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         "batch_size": 2,
         "gradient_accumulation_steps": 8,
         "num_train_epochs": 2 if high_reasoning else 1,
-        "warmup_steps": 20,
+        # Several role adapters intentionally have only one or two optimizer
+        # steps. A fixed warmup would consume the complete preference run.
+        "warmup_steps": 0,
         "preference_trainer": "dpo",
         "dataset_dir": f"generated/fine_tuning/{agent}",
         "output_dir": f"models/training_runs/{agent}",

@@ -178,86 +178,42 @@ But the trained outputs should be role adapters by default, not six standalone r
 Expected training shape:
 
 ```text
-base: Qwen/Qwen3-1.7B or configured Qwen3 base
-outputs:
-  models/lora_qwen3_bootstrap/cortex
-  models/lora_qwen3_bootstrap/executor
-  models/lora_qwen3_bootstrap/mouth
-  models/lora_qwen3_bootstrap/mimicry
-  models/lora_qwen3_bootstrap/rem
-  models/lora_qwen3_bootstrap/fleet
+base: pinned Qwen/Qwen3-1.7B
+per role:
+  <run-root>/models/lora_qwen3_bootstrap/<role>   # verified SFT parent
+  <run-root>/models/lora_qwen3_dpo/<role>         # final preference adapter
+  <run-root>/models/lora_qwen3_gguf/lumen-<role>-lora.gguf
+  <run-root>/evaluation/<role>/...
 ```
 
-Expected adapter conversion (base model is mandatory — either `--base-model-id`
-or `--base` pointing at a local config dir):
+The canonical launcher owns adapter conversion and optional upload. It verifies
+the pinned llama.cpp checkout and base artifacts before conversion. Upload is
+off by default; `--upload` scopes an owner-only token to a separate container,
+re-verifies exact evidence, and makes one private atomic commit unless
+`--public` is explicit. Manual converter and broad `hf upload` shortcuts are
+not part of this contract.
+
+### Canonical Ubuntu training loop
+
+`scripts/ubuntu_train_lumen_full_pipeline.sh` is the only supported full
+Ubuntu training entrypoint. It consumes the controlled generated variants,
+builds the pinned container, trains SFT and DPO adapters, runs frozen
+evaluation, converts the final preference adapters to adapter-only GGUF, and
+writes self-verified run evidence. The older terminal improve-loop remains a
+dataset/developer utility and must not be used as the training launcher.
 
 ```bash
-mkdir -p models/lora_qwen3_gguf
-
-for agent in cortex executor mouth mimicry rem fleet; do
-  python ~/.unsloth/llama.cpp/convert_lora_to_gguf.py \
-    "models/lora_qwen3_bootstrap/$agent" \
-    --outfile "models/lora_qwen3_gguf/lumen-$agent-lora.gguf" \
-    --base-model-id Qwen/Qwen3-1.7B
-done
+bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
 
-Expected adapter upload (current Hugging Face CLI uses `hf repos create`, not
-the legacy `hf repo create`):
-
-```bash
-hf repos create ales27pm/lumen-qwen3-bootstrap-adapters-gguf \
-  --type model \
-  --private \
-  --exist-ok \
-  --yes
-
-hf upload ales27pm/lumen-qwen3-bootstrap-adapters-gguf \
-  models/lora_qwen3_gguf \
-  . \
-  --repo-type model
-```
-
-For the shared base GGUF (large file, resumable), prefer:
-
-```bash
-hf upload-large-folder ales27pm/lumen-qwen3-bootstrap-gguf \
-  models/base_qwen3_fast \
-  --repo-type model
-```
-
-### Resumable terminal AIO loop
-
-The terminal launcher `tools/lumen_terminal_improve_loop.py` is the single
-entrypoint for running the full local cycle. It records each stage's argv,
-input hash, output paths and status to `pipeline_state.json`, so reruns can
-skip stages whose inputs are unchanged.
-
-```bash
-python tools/lumen_terminal_improve_loop.py \
-  --mode full \
-  --resume \
-  --state-file generated/agent_improvement_loop/pipeline_state.json \
-  --config-dir tools/fine_tuning/unsloth/configs_qwen3_bootstrap \
-  --agents cortex,executor,mouth,mimicry,rem,fleet \
-  --base-model-id Qwen/Qwen3-1.7B \
-  --seed 42 \
-  --assistant-only-loss \
-  --hf-private \
-  --fail-if-missing-qwen3-config \
-  --stop-on-error
-```
-
-Preflight strictness:
-
-- Fails if `tools/fine_tuning/unsloth/configs_qwen3_bootstrap/` is missing.
-- Fails if any agent config in that dir still references a Qwen2.x base.
-- Fails if `merge_adapters_by_default` or `release_bake_enabled_by_default`
-  is true in any Qwen3 bootstrap config.
+Use `--resume --run-id <original-id> --no-build` to resume verified phase
+boundaries. See `docs/UBUNTU_TRAINING.md` for host prerequisites, selectors,
+credential isolation, outputs, and evidence limits.
 
 ### Release-bake policy
 
-Release-baking adapters into per-role full GGUFs is optional and manual only.
+Release-baking adapters into per-role full GGUFs is outside the canonical
+Ubuntu training contract.
 
 The default improve-loop must keep:
 
@@ -268,26 +224,13 @@ The default improve-loop must keep:
 }
 ```
 
-`tools/fine_tuning/unsloth/export_gguf.py` must continue to skip merging unless `--release-bake` is explicitly passed.
-
-Allowed:
-
-```bash
-python tools/fine_tuning/unsloth/export_gguf.py \
-  --config-dir tools/fine_tuning/unsloth/configs_qwen3_bootstrap
-```
-
-This should write an adapter-first manifest and skip merged GGUF export.
-
-Manual fallback only:
-
-```bash
-python tools/fine_tuning/unsloth/export_gguf.py \
-  --release-bake \
-  --config-dir tools/fine_tuning/unsloth/configs_qwen3_bootstrap
-```
-
-This can produce `lumen-<role>-release-bake-*.gguf` artifacts, but those artifacts must not become Qwen3 default first-launch downloads.
+The legacy directory exporter must continue to skip merging unless
+`--release-bake` is explicit, but it does not consume the run-scoped final DPO
+configs and is not a supported post-training shortcut. A future release-bake
+workflow must take explicit `<agent>.final.json` inputs inside the pinned
+container, produce new artifact lineage, and rerun evaluation and release
+approval. Its outputs must not become Qwen3 default downloads merely because a
+training run completed.
 
 ## Runtime audit export contract
 
@@ -332,8 +275,9 @@ A future improve-loop or Codex change should be rejected if any of these become 
 8. `outputTokenCount` is populated from whitespace word count.
 9. Runtime traces omit `adapterApplied` or `adapterSlot` for Qwen3 model turns.
 10. `export_gguf.py` merges adapters by default without `--release-bake`.
-11. `tools/lumen_terminal_improve_loop.py` calls the legacy `hf repo create`
-    or invokes `convert_lora_to_gguf.py` without `--base` / `--base-model-id`.
+11. `tools/lumen_terminal_improve_loop.py` permits its retired
+    training/conversion/upload modes instead of routing operators to the
+    canonical Ubuntu launcher.
 12. Any Qwen3 bootstrap config references a non-Qwen3 base model.
 
 ## Required test coverage

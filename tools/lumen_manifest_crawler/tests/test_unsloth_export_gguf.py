@@ -200,17 +200,16 @@ def test_skip_existing_requires_matching_current_lineage(
 
 def test_ubuntu_post_training_gate_requires_finalized_source_and_artifact_lineage() -> None:
     repo_root = Path(__file__).resolve().parents[3]
-    script = (repo_root / "scripts" / "ubuntu_train_lumen_adapters_aio.sh").read_text(
+    script = (repo_root / "tools/fine_tuning/unsloth/ubuntu_pipeline.py").read_text(
         encoding="utf-8"
     )
 
-    assert script.count(
-        "LUMEN_AIO_CONTAINER_IMAGE_DIGEST must be sha256:<64 lowercase hex characters>"
-    ) == 1
-    assert 'finalized.get("sourceVariantManifestSHA256")' in script
-    assert 'canonical_sha256(unsigned) != finalized_sha' in script
+    assert "Container image digest must be sha256" in script
+    assert '"sourceVariantManifestSHA256": config.get("variantManifestSHA256")' in script
+    assert "_shared_finalized_variant_validator" in script
+    assert "canonical_sha256(unsigned) != digest" in script
     assert 'artifact.get("trainingPhase") != "sft"' in script
-    assert 'expected_adapter_sha256=artifact["adapterSHA256"]' in script
+    assert "expected_adapter_sha256=str(artifact.get" in script
 
 
 def test_release_bake_loads_pinned_base_before_verified_adapter() -> None:

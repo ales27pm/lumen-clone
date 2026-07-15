@@ -22,6 +22,9 @@ run_git_diff_check() {
 }
 
 run_check "Agent kernel boundary" python3 tools/check_agent_kernel_boundary.py
+run_check "Ubuntu training launcher syntax" bash -n \
+  scripts/ubuntu_train_lumen_adapters_aio.sh \
+  scripts/ubuntu_train_lumen_full_pipeline.sh
 run_check "Agent kernel boundary strict" python3 tools/check_agent_kernel_boundary.py --strict
 run_check "Adapter runtime invariants" python3 tools/check_adapter_runtime_invariants.py
 run_check "Release hardening guard" python3 tools/check_release_hardening.py
