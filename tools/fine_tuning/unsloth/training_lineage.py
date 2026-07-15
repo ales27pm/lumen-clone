@@ -60,6 +60,9 @@ DEFAULT_PACKAGE_VERSIONS: dict[str, str] = {
     "trl": "0.24.0",
     "unsloth_zoo": "2026.7.2",
 }
+_CUDA_WHEEL_LOCAL_VERSION_PACKAGES = frozenset(
+    {"torch", "torchaudio", "torchvision"}
+)
 
 _REQUIREMENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -760,8 +763,25 @@ def verify_training_dependency_lock(
         rebuilt = build_training_dependency_lock(requirements_path)
         if rebuilt != dict(lock):
             raise ValueError("Deployed requirements.txt drifted from the dependency lock")
-    if installed_versions is not None and dict(installed_versions) != dict(packages):
-        raise ValueError("Installed controlled package versions drifted from the lock")
+    if installed_versions is not None:
+        observed_versions = dict(installed_versions)
+        canonical_versions = {
+            name: canonical_controlled_package_version(
+                name,
+                str(version),
+                expected_version=str(packages.get(name) or ""),
+                cuda_version=str(lock["cudaVersion"]),
+            )
+            for name, version in observed_versions.items()
+        }
+        if canonical_versions != dict(packages):
+            raise ValueError(
+                "Installed controlled package versions drifted from the lock: "
+                + json.dumps(
+                    {"actual": observed_versions, "expected": dict(packages)},
+                    sort_keys=True,
+                )
+            )
     if (
         installed_unsloth_revision is not None
         and installed_unsloth_revision != DEFAULT_UNSLOTH_REVISION
@@ -775,6 +795,34 @@ def verify_training_dependency_lock(
     if runtime_cuda_version is not None and runtime_cuda_version != lock["cudaVersion"]:
         raise ValueError("Runtime CUDA version drifted from the dependency lock")
     return digest
+
+
+def canonical_controlled_package_version(
+    name: str,
+    installed_version: str,
+    *,
+    expected_version: str,
+    cuda_version: str,
+) -> str:
+    """Canonicalize only the CUDA local tag already bound by the lock.
+
+    PyTorch's CUDA wheel index records versions such as ``2.9.1+cu128`` while
+    the direct requirement remains ``torch==2.9.1``. The dependency lock binds
+    CUDA separately as ``12.8``, so the exact matching ``+cu128`` local tag is
+    equivalent for the three PyTorch distributions. Every other local tag or
+    package version remains unchanged and therefore fails the caller's exact
+    lock comparison.
+    """
+
+    if installed_version == expected_version:
+        return expected_version
+    cuda_tag = "cu" + cuda_version.replace(".", "")
+    if (
+        name in _CUDA_WHEEL_LOCAL_VERSION_PACKAGES
+        and installed_version == f"{expected_version}+{cuda_tag}"
+    ):
+        return expected_version
+    return installed_version
 
 
 def installed_controlled_package_versions(lock: Mapping[str, Any]) -> dict[str, str]:

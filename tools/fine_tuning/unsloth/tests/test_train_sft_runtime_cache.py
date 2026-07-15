@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib.metadata as metadata
 import json
+import sys
+import types
 from typing import Any
 
 import pytest
@@ -148,3 +151,76 @@ def test_direct_trainer_rescans_and_rejects_invalid_cache(
             },
             deployed_space=True,
         )
+
+
+def test_training_environment_accepts_only_matching_cuda_wheel_local_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _environment()
+    expected_packages = dict(training_lineage.DEFAULT_PACKAGE_VERSIONS)
+    observed_packages = dict(expected_packages)
+    for name in ("torch", "torchvision", "torchaudio"):
+        observed_packages[name] += "+cu128"
+
+    class _UnslothDistribution:
+        @staticmethod
+        def read_text(name: str) -> str | None:
+            if name != "direct_url.json":
+                return None
+            return json.dumps(
+                {
+                    "vcs_info": {
+                        "commit_id": training_lineage.DEFAULT_UNSLOTH_REVISION
+                    }
+                }
+            )
+
+    monkeypatch.setattr(
+        train_sft,
+        "_package_version",
+        lambda name: observed_packages[name],
+    )
+    monkeypatch.setattr(
+        train_sft,
+        "sys",
+        types.SimpleNamespace(
+            version_info=types.SimpleNamespace(major=3, minor=10)
+        ),
+    )
+    monkeypatch.setattr(metadata, "distribution", lambda _name: _UnslothDistribution())
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(version=types.SimpleNamespace(cuda="12.8")),
+    )
+    config = {
+        "seed": 42,
+        "trainingContainerImageDigest": "sha256:" + "a" * 64,
+        "trainingContainerImageDigestSource": "operator_declared",
+        "trainingRuntimeImageBindingStatus": "manual_validation_required",
+        "trainingRuntimeImageBindingVerified": False,
+        "trainingCodeSHA256": "b" * 64,
+        "trainingDependencyLockSHA256": "c" * 64,
+        "requirementsSHA256": "d" * 64,
+        "resolvedTrainingEnvironment": environment,
+        "resolvedTrainingEnvironmentSHA256": environment[
+            "resolvedTrainingEnvironmentSHA256"
+        ],
+        "trainingEnvironmentSHA256": None,
+        "zeroGPUSize": None,
+        "zeroGPUDurationSeconds": None,
+        "observedAccelerator": {"backend": "cuda"},
+        "trainingEnvironmentLock": {
+            "pythonVersion": "3.10",
+            "cudaVersion": "12.8",
+            "packageVersions": expected_packages,
+            "unslothRevision": training_lineage.DEFAULT_UNSLOTH_REVISION,
+        },
+    }
+
+    result = train_sft._training_environment(config)
+    assert result["environmentLock"]["packageVersions"] == expected_packages
+
+    observed_packages["torch"] = "2.9.1+cu129"
+    with pytest.raises(RuntimeError, match="Training package versions drifted"):
+        train_sft._training_environment(config)
