@@ -1,6 +1,8 @@
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG LUMEN_RUNTIME_UID=1000
+ARG LUMEN_RUNTIME_GID=1000
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -18,6 +20,7 @@ RUN apt-get update \
         cmake \
         git \
         ninja-build \
+        passwd \
         pkg-config \
         python3.10 \
         python3.10-dev \
@@ -104,6 +107,74 @@ if (
 print(json.dumps(scan, sort_keys=True))
 PY
 
+# Docker's numeric --user mapping does not synthesize passwd/group entries.
+# Create a real identity for the invoking Ubuntu operator only after the
+# expensive dependency layers so UID/GID-specific builds retain those caches.
+RUN set -eu; \
+    case "${LUMEN_RUNTIME_UID}" in \
+        ''|*[!0-9]*) echo "LUMEN_RUNTIME_UID must be a positive integer" >&2; exit 1 ;; \
+    esac; \
+    case "${LUMEN_RUNTIME_GID}" in \
+        ''|*[!0-9]*) echo "LUMEN_RUNTIME_GID must be a positive integer" >&2; exit 1 ;; \
+    esac; \
+    [ "${LUMEN_RUNTIME_UID}" -gt 0 ] \
+        || { echo "LUMEN_RUNTIME_UID must not be root" >&2; exit 1; }; \
+    [ "${LUMEN_RUNTIME_GID}" -gt 0 ] \
+        || { echo "LUMEN_RUNTIME_GID must not be root" >&2; exit 1; }; \
+    if ! getent group "${LUMEN_RUNTIME_GID}" >/dev/null; then \
+        groupadd --gid "${LUMEN_RUNTIME_GID}" lumen-runtime; \
+    fi; \
+    if ! getent passwd "${LUMEN_RUNTIME_UID}" >/dev/null; then \
+        useradd \
+            --no-log-init \
+            --uid "${LUMEN_RUNTIME_UID}" \
+            --gid "${LUMEN_RUNTIME_GID}" \
+            --home-dir /home/lumen-runtime \
+            --no-create-home \
+            --shell /bin/bash \
+            lumen-runtime; \
+    fi; \
+    install -d -m 0700 \
+        -o "${LUMEN_RUNTIME_UID}" \
+        -g "${LUMEN_RUNTIME_GID}" \
+        /home/lumen-runtime \
+        /home/lumen-runtime/.cache \
+        /home/lumen-runtime/.cache/torch/inductor \
+        /home/lumen-runtime/.cache/triton
+
+ENV HOME=/home/lumen-runtime \
+    XDG_CACHE_HOME=/home/lumen-runtime/.cache \
+    TORCHINDUCTOR_CACHE_DIR=/home/lumen-runtime/.cache/torch/inductor \
+    TRITON_CACHE_DIR=/home/lumen-runtime/.cache/triton
+
+# Exercise Python's passwd fallback and cache writes under the exact runtime
+# UID/GID. This catches the getpwuid failure during image construction.
+RUN setpriv \
+        --reuid="${LUMEN_RUNTIME_UID}" \
+        --regid="${LUMEN_RUNTIME_GID}" \
+        --clear-groups \
+        env -u LOGNAME -u USER -u LNAME -u USERNAME \
+        python - <<'PY'
+import getpass
+import grp
+import os
+import pwd
+import tempfile
+from pathlib import Path
+
+uid = os.getuid()
+gid = os.getgid()
+assert pwd.getpwuid(uid).pw_uid == uid
+assert grp.getgrgid(gid).gr_gid == gid
+assert getpass.getuser()
+home = Path.home()
+assert home == Path("/home/lumen-runtime") and home.is_dir()
+tempfile.TemporaryFile(dir=home).close()
+tempfile.TemporaryFile(dir=Path(os.environ["TORCHINDUCTOR_CACHE_DIR"])).close()
+PY
+
 WORKDIR /workspace
+
+USER ${LUMEN_RUNTIME_UID}:${LUMEN_RUNTIME_GID}
 
 CMD ["/bin/bash"]

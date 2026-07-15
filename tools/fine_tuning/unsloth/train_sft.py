@@ -489,6 +489,13 @@ def _seed_everything(seed: int) -> None:
         pass
 
 
+def _require_unsloth_before_transformers() -> None:
+    if "transformers" in sys.modules and "unsloth" not in sys.modules:
+        raise RuntimeError(
+            "Unsloth must be imported before Transformers so its runtime patches are applied"
+        )
+
+
 def _resolve_controlled_seed(
     cfg: Mapping[str, Any],
     *,
@@ -1502,7 +1509,6 @@ def main() -> None:
     cfg = load_config(cfg_path)
 
     seed, seed_source = _resolve_controlled_seed(cfg, cli_seed=args.seed)
-    _seed_everything(seed)
 
     dataset_dir = Path(cfg["dataset_dir"]).resolve()
     train_path = dataset_dir / "train_sft.jsonl"
@@ -1525,6 +1531,7 @@ def main() -> None:
     )
     _verify_base_model_lineage(cfg)
 
+    _require_unsloth_before_transformers()
     try:
         from unsloth import FastLanguageModel
         from datasets import Dataset
@@ -1541,6 +1548,9 @@ def main() -> None:
                 "This host imported Unsloth, but Torch is not compiled with CUDA enabled."
             ) from exc
         raise
+
+    # Unsloth must patch Transformers before the shared seed helper imports it.
+    _seed_everything(seed)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg["base_model_name"],

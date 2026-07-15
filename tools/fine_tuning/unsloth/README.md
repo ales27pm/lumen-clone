@@ -17,6 +17,9 @@ See [`docs/UBUNTU_TRAINING.md`](../../../docs/UBUNTU_TRAINING.md) for host
 prerequisites, variants, capacity estimates, resume/overwrite behavior, output
 layout, and upload safety. The default is the optimized variant, all six roles,
 full frozen evaluation, no upload, private visibility, and no runtime promotion.
+Run it as a regular non-root user: the image maps that account's UID/GID to a
+real container passwd/group entry and validates its writable home before model
+training.
 
 The commands below describe the individual components. Use them for inspection
 and targeted development; the full Ubuntu launcher is the canonical operator
