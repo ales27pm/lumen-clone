@@ -282,6 +282,51 @@ def test_requirements_mutation_and_dependency_drift_fail_closed(tmp_path: Path) 
         )
 
 
+def test_dependency_lock_accepts_only_its_exact_cuda_wheel_local_tag() -> None:
+    requirements = ROOT / "tools/hf_zerogpu/space_template/requirements.txt"
+    lock = training_lineage.build_training_dependency_lock(requirements)
+    installed = dict(lock["packageVersions"])
+    for name in ("torch", "torchvision", "torchaudio"):
+        installed[name] += "+cu128"
+
+    assert training_lineage.verify_training_dependency_lock(
+        lock,
+        installed_versions=installed,
+    ) == lock["trainingDependencyLockSHA256"]
+
+    installed["torch"] = "2.9.1+cu129"
+    with pytest.raises(
+        ValueError,
+        match="Installed controlled package versions drifted",
+    ):
+        training_lineage.verify_training_dependency_lock(
+            lock,
+            installed_versions=installed,
+        )
+
+    installed["torch"] = "2.9.1+cu128"
+    installed["trl"] = "0.24.0+cu128"
+    with pytest.raises(
+        ValueError,
+        match="Installed controlled package versions drifted",
+    ):
+        training_lineage.verify_training_dependency_lock(
+            lock,
+            installed_versions=installed,
+        )
+
+    installed["trl"] = "0.24.0"
+    installed["torch"] = "2.9.1+cpu"
+    with pytest.raises(
+        ValueError,
+        match="Installed controlled package versions drifted",
+    ):
+        training_lineage.verify_training_dependency_lock(
+            lock,
+            installed_versions=installed,
+        )
+
+
 def test_dependency_lock_covers_every_direct_requirement() -> None:
     requirements = ROOT / "tools/hf_zerogpu/space_template/requirements.txt"
     lock = training_lineage.build_training_dependency_lock(requirements)

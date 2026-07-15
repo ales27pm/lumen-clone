@@ -1,7 +1,7 @@
 {
   "agent": "cortex",
   "availableSFTRecords": 972,
-  "candidateSFTRecords": 11394,
+  "candidateSFTRecords": 11571,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -15,7 +15,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "165744a29333f65d9bb56812767385e50195f106c79fcc7c7260b3301e6f88a7"
+      "reportSHA256": "7377fb122deb288c558396de463181b960acb67da5415906c1f222db8d1826df"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -25,8 +25,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "3edbc28a231db90019bbf82a1eb29c860de9513c791d33688654f563800a3721",
-      "optimizedTrainingCorpusSHA256": "9327ad9f1c91c8dfde0613888c71e5403c68416ecc1e458ebf37978b7e8a4963",
+      "baselineTrainingCorpusSHA256": "5be8a3f2c1eda4e54e7c896a6948201b24bd72403bd1104df9e6b3bb60ac57e5",
+      "optimizedTrainingCorpusSHA256": "d9431e1d6166819345bac2a068cba2dc20a106981ae88f000ba2b75b06bcc33e",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 662,
@@ -53,7 +53,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "6fd5bb8c5654a5c4dc59792d23392598d0e32ebacc4be2c0e487133284657243",
+    "experimentManifestSHA256": "dfce0691239e36118fe12d9597399737971ef4f890836b321c6917c448708a47",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -83,7 +83,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "560341273831b8d1c8e4c57e5499030e5f5a0549",
+  "manifestCommit": "23f270120023867a8cadb9ee3aea59a50d7bf684",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 16,
@@ -276,12 +276,12 @@
   "quality": {
     "cortexCodebaseChunkRecordCount": 40,
     "cortexCodebaseFileRecordCount": 119,
-    "cortexCodebaseSelfAwarenessCandidateRecordCount": 6027,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 6121,
     "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files",
     "cortexCodebaseSelfAwarenessRecordCount": 161,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "sequenceBudgetDroppedRecordCount": 12,
-    "supplementalBalanceDroppedRecordCount": 10246,
+    "supplementalBalanceDroppedRecordCount": 10423,
     "supplementalSFTRecordCount": 243,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 25,
@@ -318,9 +318,9 @@
     "public_adapter_corpus_toolace_train": 12
   },
   "sourceIntegrity": {
-    "baseCommit": "560341273831b8d1c8e4c57e5499030e5f5a0549",
+    "baseCommit": "23f270120023867a8cadb9ee3aea59a50d7bf684",
     "dirtyState": true,
-    "workingTreeDigest": "1297414a35bc8335c6adfb6a48550b79f08c6319f6151b7711f044d8f44ac210"
+    "workingTreeDigest": "9b1f44732f58b704090e0e340d53b8b3cbc0ab3c4a9b3d9edbd2c30032c20061"
   },
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
   "taskTypeCounts": {
@@ -367,5 +367,5 @@
     "ultra_specific_intent_routing",
     "ultra_specific_regression_routing"
   ],
-  "worktreeFingerprint": "1297414a35bc8335c6adfb6a48550b79f08c6319f6151b7711f044d8f44ac210"
+  "worktreeFingerprint": "9b1f44732f58b704090e0e340d53b8b3cbc0ab3c4a9b3d9edbd2c30032c20061"
 }

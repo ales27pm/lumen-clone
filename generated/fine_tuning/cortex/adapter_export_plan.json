@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "165744a29333f65d9bb56812767385e50195f106c79fcc7c7260b3301e6f88a7"
+        "reportSHA256": "7377fb122deb288c558396de463181b960acb67da5415906c1f222db8d1826df"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,7 +41,7 @@
       "recordCount": 558,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "560341273831b8d1c8e4c57e5499030e5f5a0549",
+    "manifestCommit": "23f270120023867a8cadb9ee3aea59a50d7bf684",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 16,
@@ -67,9 +67,9 @@
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "560341273831b8d1c8e4c57e5499030e5f5a0549",
+      "baseCommit": "23f270120023867a8cadb9ee3aea59a50d7bf684",
       "dirtyState": true,
-      "workingTreeDigest": "1297414a35bc8335c6adfb6a48550b79f08c6319f6151b7711f044d8f44ac210"
+      "workingTreeDigest": "9b1f44732f58b704090e0e340d53b8b3cbc0ab3c4a9b3d9edbd2c30032c20061"
     },
     "taskTypes": [
       "codebase_home_grounding",
@@ -133,7 +133,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "6fd5bb8c5654a5c4dc59792d23392598d0e32ebacc4be2c0e487133284657243",
+    "experimentManifestSHA256": "dfce0691239e36118fe12d9597399737971ef4f890836b321c6917c448708a47",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -192,12 +192,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
-  "trainingCodeBundleSHA256": "40ccc3e8289eb0bb9dabf0d196f59bd5130f8e83c73240107ea0df55e98b1cfc",
-  "trainingCodeSHA256": "9f4a2c22e026518207d617efd20c32e7f694f8b3f4525cce1e80ae0547140d26",
+  "trainingCodeBundleSHA256": "06ccb19db4e7b1b689682650af9d5e3bacef86d7524286a3134ceca488923777",
+  "trainingCodeSHA256": "7877af58b8d8e092d7b0347c5be52513d00be61420c50d1ce2ca264a60226af6",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "9601ce566f486e440d063a6ce3452c1d9f16ecd33d79492c01af17f01847a543",
-    "orpo": "6786daa2c4aeab3be2253ce2d0a111e728a21d902eac74c3e82140a64b0a6639",
-    "sft": "9f4a2c22e026518207d617efd20c32e7f694f8b3f4525cce1e80ae0547140d26"
+    "dpo": "4d6b53a73f50c7b7d87035a3e86361beaaf228d761d502c0a0c9d04d7ffdff84",
+    "orpo": "db5c29629729297f68b8cdf159da1adfd0c27bfd024fbe637de05edb4dd72d18",
+    "sft": "7877af58b8d8e092d7b0347c5be52513d00be61420c50d1ce2ca264a60226af6"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
