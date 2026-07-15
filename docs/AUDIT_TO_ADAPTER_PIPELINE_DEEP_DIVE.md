@@ -226,8 +226,13 @@ The test now asserts the Qwen3-specific adapter paths and repo IDs instead of th
 
 ## Recommended end-to-end command sequence
 
+Run the audit/input validators locally, then use the canonical Ubuntu launcher
+for every mutating training, evaluation, conversion, and optional upload stage.
+The legacy `run_audit_to_adapter_pipeline.py --mode train-adapters` and
+terminal improve-loop training modes are not supported operator paths.
+
 ```bash
-cd /home/ales27pm/lumen-clone
+cd /absolute/path/to/lumen-clone
 
 python tools/pipeline/validate_audit_to_adapter_pipeline_deep.py
 
@@ -237,24 +242,12 @@ python tools/pipeline/inspect_audit_to_adapter_inputs.py \
   --require-training-signals \
   --write generated/agent_improvement_loop/audit_input_inspection.json
 
-python tools/pipeline/run_audit_to_adapter_pipeline.py \
-  --mode ingest \
-  --require-runtime-audit
-
-LUMEN_TRAIN_PYTHON=/home/ales27pm/lumen-clone/.venv/bin/python \
-python tools/pipeline/run_audit_to_adapter_pipeline.py \
-  --mode train-adapters \
-  --agents cortex,executor,mouth,mimicry,rem,fleet \
-  --seed 42 \
-  --assistant-only-loss
-
-python tools/pipeline/run_audit_to_adapter_pipeline.py \
-  --mode convert-adapters \
-  --agents cortex,executor,mouth,mimicry,rem,fleet \
-  --base-model-id Qwen/Qwen3-1.7B
-
-python tools/pipeline/run_audit_to_adapter_pipeline.py --mode upload-adapters
+bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
+
+For an explicit private upload, add `--upload --token-file
+/secure/path/lumen-hf-token`. See `docs/UBUNTU_TRAINING.md`; no training result
+is an iOS runtime promotion or real-device proof.
 
 ## What still needs real-device proof
 

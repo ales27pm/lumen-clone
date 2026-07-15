@@ -353,6 +353,11 @@ def upload_base(root: Path, args: argparse.Namespace) -> list[StageResult]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.mode not in {"validate", "ingest"}:
+        raise SystemExit(
+            "Legacy adapter training/conversion/upload modes are retired; use "
+            "bash scripts/ubuntu_train_lumen_full_pipeline.sh"
+        )
     args._stage_results = []
     root = args.root.resolve()
     if not (root / "ios/Lumen").exists():

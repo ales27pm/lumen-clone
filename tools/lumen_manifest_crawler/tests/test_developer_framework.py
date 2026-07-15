@@ -29,6 +29,12 @@ def test_framework_jobs_include_macos_and_ubuntu_profiles(tmp_path: Path) -> Non
     assert "hf-resolve" in ubuntu_jobs
     assert "hf-upload-dry-run" in ubuntu_jobs
     assert ubuntu_jobs["train-adapters"].requires_confirmation is True
+    assert ubuntu_jobs["ubuntu-preflight"].command[-1] == "--prepare-only"
+    assert ubuntu_jobs["train-adapters"].command == (
+        "bash",
+        "scripts/ubuntu_train_lumen_full_pipeline.sh",
+    )
+    assert "convert-adapters" not in ubuntu_jobs
     assert UBUNTU_TRAINING_JOB_IDS[-1] == "hf-upload-dry-run"
 
 

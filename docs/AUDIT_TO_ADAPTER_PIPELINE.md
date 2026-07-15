@@ -133,62 +133,43 @@ Every role dataset should include `train_sft.jsonl` and `val_sft.jsonl`.
 
 ### 3. Adapter-only training
 
-Adapter training is intentionally separate from GGUF conversion.
+Full Ubuntu training is owned by the pinned one-click launcher. Do not train
+from the retired static bootstrap configs: the launcher snapshots the selected
+controlled variant and binds its dataset, config, base-model, source, code,
+dependency, and runtime lineage before any optimizer work.
 
 ```bash
-for role in cortex executor mouth mimicry rem fleet; do
-  python tools/fine_tuning/unsloth/train_sft.py \
-    --config "tools/fine_tuning/unsloth/configs_qwen3_bootstrap/$role.json" \
-    --seed 42 \
-    --assistant-only-loss
-done
+bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
 
-Expected outputs:
+The default run performs SFT followed by DPO for all six roles and preserves
+the verified SFT parent separately from the final preference adapter.
+
+### 4. Adapter-only GGUF conversion
+
+Conversion is part of the canonical launcher and uses the finalized preference
+adapter plus the pinned base-model artifacts. It fetches the converter from the
+pinned llama.cpp revision and verifies that checkout before execution. Do not
+run an unbound converter against `models/lora_qwen3_bootstrap`.
+
+Expected per-role outputs include:
 
 ```text
-models/lora_qwen3_bootstrap/cortex
-models/lora_qwen3_bootstrap/executor
-models/lora_qwen3_bootstrap/mouth
-models/lora_qwen3_bootstrap/mimicry
-models/lora_qwen3_bootstrap/rem
-models/lora_qwen3_bootstrap/fleet
-```
-
-### 4. Explicit LoRA-to-GGUF adapter conversion
-
-Conversion is a separate stage. It must pass the base model explicitly.
-
-```bash
-for role in cortex executor mouth mimicry rem fleet; do
-  python ~/.unsloth/llama.cpp/convert_lora_to_gguf.py \
-    "models/lora_qwen3_bootstrap/$role" \
-    --outfile "models/lora_qwen3_gguf/lumen-$role-lora.gguf" \
-    --base-model-id Qwen/Qwen3-1.7B
-done
+<run-root>/models/lora_qwen3_dpo/<role>/
+<run-root>/models/lora_qwen3_gguf/lumen-<role>-lora.gguf
 ```
 
 ### 5. Hugging Face upload
 
-Adapters:
+Upload is off by default and occurs only after local evidence re-verifies. The
+launcher starts a separate credential-scoped container, performs one atomic
+allowlisted commit, and keeps the repository private unless `--public` is
+explicitly requested.
 
 ```bash
-hf repos create ales27pm/lumen-qwen3-bootstrap-adapters-gguf \
-  --type model \
-  --exist-ok
-
-hf upload ales27pm/lumen-qwen3-bootstrap-adapters-gguf \
-  models/lora_qwen3_gguf \
-  . \
-  --repo-type model
-```
-
-Shared base:
-
-```bash
-hf upload-large-folder ales27pm/lumen-qwen3-bootstrap-gguf \
-  models/base_qwen3_fast \
-  --repo-type model
+bash scripts/ubuntu_train_lumen_full_pipeline.sh \
+  --upload \
+  --token-file /secure/path/lumen-hf-token
 ```
 
 ### 6. iOS installation and runtime resolution
@@ -212,7 +193,7 @@ Static validation:
 ```bash
 python tools/pipeline/validate_audit_to_adapter_pipeline.py
 python tools/check_adapter_runtime_invariants.py
-python tools/lumen_terminal_improve_loop.py --mode preflight --dry-run --skip-pytest
+bash scripts/check-lumen-integration-gate.sh
 ```
 
 Require local generated artifacts too:

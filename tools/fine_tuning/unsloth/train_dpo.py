@@ -20,6 +20,7 @@ try:
         _seed_everything,
         _training_environment,
         _training_runtime_lineage,
+        _write_json_atomic,
     )
 except ImportError:
     from adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
@@ -32,6 +33,7 @@ except ImportError:
         _seed_everything,
         _training_environment,
         _training_runtime_lineage,
+        _write_json_atomic,
     )
 
 
@@ -425,9 +427,8 @@ def _build_preference_trainer(
         "num_train_epochs": float(cfg["num_train_epochs"]),
         "warmup_steps": int(cfg["warmup_steps"]),
         "logging_steps": int(cfg.get("logging_steps", 10)),
-        "eval_strategy": "steps" if val_dataset is not None else "no",
-        "eval_steps": int(cfg.get("eval_steps", 50)),
-        "save_steps": int(cfg.get("save_steps", 100)),
+        "eval_strategy": "epoch" if val_dataset is not None else "no",
+        "save_strategy": "epoch",
         "save_total_limit": int(cfg.get("save_total_limit", 2)),
         "bf16": bool(cfg.get("bf16", False)),
         "fp16": bool(cfg.get("fp16", True)),
@@ -719,10 +720,7 @@ def _finalize_dpo_variant(
         reference_sft_lineage=reference_sft_lineage,
         preference_trainer=preference_trainer,
     )
-    output_path.write_text(
-        json.dumps(finalized, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _write_json_atomic(output_path, finalized)
     return finalized
 
 
@@ -864,8 +862,9 @@ def main() -> None:
     )
 
     train_result = trainer.train()
+    evaluation_metrics = trainer.evaluate() if val_dataset is not None else {}
     _save_policy_adapter(trainer.model, dpo_adapter_dir)
-    tokenizer.save_pretrained(str(dpo_adapter_dir))
+    tokenizer.save_pretrained(str(dpo_adapter_dir), legacy_format=False)
     dpo_artifact_manifest = write_adapter_artifact_manifest(
         dpo_adapter_dir,
         training_phase="sft_dpo",
@@ -932,13 +931,17 @@ def main() -> None:
         "seed": seed,
         "seed_source": seed_source,
         "trainingEnvironment": training_environment,
+        "trainingEnvironmentSHA256": training_environment[
+            "trainingEnvironmentSHA256"
+        ],
         **training_runtime_lineage,
         "adapterSHA256": dpo_artifact_manifest["adapterSHA256"],
         "finalized_variant_manifest": str(finalized_manifest_path),
         "finalized_variant_manifest_sha256": finalized_variant["variantManifestSHA256"],
         "metrics": train_result.metrics,
+        "evaluation_metrics": evaluation_metrics,
     }
-    (output_dir / "dpo_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_json_atomic(output_dir / "dpo_report.json", report)
 
 
 if __name__ == "__main__":
