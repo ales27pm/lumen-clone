@@ -15,6 +15,30 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 FAKE_IMAGE_DIGEST = "sha256:" + ("a" * 64)
 
 
+def test_docker_context_includes_the_dependency_lineage_build_preflight() -> None:
+    docker_root = REPO_ROOT / "tools/fine_tuning/unsloth"
+    dockerfile = (docker_root / "Dockerfile.ubuntu-cu128").read_text(
+        encoding="utf-8"
+    )
+    dockerignore = set(
+        (docker_root / "Dockerfile.ubuntu-cu128.dockerignore")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+
+    assert (
+        "COPY tools/fine_tuning/unsloth/training_lineage.py "
+        "/tmp/lumen-training-lineage.py"
+    ) in dockerfile
+    assert "lineage.verify_training_dependency_lock(" in dockerfile
+    assert {
+        "!tools/",
+        "!tools/fine_tuning/",
+        "!tools/fine_tuning/unsloth/",
+        "!tools/fine_tuning/unsloth/training_lineage.py",
+    } <= dockerignore
+
+
 def test_agent_and_run_root_validation_fails_closed(tmp_path: Path) -> None:
     assert ubuntu_pipeline.parse_agents("cortex,executor") == ("cortex", "executor")
     with pytest.raises(RuntimeError, match="duplicates"):
