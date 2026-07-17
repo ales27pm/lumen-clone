@@ -923,6 +923,10 @@ def test_ubuntu_trainers_import_unsloth_before_transformers_seeding() -> None:
         assert main_source.index("from unsloth import FastLanguageModel") < (
             main_source.index("_seed_everything(seed)")
         )
+        if filename == "train_dpo.py":
+            assert main_source.index(
+                "_latch_expandable_cuda_allocator()"
+            ) < main_source.index("from unsloth import FastLanguageModel")
 
     evaluator = (
         REPO_ROOT / "tools/fine_tuning/unsloth/evaluate_adapter.py"
@@ -935,8 +939,8 @@ def test_ubuntu_trainers_import_unsloth_before_transformers_seeding() -> None:
     launcher = (
         REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
     ).read_text(encoding="utf-8")
-    assert "PYTORCH_ALLOC_CONF=expandable_segments:True" in launcher
-    assert "PYTORCH_CUDA_ALLOC_CONF" not in launcher
+    assert "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" in launcher
+    assert "PYTORCH_ALLOC_CONF" not in launcher
 
 
 @pytest.mark.parametrize(

@@ -34,6 +34,144 @@ OBSERVED_ACCELERATOR = {
 }
 
 
+class _AllocatorProbe:
+    def __init__(self, events: list[object], address: int = 1024) -> None:
+        self._events = events
+        self._address = address
+
+    def data_ptr(self) -> int:
+        return self._address
+
+    def __del__(self) -> None:
+        self._events.append("released")
+
+
+class _CudaAllocatorProbe:
+    def __init__(
+        self,
+        events: list[object],
+        *,
+        is_available: bool = True,
+        is_expandable: bool = True,
+    ) -> None:
+        self._events = events
+        self._is_available = is_available
+        self._is_expandable = is_expandable
+
+    def is_available(self) -> bool:
+        return self._is_available
+
+    def memory_snapshot(self) -> list[dict[str, object]]:
+        return [
+            {
+                "address": 1000,
+                "total_size": 100,
+                "is_expandable": self._is_expandable,
+            }
+        ]
+
+    def empty_cache(self) -> None:
+        self._events.append("empty_cache")
+
+
+class _TorchAllocatorProbe:
+    def __init__(
+        self,
+        events: list[object],
+        *,
+        is_available: bool = True,
+        is_expandable: bool = True,
+    ) -> None:
+        self._events = events
+        self.cuda = _CudaAllocatorProbe(
+            events,
+            is_available=is_available,
+            is_expandable=is_expandable,
+        )
+
+    def empty(self, size: int, *, device: str) -> _AllocatorProbe:
+        self._events.append(("empty", size, device))
+        return _AllocatorProbe(self._events)
+
+
+def test_dpo_latches_and_verifies_expandable_cuda_allocator() -> None:
+    events: list[object] = []
+    result = train_dpo._latch_expandable_cuda_allocator(
+        environ={
+            train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: (
+                "expandable_segments:True,max_split_size_mb:128"
+            )
+        },
+        torch_module=_TorchAllocatorProbe(events),
+    )
+
+    assert result == {
+        "configurationEnvironmentVariable": (
+            train_dpo.CUDA_ALLOCATOR_CONFIG_ENV
+        ),
+        "configuration": "expandable_segments:True,max_split_size_mb:128",
+        "expandableSegmentsVerified": True,
+    }
+    assert events == [("empty", 1, "cuda"), "released", "empty_cache"]
+
+
+def test_dpo_allocator_verification_fails_closed_and_releases_probe() -> None:
+    events: list[object] = []
+    with pytest.raises(RuntimeError, match="did not enable expandable segments"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ={
+                train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: "expandable_segments:True"
+            },
+            torch_module=_TorchAllocatorProbe(
+                events,
+                is_expandable=False,
+            ),
+        )
+
+    assert events == [("empty", 1, "cuda"), "released", "empty_cache"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        None,
+        "",
+        "expandable_segments:False",
+        "expandable_segments:True,expandable_segments:True",
+        "expandable_segments",
+    ),
+)
+def test_dpo_allocator_requires_exact_expandable_configuration(
+    value: str | None,
+) -> None:
+    environment = (
+        {} if value is None else {train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: value}
+    )
+    with pytest.raises(RuntimeError, match="PYTORCH_CUDA_ALLOC_CONF"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ=environment,
+            torch_module=_TorchAllocatorProbe([]),
+        )
+
+
+def test_dpo_allocator_requires_cuda() -> None:
+    with pytest.raises(RuntimeError, match="requires a CUDA accelerator"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ={
+                train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: "expandable_segments:True"
+            },
+            torch_module=_TorchAllocatorProbe([], is_available=False),
+        )
+
+
+def test_dpo_allocator_rejects_generic_only_configuration() -> None:
+    with pytest.raises(RuntimeError, match="PYTORCH_CUDA_ALLOC_CONF"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ={"PYTORCH_ALLOC_CONF": "expandable_segments:True"},
+            torch_module=_TorchAllocatorProbe([]),
+        )
+
+
 def _resolved_environment() -> dict:
     distribution_payload = {
         "name": "synthetic-runtime",
@@ -611,6 +749,7 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     assert dpo_args.kwargs["precompute_ref_log_probs"] is True
     assert dpo_args.kwargs["precompute_ref_batch_size"] == 1
     assert dpo_args.kwargs["gradient_checkpointing"] is True
+    assert dpo_args.kwargs["torch_empty_cache_steps"] == 1
 
     orpo_trainer, orpo_args = train_dpo._build_preference_trainer(
         cfg, preference_trainer="orpo", **common
@@ -620,6 +759,7 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     assert "use_logits_to_keep" not in orpo_args.kwargs
     assert "precompute_ref_log_probs" not in orpo_args.kwargs
     assert "precompute_ref_batch_size" not in orpo_args.kwargs
+    assert "torch_empty_cache_steps" not in orpo_args.kwargs
     assert orpo_args.kwargs["seed"] == orpo_args.kwargs["data_seed"] == 42
     assert orpo_args.kwargs["learning_rate"] == 2e-6
 
@@ -707,6 +847,7 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
     assert dpo_args.precompute_ref_log_probs is True
     assert dpo_args.precompute_ref_batch_size == 1
     assert dpo_args.gradient_checkpointing is True
+    assert dpo_args.torch_empty_cache_steps == 1
     assert dpo_args.seed == dpo_args.data_seed == 42
     assert orpo_args.seed == orpo_args.data_seed == 42
 

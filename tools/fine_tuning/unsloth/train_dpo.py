@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -92,6 +93,68 @@ AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
 FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned", "training"}
 POLICY_ADAPTER_NAME = "default"
 REFERENCE_ADAPTER_NAME = "lumen_sft_reference"
+CUDA_ALLOCATOR_CONFIG_ENV = "PYTORCH_CUDA_ALLOC_CONF"
+
+
+def _latch_expandable_cuda_allocator(
+    *,
+    environ: Mapping[str, str] | None = None,
+    torch_module: Any | None = None,
+) -> dict[str, Any]:
+    """Initialize and verify the CUDA allocator before Unsloth rewrites its env."""
+
+    environment = os.environ if environ is None else environ
+    raw_config = environment.get(CUDA_ALLOCATOR_CONFIG_ENV)
+    if not isinstance(raw_config, str) or not raw_config.strip():
+        raise RuntimeError(
+            f"DPO requires {CUDA_ALLOCATOR_CONFIG_ENV}=expandable_segments:True"
+        )
+    settings: dict[str, str] = {}
+    for raw_setting in raw_config.split(","):
+        key, separator, value = raw_setting.strip().partition(":")
+        if not separator or not key or key in settings:
+            raise RuntimeError(f"Invalid {CUDA_ALLOCATOR_CONFIG_ENV} setting")
+        settings[key] = value
+    if settings.get("expandable_segments") != "True":
+        raise RuntimeError(
+            f"DPO requires {CUDA_ALLOCATOR_CONFIG_ENV}=expandable_segments:True"
+        )
+
+    if torch_module is None:
+        import torch as torch_module  # type: ignore
+
+    if not torch_module.cuda.is_available():
+        raise RuntimeError("DPO allocator verification requires a CUDA accelerator")
+
+    probe = torch_module.empty(1, device="cuda")
+    try:
+        probe_address = int(probe.data_ptr())
+        matching_segments = [
+            segment
+            for segment in torch_module.cuda.memory_snapshot()
+            if (
+                type(segment.get("address")) is int
+                and type(segment.get("total_size")) is int
+                and segment["address"] <= probe_address
+                < segment["address"] + segment["total_size"]
+            )
+        ]
+        if (
+            len(matching_segments) != 1
+            or matching_segments[0].get("is_expandable") is not True
+        ):
+            raise RuntimeError(
+                "DPO CUDA allocator did not enable expandable segments before Unsloth import"
+            )
+    finally:
+        del probe
+        torch_module.cuda.empty_cache()
+
+    return {
+        "configurationEnvironmentVariable": CUDA_ALLOCATOR_CONFIG_ENV,
+        "configuration": raw_config,
+        "expandableSegmentsVerified": True,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -468,6 +531,7 @@ def _build_preference_trainer(
         "gradient_checkpointing": gradient_checkpointing,
     }
     if preference_trainer == "dpo":
+        common_config["torch_empty_cache_steps"] = 1
         training_args = dpo_config_class(
             **common_config,
             beta=float(cfg.get("dpo_beta", 0.1)),
@@ -891,6 +955,11 @@ def main() -> None:
     ]
     _verify_base_model_lineage(cfg)
 
+    cuda_allocator = (
+        _latch_expandable_cuda_allocator()
+        if preference_trainer == "dpo"
+        else None
+    )
     _require_unsloth_before_transformers()
     try:
         from unsloth import FastLanguageModel
@@ -1016,6 +1085,7 @@ def main() -> None:
             else None
         ),
         "reference_log_probs_precomputed": reference_log_probs_precomputed,
+        "cudaAllocator": cuda_allocator,
         "parentSFTLineage": parent_sft_lineage,
         "referenceSFTLineage": (
             parent_sft_lineage if preference_trainer == "dpo" else None

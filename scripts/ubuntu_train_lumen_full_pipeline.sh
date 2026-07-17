@@ -404,7 +404,7 @@ for variant in "${variants[@]}"; do
     -e PYTHONDONTWRITEBYTECODE=1
     -e PYTHONPATH=/workspace
     -e TOKENIZERS_PARALLELISM=false
-    -e PYTORCH_ALLOC_CONF=expandable_segments:True
+    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     -e "LUMEN_AIO_EXPERIMENT_VARIANT=$variant"
     -e "LUMEN_AIO_CONTAINER_IMAGE_DIGEST=$IMAGE_DIGEST"
     -e "LUMEN_AIO_RUN_ID=$RUN_ID"
