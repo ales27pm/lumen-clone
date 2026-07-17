@@ -368,6 +368,14 @@ def _write_evaluation_evidence(
         if generated_case_count is not None
         else len(records)
     )
+    evaluation_scope = "full" if generated_count == len(records) else "smoke"
+    evaluation_plan = _test_execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=(
+            generated_count if evaluation_scope == "smoke" else None
+        ),
+        gguf_requested=False,
+    )
     selected_records = (
         list(records)
         if generated_count == len(records)
@@ -555,7 +563,11 @@ def _write_evaluation_evidence(
         "release_bake_enabled_by_default": False,
         "trainingCodeManifestsByPhase": {"dpo": {"phase": "dpo"}},
         "trainingCodeSHA256ByPhase": {"dpo": "d" * 64},
-        "variantAttestation": {"trainingEnvironmentSHA256": None},
+        "runExecutionPlan": evaluation_plan,
+        "variantAttestation": {
+            "trainingEnvironmentSHA256": None,
+            "executionPlanSHA256": evaluation_plan["executionPlanSHA256"],
+        },
         "adapterExport": {
             "adapterArtifact": "bootstrap",
             "adapterDirectory": "bootstrap",
@@ -655,6 +667,9 @@ def _write_evaluation_evidence(
         "fullCaseCount": len(records),
         "generatedCaseCount": len(selected_records),
         "completeEvaluation": len(selected_records) == len(records),
+        "executionPlanSHA256": evaluation_plan["executionPlanSHA256"],
+        "evaluationScope": evaluation_plan["evaluationScope"],
+        "evaluationMaxExamples": evaluation_plan["evaluationMaxExamples"],
         "initialFormatFailureCount": sum(
             row["generationAttempts"][0]["formatError"] is not None
             for row in candidate_rows
@@ -687,7 +702,7 @@ def _write_evaluation_evidence(
             "variant": variant,
             "behaviorManifest": str(behavior_path.resolve()),
             "behaviorManifestFileSHA256": prepared_behavior_sha256,
-            "executionPlan": _test_execution_plan(gguf_requested=False),
+            "executionPlan": evaluation_plan,
             **source_fields,
             "agents": [
                 {
@@ -1122,10 +1137,37 @@ def test_current_optimized_artifacts_pass_static_preflight(tmp_path: Path) -> No
 
     assert result["status"] == "static_ready"
     assert result["trainingReady"] is False
+    assert result["executionPlan"] == _test_execution_plan()
     assert [entry["agent"] for entry in result["agents"]] == list(
         ubuntu_pipeline.AGENTS
     )
     assert not (tmp_path / "run-one").exists()
+
+
+def test_static_preflight_rejects_smoke_size_covering_a_frozen_suite(
+    tmp_path: Path,
+) -> None:
+    dataset_source = REPO_ROOT / "generated" / "fine_tuning"
+    frozen_case_count = len(
+        ubuntu_pipeline.read_jsonl(dataset_source / "mimicry" / "eval.jsonl")
+    )
+
+    with pytest.raises(RuntimeError, match="must be smaller.*mimicry"):
+        ubuntu_pipeline.static_preflight(
+            root=REPO_ROOT,
+            dataset_source=dataset_source,
+            agents=("mimicry",),
+            variant=OPTIMIZED_VARIANT,
+            seed=42,
+            base_model_override="",
+            container_digest=FAKE_IMAGE_DIGEST,
+            run_root=tmp_path / "run-smoke",
+            allowed_parent=tmp_path,
+            evaluation_scope="smoke",
+            evaluation_max_examples=frozen_case_count,
+            gguf_requested=False,
+        )
+    assert not (tmp_path / "run-smoke").exists()
 
 
 def test_variant_validation_rejects_a_missing_contamination_report(
@@ -1411,6 +1453,18 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
         assert config[field] == run_manifest[field]
         assert config["variantAttestation"][field] == run_manifest[field]
     ubuntu_pipeline.verify_embedded_source_integrity(run_manifest)
+
+    manifest_path = run_root / "aio_run_manifest.json"
+    drifted_manifest = dict(run_manifest)
+    drifted_manifest["executionPlan"] = _test_execution_plan()
+    drifted_manifest.pop("runManifestSHA256", None)
+    drifted_manifest["runManifestSHA256"] = ubuntu_pipeline.canonical_sha256(
+        drifted_manifest
+    )
+    ubuntu_pipeline.write_object(manifest_path, drifted_manifest)
+    with pytest.raises(RuntimeError, match="execution plan drifted from the config"):
+        ubuntu_pipeline._verified_run_manifest(run_root)
+    ubuntu_pipeline.write_object(manifest_path, run_manifest)
 
     config["workingTreeDigest"] = "0" * 64
     with pytest.raises(RuntimeError, match="digest fields drifted"):
@@ -1779,6 +1833,11 @@ def test_diagnostic_publication_requires_override_and_separate_namespace(
     evaluation_scope: str,
     status: str,
 ) -> None:
+    plan = _test_execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=1 if evaluation_scope == "smoke" else None,
+        gguf_requested=False,
+    )
     summary = {
         "status": status,
         "evaluationStatus": evaluation_status,
@@ -1786,6 +1845,7 @@ def test_diagnostic_publication_requires_override_and_separate_namespace(
         "ggufStatus": "skipped_by_operator",
         "qualification": "diagnostic_only",
         "promotionEligible": False,
+        "executionPlanSHA256": plan["executionPlanSHA256"],
     }
     with pytest.raises(RuntimeError, match="--allow-diagnostic-upload"):
         ubuntu_pipeline._upload_publication_contract(
@@ -1805,6 +1865,7 @@ def test_diagnostic_publication_requires_override_and_separate_namespace(
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": "skipped_by_operator",
+        "executionPlanSHA256": plan["executionPlanSHA256"],
     }
 
 
@@ -2416,7 +2477,40 @@ def test_evaluation_verifier_rejects_rehashed_smoke_cohort_size_drift(
     manifest["runManifestSHA256"] = ubuntu_pipeline.canonical_sha256(manifest)
     ubuntu_pipeline.write_object(run_path, manifest)
 
-    with pytest.raises(RuntimeError, match="Candidate output evidence failed"):
+    with pytest.raises(RuntimeError, match="case-count lineage failed"):
+        ubuntu_pipeline._verify_evaluation_outputs(
+            tmp_path,
+            "cortex",
+            final_phase={
+                "adapterSHA256": "b" * 64,
+                "finalizedVariantManifestSHA256": manifest[
+                    "finalizedVariantManifestSHA256"
+                ],
+                "parentSFTAdapterSHA256": "9" * 64,
+                "phase": "dpo",
+            },
+        )
+
+
+def test_evaluation_verifier_rejects_rehashed_smoke_plan_evidence_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_path = _write_evaluation_evidence(
+        tmp_path,
+        monkeypatch=monkeypatch,
+        status="smoke_complete",
+        quality_gate_passed=False,
+        full_case_count=3,
+        generated_case_count=1,
+    )
+    manifest = ubuntu_pipeline.read_object(run_path)
+    manifest["evaluationMaxExamples"] = 2
+    manifest.pop("runManifestSHA256", None)
+    manifest["runManifestSHA256"] = ubuntu_pipeline.canonical_sha256(manifest)
+    ubuntu_pipeline.write_object(run_path, manifest)
+
+    with pytest.raises(RuntimeError, match="exact prepared run"):
         ubuntu_pipeline._verify_evaluation_outputs(
             tmp_path,
             "cortex",
@@ -3046,6 +3140,9 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
         "ggufStatus": "skipped_by_operator",
         "qualification": "quality_gate_passed",
         "promotionEligible": True,
+        "executionPlanSHA256": _test_execution_plan(
+            gguf_requested=False
+        )["executionPlanSHA256"],
         "agents": {
             agent: {
                 "evaluation": None,
@@ -3207,6 +3304,11 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
         "ggufStatus": "skipped_by_operator",
         "qualification": "diagnostic_only",
         "promotionEligible": False,
+        "executionPlanSHA256": _test_execution_plan(
+            evaluation_scope="smoke",
+            evaluation_max_examples=1,
+            gguf_requested=False,
+        )["executionPlanSHA256"],
         "agents": {agent: {"evaluation": None, "adapterGGUFExists": False}},
     }
     monkeypatch.setattr(

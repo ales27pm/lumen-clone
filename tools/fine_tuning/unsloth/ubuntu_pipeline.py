@@ -92,7 +92,7 @@ GGUF_SUPPORTED_VERSIONS = frozenset({2, 3})
 GGUF_READER_RELATIVE_PATH = Path("gguf-py/gguf/scripts/gguf_dump.py")
 GGUF_READER_TIMEOUT_SECONDS = 120
 SUMMARY_SCHEMA_VERSION = "lumen.ubuntu-training-summary/3.0.0"
-UPLOAD_SCHEMA_VERSION = "lumen.ubuntu-training-upload/2.0.0"
+UPLOAD_SCHEMA_VERSION = "lumen.ubuntu-training-upload/2.1.0"
 EXECUTION_PLAN_SCHEMA_VERSION = "lumen.ubuntu-training-execution-plan/1.0.0"
 RUN_SCHEMA_VERSION = "lumen.ubuntu-training-run/3.0.0"
 _GGUF_READER_FD_BOOTSTRAP = """
@@ -972,6 +972,29 @@ def validate_variant(
     return config, manifest, variant_root
 
 
+def _verify_smoke_plan_against_frozen_suites(
+    dataset_source: Path,
+    agents: Sequence[str],
+    plan: Mapping[str, Any],
+) -> None:
+    verified_plan = _verified_execution_plan(plan)
+    if verified_plan["evaluationScope"] != "smoke":
+        return
+    max_examples = verified_plan["evaluationMaxExamples"]
+    for agent in agents:
+        evaluation_path = dataset_source / agent / "eval.jsonl"
+        if evaluation_path.is_symlink() or not evaluation_path.is_file():
+            raise RuntimeError(
+                f"Missing regular frozen evaluation dataset: {evaluation_path}"
+            )
+        frozen_case_count = len(read_jsonl(evaluation_path))
+        if max_examples >= frozen_case_count:
+            raise RuntimeError(
+                "Smoke evaluation size must be smaller than the frozen suite for "
+                f"{agent}: requested {max_examples}, available {frozen_case_count}"
+            )
+
+
 def static_preflight(
     *,
     root: Path,
@@ -984,6 +1007,9 @@ def static_preflight(
     run_root: Path,
     allowed_parent: Path,
     expected_run_id: str | None = None,
+    evaluation_scope: str = "full",
+    evaluation_max_examples: int | None = None,
+    gguf_requested: bool = True,
 ) -> dict[str, Any]:
     require_variant(variant)
     require_container_digest(container_digest)
@@ -1001,6 +1027,11 @@ def static_preflight(
     read_object(
         root / "generated" / "agent_manifest" / "AgentBehaviorManifest.json"
     )
+    prepared_execution_plan = execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=evaluation_max_examples,
+        gguf_requested=gguf_requested,
+    )
     checked: list[dict[str, Any]] = []
     for agent in agents:
         _, manifest, _ = validate_variant(
@@ -1017,12 +1048,18 @@ def static_preflight(
                 "trainingCorpusSHA256": manifest["trainingCorpusSHA256"],
             }
         )
+    _verify_smoke_plan_against_frozen_suites(
+        dataset_source,
+        agents,
+        prepared_execution_plan,
+    )
     return {
-        "schema": "lumen.ubuntu-training-static-preflight/1.0.0",
+        "schema": "lumen.ubuntu-training-static-preflight/2.0.0",
         "status": "static_ready",
         "trainingReady": False,
         "unchecked": ["python_environment", "cuda_runtime", "accelerator", "network"],
         "variant": variant,
+        "executionPlan": prepared_execution_plan,
         "agents": checked,
         "runRoot": str(run_root.resolve()),
         "adapterRepoID": runtime_manifest.get("adapterRepoID"),
@@ -1124,6 +1161,9 @@ def _training_attestation(
     config: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
+    prepared_execution_plan = _verified_execution_plan(
+        config.get("runExecutionPlan")
+    )
     controlled = manifest.get("controlledTrainingConfig")
     if not isinstance(controlled, Mapping):
         raise RuntimeError("Variant manifest lacks controlled training config")
@@ -1164,6 +1204,7 @@ def _training_attestation(
             "trainingDependencyLockSHA256"
         ],
         "requirementsSHA256": config["requirementsSHA256"],
+        "executionPlanSHA256": prepared_execution_plan["executionPlanSHA256"],
         "runtimeImageBindingStatus": config[
             "trainingRuntimeImageBindingStatus"
         ],
@@ -1191,6 +1232,16 @@ def prepare_run(
 ) -> dict[str, Any]:
     if run_root.exists():
         raise RuntimeError(f"Run root already exists: {run_root}")
+    prepared_execution_plan = execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=evaluation_max_examples,
+        gguf_requested=gguf_requested,
+    )
+    _verify_smoke_plan_against_frozen_suites(
+        dataset_source,
+        agents,
+        prepared_execution_plan,
+    )
     source_config, _, _ = validate_variant(
         dataset_source,
         agent=agents[0],
@@ -1204,11 +1255,6 @@ def prepare_run(
         source_config=source_config,
         container_digest=container_digest,
         source_integrity=source_integrity,
-    )
-    prepared_execution_plan = execution_plan(
-        evaluation_scope=evaluation_scope,
-        evaluation_max_examples=evaluation_max_examples,
-        gguf_requested=gguf_requested,
     )
     run_root.mkdir(parents=True)
     snapshot_root = run_root / "generated" / "fine_tuning"
@@ -1400,7 +1446,9 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
         raise RuntimeError("Prepared run manifest integrity check failed")
     verify_embedded_source_integrity(manifest)
     manifest_agents = manifest.get("agents")
-    _verified_execution_plan(manifest.get("executionPlan"))
+    prepared_execution_plan = _verified_execution_plan(
+        manifest.get("executionPlan")
+    )
     if (
         manifest.get("schema") != RUN_SCHEMA_VERSION
         or manifest.get("adapterFirst") is not True
@@ -1421,6 +1469,31 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
         is None
     ):
         raise RuntimeError("Prepared run manifest does not own this exact run root")
+    for prepared_agent in manifest_agents:
+        agent = str(prepared_agent["agent"])
+        config_path = run_root / "configs" / f"{agent}.json"
+        if config_path.is_symlink() or not config_path.is_file():
+            raise RuntimeError(
+                f"Prepared run config is not a regular file for {agent}: {config_path}"
+            )
+        if (
+            prepared_agent.get("config") != str(config_path)
+            or prepared_agent.get("configSHA256") != file_sha256(config_path)
+        ):
+            raise RuntimeError(
+                f"Prepared run config binding failed verification for {agent}"
+            )
+        prepared_config = read_object(config_path)
+        variant_attestation = prepared_config.get("variantAttestation")
+        if (
+            prepared_config.get("runExecutionPlan") != prepared_execution_plan
+            or not isinstance(variant_attestation, Mapping)
+            or variant_attestation.get("executionPlanSHA256")
+            != prepared_execution_plan["executionPlanSHA256"]
+        ):
+            raise RuntimeError(
+                f"Prepared run execution plan drifted from the config for {agent}"
+            )
     return manifest
 
 
@@ -2395,6 +2468,9 @@ def _verify_evaluation_outputs(
         "fullCaseCount",
         "generatedCaseCount",
         "completeEvaluation",
+        "executionPlanSHA256",
+        "evaluationScope",
+        "evaluationMaxExamples",
         "initialFormatFailureCount",
         "formatRecoveryCount",
         "formatFailureCount",
@@ -2517,6 +2593,9 @@ def _verify_evaluation_outputs(
         ) from exc
 
     prepared_run = _verified_run_manifest(run_root)
+    prepared_execution_plan = _verified_execution_plan(
+        prepared_run.get("executionPlan")
+    )
     prepared_agents = prepared_run.get("agents")
     prepared_agent = next(
         (
@@ -2540,6 +2619,13 @@ def _verify_evaluation_outputs(
         != file_sha256(behavior_path)
         or prepared_agent.get("config") != str(base_config_path.resolve())
         or prepared_agent.get("configSHA256") != file_sha256(base_config_path)
+        or config.get("runExecutionPlan") != prepared_execution_plan
+        or evaluation_run.get("executionPlanSHA256")
+        != prepared_execution_plan["executionPlanSHA256"]
+        or evaluation_run.get("evaluationScope")
+        != prepared_execution_plan["evaluationScope"]
+        or evaluation_run.get("evaluationMaxExamples")
+        != prepared_execution_plan["evaluationMaxExamples"]
         or (
             source_evidence_required
             and any(
@@ -2595,13 +2681,27 @@ def _verify_evaluation_outputs(
         )
     generated_case_count = evaluation_run.get("generatedCaseCount")
     complete_evaluation = evaluation_run.get("completeEvaluation")
+    evaluation_scope = prepared_execution_plan["evaluationScope"]
+    planned_max_examples = prepared_execution_plan["evaluationMaxExamples"]
+    expected_complete_evaluation = evaluation_scope == "full"
+    expected_generated_case_count = (
+        len(evaluation_records)
+        if expected_complete_evaluation
+        else planned_max_examples
+    )
     if (
-        type(generated_case_count) is not int
+        evaluation_scope == "none"
+        or type(generated_case_count) is not int
         or generated_case_count <= 0
         or generated_case_count > len(evaluation_records)
         or type(evaluation_run.get("fullCaseCount")) is not int
         or evaluation_run.get("fullCaseCount") != len(evaluation_records)
-        or complete_evaluation is not (generated_case_count == len(evaluation_records))
+        or complete_evaluation is not expected_complete_evaluation
+        or generated_case_count != expected_generated_case_count
+        or (
+            evaluation_scope == "smoke"
+            and generated_case_count >= len(evaluation_records)
+        )
     ):
         raise RuntimeError(f"Evaluation case-count lineage failed verification: {run_path}")
     if complete_evaluation:
@@ -2610,7 +2710,7 @@ def _verify_evaluation_outputs(
         try:
             selected_records = evaluate_adapter.select_evaluation_records(
                 evaluation_records,
-                max_examples=generated_case_count,
+                max_examples=planned_max_examples,
             )
         except (TypeError, ValueError) as exc:
             raise RuntimeError(
@@ -3241,6 +3341,7 @@ def _upload_publication_contract(
         "evaluationStatus": summary["evaluationStatus"],
         "evaluationScope": summary["evaluationScope"],
         "ggufStatus": summary["ggufStatus"],
+        "executionPlanSHA256": summary["executionPlanSHA256"],
     }
 
 
@@ -3477,6 +3578,7 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     static = subparsers.add_parser("static-preflight")
     _common_parser(static)
+    _execution_plan_parser(static)
     static.add_argument("--run-root", type=Path, required=True)
     static.add_argument("--allowed-run-parent", type=Path, required=True)
     static.add_argument("--run-id")
@@ -3554,6 +3656,9 @@ def main() -> None:
             run_root=args.run_root,
             allowed_parent=args.allowed_run_parent,
             expected_run_id=args.run_id,
+            evaluation_scope=args.evaluation_scope,
+            evaluation_max_examples=args.evaluation_max_examples,
+            gguf_requested=args.gguf_requested,
         )
     elif args.command == "runtime-preflight":
         result = runtime_preflight(
