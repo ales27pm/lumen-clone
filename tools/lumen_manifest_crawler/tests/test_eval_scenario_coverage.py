@@ -283,6 +283,7 @@ def test_curated_natural_prompts_distinguish_actionable_partial_and_ambiguous_va
     ]
     clarification_cases = [
         ("maps.search", "Show me on map.", []),
+        ("calendar.create", "Please help me create event.", []),
         ("calendar.create", "Create a calendar entry named Ridgeview permit review.", ["title"]),
         ("alarm.countdown", "Start a 10 minute countdown alarm.", ["durationSeconds"]),
         ("reminders.create", "Add a reminder for tomorrow morning.", []),
