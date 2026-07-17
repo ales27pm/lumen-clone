@@ -1,10 +1,12 @@
 {
   "agent": "fleet",
-  "availableSFTRecords": 754,
-  "candidateSFTRecords": 5155,
+  "availableSFTRecords": 877,
+  "candidateSFTRecords": 5519,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
+    "maxCortexPublicSFTRecordsPerTool": null,
+    "maxCortexSupplementalAssistantCharShare": null,
     "maxPublicCorpusSFTTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
@@ -15,18 +17,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "78957eeb4a2edd6fd50e0a530beee590564a7325268316ad3af2dbdcd125ea83"
+      "reportSHA256": "085490a353c1ef66072c857a9d8bdc2ff350b7c4cd03c86c21e5c545dd4557e9"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "92fcbd3e7f0236628d0812457a44be38aa019594a0ce33d730cf6cfefb13ec89",
+    "frozenEvaluationSHA256": "c44c0a8670180dc9d7305a5590f323c065a4956a796b5d60c07907b5ba52368d",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "38984e0f67888704d4ab8079b8e57113530ee57a5cb92f75b6331ee1b98ee7b3",
-      "optimizedTrainingCorpusSHA256": "53b04b443315dff0ccb5d776bab74275295b67f90581680c4ba22e1c20054fba",
+      "baselineTrainingCorpusSHA256": "6597299510f5f858005bce18668637484ce7c8003e55e567359a228d7813cc90",
+      "optimizedTrainingCorpusSHA256": "77de5074f7d5034ea66fd8878e8802621e3d5e37a81035d4eeaac7521a9bce0d",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -53,7 +55,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "75f46466e22606b0b416a19bb0081313c5bc0d274296ac9880a0fff12f43f04b",
+    "experimentManifestSHA256": "3935166c44061892233085f23e9f6c08bab5add8f9733f0ab7f08e086fdf6d7c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -83,19 +85,19 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "633cd747db3339fc818372f85d790f14144aa845",
+  "manifestCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
   "preferenceTraining": {
     "includedInCheckpoint": false,
-    "recordCount": 18,
+    "recordCount": 25,
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
   "publicCorpus": {
     "availableRecordCounts": {
       "train_dpo": 0,
-      "train_sft": 425,
+      "train_sft": 428,
       "val_dpo": 0,
-      "val_sft": 75
+      "val_sft": 72
     },
     "availableSourceCounts": {
       "AmazonScience/massive": 500
@@ -117,9 +119,9 @@
     "maxSFTTokenShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 425,
+      "train_sft": 428,
       "val_dpo": 0,
-      "val_sft": 75
+      "val_sft": 72
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
@@ -232,9 +234,9 @@
     "sourceSplitCounts": {
       "AmazonScience/massive": {
         "train_dpo": 0,
-        "train_sft": 425,
+        "train_sft": 428,
         "val_dpo": 0,
-        "val_sft": 75
+        "val_sft": 72
       }
     },
     "tokenShares": {
@@ -243,41 +245,45 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.011976,
-        "total": 0.290006
+        "target": 0.009189,
+        "total": 0.232869
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.012714,
-        "total": 0.300103
+        "target": 0.009743,
+        "total": 0.240658
       }
     }
   },
   "quality": {
+    "assistantTargetCharCount": 724443,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
     "cortexCodebaseSelfAwarenessCoverage": null,
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
-    "sequenceBudgetDroppedRecordCount": 4,
-    "supplementalBalanceDroppedRecordCount": 4397,
-    "supplementalSFTRecordCount": 188,
+    "cortexPublicBalanceDroppedRecordCount": 0,
+    "sequenceBudgetDroppedRecordCount": 12,
+    "supplementalAssistantTargetCharCount": 508037,
+    "supplementalAssistantTargetCharShare": 0.7012794657412661,
+    "supplementalBalanceDroppedRecordCount": 4627,
+    "supplementalSFTRecordCount": 219,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 19,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
     "eval": 15,
-    "train_dpo": 15,
-    "train_sft": 640,
-    "val_dpo": 3,
-    "val_sft": 114
+    "train_dpo": 21,
+    "train_sft": 749,
+    "val_dpo": 4,
+    "val_sft": 128
   },
-  "sourceDirty": true,
+  "sourceDirty": false,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "codebase_home_chunk_sft",
@@ -292,38 +298,38 @@
   ],
   "sourceFamilyCounts": {
     "adapter_ultra_specific": 19,
-    "codebase_home_chunk_sft": 94,
-    "codebase_home_sft": 94,
-    "cross_model_training": 18,
+    "codebase_home_chunk_sft": 109,
+    "codebase_home_sft": 110,
+    "cross_model_training": 108,
     "fleet_orchestration_native": 9,
-    "fleet_system_prompts": 5,
+    "fleet_system_prompts": 6,
     "manifest_grounding_cards": 4,
     "public_adapter_corpus_massive_en_us_1_1": 500,
-    "self_model_cards": 7,
+    "self_model_cards": 8,
     "self_model_sft": 4
   },
   "sourceIntegrity": {
-    "baseCommit": "633cd747db3339fc818372f85d790f14144aa845",
-    "dirtyState": true,
-    "workingTreeDigest": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+    "baseCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+    "dirtyState": false,
+    "workingTreeDigest": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
   },
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
   "taskTypeCounts": {
-    "codebase_home_grounding": 93,
+    "codebase_home_grounding": 109,
     "codebase_home_overview": 1,
-    "codebase_source_chunk_grounding": 94,
-    "fleet_delegation": 5,
+    "codebase_source_chunk_grounding": 109,
+    "fleet_delegation": 30,
     "fleet_orchestration_event_graph": 9,
-    "fleet_peer_knowledge": 5,
-    "fleet_peer_source_knowledge": 5,
-    "fleet_self_knowledge": 1,
-    "fleet_whole_system_identity": 1,
+    "fleet_peer_knowledge": 30,
+    "fleet_peer_source_knowledge": 30,
+    "fleet_self_knowledge": 6,
+    "fleet_whole_system_identity": 6,
     "manifest_grounding_cards": 4,
     "public_capability_delegation": 500,
-    "role_directory": 5,
-    "self_model_card_grounding": 7,
+    "role_directory": 6,
+    "self_model_card_grounding": 8,
     "self_model_grounded_answer": 4,
-    "source_code_self_knowledge": 1,
+    "source_code_self_knowledge": 6,
     "ultra_specific_fleet_delegation": 1,
     "ultra_specific_fleet_slot_directory": 6,
     "ultra_specific_tool_boundary_awareness": 12
@@ -348,5 +354,5 @@
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"
   ],
-  "worktreeFingerprint": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+  "worktreeFingerprint": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
 }

@@ -1,10 +1,12 @@
 {
   "agent": "mimicry",
-  "availableSFTRecords": 12,
+  "availableSFTRecords": 11,
   "candidateSFTRecords": 612,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
+    "maxCortexPublicSFTRecordsPerTool": null,
+    "maxCortexSupplementalAssistantCharShare": null,
     "maxPublicCorpusSFTTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
@@ -15,7 +17,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "6f7d6e62d44e8346e166a2981daa6b5574b825e57b269a05f422b53b603a8327"
+      "reportSHA256": "a34cd5e099171c12f8be453edf2e1aa4ab4f2ac777632c06a3883671482edbd9"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -25,8 +27,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "be6d260e1efea885506ce5ffc5757dcee4b65f5a3f19d26c4cb4baab7e94f86b",
-      "optimizedTrainingCorpusSHA256": "7c57c88c24c0f539317832a610a99f55afff446b84084b9201264e0697ee9f72",
+      "baselineTrainingCorpusSHA256": "c2f0936497c97761e639d17bfc5491c6927a3faf9709542ffa7258c2b84ececd",
+      "optimizedTrainingCorpusSHA256": "af66c7d27c1c6148860286b01e79442f32da30f391000bdf75b02bf5b24e1637",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 600,
@@ -53,7 +55,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "084a59925153b93a1cd6343323ed5d535e1656c51b14ae2c23c3aa722e12fe46",
+    "experimentManifestSHA256": "86333151af65da30ee5f85b860a386251575d431c0e5216bf4dd1237144fd883",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -83,7 +85,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "633cd747db3339fc818372f85d790f14144aa845",
+  "manifestCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 2,
@@ -119,13 +121,13 @@
       "train_dpo": 0,
       "train_sft": 2,
       "val_dpo": 0,
-      "val_sft": 1
+      "val_sft": 0
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
       "train_sft": 509,
       "val_dpo": 0,
-      "val_sft": 88
+      "val_sft": 89
     },
     "selectionContract": {
       "maxTokenShare": 0.35,
@@ -143,10 +145,10 @@
         "minimum": 0.720013
       },
       "selected": {
-        "count": 3,
+        "count": 2,
         "maximum": 0.755176,
-        "mean": 0.738817,
-        "minimum": 0.723763
+        "mean": 0.741873,
+        "minimum": 0.72857
       }
     },
     "snapshotIntegrity": {
@@ -227,14 +229,14 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "grammarly/coedit": 3
+      "grammarly/coedit": 2
     },
     "sourceSplitCounts": {
       "grammarly/coedit": {
         "train_dpo": 0,
         "train_sft": 2,
         "val_dpo": 0,
-        "val_sft": 1
+        "val_sft": 0
       }
     },
     "tokenShares": {
@@ -243,27 +245,31 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.307018,
-        "total": 0.347913
+        "target": 0.322917,
+        "total": 0.349241
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.245283,
-        "total": 0.345865
+        "target": 0.0,
+        "total": 0.0
       }
     }
   },
   "quality": {
+    "assistantTargetCharCount": 2911,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
     "cortexCodebaseSelfAwarenessCoverage": null,
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "cortexPublicBalanceDroppedRecordCount": 0,
     "sequenceBudgetDroppedRecordCount": 0,
+    "supplementalAssistantTargetCharCount": 0,
+    "supplementalAssistantTargetCharShare": 0.0,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
@@ -275,9 +281,9 @@
     "train_dpo": 1,
     "train_sft": 9,
     "val_dpo": 1,
-    "val_sft": 3
+    "val_sft": 2
   },
-  "sourceDirty": true,
+  "sourceDirty": false,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "mimicry_style",
@@ -286,23 +292,23 @@
   "sourceFamilyCounts": {
     "adapter_ultra_specific": 6,
     "mimicry_style": 3,
-    "public_adapter_corpus_coedit_train": 3
+    "public_adapter_corpus_coedit_train": 2
   },
   "sourceIntegrity": {
-    "baseCommit": "633cd747db3339fc818372f85d790f14144aa845",
-    "dirtyState": true,
-    "workingTreeDigest": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+    "baseCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+    "dirtyState": false,
+    "workingTreeDigest": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
   },
   "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries.",
   "taskTypeCounts": {
-    "mimicry_style": 3,
-    "public_meaning_preserving_style_edit": 3,
+    "public_meaning_preserving_style_edit": 2,
+    "style_profile_detection": 3,
     "ultra_specific_style_profile_detection": 6
   },
   "taskTypes": [
-    "mimicry_style",
     "public_meaning_preserving_style_edit",
+    "style_profile_detection",
     "ultra_specific_style_profile_detection"
   ],
-  "worktreeFingerprint": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+  "worktreeFingerprint": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
 }

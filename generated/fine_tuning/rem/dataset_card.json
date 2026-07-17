@@ -5,6 +5,8 @@
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
+    "maxCortexPublicSFTRecordsPerTool": null,
+    "maxCortexSupplementalAssistantCharShare": null,
     "maxPublicCorpusSFTTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
@@ -15,7 +17,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "a24ee13512f3a54958f1e7e5d9268ca1a83c2c43051cba28dd1c2814e2ef46e1"
+      "reportSHA256": "3701b4256d126d3db494cef9321c5ab4f43fa4a03232938e2e70f2ef547606f4"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -25,8 +27,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "cda79ce71d367db68c906baa28c56ec023515ff75573fda6d7b6f4c1f75e6258",
-      "optimizedTrainingCorpusSHA256": "bcec27af26a35a53b34d158b2557d53c5abfff5224dc0a02a9fee12dfb7e9871",
+      "baselineTrainingCorpusSHA256": "ba3014419a3d7ea37d431c8186ec9126e4e56b7ed322f1666b85bf8ee5bb666e",
+      "optimizedTrainingCorpusSHA256": "c1ce80e2e9bdd9bc2c866d20cb2f8c6625614444dd0ec2594aa8a6a209e32f8f",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -53,7 +55,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "abf8da7cf4a17c3eda9c21033003fc0747765b82acb42c7c4d71ee57c1783219",
+    "experimentManifestSHA256": "f83d67931a5d6ac091260f93f69de65627a05ef7167381f768af349a1cbf612d",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -83,7 +85,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "633cd747db3339fc818372f85d790f14144aa845",
+  "manifestCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 3,
@@ -276,27 +278,31 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.215159,
-        "total": 0.327468
+        "target": 0.232804,
+        "total": 0.337702
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.148148,
-        "total": 0.266667
+        "target": 0.170213,
+        "total": 0.277457
       }
     }
   },
   "quality": {
+    "assistantTargetCharCount": 5203,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
     "cortexCodebaseSelfAwarenessCoverage": null,
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "cortexPublicBalanceDroppedRecordCount": 0,
     "sequenceBudgetDroppedRecordCount": 0,
+    "supplementalAssistantTargetCharCount": 0,
+    "supplementalAssistantTargetCharShare": 0.0,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
@@ -310,7 +316,7 @@
     "val_dpo": 1,
     "val_sft": 4
   },
-  "sourceDirty": true,
+  "sourceDirty": false,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "public_adapter_corpus_coedit_train",
@@ -326,16 +332,16 @@
     "rem_reflection": 5
   },
   "sourceIntegrity": {
-    "baseCommit": "633cd747db3339fc818372f85d790f14144aa845",
-    "dirtyState": true,
-    "workingTreeDigest": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+    "baseCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+    "dirtyState": false,
+    "workingTreeDigest": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
   },
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypeCounts": {
     "public_schema_failure_diagnosis": 2,
     "public_text_repair": 1,
     "public_tool_boundary_repair": 3,
-    "rem_reflection": 5,
+    "reflection_and_memory_policy": 5,
     "ultra_specific_argument_extraction_repair": 1,
     "ultra_specific_manifest_tool_repair": 1,
     "ultra_specific_memory_ttl_policy": 4,
@@ -348,7 +354,7 @@
     "public_schema_failure_diagnosis",
     "public_text_repair",
     "public_tool_boundary_repair",
-    "rem_reflection",
+    "reflection_and_memory_policy",
     "ultra_specific_argument_extraction_repair",
     "ultra_specific_manifest_tool_repair",
     "ultra_specific_memory_ttl_policy",
@@ -357,5 +363,5 @@
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
   ],
-  "worktreeFingerprint": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+  "worktreeFingerprint": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
 }

@@ -33,15 +33,15 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "967d8e4892f480cbfc1d319376f90f81184eea763a3125a067dcba3d9f70bdf2"
+        "reportSHA256": "165d3b9336ed484290ccc4f91fb699aea91f922b20e6ca8e0e7b4cdff3735f11"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "f54c9097c4f1dd9122b7042d5dd3e75a29e1eeaa9fe081d74e222e28ae3447f1",
-      "recordCount": 7,
+      "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
+      "recordCount": 8,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "633cd747db3339fc818372f85d790f14144aa845",
+    "manifestCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 19,
@@ -49,7 +49,7 @@
       "status": "generated_not_trained"
     },
     "recordCounts": {
-      "eval": 7,
+      "eval": 8,
       "train_dpo": 17,
       "train_sft": 131,
       "val_dpo": 2,
@@ -63,12 +63,11 @@
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "633cd747db3339fc818372f85d790f14144aa845",
-      "dirtyState": true,
-      "workingTreeDigest": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+      "baseCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+      "dirtyState": false,
+      "workingTreeDigest": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
     },
     "taskTypes": [
-      "mouth_responses",
       "public_grounded_response_finalization",
       "public_grounded_response_preference",
       "public_observation_grounded_final",
@@ -76,7 +75,8 @@
       "ultra_specific_empty_after_sanitization_recovery",
       "ultra_specific_permission_failure_response",
       "ultra_specific_post_tool_summary",
-      "ultra_specific_reference_resolution_failure"
+      "ultra_specific_reference_resolution_failure",
+      "user_response_generation"
     ]
   },
   "expectedArtifacts": {
@@ -118,7 +118,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "88cbde433b6d5580424f4e8e930066bd447d9b22e253f2a085ffccd821817265",
+    "experimentManifestSHA256": "75875498cfc356e9bad64c15d7687d68bb7ed4f94fdc828d5b0b7b4a5968ceb9",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -177,12 +177,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
-  "trainingCodeBundleSHA256": "11bd3870bfbb09009374bdd62d61d7a8bd00b19ad6c8c164bcca1845c638f8d2",
-  "trainingCodeSHA256": "f3f1cb5bdf98bc847c095a95af0d84bdbd5ea2e87655b20d09dafb5c96b38799",
+  "trainingCodeBundleSHA256": "42e198f843c54adcf48ada35067017d746041a10f55b39173c9a04d99ae05e99",
+  "trainingCodeSHA256": "3143af95849e563d9d33872fa4686c4dc4b7bc3002b1c66de308fe21d7f296d7",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "90823f38248fefa82bf3103a6d5955022885a99d9e29bf3b91aee8b7ed95e224",
-    "orpo": "4977e78e40a696282c10be6b4c866556f7db6bc4de3a6efd9adb80ff52ee2644",
-    "sft": "f3f1cb5bdf98bc847c095a95af0d84bdbd5ea2e87655b20d09dafb5c96b38799"
+    "dpo": "aba8f66d2319c8dfd0a4eb089693efb5062f219360d69bca242e6c1066b593d3",
+    "orpo": "1cf8fc4d804c825475a97fd2b3beada04fa0ec8dba951b228ea5d2cdaf38e5d5",
+    "sft": "3143af95849e563d9d33872fa4686c4dc4b7bc3002b1c66de308fe21d7f296d7"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

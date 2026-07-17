@@ -5,6 +5,8 @@
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
+    "maxCortexPublicSFTRecordsPerTool": null,
+    "maxCortexSupplementalAssistantCharShare": null,
     "maxPublicCorpusSFTTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
@@ -15,18 +17,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "967d8e4892f480cbfc1d319376f90f81184eea763a3125a067dcba3d9f70bdf2"
+      "reportSHA256": "165d3b9336ed484290ccc4f91fb699aea91f922b20e6ca8e0e7b4cdff3735f11"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "f54c9097c4f1dd9122b7042d5dd3e75a29e1eeaa9fe081d74e222e28ae3447f1",
-    "recordCount": 7,
+    "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
+    "recordCount": 8,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "266ddcf3f7be1c5de56536be97b006eba98326e8a475f179128dc326a66232d7",
-      "optimizedTrainingCorpusSHA256": "d26647a8c47ff16a01dfb177130fcbd3f1a3ae9e3b7e626e0fcdc105493ee86c",
+      "baselineTrainingCorpusSHA256": "6e235f74d7a4c3ec681fbc9572bd9fc5043a642bc5c8fc685e208caa403ac53f",
+      "optimizedTrainingCorpusSHA256": "e8818320aaa782904736a2495392d4ce782ce5a50d8a8adec186a14bce8360c0",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 1051,
@@ -53,7 +55,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "88cbde433b6d5580424f4e8e930066bd447d9b22e253f2a085ffccd821817265",
+    "experimentManifestSHA256": "75875498cfc356e9bad64c15d7687d68bb7ed4f94fdc828d5b0b7b4a5968ceb9",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -83,7 +85,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "633cd747db3339fc818372f85d790f14144aa845",
+  "manifestCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 19,
@@ -290,13 +292,17 @@
     }
   },
   "quality": {
+    "assistantTargetCharCount": 12503,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
     "cortexCodebaseSelfAwarenessCoverage": null,
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "cortexPublicBalanceDroppedRecordCount": 0,
     "sequenceBudgetDroppedRecordCount": 0,
+    "supplementalAssistantTargetCharCount": 0,
+    "supplementalAssistantTargetCharShare": 0.0,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
@@ -304,13 +310,13 @@
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
-    "eval": 7,
+    "eval": 8,
     "train_dpo": 17,
     "train_sft": 131,
     "val_dpo": 2,
     "val_sft": 24
   },
-  "sourceDirty": true,
+  "sourceDirty": false,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "mouth_responses",
@@ -326,13 +332,12 @@
     "public_adapter_corpus_toolace_train": 1
   },
   "sourceIntegrity": {
-    "baseCommit": "633cd747db3339fc818372f85d790f14144aa845",
-    "dirtyState": true,
-    "workingTreeDigest": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+    "baseCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+    "dirtyState": false,
+    "workingTreeDigest": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
   },
   "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
   "taskTypeCounts": {
-    "mouth_responses": 26,
     "public_grounded_response_finalization": 11,
     "public_grounded_response_preference": 13,
     "public_observation_grounded_final": 1,
@@ -340,10 +345,10 @@
     "ultra_specific_empty_after_sanitization_recovery": 1,
     "ultra_specific_permission_failure_response": 23,
     "ultra_specific_post_tool_summary": 53,
-    "ultra_specific_reference_resolution_failure": 1
+    "ultra_specific_reference_resolution_failure": 1,
+    "user_response_generation": 26
   },
   "taskTypes": [
-    "mouth_responses",
     "public_grounded_response_finalization",
     "public_grounded_response_preference",
     "public_observation_grounded_final",
@@ -351,7 +356,8 @@
     "ultra_specific_empty_after_sanitization_recovery",
     "ultra_specific_permission_failure_response",
     "ultra_specific_post_tool_summary",
-    "ultra_specific_reference_resolution_failure"
+    "ultra_specific_reference_resolution_failure",
+    "user_response_generation"
   ],
-  "worktreeFingerprint": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+  "worktreeFingerprint": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
 }
